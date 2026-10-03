@@ -259,7 +259,7 @@ fn render_operation_failure(operation: &str, reason: &str) -> String {
     } else {
         format!(
             "background support for your journal couldn't be changed.\n\
-             run `journal service status` to check it.\n\
+             run `solstone journal service status` to check it.\n\
              details: {reason}"
         )
     }
@@ -274,7 +274,7 @@ mod tests {
         assert_eq!(
             render_operation_failure("update", "powershell.exe: access is denied"),
             "background support for your journal couldn't be changed.\n\
-             run `journal service status` to check it.\n\
+             run `solstone journal service status` to check it.\n\
              details: powershell.exe: access is denied"
         );
     }
@@ -294,7 +294,7 @@ mod tests {
         assert_eq!(
             render_operation_failure("run", "windows gave no reason"),
             "background support for your journal couldn't be changed.\n\
-             run `journal service status` to check it.\n\
+             run `solstone journal service status` to check it.\n\
              details: windows gave no reason."
         );
     }

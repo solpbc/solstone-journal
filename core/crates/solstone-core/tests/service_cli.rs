@@ -7,7 +7,7 @@ use std::process::{Command, Output, Stdio};
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core");
 const RECOVERY_HEADER: &str = "this installation couldn't be verified.";
 const RECOVERY_SETUP: &str =
-    "run `journal setup` to check it. if setup finishes successfully, try again.";
+    "run `solstone journal setup` to check it. if setup finishes successfully, try again.";
 const TRUNCATION_MARKER: &str = "…[truncated]";
 
 #[path = "support/hostile_binary.rs"]
@@ -79,7 +79,7 @@ fn absent_unit_status_and_top_level_up_have_exact_failures() {
     for (arguments, expected_stdout) in [
         (
             &["service", "status"][..],
-            "service: not installed\nrun 'journal setup' or 'journal service install' to install it.\n",
+            "service: not installed\nrun 'solstone journal setup' or 'solstone journal service install' to install it.\n",
         ),
         (&["up"][..], ""),
     ] {
@@ -98,7 +98,7 @@ fn absent_unit_status_and_top_level_up_have_exact_failures() {
         if arguments == ["up"] {
             assert_eq!(
                 output.stderr,
-                b"error: service not installed. run 'journal service install' first.\n"
+                b"error: service not installed. run 'solstone journal service install' first.\n"
             );
         } else {
             assert!(output.stderr.is_empty());
@@ -122,7 +122,7 @@ fn service_install_recovery_keeps_checksum_mismatch_byte_exact() {
     assert_eq!(
         output.stderr,
         b"this installation couldn't be verified.\n\
-run `journal setup` to check it. if setup finishes successfully, try again.\n\
+run `solstone journal setup` to check it. if setup finishes successfully, try again.\n\
 details: could not verify the saved installation: identity record checksum mismatch\n"
     );
 }

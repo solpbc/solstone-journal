@@ -3,8 +3,9 @@
 
 //! The journal's own loopback routes, the same ones its browser pages and the
 //! Mac app call: the journal's name, its identity and mark, the first-run mark
-//! ritual, the device list and the running version. Loopback callers need no
-//! credential; nothing here leaves this PC.
+//! ritual, devices and pairing, whether the journal is open to the network,
+//! and the running version. Loopback callers need no credential; nothing here
+//! leaves this PC.
 
 use std::time::Duration;
 
@@ -16,6 +17,25 @@ pub const DEFAULT_PORT: u16 = 5015;
 pub struct Convey {
     base: String,
     agent: Agent,
+}
+
+/// A journal answer that wasn't a success. The page reads `reason_code` to
+/// offer the way forward the journal's own pages offer.
+#[derive(Debug, Eq, PartialEq)]
+pub struct Refusal {
+    pub status: Option<u16>,
+    pub reason_code: Option<String>,
+    pub message: String,
+}
+
+impl From<String> for Refusal {
+    fn from(message: String) -> Self {
+        Self {
+            status: None,
+            reason_code: None,
+            message,
+        }
+    }
 }
 
 /// What `GET /init` says about the first run.
@@ -47,7 +67,7 @@ impl Convey {
     fn json(
         &self,
         response: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, Refusal> {
         let mut response = response.map_err(|error| error.to_string())?;
         let status = response.status().as_u16();
         let text = response
@@ -58,15 +78,10 @@ impl Convey {
         if (200..300).contains(&status) {
             return Ok(value);
         }
-        // The journal names a refusal for the owner in `detail` or `error`.
-        let reason = ["detail", "error", "message"]
-            .iter()
-            .find_map(|key| value.get(key).and_then(Value::as_str))
-            .map_or_else(|| format!("your journal answered {status}"), str::to_owned);
-        Err(reason)
+        Err(refusal(status, &value))
     }
 
-    pub fn get(&self, path: &str) -> Result<Value, String> {
+    pub fn get(&self, path: &str) -> Result<Value, Refusal> {
         self.json(
             self.agent
                 .get(format!("{}{path}", self.base))
@@ -75,7 +90,7 @@ impl Convey {
         )
     }
 
-    pub fn post(&self, path: &str, body: Option<&Value>) -> Result<Value, String> {
+    pub fn post(&self, path: &str, body: Option<&Value>) -> Result<Value, Refusal> {
         let request = self
             .agent
             .post(format!("{}{path}", self.base))
@@ -88,7 +103,7 @@ impl Convey {
         })
     }
 
-    pub fn put(&self, path: &str, body: &Value) -> Result<Value, String> {
+    pub fn put(&self, path: &str, body: &Value) -> Result<Value, Refusal> {
         self.json(
             self.agent
                 .put(format!("{}{path}", self.base))
@@ -96,6 +111,14 @@ impl Convey {
                 .header("Content-Type", "application/json")
                 .send(body.to_string()),
         )
+    }
+
+    /// Whether a pairing link has been used, by the nonce pair-start returned.
+    pub fn pairing_status(&self, nonce: &str) -> Result<Value, Refusal> {
+        if !is_nonce(nonce) {
+            return Err(Refusal::from("that isn't a pairing link".to_owned()));
+        }
+        self.get(&format!("/app/network/api/pair/nonce-status?nonce={nonce}"))
     }
 
     /// Whether the journal answers, and its version when it says. A journal
@@ -137,5 +160,63 @@ impl Convey {
             200 => Ok(InitProbe::Incomplete),
             status => Err(format!("your journal answered {status}")),
         }
+    }
+}
+
+/// The journal names a refusal for the owner in `detail` or `error`, and its
+/// kind in `reason_code`.
+fn refusal(status: u16, value: &Value) -> Refusal {
+    let message = ["detail", "error", "message"]
+        .iter()
+        .find_map(|key| value.get(key).and_then(Value::as_str))
+        .map_or_else(|| format!("your journal answered {status}"), str::to_owned);
+    Refusal {
+        status: Some(status),
+        reason_code: value
+            .get("reason_code")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        message,
+    }
+}
+
+/// A pair-start nonce goes into a query string as it is, so it may only be
+/// the characters the journal mints.
+fn is_nonce(nonce: &str) -> bool {
+    !nonce.is_empty()
+        && nonce.len() <= 128
+        && nonce
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{is_nonce, refusal};
+
+    #[test]
+    fn a_refusal_keeps_its_reason_code_for_the_page() {
+        let closed = refusal(
+            409,
+            &json!({"reason_code": "local_network_closed", "detail": "closed"}),
+        );
+        assert_eq!(closed.status, Some(409));
+        assert_eq!(closed.reason_code.as_deref(), Some("local_network_closed"));
+        assert_eq!(closed.message, "closed");
+        assert_eq!(
+            refusal(502, &json!(null)).message,
+            "your journal answered 502"
+        );
+    }
+
+    #[test]
+    fn only_a_minted_nonce_reaches_the_query_string() {
+        assert!(is_nonce("0123abcdEF-_"));
+        assert!(!is_nonce(""));
+        assert!(!is_nonce("a&nonce=b"));
+        assert!(!is_nonce("a b"));
+        assert!(!is_nonce(&"a".repeat(129)));
     }
 }

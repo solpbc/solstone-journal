@@ -218,7 +218,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 check,
                 Status::Warn,
                 detail,
-                Some("journal transcribe --redo"),
+                Some("solstone journal transcribe --redo"),
             ))
         }
         UnretryableScan::CannotDetermine(reason) => Ok(make_result(

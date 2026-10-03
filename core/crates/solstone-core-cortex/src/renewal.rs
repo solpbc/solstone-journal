@@ -9,12 +9,14 @@ use std::thread;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use solstone_core_brain::BrainInspection;
 use uuid::Uuid;
 
 use crate::state::Outbound;
 
+#[cfg(test)]
+use serde_json::json;
 #[cfg(test)]
 use std::path::Path;
 
@@ -734,7 +736,12 @@ impl RenewalHandle {
         let outbound = Outbound {
             tract: "supervisor",
             event: "request".into(),
-            fields: Map::from_iter([("cmd".into(), json!(["journal", "brain", "refresh"]))]),
+            fields: Map::from_iter([(
+                "cmd".into(),
+                Value::from(solstone_core_system::partition::canonical_journal_command(
+                    ["brain", "refresh"],
+                )),
+            )]),
         };
         if self.outbound.send(outbound.clone()).is_err() {
             self.machine
@@ -818,30 +825,33 @@ impl RenewalHandle {
     ) -> Duration {
         let reference = format!("spp-renewal-{}", Uuid::new_v4().simple());
         let command = match &kind {
-            AttemptKind::Renew { fingerprint } => json!([
-                "journal",
-                "brain",
-                "renew-prerequisites",
-                "--json",
-                "--expected-fingerprint",
-                fingerprint
-            ]),
-            AttemptKind::RefreshExpectedFingerprint { fingerprint } => json!([
-                "journal",
-                "brain",
-                "refresh",
-                "--json",
-                "--expected-fingerprint",
-                fingerprint,
-                "--expected-active-fingerprint"
-            ]),
-            AttemptKind::RefreshExpectAbsent => json!([
-                "journal",
-                "brain",
-                "refresh",
-                "--json",
-                "--expect-active-fingerprint-absent"
-            ]),
+            AttemptKind::Renew { fingerprint } => Value::from(
+                solstone_core_system::partition::canonical_journal_command([
+                    "brain",
+                    "renew-prerequisites",
+                    "--json",
+                    "--expected-fingerprint",
+                    fingerprint,
+                ]),
+            ),
+            AttemptKind::RefreshExpectedFingerprint { fingerprint } => Value::from(
+                solstone_core_system::partition::canonical_journal_command([
+                    "brain",
+                    "refresh",
+                    "--json",
+                    "--expected-fingerprint",
+                    fingerprint,
+                    "--expected-active-fingerprint",
+                ]),
+            ),
+            AttemptKind::RefreshExpectAbsent => Value::from(
+                solstone_core_system::partition::canonical_journal_command([
+                    "brain",
+                    "refresh",
+                    "--json",
+                    "--expect-active-fingerprint-absent",
+                ]),
+            ),
         };
         let sent = self.outbound.send(Outbound {
             tract: "supervisor",

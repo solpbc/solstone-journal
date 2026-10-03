@@ -333,18 +333,24 @@ mod linux {
                     vec![
                         "binary_missing",
                         "model_missing",
-                        "run `journal install-provider local`",
+                        "run `solstone journal install-provider local`",
                     ],
                 ),
                 (
                     true,
                     false,
-                    vec!["model_missing", "run `journal install-provider local`"],
+                    vec![
+                        "model_missing",
+                        "run `solstone journal install-provider local`",
+                    ],
                 ),
                 (
                     false,
                     true,
-                    vec!["binary_missing", "run `journal install-provider local`"],
+                    vec![
+                        "binary_missing",
+                        "run `solstone journal install-provider local`",
+                    ],
                 ),
                 (true, true, Vec::new()),
             ] {
@@ -381,7 +387,10 @@ mod linux {
             }
             assert_provider_issues(
                 journal.path(),
-                &["binary_missing", "run `journal install-provider local`"],
+                &[
+                    "binary_missing",
+                    "run `solstone journal install-provider local`",
+                ],
             )
             .await;
         }
@@ -393,7 +402,10 @@ mod linux {
         write_model_artifact(alternate.path());
         assert_provider_issues(
             alternate.path(),
-            &["binary_missing", "run `journal install-provider local`"],
+            &[
+                "binary_missing",
+                "run `solstone journal install-provider local`",
+            ],
         )
         .await;
 

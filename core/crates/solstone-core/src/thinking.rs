@@ -141,11 +141,13 @@ pub fn run_chatgpt_sign_in(options: ChatGptSignInOptions) -> ExitCode {
         }
         Err(solstone_core_thinking::chatgpt::ClosedOutcome::RegistrationRefused)
         | Err(solstone_core_thinking::chatgpt::ClosedOutcome::PlanUsageNotGranted) => {
-            eprintln!("ChatGPT sign-in required: run 'journal thinking chatgpt sign-in'");
+            eprintln!("ChatGPT sign-in required: run 'solstone journal thinking chatgpt sign-in'");
             ExitCode::from(EXIT_DATAERR)
         }
         Err(solstone_core_thinking::chatgpt::ClosedOutcome::AccountMismatch) => {
-            eprintln!("account mismatch: run 'journal thinking chatgpt sign-out --forget'");
+            eprintln!(
+                "account mismatch: run 'solstone journal thinking chatgpt sign-out --forget'"
+            );
             ExitCode::from(EXIT_DATAERR)
         }
         Err(outcome) => {

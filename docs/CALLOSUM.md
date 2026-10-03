@@ -63,7 +63,7 @@ and remote-network boundary, not a defense against malware already running as th
 - If command is already running → queue the request (FIFO)
 - Deduped by exact `cmd` match (same command+args won't queue twice)
 - When task completes → next queued request runs automatically, once the supervisor has proven the finished task's processes are gone
-- If it cannot prove that, the command is held: each of its refs gets one `held` event (`service`, `ref`, `reasons`), later requests keep queuing, and `journal health` lists it. Its `stopped` events follow once a later check proves the processes gone
+- If it cannot prove that, the command is held: each of its refs gets one `held` event (`service`, `ref`, `reasons`), later requests keep queuing, and `solstone journal health` lists it. Its `stopped` events follow once a later check proves the processes gone
 
 **Ref tracking:** Callers can provide a `ref` field in requests to track completion:
 - If omitted, supervisor generates a timestamp-based ref
@@ -84,7 +84,7 @@ and remote-network boundary, not a defense against malware already running as th
 ### `observe` - Multimodal capture and processing
 **Sources:**
 - Capture: linked-device clients (solstone-linux, solstone-tmux, solstone-macos) upload through native client ingest
-- Processing: native `journal sense`, `solstone-core-describe`, native `journal transcribe`
+- Processing: native `solstone journal sense`, `solstone-core-describe`, native `solstone journal transcribe`
 
 **Events:**
 | Event | Emitter | Purpose |
@@ -155,7 +155,7 @@ and remote-network boundary, not a defense against malware already running as th
 **Purpose:** Forward Callosum events directly to the browser notification UI — any service can trigger an in-app notification card by emitting to this tract
 
 ### `navigate` - Browser navigation control
-**Source:** `journal navigate` (`solstone-core-journal-cli`)
+**Source:** `solstone journal navigate` (`solstone-core-journal-cli`)
 **Events:** `request`
 **Key fields:** `path` (string, URL path)
 **Consumer:** `core/crates/solstone-core-convey-shell/assets/static/websocket.js` (built-in listener)

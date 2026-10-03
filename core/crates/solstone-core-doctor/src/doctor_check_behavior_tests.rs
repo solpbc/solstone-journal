@@ -1922,7 +1922,7 @@ fn parakeet_cpp_fixture_states_are_distinct() {
     assert_eq!(
         missing_row.fix.as_deref(),
         Some(
-            "parakeet-cpp artifacts are not installed — fetch them with: journal install-provider parakeet"
+            "parakeet-cpp artifacts are not installed — fetch them with: solstone journal install-provider parakeet"
         )
     );
 
@@ -1970,7 +1970,7 @@ fn parakeet_cpp_fixture_states_are_distinct() {
     assert_eq!(
         openmp_row.fix.as_deref(),
         Some(
-            "install the system OpenMP runtime that provides libgomp.so.1, then rerun journal doctor"
+            "install the system OpenMP runtime that provides libgomp.so.1, then rerun solstone journal doctor"
         )
     );
 
@@ -2059,7 +2059,9 @@ fn default_stt_fixture_matrix_delegates_and_checks_coreml() {
     assert_eq!(row.status, Status::Warn);
     assert_eq!(
         row.fix.as_deref(),
-        Some("CoreML parakeet model is not downloaded — fetch it with: journal install-models")
+        Some(
+            "CoreML parakeet model is not downloaded — fetch it with: solstone journal install-models"
+        )
     );
 
     let corrupt = fixture();
@@ -2653,7 +2655,10 @@ fn unretryable_transcribe_input_reports_warn_with_ids_and_fix_on_corrupt_input()
         row.detail,
         "1 recordings the journal will not retry on its own (handler: transcribe, reason_code: corrupt_input): 20260101/_default/120000_60"
     );
-    assert_eq!(row.fix, Some("journal transcribe --redo".to_owned()));
+    assert_eq!(
+        row.fix,
+        Some("solstone journal transcribe --redo".to_owned())
+    );
 }
 
 #[test]
@@ -3240,7 +3245,7 @@ fn a_pathless_cause_does_not_promise_a_file() {
     // format" -- which reads as the owner's own typo, about a day this line
     // handed them.
     assert!(
-        !fix.contains("journal reprocess"),
+        !fix.contains("reprocess"),
         "a day that cannot parse must not be sent to reprocess: {fix:?}"
     );
     // ⛔ And the day rides with the cause, so an owner who repairs one of
@@ -3304,7 +3309,7 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
     let fix = row.fix.as_deref().unwrap_or_default();
     assert_eq!(
         fix,
-        "entities:entities_review stopped on 20251230/work with reason alias_claimed after its automatic retry; run journal reprocess 20251230 --unit entities:entities_review --facet work"
+        "entities:entities_review stopped on 20251230/work with reason alias_claimed after its automatic retry; run solstone journal reprocess 20251230 --unit entities:entities_review --facet work"
     );
     assert!(!fix.contains("conflict"), "{fix}");
     assert!(!fix.contains("journal health"), "{fix}");
@@ -3384,7 +3389,7 @@ fn journal_caught_up_names_any_daily_unit_stopped_by_an_owner_change() {
     assert_eq!(
         row.fix.as_deref(),
         Some(
-            "schedule stopped on 20251230 after its automatic retry; run journal reprocess 20251230 --unit schedule"
+            "schedule stopped on 20251230 after its automatic retry; run solstone journal reprocess 20251230 --unit schedule"
         )
     );
 
@@ -3500,7 +3505,7 @@ fn journal_caught_up_selects_highest_review_severity() {
     let fix = row.fix.as_deref().unwrap_or_default();
     assert_eq!(
         fix,
-        "entities:entities_review stopped on 20251229/work with reason identity_changed after its automatic retry; run journal reprocess 20251229 --unit entities:entities_review --facet work"
+        "entities:entities_review stopped on 20251229/work with reason identity_changed after its automatic retry; run solstone journal reprocess 20251229 --unit entities:entities_review --facet work"
     );
     assert!(!fix.contains("it will retry automatically"), "{fix}");
 }
@@ -3740,7 +3745,7 @@ fn journal_caught_up_outside_window_exhausted_and_ambiguous_scenarios() {
     );
     let fix = row.fix.as_deref().unwrap_or_default();
     assert!(
-        fix.contains("entities:entities_review stopped on 20251001/work with reason alias_claimed after its automatic retry; run journal reprocess 20251001 --unit entities:entities_review --facet work"),
+        fix.contains("entities:entities_review stopped on 20251001/work with reason alias_claimed after its automatic retry; run solstone journal reprocess 20251001 --unit entities:entities_review --facet work"),
         "unexpected fix: {fix}"
     );
     assert_eq!(fix.matches("--unit").count(), 1);

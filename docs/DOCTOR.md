@@ -6,7 +6,7 @@ Quick reference for debugging and diagnosing issues. For detailed specifications
 
 ```bash
 # Check the supervisor's services are running (names, pids, uptime, crashes, heartbeat)
-journal health
+solstone journal health
 
 # Check Callosum socket exists
 ls -la journal/health/callosum.sock
@@ -16,7 +16,7 @@ ls journal/talents/*/*_active.jsonl 2>/dev/null
 ```
 
 **Healthy state:**
-- `journal health` lists `sense` under `Services:` and shows no `Crashed:` section
+- `solstone journal health` lists `sense` under `Services:` and shows no `Crashed:` section
 - `callosum.sock` exists
 - `supervisor.status` events show no stale heartbeats
 - No `_active.jsonl` files older than a few minutes
@@ -27,11 +27,9 @@ ls journal/talents/*/*_active.jsonl 2>/dev/null
 
 Use the diagnostic command that matches the question:
 
-- `journal doctor` — is this journal host healthy, and what should be fixed?
+- `solstone journal doctor` — is this journal host healthy, and what should be fixed?
   This is the health diagnosis view.
-- `journal health` — what live supervisor status is being reported right now?
-
-`journal`-prefixed commands, including `journal doctor` and `journal setup`, require a journal-host install because the `journal` executable ships in the `solstone-journal` distribution, not in the thin `solstone` client.
+- `solstone journal health` — what live supervisor status is being reported right now?
 
 Each doctor check is an independent observation. If a check raises
 an ordinary execution exception, the row is reported as `ERROR`, the check result
@@ -40,7 +38,7 @@ severity. The public result includes the exception type and a truncated message,
 not a traceback. Summary `errors` are a subset of `failed`; consumers that want
 completed health failures should compute `failed - errors`.
 
-`journal doctor` dispatches to the native `solstone-core doctor` implementation and runs the journal-host battery:
+`solstone journal doctor` dispatches to the native `solstone-core doctor` implementation and runs the journal-host battery:
 
 | Check | Severity | Notes |
 |-------|----------|-------|
@@ -51,10 +49,10 @@ completed health failures should compute `failed - errors`.
 | `service_identity` | blocker | Installed service points at this install. |
 | `service_running` | blocker | Service installed/running/crash-loop diagnosis. |
 | `journal_sync` | blocker | Concurrent-writer conflict check. |
-| `launchd_stale_plist` | advisory | macOS only; stale legacy service plists should be removed with `journal service uninstall`, then repaired with `journal service install` only on a confirmed headless host. |
+| `launchd_stale_plist` | advisory | macOS only; remove a positively identified legacy service with `solstone journal service uninstall`, then run the journal app. |
 | `default_stt_ready` / `parakeet_cpp_stt_ready` | advisory | Linux Parakeet artifacts, binary loader readiness, model, and running server. A missing `libgomp.so.1` is reported as “OpenMP runtime unavailable” with the distro install command, before the supervisor can collapse it to a generic process exit. |
 
-`journal doctor` is role-aware. If there is no local journal directory or no
+`solstone journal doctor` is role-aware. If there is no local journal directory or no
 installed service, folder and service checks emit `skip` (`no local journal` or
 `no local journal service`) rather than failing. Invalid service config, service
 identity mismatch, crash loops, systemd failed state, and journal-sync conflicts
@@ -70,7 +68,7 @@ produce a false-ready result.
 On macOS, `supervisor_conflict` fails when `journal.app` is running while the
 legacy `org.solpbc.solstone` LaunchAgent is installed or loaded, or when a
 foreign persistent LaunchAgent targets `/Applications/solstone.app`. The proven
-legacy remediation is `journal service uninstall`; foreign launcher findings
+legacy remediation is `solstone journal service uninstall`; foreign launcher findings
 include one-line `remove foreign launchers targeting /Applications/solstone.app`
 commands for the matching plists. In a proven conflict, other diagnoses stay
 visible but their action strings point back to resolving the supervisor conflict
@@ -79,7 +77,7 @@ deletion advice with the conflict fix. If the topology or foreign-launcher scan
 is incomplete rather than proven, only service lifecycle actions are withheld
 until it can be determined.
 
-`journal setup` step 1 runs `journal doctor --readiness`: `local_bin_solstone_reachable`,
+`solstone journal setup` step 1 runs `solstone journal doctor --readiness`: `local_bin_solstone_reachable`,
 `disk_space`, `journal_dir_writable`, `default_stt_ready`,
 `parakeet_cpp_stt_ready`, `speakers_analyze_installation`, and
 `vad_runtime_ready`. `local_bin_solstone_reachable` runs on Linux and Windows
@@ -91,22 +89,22 @@ stops setup early, even when that check is advisory.
 
 `make preflight` checks a source checkout's build environment: required tools, the pinned Rust
 toolchain and platform build libraries. It is read-only and does not require a journal or provider
-key. It does not replace `journal doctor`, which checks an installed journal's operational health.
+key. It does not replace `solstone journal doctor`, which checks an installed journal's operational health.
 The former Python readiness battery and `solstone/think/probe.py` were retired.
 
 ---
 
 ## Service Architecture
 
-The supervisor (`journal supervisor`) manages these services:
+The supervisor (`solstone journal supervisor`) manages these services:
 
 | Service | Command | Purpose | Auto-restart |
 |---------|---------|---------|--------------|
 | Callosum | (in-process) | Message bus for inter-service events | No |
-| Sense | `journal sense` | File detection, processing dispatch | Yes |
+| Sense | `solstone journal sense` | File detection, processing dispatch | Yes |
 
 The supervisor normally manages Cortex, which runs completion work and connects to Callosum.
-It can also run independently via `journal cortex`.
+It can also run independently via `solstone journal cortex`.
 
 See [CALLOSUM.md](CALLOSUM.md) for message protocol and [CORTEX.md](CORTEX.md) for the completion lifecycle.
 
@@ -116,17 +114,17 @@ See [CALLOSUM.md](CALLOSUM.md) for message protocol and [CORTEX.md](CORTEX.md) f
 
 | What | Where |
 |------|-------|
-| Operational logs | `journal/chronicle/{YYYYMMDD}/health/oplog--*.log`, one file per process run per local day; a run that crosses midnight continues in a new file under the new day. Read them with `journal health logs`. |
-| Supervisor's own output | The `service` source in the same directory. When the supervisor runs as an installed service or under the macOS app, it writes its own stdout and stderr there; a manual `journal start` leaves them on the terminal. `journal health logs` includes those lines; `journal service logs` shows the raw tail. |
+| Operational logs | `journal/chronicle/{YYYYMMDD}/health/oplog--*.log`, one file per process run per local day; a run that crosses midnight continues in a new file under the new day. Read them with `solstone journal health logs`. |
+| Supervisor's own output | The `service` source in the same directory. When the supervisor runs as an installed service or under the macOS app, it writes its own stdout and stderr there; a manual `solstone journal start` leaves them on the terminal. `solstone journal health logs` includes those lines; `solstone journal service logs` shows the raw tail. |
 | Agent execution | `journal/talents/<name>/*.jsonl` |
 | Journal task log | `journal/task_log.txt` |
 
 ```bash
 # Follow every operational log
-journal health logs -f
+solstone journal health logs -f
 
 # The supervisor's own lines from the last two days
-journal health logs --since 2d --service service -c 200
+solstone journal health logs --since 2d --service service -c 200
 
 # Find today's logs
 ls -la journal/chronicle/$(date +%Y%m%d)/health/
@@ -139,11 +137,11 @@ ls -la journal/chronicle/$(date +%Y%m%d)/health/
 Health uses linked-device evidence: whether a paired client is still adding to
 the journal, not whether a retired local observer process recently checked in.
 
-`journal doctor` also runs the `client_ingest_health` advisory check. It warns
+`solstone journal doctor` also runs the `client_ingest_health` advisory check. It warns
 when the journal has recorded an active client ingest rejection, but never
 blocks. Remediation is to update or restart the client, then confirm a valid
 upload clears the active rejection.
-`journal doctor` also runs the `client_transport_refusal` advisory check. It
+`solstone journal doctor` also runs the `client_transport_refusal` advisory check. It
 warns when the journal has turned a paired device's requests away because that
 device's connection was already carrying as many requests as the journal accepts
 at once. It is separate from `client_ingest_health` on purpose: a rejection
@@ -152,7 +150,7 @@ the device sees nothing but the same generic network error either way. Knowing
 which of the two occurred is the remediation; a device that keeps provoking it
 is worth reporting.
 
-`journal doctor` also runs the `facet_routing` advisory check. Over the newest
+`solstone journal doctor` also runs the `facet_routing` advisory check. Over the newest
 two chronicle days it counts active segments whose Sense output filed them under
 no facet, and warns above 10%. Activity lists are built from those routes, so an
 unrouted segment is missing from them. A journal always keeps one enabled facet
@@ -160,7 +158,7 @@ unrouted segment is missing from them. A journal always keeps one enabled facet
 warning points at damaged facet declarations or a Sense regression, not an empty
 journal.
 
-`journal doctor` reports `capture_health` and `client_delivery_stall` from whether the solstone app on each assessed device is still adding to the journal.
+`solstone journal doctor` reports `capture_health` and `client_delivery_stall` from whether the solstone app on each assessed device is still adding to the journal.
 Their JSON and JSONL payloads also include registry completeness, delivery state, reach, and any parsed devices that are not yet part of that delivery assessment under `client_delivery`. Human warnings use reach only to distinguish an app that is still running but not adding from a device that appears offline and may be asleep; machine reason tokens remain in JSON and JSONL.
 
 | Signal | Healthy when | Stale when |
@@ -189,7 +187,7 @@ with the allowlisted fields `name`, `stream_type`, `version`, `uptime`,
 when healthy-idle, contains no captured content or file paths, and is distinct
 from linked-device uploads and journal-detected ingest rejections.
 
-In journal versions with this check, `journal doctor` reports the
+In journal versions with this check, `solstone journal doctor` reports the
 `sense_dispatch` advisory. It reads Sense's latest status update and counts
 dispatch errors since any Sense handler last completed successfully. The count
 remains during idle periods and stops at 99; the reason is the most recent
@@ -243,7 +241,7 @@ See [CORTEX.md](CORTEX.md) for complete event schemas and agent configuration.
 
 ```bash
 # Check sense log for errors
-journal health logs --service sense --grep 'ERROR|error' -c 50
+solstone journal health logs --service sense --grep 'ERROR|error' -c 50
 
 # Check if sense is emitting status via observe.status (see the hear/see staleness table above)
 # Note: supervisor.status's stale_heartbeats reflects peer heartbeat sync files, not observe.status
@@ -270,7 +268,7 @@ Causes: Backend timeout, network issues.
 ls -la journal/health/callosum.sock
 
 # Check the background service is running
-journal service status
+solstone journal service status
 ```
 
 Causes: Supervisor not started, socket path permissions.
@@ -279,7 +277,7 @@ Causes: Supervisor not started, socket path permissions.
 
 ```bash
 # Check sense log for queue status
-journal health logs --service sense --grep queue -c 10
+solstone journal health logs --service sense --grep queue -c 10
 ```
 
 Causes: Slow transcription, describe API rate limits.
@@ -288,15 +286,15 @@ Causes: Slow transcription, describe API rate limits.
 
 **Symptoms:** SPL private link is enabled but the relay never dials; cloud backup shows "enabled" but has never recorded a completed run. This is expected on a **convey-only** setup — a supervisor deliberately started with only the convey component (Cortex and full-think processing excluded from the automatic loop).
 
-`journal spl` and `journal backup run` are both standalone CLI subcommands with no supervisor or IPC dependency — they run correctly when invoked directly, but nothing invokes them on a convey-only setup, because both normally ride the full supervisor's own tick loop, which convey-only skips by design.
+`solstone journal spl` and `solstone journal backup run` are both standalone CLI subcommands with no supervisor or IPC dependency — they run correctly when invoked directly, but nothing invokes them on a convey-only setup, because both normally ride the full supervisor's own tick loop, which convey-only skips by design.
 
 ```bash
 # Confirm both are runnable manually today
-journal spl --help
-journal backup run
+solstone journal spl --help
+solstone journal backup run
 ```
 
-**Fix — schedule them yourself, alongside the convey-only service.** The supervisor's own generated launchd plist (`core/crates/solstone-core-service-unit/src/plist.rs`) only launches `journal start <port>`; it does not cover `spl` or `backup run`, so a convey-only setup needs its own separate `launchd` agents. Adjust the `journal` path and journal-path env value to match your install:
+**Fix — schedule them yourself, alongside the convey-only service.** The supervisor's own generated launchd plist (`core/crates/solstone-core-service-unit/src/plist.rs`) only launches `solstone journal start <port>`; it does not cover `spl` or `backup run`, so a convey-only setup needs its own separate `launchd` agents. Adjust the `journal` path and journal-path env value to match your install:
 
 ```xml
 <!-- ~/Library/LaunchAgents/org.solpbc.solstone.spl.plist — keep SPL dialed continuously -->
@@ -352,7 +350,7 @@ launchctl load ~/Library/LaunchAgents/org.solpbc.solstone.spl.plist
 launchctl load ~/Library/LaunchAgents/org.solpbc.solstone.backup.plist
 ```
 
-On Linux (systemd user, not covered by the example above), the equivalent is a `.timer`/`.service` pair invoking `journal backup run` and a `.service` with `Restart=always` invoking `journal spl`, following the same env-var convention as `solstone-core-service-unit`'s generated unit.
+On Linux (systemd user, not covered by the example above), the equivalent is a `.timer`/`.service` pair invoking `solstone journal backup run` and a `.service` with `Restart=always` invoking `solstone journal spl`, following the same env-var convention as `solstone-core-service-unit`'s generated unit.
 
 Causes: convey-only is an intentional, documented configuration (not a code defect) that skips the supervisor triggers SPL and backup normally ride. This shape is architecturally generic — any source-checkout running convey-only hits it, not just one machine.
 
@@ -362,7 +360,7 @@ Causes: convey-only is an intentional, documented configuration (not a code defe
 
 ```bash
 # Watch all service logs
-journal health logs -f
+solstone journal health logs -f
 
 # Count entries in today's journal-day index by status
 echo "Completed: $([ -f journal/talents/$(date +%Y%m%d).jsonl ] && wc -l < journal/talents/$(date +%Y%m%d).jsonl || echo 0)"
@@ -381,7 +379,7 @@ jq -r --arg today "$(date +%Y%m%d)" '
 wc -l journal/tokens/$(date +%Y%m%d).jsonl
 
 # Find errors in today's logs
-journal health logs --grep 'ERROR|error' -c 200
+solstone journal health logs --grep 'ERROR|error' -c 200
 
 # Watch Callosum events in real-time
 socat - UNIX-CONNECT:journal/health/callosum.sock

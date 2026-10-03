@@ -36,6 +36,9 @@ pub const ABI_VERSION: i32 = 1;
 pub const ENGINE: &str = "ced.cpp v0.1.0";
 pub const MODEL: &str = "ced-tiny-q8_0";
 pub const AGG: &str = "max";
+/// Name prefix of the scratch directory that holds one classification's decoded
+/// audio. The journal reaps any such directory a killed process left behind.
+pub const CED_ANALYZE_TEMP_PREFIX: &str = "solstone-ced-analyze-";
 
 const REQUEST_SCHEMA: &str = "solstone-ced-request-v1";
 const RESPONSE_SCHEMA: &str = "solstone-ced-response-v1";
@@ -112,7 +115,7 @@ fn classify_windows(
     program: &CedAnalyzeProgram,
 ) -> Option<Value> {
     let temporary = match tempfile::Builder::new()
-        .prefix("solstone-ced-analyze-")
+        .prefix(CED_ANALYZE_TEMP_PREFIX)
         .tempdir()
     {
         Ok(directory) => directory,

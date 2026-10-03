@@ -1767,7 +1767,7 @@ mod tests {
         assert_eq!(output.exit, 2);
         assert_eq!(
             output.stderr,
-            "Moved to `journal navigate` — run that instead.\n"
+            "Moved to `solstone journal navigate` — run that instead.\n"
         );
         transport.assert_done();
     }

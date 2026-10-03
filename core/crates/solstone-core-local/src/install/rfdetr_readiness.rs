@@ -21,7 +21,7 @@ pub use super::rfdetr_windows::{
 };
 
 pub const RFDETR_READY_DETAIL: &str = "rf-detr.cpp object-detection engine and model are ready";
-pub const RFDETR_UNAVAILABLE_GUIDANCE: &str = "Object detection is degraded because its RF-DETR assets are unavailable. Screen descriptions will continue. Use `journal install-models` to check or repair the RF-DETR assets.";
+pub const RFDETR_UNAVAILABLE_GUIDANCE: &str = "Object detection is degraded because its RF-DETR assets are unavailable. Screen descriptions will continue. Use `solstone journal install-models` to check or repair the RF-DETR assets.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

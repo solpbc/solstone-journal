@@ -11,7 +11,7 @@ pub(crate) fn backfill_pool(args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: journal maintenance run speakers:backfill-pool\n".to_owned(),
+            stderr: "usage: solstone journal maintenance run speakers:backfill-pool\n".to_owned(),
             exit_code: 2,
         };
     }
@@ -37,7 +37,8 @@ pub(crate) fn consolidate(args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: journal maintenance run speakers:consolidate-pool\n".to_owned(),
+            stderr: "usage: solstone journal maintenance run speakers:consolidate-pool\n"
+                .to_owned(),
             exit_code: 2,
         };
     }
@@ -59,7 +60,7 @@ pub(crate) fn name_variants(args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: journal maintenance run speakers:name-variants\n".to_owned(),
+            stderr: "usage: solstone journal maintenance run speakers:name-variants\n".to_owned(),
             exit_code: 2,
         };
     }
@@ -102,7 +103,7 @@ pub(crate) fn candidate_pairs(args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: journal maintenance run speakers:candidate-pair-suggestions\n"
+            stderr: "usage: solstone journal maintenance run speakers:candidate-pair-suggestions\n"
                 .to_owned(),
             exit_code: 2,
         };
@@ -124,7 +125,7 @@ pub(crate) fn discovery(
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: journal maintenance run speakers:discover-voices\n".to_owned(),
+            stderr: "usage: solstone journal maintenance run speakers:discover-voices\n".to_owned(),
             exit_code: 2,
         };
     }
@@ -332,7 +333,7 @@ mod tests {
         assert!(bad_arg.stdout.is_empty());
         assert_eq!(
             bad_arg.stderr,
-            "usage: journal maintenance run speakers:backfill-pool\n"
+            "usage: solstone journal maintenance run speakers:backfill-pool\n"
         );
 
         let awareness = root.path().join("awareness");

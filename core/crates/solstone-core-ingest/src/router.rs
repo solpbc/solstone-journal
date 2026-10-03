@@ -112,7 +112,7 @@ impl IngestNotifier for CallosumIngestNotifier {
                 let request = json!({
                     "tract": "supervisor",
                     "event": "request",
-                    "cmd": ["journal", "indexer", "--rescan-file", path],
+                    "cmd": ["solstone", "journal", "indexer", "--rescan-file", &path],
                     "ref": format!("indexer:browser:{}:{}:{}:{}", notice.day, notice.stream, notice.segment, file),
                     "day": notice.day,
                     "stream": notice.stream,
@@ -3371,14 +3371,17 @@ mod tests {
 
         fn index_and_find_request(root: &Path, request: &BusTaskRequest, text: &str, stream: &str) {
             let cmd = request.cmd.as_wire();
-            assert_eq!(&cmd[..3], ["journal", "indexer", "--rescan-file"]);
-            assert_eq!(cmd.len(), 4);
+            assert_eq!(
+                &cmd[..4],
+                ["solstone", "journal", "indexer", "--rescan-file"]
+            );
+            assert_eq!(cmd.len(), 5);
             // Exercise the same indexer owner entry point as the emitted CLI
             // command. Accepted bus admission alone does not prove the path
             // reaches the classifier or yields searchable content.
             for _ in 0..2 {
                 assert!(matches!(
-                    rescan_file(root, Path::new(&cmd[3])).expect("index retained browser file"),
+                    rescan_file(root, Path::new(&cmd[4])).expect("index retained browser file"),
                     RescanFileStatus::Indexed { .. }
                 ));
                 let response = search(
@@ -3460,10 +3463,13 @@ mod tests {
                         "device_browser",
                     );
                     let cmd = request.cmd.as_wire();
-                    assert_eq!(&cmd[..3], ["journal", "indexer", "--rescan-file"]);
-                    assert_eq!(cmd.len(), 4);
                     assert_eq!(
-                        fs::read(root.join("chronicle").join(&cmd[3])).unwrap(),
+                        &cmd[..4],
+                        ["solstone", "journal", "indexer", "--rescan-file"]
+                    );
+                    assert_eq!(cmd.len(), 5);
+                    assert_eq!(
+                        fs::read(root.join("chronicle").join(&cmd[4])).unwrap(),
                         TEXT
                     );
                     assert_eq!(request.day.as_deref(), Some("20260804"));

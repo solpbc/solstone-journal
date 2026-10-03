@@ -18,7 +18,7 @@ solstone journal setup
 ```
 
 If you are moving specifically from v1.0.22 after installing this linux native
-`.deb` or `.rpm`, run `/usr/bin/journal setup` once instead. This is only for
+`.deb` or `.rpm`, run `/usr/bin/solstone journal setup` once instead. This is only for
 that package crossover when the old `~/.local/bin/journal` still comes first on
 your normal PATH. Do not remove the old install first: setup recognizes only
 its known runtime and service artifacts, keeps recovery backups of recognized
@@ -27,7 +27,7 @@ legacy launchers, and preserves your journal. Archive installs still use
 
 Safe to re-run. It repairs config, fetches the transcription model, installs skill links, and reconciles the service unit. If it finds a leftover install from the earlier Python-based journal, installed via `pip`, `uv tool`, or `pipx` (its `solstone`, `journal`, and `sol` binaries under `~/.local/bin`), it stops that install's service, backs up its binaries, and replaces them with this one, automatically, in this one invocation.
 
-Do not pre-uninstall the old install. Running `pip uninstall`, `uv tool uninstall`, or `pipx uninstall` yourself, or manually running `journal service stop` against the old install, before setup only removes the evidence it needs to find and safely replace the runtime. Run the applicable setup command above.
+Do not pre-uninstall the old install. Running `pip uninstall`, `uv tool uninstall`, or `pipx uninstall` yourself, or manually running `solstone journal service stop` against the old install, before setup only removes the evidence it needs to find and safely replace the runtime. Run the applicable setup command above.
 
 Backups of recognized legacy launchers land at `~/.local/share/solstone/setup-backups/`, timestamped.
 

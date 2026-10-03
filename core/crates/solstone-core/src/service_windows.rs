@@ -76,7 +76,7 @@ struct ServiceContext {
     sid: String,
     guard: GuardFields,
     task_path: String,
-    public_journal_exe: PathBuf,
+    public_solstone_exe: PathBuf,
     /// This command's Task Scheduler worker; it ends with the context.
     scheduler: task_scheduler::ControlSession,
 }
@@ -122,9 +122,9 @@ fn context_for_journal(journal: PathBuf) -> Result<ServiceContext, String> {
         .map_err(|error| format!("could not retrieve user SID: {error}"))?;
     let installation_id = binding.id.as_hex();
     let task_path = format!(r"\solstone-{sid}\{installation_id}");
-    let public_journal_exe = exe_dir.join("journal.exe");
-    if !public_journal_exe.is_file() {
-        return Err("the installed journal.exe facade is unavailable".to_owned());
+    let public_solstone_exe = exe_dir.join("solstone.exe");
+    if !public_solstone_exe.is_file() {
+        return Err("the installed solstone.exe facade is unavailable".to_owned());
     }
 
     Ok(ServiceContext {
@@ -133,7 +133,7 @@ fn context_for_journal(journal: PathBuf) -> Result<ServiceContext, String> {
         sid,
         guard: GuardFields::from_binding(&binding),
         task_path,
-        public_journal_exe,
+        public_solstone_exe,
         scheduler: task_scheduler::ControlSession::default(),
     })
 }
@@ -178,9 +178,14 @@ pub(crate) fn doctor_registration(
         Ok(definition) => definition,
         Err(error) => return WindowsServiceRegistration::Unreadable(error.to_string()),
     };
-    let expected = ctx.public_journal_exe.display().to_string();
+    let expected = ctx.public_solstone_exe.display().to_string();
+    let legacy_expected = ctx
+        .public_solstone_exe
+        .with_file_name("journal.exe")
+        .display()
+        .to_string();
     let journal = ctx.journal.display().to_string();
-    let mismatch = if definition.command != expected {
+    let mismatch = if definition.command != expected && definition.command != legacy_expected {
         Some(format!(
             "{} is registered, expected {expected}",
             definition.command
@@ -229,12 +234,19 @@ fn validate_task(
         .filter(|_| snapshot.present)
         .ok_or_else(|| task_error("service task is not installed"))?;
     let definition = parse_windows_task_xml(xml).map_err(task_error)?;
-    if definition.principal_sid != ctx.sid
+    let command_matches = definition.command
+        == ctx
+            .public_solstone_exe
+            .to_str()
+            .ok_or_else(|| task_error("installed command contains invalid text"))?
         || definition.command
-            != ctx
-                .public_journal_exe
+            == ctx
+                .public_solstone_exe
+                .with_file_name("journal.exe")
                 .to_str()
-                .ok_or_else(|| task_error("installed command contains invalid text"))?
+                .ok_or_else(|| task_error("installed command contains invalid text"))?;
+    if definition.principal_sid != ctx.sid
+        || !command_matches
         || definition.working_directory
             != ctx
                 .journal
@@ -275,7 +287,7 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
         .to_str()
         .ok_or_else(|| task_error("journal path contains invalid text"))?;
     let command = ctx
-        .public_journal_exe
+        .public_solstone_exe
         .to_str()
         .ok_or_else(|| task_error("installed command contains invalid text"))?;
     let action = WindowsServiceAction {
@@ -330,7 +342,7 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
                     "background support for your journal was stopped so it could be updated. \
                      its registration with windows changed first, so the update didn't happen, \
                      and background support is stopped now.\n\
-                     run `journal service status` to check it, then `journal service install` \
+                     run `solstone journal service status` to check it, then `solstone journal service install` \
                      again.",
                 ));
             }
@@ -489,7 +501,7 @@ fn retain_task_run(
     )
     .ok_or_else(|| {
         task_error(
-            "your journal didn't report ready, so the start can't be confirmed. run `journal service logs` to see why",
+            "your journal didn't report ready, so the start can't be confirmed. run `solstone journal service logs` to see why",
         )
     })?;
     let supervisor_instance: solstone_core_system::process::ProcessInstance =

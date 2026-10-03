@@ -28,7 +28,7 @@ JavaScript uses `//` for the same two lines.
 - **Single responsibility.** One crate or function owns one write.
 - **Self-contained.** No backwards-compatibility shims, fallback aliases, or
   deprecated parameter handling. Update every caller. Journal format changes
-  get a `journal maintenance` migration, not a compatibility layer.
+  get a `solstone journal maintenance` migration, not a compatibility layer.
 - **Trust journal resolution.** Never set `SOLSTONE_JOURNAL` from application
   code, agent prompts, subprocess environments, or service files. See
   [environment.md](environment.md).

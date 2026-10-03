@@ -477,6 +477,7 @@ where
                 timeout,
                 skip_talents,
                 parsed.no_activity_prompts,
+                segment::CurrentSegment::Rethink,
             );
             return logged_mode_outcome(log, run, result);
         }
@@ -3718,7 +3719,8 @@ mod tests {
         // with another content type wore it down over two segments, a phone
         // segment just before a desktop pause hid the pause, and a late phone
         // upload from hours earlier opened a gap that was never there.
-        let cases: [(&str, Vec<(&str, &str, Value)>, Vec<Vec<&str>>); 5] = [
+        type Case<'a> = (&'a str, Vec<(&'a str, &'a str, Value)>, Vec<Vec<&'a str>>);
+        let cases: [Case<'_>; 5] = [
             (
                 "idle",
                 vec![
@@ -4692,6 +4694,7 @@ mod tests {
             2,
             None,
             Vec::new(),
+            segment::CurrentSegment::Rethink,
         )
         .unwrap();
         assert_eq!((result.success, result.failed), (4, 0));
@@ -5675,6 +5678,117 @@ mod tests {
             segment_think(journal.path(), "20260813", "090000_300").as_deref(),
             Some("thought")
         );
+    }
+
+    /// A context whose recorded events sit an hour after every file the test writes.
+    fn thought_after_input_context(
+        journal: &Path,
+        roots: &Path,
+    ) -> (context::ThinkContext, Arc<Recorder>) {
+        let (context, recorder) = floor_context(journal, roots);
+        let later = chrono::Utc::now().timestamp_millis() + 3_600_000;
+        (context.with_event_clock(Arc::new(move || later)), recorder)
+    }
+
+    fn think_segment(context: &context::ThinkContext, live: bool) -> dispatch::ModeResult {
+        let mut log = test_log(context, "segment");
+        segment::run(
+            context,
+            &mut log,
+            "090000_300",
+            false,
+            Some("default"),
+            2,
+            Some(std::time::Duration::from_secs(610)),
+            live,
+            &[],
+        )
+        .unwrap()
+    }
+
+    fn already_thought_skips(journal: &Path) -> usize {
+        oplog_records(journal, "20260813", "segment")
+            .iter()
+            .filter(|record| {
+                record.get("event").and_then(Value::as_str) == Some("talent.skip")
+                    && record.get("reason").and_then(Value::as_str) == Some("already_thought")
+            })
+            .count()
+    }
+
+    // A late delivery queues every segment for live thinking while the day's
+    // repair thinks the same segments; whichever comes second must not think
+    // the segment again on unchanged input.
+    #[test]
+    fn live_thinking_skips_a_segment_already_thought_on_its_current_input() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = thought_after_input_context(journal.path(), roots.path());
+        write_analyzed_screen(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work"}),
+        );
+        let repaired = think_segment(&context, false);
+        assert_eq!((repaired.success, repaired.failed), (2, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+
+        let live = think_segment(&context, true);
+        assert_eq!((live.success, live.failed), (0, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+        assert_eq!(already_thought_skips(journal.path()), 1);
+
+        // The day's repair skips the same way; an explicit request re-thinks.
+        let log = test_log(&context, "segments");
+        let batch = segment::run_repair_batch(
+            &context,
+            &log,
+            vec![("090000_300".to_owned(), Some("default".to_owned()))],
+            false,
+            0,
+            1,
+            None,
+            Vec::new(),
+            segment::CurrentSegment::Skip,
+        )
+        .unwrap();
+        assert_eq!((batch.success, batch.failed), (0, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+        let direct = think_segment(&context, false);
+        assert_eq!((direct.success, direct.failed), (2, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 4);
+    }
+
+    // A modality that lands, or is analyzed again, after the segment was
+    // thought is new input: live thinking must think the segment again.
+    #[test]
+    fn live_thinking_rethinks_a_segment_whose_input_moved_after_its_sense() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = thought_after_input_context(journal.path(), roots.path());
+        write_analyzed_screen(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work"}),
+        );
+        let repaired = think_segment(&context, false);
+        assert_eq!((repaired.success, repaired.failed), (2, 0));
+
+        // The screen is analyzed again after the segment was thought.
+        write_analyzed_screen(journal.path(), "20260813", "090000_300");
+        let arrived = segment_dir(journal.path(), "20260813", "090000_300").join("screen.jsonl");
+        fs::File::options()
+            .write(true)
+            .open(&arrived)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(7_200))
+            .unwrap();
+        let live = think_segment(&context, true);
+        assert_eq!((live.success, live.failed), (2, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 4);
+        assert_eq!(already_thought_skips(journal.path()), 0);
     }
 
     #[test]

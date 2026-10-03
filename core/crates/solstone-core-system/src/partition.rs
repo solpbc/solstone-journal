@@ -44,6 +44,16 @@ pub fn journal_alias_form(cmd: &[String]) -> Cow<'_, [String]> {
     }
 }
 
+pub fn canonical_journal_command<I, S>(tail: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let mut command = vec!["solstone".to_owned(), "journal".to_owned()];
+    command.extend(tail.into_iter().map(Into::into));
+    command
+}
+
 /// Mirror the Python supervisor's ordered command partition resolver.
 pub fn partition_for(cmd: &[String]) -> Partition {
     alias_partition_for(&journal_alias_form(cmd))

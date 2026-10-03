@@ -75,7 +75,7 @@ fn navigate_preserves_gate_and_parser_ordering() {
     assert_eq!(interactive.stdout, b"");
     assert_eq!(
         interactive.stderr,
-        b"journal isn't running. start it with 'journal up' and retry.\n"
+        b"journal isn't running. start it with 'solstone journal up' and retry.\n"
     );
 
     let spawned = navigate_without_gate_override(journal.path(), &["/app/work"], true);
@@ -86,11 +86,15 @@ fn navigate_preserves_gate_and_parser_ordering() {
     let no_args = navigate(journal.path(), &[]);
     assert_eq!(no_args.status.code(), Some(2));
     assert_eq!(no_args.stdout, b"");
-    assert!(String::from_utf8_lossy(&no_args.stderr).starts_with("usage: journal navigate"));
+    assert!(
+        String::from_utf8_lossy(&no_args.stderr).starts_with("usage: solstone journal navigate")
+    );
 
     let malformed = navigate_without_gate_override(journal.path(), &["--nonsense"], false);
     assert_eq!(malformed.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&malformed.stderr).starts_with("usage: journal navigate"));
+    assert!(
+        String::from_utf8_lossy(&malformed.stderr).starts_with("usage: solstone journal navigate")
+    );
 
     for args in [
         ["--facet", "work", "/app/work"].as_slice(),
@@ -144,7 +148,7 @@ fn assert_undeliverable(output: &Output, socket: &Path) {
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
         format!(
-            "journal navigate: error: Callosum socket unavailable: {}\n",
+            "solstone journal navigate: error: Callosum socket unavailable: {}\n",
             socket.display()
         )
     );

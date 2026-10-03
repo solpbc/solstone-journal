@@ -44,7 +44,7 @@ const MAINTENANCE_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 const CHECK_USAGE_ANCHOR: &[u8] = CHECK_USAGE.as_bytes();
 const INSTALL_MODELS_USAGE_ANCHOR: &[u8] = INSTALL_MODELS_USAGE.as_bytes();
 const INSTALL_PROVIDER_USAGE_ANCHOR: &[u8] = INSTALL_PROVIDER_USAGE.as_bytes();
-const CONVEY_USAGE_ANCHOR: &[u8] = b"usage: journal convey [-h] --port PORT [-v] [-d]\n";
+const CONVEY_USAGE_ANCHOR: &[u8] = b"usage: solstone journal convey [-h] --port PORT [-v] [-d]\n";
 const DESCRIBE_USAGE_ANCHOR: &[u8] = DESCRIBE_USAGE.as_bytes();
 const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
     &["platform", "checks", "overall", "feedback_url", "version"];
@@ -320,12 +320,13 @@ fn install_provider_is_registered_for_native_dispatch() {
 }
 
 const SUPERVISOR_USAGE_ANCHOR: &[u8] =
-    b"usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
+    b"usage: solstone journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
 const START_USAGE_ANCHOR: &[u8] =
-    b"usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
+    b"usage: solstone journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
 const SERVICE_UNKNOWN_ANCHOR: &[u8] = b"unknown subcommand: --nonsense; available: install, uninstall, start, stop, restart, status, logs\n";
-const BACKUP_USAGE_ANCHOR: &[u8] = b"usage: journal backup <command> [options]\n";
-const MAINTENANCE_USAGE_ANCHOR: &[u8] = b"usage: journal maintenance <command> [options]\n";
+const BACKUP_USAGE_ANCHOR: &[u8] = b"usage: solstone journal backup <command> [options]\n";
+const MAINTENANCE_USAGE_ANCHOR: &[u8] =
+    b"usage: solstone journal maintenance <command> [options]\n";
 
 const PROBES: &[Probe] = &[
     Probe {
@@ -344,13 +345,13 @@ const PROBES: &[Probe] = &[
         token: "brain",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal brain"),
+        stderr_anchor: Some(b"usage: solstone journal brain"),
     },
     Probe {
         token: "config",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal config"),
+        stderr_anchor: Some(b"usage: solstone journal config"),
     },
     Probe {
         token: "depict",
@@ -404,7 +405,7 @@ const PROBES: &[Probe] = &[
         token: "heartbeat",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal heartbeat [-h] [--force]\n"),
+        stderr_anchor: Some(b"usage: solstone journal heartbeat [-h] [--force]\n"),
     },
     Probe {
         token: "top",
@@ -416,14 +417,14 @@ const PROBES: &[Probe] = &[
         token: "cortex",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal cortex"),
+        stderr_anchor: Some(b"usage: solstone journal cortex"),
     },
     Probe {
         token: "talent",
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: Some(
-            b"usage: journal talent [-h] [-v] [-d] {list,show,logs,log} ...",
+            b"usage: solstone journal talent [-h] [-v] [-d] {list,show,logs,log} ...",
         ),
     },
     Probe {
@@ -452,13 +453,13 @@ const PROBES: &[Probe] = &[
         token: "doctor",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal doctor [-h]"),
+        stderr_anchor: Some(b"usage: solstone journal doctor [-h]"),
     },
     Probe {
         token: "setup",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal setup [-h] [--journal PATH] [--port INT]"),
+        stderr_anchor: Some(b"usage: solstone journal setup [-h] [--journal PATH] [--port INT]"),
     },
     // Exit 2 and the parser-owned usage anchors distinguish each present verb
     // from top-level exit 64, which would also result if the sibling lacked it.
@@ -540,7 +541,7 @@ const PROBES: &[Probe] = &[
         token: "sense",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal sense"),
+        stderr_anchor: Some(b"usage: solstone journal sense"),
     },
     Probe {
         token: "facet-candidates",
@@ -558,7 +559,7 @@ const PROBES: &[Probe] = &[
         token: "importer",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal importer [-h] [options] media [timestamp]\n"),
+        stderr_anchor: Some(b"usage: solstone journal importer [-h] [options] media [timestamp]\n"),
     },
     Probe {
         token: "settings",
@@ -600,13 +601,13 @@ const PROBES: &[Probe] = &[
         token: "backfill-facet-ids",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal backfill-facet-ids [-h] [--commit]\n"),
+        stderr_anchor: Some(b"usage: solstone journal backfill-facet-ids [-h] [--commit]\n"),
     },
     Probe {
         token: "think",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal think [-h]"),
+        stderr_anchor: Some(b"usage: solstone journal think [-h]"),
     },
 ];
 
@@ -1609,7 +1610,7 @@ fn brain_internal_protocol_verbs_are_closed_at_the_real_owner_dispatcher() {
         assert_eq!(output.status.code(), Some(2), "argv={argv:?}");
         assert!(output.stdout.is_empty(), "argv={argv:?}");
         assert!(
-            output.stderr.starts_with(b"usage: journal brain"),
+            output.stderr.starts_with(b"usage: solstone journal brain"),
             "argv={argv:?} stderr={}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -1904,7 +1905,7 @@ fn native_schedule_dispatch_reaches_the_real_read_only_body() {
     assert!(invalid.stdout.is_empty());
     assert_eq!(
         String::from_utf8_lossy(&invalid.stderr),
-        "usage: journal schedule [-h] [-v] [-d]\njournal schedule: error: unrecognized arguments: --nonsense\n"
+        "usage: solstone journal schedule [-h] [-v] [-d]\nsolstone journal schedule: error: unrecognized arguments: --nonsense\n"
     );
     assert_eq!(snapshot_tree(context.journal), before);
     assert!(!context.poison_marker.exists());
@@ -2068,7 +2069,7 @@ fn native_config_branches_remain_poison_clean_through_dispatcher() {
     fs::write(
         &solstone,
         format!(
-            "#!/bin/bash\n# solstone — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='/native/solstone'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${{SOL_BIN%/.venv/bin/solstone}}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"solstone: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf 'solstone: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n",
+            "#!/bin/bash\n# solstone — managed by 'solstone journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='/native/solstone'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${{SOL_BIN%/.venv/bin/solstone}}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"solstone: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf 'solstone: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n",
             current.display()
         ),
     )
@@ -2197,7 +2198,7 @@ fn native_install_provider_bodies_never_reach_a_poisoned_interpreter() {
     assert_eq!(down.status.code(), Some(1));
     assert_eq!(
         down.stderr,
-        b"journal isn't running. start it with 'journal up' and retry.\n"
+        b"journal isn't running. start it with 'solstone journal up' and retry.\n"
     );
     assert!(down.stdout.is_empty());
     assert!(!context.poison_marker.exists(), "supervisor gate");
@@ -2401,7 +2402,7 @@ fn native_top_registered_probe_has_exact_clean_parser_output() {
     assert!(output.stdout.is_empty());
     assert_eq!(
         output.stderr,
-        b"usage: journal top [-h] [-v] [-d]\njournal top: error: invalid arguments\n"
+        b"usage: solstone journal top [-h] [-v] [-d]\nsolstone journal top: error: invalid arguments\n"
     );
     assert!(!context.poison_marker.exists());
 }
@@ -2443,7 +2444,7 @@ fn native_service_dispatch_reaches_stable_real_bodies_without_python() {
         (
             "service",
             &["status"][..],
-            b"service: not installed\nrun 'journal setup' or 'journal service install' to install it.\n"
+            b"service: not installed\nrun 'solstone journal setup' or 'solstone journal service install' to install it.\n"
                 .as_slice(),
             b"".as_slice(),
         ),
@@ -2451,7 +2452,7 @@ fn native_service_dispatch_reaches_stable_real_bodies_without_python() {
             "up",
             &[][..],
             b"".as_slice(),
-            b"error: service not installed. run 'journal service install' first.\n".as_slice(),
+            b"error: service not installed. run 'solstone journal service install' first.\n".as_slice(),
         ),
     ] {
         let output = run_dispatcher_with_bounded_output(&context, token, argv, PROBE_TIMEOUT)
@@ -2477,7 +2478,7 @@ fn native_top_dispatch_reaches_the_real_non_tty_body_without_python() {
     assert!(output.stdout.is_empty());
     assert_eq!(
         output.stderr,
-        b"journal top: terminal failure: stdin is not a terminal\n"
+        b"solstone journal top: terminal failure: stdin is not a terminal\n"
     );
     assert!(!context.poison_marker.exists());
 }
@@ -2496,10 +2497,10 @@ fn native_health_dispatch_reaches_both_real_bodies_without_python() {
         health.stdout,
         concat!(
             "Sound tagging is degraded because its CED assets are unavailable. ",
-            "Transcription will continue. Use `journal install-models` to check or repair the CED assets. ",
+            "Transcription will continue. Use `solstone journal install-models` to check or repair the CED assets. ",
             "If the signed CED app payload is unavailable on Windows, reinstall the journal app.\n",
             "Object detection is degraded because its RF-DETR assets are unavailable. ",
-            "Screen descriptions will continue. Use `journal install-models` to check or repair the RF-DETR assets.\n",
+            "Screen descriptions will continue. Use `solstone journal install-models` to check or repair the RF-DETR assets.\n",
         )
         .as_bytes()
     );
@@ -2728,7 +2729,7 @@ fn native_start_help_uses_start_program_name() {
 
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(output.stderr, b"");
-    assert!(output.stdout.starts_with(b"usage: journal start"));
+    assert!(output.stdout.starts_with(b"usage: solstone journal start"));
     assert!(!context.poison_marker.exists());
 }
 

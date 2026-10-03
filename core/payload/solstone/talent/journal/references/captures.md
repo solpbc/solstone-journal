@@ -123,7 +123,7 @@ Pre-stream segments (created before stream identity was added) have no `stream.j
 Layer 1 is the original media: the binary audio and video files as the linked
 devices sent them, unmodified.
 
-`journal grab` walks the screen material from day to stream to segment to screen to frame.
+`solstone journal grab` walks the screen material from day to stream to segment to screen to frame.
 Without `--out` it lists what is available or shows one frame's details.
 With `--out` it writes one or more frame images using the suffix you choose.
 Use bare `screen` for single-screen segments.

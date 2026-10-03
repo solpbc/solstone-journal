@@ -54,7 +54,7 @@ a device still can't reach your journal, an earlier choice in windows may be blo
 an administrator can allow it in Windows Security, under Firewall & network protection › \
 Allow an app through firewall.";
 const LOCAL_NETWORK_AGENTS_ON_NETWORK: &str = "your journal stays open to devices on your \
-network while agents on your network is on. it closes to them when you turn that off in agents.";
+network while \"agents on your network\" is on. it closes to them when you turn that off in agents.";
 const LOCAL_NETWORK_FAILED: &str =
     "couldn't change whether your journal is open to devices on your network. try again.";
 
@@ -382,8 +382,10 @@ fn local_network_output(body: &Value, json_output: bool, opening: bool) -> Comma
     if json_output {
         return stdout_line(body.to_string());
     }
+    // Agents on your network holds the door open only when the owner's own
+    // choice is closed; an owner who chose open stays open after turning it off.
     if body.get("listening_on").and_then(Value::as_str) == Some("local_network")
-        && truthy(body.get("agents_on_network"))
+        && body.get("source").and_then(Value::as_str) == Some("agents_on_network")
     {
         return stdout(vec![LOCAL_NETWORK_AGENTS_ON_NETWORK.to_string()]);
     }

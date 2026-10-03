@@ -10,7 +10,7 @@ pub fn navigate(_ctx: CommandContext<'_>) -> CommandOutput {
 
 fn moved(name: &str) -> CommandOutput {
     CommandOutput::failure(
-        format!("Moved to `journal {name}` — run that instead.\n"),
+        format!("Moved to `solstone journal {name}` — run that instead.\n"),
         2,
     )
 }

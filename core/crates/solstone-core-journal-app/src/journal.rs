@@ -79,6 +79,12 @@ pub fn install_models() -> Result<(), String> {
     run(&["install-models"]).map(drop)
 }
 
+/// Whether the models are all in place, however they got there: setup, the
+/// app's own button, or `journal install-models` typed in a terminal.
+pub fn models_ready() -> bool {
+    run(&["install-models", "--check"]).is_ok()
+}
+
 pub fn set_starts_at_sign_in(on: bool) -> Result<(), String> {
     run(&["service", "__sign-in", if on { "on" } else { "off" }]).map(drop)
 }

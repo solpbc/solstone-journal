@@ -108,13 +108,16 @@ fn heartbeat_parser_owns_invalid_arguments_and_help() {
     assert!(
         invalid
             .stderr
-            .starts_with(b"usage: journal heartbeat [-h] [--force]\n")
+            .starts_with(b"usage: solstone journal heartbeat [-h] [--force]\n")
     );
 
     let help = run(&journal, &["heartbeat", "--help"]);
     assert!(help.status.success());
     assert!(help.stderr.is_empty());
-    assert!(help.stdout.starts_with(b"usage: journal heartbeat"));
+    assert!(
+        help.stdout
+            .starts_with(b"usage: solstone journal heartbeat")
+    );
 
     let repeated_force = run(&journal, &["heartbeat", "--force", "--force"]);
     assert!(repeated_force.status.success(), "{repeated_force:?}");
@@ -331,7 +334,7 @@ fn invalid_utf8_pid_fails_and_reference_cleanup_removes_it() {
     let output = run(&journal, &["heartbeat", "--force"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).starts_with("journal heartbeat:"));
+    assert!(String::from_utf8_lossy(&output.stderr).starts_with("solstone journal heartbeat:"));
     assert!(!health.join("heartbeat.pid").exists());
     assert!(
         matching_entries(

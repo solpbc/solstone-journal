@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -509,6 +509,40 @@ pub fn validate_archive_preflight(
     Ok(())
 }
 
+/// The journal's own working root for archive merges: extractions and run records.
+pub fn archive_merge_working_root(journal_root: &Path) -> PathBuf {
+    journal_root.join("imports").join("archive-merge-work")
+}
+
+fn archive_merge_lock_path(journal_root: &Path) -> PathBuf {
+    journal_root.join("health/locks/archive-merge")
+}
+
+/// Remove extraction directories that a killed merge left in the journal's merge
+/// working root, and return how many were removed. A merge holds the merge lock
+/// for its whole life and the kernel releases it when the holder dies, so a lock
+/// taken here proves no extraction is in use; a busy lock removes nothing.
+pub fn reap_abandoned_archive_extractions(journal_root: &Path) -> usize {
+    let Ok(entries) = fs::read_dir(archive_merge_working_root(journal_root)) else {
+        return 0;
+    };
+    let no_wait = LockOptions {
+        timeout: Duration::ZERO,
+        ..LockOptions::default()
+    };
+    let Ok(_lock) = hold_lock(archive_merge_lock_path(journal_root), no_wait) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_dir())
+                && entry.file_name().to_string_lossy().starts_with("extract-")
+        })
+        .filter(|entry| fs::remove_dir_all(entry.path()).is_ok())
+        .count()
+}
+
 /// Validate, extract, and merge an archive while holding the target merge lock.
 pub fn merge_journal_archive(
     archive_path: &Path,
@@ -518,7 +552,7 @@ pub fn merge_journal_archive(
 ) -> Result<ArchiveMergeResult, ImportSourcesError> {
     require_zip_archive(archive_path)?;
     let validated = validate_archive(archive_path, options)?;
-    let protected = target_journal_root.join("health/locks/archive-merge");
+    let protected = archive_merge_lock_path(target_journal_root);
     let owner_path = protected
         .parent()
         .expect("lock has parent")
@@ -3098,6 +3132,37 @@ mod tests {
     }
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn abandoned_extractions_are_reaped_only_while_no_merge_holds_the_lock() {
+        let journal = tempfile::tempdir().unwrap();
+        let work = archive_merge_working_root(journal.path());
+        let extraction = work.join("extract-killed");
+        let run_record = work.join("runs").join("killed");
+        fs::create_dir_all(extraction.join("chronicle/20260101")).unwrap();
+        fs::write(extraction.join("chronicle/20260101/audio.flac"), b"x").unwrap();
+        fs::create_dir_all(&run_record).unwrap();
+
+        let held = hold_lock(
+            archive_merge_lock_path(journal.path()),
+            LockOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(reap_abandoned_archive_extractions(journal.path()), 0);
+        assert!(extraction.exists(), "a running merge keeps its extraction");
+        drop(held);
+
+        assert_eq!(reap_abandoned_archive_extractions(journal.path()), 1);
+        assert!(!extraction.exists());
+        assert!(run_record.exists(), "run records are not scratch");
+    }
+
+    #[test]
+    fn a_journal_that_never_merged_gains_no_lock_from_the_reaper() {
+        let journal = tempfile::tempdir().unwrap();
+        assert_eq!(reap_abandoned_archive_extractions(journal.path()), 0);
+        assert!(!journal.path().join("health").exists());
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

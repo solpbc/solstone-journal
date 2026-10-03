@@ -413,6 +413,27 @@ fn has_raw_media(files: &[PathBuf], kind: MediaKind) -> bool {
     files.iter().any(|path| media_kind_for(path) == Some(kind))
 }
 
+/// The newest modification time, in epoch milliseconds, among a segment's input files.
+///
+/// Input is every regular file directly in the segment directory except what
+/// thinking itself writes there (`events.jsonl`) and transient lock sidecars
+/// and dot-named temporaries.  Talent output lives under `talents/` and is not
+/// read.  `None` when the segment holds no input file.
+pub fn newest_segment_input_ms(segment_path: &Path) -> Result<Option<i64>, HealthError> {
+    let files = segment_files(segment_path)?;
+    let inputs = files
+        .iter()
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name != "events.jsonl" && !name.ends_with(".lock") && !name.starts_with('.')
+                })
+        })
+        .collect::<Vec<_>>();
+    Ok(newest_input_mtime_ms(&inputs))
+}
+
 fn newest_input_mtime_ms(paths: &[&PathBuf]) -> Option<i64> {
     paths
         .iter()
@@ -510,6 +531,39 @@ mod tests {
 
     fn write_file(path: &Path, name: &str, contents: &str) {
         fs::write(path.join(name), contents).unwrap();
+    }
+
+    #[test]
+    fn segment_input_is_what_thinking_reads_not_what_it_writes() {
+        let segment = TempDir::new().unwrap();
+        let at = |seconds: u64| std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds);
+        let place = |name: &str, seconds: u64| {
+            let path = segment.path().join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "x").unwrap();
+            fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(at(seconds))
+                .unwrap();
+        };
+        assert_eq!(newest_segment_input_ms(segment.path()).unwrap(), None);
+        place("audio.m4a", 100);
+        place("audio.jsonl", 200);
+        place("events.jsonl", 900);
+        place("audio.jsonl.lock", 900);
+        place(".describe-1-0.jsonl.tmp", 900);
+        place("talents/sense.json", 900);
+        assert_eq!(
+            newest_segment_input_ms(segment.path()).unwrap(),
+            Some(200_000)
+        );
+        place("screen.jsonl", 300);
+        assert_eq!(
+            newest_segment_input_ms(segment.path()).unwrap(),
+            Some(300_000)
+        );
     }
 
     #[test]

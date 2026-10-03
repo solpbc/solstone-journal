@@ -110,14 +110,16 @@ pub fn resume_service_after_update() {
 
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let Ok(journal) = std::env::current_exe() else {
+    let Ok(executable) = std::env::current_exe() else {
         return;
     };
-    // <root>\current\bin\journal.exe
-    let Some(root) = journal.ancestors().nth(3) else {
+    // Both entry names live in <root>\current\bin. Resume through the
+    // canonical sibling even when the updater entered the journal alias.
+    let Some(root) = executable.ancestors().nth(3) else {
         return;
     };
-    let (Some(journal), Some(root)) = (journal.to_str(), root.to_str()) else {
+    let solstone = executable.with_file_name("solstone.exe");
+    let (Some(solstone), Some(root)) = (solstone.to_str(), root.to_str()) else {
         return;
     };
     let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
@@ -138,7 +140,7 @@ pub fn resume_service_after_update() {
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            &resume_after_update_script(root, journal),
+            &resume_after_update_script(root, solstone),
         ])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -163,17 +165,17 @@ pub fn resume_service_after_update() {
 /// out; counting it would hold the resident back for the whole deadline.
 /// Everything older, this hook's own process included, still counts.
 #[cfg(any(windows, test))]
-fn resume_after_update_script(root: &str, journal: &str) -> String {
+fn resume_after_update_script(root: &str, solstone: &str) -> String {
     let literal = |value: &str| format!("'{}'", value.replace('\'', "''"));
     format!(
-        "$root={}; $journal={}; $app={}; $self=[Diagnostics.Process]::GetCurrentProcess().StartTime; \
+        "$root={}; $solstone={}; $app={}; $self=[Diagnostics.Process]::GetCurrentProcess().StartTime; \
          $deadline=[DateTime]::UtcNow.AddMinutes(2); \
          do {{ Start-Sleep -Seconds 2; $busy=@(Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root + '\\', [StringComparison]::OrdinalIgnoreCase) -and \
          -not ([IO.Path]::GetFileName($_.ExecutablePath) -ieq $app -and $_.CreationDate -gt $self) }}).Count }} \
          while ($busy -gt 0 -and [DateTime]::UtcNow -lt $deadline); \
-         & $journal service __resume-after-update; exit $LASTEXITCODE",
+         & $solstone journal service __resume-after-update; exit $LASTEXITCODE",
         literal(root),
-        literal(journal),
+        literal(solstone),
         literal(JOURNAL_APP_EXECUTABLE)
     )
 }
@@ -376,7 +378,7 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             Some(manifest::Primitive::Notify) => notify::notify(&rest),
             Some(manifest::Primitive::Indexer) => local_ops::dispatch("indexer", &rest),
             Some(manifest::Primitive::About) => {
-                let usage = "usage: journal about [-h | --help]\n";
+                let usage = "usage: solstone journal about [-h | --help]\n";
                 if host::is_help_only(&rest) {
                     Outcome::LocalSuccess {
                         stdout: usage.into(),
@@ -480,14 +482,17 @@ mod tests {
     fn the_post_update_waiter_carries_paths_as_literals_and_runs_the_hidden_step() {
         let script = resume_after_update_script(
             "C:\\Users\\O'Brien $x\\AppData\\Local\\Journal",
-            "C:\\Users\\O'Brien $x\\AppData\\Local\\Journal\\current\\bin\\journal.exe",
+            "C:\\Users\\O'Brien $x\\AppData\\Local\\Journal\\current\\bin\\solstone.exe",
         );
         assert!(script.starts_with("$root='C:\\Users\\O''Brien $x\\AppData\\Local\\Journal'; "));
         assert!(script.contains(
-            "$journal='C:\\Users\\O''Brien $x\\AppData\\Local\\Journal\\current\\bin\\journal.exe'; "
+            "$solstone='C:\\Users\\O''Brien $x\\AppData\\Local\\Journal\\current\\bin\\solstone.exe'; "
         ));
         assert!(script.contains("StartsWith($root + '\\', [StringComparison]::OrdinalIgnoreCase)"));
-        assert!(script.ends_with("& $journal service __resume-after-update; exit $LASTEXITCODE"));
+        assert!(
+            script
+                .ends_with("& $solstone journal service __resume-after-update; exit $LASTEXITCODE")
+        );
         assert!(!script.contains('"'));
         // Windows PowerShell 5.1 reads a command line in the system code page.
         assert!(script.is_ascii());
@@ -497,7 +502,7 @@ mod tests {
     fn the_post_update_waiter_does_not_wait_on_an_app_started_after_it() {
         let script = resume_after_update_script(
             "C:\\Users\\Owner\\AppData\\Local\\Journal",
-            "C:\\Users\\Owner\\AppData\\Local\\Journal\\current\\bin\\journal.exe",
+            "C:\\Users\\Owner\\AppData\\Local\\Journal\\current\\bin\\solstone.exe",
         );
         // Only the app's executable, by file name, and only an instance newer
         // than the waiter itself, is left out of the busy count.
@@ -790,7 +795,7 @@ mod tests {
                 &spawner,
             ),
             Outcome::LocalSuccess {
-                stdout: "Usage: journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n".to_owned(),
+                stdout: "Usage: solstone journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n".to_owned(),
                 stderr: String::new(),
             }
         );

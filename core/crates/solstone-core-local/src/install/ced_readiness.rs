@@ -27,7 +27,7 @@ use super::ced_runtime::{
 use super::manifest::sha256_file;
 
 /// Owner-facing sentence for a degraded CED verdict, identical on every surface.
-pub const CED_UNAVAILABLE_GUIDANCE: &str = "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.";
+pub const CED_UNAVAILABLE_GUIDANCE: &str = "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `solstone journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.";
 
 /// Short ready detail for `journal check` and `journal health`.
 pub const CED_READY_DETAIL: &str = "ced.cpp sound-tag engine and model are ready";

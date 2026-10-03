@@ -32,7 +32,7 @@ fn argv_parses_before_supervisor_preflight_and_preserves_exit_contract() {
             .stderr
             .contains("unrecognized arguments: --nonsense")
     );
-    assert!(unknown.stderr.contains("usage: journal importer"));
+    assert!(unknown.stderr.contains("usage: solstone journal importer"));
 
     let spawned = run(
         &["file"],
@@ -55,7 +55,7 @@ fn positional_timestamp_reaches_the_generic_dispatch() {
         || false,
     );
 
-    assert!(!result.stderr.contains("usage: journal importer"));
+    assert!(!result.stderr.contains("usage: solstone journal importer"));
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn value_options_accept_attached_and_separated_values() {
             || false,
         );
 
-        assert!(!result.stderr.contains("usage: journal importer"));
+        assert!(!result.stderr.contains("usage: solstone journal importer"));
         assert!(!result.stderr.contains("media"));
     }
 }
@@ -102,7 +102,7 @@ fn unknown_attached_option_is_rejected() {
     let result = run(&["--nonsense=x", "file"], |_| None, || false);
 
     assert_eq!(result.exit_code, 2);
-    assert!(result.stderr.contains("usage: journal importer"));
+    assert!(result.stderr.contains("usage: solstone journal importer"));
 }
 
 #[test]

@@ -83,7 +83,7 @@ fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_js
 fn backend_metadata() -> serde_json::Value {
     json!([
         {"name": "parakeet", "label": "Parakeet - local processing", "description": "On-device speech recognition via Parakeet TDT: a Core ML helper on a mac, the parakeet.cpp server on linux and windows.", "env_key": null, "settings": ["model_version", "device", "timeout_sec"]},
-        {"name": "parakeet-cpp", "label": "parakeet.cpp - local processing (linux and windows)", "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.", "env_key": null, "settings": ["device"]},
+        {"name": "parakeet-cpp", "label": "parakeet.cpp - local processing (linux and windows)", "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `solstone journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.", "env_key": null, "settings": ["device"]},
     ])
 }
 

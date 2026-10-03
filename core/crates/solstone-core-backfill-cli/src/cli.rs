@@ -4,12 +4,12 @@
 use std::ffi::{OsStr, OsString};
 
 pub const USAGE: &str = concat!(
-    "usage: journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
+    "usage: solstone journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
     "                                           --dry-run] [-v] [-d]\n",
 );
 
 pub const HELP: &str = concat!(
-    "usage: journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
+    "usage: solstone journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
     "                                           --dry-run] [-v] [-d]\n",
     "\n",
     "Backfill empty processing records onto stuck header-only native\n",

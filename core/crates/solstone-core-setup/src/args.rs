@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 use crate::user_config::{config_path, default_journal, read_user_config};
 
 pub const USAGE: &str = concat!(
-    "usage: journal setup [-h] [--journal PATH] [--port INT]\n",
+    "usage: solstone journal setup [-h] [--journal PATH] [--port INT]\n",
     "                     [--variant {auto,cpu,cuda,coreml}] [--step-timeout-seconds INT]\n",
     "                     [-y] [--dry-run] [--jsonl] [--explain] [--skip-models]\n",
     "                     [--skip-brain] [--skip-skills] [--skip-service] [--skip-wrapper]\n",
@@ -532,7 +532,9 @@ mod tests {
 
     #[test]
     fn usage_has_the_owner_facing_probe_prefix() {
-        assert!(USAGE.starts_with("usage: journal setup [-h] [--journal PATH] [--port INT]"));
+        assert!(
+            USAGE.starts_with("usage: solstone journal setup [-h] [--journal PATH] [--port INT]")
+        );
     }
 
     #[test]

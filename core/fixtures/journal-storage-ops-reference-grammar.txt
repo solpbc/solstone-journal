@@ -9,7 +9,7 @@
 # Inside a help block the payload is the exact text the verb prints on stdout.
 
 === streams --help
-usage: journal streams [-h] [--rebuild] [-v] [-d] [name]
+usage: solstone journal streams [-h] [--rebuild] [-v] [-d] [name]
 
 Inspect and manage stream identity
 
@@ -23,7 +23,7 @@ options:
   -d, --debug    Enable debug logging
 
 === segment --help
-usage: journal segment <command> [options]
+usage: solstone journal segment <command> [options]
 
 Inspect and manage journal segments
 
@@ -40,7 +40,7 @@ options:
   -d, --debug           Enable debug logging
 
 === segment list --help
-usage: journal segment <command> [options] list [-h] [--stream STREAM]
+usage: solstone journal segment <command> [options] list [-h] [--stream STREAM]
                                                 [--json]
                                                 day
 
@@ -53,7 +53,7 @@ options:
   --json           Output as JSON
 
 === segment inspect --help
-usage: journal segment <command> [options] inspect [-h] [--json] path
+usage: solstone journal segment <command> [options] inspect [-h] [--json] path
 
 positional arguments:
   path        Segment path: day/stream/segment (e.g.
@@ -64,7 +64,7 @@ options:
   --json      Output as JSON
 
 === segment verify --help
-usage: journal segment <command> [options] verify [-h] [--day DAY] [--json]
+usage: solstone journal segment <command> [options] verify [-h] [--day DAY] [--json]
                                                   [path]
 
 positional arguments:
@@ -76,7 +76,7 @@ options:
   --json      Output as JSON
 
 === segment move --help
-usage: journal segment <command> [options] move [-h] --to-day TO_DAY
+usage: solstone journal segment <command> [options] move [-h] --to-day TO_DAY
                                                 [--to-time TO_TIME]
                                                 [--dry-run] [-v]
                                                 path
@@ -93,7 +93,7 @@ options:
   -v, --verbose      Show detailed progress
 
 === journal-stats --help
-usage: journal journal-stats [-h] [--no-cache] [-v] [-d]
+usage: solstone journal journal-stats [-h] [--no-cache] [-v] [-d]
 
 Scan a solstone journal and generate statistics
 
@@ -104,7 +104,7 @@ options:
   -d, --debug    Enable debug logging
 
 === reprocess --help
-usage: journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]
+usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]
                          [--facet FACET] [--from-scratch | --mark-updated |
                          --owed] [-v] [-d]
                          day
@@ -130,14 +130,14 @@ options:
   -d, --debug        Enable debug logging
 
 === reprocess (missing day)
-usage: journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]
+usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]
                          [--facet FACET] [--from-scratch | --mark-updated |
                          --owed] [-v] [-d]
                          day
-journal reprocess: error: the following arguments are required: day
+solstone journal reprocess: error: the following arguments are required: day
 
 === backfill-processing-records --help
-usage: journal backfill-processing-records [-h] [--day DAY] [--commit |
+usage: solstone journal backfill-processing-records [-h] [--day DAY] [--commit |
                                            --dry-run] [-v] [-d]
 
 Backfill empty processing records onto stuck header-only native
@@ -153,16 +153,16 @@ options:
 
 === misuse exit codes
 # verb argv -> exit status, stderr shape
-streams --nonsense -> 2, prints `usage: journal streams` then `journal streams: error: unrecognized arguments: --nonsense`
-segment --nonsense -> 2, prints `usage: journal segment <command> [options]` then `journal segment: error: unrecognized arguments: --nonsense`
-journal-stats --nonsense -> 2, prints `usage: journal journal-stats` then `journal journal-stats: error: unrecognized arguments: --nonsense`
-reprocess --nonsense -> 2, prints the reprocess usage then `journal reprocess: error: the following arguments are required: day`
-backfill-processing-records --nonsense -> 2, prints the backfill usage then `journal backfill-processing-records: error: unrecognized arguments: --nonsense`
-backfill-processing-records --commit --dry-run -> 2, prints the backfill usage then `journal backfill-processing-records: error: argument --dry-run: not allowed with argument --commit`
-reprocess DAY --from-scratch --mark-updated -> 2, prints the reprocess usage then `journal reprocess: error: argument --mark-updated: not allowed with argument --from-scratch`
-reprocess DAY --from-scratch --unit TALENT -> 2, prints the reprocess usage then `journal reprocess: error: argument --unit: not allowed with argument --from-scratch`
-reprocess DAY --facet FACET -> 2, prints the reprocess usage then `journal reprocess: error: argument --facet: requires --unit`
+streams --nonsense -> 2, prints `usage: solstone journal streams` then `solstone journal streams: error: unrecognized arguments: --nonsense`
+segment --nonsense -> 2, prints `usage: solstone journal segment <command> [options]` then `solstone journal segment: error: unrecognized arguments: --nonsense`
+journal-stats --nonsense -> 2, prints `usage: solstone journal journal-stats` then `solstone journal journal-stats: error: unrecognized arguments: --nonsense`
+reprocess --nonsense -> 2, prints the reprocess usage then `solstone journal reprocess: error: the following arguments are required: day`
+backfill-processing-records --nonsense -> 2, prints the backfill usage then `solstone journal backfill-processing-records: error: unrecognized arguments: --nonsense`
+backfill-processing-records --commit --dry-run -> 2, prints the backfill usage then `solstone journal backfill-processing-records: error: argument --dry-run: not allowed with argument --commit`
+reprocess DAY --from-scratch --mark-updated -> 2, prints the reprocess usage then `solstone journal reprocess: error: argument --mark-updated: not allowed with argument --from-scratch`
+reprocess DAY --from-scratch --unit TALENT -> 2, prints the reprocess usage then `solstone journal reprocess: error: argument --unit: not allowed with argument --from-scratch`
+reprocess DAY --facet FACET -> 2, prints the reprocess usage then `solstone journal reprocess: error: argument --facet: requires --unit`
 # `streams` and `segment` additionally refuse with exit 1 and
-# `journal isn't running. start it with 'journal up' and retry.`
+# `journal isn't running. start it with 'solstone journal up' and retry.`
 # when the stack is not up and SOL_SKIP_SUPERVISOR_CHECK is not 1. The other
 # three verbs have no such refusal.

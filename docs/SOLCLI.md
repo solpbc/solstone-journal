@@ -226,7 +226,7 @@ The journal MCP endpoint serves seven read-only journal tools:
 of the doors below.
 
 An agent reaches the endpoint through one of four doors. Each door has its own
-listener, and `journal mcp pairing generate --door` names the door a pairing
+listener, and `solstone journal mcp pairing generate --door` names the door a pairing
 code is for.
 
 | Door | Where the agent connects | Default |
@@ -284,16 +284,16 @@ read this capability.
 
 ### Tokens and status
 
-Create an agent credential with `journal mcp token create --label <label>`.
+Create an agent credential with `solstone journal mcp token create --label <label>`.
 The command displays the bearer secret once only; it cannot be recovered later.
-Use `journal mcp token list` to view labels and creation times, and `journal
+Use `solstone journal mcp token list` to view labels and creation times, and `solstone journal
 mcp token revoke --label <label>` to disable a credential immediately.
 Local pairing and OAuth client registration are documented in
-[MCP OAuth](MCP_OAUTH.md) (`journal mcp pairing` and `journal mcp oauth`).
-`journal mcp permission {show,set,clear}` manages connection read permissions
+[MCP OAuth](MCP_OAUTH.md) (`solstone journal mcp pairing` and `solstone journal mcp oauth`).
+`solstone journal mcp permission {show,set,clear}` manages connection read permissions
 for bearer tokens (`--token --label LABEL`) and OAuth clients (`--oauth --client-id CLIENT_ID`).
-`journal mcp probe` runs one permissioned tool call locally without starting a listener.
-`journal mcp status` reports the compiled capability, the current journal
+`solstone journal mcp probe` runs one permissioned tool call locally without starting a listener.
+`solstone journal mcp status` reports the compiled capability, the current journal
 configuration result, whether the local and LAN doors are set on, and the token
 count. It is capability/configuration status,
 not a listener-liveness check.
@@ -308,7 +308,7 @@ The `127.0.0.1:7658` listener behind `solstone.me` is not a drop-in HTTPS URL.
 TLS there requires the owner-authorized hostname as both the TLS server name
 (SNI) and the certificate-validation name, and a client that sends `127.0.0.1`,
 `localhost`, or no SNI will not complete the handshake. That hostname is not
-exposed by `journal mcp status` or another operator command, so remote agents
+exposed by `solstone journal mcp status` or another operator command, so remote agents
 reach this listener through the owner-authorized bridge.
 
 At every door, send `Authorization: Bearer <token>` on every request, where
@@ -328,7 +328,7 @@ The Journal MCP endpoint is listed in the [current command inventory](#current-c
 
 ## Journal Doctor
 
-`journal doctor` diagnoses journal-host health. It is role-aware: on a machine
+`solstone journal doctor` diagnoses journal-host health. It is role-aware: on a machine
 without a local journal directory or installed journal service, folder and
 service checks emit `skip` (`no local journal` / `no local journal service`)
 instead of false failures. Its battery is:
@@ -339,25 +339,23 @@ instead of false failures. Its battery is:
 - `supervisor_conflict` — blocker; macOS only; fails when `journal.app` and the
   legacy LaunchAgent are both supervising one journal, or when a foreign
   persistent LaunchAgent relaunches `/Applications/solstone.app`. Proven-conflict
-  actions are `journal service uninstall` for the legacy service and one-line
+  actions are `solstone journal service uninstall` for the legacy service and one-line
   `remove foreign launchers targeting /Applications/solstone.app` commands for
   foreign launcher plists; other diagnoses remain visible with their actions
   withheld until the topology is resolved.
-- `launchd_stale_plist` — advisory on macOS; skipped on Linux. It advises
-  removing the legacy service first and reinstalling the headless service only
-  as a separate step.
+- `launchd_stale_plist` — advisory on macOS; skipped on Linux. See
+  [DOCTOR.md](DOCTOR.md) for the legacy-service remedy.
 
 Journal-host blocker failures include invalid service config, service identity
 mismatch, crash loops, systemd failed state, and journal-sync conflicts. An
 installed service with no supervisor socket is a warning when the OS unit is not
 failed.
 
-Use `journal doctor` for “why is this journal host unhealthy?” and `journal
-health` for the live supervisor status view. ⚠ There is no fresh-clone check that
-runs before `.venv`/`uv` exist; `make preflight` filled that role and was removed
-with the Python reference cut.
+Use `solstone journal doctor` for “why is this journal host unhealthy?” and `solstone journal
+health` for the live supervisor status view. `make preflight` checks a source
+checkout's build environment; see [DOCTOR.md](DOCTOR.md).
 
-## Structured output: `journal setup --jsonl` and doctor `--jsonl`
+## Structured output: `solstone journal setup --jsonl` and doctor `--jsonl`
 
 Use `--jsonl` when another process needs progress events as they happen. The
 contract is one JSON object per stdout line, flushed immediately; doctor
@@ -369,12 +367,12 @@ when the check runner raised an ordinary exception.
 
 | Event | Emitted by | When |
 |-------|------------|------|
-| `setup.started` | `journal setup --jsonl` | Setup arguments are resolved and the run starts. |
-| `setup.completed` | `journal setup --jsonl` | Setup reaches a terminal `ok` or `failed` state. |
-| `step.started` | `journal setup --jsonl` | A setup step starts. |
-| `step.completed` | `journal setup --jsonl` | A setup step finishes with `outcome: "ok"` or `outcome: "skipped"`. |
-| `step.failed` | `journal setup --jsonl` | A setup step fails or reaches a dead end. |
-| `step.warning` | `journal setup --jsonl` | Setup translates advisory diagnostics, dropped doctor lines, or non-fatal wrapper-provisioning failures. |
+| `setup.started` | `solstone journal setup --jsonl` | Setup arguments are resolved and the run starts. |
+| `setup.completed` | `solstone journal setup --jsonl` | Setup reaches a terminal `ok` or `failed` state. |
+| `step.started` | `solstone journal setup --jsonl` | A setup step starts. |
+| `step.completed` | `solstone journal setup --jsonl` | A setup step finishes with `outcome: "ok"` or `outcome: "skipped"`. |
+| `step.failed` | `solstone journal setup --jsonl` | A setup step fails or reaches a dead end. |
+| `step.warning` | `solstone journal setup --jsonl` | Setup translates advisory diagnostics, dropped doctor lines, or non-fatal wrapper-provisioning failures. |
 | `doctor.started` | doctor `--jsonl` | Doctor diagnostics begin. |
 | `check.completed` | doctor `--jsonl` | One diagnostic check finishes. Status is long form: `ok`, `warning`, `failed`, or `skipped`. |
 | `doctor.completed` | doctor `--jsonl` | Doctor diagnostics finish with `status: "ok"`, `"warning"`, or `"failed"`. |
@@ -418,7 +416,7 @@ the next run can repair the wrappers.
 
 ### Doctor pass-through
 
-`journal setup --jsonl` runs `journal doctor --readiness --jsonl` for the doctor step and forwards `doctor.started`, `check.completed`, and `doctor.completed` lines verbatim. The readiness battery is the client readiness checks (`python_version`, `sol_importable`, `local_bin_sol_reachable`, `stale_alias_symlink`, `disk_space`, `journal_dir_writable`) plus `host_dependencies`, `default_stt_ready`, `feature:pdf-import`, and `feature:whisper`; it does not run runtime service, sync, config-dir, or launchd checks. Advisory doctor checks are also translated into setup-level `step.warning` events so consumers can handle setup warnings uniformly. Execution-error doctor failures remain `doctor_failed` step failures, not warnings.
+`solstone journal setup --jsonl` runs `solstone journal doctor --readiness --jsonl` for the doctor step and forwards `doctor.started`, `check.completed`, and `doctor.completed` lines verbatim. [DOCTOR.md](DOCTOR.md) describes the native readiness battery. It does not run runtime service, sync, config-dir, or launchd checks. Advisory doctor checks are also translated into setup-level `step.warning` events so consumers can handle setup warnings uniformly. Execution-error doctor failures remain `doctor_failed` step failures, not warnings.
 
 Example stream excerpt for setup readiness:
 
@@ -426,7 +424,7 @@ Example stream excerpt for setup readiness:
 {"event":"setup.started","ts":"2026-05-11T20:00:00Z","version":"0.0.0+source","mode":"non_interactive"}
 {"event":"step.started","ts":"2026-05-11T20:00:00Z","step":"doctor","index":1,"total":8}
 {"event":"doctor.started","ts":"2026-05-11T20:00:00Z","version":"0.0.0+source","port":5015,"feature":""}
-{"event":"check.completed","ts":"2026-05-11T20:00:01Z","name":"python_version","severity":"blocker","status":"ok","detail":"Python version ok","fix":"","execution_error":null}
+{"event":"check.completed","ts":"2026-05-11T20:00:01Z","name":"disk_space","severity":"advisory","status":"ok","detail":"Free space is sufficient","fix":"","execution_error":null}
 {"event":"doctor.completed","ts":"2026-05-11T20:00:01Z","status":"ok","duration_ms":120,"summary":{"total":10,"failed":0,"warnings":0,"skipped":0,"errors":0}}
 {"event":"step.completed","ts":"2026-05-11T20:00:01Z","step":"doctor","outcome":"ok","duration_ms":121}
 {"event":"step.completed","ts":"2026-05-11T20:00:04Z","step":"service","outcome":"ok","duration_ms":900}
@@ -481,11 +479,11 @@ not the codebase. See [APPS.md](APPS.md).
 | Installation | `doctor` |
 | Help | `help` |
 
-`journal install-provider local` and `journal install-provider parakeet` are native.
+`solstone journal install-provider local` and `solstone journal install-provider parakeet` are native.
 
 `reprocess` is the on-demand reprocess command: process-now by default; `--from-scratch` re-runs already-complete units and, with `--through`, can queue an inclusive past-day range.
 
-`journal maintenance list|sync|run <name>` runs native maintenance (`solstone-core-maintenance`). The supervisor performs the same `sync` at every start, so an upgrade that adds or retires a routine takes effect on the next boot; the verb remains for inspection and for applying a change without restarting.
+`solstone journal maintenance list|sync|run <name>` runs native maintenance (`solstone-core-maintenance`). The supervisor performs the same `sync` at every start, so an upgrade that adds or retires a routine takes effect on the next boot; the verb remains for inspection and for applying a change without restarting.
 
 ### Call (`solstone call <app> <cmd>`)
 
@@ -495,7 +493,7 @@ not the codebase. See [APPS.md](APPS.md).
 | `entities` | `core/native-sol/apps/entities/native/authority.toml` | list, move, detect, attach, update, aka, record-merge-candidate, merge-candidates, accept-merge-candidate, dismiss-merge-candidate, merge, ambiguities, resolve-ambiguity, entity-history, restore-version, network, history, overview, observations, observe, search |
 | `speakers` | `core/native-sol/apps/speakers/native/authority.toml` | list, show, detect-owner, confirm-owner, clusters, suggest |
 | `transcripts` | `core/native-sol/apps/transcripts/native/authority.toml` | list, read, segments |
-| `settings` | `core/native-sol/apps/settings/native/authority.toml` | personal service keys (show/set/delete). Thinking provider selection lives in the Thinking app; local provider install lives at `journal install-provider local`. |
+| `settings` | `core/native-sol/apps/settings/native/authority.toml` | personal service keys (show/set/delete). Thinking provider selection lives in the Thinking app; local provider install lives at `solstone journal install-provider local`. |
 | `awareness` | `core/native-sol/apps/awareness/native/authority.toml` | status, imports, log, log-read |
 | `link` | `core/native-sol/apps/network/native/authority.toml` | authorized-clients, list, observer-pause, pair, private-link (disable/setup/status), set-label, status, unpair |
 | `journal` | `core/native-sol/think/tools/native/journal/authority.toml` | agents, facet (create/delete/mute/rename/show/unmute/update), facets, import, imports, news, read, retention (config/list), search, storage-summary |

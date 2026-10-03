@@ -230,7 +230,7 @@ fn check_with_rows(
             CoremlInstallError::new(
                 "sentinel_not_ready",
                 format!(
-                    "parakeet CoreML sentinel not ready: {}; install it with: journal install-models",
+                    "parakeet CoreML sentinel not ready: {}; install it with: solstone journal install-models",
                     parakeet_coreml_sentinel_path(home_dir).display(),
                 ),
                 65,
@@ -242,7 +242,7 @@ fn check_with_rows(
             return Err(CoremlInstallError::new(
                 "model_incomplete",
                 format!(
-                    "parakeet CoreML asset missing: {}; install it with: journal install-models",
+                    "parakeet CoreML asset missing: {}; install it with: solstone journal install-models",
                     row.filename
                 ),
                 65,
@@ -433,7 +433,11 @@ mod tests {
         let rows = [&artifact];
         let error = check_with_rows(&home, "darwin", "arm64", &rows).unwrap_err();
         assert_eq!(error.reason_code, "sentinel_not_ready");
-        assert!(error.to_string().contains("journal install-models"));
+        assert!(
+            error
+                .to_string()
+                .contains("solstone journal install-models")
+        );
     }
 
     #[test]

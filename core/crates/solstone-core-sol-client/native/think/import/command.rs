@@ -15,7 +15,7 @@ use crate::transport::{
 };
 
 const IMPORT_API: &str = "/app/import/api";
-const JOURNAL_HOST_HINT: &str = "Run this on the journal host with `journal importer`.";
+const JOURNAL_HOST_HINT: &str = "Run this on the journal host with `solstone journal importer`.";
 const HELP: &str = "usage: solstone import [-h] [--timestamp TIMESTAMP] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--dry-run] [--backends] [--sync BACKEND] [--save] [--path PATH] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
 
 #[must_use]
@@ -190,7 +190,7 @@ fn reject_unsupported_modes(parsed: &ParsedArgs) -> Option<CommandOutput> {
     }
     if matches!(parsed.auto, AutoArg::Guidance) {
         return Some(rejected(
-            "`--auto <guidance>` requires the journal host. Use `--timestamp` here or run `journal importer`.",
+            "`--auto <guidance>` requires the journal host. Use `--timestamp` here or run `solstone journal importer`.",
         ));
     }
     None
@@ -213,7 +213,7 @@ fn run_import(ctx: CommandContext<'_>, parsed: &ParsedArgs) -> CommandOutput {
         Ok(response) => response,
         Err(ImportError::Unreachable) => {
             return CommandOutput::failure(
-                "solstone import: couldn't reach the journal. Start it with 'journal up' and retry.\n",
+                "solstone import: couldn't reach the journal. Start it with 'solstone journal up' and retry.\n",
                 1,
             );
         }
@@ -404,7 +404,7 @@ fn print_client_error(operation: &str, error: ImportError) -> CommandOutput {
             CommandOutput::failure(stderr, 1)
         }
         ImportError::Unreachable => CommandOutput::failure(
-            "solstone import: couldn't reach the journal. Start it with 'journal up' and retry.\n",
+            "solstone import: couldn't reach the journal. Start it with 'solstone journal up' and retry.\n",
             1,
         ),
     }
@@ -817,31 +817,31 @@ mod tests {
         let cases: Vec<(Vec<&str>, &str)> = vec![
             (
                 vec!["media.txt", "--dry-run"],
-                "solstone import: `--dry-run` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--dry-run` requires the journal host. Run this on the journal host with `solstone journal importer`.\n",
             ),
             (
                 vec!["--backends"],
-                "solstone import: `--backends` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--backends` requires the journal host. Run this on the journal host with `solstone journal importer`.\n",
             ),
             (
                 vec!["--list-importers"],
-                "solstone import: `--list-importers` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--list-importers` requires the journal host. Run this on the journal host with `solstone journal importer`.\n",
             ),
             (
                 vec!["--sync", "plaud"],
-                "solstone import: `--sync` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--sync` requires the journal host. Run this on the journal host with `solstone journal importer`.\n",
             ),
             (
                 vec!["media.txt", "--save"],
-                "solstone import: `--save` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--save` requires the journal host. Run this on the journal host with `solstone journal importer`.\n",
             ),
             (
                 vec!["media.txt", "--path", "/tmp/source"],
-                "solstone import: `--path` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--path` requires the journal host. Run this on the journal host with `solstone journal importer`.\n",
             ),
             (
                 vec!["media.txt", "--auto", "timestamps are Pacific"],
-                "solstone import: `--auto <guidance>` requires the journal host. Use `--timestamp` here or run `journal importer`.\n",
+                "solstone import: `--auto <guidance>` requires the journal host. Use `--timestamp` here or run `solstone journal importer`.\n",
             ),
         ];
 
@@ -922,7 +922,7 @@ mod tests {
             output,
             CommandOutput {
                 stdout: String::new(),
-                stderr: "solstone import: couldn't reach the journal. Start it with 'journal up' and retry.\n".to_string(),
+                stderr: "solstone import: couldn't reach the journal. Start it with 'solstone journal up' and retry.\n".to_string(),
                 exit: 1,
             }
         );

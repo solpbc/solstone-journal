@@ -186,7 +186,11 @@ pub fn schedule_name(id: &str) -> String {
 
 /// Build the generated raw config entry for one routine.
 pub fn expected_entry(descriptor: &RoutineDescriptor) -> Value {
-    let command = vec!["journal", "maintenance", "run", descriptor.id];
+    let command = solstone_core_system::partition::canonical_journal_command([
+        "maintenance",
+        "run",
+        descriptor.id,
+    ]);
     let mut entry = Map::from_iter([
         ("cmd".to_owned(), json!(command)),
         (
@@ -442,6 +446,45 @@ mod tests {
         assert_eq!(
             raw["maintenance:operator:custom"]["cmd"],
             json!(["operator", "custom"])
+        );
+    }
+
+    #[test]
+    fn sync_keeps_legacy_alias_command_synced_and_writes_canonical_form_for_missing() {
+        let legacy_entry = json!({
+            "cmd": ["journal", "maintenance", "run", "app:capped"],
+            "every": "daily",
+            "enabled": true,
+            "max_runtime": "30m",
+        });
+        assert_eq!(
+            classify_one(&CAPPED, Some(&legacy_entry)),
+            ScheduleStatus::Synced
+        );
+
+        let root = tempfile::tempdir().expect("temporary journal");
+        let config = root.path().join("config/schedules.json");
+        write_config(
+            &config,
+            &json!({
+                "maintenance:app:capped": legacy_entry,
+            }),
+        );
+
+        let summary = sync(&config, &[CAPPED, UNCAPPED]).expect("sync");
+        assert_eq!(summary.synced, vec![CAPPED.id]);
+        assert_eq!(summary.added, vec![UNCAPPED.id]);
+
+        let raw: Value = serde_json::from_slice(&fs::read(&config).expect("config")).expect("json");
+        // Legacy entry cmd was not rewritten
+        assert_eq!(
+            raw["maintenance:app:capped"]["cmd"],
+            json!(["journal", "maintenance", "run", "app:capped"])
+        );
+        // Added entry cmd uses canonical wire form
+        assert_eq!(
+            raw["maintenance:app:uncapped"]["cmd"],
+            json!(["solstone", "journal", "maintenance", "run", "app:uncapped"])
         );
     }
 }

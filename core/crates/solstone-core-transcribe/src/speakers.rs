@@ -16,9 +16,9 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 #[cfg(unix)]
 use std::thread;
+use std::time::Duration;
 #[cfg(unix)]
 use std::time::Instant;
-use std::time::{Duration, SystemTime};
 
 use serde_json::{Map, Value, json};
 use solstone_core_observe_audio::{AudioError, write_f32le_exclusive};
@@ -38,7 +38,9 @@ const RESPONSE_SCHEMA: &str = "solstone-speaker-analyze-response-v1";
 const ERROR_SCHEMA: &str = "solstone-speaker-analyze-error-v1";
 #[cfg(not(windows))]
 const TEMP_ROOT: &str = "/var/tmp";
-const TEMP_PREFIX: &str = "solstone-speakers-analyze-";
+/// Name prefix of every speaker-analysis scratch directory. Speaker discovery's
+/// cluster scratch shares it and the same root, so one sweep reaps both.
+pub(crate) const TEMP_PREFIX: &str = "solstone-speakers-analyze-";
 #[cfg(unix)]
 const TEMP_DIR_MODE: u32 = 0o700;
 const WESPEAKER_EMBEDDING_WIDTH: usize = 256;
@@ -163,12 +165,7 @@ pub(crate) fn create_speakers_analyze_temp_dir(raw_path: &Path) -> io::Result<Pa
     create_speakers_analyze_temp_dir_in(raw_path, &speakers_temp_root(), std::process::id())
 }
 
-/// Remove stale helper directories older than one day.
-pub(crate) fn sweep_stale_speakers_analyze_dirs(max_age: Duration) -> usize {
-    sweep_stale_speakers_analyze_dirs_at(&speakers_temp_root(), max_age, SystemTime::now())
-}
-
-fn speakers_temp_root() -> PathBuf {
+pub(crate) fn speakers_temp_root() -> PathBuf {
     #[cfg(windows)]
     {
         std::env::temp_dir()
@@ -1535,32 +1532,6 @@ fn create_speakers_analyze_temp_dir_in(
     Ok(path)
 }
 
-fn sweep_stale_speakers_analyze_dirs_at(root: &Path, max_age: Duration, now: SystemTime) -> usize {
-    let Ok(entries) = fs::read_dir(root) else {
-        return 0;
-    };
-    entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let path = entry.path();
-            let stale = path.is_dir()
-                && entry.file_name().to_string_lossy().starts_with(TEMP_PREFIX)
-                && entry
-                    .metadata()
-                    .ok()
-                    .and_then(|metadata| metadata.modified().ok())
-                    .is_some_and(|modified| {
-                        now.duration_since(modified).is_ok_and(|age| age > max_age)
-                    });
-            stale.then_some(path)
-        })
-        .filter(|path| {
-            let _ = fs::remove_dir_all(path);
-            !path.exists()
-        })
-        .count()
-}
-
 fn safe_temp_part(value: &str) -> String {
     let cleaned: String = value
         .chars()
@@ -1599,14 +1570,14 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
-    use std::time::{Duration, UNIX_EPOCH};
+    use std::time::Duration;
 
     use serde_json::{Map, Value, json};
 
     use super::{
         MIN_STATEMENT_DURATION_S, RESPONSE_SCHEMA, SpeakerAnalyzeError, SpeakersAnalyzeBudget,
         accepted_result_from_response, admitted_statement_ids, create_speakers_analyze_temp_dir_in,
-        remove_partial_sidecar, sweep_stale_speakers_analyze_dirs_at, with_cleaned_temp_dir,
+        remove_partial_sidecar, with_cleaned_temp_dir,
     };
     use crate::TranscribeError;
 
@@ -1641,37 +1612,6 @@ mod tests {
             0o700
         );
         fs::remove_dir_all(path).unwrap();
-    }
-
-    #[test]
-    fn stale_sweep_removes_old_directory_and_keeps_fresh_one() {
-        let root = tempfile::tempdir().unwrap();
-        let now = UNIX_EPOCH + Duration::from_secs(100_000);
-        let old = root.path().join("solstone-speakers-analyze-old");
-        let fresh = root.path().join("solstone-speakers-analyze-fresh");
-        let unrelated = root.path().join("other-dir");
-        let leftover = root.path().join("readme.txt");
-        fs::create_dir(&old).unwrap();
-        fs::create_dir(&fresh).unwrap();
-        fs::create_dir(&unrelated).unwrap();
-        fs::write(&leftover, b"keep").unwrap();
-        fs::File::open(&old)
-            .unwrap()
-            .set_times(std::fs::FileTimes::new().set_modified(UNIX_EPOCH))
-            .unwrap();
-        fs::File::open(&fresh)
-            .unwrap()
-            .set_times(std::fs::FileTimes::new().set_modified(now - Duration::from_secs(1)))
-            .unwrap();
-
-        assert_eq!(
-            sweep_stale_speakers_analyze_dirs_at(root.path(), Duration::from_secs(86_400), now),
-            1
-        );
-        assert!(!old.exists());
-        assert!(fresh.exists());
-        assert!(unrelated.exists());
-        assert!(leftover.exists());
     }
 
     #[test]

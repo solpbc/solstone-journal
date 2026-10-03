@@ -4,7 +4,7 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
-const CANT_TELL: &str = "re-run journal doctor; check the health logs if it persists";
+const CANT_TELL: &str = "re-run solstone journal doctor; check the health logs if it persists";
 
 fn shell_argument(value: &str) -> String {
     if !value.is_empty()
@@ -605,7 +605,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 format!("{} stopped on {loc}{}; resolve the conflict before reprocessing a past day",
                     candidate.name, reason(candidate.owner_conflict_kind.as_deref()))
             } else { format!(
-                "{} stopped on {loc}{} after its automatic retry; run journal reprocess {} --unit {}{opt_facet}",
+                "{} stopped on {loc}{} after its automatic retry; run solstone journal reprocess {} --unit {}{opt_facet}",
                 candidate.name,
                 reason(candidate.owner_conflict_kind.as_deref()),
                 candidate.day,

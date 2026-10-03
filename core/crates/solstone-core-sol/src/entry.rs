@@ -29,13 +29,31 @@ pub fn process_main() -> ExitCode {
     let mut args = std::env::args_os();
     let argv0 = args.next();
     let args = args.collect::<Vec<_>>();
-    match invocation(argv0.as_deref(), || std::env::current_exe().ok()) {
-        Invocation::Journal => {
+    dispatch(
+        argv0.as_deref(),
+        args,
+        || std::env::current_exe().ok(),
+        || {
             #[cfg(windows)]
             windows_lifecycle::run_installer_hooks();
-            run_journal(args)
-        }
-        Invocation::Solstone => crate::run("solstone", args),
+        },
+        crate::run,
+        run_journal,
+    )
+}
+
+fn dispatch(
+    argv0: Option<&OsStr>,
+    args: Vec<OsString>,
+    current_exe: impl FnOnce() -> Option<PathBuf>,
+    mut run_hooks: impl FnMut(),
+    mut run_solstone: impl FnMut(&str, Vec<OsString>) -> ExitCode,
+    mut run_journal: impl FnMut(Vec<OsString>) -> ExitCode,
+) -> ExitCode {
+    run_hooks();
+    match invocation(argv0, current_exe) {
+        Invocation::Journal => run_journal(args),
+        Invocation::Solstone => run_solstone("solstone", args),
     }
 }
 
@@ -83,7 +101,7 @@ fn install_logger() {
 }
 
 /// Velopack runs the Windows journal's install, update and uninstall hooks
-/// through `journal.exe`, the package's main program.
+/// through `solstone.exe`, the package's main program; alias entry also runs them.
 #[cfg(windows)]
 mod windows_lifecycle {
     pub(super) fn run_installer_hooks() {
@@ -191,5 +209,90 @@ mod tests {
         if std::env::var("RUST_LOG").is_err() {
             assert!(log::max_level() >= log::LevelFilter::Warn);
         }
+    }
+
+    #[test]
+    fn dispatch_routes_invocations_and_runs_hooks() {
+        let mut hooks_run = 0;
+        let mut solstone_run = 0;
+        let mut journal_run = 0;
+        let mut solstone_args = Vec::new();
+        let mut journal_args = Vec::new();
+
+        // 1. argv0 solstone.exe, args ["status"]
+        let code = dispatch(
+            Some(OsStr::new("solstone.exe")),
+            vec![OsString::from("status")],
+            || None,
+            || hooks_run += 1,
+            |_name, args| {
+                solstone_run += 1;
+                solstone_args = args;
+                ExitCode::SUCCESS
+            },
+            |_args| {
+                journal_run += 1;
+                ExitCode::SUCCESS
+            },
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(hooks_run, 1);
+        assert_eq!(solstone_run, 1);
+        assert_eq!(solstone_args, vec![OsString::from("status")]);
+        assert_eq!(journal_run, 0);
+
+        // 2. argv0 solstone.exe, args ["journal", "status"]
+        hooks_run = 0;
+        solstone_run = 0;
+        journal_run = 0;
+        solstone_args.clear();
+        let code = dispatch(
+            Some(OsStr::new("solstone.exe")),
+            vec![OsString::from("journal"), OsString::from("status")],
+            || None,
+            || hooks_run += 1,
+            |_name, args| {
+                solstone_run += 1;
+                solstone_args = args;
+                ExitCode::SUCCESS
+            },
+            |_args| {
+                journal_run += 1;
+                ExitCode::SUCCESS
+            },
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(hooks_run, 1);
+        assert_eq!(solstone_run, 1);
+        assert_eq!(
+            solstone_args,
+            vec![OsString::from("journal"), OsString::from("status")]
+        );
+        assert_eq!(journal_run, 0);
+
+        // 3. argv0 journal.exe, args ["status"]
+        hooks_run = 0;
+        solstone_run = 0;
+        journal_run = 0;
+        let code = dispatch(
+            Some(OsStr::new("journal.exe")),
+            vec![OsString::from("status")],
+            || None,
+            || hooks_run += 1,
+            |_name, _args| {
+                solstone_run += 1;
+                ExitCode::SUCCESS
+            },
+            |args| {
+                journal_run += 1;
+                journal_args = args;
+                ExitCode::SUCCESS
+            },
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(hooks_run, 1);
+        assert_eq!(journal_run, 1);
+        assert_eq!(journal_args, vec![OsString::from("status")]);
+        assert_eq!(solstone_run, 0);
     }
 }

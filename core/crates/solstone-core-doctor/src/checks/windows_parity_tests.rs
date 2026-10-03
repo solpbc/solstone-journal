@@ -120,7 +120,7 @@ fn windows_service_running_reads_the_registration_before_the_resident() {
         (
             Status::Warn,
             "service installed but not running",
-            Some("run journal service start")
+            Some("run solstone journal service start")
         )
     );
 }
@@ -151,7 +151,7 @@ fn windows_service_identity_is_the_registration_answer() {
     assert!(row.detail.starts_with("service target mismatch: "));
     assert_eq!(
         row.fix.as_deref(),
-        Some("run journal setup --force from this install to refresh the service")
+        Some("run solstone journal setup --force from this install to refresh the service")
     );
 }
 

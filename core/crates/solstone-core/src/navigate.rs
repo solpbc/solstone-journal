@@ -54,7 +54,9 @@ pub(crate) fn run(path: String) -> ExitCode {
     let mut line = match serde_json::to_string(&envelope) {
         Ok(line) => line,
         Err(error) => {
-            eprintln!("journal navigate: error: failed to encode Callosum request: {error}");
+            eprintln!(
+                "solstone journal navigate: error: failed to encode Callosum request: {error}"
+            );
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
@@ -64,7 +66,7 @@ pub(crate) fn run(path: String) -> ExitCode {
     let sender = CallosumOneShotSender::new(&socket, NAVIGATE_SOCKET_TIMEOUT);
     if sender.send_line(&line).is_err() {
         eprintln!(
-            "journal navigate: error: Callosum socket unavailable: {}",
+            "solstone journal navigate: error: Callosum socket unavailable: {}",
             socket.display()
         );
         return ExitCode::from(EXIT_UNAVAILABLE);

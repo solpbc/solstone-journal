@@ -398,6 +398,8 @@ fn run_segment_repair_phase(
         timeout,
         skip_talents,
         no_activity_prompts,
+        // Live thinking may already have thought a blocker since the scan.
+        segment::CurrentSegment::Skip,
     ) {
         Ok(result) => result,
         Err(error) => failed_phase("segment_repair", error),

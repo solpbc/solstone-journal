@@ -150,9 +150,18 @@ pub fn read_segment_progress<S: HealthLogSource>(
             let mut dispatched = BTreeSet::new();
             let mut completed = BTreeSet::new();
             let mut capped_by_skip = BTreeSet::new();
+            // `None`: no Sense use was dispatched.  `Some(None)`: the latest
+            // one has not completed.  `Some(Some(ts))`: it completed.
+            let mut sense_dispatch: Option<Option<i64>> = None;
             if let Some(by_name) = records.remove(&key) {
                 for (name, mut entries) in by_name {
                     entries.sort_by_key(|item| (item.ts, item.sequence));
+                    if name == "sense" {
+                        sense_dispatch = entries
+                            .iter()
+                            .rfind(|item| item.kind == ProgressKind::Dispatch)
+                            .map(|item| name_is_completed(&entries).then_some(item.ts));
+                    }
                     // A fresh selection can withdraw optional work. A later
                     // dispatch restores the obligation; late worker outcomes
                     // cannot restore work that is no longer recommended.
@@ -178,7 +187,14 @@ pub fn read_segment_progress<S: HealthLogSource>(
                     }
                 }
             }
+            let sensed_at = latest_sense.get(&key).map(|(ts, _)| *ts);
+            let sense_input_ms = match sense_dispatch {
+                None => sensed_at,
+                Some(None) => None,
+                Some(Some(dispatched)) => sensed_at.map(|sensed| sensed.min(dispatched)),
+            };
             let progress = SegmentProgress {
+                sense_input_ms,
                 sensed: latest_sense.contains_key(&key),
                 density: latest_sense
                     .get(&key)

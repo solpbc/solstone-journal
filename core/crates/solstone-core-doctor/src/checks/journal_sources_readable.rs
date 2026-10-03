@@ -117,7 +117,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 "couldn't check — the statistics are {} hours old",
                 age.num_hours()
             ),
-            Some("run journal journal-stats; check the health logs if it persists"),
+            Some("run solstone journal journal-stats; check the health logs if it persists"),
         ));
     }
 
@@ -205,11 +205,11 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                  day the journal can process"
             }
             (true, true) => {
-                "repair the file named above, then run journal reprocess <day> for each listed \
+                "repair the file named above, then run solstone journal reprocess <day> for each listed \
                  day that has already ended"
             }
             (true, false) => {
-                "run journal reprocess <day> for each listed day that has already ended"
+                "run solstone journal reprocess <day> for each listed day that has already ended"
             }
         }),
     ))

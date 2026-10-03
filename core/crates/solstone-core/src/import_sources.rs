@@ -7,7 +7,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use serde_json::{Map, json};
+use serde_json::Map;
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::publish::NativePublicationOperations;
@@ -42,7 +42,12 @@ impl FullReindexRequester for SupervisorRescan {
 /// unavailable Callosum socket is logged and leaves the import successful.
 fn send_indexer_rescan(journal: &Path) {
     let mut extra = Map::new();
-    extra.insert("cmd".to_owned(), json!(["journal", "indexer", "--rescan"]));
+    extra.insert(
+        "cmd".to_owned(),
+        serde_json::Value::from(solstone_core_system::partition::canonical_journal_command(
+            ["indexer", "--rescan"],
+        )),
+    );
     let envelope = CallosumEnvelope {
         tract: "supervisor".to_owned(),
         event: "request".to_owned(),
@@ -590,7 +595,7 @@ fn run_archive_with_seams(
         };
     }
     let options = ArchiveMergeOptions {
-        working_root: journal.join("imports").join("archive-merge-work"),
+        working_root: solstone_core_import_sources::archive::archive_merge_working_root(journal),
         ..ArchiveMergeOptions::default()
     };
     if let Err(error) = validate_archive_preflight(&dispatch.media, &options) {

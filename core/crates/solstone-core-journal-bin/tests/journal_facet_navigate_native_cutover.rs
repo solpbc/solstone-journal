@@ -180,7 +180,7 @@ fn facet_candidates_help_runs_natively() {
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
     for token in [
-        "usage: journal facet-candidates",
+        "usage: solstone journal facet-candidates",
         "-h",
         "--help",
         "-v",
@@ -200,7 +200,7 @@ fn navigate_help_runs_natively() {
 
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for token in ["usage: journal navigate", "-h", "--help", "PATH"] {
+    for token in ["usage: solstone journal navigate", "-h", "--help", "PATH"] {
         assert!(stdout.contains(token), "missing {token:?} from {stdout:?}");
     }
     assert_python_was_not_invoked(&harness.poison_marker);
@@ -213,8 +213,8 @@ fn facet_candidates_invalid_args_run_natively() {
 
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("usage: journal facet-candidates"));
-    assert!(stderr.contains("journal facet-candidates: error: invalid arguments"));
+    assert!(stderr.contains("usage: solstone journal facet-candidates"));
+    assert!(stderr.contains("solstone journal facet-candidates: error: invalid arguments"));
     assert_python_was_not_invoked(&harness.poison_marker);
 }
 
@@ -225,8 +225,8 @@ fn navigate_invalid_args_run_natively() {
 
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("usage: journal navigate"));
-    assert!(stderr.contains("journal navigate: error: invalid arguments"));
+    assert!(stderr.contains("usage: solstone journal navigate"));
+    assert!(stderr.contains("solstone journal navigate: error: invalid arguments"));
     assert_python_was_not_invoked(&harness.poison_marker);
 }
 

@@ -73,7 +73,7 @@ pub async fn update(journal_root: PathBuf, body: Bytes) -> Response {
                     .and_then(Value::as_bool)
                     .unwrap_or(old_entry.is_some());
                 if enabled != old_enabled {
-                    let entry = schedules.entry(entry_name.to_owned()).or_insert_with(|| json!({"cmd":["journal","importer","--sync",service,"--save"],"every":"hourly"}));
+                    let entry = schedules.entry(entry_name.to_owned()).or_insert_with(|| json!({"cmd":["solstone","journal","importer","--sync",service,"--save"],"every":"hourly"}));
                     let target = entry.as_object_mut().expect("created object");
                     target.insert("enabled".to_owned(), Value::Bool(enabled));
                     changed_fields.insert(format!("{service}.enabled"), Value::Bool(enabled));

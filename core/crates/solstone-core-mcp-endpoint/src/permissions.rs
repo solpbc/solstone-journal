@@ -120,12 +120,12 @@ pub fn resolve_permission_facet_names(
             .and_then(serde_json::Value::as_str)
         else {
             return Err(format!(
-                "facet {name:?} has no stable id; run journal backfill-facet-ids"
+                "facet {name:?} has no stable id; run solstone journal backfill-facet-ids"
             ));
         };
         if !solstone_core_facets::is_well_formed_facet_id(id) {
             return Err(format!(
-                "facet {name:?} has no stable id; run journal backfill-facet-ids"
+                "facet {name:?} has no stable id; run solstone journal backfill-facet-ids"
             ));
         }
         ids.insert(id.to_owned());
@@ -535,7 +535,7 @@ mod tests {
         assert!(
             resolve_permission_facet_names(temp.path(), &["alpha".to_owned()])
                 .unwrap_err()
-                .contains("journal backfill-facet-ids")
+                .contains("solstone journal backfill-facet-ids")
         );
         assert_eq!(
             before,

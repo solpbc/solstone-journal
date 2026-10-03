@@ -137,7 +137,7 @@ impl Drop for TempJournal {
 
 const RECOVERY_HEADER: &str = "this installation couldn't be verified.";
 const RECOVERY_SETUP: &str =
-    "run `journal setup` to check it. if setup finishes successfully, try again.";
+    "run `solstone journal setup` to check it. if setup finishes successfully, try again.";
 const TRUNCATION_MARKER: &str = "…[truncated]";
 
 fn supervisor_output(binary: &Path, journal: &OsStr, home: Option<&Path>) -> Output {
@@ -193,6 +193,18 @@ fn start_with_convey_argv_in(
     convey_argv: Option<String>,
     systemd_scope_unit: Option<&str>,
 ) -> SupervisorGuard {
+    SupervisorGuard::new(
+        supervisor_command(journal, convey_argv, systemd_scope_unit)
+            .spawn()
+            .expect("supervisor starts"),
+    )
+}
+
+fn supervisor_command(
+    journal: &TempJournal,
+    convey_argv: Option<String>,
+    systemd_scope_unit: Option<&str>,
+) -> Command {
     let home = super::installation_binding::admit_for(&journal.0);
     let mut command = match systemd_scope_unit {
         Some(unit) => {
@@ -228,7 +240,7 @@ fn start_with_convey_argv_in(
         "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
         journal.system_test_child(),
     );
-    SupervisorGuard::new(command.spawn().expect("supervisor starts"))
+    command
 }
 
 fn start_paused_before_readiness(journal: &TempJournal, marker: &Path) -> SupervisorGuard {
@@ -946,6 +958,75 @@ fn schedules_are_reconciled_before_the_scheduler_loads() {
 }
 
 #[test]
+fn a_booted_supervisor_reaps_decoded_audio_a_killed_analysis_left_behind() {
+    // A process killed mid-analysis or mid-merge leaves a segment's decoded
+    // audio outside its own cleanup. The running supervisor must remove every
+    // such leftover without being asked, and leave in-flight scratch alone.
+    let journal = TempJournal::new();
+    let temp = journal.0.join("process-temp");
+    fs::create_dir_all(&temp).expect("process temp root");
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let planted = |root: &Path, name: &str, modified: SystemTime| {
+        let path = root.join(name);
+        fs::create_dir_all(&path).expect("plant scratch");
+        fs::write(path.join("audio.f32le"), [0_u8; 8]).expect("plant audio");
+        fs::File::open(&path)
+            .expect("open scratch")
+            .set_times(fs::FileTimes::new().set_modified(modified))
+            .expect("age scratch");
+        path
+    };
+    let killed = UNIX_EPOCH + Duration::from_secs(86_400);
+    let leftovers = [
+        // The speakers root is fixed, not the process temp root.
+        planted(
+            Path::new("/var/tmp"),
+            &format!(
+                "solstone-speakers-analyze-boot-reap-{}-{stamp}",
+                std::process::id()
+            ),
+            killed,
+        ),
+        planted(&temp, "solstone-transcribe-vad-killed", killed),
+        planted(&temp, "solstone-ced-analyze-killed", killed),
+        planted(
+            &journal.0.join("imports/archive-merge-work"),
+            "extract-killed",
+            killed,
+        ),
+    ];
+    let in_flight = planted(&temp, "solstone-transcribe-vad-live", SystemTime::now());
+
+    let mut command = supervisor_command(&journal, None, None);
+    command.env("TMPDIR", &temp);
+    let mut child = SupervisorGuard::new(command.spawn().expect("supervisor starts"));
+    let ready = journal.0.join("health/supervisor.ready");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while leftovers.iter().any(|path| path.exists()) && Instant::now() < deadline {
+        if let Some(status) = child.try_wait().expect("supervisor status") {
+            panic!("supervisor exited before reaping: {status}");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let remaining: Vec<_> = leftovers.iter().filter(|path| path.exists()).collect();
+    for path in &remaining {
+        let _ = fs::remove_dir_all(path);
+    }
+    assert!(ready.exists(), "supervisor did not reach readiness");
+    assert!(
+        remaining.is_empty(),
+        "leftovers survived boot: {remaining:?}"
+    );
+    assert!(
+        in_flight.exists(),
+        "in-flight scratch must survive the sweep"
+    );
+}
+
+#[test]
 fn ac7_second_instance_refused_first_survives() {
     let journal = TempJournal::new();
     let mut first = start(&journal);
@@ -1278,7 +1359,7 @@ fn supervisor_installation_recovery_preserves_real_provider_causes() {
     assert_eq!(
         checksum_mismatch.stderr,
         b"this installation couldn't be verified.\n\
-run `journal setup` to check it. if setup finishes successfully, try again.\n\
+run `solstone journal setup` to check it. if setup finishes successfully, try again.\n\
 details: saved binding: identity record checksum mismatch\n"
     );
 

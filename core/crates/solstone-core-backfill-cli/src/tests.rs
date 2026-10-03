@@ -349,7 +349,7 @@ fn fixture_help() -> String {
         .split_once("\n=== misuse exit codes")
         .expect("fixture help block ends before misuse block")
         .0
-        .to_owned()
+        .replacen("usage: journal", "usage: solstone journal", 1)
 }
 
 #[test]
@@ -372,9 +372,9 @@ fn help_and_argument_refusals_are_fixture_faithful() {
     assert_eq!(
         stderr,
         concat!(
-            "usage: journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
+            "usage: solstone journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
             "                                           --dry-run] [-v] [-d]\n",
-            "journal backfill-processing-records: error: unrecognized arguments: --nonsense\n",
+            "solstone journal backfill-processing-records: error: unrecognized arguments: --nonsense\n",
         )
     );
 
@@ -384,9 +384,9 @@ fn help_and_argument_refusals_are_fixture_faithful() {
     assert_eq!(
         stderr,
         concat!(
-            "usage: journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
+            "usage: solstone journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
             "                                           --dry-run] [-v] [-d]\n",
-            "journal backfill-processing-records: error: argument --dry-run: not allowed with argument --commit\n",
+            "solstone journal backfill-processing-records: error: argument --dry-run: not allowed with argument --commit\n",
         )
     );
 

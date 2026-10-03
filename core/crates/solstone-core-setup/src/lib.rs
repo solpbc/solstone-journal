@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Foundational types for the native `journal setup` port.
+//! Foundational types for the native `solstone journal setup` port.
 
 use std::env;
 use std::ffi::OsString;
@@ -240,7 +240,7 @@ fn identity_error_code(error: &IdentityError) -> events::ErrorCode {
 
 /// The setup artifacts an owner must clear to recover from a refused admission.
 ///
-/// ⚠ Every path here is created by `journal setup` and rebuilt by it. 🔒 None of
+/// ⚠ Every path here is created by `solstone journal setup` and rebuilt by it. 🔒 None of
 /// them holds the owner's journal, and saying so in the copy is load-bearing: an
 /// owner who is not certain of that will not run the commands, and this refusal
 /// is otherwise a dead end.
@@ -354,7 +354,7 @@ fn report_identity_failure<W: Write>(
     // owner-visible line first, the internal reason under `details:`.
     //
     // ⚠ It deliberately DIVERGES from that lock's prescribed second line ("run
-    // `journal setup` to check it. if setup finishes successfully, try again"),
+    // `solstone journal setup` to check it. if setup finishes successfully, try again"),
     // because for this particular refusal that instruction is a loop -- the
     // admission is deterministic, so re-running setup fails identically. ⛔ And
     // `--clean-uninstall` is not the way out either: `admit_clean_uninstall` runs
@@ -377,7 +377,7 @@ fn report_identity_failure<W: Write>(
         "\n    systemctl --user disable --now solstone.service"
     };
     let mut message = format!(
-        "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, stop the service, remove this installation's setup artifacts, and run `journal setup` again:{stop_service}{steps}\n\nyour journal itself is untouched. none of these holds your memories."
+        "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, stop the service, remove this installation's setup artifacts, and run `solstone journal setup` again:{stop_service}{steps}\n\nyour journal itself is untouched. none of these holds your memories."
     );
     if foreign {
         message = format!(
@@ -397,7 +397,7 @@ fn report_identity_failure<W: Write>(
             })
             .collect::<String>();
         message = format!(
-            "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, first run `journal service uninstall`. if it fails, stop here and include these details in a support request. if it succeeds, run these commands in PowerShell, then run `journal setup` again:{commands}\n\nyour journal itself is untouched. none of these holds your memories."
+            "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, first run `solstone journal service uninstall`. if it fails, stop here and include these details in a support request. if it succeeds, run these commands in PowerShell, then run `solstone journal setup` again:{commands}\n\nyour journal itself is untouched. none of these holds your memories."
         );
     }
     if let Some(location_error) = recovery_error {
@@ -754,7 +754,10 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         && !args.skip_wrapper
         && let Err(error) = wrapper::validate_wrapper_pair(&resolved.journal_path, &executable_dir)
     {
-        let _ = writeln!(stderr, "journal setup: refused before mutation: {error}");
+        let _ = writeln!(
+            stderr,
+            "solstone journal setup: refused before mutation: {error}"
+        );
         return ExitCode::from(1);
     }
     let mut effective_resolved = resolved.clone();
@@ -797,7 +800,10 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         if !args.skip_wrapper
             && let Err(error) = wrapper::validate_wrapper_pair(&effective_journal, &executable_dir)
         {
-            let _ = writeln!(stderr, "journal setup: refused before mutation: {error}");
+            let _ = writeln!(
+                stderr,
+                "solstone journal setup: refused before mutation: {error}"
+            );
             return ExitCode::from(1);
         }
         (
@@ -878,7 +884,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
     {
         let _ = writeln!(
             stderr,
-            "journal setup: warning: package receipt was not written: {error}"
+            "solstone journal setup: warning: package receipt was not written: {error}"
         );
     }
     if let Some(dead_end) = outcome.dead_end {
@@ -953,7 +959,7 @@ pub fn run_owner_args(
         Ok(args) => run_owner_setup(args, home_dir, executable_dir, seams),
         Err(error) => {
             eprint!("{}", args::USAGE);
-            eprintln!("journal setup: error: {}", error.0);
+            eprintln!("solstone journal setup: error: {}", error.0);
             ExitCode::from(2)
         }
     }
@@ -1531,7 +1537,7 @@ mod tests {
             assert!(text.contains(&command), "missing command {command}: {text}");
         }
         assert!(
-            text.contains("run `journal setup` again"),
+            text.contains("run `solstone journal setup` again"),
             "the remedy must say what to run afterwards; got:\n{text}"
         );
         // An owner who is not sure their journal is safe will not run the commands.
@@ -1546,7 +1552,7 @@ mod tests {
             assert!(!text.contains("\n    rm "));
             assert!(!text.contains("launchctl"));
             assert!(text.contains("if it fails, stop here"));
-            ("journal service uninstall", "systemctl")
+            ("solstone journal service uninstall", "systemctl")
         } else if cfg!(target_os = "macos") {
             ("launchctl bootout", "systemctl")
         } else {

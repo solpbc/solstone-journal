@@ -114,7 +114,7 @@ fn status_is_read_only_and_usage_is_backup_owned() {
     assert!(invalid.stdout.is_empty());
     assert_eq!(
         String::from_utf8(invalid.stderr).unwrap(),
-        "usage: journal backup <command> [options]\njournal backup: error: unrecognized arguments: --nonsense\n"
+        "usage: solstone journal backup <command> [options]\nsolstone journal backup: error: unrecognized arguments: --nonsense\n"
     );
 }
 

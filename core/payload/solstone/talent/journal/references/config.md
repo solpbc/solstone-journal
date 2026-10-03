@@ -132,7 +132,7 @@ For complete documentation of the prompt template system including all variable 
 
 ## Transcribe configuration
 
-The `transcribe` block configures audio transcription settings for `journal transcribe`:
+The `transcribe` block configures audio transcription settings for `solstone journal transcribe`:
 
 ```json
 {
@@ -167,7 +167,7 @@ CLI flags can override settings: `--backend` selects the backend.
 
 ## Describe configuration
 
-The `describe` block configures screen analysis settings for `journal describe`:
+The `describe` block configures screen analysis settings for `solstone journal describe`:
 
 ```json
 {
@@ -240,7 +240,7 @@ Brain choice is managed in the Thinking app. Your journal stores that choice in
 There is no implicit key-based selection or fallback. A missing or invalid
 active profile is the no-brain state.
 
-`chatgpt` uses no env key; sign in with `journal thinking chatgpt sign-in`.
+`chatgpt` uses no env key; sign in with `solstone journal thinking chatgpt sign-in`.
 
 **`env`** stores managed cloud API keys:
 - `GOOGLE_API_KEY`

@@ -379,6 +379,10 @@ fn ac13_ac16_defaults_are_idempotent_and_preserve_disabled_raw_entries() {
     let raw: Value =
         serde_json::from_slice(&fs::read(bed.config()).expect("config")).expect("json");
     assert_eq!(raw["brain"]["enabled"], false);
+    assert_eq!(
+        raw["heartbeat"]["cmd"],
+        json!(["solstone", "journal", "heartbeat"])
+    );
     let status = engine.collect_status(now(2026, 3, 22, 10, 0));
     assert!(status.iter().all(|item| item.name != "brain"));
     assert!(status.iter().any(|item| item.name == "heartbeat"));

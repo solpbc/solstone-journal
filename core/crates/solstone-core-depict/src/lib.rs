@@ -48,7 +48,7 @@ use solstone_core_processing_record::{
 
 pub const ERROR_SCHEMA: &str = "solstone-depict-error-v1";
 pub const DESCRIPTION_PROMPT: &str = "Describe this image in detail. Include any visible text, people, objects, setting, and notable context. Return a concise natural-language description.";
-pub const USAGE: &str = "usage: journal depict [-h] [--redo] [-v] [-d] FILE\n";
+pub const USAGE: &str = "usage: solstone journal depict [-h] [--redo] [-v] [-d] FILE\n";
 const MAX_VLM_DIM: u32 = 1920;
 const ENGINE_NAME: &str = "rf-detr.cpp";
 const MODEL_NAME: &str = "rfdetr-nano-f16";
@@ -58,7 +58,7 @@ const RFDETR_TIMEOUT: Duration = Duration::from_secs(120);
 #[cfg(not(windows))]
 const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(20);
 #[cfg(not(windows))]
-const RFDETR_UNAVAILABLE_DETAIL: &str = "Object detection is unavailable. Run `journal install-models` to check or repair the RF-DETR assets.";
+const RFDETR_UNAVAILABLE_DETAIL: &str = "Object detection is unavailable. Run `solstone journal install-models` to check or repair the RF-DETR assets.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
