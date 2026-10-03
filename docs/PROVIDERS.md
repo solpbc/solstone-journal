@@ -235,6 +235,19 @@ transcription writes when it cannot verify the service and removes once it can.
 Confidential SPP egress goes only over an RA-TLS channel
 that passed attestation for that call (`confidential_generate` in
 `core/crates/solstone-core-generate-wire/src/confidential.rs`).
+The engine name can carry more than one engine. Establishing a channel walks
+every address the name resolves to, at most eight, in random order, with a
+10-second connect budget per address when there is more than one. It keeps
+the first address whose channel passes the full appraisal. Each address is
+appraised on its own, so failover never relaxes a check, and identity is the
+attestation rather than the address. The whole walk shares one socket-timeout
+budget, and it stops on a failure on this device (nvattest or nonce). When
+every address fails, an appraisal refusal is reported over a transport or
+protocol failure, and either over `gateway_unreachable`. The qualification
+probe refuses a host that resolves to more than one address
+(`qualification_target_ambiguous`), so it always appraises one named machine
+(`establish_attested_channel_with_clock` in
+`core/crates/solstone-core-spp-ratls/src/ratls/channel.rs`).
 The process-local result is kept in `AttestationStateStore`
 (`core/crates/solstone-core-spp-ratls/src/state.rs`).
 The NVIDIA reference manifests used for GPU appraisal are
