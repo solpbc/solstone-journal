@@ -805,7 +805,7 @@ talent_rung() {
 	export HOME="$home"
 	export SOLSTONE_JOURNAL="$JOURNAL"
 	# Exercise the exact Cortex child boundary without starting Cortex itself.
-	# The supervisor owns the generation lease, while `journal think` dispatches
+	# The supervisor owns the generation lease, while `solstone journal think` dispatches
 	# through that supervisor; starting one and then invoking the other directly
 	# would test lease contention rather than the extracted talent. Cortex uses
 	# this same native worker plus the same line-delimited request shape.
