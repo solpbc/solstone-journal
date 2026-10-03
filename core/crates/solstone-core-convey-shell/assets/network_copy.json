@@ -156,5 +156,6 @@
   "MODE_BYO_DESC_CLOSED": "your devices reach your journal over your own network, same wifi or your own VPN, once you open it to them.",
   "PRIVATE_LINK_DISABLE_CONFIRM_CLOSED": "turn off your private network? your journal is closed to devices on your network, so your other devices can't reach it until you open it to your network or turn the private network back on.",
   "PRIVATE_LINK_DISABLE_SUCCESS_CLOSED": "your private network is off. your journal is closed to devices on your network, so your other devices can't reach it.",
-  "LOCAL_NETWORK_AGENTS_NOTE": "your journal stays open to devices on your network while agents on your network is on. it closes to them when you turn that off in agents."
+  "LOCAL_NETWORK_AGENTS_NOTE": "your journal stays open to devices on your network while \"agents on your network\" is on.",
+  "LOCAL_NETWORK_AGENTS_CLOSES_NOTE": "it closes to them when you turn that off in agents."
 }

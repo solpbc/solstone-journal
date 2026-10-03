@@ -272,7 +272,7 @@ async fn set_and_rebind(door: &DoorLifecycle, open: bool) -> Response {
     if !open && want {
         body["reason_code"] = Value::String("agents_on_network".to_owned());
         body["detail"] = Value::String(
-            "your journal stays open to devices on your network while agents on your network is on. it closes to them when you turn that off in agents."
+            "your journal stays open to devices on your network while \"agents on your network\" is on. it closes to them when you turn that off in agents."
                 .to_owned(),
         );
         return (StatusCode::CONFLICT, Json(body)).into_response();
