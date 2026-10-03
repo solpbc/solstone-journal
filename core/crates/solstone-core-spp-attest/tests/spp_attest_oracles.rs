@@ -218,6 +218,12 @@ fn gpu_reason_name(reason: solstone_core_spp_attest::error::GpuAppraisalReason) 
         solstone_core_spp_attest::error::GpuAppraisalReason::GpuAppraisalFailed => {
             "gpu_appraisal_failed"
         }
+        solstone_core_spp_attest::error::GpuAppraisalReason::StatusProfileMissing => {
+            "gpu_status_profile_missing"
+        }
+        solstone_core_spp_attest::error::GpuAppraisalReason::StatusProofsMissing => {
+            "gpu_status_proofs_missing"
+        }
     }
 }
 
@@ -323,7 +329,12 @@ fn native_verdict(kind: &str, root: &Path) -> Value {
                     .expect("positive stdout is an object")
                     .insert("result_code".to_owned(), json!(999));
             }
-            match classify_nvattest_result(0, &stdout, &nonce(root)) {
+            match classify_nvattest_result(
+                0,
+                &stdout,
+                &nonce(root),
+                solstone_core_spp_attest::nvgpu::StatusExpectation::OnlineNonce,
+            ) {
                 NvattestVerdict::Rejected(rejection) => {
                     rejected(kind, Some(gpu_reason_name(rejection.reason)))
                 }
@@ -334,7 +345,12 @@ fn native_verdict(kind: &str, root: &Path) -> Value {
                         Ok(envelope) => envelope,
                         Err(_) => return rejected(kind, None),
                     };
-                    match build_gpu_appraisal(&acceptance.claim, &envelope, Vec::new()) {
+                    match build_gpu_appraisal(
+                        &acceptance.claim,
+                        &envelope,
+                        Vec::new(),
+                        acceptance.status,
+                    ) {
                         Ok(appraisal) => accepted(
                             kind,
                             Map::from_iter([

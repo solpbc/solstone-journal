@@ -1,0 +1,118 @@
+{
+  "url": "https://ocsp.ndis.nvidia.com",
+  "evidence": "gpu-evidence.json",
+  "rims": [
+    "NV_GPU_DRIVER_GH100_595.71.05.xml",
+    "NV_GPU_VBIOS_1010_0210_886_9600880011.xml",
+    "NV_GPU_VBIOS_1010_0210_886_96009F0004.xml"
+  ],
+  "responses": [
+    {
+      "file": "00-41b71ce2a8f35e5f66.der",
+      "subject": "CN=GH100 A01 GSP BROM,O=NVIDIA Corporation,C=US,2.5.4.5=41B71CE2A8F35E5F66",
+      "issuer": "C=US,O=NVIDIA Corporation,CN=NVIDIA GH100 Provisioner ICA 1",
+      "serial": "41b71ce2a8f35e5f66",
+      "queried_at": "2026-10-03T02:04:07.897000+00:00",
+      "bytes": 940,
+      "sha256": "9470be47201f7514e2053addd4f7f32c0963570312790dca4f627bb3f828719e",
+      "status": "GOOD",
+      "this_update_unix": 1790993048,
+      "next_update_unix": 1791079448,
+      "produced_at_unix": 1790993048
+    },
+    {
+      "file": "01-6afe7184f92232c8df7b242261776e56.der",
+      "subject": "C=US,O=NVIDIA Corporation,CN=NVIDIA GH100 Provisioner ICA 1",
+      "issuer": "O=NVIDIA Corporation,CN=NVIDIA GH100 Identity",
+      "serial": "6afe7184f92232c8df7b242261776e56",
+      "queried_at": "2026-10-03T02:04:08.056763+00:00",
+      "bytes": 921,
+      "sha256": "4622970dc3a6755329570d0ff082128483335c0a9faa52230948c7e1b920e7fd",
+      "status": "GOOD",
+      "this_update_unix": 1790993048,
+      "next_update_unix": 1791079448,
+      "produced_at_unix": 1790993048
+    },
+    {
+      "file": "02-4c255ede3bd001bf3f4a3b605fca898a.der",
+      "subject": "O=NVIDIA Corporation,CN=NVIDIA GH100 Identity",
+      "issuer": "O=NVIDIA,CN=NVIDIA Device Identity CA",
+      "serial": "4c255ede3bd001bf3f4a3b605fca898a",
+      "queried_at": "2026-10-03T02:04:08.195965+00:00",
+      "bytes": 891,
+      "sha256": "9e561cb447a821b36e30be42c26c341dfe1ebf4735e70ff7dd88a515cec7e35e",
+      "status": "GOOD",
+      "this_update_unix": 1790993048,
+      "next_update_unix": 1791079448,
+      "produced_at_unix": 1790993048
+    },
+    {
+      "file": "03-30d65be43198b27486d227b7691fd9f8d12b239a.der",
+      "subject": "CN=HCC RIM L4 Signer,O=NVIDIA Corporation,L=Santa Clara,ST=CA,C=US",
+      "issuer": "CN=NVIDIA Reference Value L3 GH100 003,O=NVIDIA,C=US",
+      "serial": "30d65be43198b27486d227b7691fd9f8d12b239a",
+      "queried_at": "2026-10-03T02:04:08.336104+00:00",
+      "bytes": 948,
+      "sha256": "57528069da95d31e20de76eeb38ff1c3f627568a19eb8bd7a834abd15279e397",
+      "status": "GOOD",
+      "this_update_unix": 1790993048,
+      "next_update_unix": 1791079448,
+      "produced_at_unix": 1790993048
+    },
+    {
+      "file": "04-1f32c4f65e83d738df1c49ecabf26ef76a698597.der",
+      "subject": "CN=NVIDIA Reference Value L3 GH100 003,O=NVIDIA,C=US",
+      "issuer": "C=US,O=NVIDIA Corporation,CN=NVIDIA Reference Value GH100 CA",
+      "serial": "1f32c4f65e83d738df1c49ecabf26ef76a698597",
+      "queried_at": "2026-10-03T02:04:08.604215+00:00",
+      "bytes": 968,
+      "sha256": "6e4808446d6ce5db007b1271e960f0b1748cd07c9d4fedbb140b27bdd1ad623a",
+      "status": "GOOD",
+      "this_update_unix": 1790993048,
+      "next_update_unix": 1791079448,
+      "produced_at_unix": 1790993048
+    },
+    {
+      "file": "05-c6dbf0754093fdeb4333f34ba205b4dc.der",
+      "subject": "C=US,O=NVIDIA Corporation,CN=NVIDIA Reference Value GH100 CA",
+      "issuer": "CN=NVIDIA CoRIM signing Root CA,O=NVIDIA,C=US",
+      "serial": "c6dbf0754093fdeb4333f34ba205b4dc",
+      "queried_at": "2026-10-03T02:04:08.738878+00:00",
+      "bytes": 939,
+      "sha256": "0fafdb542985f0a7cc144ac64a05e12492a17fffd309dc19099c774511ed97ec",
+      "status": "GOOD",
+      "this_update_unix": 1790993048,
+      "next_update_unix": 1791079448,
+      "produced_at_unix": 1790993048
+    },
+    {
+      "file": "06-7fc7f4a16c9211803cea09a595f82072596c71d0.der",
+      "subject": "CN=HCC RIM L4 Signer,O=NVIDIA Corporation,L=Santa Clara,ST=CA,C=US",
+      "issuer": "CN=NVIDIA Reference Value L3 GH100 003,O=NVIDIA,C=US",
+      "serial": "7fc7f4a16c9211803cea09a595f82072596c71d0",
+      "queried_at": "2026-10-03T02:04:08.931622+00:00",
+      "bytes": 947,
+      "sha256": "25e6a957560a6d00e585884eded8ff22897662aad5eb7b6e7f52e25063e65201",
+      "status": "GOOD",
+      "this_update_unix": 1790993049,
+      "next_update_unix": 1791079449,
+      "produced_at_unix": 1790993049
+    },
+    {
+      "file": "07-4a72a9da93df17ae82f921a3dc64949fb446e28a.der",
+      "subject": "CN=HCC RIM L4 Signer,O=NVIDIA Corporation,L=Santa Clara,ST=CA,C=US",
+      "issuer": "CN=NVIDIA Reference Value L3 GH100 003,O=NVIDIA,C=US",
+      "serial": "4a72a9da93df17ae82f921a3dc64949fb446e28a",
+      "queried_at": "2026-10-03T02:04:09.072208+00:00",
+      "bytes": 946,
+      "sha256": "baaf63585cac6fc0b9725b85f1a80e710d4f8782fa41cae3296737403e68e3e2",
+      "status": "GOOD",
+      "this_update_unix": 1790993049,
+      "next_update_unix": 1791079449,
+      "produced_at_unix": 1790993049
+    }
+  ],
+  "bundle_bytes": 7543,
+  "bundle_sha256": "c57ba2e838959d9f6dff60df043067278ff452c748fc5e73b3801e7da6cdeca3",
+  "required_certids": 8
+}

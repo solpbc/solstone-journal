@@ -8,11 +8,15 @@ pub mod binary;
 pub mod claims;
 mod rims;
 
-pub use appraise::{GpuAppraiser, NVATTEST_TIMEOUT, NvattestGpuAppraiser, appraise_gpu_leg};
+pub use appraise::{
+    GpuAppraiser, GpuStatusInput, NVATTEST_TIMEOUT, NvattestGpuAppraiser, appraise_gpu_leg,
+};
 pub use binary::{
-    NvattestCommand, NvattestInstallation, build_nvattest_attest_command, locate_nvattest,
+    NvattestCommand, NvattestInstallation, build_nvattest_attest_command,
+    build_nvattest_offline_attest_command, locate_nvattest,
 };
 pub use claims::{
-    GpuAppraisal, NvattestAcceptance, NvattestRejection, NvattestVerdict, build_gpu_appraisal,
-    classify_nvattest_result, parse_nvattest_stdout,
+    GpuAppraisal, GpuStatusAuthorization, NvattestAcceptance, NvattestRejection, NvattestVerdict,
+    StatusExpectation, build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout,
 };
+pub use rims::{GpuProfile, GpuProfiles, ManifestSet, StatusMode};

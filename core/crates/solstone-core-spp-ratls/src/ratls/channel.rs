@@ -12,7 +12,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{WebPkiSupportedAlgorithms, verify_tls13_signature_with_raw_key};
@@ -20,7 +20,7 @@ use rustls::pki_types::{CertificateDer, ServerName, SubjectPublicKeyInfoDer, Uni
 use rustls::{
     ClientConfig, ClientConnection, DigitallySignedStruct, Error as RustlsError, SignatureScheme,
 };
-use solstone_core_spp_attest::{Policy, QuoteVerifier};
+use solstone_core_spp_attest::{Policy, QuoteVerifier, nvgpu::GpuStatusAuthorization};
 use x509_parser::prelude::{FromDer, X509Certificate};
 
 use crate::{
@@ -43,6 +43,101 @@ use crate::{
 };
 
 type PeerCertificate = Arc<Mutex<Option<Vec<u8>>>>;
+
+/// How long after admission an offline-status channel may start new requests.
+/// The Generate pool's reuse age must never exceed it.
+pub const OFFLINE_STATUS_REQUEST_WINDOW: Duration = Duration::from_secs(120);
+/// Headroom kept between the last allowed request start and the deadline.
+pub const OFFLINE_STATUS_ADMISSION_MARGIN: Duration = Duration::from_secs(10);
+/// Remaining signed-status lifetime required when a channel is admitted.
+pub const OFFLINE_STATUS_MIN_REMAINING: Duration = Duration::from_secs(
+    OFFLINE_STATUS_REQUEST_WINDOW.as_secs() + OFFLINE_STATUS_ADMISSION_MARGIN.as_secs(),
+);
+
+/// This device's clocks, read at admission. Injectable for tests.
+pub trait AdmissionClock {
+    fn now_system(&self) -> SystemTime;
+    fn now_monotonic(&self) -> Instant;
+}
+
+/// The system clocks.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SystemAdmissionClock;
+
+impl AdmissionClock for SystemAdmissionClock {
+    fn now_system(&self) -> SystemTime {
+        SystemTime::now()
+    }
+    fn now_monotonic(&self) -> Instant {
+        Instant::now()
+    }
+}
+
+/// What a channel's GPU status authorizes after admission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelStatus {
+    /// Statuses were fetched with a fresh request nonce; the existing channel
+    /// and request limits apply.
+    OnlineNonce,
+    /// New requests may start only inside the admission window, which ends at
+    /// least the margin before this signed-status deadline.
+    OfflineUntil(SystemTime),
+}
+
+/// The instant a channel was admitted, on both clocks, and its status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelAdmission {
+    pub at_system: SystemTime,
+    pub at_monotonic: Instant,
+    pub status: ChannelStatus,
+}
+
+impl ChannelAdmission {
+    /// Admits a verified channel at this instant, or refuses an offline status
+    /// that will not outlast the request window plus the margin.
+    pub fn admit(
+        gpu_status: GpuStatusAuthorization,
+        at_system: SystemTime,
+        at_monotonic: Instant,
+    ) -> Result<Self, RatlsChannelError> {
+        let status = match gpu_status {
+            GpuStatusAuthorization::OnlineNonce => ChannelStatus::OnlineNonce,
+            GpuStatusAuthorization::OfflineSignedAge { deadline, .. } => {
+                match deadline.duration_since(at_system) {
+                    Ok(remaining) if remaining >= OFFLINE_STATUS_MIN_REMAINING => {
+                        ChannelStatus::OfflineUntil(deadline)
+                    }
+                    _ => {
+                        return Err(RatlsChannelError {
+                            reason_code: "status_deadline_insufficient",
+                        });
+                    }
+                }
+            }
+        };
+        Ok(Self {
+            at_system,
+            at_monotonic,
+            status,
+        })
+    }
+
+    /// Whether a new request may start now. Work already started is not
+    /// re-checked; it finishes under the existing request and channel limits.
+    pub fn permits_new_request(&self, now_system: SystemTime, now_monotonic: Instant) -> bool {
+        match self.status {
+            ChannelStatus::OnlineNonce => true,
+            ChannelStatus::OfflineUntil(deadline) => {
+                let wall = now_system
+                    .duration_since(self.at_system)
+                    .is_ok_and(|age| age <= OFFLINE_STATUS_REQUEST_WINDOW);
+                let monotonic = now_monotonic.saturating_duration_since(self.at_monotonic)
+                    <= OFFLINE_STATUS_REQUEST_WINDOW;
+                wall && monotonic && now_system < deadline
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trailing {
@@ -260,6 +355,9 @@ pub struct AttestedChannel {
     pub tracker: RecordFramingTracker,
     pub verified: VerifiedCertificateEvidence,
     pub epoch: u64,
+    /// Set once, when the exporter proof verified. Returning a channel to a
+    /// pool never renews it.
+    pub admission: ChannelAdmission,
     /// The peer closed the TCP stream, with or without close_notify.
     saw_eof: bool,
     /// The TLS layer rejected a record; nothing more is read or sent.
@@ -267,6 +365,16 @@ pub struct AttestedChannel {
 }
 
 impl AttestedChannel {
+    /// Whether this channel's status still authorizes starting a new request.
+    pub fn status_permits_new_request(
+        &self,
+        now_system: SystemTime,
+        now_monotonic: Instant,
+    ) -> bool {
+        self.admission
+            .permits_new_request(now_system, now_monotonic)
+    }
+
     pub fn clean_to_reuse(&mut self) -> bool {
         let state = match self.conn.process_new_packets() {
             Ok(state) => state,
@@ -436,6 +544,36 @@ pub fn establish_attested_channel(
     socket_timeout: Duration,
     epoch: u64,
 ) -> Result<AttestedChannel, RatlsChannelError> {
+    establish_attested_channel_with_clock(
+        endpoint,
+        owner_nonce,
+        nvattest_dir,
+        now,
+        roots_dir,
+        policy,
+        quote_verifier,
+        composite_verifier,
+        socket_timeout,
+        epoch,
+        &SystemAdmissionClock,
+    )
+}
+
+/// [`establish_attested_channel`] with an injected admission clock.
+#[allow(clippy::too_many_arguments)]
+pub fn establish_attested_channel_with_clock(
+    endpoint: &RatlsEndpoint,
+    owner_nonce: &[u8],
+    nvattest_dir: &Path,
+    now: SystemTime,
+    roots_dir: Option<&Path>,
+    policy: Option<&Policy>,
+    quote_verifier: Option<&dyn QuoteVerifier>,
+    composite_verifier: &dyn CompositeVerifier,
+    socket_timeout: Duration,
+    epoch: u64,
+    clock: &dyn AdmissionClock,
+) -> Result<AttestedChannel, RatlsChannelError> {
     let address = (endpoint.host.as_str(), endpoint.port)
         .to_socket_addrs()
         .map_err(|_| RatlsChannelError {
@@ -537,12 +675,19 @@ pub fn establish_attested_channel(
             reason_code: "gateway_unreachable",
         })?;
 
+    // Provisional until the exporter proof verifies; replaced below.
+    let provisional = ChannelAdmission {
+        at_system: now,
+        at_monotonic: clock.now_monotonic(),
+        status: ChannelStatus::OfflineUntil(SystemTime::UNIX_EPOCH),
+    };
     let mut channel = AttestedChannel {
         conn: connection,
         sock: socket,
         tracker,
         verified,
         epoch,
+        admission: provisional,
         saw_eof: false,
         tls_failed: false,
     };
@@ -566,6 +711,13 @@ pub fn establish_attested_channel(
     .map_err(|error| RatlsChannelError {
         reason_code: error.reason_code,
     })?;
+    // Admission: reread this device's clock now that the exporter proof has
+    // verified, so time spent in the exchange counts against the status.
+    channel.admission = ChannelAdmission::admit(
+        channel.verified.verdict.gpu.status,
+        clock.now_system(),
+        clock.now_monotonic(),
+    )?;
     channel
         .sock
         .set_read_timeout(None)
@@ -820,6 +972,73 @@ mod tests {
                 Ok(Trailing::None)
             }
         }
+    }
+
+    fn offline(deadline: SystemTime) -> GpuStatusAuthorization {
+        GpuStatusAuthorization::OfflineSignedAge {
+            verified_at: SystemTime::UNIX_EPOCH,
+            deadline,
+        }
+    }
+
+    #[test]
+    fn admission_needs_the_request_window_plus_margin_of_signed_status() {
+        assert_eq!(OFFLINE_STATUS_MIN_REMAINING, Duration::from_secs(130));
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_790_996_648);
+        let mono = Instant::now();
+        let exact = ChannelAdmission::admit(offline(at + Duration::from_secs(130)), at, mono)
+            .expect("130 s remaining admits");
+        assert_eq!(
+            exact.status,
+            ChannelStatus::OfflineUntil(at + Duration::from_secs(130))
+        );
+        assert_eq!(exact.at_system, at);
+        for short in [129, 0] {
+            assert_eq!(
+                ChannelAdmission::admit(offline(at + Duration::from_secs(short)), at, mono),
+                Err(RatlsChannelError {
+                    reason_code: "status_deadline_insufficient"
+                }),
+                "{short}"
+            );
+        }
+        assert!(ChannelAdmission::admit(offline(at - Duration::from_secs(1)), at, mono).is_err());
+        // The online status needs no signed-age headroom.
+        assert_eq!(
+            ChannelAdmission::admit(GpuStatusAuthorization::OnlineNonce, at, mono)
+                .expect("online")
+                .status,
+            ChannelStatus::OnlineNonce
+        );
+    }
+
+    #[test]
+    fn new_requests_start_only_inside_the_admission_window_on_both_clocks() {
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_790_996_648);
+        let mono = Instant::now();
+        let admission =
+            ChannelAdmission::admit(offline(at + Duration::from_secs(130)), at, mono).unwrap();
+        let window = OFFLINE_STATUS_REQUEST_WINDOW;
+        assert!(admission.permits_new_request(at, mono));
+        assert!(admission.permits_new_request(at + window, mono + window));
+        let past = window + Duration::from_secs(1);
+        assert!(!admission.permits_new_request(at + past, mono + window));
+        assert!(!admission.permits_new_request(at + window, mono + past));
+        // A wall clock set backwards is not a fresh window.
+        assert!(!admission.permits_new_request(at - Duration::from_secs(1), mono));
+        // The deadline itself still bounds a window that a later deadline
+        // would otherwise allow.
+        let tight = ChannelAdmission {
+            at_system: at,
+            at_monotonic: mono,
+            status: ChannelStatus::OfflineUntil(at + Duration::from_secs(5)),
+        };
+        assert!(tight.permits_new_request(at + Duration::from_secs(4), mono));
+        assert!(!tight.permits_new_request(at + Duration::from_secs(5), mono));
+        // Online channels keep their existing limits only.
+        let online =
+            ChannelAdmission::admit(GpuStatusAuthorization::OnlineNonce, at, mono).unwrap();
+        assert!(online.permits_new_request(at + 10 * window, mono + 10 * window));
     }
 
     #[test]

@@ -19,6 +19,15 @@ use solstone_core_spp_ratls::AttestedChannel;
 /// hard deadline by at most this age.
 pub const CONFIDENTIAL_CHANNEL_REUSE_MAX_AGE: Duration = Duration::from_secs(120);
 
+// An offline-status channel is admitted with at least the request window plus
+// a margin of signed status left, and its age is counted from that admission.
+// Reusing it longer than the window would start requests the status no longer
+// covers, so raising the reuse age must raise the admission headroom with it.
+const _: () = assert!(
+    CONFIDENTIAL_CHANNEL_REUSE_MAX_AGE.as_secs()
+        <= solstone_core_spp_ratls::OFFLINE_STATUS_REQUEST_WINDOW.as_secs()
+);
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct RedactedCredential(pub String);
 

@@ -29,6 +29,53 @@
     "owner_nonce_bytes": 32
   },
   "protocol_version": 1,
+  "status_proofs": {
+    "asn1": "SEQUENCE { version INTEGER (1), responses SEQUENCE OF OCTET STRING }",
+    "critical": false,
+    "encoding": "DER",
+    "limits": {
+      "max_certificate_bytes": 49152,
+      "max_extension_value_bytes": 16384,
+      "max_response_bytes": 2048,
+      "max_responses": 16
+    },
+    "measured": {
+      "date": "2026-10-03",
+      "fixture_certificate_bytes_with_h100_inventory": 29503,
+      "fixture_certificate_bytes_without_proofs": 21929,
+      "fixture_composite_extension_value_bytes": 21604,
+      "h100_inventory_bundle_bytes": 7543,
+      "h100_inventory_responses": 8,
+      "nvidia_response_bytes": [
+        891,
+        968
+      ],
+      "tls_client_max_handshake_message_bytes": 65535
+    },
+    "media_type": "application/vnd.sol.spp-status-proofs-v1+der",
+    "oid": "2.25.2270882455.2325790823.606324700.3809542406",
+    "response": "Each OCTET STRING is one complete, unchanged NVIDIA OCSPResponse DER, as the responder returned it for one nonce-free SHA-1 CertID request.",
+    "rules": [
+      "At most one instance of this extension, and it is not critical.",
+      "Definite, minimal DER lengths only; no trailing bytes after the SEQUENCE.",
+      "version is exactly 1; responses holds 1 to max_responses non-empty OCTET STRINGs of at most max_response_bytes each.",
+      "No timestamps, cache flags, URLs, certificate-order labels or policy outside the signed responses: CertIDs and signed times come only from the responses.",
+      "The inventory may carry responses this device does not need; each certificate it does check must be covered by exactly one SingleResponse."
+    ],
+    "selection": "The relying journal's verified CPU fingerprint alone selects online or offline status for an image. This extension's presence, a server flag, a hostname or a failure never selects or downgrades it.",
+    "vectors": "core/fixtures/ratls-status-proofs-v1-vectors.json",
+    "verification": {
+      "admission_min_remaining_seconds": 130,
+      "deadline": "min(nextUpdate, thisUpdate + 86400)",
+      "expiry_grace_seconds": 0,
+      "future_tolerance_seconds": 60,
+      "max_signed_age_seconds": 86400,
+      "responder_authorization": "OCSP_basic_verify with flags 0: the CertID issuer, or a responder it issued directly with id-kp-OCSPSigning; plain trust anchors",
+      "status": "good",
+      "verifier": "the pinned nvattest helper, offline, on the relying device's own clock"
+    },
+    "version": 1
+  },
   "x509_extension": {
     "critical": true,
     "encoding": "DER",

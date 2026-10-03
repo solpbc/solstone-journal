@@ -11,8 +11,8 @@ use solstone_core_spp_attest::snp::check_pcr_fingerprint;
 use solstone_core_spp_attest::{PcrMode, Policy};
 
 use crate::ratls::channel::{
-    AttestedIo, RatlsEndpoint, establish_attested_channel, send_json_request,
-    send_transcription_request,
+    AdmissionClock, AttestedIo, RatlsEndpoint, SystemAdmissionClock,
+    establish_attested_channel_with_clock, send_json_request, send_transcription_request,
 };
 use crate::ratls::contract::CompositeEvidence;
 use crate::ratls::verify::CompositeVerifier;
@@ -76,6 +76,22 @@ pub fn run_qualification(
     nvattest_dir: &Path,
     composite_verifier: &dyn CompositeVerifier,
 ) -> Result<QualificationSuccess, QualificationError> {
+    run_qualification_with_clock(
+        request,
+        nvattest_dir,
+        composite_verifier,
+        &SystemAdmissionClock,
+    )
+}
+
+/// [`run_qualification`] with an injected clock for admission and for the
+/// status check before each new request.
+pub fn run_qualification_with_clock(
+    request: &QualificationRequest,
+    nvattest_dir: &Path,
+    composite_verifier: &dyn CompositeVerifier,
+    clock: &dyn AdmissionClock,
+) -> Result<QualificationSuccess, QualificationError> {
     if request.content && request.model.is_none() {
         return Err(QualificationError {
             reason_code: "model_missing",
@@ -88,7 +104,7 @@ pub fn run_qualification(
     }
 
     let endpoint = RatlsEndpoint::new(&request.host, request.port);
-    let mut channel = establish_attested_channel(
+    let mut channel = establish_attested_channel_with_clock(
         &endpoint,
         &request.owner_nonce,
         nvattest_dir,
@@ -99,6 +115,7 @@ pub fn run_qualification(
         composite_verifier,
         request.socket_timeout,
         0,
+        clock,
     )
     .map_err(|error| QualificationError {
         reason_code: error.reason_code,
@@ -138,6 +155,9 @@ pub fn run_qualification(
         reason_code: "chat_failed",
     })?;
 
+    // This instrument sends more than one request on a channel, so each new
+    // request is checked against the channel's status first.
+    require_status_for_new_request(&channel, clock)?;
     channel
         .set_io_timeout(Some(request.socket_timeout))
         .map_err(|_| QualificationError {
@@ -162,6 +182,7 @@ pub fn run_qualification(
         });
     }
 
+    require_status_for_new_request(&channel, clock)?;
     channel
         .set_io_timeout(Some(request.socket_timeout))
         .map_err(|_| QualificationError {
@@ -188,6 +209,19 @@ pub fn run_qualification(
         evidence: channel.verified.evidence.clone(),
         pcr_sha256,
     })
+}
+
+fn require_status_for_new_request(
+    channel: &crate::AttestedChannel,
+    clock: &dyn AdmissionClock,
+) -> Result<(), QualificationError> {
+    if channel.status_permits_new_request(clock.now_system(), clock.now_monotonic()) {
+        Ok(())
+    } else {
+        Err(QualificationError {
+            reason_code: "status_deadline_passed",
+        })
+    }
 }
 
 fn write_evidence_files(

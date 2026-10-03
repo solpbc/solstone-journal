@@ -1,0 +1,24 @@
+{
+  "certificate-proofs-critical.der": {
+    "bytes": 29506,
+    "sha256": "25ff41188748696802f095bcfd11f4834f6a13ce37fdfbac2dc60a49eaa171d3"
+  },
+  "certificate-proofs-trailing.der": {
+    "bytes": 29504,
+    "sha256": "d6ed68d62bc12e924ac3cdbff38227403bd449f7b9b34d8714fb28e1bb37ea3b"
+  },
+  "certificate-proofs-version-2.der": {
+    "bytes": 21967,
+    "sha256": "b99e2055f823ee2238c2bd31b68684ea2c8bb8e357ddc73e16e297e0f11dac67"
+  },
+  "certificate-without-proofs.der": {
+    "bytes": 21929,
+    "sha256": "ff999e779c0e048cf61e63d2e8b7154b0ee000304c677ca14b3455b125d5aee6"
+  },
+  "certificate.der": {
+    "bytes": 29503,
+    "sha256": "c968c95cb0944af788e12396cd8c7156d3fdb73114aa67c1580ae8a33fba1832"
+  },
+  "composite_evidence_bytes": 21604,
+  "nvidia_bundle_bytes": 7543
+}

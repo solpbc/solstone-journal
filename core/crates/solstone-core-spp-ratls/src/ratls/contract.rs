@@ -24,6 +24,30 @@ pub const EXPORTER_CONTEXT_FORMULA: &str =
 pub const EXPORTER_FORMULA: &str =
     "SHA256(domain || nonce || SHA256(tls_spki_der) || tls_exporter || SHA256(SPPGPU1_TLV))";
 
+/// Separate, noncritical extension carrying raw NVIDIA OCSP responses for an
+/// image whose locally selected profile requires offline signed-age status.
+pub const STATUS_PROOFS_OID: &str = "2.25.2270882455.2325790823.606324700.3809542406";
+pub const STATUS_PROOFS_OID_ARCS: [u64; 6] = [
+    2,
+    25,
+    2_270_882_455,
+    2_325_790_823,
+    606_324_700,
+    3_809_542_406,
+];
+pub const STATUS_PROOFS_VERSION: u64 = 1;
+pub const STATUS_PROOFS_MEDIA_TYPE: &str = "application/vnd.sol.spp-status-proofs-v1+der";
+pub const STATUS_PROOFS_ASN1: &str =
+    "SEQUENCE { version INTEGER (1), responses SEQUENCE OF OCTET STRING }";
+/// Bounds, fixed from measured real responses (891-968 bytes each; the
+/// eight-entry H100 inventory bundles to 7,543 bytes) and the 65,535-byte
+/// handshake-message limit of the journal's TLS client.
+pub const MAX_STATUS_PROOFS_BYTES: usize = 16_384;
+pub const MAX_STATUS_PROOF_RESPONSES: usize = 16;
+pub const MAX_STATUS_PROOF_RESPONSE_BYTES: usize = 2_048;
+/// The whole engine certificate is refused above this before it is parsed.
+pub const MAX_CERTIFICATE_BYTES: usize = 49_152;
+
 pub const COMPOSITE_FIELDS: [&str; 13] = [
     "version",
     "owner_nonce",
@@ -194,6 +218,58 @@ pub fn decode_sequence(
         return Err(RatlsContractError::UnexpectedField);
     }
     Ok((version, fields))
+}
+
+/// Encodes a version 1 status-proof extension value. Each response is one
+/// complete, unchanged NVIDIA OCSPResponse DER.
+pub fn encode_status_proofs(responses: &[&[u8]]) -> Vec<u8> {
+    let mut list = Vec::new();
+    for response in responses {
+        list.extend(der_tlv(0x04, response));
+    }
+    let mut body = der_integer(STATUS_PROOFS_VERSION);
+    body.extend(der_tlv(0x30, &list));
+    der_tlv(0x30, &body)
+}
+
+/// Validates a version 1 status-proof extension value in place and returns
+/// its response count. Every length and count is bounded before anything is
+/// copied; non-minimal lengths, trailing bytes, an unknown version, an empty
+/// bundle and oversized entries are refused. The responses themselves are
+/// verified only by the pinned nvattest helper.
+pub fn validate_status_proofs(data: &[u8]) -> Result<usize, RatlsContractError> {
+    if data.len() > MAX_STATUS_PROOFS_BYTES {
+        return Err(RatlsContractError::StatusProofsTooLarge);
+    }
+    let (body, end) = read_tlv(data, 0, 0x30)?;
+    if end != data.len() {
+        return Err(RatlsContractError::TrailingBytes);
+    }
+    let (version, offset) = read_tlv(body, 0, 0x02)?;
+    if version != [STATUS_PROOFS_VERSION as u8] {
+        return Err(RatlsContractError::UnsupportedVersion);
+    }
+    let (list, list_end) = read_tlv(body, offset, 0x30)?;
+    if list_end != body.len() {
+        return Err(RatlsContractError::UnexpectedField);
+    }
+    let mut count = 0usize;
+    let mut cursor = 0usize;
+    while cursor < list.len() {
+        if count == MAX_STATUS_PROOF_RESPONSES {
+            return Err(RatlsContractError::StatusProofsTooLarge);
+        }
+        let (response, next) = read_tlv(list, cursor, 0x04)?;
+        if response.is_empty() || response.len() > MAX_STATUS_PROOF_RESPONSE_BYTES {
+            return Err(RatlsContractError::StatusProofsTooLarge);
+        }
+        count += 1;
+        cursor = next;
+    }
+    if count == 0 {
+        return Err(RatlsContractError::StatusProofsEmpty);
+    }
+    Ok(count)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -389,6 +465,147 @@ mod tests {
             EXPORTER_PROOF_FIELDS
         );
     }
+    fn repository_file(relative: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(relative)
+    }
+
+    fn decode_hex(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).expect("hex"))
+            .collect()
+    }
+
+    #[test]
+    fn checked_in_status_proof_contract_matches_the_code() {
+        let artifact: Value = serde_json::from_str(
+            &std::fs::read_to_string(repository_file("fixtures/ratls-contract.json"))
+                .expect("contract artifact"),
+        )
+        .expect("contract JSON");
+        let proofs = &artifact["status_proofs"];
+        assert_eq!(proofs["oid"].as_str(), Some(STATUS_PROOFS_OID));
+        assert_eq!(
+            STATUS_PROOFS_OID,
+            STATUS_PROOFS_OID_ARCS
+                .iter()
+                .map(u64::to_string)
+                .collect::<Vec<_>>()
+                .join(".")
+        );
+        assert_ne!(STATUS_PROOFS_OID, COMPOSITE_EVIDENCE_OID);
+        assert_eq!(proofs["critical"].as_bool(), Some(false));
+        assert_eq!(proofs["encoding"].as_str(), Some("DER"));
+        assert_eq!(proofs["version"].as_u64(), Some(STATUS_PROOFS_VERSION));
+        assert_eq!(
+            proofs["media_type"].as_str(),
+            Some(STATUS_PROOFS_MEDIA_TYPE)
+        );
+        assert_eq!(proofs["asn1"].as_str(), Some(STATUS_PROOFS_ASN1));
+        let limits = &proofs["limits"];
+        assert_eq!(
+            limits["max_extension_value_bytes"].as_u64(),
+            Some(MAX_STATUS_PROOFS_BYTES as u64)
+        );
+        assert_eq!(
+            limits["max_responses"].as_u64(),
+            Some(MAX_STATUS_PROOF_RESPONSES as u64)
+        );
+        assert_eq!(
+            limits["max_response_bytes"].as_u64(),
+            Some(MAX_STATUS_PROOF_RESPONSE_BYTES as u64)
+        );
+        assert_eq!(
+            limits["max_certificate_bytes"].as_u64(),
+            Some(MAX_CERTIFICATE_BYTES as u64)
+        );
+        assert_eq!(
+            proofs["verification"]["admission_min_remaining_seconds"].as_u64(),
+            Some(crate::ratls::channel::OFFLINE_STATUS_MIN_REMAINING.as_secs())
+        );
+        // The bounds leave room for the evidence the engine already sends,
+        // under the client's 65,535-byte handshake-message limit.
+        let measured = &proofs["measured"];
+        let largest_fixture = measured["fixture_certificate_bytes_without_proofs"]
+            .as_u64()
+            .expect("measured certificate") as usize;
+        assert!(largest_fixture + MAX_STATUS_PROOFS_BYTES + 64 <= MAX_CERTIFICATE_BYTES);
+        const { assert!(MAX_CERTIFICATE_BYTES + 1024 <= 65_535) };
+        assert!(
+            measured["h100_inventory_bundle_bytes"]
+                .as_u64()
+                .expect("bundle") as usize
+                <= MAX_STATUS_PROOFS_BYTES
+        );
+        assert_eq!(
+            proofs["vectors"].as_str(),
+            Some("core/fixtures/ratls-status-proofs-v1-vectors.json")
+        );
+    }
+
+    #[test]
+    fn independent_status_proof_vectors_decode_as_published() {
+        let vectors: Value = serde_json::from_str(
+            &std::fs::read_to_string(repository_file(
+                "fixtures/ratls-status-proofs-v1-vectors.json",
+            ))
+            .expect("vectors"),
+        )
+        .expect("vectors JSON");
+        let vectors = vectors["vectors"].as_array().expect("vector list");
+        assert!(vectors.len() >= 19);
+        for vector in vectors {
+            let name = vector["name"].as_str().expect("name");
+            let bytes = decode_hex(vector["hex"].as_str().expect("hex"));
+            assert_eq!(
+                bytes.len() as u64,
+                vector["bytes"].as_u64().unwrap(),
+                "{name}"
+            );
+            let decoded = validate_status_proofs(&bytes);
+            if vector["valid"].as_bool() == Some(true) {
+                assert_eq!(
+                    decoded,
+                    Ok(vector["response_count"].as_u64().unwrap() as usize),
+                    "{name}"
+                );
+            } else {
+                assert!(decoded.is_err(), "{name} must be refused");
+            }
+        }
+    }
+
+    #[test]
+    fn the_encoder_reproduces_the_independent_vectors() {
+        let vectors: Value = serde_json::from_str(
+            &std::fs::read_to_string(repository_file(
+                "fixtures/ratls-status-proofs-v1-vectors.json",
+            ))
+            .expect("vectors"),
+        )
+        .expect("vectors JSON");
+        let find = |name: &str| {
+            vectors["vectors"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|vector| vector["name"] == name)
+                .map(|vector| decode_hex(vector["hex"].as_str().unwrap()))
+                .unwrap()
+        };
+        let small = [0x30u8, 0x03, 0x02, 0x01, 0x01];
+        assert_eq!(encode_status_proofs(&[&small]), find("one_response"));
+        assert_eq!(
+            encode_status_proofs(&[&small[..]; MAX_STATUS_PROOF_RESPONSES]),
+            find("max_responses")
+        );
+        let mut long = vec![0u8; MAX_STATUS_PROOF_RESPONSE_BYTES];
+        long[0] = 0x30;
+        assert_eq!(encode_status_proofs(&[&long]), find("max_response_bytes"));
+    }
+
     #[test]
     fn evidence_round_trips() {
         let item = CompositeEvidence {

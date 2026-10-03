@@ -117,6 +117,63 @@ pub fn build_nvattest_attest_command(
     })
 }
 
+/// Builds the offline signed-age invocation without a shell.
+///
+/// It names only local inputs: the evidence file, the packaged manifest
+/// directory, the engine's raw status-proof bundle and this device's time.
+/// There is no CA bundle, OCSP, RIM or NRAS URL, or service key, so the
+/// helper has nothing to contact.
+pub fn build_nvattest_offline_attest_command(
+    nvattest_dir: &Path,
+    evidence_file: &Path,
+    owner_nonce: &[u8],
+    rim_dir: &Path,
+    proof_bundle_file: &Path,
+    verification_time_unix: i64,
+) -> Result<NvattestCommand, GpuAppraisalReason> {
+    if owner_nonce.len() != SPDM_NONCE_SIZE || verification_time_unix <= 0 {
+        return Err(GpuAppraisalReason::GpuAppraisalFailed);
+    }
+    let installation = locate_nvattest(nvattest_dir)?;
+    let mut argv = vec![installation.binary.clone().into_os_string()];
+    argv.extend(
+        [
+            "--format",
+            "json",
+            "attest",
+            "--device",
+            "gpu",
+            "--gpu-evidence-source",
+            "file",
+            "--gpu-evidence-file",
+        ]
+        .into_iter()
+        .map(OsString::from),
+    );
+    argv.push(evidence_file.as_os_str().to_owned());
+    argv.extend(
+        ["--verifier", "local", "--rim-store", "dir", "--rim-dir"]
+            .into_iter()
+            .map(OsString::from),
+    );
+    argv.push(rim_dir.as_os_str().to_owned());
+    argv.push(OsString::from("--ocsp-proof-bundle"));
+    argv.push(proof_bundle_file.as_os_str().to_owned());
+    argv.push(OsString::from("--ocsp-verification-time"));
+    argv.push(OsString::from(verification_time_unix.to_string()));
+    argv.push(OsString::from("--nonce"));
+    argv.push(OsString::from(hex_lower(owner_nonce)));
+
+    Ok(NvattestCommand {
+        executable: installation.binary,
+        argv,
+        env: BTreeMap::from([(
+            OsString::from("LD_LIBRARY_PATH"),
+            installation.lib_dir.into_os_string(),
+        )]),
+    })
+}
+
 fn hex_lower(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut result = String::with_capacity(bytes.len() * 2);
@@ -136,7 +193,9 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use super::{build_nvattest_attest_command, locate_nvattest};
+    use super::{
+        build_nvattest_attest_command, build_nvattest_offline_attest_command, locate_nvattest,
+    };
     use crate::error::GpuAppraisalReason;
 
     static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -247,6 +306,79 @@ mod tests {
         assert_eq!(
             command.env.get(OsStr::new("LD_LIBRARY_PATH")),
             Some(&root.path().join("lib").into_os_string())
+        );
+    }
+
+    #[test]
+    fn offline_command_names_only_local_inputs() {
+        let root = TempDir::new();
+        layout(root.path());
+        let evidence = root.path().join("evidence.json");
+        let rims = root.path().join("rims");
+        let proofs = root.path().join("proofs.der");
+        let command = build_nvattest_offline_attest_command(
+            root.path(),
+            &evidence,
+            &[0xab; 32],
+            &rims,
+            &proofs,
+            1_790_993_048,
+        )
+        .expect("build command");
+        let argv = command
+            .argv
+            .iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            argv,
+            vec![
+                root.path().join("bin/nvattest").display().to_string(),
+                "--format".to_owned(),
+                "json".to_owned(),
+                "attest".to_owned(),
+                "--device".to_owned(),
+                "gpu".to_owned(),
+                "--gpu-evidence-source".to_owned(),
+                "file".to_owned(),
+                "--gpu-evidence-file".to_owned(),
+                evidence.display().to_string(),
+                "--verifier".to_owned(),
+                "local".to_owned(),
+                "--rim-store".to_owned(),
+                "dir".to_owned(),
+                "--rim-dir".to_owned(),
+                rims.display().to_string(),
+                "--ocsp-proof-bundle".to_owned(),
+                proofs.display().to_string(),
+                "--ocsp-verification-time".to_owned(),
+                "1790993048".to_owned(),
+                "--nonce".to_owned(),
+                "ab".repeat(32),
+            ]
+        );
+        for refused in [
+            "--ca-bundle",
+            "--ocsp-url",
+            "--rim-url",
+            "--nras-url",
+            "--service-key",
+        ] {
+            assert!(
+                !argv.iter().any(|argument| argument == refused),
+                "{refused}"
+            );
+        }
+        assert!(
+            build_nvattest_offline_attest_command(
+                root.path(),
+                &evidence,
+                &[0xab; 32],
+                &rims,
+                &proofs,
+                0
+            )
+            .is_err()
         );
     }
 }

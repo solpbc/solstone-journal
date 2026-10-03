@@ -173,6 +173,7 @@ fn test_verdict() -> CompositeVerdict {
             claims_version: String::new(),
             arch: String::new(),
             envelope_gpu_uuid: String::new(),
+            status: solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OnlineNonce,
         },
     }
 }
@@ -2570,6 +2571,100 @@ fn oracle_12_proof_surplus_fails_establishment() {
     assert_eq!(reason_code(&res2), Some("proof_http_failed"));
     assert_eq!(
         server_bare.stats.app_requests_read.load(Ordering::SeqCst),
+        0
+    );
+
+    let _ = fs::remove_dir_all(&journal_path);
+}
+
+/// Accepts with an offline signed-age status that has `remaining` left at
+/// verification time on the pool's clock.
+struct OfflineStatusVerifier {
+    clock: Arc<MockClock>,
+    remaining: Duration,
+}
+
+impl CompositeVerifier for OfflineStatusVerifier {
+    fn verify(
+        &self,
+        _: CpuBundle<'_>,
+        _: CompositeVerificationInput<'_>,
+    ) -> Result<CompositeVerdict, CompositeVerificationError> {
+        let now = self.clock.now_system();
+        let mut verdict = test_verdict();
+        verdict.gpu.status =
+            solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OfflineSignedAge {
+                verified_at: now,
+                deadline: now + self.remaining,
+            };
+        Ok(verdict)
+    }
+}
+
+#[test]
+fn oracle_13_offline_status_channels_age_from_admission_and_are_never_renewed() {
+    let journal_path = temp_journal("oracle_13");
+    let config = Map::new();
+    let server = TestServer::spawn(AppScript::Ok("hello".to_owned()));
+    let clock = Arc::new(MockClock::new());
+    let runtime = EndpointRuntime::with_pool_clock(1, clock.clone());
+    let endpoint = test_endpoint(server.port);
+    let verifier = OfflineStatusVerifier {
+        clock: clock.clone(),
+        remaining: Duration::from_secs(130),
+    };
+    let generate = |id: &str| {
+        confidential_generate_attested(
+            &request(id),
+            &journal_path,
+            &endpoint,
+            &config,
+            &runtime,
+            &verifier,
+        )
+    };
+
+    // Admitted with exactly 130 s of status left.
+    assert!(matches!(
+        generate("req-1"),
+        ConfidentialResult::Generated(_)
+    ));
+    assert_eq!(server.stats.prefaces_read.load(Ordering::SeqCst), 1);
+    // Reused inside the window; returning it does not renew its age.
+    clock.advance_both(Duration::from_secs(60));
+    assert!(matches!(
+        generate("req-2"),
+        ConfidentialResult::Generated(_)
+    ));
+    assert_eq!(server.stats.prefaces_read.load(Ordering::SeqCst), 1);
+    // 121 s after admission it starts no new request: a fresh channel is
+    // attested instead.
+    clock.advance_both(Duration::from_secs(61));
+    assert!(matches!(
+        generate("req-3"),
+        ConfidentialResult::Generated(_)
+    ));
+    assert_eq!(server.stats.prefaces_read.load(Ordering::SeqCst), 2);
+
+    // A status with 129 s left is refused at admission and sends nothing.
+    let short_server = TestServer::spawn(AppScript::Ok("hello".to_owned()));
+    let short_clock = Arc::new(MockClock::new());
+    let short_runtime = EndpointRuntime::with_pool_clock(1, short_clock.clone());
+    let short = confidential_generate_attested(
+        &request("req-short"),
+        &journal_path,
+        &test_endpoint(short_server.port),
+        &config,
+        &short_runtime,
+        &OfflineStatusVerifier {
+            clock: short_clock,
+            remaining: Duration::from_secs(129),
+        },
+    );
+    assert_eq!(reason_code(&short), Some("status_deadline_insufficient"));
+    assert_eq!(short_server.stats.prefaces_read.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        short_server.stats.app_requests_read.load(Ordering::SeqCst),
         0
     );
 

@@ -21,6 +21,10 @@ pub enum RatlsContractError {
     UnexpectedField,
     #[error("unsupported evidence version")]
     UnsupportedVersion,
+    #[error("status proofs exceed their bounds")]
+    StatusProofsTooLarge,
+    #[error("status proofs are empty")]
+    StatusProofsEmpty,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

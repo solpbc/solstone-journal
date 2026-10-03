@@ -12,14 +12,20 @@ use ring::rand::{SecureRandom, SystemRandom};
 use solstone_core_spp_attest::{
     CpuBundle, GpuAppraiser, NvattestGpuAppraiser, appraise_cpu_leg,
     error::{CpuLegError, GpuAppraisalReason, PcrFingerprintError},
-    locate_nvattest, production_policy,
+    locate_nvattest,
+    nvgpu::{GpuProfiles, GpuStatusInput},
+    production_policy,
+    snp::CpuAppraisal,
     tlv::decode_gpu_envelope,
 };
 
 use crate::{
     CompositeVerdict, CompositeVerificationError, NvattestEnsureStatus, RatlsChannelError,
     ratls::{
-        channel::{AttestedChannel, RatlsEndpoint, establish_attested_channel},
+        channel::{
+            AdmissionClock, AttestedChannel, RatlsEndpoint, SystemAdmissionClock,
+            establish_attested_channel_with_clock,
+        },
         verify::{CompositeVerificationInput, CompositeVerifier},
     },
 };
@@ -28,13 +34,21 @@ use crate::{
 pub struct ProductionCompositeVerifier {
     nvattest_dir: PathBuf,
     gpu_appraiser: Box<dyn GpuAppraiser + Send + Sync>,
+    profiles: GpuProfiles,
 }
 
 impl ProductionCompositeVerifier {
     pub fn new(nvattest_dir: PathBuf) -> Self {
+        Self::with_profiles(nvattest_dir, GpuProfiles::production())
+    }
+
+    /// A verifier whose GPU profiles are supplied by the caller, for tests and
+    /// instruments that also inject their own CPU policy.
+    pub fn with_profiles(nvattest_dir: PathBuf, profiles: GpuProfiles) -> Self {
         Self {
             nvattest_dir,
             gpu_appraiser: Box::new(NvattestGpuAppraiser),
+            profiles,
         }
     }
 }
@@ -49,6 +63,7 @@ impl CompositeVerifier for ProductionCompositeVerifier {
             bundle,
             input,
             self.gpu_appraiser.as_ref(),
+            &self.profiles,
             &self.nvattest_dir,
             SystemTime::now(),
         )
@@ -56,10 +71,14 @@ impl CompositeVerifier for ProductionCompositeVerifier {
 }
 
 /// Verifies both attestation legs with an injectable GPU appraiser.
+///
+/// The CPU leg runs first. Only its verified fingerprint selects the GPU
+/// profile, and an unknown fingerprint stops before any GPU work.
 pub fn verify_composite_with_gpu_appraiser(
     bundle: CpuBundle<'_>,
     input: CompositeVerificationInput<'_>,
     gpu_appraiser: &dyn GpuAppraiser,
+    profiles: &GpuProfiles,
     nvattest_dir: &Path,
     now: SystemTime,
 ) -> Result<CompositeVerdict, CompositeVerificationError> {
@@ -72,6 +91,23 @@ pub fn verify_composite_with_gpu_appraiser(
         input.quote_verifier,
     )
     .map_err(cpu_error)?;
+    verify_gpu_after_cpu(cpu, &input, gpu_appraiser, profiles, nvattest_dir, now)
+}
+
+/// The GPU half of composite verification, after a verified CPU leg.
+///
+/// `now` is this device's clock, the only time offline status proofs are
+/// judged against. Exposed so an instrument that cannot reproduce a CPU leg
+/// (a synthetic gateway) still drives the real profile selection and helper.
+pub fn verify_gpu_after_cpu(
+    cpu: CpuAppraisal,
+    input: &CompositeVerificationInput<'_>,
+    gpu_appraiser: &dyn GpuAppraiser,
+    profiles: &GpuProfiles,
+    nvattest_dir: &Path,
+    now: SystemTime,
+) -> Result<CompositeVerdict, CompositeVerificationError> {
+    let profile = profiles.select(&cpu.pcr_sha256).map_err(gpu_error)?;
     let envelope = decode_gpu_envelope(input.envelope_tlv)
         .map_err(|_| composite_error("cpu_verification_failed"))?;
     let owner_nonce: &[u8; 32] = input
@@ -79,7 +115,16 @@ pub fn verify_composite_with_gpu_appraiser(
         .try_into()
         .map_err(|_| composite_error("gpu_appraisal_failed"))?;
     let gpu = gpu_appraiser
-        .appraise(&envelope, owner_nonce, nvattest_dir, &cpu.pcr_sha256)
+        .appraise(
+            &envelope,
+            owner_nonce,
+            nvattest_dir,
+            &GpuStatusInput {
+                profile,
+                proofs: input.status_proofs,
+                verification_time: now,
+            },
+        )
         .map_err(gpu_error)?;
 
     Ok(CompositeVerdict {
@@ -98,9 +143,12 @@ pub fn check_nvattest_readiness(nvattest_dir: &Path) -> NvattestEnsureStatus {
         Ok(_) => NvattestEnsureStatus::AlreadyInstalled,
         Err(GpuAppraisalReason::NvattestUnavailable) => NvattestEnsureStatus::Unavailable,
         Err(GpuAppraisalReason::NvattestIntegrityFailed) => NvattestEnsureStatus::IntegrityFailed,
-        Err(GpuAppraisalReason::GpuNonceMismatch | GpuAppraisalReason::GpuAppraisalFailed) => {
-            NvattestEnsureStatus::InstallFailed
-        }
+        Err(
+            GpuAppraisalReason::GpuNonceMismatch
+            | GpuAppraisalReason::GpuAppraisalFailed
+            | GpuAppraisalReason::StatusProfileMissing
+            | GpuAppraisalReason::StatusProofsMissing,
+        ) => NvattestEnsureStatus::InstallFailed,
     }
 }
 
@@ -111,6 +159,24 @@ pub fn establish_production_attested_channel(
     socket_timeout: Duration,
     epoch: u64,
 ) -> Result<AttestedChannel, RatlsChannelError> {
+    establish_production_attested_channel_with_clock(
+        endpoint,
+        nvattest_dir,
+        socket_timeout,
+        epoch,
+        &SystemAdmissionClock,
+    )
+}
+
+/// [`establish_production_attested_channel`], admitted on the caller's clock,
+/// so a pool measures channel age on the same clock it admitted with.
+pub fn establish_production_attested_channel_with_clock(
+    endpoint: &RatlsEndpoint,
+    nvattest_dir: &Path,
+    socket_timeout: Duration,
+    epoch: u64,
+    clock: &dyn AdmissionClock,
+) -> Result<AttestedChannel, RatlsChannelError> {
     let mut owner_nonce = [0u8; 32];
     SystemRandom::new()
         .fill(&mut owner_nonce)
@@ -119,7 +185,7 @@ pub fn establish_production_attested_channel(
         })?;
     let policy = production_policy();
     let verifier = ProductionCompositeVerifier::new(nvattest_dir.to_path_buf());
-    establish_attested_channel(
+    establish_attested_channel_with_clock(
         endpoint,
         &owner_nonce,
         nvattest_dir,
@@ -130,6 +196,7 @@ pub fn establish_production_attested_channel(
         &verifier,
         socket_timeout,
         epoch,
+        clock,
     )
 }
 
@@ -149,6 +216,8 @@ fn gpu_error(error: GpuAppraisalReason) -> CompositeVerificationError {
         GpuAppraisalReason::NvattestIntegrityFailed => "nvattest_integrity_failed",
         GpuAppraisalReason::GpuNonceMismatch => "gpu_nonce_mismatch",
         GpuAppraisalReason::GpuAppraisalFailed => "gpu_appraisal_failed",
+        GpuAppraisalReason::StatusProfileMissing => "gpu_status_profile_missing",
+        GpuAppraisalReason::StatusProofsMissing => "gpu_status_proofs_missing",
     })
 }
 
@@ -172,15 +241,101 @@ mod tests {
         snp::{AppraisalStep, TcbFloor},
     };
 
+    use solstone_core_spp_attest::nvgpu::{
+        GpuProfile, GpuProfiles, GpuStatusInput, ManifestSet, StatusMode,
+    };
+
     use super::{check_nvattest_readiness, verify_composite_with_gpu_appraiser};
+
+    const CURRENT_PIN: &str = "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3";
+
+    fn profiles(entries: &[(&str, StatusMode)]) -> GpuProfiles {
+        GpuProfiles::from_profiles(
+            entries
+                .iter()
+                .map(|(pin, mode)| GpuProfile::new(*pin, ManifestSet::QUALIFIED_595_71_05, *mode))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn the_verified_cpu_fingerprint_alone_selects_the_status_mode() {
+        let fixture = Fixture::load();
+        let policy = solstone_core_spp_attest::production_policy();
+        let successor = "44".repeat(32);
+        // Test-only coexistence: the current pin online, a successor offline.
+        let both = profiles(&[
+            (CURRENT_PIN, StatusMode::OnlineNonce),
+            (&successor, StatusMode::OfflineSignedAge),
+        ]);
+        for proofs in [None, Some(&b"proofs from the engine"[..])] {
+            let appraiser = FixtureGpuAppraiser::accepted();
+            fixture
+                .verify_with(Some(&policy), &appraiser, &both, proofs)
+                .expect("current image verifies online");
+            let (mode, seen_proofs, _) = appraiser.seen.lock().unwrap().clone().unwrap();
+            // Proof presence never selects or changes the mode.
+            assert_eq!(mode, StatusMode::OnlineNonce);
+            assert_eq!(seen_proofs.as_deref(), proofs);
+        }
+
+        // The same CPU evidence under a profile set that maps it offline is
+        // judged offline, with this device's time and the engine's proofs.
+        let offline = profiles(&[(CURRENT_PIN, StatusMode::OfflineSignedAge)]);
+        let appraiser = FixtureGpuAppraiser::accepted();
+        fixture
+            .verify_with(Some(&policy), &appraiser, &offline, Some(b"proofs"))
+            .expect("offline stub verifies");
+        let (mode, seen_proofs, verification_time) =
+            appraiser.seen.lock().unwrap().clone().unwrap();
+        assert_eq!(mode, StatusMode::OfflineSignedAge);
+        assert_eq!(seen_proofs.as_deref(), Some(&b"proofs"[..]));
+        assert_eq!(
+            verification_time,
+            SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_790_996_648)
+        );
+    }
+
+    #[test]
+    fn an_admitted_pin_without_a_profile_stops_before_gpu_work() {
+        let fixture = Fixture::load();
+        let policy = solstone_core_spp_attest::production_policy();
+        for set in [
+            profiles(&[]),
+            profiles(&[(&"55".repeat(32), StatusMode::OfflineSignedAge)]),
+        ] {
+            let appraiser = FixtureGpuAppraiser::accepted();
+            assert_eq!(
+                fixture.verify_with(Some(&policy), &appraiser, &set, Some(b"proofs")),
+                Err(crate::CompositeVerificationError {
+                    reason_code: "gpu_status_profile_missing"
+                })
+            );
+            assert!(!appraiser.called.load(Ordering::SeqCst));
+        }
+    }
+
+    #[test]
+    fn production_profiles_cover_exactly_the_production_pins() {
+        let profiles = GpuProfiles::production();
+        for pin in solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS {
+            assert_eq!(
+                profiles.select(pin).expect("profile").status(),
+                StatusMode::OnlineNonce
+            );
+        }
+    }
     use crate::{
         CompositeVerificationInput, NvattestEnsureStatus, classify_nvattest_prerequisite,
         test_support::TempDir,
     };
 
+    type SeenStatus = (StatusMode, Option<Vec<u8>>, SystemTime);
+
     struct FixtureGpuAppraiser {
         result: Result<GpuAppraisal, solstone_core_spp_attest::error::GpuAppraisalReason>,
         called: AtomicBool,
+        seen: std::sync::Mutex<Option<SeenStatus>>,
     }
 
     impl FixtureGpuAppraiser {
@@ -201,8 +356,10 @@ mod tests {
                     claims_version: String::new(),
                     arch: "UNTRUSTED-ENVELOPE-ARCH".to_owned(),
                     envelope_gpu_uuid: String::new(),
+                    status: solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OnlineNonce,
                 }),
                 called: AtomicBool::new(false),
+                seen: std::sync::Mutex::new(None),
             }
         }
 
@@ -210,6 +367,7 @@ mod tests {
             Self {
                 result: Err(reason),
                 called: AtomicBool::new(false),
+                seen: std::sync::Mutex::new(None),
             }
         }
     }
@@ -220,9 +378,14 @@ mod tests {
             _: &solstone_core_spp_attest::tlv::GpuEnvelope,
             _: &[u8; 32],
             _: &Path,
-            _: &str,
+            status: &GpuStatusInput<'_>,
         ) -> Result<GpuAppraisal, solstone_core_spp_attest::error::GpuAppraisalReason> {
             self.called.store(true, Ordering::SeqCst);
+            *self.seen.lock().unwrap() = Some((
+                status.profile.status(),
+                status.proofs.map(<[u8]>::to_vec),
+                status.verification_time,
+            ));
             self.result.clone()
         }
     }
@@ -285,6 +448,16 @@ mod tests {
             policy: Option<&solstone_core_spp_attest::Policy>,
             appraiser: &dyn solstone_core_spp_attest::GpuAppraiser,
         ) -> Result<crate::CompositeVerdict, crate::CompositeVerificationError> {
+            self.verify_with(policy, appraiser, &GpuProfiles::production(), None)
+        }
+
+        fn verify_with(
+            &self,
+            policy: Option<&solstone_core_spp_attest::Policy>,
+            appraiser: &dyn solstone_core_spp_attest::GpuAppraiser,
+            profiles: &GpuProfiles,
+            status_proofs: Option<&[u8]>,
+        ) -> Result<crate::CompositeVerdict, crate::CompositeVerificationError> {
             let certificate_chain = [&self.ark[..], &self.ask[..], &self.vcek[..]];
             verify_composite_with_gpu_appraiser(
                 solstone_core_spp_attest::CpuBundle {
@@ -307,10 +480,12 @@ mod tests {
                     roots_dir: None,
                     policy,
                     quote_verifier: None,
+                    status_proofs,
                 },
                 appraiser,
+                profiles,
                 Path::new("unused"),
-                SystemTime::UNIX_EPOCH,
+                SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_790_996_648),
             )
         }
     }
