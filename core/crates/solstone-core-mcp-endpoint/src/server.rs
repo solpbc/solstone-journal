@@ -123,8 +123,6 @@ pub(crate) enum RequestGuard {
     IpLiteral {
         port: u16,
     },
-    // The owner-hostname door that admits by this guard runs on Unix only.
-    #[cfg_attr(not(unix), allow(dead_code))]
     ByoHostname {
         canonical_hostname: Arc<str>,
     },
