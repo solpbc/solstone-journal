@@ -12,9 +12,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- day summaries from Apple Health or Oura imports made with earlier versions could turn up in journal search, in what your journal sent your thinking provider for your upcoming schedule, and in what an agent connected to your journal could find. they no longer do, including any already in search.
 - on windows, material that arrived late for an earlier day, like what a device was still holding when you paired it again, could be left out of that day's daily results. your journal on windows now brings a day's daily results up to date when something new arrives for it, whatever day it's from, as it does on mac and linux.
 - when you merged another journal's archive into yours, material from one of your sources could be left out if your journal already had different material from that source at the same moment, and the merge was marked incomplete. your journal now keeps it alongside what's there when it can find a free place for it, the way it does when a device sends material for a moment it already holds.
-- body day cards no longer enter journal search, the daily schedule's input, agent tools, transcripts read, or read-by-path.
 
 ## [2.0.32] - 2026-10-04
 
