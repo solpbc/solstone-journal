@@ -16,7 +16,8 @@ use chrono::{TimeZone, Utc};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use solstone_core_facets::{
-    AppendOutcome, DeclaredFacetInventory, append_activity_record, observe_declared_facet_inventory,
+    ActivityRecordStoreError, AppendOutcome, DeclaredFacetInventory, append_activity_record,
+    get_activity_record, observe_declared_facet_inventory,
 };
 use solstone_core_journal_io::{
     AtomicWriteOptions, DEFAULT_STREAM, FileLock, LockOptions, PathOrDay, atomic_replace,
@@ -1911,29 +1912,36 @@ fn publish_ended_activities(
         if let Some(stream) = stream {
             record.insert("stream".to_owned(), Value::String(stream.to_owned()));
         }
-        let written =
-            match append_activity_record(&context.journal, facet, routing_day, record.clone()) {
-                Ok(AppendOutcome::Written(_)) => true,
-                Ok(AppendOutcome::AlreadyExists) => false,
-                Err(error) => {
-                    log.log(
-                        "activity.persist_failed",
-                        context.now_ms,
-                        activity_event(
-                            context,
-                            segment,
-                            routing_day,
-                            Map::from_iter([
-                                ("activity".to_owned(), Value::String(id.to_owned())),
-                                ("facet".to_owned(), Value::String(facet.to_owned())),
-                                ("error".to_owned(), Value::String(error.to_string())),
-                            ]),
-                        ),
-                    );
-                    failures.push(format!("{facet}/{id}: {error}"));
-                    continue;
-                }
-            };
+        let written = match append_own_activity(&context.journal, facet, routing_day, &mut record) {
+            Ok(AppendOutcome::Written(_)) => true,
+            Ok(AppendOutcome::AlreadyExists) => false,
+            Err(error) => {
+                log.log(
+                    "activity.persist_failed",
+                    context.now_ms,
+                    activity_event(
+                        context,
+                        segment,
+                        routing_day,
+                        Map::from_iter([
+                            ("activity".to_owned(), Value::String(id.to_owned())),
+                            ("facet".to_owned(), Value::String(facet.to_owned())),
+                            ("error".to_owned(), Value::String(error.to_string())),
+                        ]),
+                    ),
+                );
+                failures.push(format!("{facet}/{id}: {error}"));
+                continue;
+            }
+        };
+        // The ID it was published under: its own when another stream's
+        // activity already held the one its type and first segment make.
+        let published_id = record
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or(id)
+            .to_owned();
+        let id = published_id.as_str();
         log.log(
             "activity.persisted",
             context.now_ms,
@@ -1998,6 +2006,63 @@ fn publish_ended_activities(
     } else {
         Err(format!("activity work pending: {}", failures.join(", ")))
     }
+}
+
+/// Append an ended activity, giving it its own ID when another stream's
+/// activity already holds the one its type and first segment make.
+///
+/// Two streams starting the same type in the same facet on segments with the
+/// same key (capture clients that align segments to the clock do this) would
+/// otherwise share `{type}_{since}`, and the second would be dropped as
+/// already written. The second takes `{type}_{stream}_{since}` instead. A held
+/// record that names no stream may be an older record of this very stream, so
+/// it is taken as the same activity, as before; a record of ours with no
+/// stream sits directly under the day and takes that layout's name. The choice
+/// holds on every later publish, because the first record stays where it is.
+fn append_own_activity(
+    journal: &std::path::Path,
+    facet: &str,
+    day: &str,
+    record: &mut Map<String, Value>,
+) -> Result<AppendOutcome, ActivityRecordStoreError> {
+    let outcome = append_activity_record(journal, facet, day, record.clone())?;
+    if !matches!(outcome, AppendOutcome::AlreadyExists) {
+        return Ok(outcome);
+    }
+    let (Some(id), Some(activity)) = (
+        record.get("id").and_then(Value::as_str),
+        record.get("activity").and_then(Value::as_str),
+    ) else {
+        return Ok(outcome);
+    };
+    let stream = record
+        .get("stream")
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_STREAM);
+    let Some(since) = id.strip_prefix(&format!("{activity}_")) else {
+        return Ok(outcome);
+    };
+    let safe_name = !stream.is_empty()
+        && !stream.starts_with('.')
+        && stream
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    if !safe_name {
+        return Ok(outcome);
+    }
+    let held_by_another_stream = get_activity_record(journal, facet, day, id)?
+        .and_then(|held| {
+            held.get("stream")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .is_some_and(|held| held != stream);
+    if !held_by_another_stream {
+        return Ok(outcome);
+    }
+    let own = format!("{activity}_{stream}_{since}");
+    record.insert("id".to_owned(), Value::String(own));
+    append_activity_record(journal, facet, day, record.clone())
 }
 
 /// Run the talents of activities [`publish_ended_activities`] recorded. A run

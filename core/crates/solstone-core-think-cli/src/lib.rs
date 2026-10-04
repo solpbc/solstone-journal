@@ -3837,6 +3837,12 @@ mod tests {
             live_snapshot(journal.path())["last_segment_key"],
             "084000_300"
         );
+        // 09:05's Sense was written a minute before 09:00's, as separate
+        // thinking runs are; writes within one millisecond would tie.
+        let earlier = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() - std::time::Duration::from_secs(60),
+        );
+        filetime::set_file_mtime(sense_output_path(&context, "090500_300"), earlier).unwrap();
 
         write_sense_output(&context, "090000_300", work_sense("work"));
         live_tail(&context, "090000_300");
@@ -4006,6 +4012,163 @@ mod tests {
             records[0]["segments"],
             serde_json::json!(["090000_300", "090500_300", "091000_300"])
         );
+    }
+
+    /// Two streams, `default` and `tmux`, each with work at 09:00 and 09:05.
+    fn two_streams_on_the_same_keys(journal: &Path, context: &context::ThinkContext) {
+        solstone_core_facets::create_facet(journal, "work", "Work", "", "", "", None).unwrap();
+        for key in ["090000_300", "090500_300"] {
+            segment_dir(journal, "20260813", key);
+            write_sense_output(context, key, work_sense("work"));
+            let tmux = journal
+                .join("chronicle/20260813/tmux")
+                .join(key)
+                .join("talents");
+            fs::create_dir_all(&tmux).unwrap();
+            fs::write(
+                tmux.join("sense.json"),
+                serde_json::to_vec(&work_sense("work")).unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
+    /// Think both segments of `stream` live, then flush it.
+    fn live_then_flush(context: &context::ThinkContext, stream: &str, skip_prompts: bool) {
+        for key in ["090000_300", "090500_300"] {
+            let mut log = test_log(context, "segment");
+            segment::replay_activity_state(
+                context,
+                &mut log,
+                &[(key.to_owned(), Some(stream.to_owned()))],
+                false,
+                2,
+                skip_prompts,
+                true,
+            )
+            .unwrap();
+        }
+        let mut log = test_log(context, "flush");
+        flush::run(
+            context,
+            &mut log,
+            "090500_300",
+            Some(stream),
+            2,
+            skip_prompts,
+        )
+        .unwrap();
+    }
+
+    fn ids_and_streams(journal: &Path) -> Vec<(String, String)> {
+        work_records(journal)
+            .iter()
+            .map(|record| {
+                (
+                    record["id"].as_str().unwrap().to_owned(),
+                    record["stream"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn two_streams_starting_the_same_activity_on_the_same_key_both_keep_it() {
+        // Clients that align segments to the clock give two streams the same
+        // keys; each stream's activity must be its own record, whichever
+        // stream is written first, and publishing again adds nothing.
+        for (first, second) in [("default", "tmux"), ("tmux", "default")] {
+            let journal = tempdir().unwrap();
+            let (context, _) = recorder_context(journal.path(), "20260813", 9);
+            two_streams_on_the_same_keys(journal.path(), &context);
+            live_then_flush(&context, first, true);
+            live_then_flush(&context, second, true);
+            let mut log = test_log(&context, "repair");
+            segment::replay_activity_state(
+                &context,
+                &mut log,
+                &["090000_300", "090500_300"]
+                    .iter()
+                    .flat_map(|key| {
+                        [first, second].map(|stream| ((*key).to_owned(), Some(stream.to_owned())))
+                    })
+                    .collect::<Vec<_>>(),
+                false,
+                2,
+                true,
+                false,
+            )
+            .unwrap();
+            assert_eq!(
+                ids_and_streams(journal.path()),
+                [
+                    ("work_090000_300".to_owned(), first.to_owned()),
+                    (format!("work_{second}_090000_300"), second.to_owned()),
+                ]
+            );
+            assert_eq!(
+                work_records(journal.path())[1]["segments"],
+                serde_json::json!(["090000_300", "090500_300"])
+            );
+        }
+    }
+
+    #[test]
+    fn a_segment_directly_under_the_day_keeps_its_activity_beside_a_named_streams() {
+        let journal = tempdir().unwrap();
+        let (context, _) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        for key in ["090000_300", "090500_300"] {
+            for dir in [format!("tmux/{key}"), key.to_owned()] {
+                let talents = journal
+                    .path()
+                    .join("chronicle/20260813")
+                    .join(dir)
+                    .join("talents");
+                fs::create_dir_all(&talents).unwrap();
+                fs::write(
+                    talents.join("sense.json"),
+                    serde_json::to_vec(&work_sense("work")).unwrap(),
+                )
+                .unwrap();
+            }
+        }
+        live_then_flush(&context, "tmux", true);
+        live_then_flush(&context, "_default", true);
+        let ids = work_records(journal.path())
+            .iter()
+            .map(|record| record["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["work_090000_300", "work__default_090000_300"]);
+    }
+
+    #[test]
+    fn the_second_streams_talent_work_follows_its_own_id() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "activity_probe",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        two_streams_on_the_same_keys(journal.path(), &context);
+        live_then_flush(&context, "default", false);
+        live_then_flush(&context, "tmux", false);
+        let provenance = journal
+            .path()
+            .join("chronicle/20260813/health/talent-provenance/activity-inputs/work");
+        for id in ["work_090000_300", "work_tmux_090000_300"] {
+            assert!(provenance.join(format!("{id}.json")).is_file(), "{id}");
+        }
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+        // Publishing the same activities again runs nothing more.
+        live_then_flush(&context, "tmux", false);
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
     }
 
     #[test]

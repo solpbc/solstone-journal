@@ -200,7 +200,7 @@ Each day file contains one JSON object per line, where each record represents a 
 
 ### Record ID scheme
 
-Activity record IDs follow the format `{activity_type}_{segment_key}` where `segment_key` is the segment in which the activity started. This is unique within a facet+day because only one activity of a given type can start in a given segment for one facet.
+Activity record IDs follow the format `{activity_type}_{segment_key}` where `segment_key` is the segment in which the activity started. Within one stream this is unique within a facet+day, because only one activity of a given type can start in a given segment for one facet. Two streams can hold segments with the same key, and clients that align segments to the clock often do. When another stream's activity already holds that ID, the record takes `{activity_type}_{stream}_{segment_key}` instead. Which of the two keeps the plain ID depends on which was written first.
 
 ### Record fields
 
