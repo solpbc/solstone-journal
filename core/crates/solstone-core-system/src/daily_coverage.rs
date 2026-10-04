@@ -897,9 +897,13 @@ mod tests {
         AcceptedDailyResult, DailyUnitRecord, load_daily_unit_record, save_daily_unit_record,
     };
     use std::fs;
-    use std::sync::mpsc::{self, RecvTimeoutError};
+    use std::sync::mpsc;
+    #[cfg(feature = "full-tests")]
+    use std::sync::mpsc::RecvTimeoutError;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    #[cfg(feature = "full-tests")]
+    use std::time::Instant;
 
     fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
@@ -1323,6 +1327,10 @@ mod tests {
     }
 
     // --- whole-day coverage reads are mutually exclusive within a process ------------
+    //
+    // The two tests that prove exclusion by waiting out a timeout on the wall clock run
+    // under `full-tests`: how long a read takes depends on the host, so they cannot be
+    // routine. The rest only bound a hang and stay in the routine set.
 
     /// Long enough that a read which is merely slow is never mistaken for a hung one.
     const GENEROUS: Duration = Duration::from_secs(60);
@@ -1364,6 +1372,7 @@ mod tests {
         drop(acquire_coverage_read(&lock, "20260910"));
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn acquiring_waits_for_a_holder_and_then_takes_the_lock() {
         let lock = Mutex::new(());
@@ -1388,6 +1397,7 @@ mod tests {
         });
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn a_coverage_read_waits_while_another_holds_the_lock_and_then_matches_a_plain_read() {
         let (dir, talent, apps) = fixture();
