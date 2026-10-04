@@ -212,6 +212,11 @@ fn resolve_service_target(raw: &str) -> PathBuf {
 mod tests {
     use std::{fs, os::unix::fs::PermissionsExt};
 
+    use solstone_core_installation_identity::{
+        Generation, GuardFields, InstallationId, JournalToken, NamespaceName,
+    };
+    use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper};
+
     use super::*;
     use crate::{
         checks::test_support::{check, context},
@@ -256,6 +261,69 @@ mod tests {
 
         fs::write(&unit, "ExecStart='unterminated\n").expect("write malformed unit");
         assert_eq!(run(&staged, check).unwrap().status, Status::Fail);
+    }
+
+    #[test]
+    fn resolves_current_canonical_and_alias_wrappers_without_accepting_modified_scripts() {
+        let staged = context();
+        fs::create_dir_all(&staged.install_bin_dir).expect("create install bin");
+        let unit = staged
+            .home_dir
+            .join(".config/systemd/user/solstone.service");
+        fs::create_dir_all(unit.parent().expect("unit parent")).expect("create unit parent");
+        let guard = GuardFields {
+            namespace: NamespaceName::parse(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )
+            .expect("namespace"),
+            id: InstallationId::parse("00112233445566778899aabbccddeeff").expect("id"),
+            generation: Generation::new(1).expect("generation"),
+            journal_token: JournalToken::from_raw_absolute(
+                staged.journal_path.as_os_str().as_encoded_bytes().to_vec(),
+            )
+            .expect("journal"),
+        };
+        let check = check("service_identity", Severity::Blocker);
+        for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
+            let target = staged.install_bin_dir.join(command.as_str());
+            executable(&target);
+            let wrapper = staged.home_dir.join(".local/bin").join(command.as_str());
+            fs::create_dir_all(wrapper.parent().expect("wrapper parent"))
+                .expect("create wrapper parent");
+            let content = render_wrapper(command, &staged.journal_path, &target, &guard)
+                .expect("render current managed wrapper");
+            fs::write(&wrapper, &content).expect("write wrapper");
+            let namespace = if command == WrapperCommand::Solstone {
+                " journal"
+            } else {
+                ""
+            };
+            fs::write(
+                &unit,
+                format!("ExecStart={}{namespace} start 5015\n", wrapper.display()),
+            )
+            .expect("write unit");
+            assert_eq!(run(&staged, check).unwrap().status, Status::Ok);
+
+            fs::write(&wrapper, format!("{content}SOL_BIN='/foreign/solstone'\n"))
+                .expect("write duplicate target");
+            assert_eq!(run(&staged, check).unwrap().status, Status::Fail);
+            fs::write(
+                &wrapper,
+                content.replace("exec \"$SOL_BIN\" \"$@\"", "exec /foreign/solstone \"$@\""),
+            )
+            .expect("write changed execution");
+            assert_eq!(run(&staged, check).unwrap().status, Status::Fail);
+
+            let foreign_target = staged
+                .home_dir
+                .join("other-install/bin")
+                .join(command.as_str());
+            let foreign = render_wrapper(command, &staged.journal_path, &foreign_target, &guard)
+                .expect("render wrapper for another install");
+            fs::write(&wrapper, foreign).expect("write foreign install wrapper");
+            assert_eq!(run(&staged, check).unwrap().status, Status::Fail);
+        }
     }
 
     #[test]

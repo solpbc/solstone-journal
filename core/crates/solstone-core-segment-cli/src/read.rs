@@ -354,7 +354,7 @@ pub(crate) fn checks(journal: &Path, location: &SegmentLocation) -> Vec<Check> {
         }
         SegmentIndexStatus::Unreadable { error } => (
             false,
-            format!("journal index error: {error} (run: journal indexer --rescan)"),
+            format!("journal index error: {error} (run: solstone journal indexer --rescan)"),
         ),
     };
     let content = exists
@@ -592,7 +592,7 @@ pub(crate) fn inspect_output(
     output.push_str(&format!("\nSize: {}\n", format_size(stats.size)));
     match index {
         SegmentIndexStatus::Unreadable { error } => output.push_str(&format!(
-            "Index: error ({error}) - run: journal indexer --rescan\n"
+            "Index: error ({error}) - run: solstone journal indexer --rescan\n"
         )),
         SegmentIndexStatus::Ready {
             indexed: true,

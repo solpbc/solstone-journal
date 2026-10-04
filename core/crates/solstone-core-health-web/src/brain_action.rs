@@ -72,7 +72,7 @@ pub(crate) fn resolve_cli_brain_action(
         return json!({"label":"open thinking","href":"/app/thinking/#main"});
     }
     if state == "unknown" {
-        return json!({"label":"check again","command":"journal brain refresh"});
+        return json!({"label":"check again","command":"solstone journal brain refresh"});
     }
     Value::Null
 }
@@ -206,7 +206,7 @@ mod tests {
     fn cli_actions_match_the_surface_contract() {
         assert_eq!(
             resolve_cli_brain_action("unknown", None, None, None, false),
-            json!({"label":"check again","command":"journal brain refresh"})
+            json!({"label":"check again","command":"solstone journal brain refresh"})
         );
         assert_eq!(
             resolve_cli_brain_action("unknown", Some("configuration_invalid"), None, None, false),
@@ -306,7 +306,7 @@ mod tests {
                 Some("lane_prerequisites"),
                 false
             ),
-            json!({"label":"check again","command":"journal brain refresh"})
+            json!({"label":"check again","command":"solstone journal brain refresh"})
         );
     }
 

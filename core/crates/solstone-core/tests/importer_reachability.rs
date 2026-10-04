@@ -248,7 +248,7 @@ const MODE_CASES: &[ModeCase] = &[
             Expected {
                 exit: 1,
                 stream: Stream::Stderr,
-                identifies: "Oura body data imports through sync; use journal importer --sync oura",
+                identifies: "Oura body data imports through sync; use solstone journal importer --sync oura",
             },
         )],
     },
@@ -743,7 +743,7 @@ fn journal_archive_import_requests_supervisor_indexer_rescan() {
     assert_eq!(envelope["event"], "request");
     assert_eq!(
         envelope["cmd"],
-        serde_json::json!(["journal", "indexer", "--rescan"])
+        serde_json::json!(["solstone", "journal", "indexer", "--rescan"])
     );
 }
 

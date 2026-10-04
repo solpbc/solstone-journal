@@ -62,7 +62,7 @@ fn recorded_timestamp() -> String {
 fn recorded_oura_message() -> String {
     serde_json::from_str::<Value>(CORPUS).unwrap()["passes"]["native_detector_answers_no"]
         ["source=oura::plain.txt"]["raised"]["message"]
-        .as_str().unwrap().to_owned()
+        .as_str().unwrap().replace("use journal importer --sync oura", "use solstone journal importer --sync oura")
 }
 fn recorded_impossible_day() -> String {
     "timestamp=20260230_120000::audio.m4a"

@@ -589,7 +589,7 @@ fn spawn_windows_queue_process(
     let Some(program) = command.first() else {
         return Err(QueueSpawnFailure::Clean(SpawnError::EmptyCommand));
     };
-    let journal = std::env::current_exe()
+    let bin_dir = std::env::current_exe()
         .map_err(|e| QueueSpawnFailure::Clean(SpawnError::Spawn(e)))?
         .parent()
         .ok_or_else(|| {
@@ -597,7 +597,9 @@ fn spawn_windows_queue_process(
                 "queue executable has no parent",
             )))
         })?
-        .join("journal.exe");
+        .to_path_buf();
+    let journal = bin_dir.join("journal.exe");
+    let solstone = bin_dir.join("solstone.exe");
     let named_journal =
         program.eq_ignore_ascii_case("journal") || program.eq_ignore_ascii_case("journal.exe");
     let exact_journal = !named_journal
@@ -605,20 +607,31 @@ fn spawn_windows_queue_process(
             .ok()
             .zip(std::fs::canonicalize(&journal).ok())
             .is_some_and(|(actual, expected)| actual == expected);
-    if grants.is_empty() || !(named_journal || exact_journal) {
+    let canonical_journal = command.get(1).is_some_and(|argument| argument == "journal")
+        && (program.eq_ignore_ascii_case("solstone")
+            || program.eq_ignore_ascii_case("solstone.exe")
+            || std::fs::canonicalize(program)
+                .ok()
+                .zip(std::fs::canonicalize(&solstone).ok())
+                .is_some_and(|(actual, expected)| actual == expected));
+    if grants.is_empty() || !(named_journal || exact_journal || canonical_journal) {
         // Third-party commands keep their existing no-protocol launch contract.
         return spawn_managed_queue_process(journal_root, command, options, timeout);
     }
     // Bind the queue's closed journal command to this installation's binary,
     // rather than letting a PATH override receive an installation capability.
-    command[0] = journal
-        .to_str()
-        .ok_or_else(|| {
-            QueueSpawnFailure::Clean(SpawnError::Spawn(io::Error::other(
-                "journal command path is not Unicode",
-            )))
-        })?
-        .to_owned();
+    command[0] = if canonical_journal {
+        &solstone
+    } else {
+        &journal
+    }
+    .to_str()
+    .ok_or_else(|| {
+        QueueSpawnFailure::Clean(SpawnError::Spawn(io::Error::other(
+            "journal command path is not Unicode",
+        )))
+    })?
+    .to_owned();
     // launch_managed_request with grants either fails before a process exists
     // or, after launch_windows_job_process, moves the owner into
     // independent_failure or retain_cleanup. Those hard-stop and return a
@@ -2852,14 +2865,24 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
 }
 
 fn exec_command(task_binary: Option<&Path>, command: &[String]) -> Vec<String> {
-    let command = crate::partition::journal_alias_form(command);
-    match (task_binary, command.first()) {
+    let alias = crate::partition::journal_alias_form(command);
+    match (task_binary, alias.first()) {
         (Some(binary), Some(first)) if first == "journal" => {
-            let mut resolved = command.into_owned();
-            resolved[0] = binary.display().to_string();
+            let mut resolved = vec![binary.display().to_string()];
+            if binary
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name.eq_ignore_ascii_case("solstone")
+                        || name.eq_ignore_ascii_case("solstone.exe")
+                })
+            {
+                resolved.push("journal".to_owned());
+            }
+            resolved.extend(alias.iter().skip(1).cloned());
             resolved
         }
-        _ => command.into_owned(),
+        _ => command.to_vec(),
     }
 }
 
@@ -3997,10 +4020,31 @@ mod tests {
                 "20260921".to_owned(),
             ]
         );
-        assert_eq!(
-            exec_command(None, &submitted),
-            ["journal", "think", "--day", "20260921"].map(str::to_owned)
-        );
+        assert_eq!(exec_command(None, &submitted), submitted);
+    }
+
+    #[test]
+    fn exec_command_keeps_the_namespace_for_the_canonical_sibling() {
+        let binary = Path::new("/install/bin/solstone.exe");
+        for submitted in [
+            ["journal", "think", "--day", "20260921"]
+                .map(str::to_owned)
+                .to_vec(),
+            ["solstone", "journal", "think", "--day", "20260921"]
+                .map(str::to_owned)
+                .to_vec(),
+        ] {
+            assert_eq!(
+                exec_command(Some(binary), &submitted),
+                [
+                    binary.display().to_string(),
+                    "journal".into(),
+                    "think".into(),
+                    "--day".into(),
+                    "20260921".into()
+                ]
+            );
+        }
     }
 
     #[test]

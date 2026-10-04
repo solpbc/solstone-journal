@@ -4476,7 +4476,7 @@ mod resolution_tests {
         fs::create_dir(journal.path().join("config")).unwrap();
         fs::write(
             journal.path().join("config/schedules.json"),
-            r#"{"maintenance:backup:run":{"cmd":["journal","maintenance","run","backup:run"],"every":"hourly","enabled":true}}"#,
+            r#"{"maintenance:backup:run":{"cmd":["solstone","journal","maintenance","run","backup:run"],"every":"hourly","enabled":true}}"#,
         )
         .unwrap();
         let runner = RecordingRunner::new();

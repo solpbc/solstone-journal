@@ -9,7 +9,7 @@ use solstone_core_format::segment::segment_key;
 use thiserror::Error;
 
 #[cfg(windows)]
-const DISPATCHER_FILE_NAME: &str = "journal.exe";
+const DISPATCHER_FILE_NAME: &str = "solstone.exe";
 #[cfg(not(windows))]
 const DISPATCHER_FILE_NAME: &str = "solstone-core-journal";
 
@@ -136,6 +136,15 @@ pub fn command_for(
 ) -> Vec<String> {
     let mut command = Vec::with_capacity(spec.command.len() + 2);
     command.push(program.display().to_string());
+    if program
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("solstone") || name.eq_ignore_ascii_case("solstone.exe")
+        })
+    {
+        command.push("journal".into());
+    }
     for arg in &spec.command {
         command.push(if arg == "{file}" {
             file.display().to_string()
@@ -260,6 +269,30 @@ mod tests {
         assert!(!cmd.contains(&"-v".to_string()));
     }
 
+    #[test]
+    fn command_for_preserves_the_journal_namespace_with_the_canonical_dispatcher() {
+        let spec = default_registry(4).remove(1);
+        assert_eq!(
+            command_for(
+                &spec,
+                Path::new("/install/bin/solstone.exe"),
+                Path::new("/a.webm"),
+                false,
+                true
+            ),
+            [
+                "/install/bin/solstone.exe",
+                "journal",
+                "describe",
+                "/a.webm",
+                "-j",
+                "4",
+                "-d"
+            ]
+            .map(str::to_owned)
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn resolve_dispatcher_in_returns_the_unix_executable_sibling() {
@@ -276,7 +309,7 @@ mod tests {
     #[test]
     fn resolve_dispatcher_in_returns_the_windows_public_executable_sibling() {
         let temp = tempfile::tempdir().expect("dir");
-        let candidate = temp.path().join("journal.exe");
+        let candidate = temp.path().join("solstone.exe");
         fs::write(&candidate, b"").expect("write candidate");
         assert_eq!(
             resolve_dispatcher_in(temp.path()).expect("executable sibling"),

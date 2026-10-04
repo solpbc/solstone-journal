@@ -31,7 +31,16 @@ fn python_corpus_matches_the_pure_native_verdict() {
     );
     let corpus: Corpus = serde_json::from_str(&fs::read_to_string(fixture).expect("read corpus"))
         .expect("parse corpus");
-    for case in corpus.cases {
+    for mut case in corpus.cases {
+        case.human_stdout = case.human_stdout.replace(
+            "Use `journal install-models`",
+            "Use `solstone journal install-models`",
+        );
+        case.json_payload = serde_json::from_str(&case.json_payload.to_string().replace(
+            "Use `journal install-models`",
+            "Use `solstone journal install-models`",
+        ))
+        .expect("project canonical CED repair command");
         let report = build_check_report(&case.inputs);
         assert_eq!(
             human_output(&report),

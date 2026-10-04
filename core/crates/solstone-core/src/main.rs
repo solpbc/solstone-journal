@@ -889,7 +889,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::SupervisorLifecycleRedirect(verb)) => {
             eprintln!(
-                "journal supervisor is the server-launch command (takes a port). \
+                "solstone journal supervisor is the server-launch command (takes a port). \
                  For lifecycle, use: solstone journal service <verb>. Did you mean: solstone journal service {verb} ?"
             );
             ExitCode::from(2)
@@ -5458,7 +5458,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                             },
                         ) => {
                             eprintln!(
-                                "journal mcp pairing generate: no hostname is set up for this journal. set one up in the agents app first."
+                                "solstone journal mcp pairing generate: no hostname is set up for this journal. set one up in the agents app first."
                             );
                             return ExitCode::from(EXIT_NOHOST);
                         }

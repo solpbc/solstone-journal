@@ -11,7 +11,7 @@ use solstone_core_installation_identity::{
 };
 
 use crate::args::SetupArgs;
-use crate::steps::{CommandRequest, CommandRunner, service_artifact_path};
+use crate::steps::{CommandRequest, CommandRunner, service_artifact_path, solstone_executable};
 use crate::wrapper::{AliasState, WrapperEnvironment, uninstall_wrappers, wrapper_paths};
 
 pub const CLEAN_UNINSTALL_STEP_NAMES: [&str; 4] = ["service", "wrapper", "config", "manifest"];
@@ -267,8 +267,8 @@ fn remove_service(
     }
     let existed = path.as_ref().is_some_and(|path| present(path));
     let output = context.runner.run(&CommandRequest {
-        program: context.executable_dir.join("journal"),
-        args: vec!["service".into(), "uninstall".into()],
+        program: solstone_executable(&context.executable_dir),
+        args: vec!["journal".into(), "service".into(), "uninstall".into()],
         timeout_seconds: None,
     });
     match output {

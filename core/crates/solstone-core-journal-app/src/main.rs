@@ -60,7 +60,7 @@ fn main() {
 
 /// The installer runs its install, update and uninstall steps in this
 /// program, because it is the one the Start menu opens. Those steps belong to
-/// the journal, so they run in `journal.exe` exactly as before; the app only
+/// the journal, so they run in `solstone.exe` exactly as before; the app only
 /// adds removing its own sign-in entry on uninstall.
 #[cfg(windows)]
 fn run_install_hook(args: &[String]) -> i32 {
@@ -70,7 +70,7 @@ fn run_install_hook(args: &[String]) -> i32 {
     if args[0].eq_ignore_ascii_case("--veloapp-uninstall") {
         let _ = shell::set_sign_in_launch(false);
     }
-    std::process::Command::new(journal::journal_exe())
+    std::process::Command::new(journal::solstone_exe())
         .args(args)
         .creation_flags(CREATE_NO_WINDOW)
         .status()
@@ -81,6 +81,6 @@ fn run_install_hook(args: &[String]) -> i32 {
 
 #[cfg(not(windows))]
 fn main() {
-    eprintln!("journal-app is the Windows journal app; on this system, use `journal`.");
+    eprintln!("journal-app is the Windows journal app; on this system, use `solstone journal`.");
     std::process::exit(64);
 }

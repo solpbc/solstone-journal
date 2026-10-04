@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! The app drives the journal through the same `journal` command an owner
+//! The app drives the journal through the same `solstone journal` command an owner
 //! types, from the same install. Each call is its own process with no
 //! console window, so the app holds no Task Scheduler state of its own.
 
@@ -15,7 +15,7 @@ use crate::status::ServiceStatus;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// `<root>\current\bin`, where this program and `journal.exe` both live.
+/// `<root>\current\bin`, where this program and `solstone.exe` both live.
 pub fn bin_dir() -> PathBuf {
     std::env::current_exe()
         .ok()
@@ -23,25 +23,26 @@ pub fn bin_dir() -> PathBuf {
         .unwrap_or_default()
 }
 
-pub fn journal_exe() -> PathBuf {
-    bin_dir().join("journal.exe")
+pub fn solstone_exe() -> PathBuf {
+    bin_dir().join("solstone.exe")
 }
 
 fn command(args: &[&str]) -> Command {
-    let mut command = Command::new(journal_exe());
+    let mut command = Command::new(solstone_exe());
     command
+        .arg("journal")
         .args(args)
         .stdin(Stdio::null())
         .creation_flags(CREATE_NO_WINDOW);
     command
 }
 
-/// Run `journal <args>` to the end. `Err` carries the command's own last
+/// Run `solstone journal <args>` to the end. `Err` carries the command's own last
 /// line of explanation, which is written for the owner.
 pub fn run(args: &[&str]) -> Result<String, String> {
     let output = command(args)
         .output()
-        .map_err(|error| format!("couldn't run journal: {error}"))?;
+        .map_err(|error| format!("couldn't run solstone journal: {error}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if output.status.success() {
         return Ok(stdout);
@@ -51,7 +52,11 @@ pub fn run(args: &[&str]) -> Result<String, String> {
         .lines()
         .rev()
         .chain(stdout.lines().rev())
-        .map(|line| line.trim().trim_start_matches("journal: "))
+        .map(|line| {
+            line.trim()
+                .trim_start_matches("solstone journal: ")
+                .trim_start_matches("journal: ")
+        })
         .find(|line| !line.is_empty())
         .unwrap_or("journal didn't say why")
         .to_owned();
@@ -74,13 +79,13 @@ pub fn restart() -> Result<(), String> {
     run(&["service", "restart"]).map(drop)
 }
 
-/// Download the models setup could not, as `journal install-models` does.
+/// Download the models setup could not, as `solstone journal install-models` does.
 pub fn install_models() -> Result<(), String> {
     run(&["install-models"]).map(drop)
 }
 
 /// Whether the models are all in place, however they got there: setup, the
-/// app's own button, or `journal install-models` typed in a terminal.
+/// app's own button, or `solstone journal install-models` typed in a terminal.
 pub fn models_ready() -> bool {
     run(&["install-models", "--check"]).is_ok()
 }
@@ -93,7 +98,7 @@ pub fn set_starts_at_sign_in(on: bool) -> Result<(), String> {
 /// everything else is in place and the journal is running.
 const MODELS_ONLY_FAILED: i32 = 80;
 
-/// `journal setup` for a journal at `journal`, new or already there, with
+/// `solstone journal setup` for a journal at `journal`, new or already there, with
 /// its progress handed to `progress` line by line. Setup registers the
 /// journal with Windows and starts it, exactly as it does from a terminal.
 /// `Ok(Some(reason))` means setup finished but the models did not download.

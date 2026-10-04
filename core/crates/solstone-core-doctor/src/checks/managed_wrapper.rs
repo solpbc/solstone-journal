@@ -11,7 +11,9 @@ use solstone_core_setup::wrapper::{WrapperCommand, parse_wrapper};
 /// Extract the `SOL_BIN` target from a managed source-install wrapper.
 ///
 pub(crate) fn parse_sol_bin(content: &str) -> Option<PathBuf> {
-    parse_wrapper(WrapperCommand::Journal, content).map(|wrapper| wrapper.sol_bin)
+    parse_wrapper(WrapperCommand::Solstone, content)
+        .or_else(|| parse_wrapper(WrapperCommand::Journal, content))
+        .map(|wrapper| wrapper.sol_bin)
 }
 
 pub(crate) fn resolve_non_strict(path: &Path) -> PathBuf {

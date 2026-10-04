@@ -223,15 +223,26 @@ class PortalProcess:
             except subprocess.TimeoutExpired:
                 os.killpg(pid, signal.SIGKILL)
                 process.wait(timeout=5)
-            inventory = subprocess.run(
-                ["ps", "-axo", "pid=,ppid=,command="], capture_output=True,
-                text=True, check=True, timeout=10,
-            )
             markers = (str(self.journal_dir), str(self.staged_journal_bin.parent))
-            remaining = [line for line in inventory.stdout.splitlines()
-                         if any(marker in line for marker in markers)]
+            drain_started = time.monotonic()
+            drain_deadline = drain_started + timeout_seconds
+            observed = []
+            while True:
+                inventory = subprocess.run(
+                    ["ps", "-axo", "pid=,ppid=,command="], capture_output=True,
+                    text=True, check=True, timeout=10,
+                )
+                remaining = [line for line in inventory.stdout.splitlines()
+                             if any(marker in line for marker in markers)]
+                if not observed:
+                    observed = remaining
+                if not remaining or time.monotonic() >= drain_deadline:
+                    break
+                time.sleep(0.1)
             receipt = {"supervisor_pid": pid, "exit_code": process.returncode,
-                       "remaining_fixture_processes": remaining}
+                       "remaining_fixture_processes": remaining,
+                       "observed_during_shutdown": observed,
+                       "drain_wait_seconds": time.monotonic() - drain_started}
             if self.case_dir:
                 (self.case_dir / "process-cleanup.json").write_text(json.dumps(receipt, indent=2))
             if remaining:

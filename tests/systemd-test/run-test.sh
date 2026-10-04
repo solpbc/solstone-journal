@@ -436,9 +436,9 @@ UNIT
                 -cf /tmp/journal-preexisting.before.tar
         '
 
-        log "legacy-upgrade: one solstone journal setup invocation"
+        log "legacy-upgrade: one /usr/bin/solstone journal setup invocation"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
-            'solstone journal setup -y --accept-existing-journal --skip-models --skip-skills'
+            '/usr/bin/solstone journal setup -y --accept-existing-journal --skip-models --skip-skills'
 
         log "verify: systemctl --user is-active solstone"
         for _ in $(seq 1 30); do

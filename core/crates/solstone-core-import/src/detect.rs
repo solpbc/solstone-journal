@@ -27,7 +27,7 @@ pub const ORDERED_FILE_IMPORTER_NAMES: &[&str] = &[
 ];
 
 pub const OURA_SYNC_REMEDY: &str =
-    "Oura body data imports through sync; use journal importer --sync oura";
+    "Oura body data imports through sync; use solstone journal importer --sync oura";
 
 // `cli.py:549` skips the registry sweep for generic audio/text extensions.
 const DETECTION_SKIP_EXTENSIONS: &[&str] = &["m4a", "txt", "md"];

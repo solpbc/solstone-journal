@@ -189,8 +189,11 @@ fn assert_success(output: &Output, args: &[String]) {
 }
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!("../../../fixtures/grab_cli_payloads.json"))
-        .expect("frozen grab corpus parses")
+    serde_json::from_str(
+        &include_str!("../../../fixtures/grab_cli_payloads.json")
+            .replace("journal grab ", "solstone journal grab "),
+    )
+    .expect("frozen grab corpus parses")
 }
 
 const SUCCESS_CASES: &[&[&str]] = &[
