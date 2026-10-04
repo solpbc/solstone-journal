@@ -1112,7 +1112,6 @@ mod tests {
 
     struct TestProbe<F> {
         fingerprint: String,
-        assessment: BundledRuntimePrerequisiteAssessment,
         generate_fn: Mutex<F>,
         captured_requests: Mutex<Vec<GenerateRequest>>,
     }
@@ -1121,14 +1120,9 @@ mod tests {
     where
         F: FnMut(&GenerateRequest) -> Result<GenerateResponse, ClientError>,
     {
-        fn new(
-            fingerprint: String,
-            assessment: BundledRuntimePrerequisiteAssessment,
-            generate_fn: F,
-        ) -> Self {
+        fn new(fingerprint: String, generate_fn: F) -> Self {
             Self {
                 fingerprint,
-                assessment,
                 generate_fn: Mutex::new(generate_fn),
                 captured_requests: Mutex::new(Vec::new()),
             }
@@ -1149,10 +1143,10 @@ mod tests {
 
         fn assess_bundled_runtime(
             &self,
-            _journal: &Path,
-            _expected: Option<&str>,
+            journal: &Path,
+            expected: Option<&str>,
         ) -> BundledRuntimePrerequisiteAssessment {
-            self.assessment.clone()
+            solstone_core_brain::assess_bundled_runtime_prerequisite(journal, expected)
         }
 
         fn execute_generate(
@@ -1165,7 +1159,7 @@ mod tests {
     }
 
     fn setup_temp_journal() -> tempfile::TempDir {
-        let temp = tempfile::TempDir::new_in("/var/tmp").expect("temp dir in /var/tmp");
+        let temp = tempfile::tempdir().expect("temp dir");
         std::fs::create_dir_all(temp.path().join("config")).expect("config dir");
         std::fs::write(
             temp.path().join("config/journal.json"),
@@ -1194,13 +1188,7 @@ mod tests {
         let temp = setup_temp_journal();
         let fingerprint = "a".repeat(64);
         write_runtime_file(temp.path(), "ready", &fingerprint);
-        let assessment = BundledRuntimePrerequisiteAssessment {
-            reason_code: None,
-            desired_fingerprint_sha256: Some(fingerprint.clone()),
-            phase: Some("ready".into()),
-            runtime_reason: None,
-        };
-        let probe = TestProbe::new(fingerprint.clone(), assessment, |_| {
+        let probe = TestProbe::new(fingerprint.clone(), |_| {
             Ok(GenerateResponse::Generated(Box::new(generated_response(
                 "OK",
                 "stop",
@@ -1244,39 +1232,37 @@ mod tests {
     #[test]
     fn owner_refresh_bundled_prerequisite_failures_skip_generate_and_stay_non_ready() {
         let failure_cases = [
-            BundledRuntimePrerequisiteAssessment {
-                reason_code: Some("local_runtime_state_unavailable".into()),
-                desired_fingerprint_sha256: None,
-                phase: None,
-                runtime_reason: None,
-            },
-            BundledRuntimePrerequisiteAssessment {
-                reason_code: Some("local_runtime_fingerprint_mismatch".into()),
-                desired_fingerprint_sha256: Some("c".repeat(64)),
-                phase: Some("ready".into()),
-                runtime_reason: None,
-            },
-            BundledRuntimePrerequisiteAssessment {
-                reason_code: Some("local_runtime_not_ready".into()),
-                desired_fingerprint_sha256: Some("a".repeat(64)),
-                phase: Some("starting".into()),
-                runtime_reason: None,
-            },
+            (None, "local_runtime_not_ready"),
+            (
+                Some(("ready", "c".repeat(64))),
+                "local_runtime_fingerprint_mismatch",
+            ),
+            (
+                Some(("starting", "a".repeat(64))),
+                "local_runtime_not_ready",
+            ),
         ];
 
-        for assessment in failure_cases {
+        for (runtime, expected_reason) in failure_cases {
             let temp = setup_temp_journal();
             let fingerprint = "a".repeat(64);
-            write_runtime_file(temp.path(), "starting", &fingerprint);
+            if let Some((phase, desired)) = runtime {
+                write_runtime_file(temp.path(), phase, &desired);
+            }
 
             // Plant an ordinary file under imports/
             let imports_dir = temp.path().join("imports");
             std::fs::create_dir_all(&imports_dir).unwrap();
             std::fs::write(imports_dir.join("planted.txt"), b"arbitrary-import-data").unwrap();
 
+            let assessment = solstone_core_brain::assess_bundled_runtime_prerequisite(
+                temp.path(),
+                Some(&fingerprint),
+            );
+            assert_eq!(assessment.reason_code.as_deref(), Some(expected_reason));
+
             let probe = TestProbe::new(
                 fingerprint.clone(),
-                assessment,
                 |_: &GenerateRequest| -> Result<GenerateResponse, ClientError> {
                     panic!("generate must not be called on bundled prerequisite failure");
                 },
@@ -1311,16 +1297,9 @@ mod tests {
         let temp = setup_temp_journal();
         let fingerprint = "a".repeat(64);
         write_runtime_file(temp.path(), "ready", &fingerprint);
-        let assessment = BundledRuntimePrerequisiteAssessment {
-            reason_code: None,
-            desired_fingerprint_sha256: Some(fingerprint.clone()),
-            phase: Some("ready".into()),
-            runtime_reason: None,
-        };
         // Empty stop text produces provider_response_invalid
         let probe = TestProbe::new(
             fingerprint.clone(),
-            assessment,
             |_: &GenerateRequest| -> Result<GenerateResponse, ClientError> {
                 Ok(GenerateResponse::Generated(Box::new(generated_response(
                     "",
@@ -1363,13 +1342,7 @@ mod tests {
         let temp = setup_temp_journal();
         let fingerprint = "a".repeat(64);
         write_runtime_file(temp.path(), "ready", &fingerprint);
-        let assessment = BundledRuntimePrerequisiteAssessment {
-            reason_code: None,
-            desired_fingerprint_sha256: Some(fingerprint.clone()),
-            phase: Some("ready".into()),
-            runtime_reason: None,
-        };
-        let probe = TestProbe::new(fingerprint.clone(), assessment, |_| {
+        let probe = TestProbe::new(fingerprint.clone(), |_| {
             Ok(GenerateResponse::Generated(Box::new(generated_response(
                 "OK",
                 "stop",
@@ -1395,12 +1368,6 @@ mod tests {
         // Stale expected fingerprint call
         let stale_probe = TestProbe::new(
             fingerprint.clone(),
-            BundledRuntimePrerequisiteAssessment {
-                reason_code: None,
-                desired_fingerprint_sha256: Some(fingerprint.clone()),
-                phase: Some("ready".into()),
-                runtime_reason: None,
-            },
             |_: &GenerateRequest| -> Result<GenerateResponse, ClientError> {
                 panic!("generate must not be called on stale fingerprint");
             },

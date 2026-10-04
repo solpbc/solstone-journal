@@ -114,6 +114,13 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shel
 :: solstone-core legs build with the features every shipped journal carries
 :: (core\distribution\shipped-core-features.txt), so they test what owners run
 :: and share one dependency build with the agent-connector build below.
+echo === cargo test --locked (Windows brain owner dispatcher) ===
+call :run_exact_integration "solstone-core-journal-bin" "windows_hosted_native_exit" "unhosted_journal_brain_owner_dispatches_to_native_binary" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "brain_owner::tests::owner_refresh_bundled_success_converges_to_ready" "full-tests,journal-mcp-endpoint" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "brain_owner::tests::owner_refresh_bundled_prerequisite_failures_skip_generate_and_stay_non_ready" "full-tests,journal-mcp-endpoint" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "brain_owner::tests::owner_refresh_generate_failure_records_unhealthy_or_blocked" "full-tests,journal-mcp-endpoint" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "brain_owner::tests::owner_refresh_stale_expected_fingerprint_short_circuits" "full-tests,journal-mcp-endpoint" || exit /b 1
+
 echo === cargo test --locked (Windows installer process identity) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --bin solstone-core --features full-tests,journal-mcp-endpoint install_provider::tests::local_install_reaches_existing_lease_with_current_process_identity -- --exact --nocapture || exit /b 1
 
@@ -256,6 +263,24 @@ cargo test --manifest-path core\Cargo.toml --locked -p "%~1" --lib %JOURNAL_WIN_
 set "JOURNAL_WIN_CI_EXACT_EXIT=%ERRORLEVEL%"
 type "%JOURNAL_WIN_CI_EXACT_LOG%"
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_EXACT_LOG%" -TestName "%~2" -TestExitCode %JOURNAL_WIN_CI_EXACT_EXIT% || exit /b 1
+exit /b 0
+
+
+:run_exact_integration
+set "JOURNAL_WIN_CI_EXACT_LOG=core\target\journal-win-ci-integration-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p "%~1" --test "%~2" -- --exact "%~3" --show-output > "%JOURNAL_WIN_CI_EXACT_LOG%" 2>&1
+set "JOURNAL_WIN_CI_EXACT_EXIT=%ERRORLEVEL%"
+type "%JOURNAL_WIN_CI_EXACT_LOG%"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_EXACT_LOG%" -TestName "%~3" -TestExitCode %JOURNAL_WIN_CI_EXACT_EXIT% || exit /b 1
+exit /b 0
+
+
+:run_exact_binary
+set "JOURNAL_WIN_CI_EXACT_LOG=core\target\journal-win-ci-binary-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p "%~1" --bin "%~2" --features "%~4" -- --exact "%~3" --show-output > "%JOURNAL_WIN_CI_EXACT_LOG%" 2>&1
+set "JOURNAL_WIN_CI_EXACT_EXIT=%ERRORLEVEL%"
+type "%JOURNAL_WIN_CI_EXACT_LOG%"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_EXACT_LOG%" -TestName "%~3" -TestExitCode %JOURNAL_WIN_CI_EXACT_EXIT% || exit /b 1
 exit /b 0
 
 :verify_source_binding

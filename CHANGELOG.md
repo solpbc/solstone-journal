@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, the thinking and health pages could keep saying "brain record missing" while your local model was working. they now check the model and show its health.
 - importing the same chat, calendar, or notes export again no longer brings back a segment you deleted.
 - if a device sent a segment again while you were deleting it, it could end up back in your journal. it now stays deleted.
 - the content tab on the import page could keep showing the title and preview of a conversation, note, or document you had deleted any part of. it's now left off.
