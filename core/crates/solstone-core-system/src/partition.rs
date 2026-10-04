@@ -64,6 +64,15 @@ fn alias_partition_for(cmd: &[String]) -> Partition {
         return Partition::new("unknown");
     };
 
+    if Path::new(first)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("solstone.exe"))
+        && cmd.get(1).map(String::as_str) == Some("journal")
+    {
+        return alias_partition_for(&cmd[1..]);
+    }
+
     let recognized = matches!(first.as_str(), "solstone" | "journal")
         || Path::new(first).file_name().and_then(|name| name.to_str())
             == Some("solstone-core-journal");
@@ -190,6 +199,27 @@ mod tests {
         assert_eq!(
             partition_for(&["/opt/tools/journal".to_owned(), "backup".to_owned()]),
             Partition::new("journal")
+        );
+    }
+
+    #[test]
+    fn partitions_solstone_exe_journal_tail_command() {
+        assert_eq!(
+            partition_for(&[
+                "/install/bin/solstone.exe".to_owned(),
+                "journal".to_owned(),
+                "brain".to_owned(),
+                "refresh".to_owned(),
+            ]),
+            Partition::new("brain")
+        );
+        assert_eq!(
+            partition_for(&[
+                "/usr/local/bin/solstone".to_owned(),
+                "journal".to_owned(),
+                "think".to_owned(),
+            ]),
+            Partition::new("solstone")
         );
     }
 }

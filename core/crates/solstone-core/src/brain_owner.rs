@@ -147,22 +147,75 @@ fn bundled_runtime_readiness(
     }
 }
 
+trait BrainOwnerProbe {
+    fn bundled_runtime_fingerprint(
+        &self,
+        journal: &Path,
+        config: &Map<String, Value>,
+    ) -> Option<String>;
+    fn assess_bundled_runtime(
+        &self,
+        journal: &Path,
+        expected: Option<&str>,
+    ) -> solstone_core_brain::BundledRuntimePrerequisiteAssessment;
+    fn execute_generate(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError>;
+}
+
+struct ProductionProbe;
+
+impl BrainOwnerProbe for ProductionProbe {
+    fn bundled_runtime_fingerprint(
+        &self,
+        journal: &Path,
+        config: &Map<String, Value>,
+    ) -> Option<String> {
+        current_bundled_runtime_fingerprint(journal, config, None)
+    }
+
+    fn assess_bundled_runtime(
+        &self,
+        journal: &Path,
+        expected: Option<&str>,
+    ) -> solstone_core_brain::BundledRuntimePrerequisiteAssessment {
+        solstone_core_brain::assess_bundled_runtime_prerequisite(journal, expected)
+    }
+
+    fn execute_generate(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+        OneShotClient::sibling().and_then(|client| client.execute(request))
+    }
+}
+
 /// The one full refresh path.  Unsafe prerequisite renewal delegates here.
 fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
+    let Ok((journal, _)) = journal() else {
+        return ExitCode::from(EXIT_UNAVAILABLE);
+    };
+    refresh_with(&journal, options, &ProductionProbe)
+}
+
+fn refresh_with(
+    journal: &Path,
+    options: &JournalBrainRefreshOptions,
+    probe: &impl BrainOwnerProbe,
+) -> ExitCode {
     let now = Utc::now();
     if options.expected_fingerprint.is_some() && options.expect_active_fingerprint_absent {
         return render_transient("stale_expected_fingerprint", options.json);
     }
-    let Ok((journal, config)) = journal() else {
-        return ExitCode::from(EXIT_UNAVAILABLE);
+    let config = match solstone_core_brain::read_journal_config(journal) {
+        Ok(read) => read.config.unwrap_or_default(),
+        Err(error) => {
+            eprintln!("brain failed: could not read journal config: {error}");
+            return ExitCode::from(EXIT_UNAVAILABLE);
+        }
     };
-    let before = view(&journal, &config, now);
+    let before = view(journal, &config, now);
     let initial_resolution = solstone_core_brain::derive_active_brain_lane(&config);
     // The Python writer wrapper always supplies the current bundled target,
     // even when another lane is active. The writer ignores it for non-bundled
     // lanes, while having it already captured closes a config-change race into
     // bundled between this read and `begin_refresh`.
-    let bundled_runtime_fingerprint = current_bundled_runtime_fingerprint(&journal, &config, None);
+    let bundled_runtime_fingerprint = probe.bundled_runtime_fingerprint(journal, &config);
     if let Some(expected) = options.expected_fingerprint.as_deref() {
         let actual = if options.expected_active_fingerprint {
             before.fingerprint_sha256.as_deref()
@@ -187,7 +240,7 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
         return brain_exit_code(&before);
     }
     let permit = match solstone_core_brain::begin_refresh(
-        &journal,
+        journal,
         now,
         None,
         if options.expected_active_fingerprint {
@@ -203,7 +256,7 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
             // A failed lease probe must not manufacture a busy result: the
             // persisted state is authoritative unless a held lease proves it.
             if solstone_core_brain::probe_file_lease_held(
-                &solstone_core_brain::brain_refresh_lease_path(&journal),
+                &solstone_core_brain::brain_refresh_lease_path(journal),
             )
             .unwrap_or(false)
             {
@@ -211,7 +264,7 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
                 render(&busy, options.json);
                 return brain_exit_code(&busy);
             }
-            let current = view(&journal, &config, Utc::now());
+            let current = view(journal, &config, Utc::now());
             render(&current, options.json);
             return brain_exit_code(&current);
         }
@@ -224,32 +277,33 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
         }
     };
 
-    let checking_config = match solstone_core_brain::read_journal_config(&journal) {
+    let checking_config = match solstone_core_brain::read_journal_config(journal) {
         Ok(read) => read.config.unwrap_or_default(),
         Err(_) => {
-            return abandon_probe_failure(&journal, &config, permit, options.json, Utc::now());
+            return abandon_probe_failure(journal, &config, permit, options.json, Utc::now());
         }
     };
-    let checking_view = view(&journal, &checking_config, Utc::now());
+    let checking_view = view(journal, &checking_config, Utc::now());
     let (Some(lane), Some(_provider), Some(_model)) = (
         checking_view.lane.as_deref(),
         checking_view.provider.as_deref(),
         checking_view.model.as_deref(),
     ) else {
-        return abandon_probe_failure(&journal, &checking_config, permit, options.json, Utc::now());
+        return abandon_probe_failure(journal, &checking_config, permit, options.json, Utc::now());
     };
     let outcome = probe_outcome(
-        &journal,
+        journal,
         &checking_config,
         lane,
         bundled_runtime_fingerprint.as_deref(),
         now,
+        probe,
     );
     let finish_bundled_runtime_fingerprint = (lane == "bundled")
-        .then(|| current_bundled_runtime_fingerprint(&journal, &checking_config, None))
+        .then(|| probe.bundled_runtime_fingerprint(journal, &checking_config))
         .flatten();
     if solstone_core_brain::finish_refresh(
-        &journal,
+        journal,
         permit,
         outcome,
         Utc::now(),
@@ -259,7 +313,7 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
     {
         return render_transient("lost_fence", options.json);
     }
-    let committed = view(&journal, &checking_config, Utc::now());
+    let committed = view(journal, &checking_config, Utc::now());
     render(&committed, options.json);
     brain_exit_code(&committed)
 }
@@ -340,9 +394,16 @@ fn probe_outcome(
     lane: &str,
     bundled_runtime_fingerprint: Option<&str>,
     now: DateTime<Utc>,
+    probe: &impl BrainOwnerProbe,
 ) -> Value {
-    let lane_prerequisites =
-        lane_prerequisite(journal, config, lane, bundled_runtime_fingerprint, now);
+    let lane_prerequisites = lane_prerequisite(
+        journal,
+        config,
+        lane,
+        bundled_runtime_fingerprint,
+        now,
+        probe,
+    );
     if let Some(reason) = lane_prerequisites
         .get("reason_code")
         .and_then(Value::as_str)
@@ -356,7 +417,7 @@ fn probe_outcome(
     json!({
         "configuration": component_ok(now),
         "lane_prerequisites": lane_prerequisites,
-        "generate": generate_component(now),
+        "generate": generate_component(now, probe),
     })
 }
 
@@ -366,13 +427,11 @@ fn lane_prerequisite(
     lane: &str,
     bundled_runtime_fingerprint: Option<&str>,
     now: DateTime<Utc>,
+    probe: &impl BrainOwnerProbe,
 ) -> Value {
     match lane {
         "bundled" => {
-            let assessment = solstone_core_brain::assess_bundled_runtime_prerequisite(
-                journal,
-                bundled_runtime_fingerprint,
-            );
+            let assessment = probe.assess_bundled_runtime(journal, bundled_runtime_fingerprint);
             assessment.reason_code.map_or_else(
                 || component_ok(now),
                 |reason| {
@@ -465,7 +524,7 @@ fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: DateTime<U
     }
 }
 
-fn generate_component(now: DateTime<Utc>) -> Value {
+fn generate_component(now: DateTime<Utc>, probe: &impl BrainOwnerProbe) -> Value {
     let request = GenerateRequest {
         id: None,
         context: HEALTH_BRAIN_GENERATE_CONTEXT.to_owned(),
@@ -483,7 +542,7 @@ fn generate_component(now: DateTime<Utc>) -> Value {
         exclusive_admission: false,
         transport_retries: Some(0),
     };
-    let result = OneShotClient::sibling().and_then(|client| client.execute(&request));
+    let result = probe.execute_generate(&request);
     let reason = match result {
         Ok(GenerateResponse::Generated(response)) => {
             let Some(reason) = classify_canned_generate(&response) else {
@@ -1046,5 +1105,320 @@ mod tests {
         );
         assert_eq!(mismatch["phase"], "ready");
         assert!(!mismatch.contains_key("runtime_reason"));
+    }
+
+    use solstone_core_brain::BundledRuntimePrerequisiteAssessment;
+    use std::sync::Mutex;
+
+    struct TestProbe<F> {
+        fingerprint: String,
+        assessment: BundledRuntimePrerequisiteAssessment,
+        generate_fn: Mutex<F>,
+        captured_requests: Mutex<Vec<GenerateRequest>>,
+    }
+
+    impl<F> TestProbe<F>
+    where
+        F: FnMut(&GenerateRequest) -> Result<GenerateResponse, ClientError>,
+    {
+        fn new(
+            fingerprint: String,
+            assessment: BundledRuntimePrerequisiteAssessment,
+            generate_fn: F,
+        ) -> Self {
+            Self {
+                fingerprint,
+                assessment,
+                generate_fn: Mutex::new(generate_fn),
+                captured_requests: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl<F> BrainOwnerProbe for TestProbe<F>
+    where
+        F: FnMut(&GenerateRequest) -> Result<GenerateResponse, ClientError>,
+    {
+        fn bundled_runtime_fingerprint(
+            &self,
+            _journal: &Path,
+            _config: &Map<String, Value>,
+        ) -> Option<String> {
+            Some(self.fingerprint.clone())
+        }
+
+        fn assess_bundled_runtime(
+            &self,
+            _journal: &Path,
+            _expected: Option<&str>,
+        ) -> BundledRuntimePrerequisiteAssessment {
+            self.assessment.clone()
+        }
+
+        fn execute_generate(
+            &self,
+            request: &GenerateRequest,
+        ) -> Result<GenerateResponse, ClientError> {
+            self.captured_requests.lock().unwrap().push(request.clone());
+            (self.generate_fn.lock().unwrap())(request)
+        }
+    }
+
+    fn setup_temp_journal() -> tempfile::TempDir {
+        let temp = tempfile::TempDir::new_in("/var/tmp").expect("temp dir in /var/tmp");
+        std::fs::create_dir_all(temp.path().join("config")).expect("config dir");
+        std::fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"local"}}}"#,
+        )
+        .expect("config write");
+        temp
+    }
+
+    fn write_runtime_file(journal: &Path, phase: &str, desired_fingerprint: &str) {
+        let runtime_dir = journal.join("health/providers/runtime");
+        std::fs::create_dir_all(&runtime_dir).expect("runtime dir");
+        std::fs::write(
+            runtime_dir.join("local.json"),
+            serde_json::to_vec(&json!({
+                "phase": phase,
+                "desired_fingerprint_sha256": desired_fingerprint,
+            }))
+            .expect("serialize runtime"),
+        )
+        .expect("write runtime");
+    }
+
+    #[test]
+    fn owner_refresh_bundled_success_converges_to_ready() {
+        let temp = setup_temp_journal();
+        let fingerprint = "a".repeat(64);
+        write_runtime_file(temp.path(), "ready", &fingerprint);
+        let assessment = BundledRuntimePrerequisiteAssessment {
+            reason_code: None,
+            desired_fingerprint_sha256: Some(fingerprint.clone()),
+            phase: Some("ready".into()),
+            runtime_reason: None,
+        };
+        let probe = TestProbe::new(fingerprint.clone(), assessment, |_| {
+            Ok(GenerateResponse::Generated(Box::new(generated_response(
+                "OK",
+                "stop",
+                json!({}),
+                None,
+            ))))
+        });
+        let exit = refresh_with(
+            temp.path(),
+            &JournalBrainRefreshOptions {
+                json: true,
+                expected_fingerprint: None,
+                expected_active_fingerprint: false,
+                expect_active_fingerprint_absent: false,
+            },
+            &probe,
+        );
+        assert_eq!(exit, ExitCode::from(0));
+
+        let config = solstone_core_brain::read_journal_config(temp.path())
+            .unwrap()
+            .config
+            .unwrap();
+        let inspection = solstone_core_brain::inspect_brain_state(temp.path(), &config, Utc::now());
+        assert_eq!(inspection.projection.aggregate_state, "ready");
+        assert_eq!(inspection.projection.reason_code, None);
+        assert!(inspection.projection.fingerprint_sha256.is_some());
+
+        let record_val = inspection.record.expect("record exists");
+        assert_eq!(record_val["reason_code"], serde_json::Value::Null);
+        assert_eq!(record_val["checking"], serde_json::Value::Null);
+        solstone_core_brain::validate_brain_state_record(&record_val, Utc::now())
+            .expect("record validates");
+
+        let captured = probe.captured_requests.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].timeout_s, Some(30.0));
+        assert_eq!(captured[0].transport_retries, Some(0));
+    }
+
+    #[test]
+    fn owner_refresh_bundled_prerequisite_failures_skip_generate_and_stay_non_ready() {
+        let failure_cases = [
+            BundledRuntimePrerequisiteAssessment {
+                reason_code: Some("local_runtime_state_unavailable".into()),
+                desired_fingerprint_sha256: None,
+                phase: None,
+                runtime_reason: None,
+            },
+            BundledRuntimePrerequisiteAssessment {
+                reason_code: Some("local_runtime_fingerprint_mismatch".into()),
+                desired_fingerprint_sha256: Some("c".repeat(64)),
+                phase: Some("ready".into()),
+                runtime_reason: None,
+            },
+            BundledRuntimePrerequisiteAssessment {
+                reason_code: Some("local_runtime_not_ready".into()),
+                desired_fingerprint_sha256: Some("a".repeat(64)),
+                phase: Some("starting".into()),
+                runtime_reason: None,
+            },
+        ];
+
+        for assessment in failure_cases {
+            let temp = setup_temp_journal();
+            let fingerprint = "a".repeat(64);
+            write_runtime_file(temp.path(), "starting", &fingerprint);
+
+            // Plant an ordinary file under imports/
+            let imports_dir = temp.path().join("imports");
+            std::fs::create_dir_all(&imports_dir).unwrap();
+            std::fs::write(imports_dir.join("planted.txt"), b"arbitrary-import-data").unwrap();
+
+            let probe = TestProbe::new(
+                fingerprint.clone(),
+                assessment,
+                |_: &GenerateRequest| -> Result<GenerateResponse, ClientError> {
+                    panic!("generate must not be called on bundled prerequisite failure");
+                },
+            );
+
+            let exit = refresh_with(
+                temp.path(),
+                &JournalBrainRefreshOptions {
+                    json: true,
+                    expected_fingerprint: None,
+                    expected_active_fingerprint: false,
+                    expect_active_fingerprint_absent: false,
+                },
+                &probe,
+            );
+            assert_ne!(exit, ExitCode::from(0));
+
+            let config = solstone_core_brain::read_journal_config(temp.path())
+                .unwrap()
+                .config
+                .unwrap();
+            let inspection =
+                solstone_core_brain::inspect_brain_state(temp.path(), &config, Utc::now());
+            assert_ne!(inspection.projection.aggregate_state, "ready");
+            let captured = probe.captured_requests.lock().unwrap();
+            assert!(captured.is_empty());
+        }
+    }
+
+    #[test]
+    fn owner_refresh_generate_failure_records_unhealthy_or_blocked() {
+        let temp = setup_temp_journal();
+        let fingerprint = "a".repeat(64);
+        write_runtime_file(temp.path(), "ready", &fingerprint);
+        let assessment = BundledRuntimePrerequisiteAssessment {
+            reason_code: None,
+            desired_fingerprint_sha256: Some(fingerprint.clone()),
+            phase: Some("ready".into()),
+            runtime_reason: None,
+        };
+        // Empty stop text produces provider_response_invalid
+        let probe = TestProbe::new(
+            fingerprint.clone(),
+            assessment,
+            |_: &GenerateRequest| -> Result<GenerateResponse, ClientError> {
+                Ok(GenerateResponse::Generated(Box::new(generated_response(
+                    "",
+                    "stop",
+                    json!({}),
+                    None,
+                ))))
+            },
+        );
+        let exit = refresh_with(
+            temp.path(),
+            &JournalBrainRefreshOptions {
+                json: true,
+                expected_fingerprint: None,
+                expected_active_fingerprint: false,
+                expect_active_fingerprint_absent: false,
+            },
+            &probe,
+        );
+        assert_eq!(exit, ExitCode::from(1));
+
+        let config = solstone_core_brain::read_journal_config(temp.path())
+            .unwrap()
+            .config
+            .unwrap();
+        let inspection = solstone_core_brain::inspect_brain_state(temp.path(), &config, Utc::now());
+        assert!(
+            matches!(
+                inspection.projection.aggregate_state.as_str(),
+                "unhealthy" | "blocked"
+            ),
+            "state: {}",
+            inspection.projection.aggregate_state
+        );
+        assert_ne!(inspection.projection.aggregate_state, "ready");
+    }
+
+    #[test]
+    fn owner_refresh_stale_expected_fingerprint_short_circuits() {
+        let temp = setup_temp_journal();
+        let fingerprint = "a".repeat(64);
+        write_runtime_file(temp.path(), "ready", &fingerprint);
+        let assessment = BundledRuntimePrerequisiteAssessment {
+            reason_code: None,
+            desired_fingerprint_sha256: Some(fingerprint.clone()),
+            phase: Some("ready".into()),
+            runtime_reason: None,
+        };
+        let probe = TestProbe::new(fingerprint.clone(), assessment, |_| {
+            Ok(GenerateResponse::Generated(Box::new(generated_response(
+                "OK",
+                "stop",
+                json!({}),
+                None,
+            ))))
+        });
+        let exit1 = refresh_with(
+            temp.path(),
+            &JournalBrainRefreshOptions {
+                json: true,
+                expected_fingerprint: None,
+                expected_active_fingerprint: false,
+                expect_active_fingerprint_absent: false,
+            },
+            &probe,
+        );
+        assert_eq!(exit1, ExitCode::from(0));
+
+        let brain_record_path = temp.path().join("health/brain.json");
+        let initial_bytes = std::fs::read(&brain_record_path).expect("read brain.json");
+
+        // Stale expected fingerprint call
+        let stale_probe = TestProbe::new(
+            fingerprint.clone(),
+            BundledRuntimePrerequisiteAssessment {
+                reason_code: None,
+                desired_fingerprint_sha256: Some(fingerprint.clone()),
+                phase: Some("ready".into()),
+                runtime_reason: None,
+            },
+            |_: &GenerateRequest| -> Result<GenerateResponse, ClientError> {
+                panic!("generate must not be called on stale fingerprint");
+            },
+        );
+        let exit2 = refresh_with(
+            temp.path(),
+            &JournalBrainRefreshOptions {
+                json: true,
+                expected_fingerprint: Some("b".repeat(64)),
+                expected_active_fingerprint: false,
+                expect_active_fingerprint_absent: false,
+            },
+            &stale_probe,
+        );
+        assert_eq!(exit2, ExitCode::from(3));
+
+        let after_bytes = std::fs::read(&brain_record_path).expect("read brain.json after");
+        assert_eq!(initial_bytes, after_bytes);
+        assert!(stale_probe.captured_requests.lock().unwrap().is_empty());
     }
 }

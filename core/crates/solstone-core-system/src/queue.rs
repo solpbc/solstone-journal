@@ -707,8 +707,9 @@ pub struct TaskQueueOptions {
     /// lookup — the hosted supervisor's own environment is not guaranteed to carry
     /// the directory `journal` is installed to (a GUI-launched macOS process gets
     /// the system default `PATH`, which excludes `/usr/local/bin`). `partition_for`
-    /// already recognizes an absolute path whose file name is `solstone-core-journal`
-    /// as the same command family, so this changes only how the child is located,
+    /// recognizes an absolute path whose file name is `solstone-core-journal` or
+    /// an absolute `solstone.exe` whose next argument is `journal` as the same command
+    /// family for classification, so this changes only how the child is located,
     /// never how the task is classified, capped or deduplicated.
     pub task_binary: Option<PathBuf>,
 }
@@ -4058,6 +4059,20 @@ mod tests {
         let binary = Path::new("/usr/local/lib/solstone-runtime/bin/solstone-core-journal");
         let submitted = vec!["/bin/sleep".to_owned(), "60".to_owned()];
         assert_eq!(exec_command(Some(binary), &submitted), submitted);
+    }
+
+    #[test]
+    fn exec_command_leaves_absolute_solstone_exe_journal_argv_untouched() {
+        let binary = Path::new("/install/bin/solstone.exe");
+        let submitted = vec![
+            "/install/bin/solstone.exe".to_owned(),
+            "journal".to_owned(),
+            "brain".to_owned(),
+            "refresh".to_owned(),
+        ];
+        let result = exec_command(Some(binary), &submitted);
+        assert_eq!(result, submitted);
+        assert_eq!(result.iter().filter(|arg| *arg == "journal").count(), 1);
     }
 
     struct FakeTreeObserver {

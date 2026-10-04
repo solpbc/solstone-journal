@@ -218,3 +218,83 @@ fn hosted_journal_returns_the_native_exit_code() {
         );
     }
 }
+
+#[test]
+fn unhosted_journal_brain_owner_dispatches_to_native_binary() {
+    let install = install();
+    let core_binary = build_binary("solstone-core", "solstone-core");
+    let core_dest = install.root.join("bin/solstone-core.exe");
+    fs::copy(&core_binary, &core_dest).expect("copy solstone-core native sibling");
+
+    let journal_dir = std::env::temp_dir().join(format!(
+        "solstone-hosted-brain-journal-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&journal_dir);
+    fs::create_dir_all(journal_dir.join("config")).expect("create config dir");
+    fs::write(
+        journal_dir.join("config/journal.json"),
+        br#"{"providers":{"active":{"provider":"local"}}}"#,
+    )
+    .expect("write bundled config");
+
+    let mut env = BTreeMap::new();
+    env.insert(
+        OsString::from("SOLSTONE_JOURNAL"),
+        journal_dir.as_os_str().to_os_string(),
+    );
+
+    let status_req = CommandLaunchRequest {
+        read_file_grants: Vec::new(),
+        program: install.journal.clone().into_os_string(),
+        arguments: vec![
+            OsString::from("brain"),
+            OsString::from("status"),
+            OsString::from("--json"),
+        ],
+        environment: env.clone(),
+        current_dir: Some(install.root.clone()),
+        process_group: false,
+        stdin_piped: false,
+        stdout_piped: true,
+        stderr_piped: true,
+    };
+    let status_output = launch_command(disposition(), status_req, terminate())
+        .expect("unhosted journal brain status launch")
+        .wait_with_output()
+        .expect("unhosted journal brain status output");
+    assert_ne!(status_output.status.code(), Some(69));
+    assert_eq!(status_output.status.code(), Some(2));
+    let status_json: serde_json::Value =
+        serde_json::from_slice(&status_output.stdout).expect("status json");
+    assert_eq!(status_json["reason_code"], "brain_record_missing");
+
+    let refresh_req = CommandLaunchRequest {
+        read_file_grants: Vec::new(),
+        program: install.journal.clone().into_os_string(),
+        arguments: vec![
+            OsString::from("brain"),
+            OsString::from("refresh"),
+            OsString::from("--json"),
+            OsString::from("--expected-fingerprint"),
+            OsString::from("b".repeat(64)),
+        ],
+        environment: env,
+        current_dir: Some(install.root.clone()),
+        process_group: false,
+        stdin_piped: false,
+        stdout_piped: true,
+        stderr_piped: true,
+    };
+    let refresh_output = launch_command(disposition(), refresh_req, terminate())
+        .expect("unhosted journal brain refresh launch")
+        .wait_with_output()
+        .expect("unhosted journal brain refresh output");
+    assert_ne!(refresh_output.status.code(), Some(69));
+    assert_eq!(refresh_output.status.code(), Some(3));
+    let refresh_json: serde_json::Value =
+        serde_json::from_slice(&refresh_output.stdout).expect("refresh json");
+    assert_eq!(refresh_json["reason_code"], "stale_expected_fingerprint");
+
+    let _ = fs::remove_dir_all(&journal_dir);
+}

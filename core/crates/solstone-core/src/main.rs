@@ -50,7 +50,7 @@ use solstone_core_cli::{
     TranscribeOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod brain_owner;
 mod check;
 mod config;
@@ -401,12 +401,12 @@ fn run_journal_route_repair(_lock_owner: &str) -> ExitCode {
     unavailable()
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn run_brain_owner(command: JournalBrainOwnerCommand) -> ExitCode {
     brain_owner::run(command)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn run_brain_owner(_command: JournalBrainOwnerCommand) -> ExitCode {
     unavailable()
 }

@@ -841,10 +841,29 @@ fn brain_refresh_argv() -> Option<Vec<String>> {
 }
 
 fn brain_refresh_argv_in(dir: &Path) -> Option<Vec<String>> {
-    let path =
-        solstone_core_journal_cli::sibling_native_in_dir(dir, "solstone-core-journal").ok()?;
-    let path = path.to_str()?.to_owned();
-    Some(vec![path, "brain".to_owned(), "refresh".to_owned()])
+    brain_refresh_argv_for_platform(dir, cfg!(windows))
+}
+
+fn brain_refresh_argv_for_platform(dir: &Path, windows_package: bool) -> Option<Vec<String>> {
+    if windows_package {
+        let exe = dir.join("solstone.exe");
+        if exe.is_file() {
+            let path = exe.to_str()?.to_owned();
+            Some(vec![
+                path,
+                "journal".to_owned(),
+                "brain".to_owned(),
+                "refresh".to_owned(),
+            ])
+        } else {
+            None
+        }
+    } else {
+        let path =
+            solstone_core_journal_cli::sibling_native_in_dir(dir, "solstone-core-journal").ok()?;
+        let path = path.to_str()?.to_owned();
+        Some(vec![path, "brain".to_owned(), "refresh".to_owned()])
+    }
 }
 
 fn send_brain_refresh_request(journal_root: &Path) -> bool {
@@ -1726,7 +1745,8 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        PollOutcome, brain_refresh_argv_in, classify_portal_call_error, poll_success_body,
+        PollOutcome, brain_refresh_argv_for_platform, brain_refresh_argv_in,
+        classify_portal_call_error, poll_success_body,
     };
 
     const AUDIO_DEFERRAL: &str = "transcription is waiting. nothing is sent until your journal verifies the service. your audio stays on your device and is transcribed later, after the check passes.";
@@ -2134,6 +2154,36 @@ mod tests {
     fn brain_refresh_argv_is_none_when_the_sibling_is_missing() {
         let root = tempfile::tempdir().expect("dir");
         assert_eq!(brain_refresh_argv_in(root.path()), None);
+    }
+
+    #[test]
+    fn brain_refresh_argv_windows_package_resolves_solstone_exe() {
+        let root = tempfile::tempdir().expect("dir");
+        let binary = root.path().join("solstone.exe");
+        fs::write(&binary, b"executable-bytes").expect("write solstone.exe");
+        let argv = brain_refresh_argv_for_platform(root.path(), true).expect("resolved");
+        assert_eq!(
+            argv,
+            vec![
+                binary.to_str().expect("utf-8").to_owned(),
+                "journal".to_owned(),
+                "brain".to_owned(),
+                "refresh".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn brain_refresh_argv_windows_package_returns_none_when_solstone_exe_missing() {
+        let root = tempfile::tempdir().expect("dir");
+        let binary = root.path().join("solstone-core-journal");
+        fs::write(&binary, "#!/bin/sh\nexit 0\n").expect("write sibling");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
+        assert_eq!(brain_refresh_argv_for_platform(root.path(), true), None);
     }
 
     fn temporary_journal(name: &str) -> PathBuf {
