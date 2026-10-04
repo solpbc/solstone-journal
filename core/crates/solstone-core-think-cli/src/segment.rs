@@ -1138,6 +1138,22 @@ fn replay_activity_state_selected(
                 entry.insert(ActivityStateMachine::default())
             }
         };
+        // A direct re-think or late live delivery can revisit old evidence.
+        // Compare under the stream's turn, before an idle input or day change
+        // can end today's activities. Historical activity replay belongs to
+        // the full-context repair path, which never writes live state.
+        if hydrate_existing
+            && machine
+                .last_segment_day()
+                .zip(machine.last_segment_key())
+                .is_some_and(|last| (context.day.as_str(), segment.as_str()) <= last)
+        {
+            log::debug!(
+                "think: {}/{segment} does not advance live activity state",
+                context.day
+            );
+            continue;
+        }
         // An activity that ends in the first segment of a new day belongs to
         // the day it ran on, so read that day before the update moves it.
         let routing_day = machine
