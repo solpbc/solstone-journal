@@ -1179,7 +1179,7 @@ mod tests {
             generation: 1,
             order,
         };
-        let guard = hold_lock(&authorization_path(journal), LockOptions::default()).unwrap();
+        let guard = hold_lock(authorization_path(journal), LockOptions::default()).unwrap();
         write_operation(journal, &record).unwrap();
         drop(guard);
     }
@@ -1499,7 +1499,7 @@ mod tests {
             generation: 1,
             order: 1,
         };
-        let guard = hold_lock(&authorization_path(journal.path()), LockOptions::default()).unwrap();
+        let guard = hold_lock(authorization_path(journal.path()), LockOptions::default()).unwrap();
         add_operation_row(journal.path(), &guard, &selected, &record).unwrap();
         let activity_path = journal.path().join("link/devices.json");
         fs::write(&activity_path, json!({
@@ -1597,7 +1597,7 @@ mod tests {
                 order,
             };
             let guard =
-                hold_lock(&authorization_path(journal.path()), LockOptions::default()).unwrap();
+                hold_lock(authorization_path(journal.path()), LockOptions::default()).unwrap();
             write_operation(journal.path(), &record).unwrap();
             drop(guard);
 
@@ -1729,7 +1729,7 @@ mod tests {
             generation: 1,
             order: 1,
         };
-        let guard = hold_lock(&authorization_path(journal.path()), LockOptions::default()).unwrap();
+        let guard = hold_lock(authorization_path(journal.path()), LockOptions::default()).unwrap();
         write_operation(journal.path(), &reserved).unwrap();
         drop(guard);
 
@@ -1765,7 +1765,7 @@ mod tests {
             generation: 3,
             order: 2,
         };
-        let guard = hold_lock(&authorization_path(journal.path()), LockOptions::default()).unwrap();
+        let guard = hold_lock(authorization_path(journal.path()), LockOptions::default()).unwrap();
         write_operation(journal.path(), &recorded).unwrap();
         drop(guard);
 
@@ -1925,7 +1925,7 @@ mod tests {
             checkpoint: DecisionCheckpoint::Prepared,
             order: 2,
         };
-        let guard = hold_lock(&authorization_path(journal.path()), LockOptions::default()).unwrap();
+        let guard = hold_lock(authorization_path(journal.path()), LockOptions::default()).unwrap();
         write_decision(journal.path(), &record).unwrap();
         drop(guard);
         let path = journal
