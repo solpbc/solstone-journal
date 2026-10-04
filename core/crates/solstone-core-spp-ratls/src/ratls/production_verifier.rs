@@ -318,11 +318,24 @@ mod tests {
     #[test]
     fn production_profiles_cover_exactly_the_production_pins() {
         let profiles = GpuProfiles::production();
-        for pin in solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS {
-            assert_eq!(
-                profiles.select(pin).expect("profile").status(),
-                StatusMode::OnlineNonce
-            );
+        let expected = [
+            (CURRENT_PIN, StatusMode::OnlineNonce),
+            (
+                "78d2cb684535a82591ef69490542ee9f1501b463675523ac76c834413e616180",
+                StatusMode::OfflineSignedAge,
+            ),
+            (
+                "96e66fc57838c29daa2b2f3b9301f5aeed3a9285fea2b4439053a7c7c7908952",
+                StatusMode::OfflineSignedAge,
+            ),
+        ];
+        assert_eq!(
+            solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS.len(),
+            expected.len()
+        );
+        for (pin, status) in expected {
+            assert!(solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS.contains(&pin));
+            assert_eq!(profiles.select(pin).expect("profile").status(), status);
         }
     }
     use crate::{

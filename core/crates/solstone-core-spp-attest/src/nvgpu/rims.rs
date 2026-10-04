@@ -99,13 +99,25 @@ impl GpuProfile {
 // Each admitted production pin and its complete profile. This mapping is
 // separate from CPU admission: a profile here never adds its fingerprint to
 // pins.rs, and the integrity test refuses an admitted pin without a profile.
-// A later pin admits its exact fingerprint, authenticated manifests and status
-// mode together, keeping this one during the overlap.
-const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[(
-    "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3",
-    ManifestSet::QUALIFIED_595_71_05,
-    StatusMode::OnlineNonce,
-)];
+// The current engine keeps online status during the overlap; both firmware
+// states of the sealed image use its authenticated, image-carried proofs.
+const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[
+    (
+        "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3",
+        ManifestSet::QUALIFIED_595_71_05,
+        StatusMode::OnlineNonce,
+    ),
+    (
+        "78d2cb684535a82591ef69490542ee9f1501b463675523ac76c834413e616180",
+        ManifestSet::QUALIFIED_595_71_05,
+        StatusMode::OfflineSignedAge,
+    ),
+    (
+        "96e66fc57838c29daa2b2f3b9301f5aeed3a9285fea2b4439053a7c7c7908952",
+        ManifestSet::QUALIFIED_595_71_05,
+        StatusMode::OfflineSignedAge,
+    ),
+];
 
 /// The GPU profiles a verifier may select from after CPU verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
