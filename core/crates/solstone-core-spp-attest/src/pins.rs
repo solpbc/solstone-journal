@@ -5,13 +5,16 @@
 
 use crate::snp::{PcrMode, Policy};
 
-// substrate: spp-engine-01 (processing.solstone.app:9443, Azure Standard_NCC40ads_H100_v5)
-// pcr_sha256 pin: b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3
-// Provenance: captured live from the production substrate, 2026-07-24,
-// operator decision record; observed identical across two fresh RA-TLS sessions
-// via the journal-side CPU-leg appraisal.
-pub const PRODUCTION_PCR_SHA256_PINS: &[&str] =
-    &["b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3"];
+// The current engine stays admitted during the sealed-appliance overlap.
+// Its fingerprint was captured live on 2026-07-24 and matched across two
+// fresh RA-TLS sessions. The sealed image's two fingerprints were qualified
+// on 2026-10-03/04, one per Azure firmware state, with reboot-identical quotes.
+// Each pin's authenticated manifests and status mode live in nvgpu/rims.rs.
+pub const PRODUCTION_PCR_SHA256_PINS: &[&str] = &[
+    "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3",
+    "78d2cb684535a82591ef69490542ee9f1501b463675523ac76c834413e616180",
+    "96e66fc57838c29daa2b2f3b9301f5aeed3a9285fea2b4439053a7c7c7908952",
+];
 
 /// Returns the pinned production policy with all non-PCR policy defaults intact.
 pub fn production_policy() -> Policy {
