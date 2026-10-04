@@ -254,7 +254,7 @@ impl ProcessServiceDeps {
     }
 
     fn load_instance_id(&self) -> Result<String, ProcessStartError> {
-        match load_link_state(&self.journal_root, "solstone") {
+        match load_link_state(&self.journal_root) {
             LinkStateRead::Present(state) => Ok(state.instance_id),
             LinkStateRead::Missing | LinkStateRead::Unreadable | LinkStateRead::Malformed => {
                 Err(ProcessStartError)
@@ -1180,8 +1180,7 @@ mod tests {
     fn process_service_loads_instance_id_from_native_committed_state() -> Result<(), String> {
         let journal = TempJournal::new()?;
         establish::current_candidate(journal.path()).map_err(|error| error.to_string())?;
-        let expected = establish::lock_in(journal.path(), Some("Native Service"))
-            .map_err(|error| error.to_string())?;
+        let expected = establish::lock_in(journal.path()).map_err(|error| error.to_string())?;
         assert!(!journal.path().join("link/state.json").exists());
 
         let actual = test_deps(journal.path())

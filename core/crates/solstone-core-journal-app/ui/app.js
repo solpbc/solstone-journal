@@ -9,7 +9,7 @@ import { renderMarkCard, markIconImages, sameMark, validMark } from './mark.js';
 const COPY = {
   panes: {
     home: 'home',
-    journal: 'name & location',
+    journal: 'location',
     run: 'run state',
     devices: 'devices',
     backup: 'backup',
@@ -37,16 +37,12 @@ const COPY = {
   health: 'health',
   healthy: 'healthy',
   unknown: 'unknown',
-  name: 'name',
-  save: 'save',
-  saved: 'saved',
   location: 'location',
   showInExplorer: 'show in File Explorer',
   copyAbout: 'copy',
   copiedAbout: 'copied',
   copyAboutFailed: "couldn't copy. select the text and copy it.",
   diskUsed: 'disk used',
-  nameCanBeSavedLater: 'name can be saved later.',
   modelsMissing: "your journal couldn't download its sound model, so it can't label sounds in your audio yet.",
   modelsRetry: 'download it now',
   modelsFailed: "that didn't download either. check that this PC is online, then try again. if it keeps failing, reinstall the journal app.",
@@ -62,7 +58,6 @@ const COPY = {
   addDevice: 'add a device',
   unnamedDevice: 'unnamed device',
   peerJournals: 'peer journals',
-  unnamedJournal: 'unnamed journal',
   neverConnected: 'never connected',
   lastSeenJustNow: 'last seen just now',
   lastSeenUnknown: 'last seen unknown',
@@ -112,7 +107,7 @@ const COPY = {
   startupTitle: 'startup',
   startAtSignIn: 'start the journal when you sign in',
   // first run
-  nameLocationTitle: "let's create your journal on this PC",
+  locationTitle: "let's create your journal on this PC",
   chooseLocation: 'choose',
   continueButton: 'continue',
   journalFound: 'journal found',
@@ -138,7 +133,7 @@ const COPY = {
   finishingTitle: 'finishing',
   finishingLoading: 'finishing…',
   finishedWithNotes: 'finished with notes',
-  adoptLandingLine: 'nothing moved. your journal was always here. now it has a name.',
+  adoptLandingLine: 'nothing moved. your journal was always here.',
   // updates (the Mac app's update words)
   updates: {
     header: version => `journal ${version}`,
@@ -217,7 +212,6 @@ const state = {
   status: null,
   pending: null,
   mark: null,
-  name: '',
   diskBytes: null,
   devices: null,
   devicesError: null,
@@ -308,15 +302,29 @@ async function serviceAction(action) {
 async function loadJournalFacts() {
   try {
     const identity = await call('convey', { method: 'GET', path: '/app/link/api/identity', port: port() });
-    if (identity?.committed && validMark(identity.mark)) {
+    if (identity?.availability === 'ready' && validMark(identity.mark)) {
       state.mark = identity.mark;
+      state.markUnavailable = false;
       await applyIcon(state.mark);
+    } else if (validMark(state.init?.mark) && (identity?.availability === 'unavailable' || (identity?.committed && !validMark(identity?.mark)))) {
+      state.mark = state.init.mark;
+      state.markUnavailable = false;
+    } else if (identity?.availability === 'unavailable' || (identity?.committed && !validMark(identity?.mark))) {
+      state.mark = null;
+      state.markUnavailable = true;
+    } else {
+      state.mark = null;
+      state.markUnavailable = false;
     }
-  } catch { /* the card shows the no-mark-yet treatment */ }
-  try {
-    const config = await call('convey', { method: 'GET', path: '/app/settings/api/config', port: port() });
-    state.name = config?.journal?.name ?? '';
-  } catch { /* the name field stays as it was */ }
+  } catch {
+    if (validMark(state.init?.mark)) {
+      state.mark = state.init.mark;
+      state.markUnavailable = false;
+    } else {
+      state.mark = null;
+      state.markUnavailable = true;
+    }
+  }
   render();
 }
 
@@ -358,7 +366,6 @@ function startPolling() {
 // --- first run -----------------------------------------------------------
 
 const firstRun = {
-  name: '',
   location: '',
   holdsJournal: false,
   steps: [],
@@ -374,18 +381,15 @@ function renderFirstRun(step) {
   root.replaceChildren();
   const card = el('div', { class: 'firstrun-card' });
   root.append(card);
-  if (step === 'name-location') {
-    const nameInput = el('input', { type: 'text', value: firstRun.name, 'aria-label': COPY.name });
-    nameInput.addEventListener('input', () => { firstRun.name = nameInput.value; });
+  if (step === 'location') {
     const locationInput = el('input', { type: 'text', value: firstRun.location, 'aria-label': COPY.location });
     locationInput.addEventListener('change', async () => {
       firstRun.location = locationInput.value;
       firstRun.holdsJournal = await call('holdsJournal', { path: firstRun.location });
-      renderFirstRun('name-location');
+      renderFirstRun('location');
     });
     put(card,
-      el('h1', {}, COPY.nameLocationTitle),
-      el('div', { class: 'field' }, el('h2', {}, COPY.name), nameInput),
+      el('h1', {}, COPY.locationTitle),
       el('div', { class: 'field' },
         el('h2', {}, COPY.location),
         el('div', { class: 'row' }, locationInput,
@@ -394,7 +398,7 @@ function renderFirstRun(step) {
             if (picked) {
               firstRun.location = picked.path;
               firstRun.holdsJournal = picked.holds_journal;
-              renderFirstRun('name-location');
+              renderFirstRun('location');
             }
           } } }, COPY.chooseLocation)),
         firstRun.holdsJournal ? el('p', { class: 'faint' }, COPY.journalFound) : null),
@@ -402,7 +406,7 @@ function renderFirstRun(step) {
       el('div', { class: 'actions' },
         el('button', { type: 'button', class: 'primary', on: { click: runSetup } }, COPY.continueButton)),
     );
-    nameInput.focus();
+    locationInput.focus();
   } else if (step === 'setup') {
     put(card,
       el('h1', {}, COPY.setupTitle),
@@ -443,14 +447,13 @@ function renderFirstRun(step) {
 }
 
 function beginFirstRun(journalPath) {
-  firstRun.name = state.init.starting_name;
   firstRun.location = journalPath || state.init.default_location;
   firstRun.error = null;
   call('holdsJournal', { path: firstRun.location }).then(holds => {
     firstRun.holdsJournal = holds;
-    renderFirstRun('name-location');
+    renderFirstRun('location');
   });
-  renderFirstRun('name-location');
+  renderFirstRun('location');
 }
 
 listeners.setup.push(({ progress }) => {
@@ -561,19 +564,6 @@ async function finishFirstRun() {
 }
 
 async function landHome() {
-  // Name the journal what the owner typed, unless it already had a name.
-  const name = firstRun.name.trim();
-  if (name) {
-    try {
-      const config = await call('convey', { method: 'GET', path: '/app/settings/api/config', port: port() });
-      if (!config?.journal?.name) {
-        await call('convey', { method: 'PUT', path: '/app/settings/api/config', port: port(),
-          body: { section: 'journal', data: { name } } });
-      }
-    } catch {
-      state.message = COPY.nameCanBeSavedLater;
-    }
-  }
   if (firstRun.adopted) state.message = COPY.adoptLandingLine;
   state.pane = 'home';
   await refreshStatus();
@@ -634,7 +624,7 @@ function openPage(target) {
 const panes = {
   home() {
     const markBox = el('div');
-    renderMarkCard(markBox, state.mark, COPY.confirmedLine);
+    renderMarkCard(markBox, state.mark, COPY.confirmedLine, state.markUnavailable);
     const key = display();
     let offer = null;
     if (key === 'running') {
@@ -647,7 +637,6 @@ const panes = {
     return [
       el('h1', {}, COPY.homeTitle),
       markBox,
-      el('p', { class: 'name-line' }, state.name || state.init.starting_name),
       statusLine(),
       message(),
       state.modelsMissing ? el('div', { class: 'notice' },
@@ -660,25 +649,9 @@ const panes = {
   },
 
   journal() {
-    const input = el('input', { type: 'text', value: state.name, 'aria-label': COPY.name });
-    const save = el('button', { type: 'button', on: { click: async () => {
-      save.disabled = true;
-      try {
-        const response = await call('convey', { method: 'PUT', path: '/app/settings/api/config', port: port(),
-          body: { section: 'journal', data: { name: input.value.trim() } } });
-        state.name = response?.config?.journal?.name ?? input.value.trim();
-        state.message = COPY.saved;
-      } catch (error) {
-        state.message = error.message;
-      }
-      render();
-    } } }, COPY.save);
-    input.addEventListener('keydown', event => { if (event.key === 'Enter') save.click(); });
     const journalPath = state.status?.service?.journal ?? '';
     return [
       el('h1', {}, COPY.panes.journal),
-      el('div', { class: 'field' }, el('h2', {}, COPY.name), el('div', { class: 'row' }, input, save)),
-      message(),
       info(COPY.location, journalPath),
       el('div', { class: 'actions tight' },
         el('button', { type: 'button', on: { click: () =>
@@ -795,9 +768,10 @@ function isPeerJournal(device) {
 }
 
 function deviceName(device) {
+  if (isPeerJournal(device)) return 'another journal';
   const name = [device.display_label, device.device_label, device.observer_handle]
     .map(value => String(value ?? '').trim()).find(Boolean);
-  return name || (isPeerJournal(device) ? COPY.unnamedJournal : COPY.unnamedDevice);
+  return name || COPY.unnamedDevice;
 }
 
 // The journal writes these as UTC timestamps; a number is seconds.
@@ -1092,7 +1066,7 @@ function pairingPanel() {
   // added shows the same mark and asks its owner to confirm it. With no link
   // there is nothing to confirm, so no mark.
   const markBox = el('div');
-  renderMarkCard(markBox, state.mark, COPY.confirmedLine);
+  renderMarkCard(markBox, state.mark, COPY.confirmedLine, state.markUnavailable);
   const closeButton = el('button', { type: 'button', on: { click: () => { closePairing(); loadDevices(); } } }, COPY.close);
   put(panel, el('h2', { tabindex: '-1' }, thisPc ? COPY.pairThisPc : COPY.addDevice));
   if (pairing.phase === 'opening') {
@@ -1325,7 +1299,6 @@ async function main() {
     // A journal set up from the terminal may not have met its mark yet.
     const probe = await call('initProbe', { port: port() }).catch(() => 'complete');
     if (probe === 'incomplete') {
-      firstRun.name = state.name || state.init.starting_name;
       await routeAfterSetup();
       return;
     }

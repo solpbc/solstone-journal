@@ -8,6 +8,7 @@ pub mod error;
 pub mod generated;
 pub mod json_format;
 pub mod link_credentials;
+mod mark_text;
 pub mod pagination;
 pub mod resident;
 pub mod seam;

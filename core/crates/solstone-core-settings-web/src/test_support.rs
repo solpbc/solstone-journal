@@ -18,6 +18,9 @@ pub fn corpus() -> Value {
         &mut corpus,
     );
     crate::settings_corpus_divergence::apply_permanent_support_settings_divergence(&mut corpus);
+    crate::settings_corpus_divergence::apply_permanent_journal_name_settings_divergence(
+        &mut corpus,
+    );
     corpus
 }
 

@@ -62,15 +62,31 @@ function renderWords(words, pair) {
 
 // The mark card. With no mark yet it shows the journal's "no identity yet"
 // treatment: dashed, empty chips and "your · journal", never an empty box.
-export function renderMarkCard(container, mark, confirmedLine) {
+export function renderMarkCard(container, mark, confirmedLine, unavailable = false) {
   container.replaceChildren();
   container.classList.add('mark-card');
   const chips = document.createElement('div');
   chips.className = 'mark-chips';
   const words = document.createElement('div');
   words.className = 'mark-words';
-  const known = validMark(mark);
-  if (known) {
+  const known = !unavailable && validMark(mark);
+  if (unavailable) {
+    for (let i = 0; i < 2; i++) {
+      const chip = document.createElement('div');
+      chip.className = 'mark-chip unavailable';
+      chip.style.borderColor = '#d1c7b7';
+      chip.style.background = '#eae5dc';
+      const q = document.createElement('span');
+      q.style.fontSize = '24px';
+      q.style.fontWeight = '700';
+      q.style.color = '#6E6453';
+      q.textContent = '?';
+      chip.appendChild(q);
+      chips.appendChild(chip);
+    }
+    renderWords(words, ['mark', 'unavailable']);
+    container.setAttribute('aria-label', "your journal's mark, unavailable right now");
+  } else if (known) {
     for (const icon of [mark.icon1, mark.icon2]) {
       const chip = document.createElement('div');
       chip.className = 'mark-chip';

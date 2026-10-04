@@ -22,10 +22,8 @@ use solstone_core_journal_io::{
 };
 
 use crate::ca::{CaError, LocalCa, generate_ca, jid_from_spki, load_ca};
-use crate::mark::{Mark, MarkError, mark_from_jid};
+use crate::mark::{Mark, MarkError, mark_from_jid, mark_words_from_jid};
 use crate::publish_checkpoint::PublishCheckpoint;
-
-const DEFAULT_HOME_LABEL: &str = "solstone";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkState {
@@ -93,8 +91,8 @@ impl From<MarkError> for EstablishError {
     }
 }
 
-pub fn lock_in(journal_root: &Path, home_label: Option<&str>) -> Result<LinkState, EstablishError> {
-    lock_in_with_interruption(journal_root, home_label, &NoopInterruption)
+pub fn lock_in(journal_root: &Path) -> Result<LinkState, EstablishError> {
+    lock_in_with_interruption(journal_root, &NoopInterruption)
 }
 
 trait PublishInterruption {
@@ -111,7 +109,6 @@ impl PublishInterruption for NoopInterruption {
 
 fn lock_in_with_interruption(
     journal_root: &Path,
-    home_label: Option<&str>,
     interruption: &dyn PublishInterruption,
 ) -> Result<LinkState, EstablishError> {
     let bundle = bundle_path(journal_root);
@@ -124,9 +121,11 @@ fn lock_in_with_interruption(
 
     let candidate = candidate_path(journal_root);
     let ca = load_candidate_for_promotion(&candidate)?;
+    let instance_id = jid_from_spki(ca.spki_der())?;
+    let home_label = mark_words_from_jid(&instance_id)?;
     let state = LinkState {
-        instance_id: jid_from_spki(ca.spki_der())?,
-        home_label: home_label.unwrap_or(DEFAULT_HOME_LABEL).to_owned(),
+        instance_id,
+        home_label,
         locked_at: now_ms(),
     };
     publish_bundle(&bundle, &ca, &state, interruption)?;
@@ -149,7 +148,6 @@ pub fn run_env_paused_lock_in() {
         .map(PathBuf::from);
     lock_in_with_interruption(
         Path::new(&journal),
-        None,
         &EnvPauseInterruption {
             wanted: checkpoint,
             marker,
@@ -398,8 +396,7 @@ fn read_state(path: &Path) -> Result<LinkState, EstablishError> {
     let home_label = object
         .get("home_label")
         .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(DEFAULT_HOME_LABEL);
+        .unwrap_or_default();
     let locked_at = object
         .get("locked_at")
         .and_then(Value::as_i64)
@@ -432,12 +429,16 @@ mod tests {
     fn lock_in_publishes_one_complete_bundle_and_is_idempotent() {
         let temporary = TempDir::new();
         current_candidate(temporary.path()).unwrap();
-        let first = lock_in(temporary.path(), Some("laptop")).unwrap();
+        let first = lock_in(temporary.path()).unwrap();
         let bundle = bundle_path(temporary.path());
         let before = fs::read(bundle.join("state.json")).unwrap();
 
-        let second = lock_in(temporary.path(), Some("ignored")).unwrap();
+        let second = lock_in(temporary.path()).unwrap();
 
+        assert_eq!(
+            first.home_label,
+            mark_words_from_jid(&first.instance_id).unwrap()
+        );
         assert_eq!(first, second);
         assert_eq!(fs::read(bundle.join("state.json")).unwrap(), before);
         assert!(bundle.join("cert.pem").is_file());
@@ -459,7 +460,7 @@ mod tests {
         fs::create_dir_all(&bundle).unwrap();
         fs::write(bundle.join("cert.pem"), "not a certificate").unwrap();
 
-        let error = lock_in(temporary.path(), None).unwrap_err();
+        let error = lock_in(temporary.path()).unwrap_err();
 
         assert!(error.to_string().contains("invalid local link state"));
     }
@@ -511,7 +512,7 @@ mod tests {
 
         assert!(!candidate_path(temporary.path()).exists());
         assert!(matches!(
-            lock_in(temporary.path(), None),
+            lock_in(temporary.path()),
             Err(EstablishError::NoCandidate)
         ));
     }
@@ -527,7 +528,7 @@ mod tests {
         let previewed = current_candidate(temporary.path()).unwrap();
         assert_eq!(candidate_mark(&previewed).unwrap(), regenerated_mark);
 
-        lock_in(temporary.path(), None).unwrap();
+        lock_in(temporary.path()).unwrap();
         let committed = load_ca(
             &fs::read_to_string(bundle_path(temporary.path()).join("cert.pem")).unwrap(),
             &fs::read_to_string(bundle_path(temporary.path()).join("private.pem")).unwrap(),
@@ -541,11 +542,11 @@ mod tests {
     fn committed_lock_in_discards_a_stray_candidate() {
         let temporary = TempDir::new();
         current_candidate(temporary.path()).unwrap();
-        let first = lock_in(temporary.path(), None).unwrap();
+        let first = lock_in(temporary.path()).unwrap();
         regenerate_candidate(temporary.path()).unwrap();
         assert!(candidate_path(temporary.path()).exists());
 
-        assert_eq!(lock_in(temporary.path(), None).unwrap(), first);
+        assert_eq!(lock_in(temporary.path()).unwrap(), first);
         assert!(!candidate_path(temporary.path()).exists());
     }
 
@@ -553,7 +554,7 @@ mod tests {
     fn lock_in_rejects_bundle_missing_cert_pem() {
         let temporary = committed_journal();
         fs::remove_file(bundle_path(temporary.path()).join("cert.pem")).unwrap();
-        let error = lock_in(temporary.path(), None).unwrap_err();
+        let error = lock_in(temporary.path()).unwrap_err();
         assert!(error.to_string().contains("cert.pem"));
     }
 
@@ -561,7 +562,7 @@ mod tests {
     fn lock_in_rejects_bundle_missing_private_pem() {
         let temporary = committed_journal();
         fs::remove_file(bundle_path(temporary.path()).join("private.pem")).unwrap();
-        let error = lock_in(temporary.path(), None).unwrap_err();
+        let error = lock_in(temporary.path()).unwrap_err();
         assert!(error.to_string().contains("private.pem"));
     }
 
@@ -569,7 +570,7 @@ mod tests {
     fn lock_in_rejects_bundle_missing_state_json() {
         let temporary = committed_journal();
         fs::remove_file(bundle_path(temporary.path()).join("state.json")).unwrap();
-        let error = lock_in(temporary.path(), None).unwrap_err();
+        let error = lock_in(temporary.path()).unwrap_err();
         assert!(error.to_string().contains("state.json"));
     }
 
@@ -581,7 +582,7 @@ mod tests {
             "not a private key",
         )
         .unwrap();
-        let error = lock_in(temporary.path(), None).unwrap_err();
+        let error = lock_in(temporary.path()).unwrap_err();
         assert!(matches!(error, EstablishError::Ca(_)));
     }
 
@@ -589,7 +590,7 @@ mod tests {
     fn lock_in_rejects_bundle_with_malformed_state_json() {
         let temporary = committed_journal();
         fs::write(bundle_path(temporary.path()).join("state.json"), b"[]").unwrap();
-        let error = lock_in(temporary.path(), None).unwrap_err();
+        let error = lock_in(temporary.path()).unwrap_err();
         assert!(error.to_string().contains("state.json must be an object"));
     }
 
@@ -600,7 +601,7 @@ mod tests {
         let mut value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         value["instance_id"] = json!("not-the-committed-jid");
         fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-        let error = lock_in(temporary.path(), None).unwrap_err();
+        let error = lock_in(temporary.path()).unwrap_err();
         assert!(
             error
                 .to_string()
@@ -651,7 +652,7 @@ mod tests {
     fn committed_journal() -> TempDir {
         let temporary = TempDir::new();
         current_candidate(temporary.path()).unwrap();
-        lock_in(temporary.path(), None).unwrap();
+        lock_in(temporary.path()).unwrap();
         temporary
     }
 
@@ -659,7 +660,7 @@ mod tests {
         let temporary = TempDir::new();
         current_candidate(temporary.path()).unwrap();
         assert!(
-            lock_in_with_interruption(temporary.path(), None, &FailAt(checkpoint)).is_err(),
+            lock_in_with_interruption(temporary.path(), &FailAt(checkpoint)).is_err(),
             "checkpoint: {}",
             checkpoint.as_str()
         );
@@ -668,7 +669,7 @@ mod tests {
             "checkpoint: {}",
             checkpoint.as_str()
         );
-        lock_in(temporary.path(), None).unwrap();
+        lock_in(temporary.path()).unwrap();
         assert_complete_bundle(temporary.path());
     }
 

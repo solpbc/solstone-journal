@@ -87,6 +87,21 @@ impl Mark {
     }
 }
 
+pub fn spoken_mark(spec: &MarkRenderSpec) -> String {
+    format!(
+        "{}, {} · {}·{}",
+        spec.icon1.color.name, spec.icon2.color.name, spec.words[0], spec.words[1]
+    )
+}
+
+pub fn mark_words(spec: &MarkRenderSpec) -> String {
+    format!("{}·{}", spec.words[0], spec.words[1])
+}
+
+pub fn mark_words_from_jid(jid: &str) -> Result<String, MarkError> {
+    Ok(mark_words(&mark_from_jid(jid)?.to_render_spec()))
+}
+
 /// Derive the frozen journal mark from a canonical textual UUID journal ID.
 pub fn mark_from_jid(jid: &str) -> Result<Mark, MarkError> {
     let assets = MarkAssets::load()?;

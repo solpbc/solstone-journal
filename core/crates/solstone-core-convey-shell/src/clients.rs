@@ -90,15 +90,27 @@ pub(crate) async fn redirect_workspace() -> Redirect {
     Redirect::permanent("/app/network/workspace")
 }
 
-fn journal_identity_meta(journal_root: &std::path::Path) -> JournalIdentityMeta {
-    let name = match solstone_core_spl::load_link_state(journal_root, "solstone") {
-        solstone_core_spl::LinkStateRead::Present(state) => Some(state.home_label),
+#[allow(clippy::result_large_err)]
+fn journal_identity_meta(journal_root: &std::path::Path) -> Result<JournalIdentityMeta, Response> {
+    let name = match solstone_core_spl::load_link_state(journal_root) {
+        solstone_core_spl::LinkStateRead::Present(state) => {
+            match solstone_core_sol_link::mark::mark_words_from_jid(&state.instance_id) {
+                Ok(words) => Some(words),
+                Err(_) => {
+                    return Err(crate::network::refusal(
+                        "journal_identity_unavailable",
+                        "journal identity could not be read",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    ));
+                }
+            }
+        }
         _ => None,
     };
-    JournalIdentityMeta {
+    Ok(JournalIdentityMeta {
         name,
         version: env!("CARGO_PKG_VERSION").to_owned(),
-    }
+    })
 }
 
 async fn get_self(
@@ -122,7 +134,10 @@ async fn get_self(
             );
         }
     };
-    let meta = journal_identity_meta(&root.0);
+    let meta = match journal_identity_meta(&root.0) {
+        Ok(meta) => meta,
+        Err(response) => return response,
+    };
     match get_description_response(&root.0, &cid, false, meta) {
         Ok(resp) => Json(resp).into_response(),
         Err(DescriptionMutationError::NotAuthorized) => crate::network::refusal(
@@ -180,7 +195,10 @@ async fn put_self(
             );
         }
     };
-    let meta = journal_identity_meta(&root.0);
+    let meta = match journal_identity_meta(&root.0) {
+        Ok(meta) => meta,
+        Err(response) => return response,
+    };
     let now = time::OffsetDateTime::now_utc();
     match put_self_description(&root.0, &cid, request, now, meta) {
         Ok(resp) => Json(resp).into_response(),
@@ -247,7 +265,10 @@ async fn patch_label(
             );
         }
     };
-    let meta = journal_identity_meta(&root.0);
+    let meta = match journal_identity_meta(&root.0) {
+        Ok(meta) => meta,
+        Err(response) => return response,
+    };
     let now = time::OffsetDateTime::now_utc();
     match patch_owner_label(&root.0, &cid, request.label, now, meta) {
         Ok(resp) => Json(resp).into_response(),

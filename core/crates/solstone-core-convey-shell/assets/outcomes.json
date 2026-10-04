@@ -10,8 +10,8 @@
     "network_error": "The service could not be reached. Check network access and try again.",
     "local_error": "Local service state could not be written. Check journal permissions and try again.",
     "needs_subscription": "your consent is saved. finish turning it on in the services portal, then turn it on here again.",
-    "relay_identity_conflict": "this solstone is already set up under a different identity. reach out to support to reset it, then try again.",
-    "relay_rotation_unsupported": "this solstone's security key changed and can't be re-registered automatically yet. reach out to support.",
+    "relay_identity_conflict": "this journal is already set up under a different identity. reach out to support to reset it, then try again.",
+    "relay_rotation_unsupported": "this journal's security key changed and can't be re-registered automatically yet. reach out to support.",
     "relay_unavailable": "the private network service isn't available right now. try again in a bit.",
     "relay_rejected": "the relay couldn't finish setting up your private network (error {code})."
   },

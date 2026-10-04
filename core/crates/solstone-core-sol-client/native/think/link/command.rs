@@ -27,7 +27,7 @@ use crate::seam::{
 
 const HELP: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n";
 const USAGE: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n";
-const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the relay URL\n  --direct              Direct only: reach the journal through a direct\n                        connection, never the relay. Use when the home is\n                        reachable directly (same network/VPN) to avoid relay\n                        dependency.\n  --relay-only          Relay only: reach the journal through the relay,\n                        never a direct connection. Use when direct connections\n                        must not be attempted, even if the home is reachable\n                        locally.\n";
+const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the relay URL\n  --direct              Direct only: reach the journal through a direct\n                        connection, never the relay. use when your journal is\n                        reachable directly (same network/vpn) to avoid relay\n                        dependency.\n  --relay-only          Relay only: reach the journal through the relay,\n                        never a direct connection. use when direct connections\n                        must not be attempted, even if your journal is reachable\n                        locally.\n";
 const SERVE_USAGE: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n";
 const STATUS_HELP: &str = "usage: solstone link status [-h] [--label LABEL]\n\nShow link status and observed remote journal version.\n\noptions:\n  -h, --help     show this help message and exit\n  --label LABEL  Link bundle label (defaults to the only paired link)\n";
 const STATUS_USAGE: &str = "usage: solstone link status [-h] [--label LABEL]\n";
@@ -286,6 +286,15 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
             1,
         ));
     };
+    let words = match mark_words_from_jid(&selection.bundle.instance_id) {
+        Ok(words) if !words.is_empty() => words,
+        _ => {
+            return Err(CommandOutput::failure(
+                "this link bundle has no journal id, so it can't be named. re-run solstone link join.\n",
+                1,
+            ));
+        }
+    };
     let request = LinkServeRequest {
         label: selection.label.clone(),
         port,
@@ -305,19 +314,19 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
     };
     let startup = match policy {
         LinkServeCarrierPolicy::Direct => format!(
-            "forwarding 127.0.0.1:{} -> home {} via direct connection\n",
+            "forwarding 127.0.0.1:{} -> {} via direct connection\n",
             session.bound_port(),
-            selection.label
+            words
         ),
         LinkServeCarrierPolicy::RelayPermitted => format!(
-            "forwarding 127.0.0.1:{} -> home {} via direct or relay\n",
+            "forwarding 127.0.0.1:{} -> {} via direct or relay\n",
             session.bound_port(),
-            selection.label
+            words
         ),
         LinkServeCarrierPolicy::RelayOnly => format!(
-            "forwarding 127.0.0.1:{} -> home {} via relay only\n",
+            "forwarding 127.0.0.1:{} -> {} via relay only\n",
             session.bound_port(),
-            selection.label
+            words
         ),
     };
     Ok(ResidentCommand::new(
@@ -411,11 +420,12 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
     CommandOutput::success(output)
 }
 
+fn mark_words_from_jid(jid: &str) -> Result<String, spl_core::mark::MarkError> {
+    crate::mark_text::mark_words_from_jid(jid)
+}
+
 fn format_spoken_mark(spec: &spl_core::mark::MarkRenderSpec) -> String {
-    format!(
-        "{}, {} · {}·{}",
-        spec.icon1.color.name, spec.icon2.color.name, spec.words[0], spec.words[1]
-    )
+    crate::mark_text::spoken_mark(spec)
 }
 
 fn format_sighting_block(
@@ -1291,7 +1301,7 @@ fn serve_transport_error_text(kind: LinkServeTransportErrorKind) -> String {
 fn serve_relay_error_text(error: crate::seam::LinkServeRelayErrorKind) -> &'static str {
     match error {
         crate::seam::LinkServeRelayErrorKind::HomeOffline => {
-            "The relay reports the home journal is offline. Start the journal or use --direct on LAN/VPN."
+            "the relay reports your journal is offline. start the journal or use --direct on lan/vpn."
         }
         crate::seam::LinkServeRelayErrorKind::Unauthorized => {
             "The relay rejected this observer token. Re-run solstone link join for this observer."
@@ -1300,7 +1310,7 @@ fn serve_relay_error_text(error: crate::seam::LinkServeRelayErrorKind) -> &'stat
             "The relay account is not available. Check relay service/account status or use --direct."
         }
         crate::seam::LinkServeRelayErrorKind::UnknownInstance => {
-            "The relay does not know this journal instance. Re-run solstone link join."
+            "the relay does not know this journal. re-run solstone link join."
         }
         crate::seam::LinkServeRelayErrorKind::PairWindowClosed => {
             "The relay pairing window is closed. Re-run solstone link join from a fresh code."
@@ -1696,7 +1706,7 @@ mod tests {
         fs::write(
             bundle_dir.join("peer.json"),
             json!({
-                "instance_id": "home-instance",
+                "instance_id": "f30ed159-ef46-8e9c-913f-e49f0fe7d201",
                 "home_label": "Home",
                 "paired_at": "2026-07-26T00:00:00Z",
                 "local_endpoints": local_endpoints.clone(),
@@ -1709,7 +1719,7 @@ mod tests {
             client_cert_pem: CERT.to_string(),
             ca_chain_pem: vec![CERT.to_string()],
             home_attestation: "attestation.jwt".to_string(),
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             home_label: "Home".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             endpoints: serve_endpoints_from_value(&local_endpoints).expect("serve endpoints"),
@@ -1990,9 +2000,10 @@ mod tests {
             Ok(resident) => resident,
             Err(output) => panic!("explicit bundle failed before resident: {output:?}"),
         };
+        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
         assert_eq!(
             explicit.startup(),
-            "forwarding 127.0.0.1:5016 -> home beta via direct or relay\n"
+            format!("forwarding 127.0.0.1:5016 -> {words} via direct or relay\n")
         );
         assert_eq!(
             explicit.serve(&ImmediateShutdown),
@@ -2022,7 +2033,7 @@ mod tests {
         };
         assert_eq!(
             defaulted.startup(),
-            "forwarding 127.0.0.1:5015 -> home alpha via direct or relay\n"
+            format!("forwarding 127.0.0.1:5015 -> {words} via direct or relay\n")
         );
         default_runner.assert_done();
     }
@@ -2055,9 +2066,10 @@ mod tests {
             Ok(resident) => resident,
             Err(output) => panic!("port 0 must enter resident serve: {output:?}"),
         };
+        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
         assert_eq!(
             resident.startup(),
-            "forwarding 127.0.0.1:54321 -> home alpha via direct or relay\n"
+            format!("forwarding 127.0.0.1:54321 -> {words} via direct or relay\n")
         );
         runner.assert_done();
     }
@@ -2108,9 +2120,10 @@ mod tests {
             Err(output) => panic!("direct serve failed before resident: {output:?}"),
         };
 
+        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
         assert_eq!(
             resident.startup(),
-            "forwarding 127.0.0.1:6001 -> home direct via direct connection\n"
+            format!("forwarding 127.0.0.1:6001 -> {words} via direct connection\n")
         );
         assert_eq!(runner.recorded()[0].request.relay_origin, None);
         runner.assert_done();
@@ -2151,9 +2164,10 @@ mod tests {
             Err(output) => panic!("relay-only serve failed before resident: {output:?}"),
         };
 
+        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
         assert_eq!(
             resident.startup(),
-            "forwarding 127.0.0.1:6002 -> home relay-only via relay only\n"
+            format!("forwarding 127.0.0.1:6002 -> {words} via relay only\n")
         );
         let recorded = runner.recorded();
         assert_eq!(recorded.len(), 1);
@@ -2209,9 +2223,10 @@ mod tests {
             Err(output) => panic!("relay-only serve failed before resident: {output:?}"),
         };
 
+        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
         assert_eq!(
             resident.startup(),
-            "forwarding 127.0.0.1:6003 -> home relay-only via relay only\n"
+            format!("forwarding 127.0.0.1:6003 -> {words} via relay only\n")
         );
         assert_eq!(
             runner.recorded()[0].request.relay_origin,
@@ -2936,7 +2951,7 @@ mod tests {
 
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
         let meta = LinkJournalMetadata {
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
@@ -3014,7 +3029,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3064,7 +3079,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: false,
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3116,7 +3131,7 @@ mod tests {
             next_retry_at: None,
             journal_version: None,
             journal_version_fresh: false,
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3165,7 +3180,7 @@ mod tests {
         .expect("write");
 
         let meta = LinkJournalMetadata {
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
@@ -3260,7 +3275,7 @@ mod tests {
         .expect("write");
 
         let meta = LinkJournalMetadata {
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
@@ -3289,7 +3304,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: "different-ca-fp".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3344,7 +3359,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: "rogue-ca-fp".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3388,7 +3403,7 @@ mod tests {
         .expect("write");
 
         let meta = LinkJournalMetadata {
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "stale-paired-at-before-repair".to_string(),
             journal_version: "2026.06.01".to_string(),
@@ -3413,7 +3428,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.06.01".to_string()),
             journal_version_fresh: true,
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "stale-paired-at-before-repair".to_string(),
             persist_uncertain: false,
@@ -3466,7 +3481,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("\x1b[31m2026.07.26\x1b[0m\x00\x07".to_string()),
             journal_version_fresh: true,
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3559,7 +3574,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
-            instance_id: "home-instance".to_string(),
+            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: true,

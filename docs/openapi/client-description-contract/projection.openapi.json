@@ -73,7 +73,7 @@
         "additionalProperties": false,
         "properties": {
           "name": {
-            "description": "Configured journal name, if any",
+            "description": "Mark words for this journal, middot-joined, when an identity exists. Null when it does not.",
             "type": [
               "string",
               "null"

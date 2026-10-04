@@ -238,7 +238,7 @@
               "string",
               "null"
             ],
-            "description": "Configured journal name, if any"
+            "description": "Mark words for this journal, middot-joined, when an identity exists. Null when it does not."
           },
           "version": {
             "type": "string",

@@ -17,7 +17,7 @@ const PRIVATE_LINK_TERMINAL_PHASES: &[&str] =
     &["enabled", "revoked", "error", "needs_subscription"];
 const PRIVATE_LINK_SETTING_UP: &str = "setting up your private network...";
 const PRIVATE_LINK_SETUP_SUCCESS: &str =
-    "your private network is on. your devices can reach home from anywhere.";
+    "your private network is on. your devices can reach your journal from anywhere.";
 const PRIVATE_LINK_SETUP_FAILED: &str = "couldn't finish setting up your private network.";
 const PRIVATE_LINK_PORTAL_CTA: &str = "continue to approve →";
 const PRIVATE_LINK_NEEDS_SUBSCRIPTION: &str = "your private network isn't on yet. your consent is saved. \
@@ -430,18 +430,24 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return link_error(error),
     };
     let mut lines = Vec::new();
-    if state.get("instance_id").is_none_or(Value::is_null) {
-        lines.push("Instance ID:   (not provisioned. pair a device to provision)".to_string());
-        lines.push("Home label:    (not provisioned)".to_string());
+    if let Some(instance_id) = state
+        .get("instance_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        let mark = match spl_core::mark::mark_from_jid(instance_id) {
+            Ok(mark) => mark,
+            Err(_) => return stderr("your journal's mark couldn't be read.", 1),
+        };
+        let spec = mark.to_render_spec();
+        let spoken = crate::mark_text::spoken_mark(&spec);
+        lines.push(spoken);
+        lines.push(format!("journal id:     {instance_id}"));
     } else {
-        lines.push(format!(
-            "Instance ID:   {}",
-            display_value(state.get("instance_id"))
-        ));
-        lines.push(format!(
-            "Home label:    {}",
-            display_value(state.get("home_label"))
-        ));
+        lines.push(
+            "your journal's identity is created when its mark is locked in during setup."
+                .to_string(),
+        );
     }
     lines.push(format!(
         "Relay URL:     {}",

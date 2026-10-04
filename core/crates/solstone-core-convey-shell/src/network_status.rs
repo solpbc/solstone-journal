@@ -39,7 +39,7 @@ use crate::network::read_posture;
 use crate::network_writes::NetworkOperationsOverride;
 
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
-const HOME_CANDIDATES_ERROR: &str = "couldn't check home addresses";
+const HOME_CANDIDATES_ERROR: &str = "couldn't check your journal's addresses";
 const LINK_HEALTH_FRESHNESS_MS: i64 = 90_000;
 
 /// The non-I/O health fields published by the status route.
@@ -224,6 +224,7 @@ struct IdentityBody {
     committed: bool,
     instance_id: Option<String>,
     mark: Option<Value>,
+    availability: &'static str,
 }
 
 #[derive(Serialize)]
@@ -285,8 +286,8 @@ pub(crate) async fn status(
         Ok(port) => port,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    let body = build_status_body(StatusInputs {
-        link_state: load_link_state(&root.0, "solstone"),
+    let body = match build_status_body(StatusInputs {
+        link_state: load_link_state(&root.0),
         token_present,
         posture,
         relay_url: relay_url(
@@ -299,7 +300,10 @@ pub(crate) async fn status(
         snapshot,
         now_ms: Utc::now().timestamp_millis(),
         direct_port,
-    });
+    }) {
+        Ok(body) => body,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
     Json(body).into_response()
 }
 
@@ -458,7 +462,10 @@ fn link_health_is_fresh(health: &LinkHealthProjection, now_ms: i64) -> bool {
         .is_some_and(|timestamp| now_ms - timestamp <= LINK_HEALTH_FRESHNESS_MS)
 }
 
-pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
+#[derive(Debug)]
+pub(crate) struct StatusError;
+
+pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> Result<StatusBody, StatusError> {
     let StatusInputs {
         link_state,
         token_present,
@@ -472,7 +479,11 @@ pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
         direct_port,
     } = inputs;
     let (instance_id, home_label) = match link_state {
-        LinkStateRead::Present(state) => (Some(state.instance_id), Some(state.home_label)),
+        LinkStateRead::Present(state) => {
+            let label = solstone_core_sol_link::mark::mark_words_from_jid(&state.instance_id)
+                .map_err(|_| StatusError)?;
+            (Some(state.instance_id.clone()), Some(label))
+        }
         LinkStateRead::Missing | LinkStateRead::Unreadable | LinkStateRead::Malformed => {
             (None, None)
         }
@@ -586,7 +597,7 @@ pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
         LinkPosture::Direct => derive_direct_relay_state(token_present),
         LinkPosture::Spl => derive_spl_relay_state(token_present, health, now_ms),
     };
-    StatusBody {
+    Ok(StatusBody {
         ca_fingerprint,
         device_addresses,
         enrolled: token_present,
@@ -612,37 +623,52 @@ pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
         relay_state: relay_state.as_str(),
         relay_url,
         vpn,
-    }
+    })
 }
 
 fn build_identity_body(
     identity: Result<CommittedIdentity, CommittedIdentityError>,
 ) -> IdentityBody {
-    let Ok(identity) = identity else {
-        return IdentityBody {
-            committed: false,
-            instance_id: None,
-            mark: None,
-        };
+    let identity = match identity {
+        Ok(identity) => identity,
+        Err(error) => {
+            let (availability, committed) = match error {
+                CommittedIdentityError::CertificateRead { source, .. }
+                    if source.kind() == std::io::ErrorKind::NotFound =>
+                {
+                    ("none", false)
+                }
+                _ => ("unavailable", true),
+            };
+            return IdentityBody {
+                committed,
+                instance_id: None,
+                mark: None,
+                availability,
+            };
+        }
     };
     let Ok(mark) = mark_from_jid(identity.instance_id()) else {
         return IdentityBody {
-            committed: false,
-            instance_id: None,
+            committed: true,
+            instance_id: Some(identity.instance_id().to_owned()),
             mark: None,
+            availability: "unavailable",
         };
     };
     let Ok(mark) = serde_json::to_value(mark.to_render_spec()) else {
         return IdentityBody {
-            committed: false,
-            instance_id: None,
+            committed: true,
+            instance_id: Some(identity.instance_id().to_owned()),
             mark: None,
+            availability: "unavailable",
         };
     };
     IdentityBody {
         committed: true,
         instance_id: Some(identity.instance_id().to_owned()),
         mark: Some(mark),
+        availability: "ready",
     }
 }
 
@@ -801,18 +827,21 @@ mod tests {
         snapshot: Result<PairingSnapshot, AddressError>,
         health: Option<&LinkHealthProjection>,
     ) -> Value {
-        serde_json::to_value(build_status_body(StatusInputs {
-            link_state: LinkStateRead::Missing,
-            token_present: false,
-            posture: LinkPosture::Direct,
-            relay_url: DEFAULT_RELAY_URL.to_owned(),
-            ca_fingerprint: None,
-            health,
-            home_address: home_address.map(str::to_owned),
-            snapshot,
-            now_ms: 1_000_000,
-            direct_port: 7657,
-        }))
+        serde_json::to_value(
+            build_status_body(StatusInputs {
+                link_state: LinkStateRead::Missing,
+                token_present: false,
+                posture: LinkPosture::Direct,
+                relay_url: DEFAULT_RELAY_URL.to_owned(),
+                ca_fingerprint: None,
+                health,
+                home_address: home_address.map(str::to_owned),
+                snapshot,
+                now_ms: 1_000_000,
+                direct_port: 7657,
+            })
+            .expect("status succeeds"),
+        )
         .expect("status serializes")
     }
 
@@ -1008,7 +1037,8 @@ mod tests {
             snapshot: Ok(snapshot),
             now_ms: 1_000_000,
             direct_port: 7657,
-        });
+        })
+        .expect("status succeeds");
 
         assert!(status.lan_accessible);
         assert_ne!(status.reachability, Reachability::LanUnreachable.as_str());
@@ -1201,21 +1231,24 @@ mod tests {
         );
         let configured_only = status_json(Some("10.0.0.9:7657"), Ok(snapshot(Vec::new())), None);
         assert_eq!(configured_only["lan_accessible"], true);
-        let custom = serde_json::to_value(build_status_body(StatusInputs {
-            link_state: LinkStateRead::Missing,
-            token_present: false,
-            posture: LinkPosture::Direct,
-            relay_url: DEFAULT_RELAY_URL.to_owned(),
-            ca_fingerprint: None,
-            health: None,
-            home_address: None,
-            snapshot: Ok(snapshot(vec![(
-                Ipv4Addr::new(192, 168, 1, 2),
-                EndpointScope::Lan,
-            )])),
-            now_ms: 1_000_000,
-            direct_port: 9000,
-        }))
+        let custom = serde_json::to_value(
+            build_status_body(StatusInputs {
+                link_state: LinkStateRead::Missing,
+                token_present: false,
+                posture: LinkPosture::Direct,
+                relay_url: DEFAULT_RELAY_URL.to_owned(),
+                ca_fingerprint: None,
+                health: None,
+                home_address: None,
+                snapshot: Ok(snapshot(vec![(
+                    Ipv4Addr::new(192, 168, 1, 2),
+                    EndpointScope::Lan,
+                )])),
+                now_ms: 1_000_000,
+                direct_port: 9000,
+            })
+            .expect("status succeeds"),
+        )
         .expect("status serializes");
         assert_eq!(
             custom["home_candidates"],
@@ -1307,8 +1340,7 @@ mod tests {
     fn unusable_saved_address_mint_and_status_agree() {
         let temporary = TempDir::new();
         solstone_core_sol_link::establish::current_candidate(temporary.path()).expect("candidate");
-        solstone_core_sol_link::establish::lock_in(temporary.path(), Some("Native Study"))
-            .expect("lock in");
+        solstone_core_sol_link::establish::lock_in(temporary.path()).expect("lock in");
         fs::create_dir_all(temporary.path().join("config")).expect("config");
         fs::write(
             temporary.path().join("config/journal.json"),
@@ -1359,7 +1391,8 @@ mod tests {
             snapshot: Ok(empty_snapshot),
             now_ms: 1_000_000,
             direct_port: 7657,
-        });
+        })
+        .expect("status succeeds");
 
         assert_eq!(
             status_body.home_address_unusable,
@@ -1437,8 +1470,7 @@ mod tests {
     fn device_addresses_and_the_minted_link_agree() {
         let temporary = TempDir::new();
         solstone_core_sol_link::establish::current_candidate(temporary.path()).expect("candidate");
-        solstone_core_sol_link::establish::lock_in(temporary.path(), Some("Native Study"))
-            .expect("lock in");
+        solstone_core_sol_link::establish::lock_in(temporary.path()).expect("lock in");
         let lan = |last| (Ipv4Addr::new(192, 168, 1, last), EndpointScope::Lan);
         let vpn = (Ipv4Addr::new(10, 8, 0, 2), EndpointScope::Vpn);
         let cases = [
@@ -1568,7 +1600,7 @@ mod tests {
     async fn status_reads_native_committed_link_state() {
         let temporary = TempDir::new();
         establish::current_candidate(temporary.path()).expect("candidate");
-        let expected = establish::lock_in(temporary.path(), Some("Native Study")).expect("lock in");
+        let expected = establish::lock_in(temporary.path()).expect("lock in");
         assert!(!temporary.path().join("link/state.json").exists());
         let app = Router::new()
             .route("/status", get(status))
@@ -1596,10 +1628,9 @@ mod tests {
             body["instance_id"].as_str(),
             Some(expected.instance_id.as_str())
         );
-        assert_eq!(
-            body["home_label"].as_str(),
-            Some(expected.home_label.as_str())
-        );
+        let expected_label =
+            solstone_core_sol_link::mark::mark_words_from_jid(&expected.instance_id).unwrap();
+        assert_eq!(body["home_label"].as_str(), Some(expected_label.as_str()));
     }
 
     #[tokio::test]
@@ -1627,8 +1658,51 @@ mod tests {
         .expect("JSON");
         assert_eq!(
             body,
-            json!({"committed":false,"instance_id":null,"mark":null})
+            json!({"committed":false,"instance_id":null,"mark":null,"availability":"none"})
         );
+    }
+
+    #[tokio::test]
+    async fn empty_journal_vs_unavailable_journal_identity_distinguishable_via_availability() {
+        let empty_root = TempDir::new();
+        let app_empty = Router::new()
+            .route("/identity", get(identity))
+            .layer(Extension(Arc::new(JournalRoot(
+                empty_root.path().to_owned(),
+            ))));
+        let response_empty = app_empty
+            .oneshot(Request::get("/identity").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let body_empty: Value = serde_json::from_slice(
+            &to_bytes(response_empty.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body_empty["committed"], false);
+        assert_eq!(body_empty["availability"], "none");
+
+        let corrupt_root = TempDir::new();
+        fs::create_dir_all(corrupt_root.path().join("link/ca")).unwrap();
+        fs::write(corrupt_root.path().join("link/ca/cert.pem"), b"not a cert").unwrap();
+        let app_corrupt = Router::new()
+            .route("/identity", get(identity))
+            .layer(Extension(Arc::new(JournalRoot(
+                corrupt_root.path().to_owned(),
+            ))));
+        let response_corrupt = app_corrupt
+            .oneshot(Request::get("/identity").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let body_corrupt: Value = serde_json::from_slice(
+            &to_bytes(response_corrupt.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body_corrupt["committed"], true);
+        assert_eq!(body_corrupt["availability"], "unavailable");
     }
 
     #[tokio::test]

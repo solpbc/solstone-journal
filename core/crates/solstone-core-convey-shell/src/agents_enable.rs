@@ -186,7 +186,7 @@ async fn agents_enable(
             poll: value.poll,
         })
         .unwrap_or(runtime);
-    let identity = match load_or_create_service_identity(&journal.0, "solstone") {
+    let identity = match load_or_create_service_identity(&journal.0) {
         Ok(value) => value,
         Err(_) => {
             return refusal(

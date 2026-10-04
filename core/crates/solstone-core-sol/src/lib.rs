@@ -1230,6 +1230,7 @@ mod tests {
 
     fn write_link_serve_bundle(config: &Path, label: &str) -> LinkServeBundle {
         const CERT: &str = "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n";
+        const JID: &str = "01957597-2a5c-7d92-8ec2-e0f3408a0d9b";
 
         let bundle_dir = config.join("solstone-observer").join("spl").join(label);
         fs::create_dir_all(&bundle_dir).expect("create link serve bundle directory");
@@ -1240,7 +1241,9 @@ mod tests {
             .expect("write home attestation");
         fs::write(
             bundle_dir.join("peer.json"),
-            r#"{"instance_id":"home-instance","home_label":"Home","paired_at":"2026-07-26T00:00:00Z","local_endpoints":[]}"#,
+            format!(
+                r#"{{"instance_id":"{JID}","home_label":"Home","paired_at":"2026-07-26T00:00:00Z","local_endpoints":[]}}"#
+            ),
         )
         .expect("write peer metadata");
 
@@ -1249,7 +1252,7 @@ mod tests {
             client_cert_pem: CERT.to_string(),
             ca_chain_pem: vec![CERT.to_string()],
             home_attestation: "attestation.jwt".to_string(),
-            instance_id: "home-instance".to_string(),
+            instance_id: JID.to_string(),
             home_label: "Home".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             endpoints: vec![],

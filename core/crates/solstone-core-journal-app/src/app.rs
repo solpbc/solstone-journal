@@ -103,20 +103,6 @@ fn is_loopback_base(base: &str) -> bool {
         .is_some_and(|port| port.parse::<u16>().is_ok())
 }
 
-/// The machine name as a starting name for a new journal, unless it is one
-/// Windows made up.
-fn starting_name() -> String {
-    let name = std::env::var("COMPUTERNAME").unwrap_or_default();
-    let generated = ["DESKTOP-", "LAPTOP-", "WIN-"]
-        .iter()
-        .any(|prefix| name.to_ascii_uppercase().starts_with(prefix));
-    if name.trim().is_empty() || generated {
-        "your journal".to_owned()
-    } else {
-        name.to_lowercase()
-    }
-}
-
 fn home_dir() -> PathBuf {
     std::env::var_os("USERPROFILE")
         .map(PathBuf::from)
@@ -245,7 +231,6 @@ fn handle(context: &Context, window: &Window, message: &str) {
                 },
                 "app_version": env!("CARGO_PKG_VERSION"),
                 "about": solstone_core_about::host_about(env!("CARGO_PKG_VERSION")).about,
-                "starting_name": starting_name(),
                 "default_location": home_dir().join("journal"),
                 // The mark the owner locked in, as the app last drew it, so a
                 // stopped journal still shows its own mark.

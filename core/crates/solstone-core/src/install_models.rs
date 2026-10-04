@@ -1401,11 +1401,8 @@ mod tests {
             .unwrap_err();
             assert_eq!(error.reason_code, "integrity_mismatch");
             assert_eq!(error.exit_code, 65);
-            assert!(
-                error
-                    .to_string()
-                    .contains("Repair or reinstall the solstone app.")
-            );
+            assert!(error.to_string().contains("your journal"));
+            assert!(!error.to_string().contains("solstone app"));
             assert!(error.to_string().contains("digest mismatch"));
             assert_eq!(std::fs::read_dir(journal.path()).unwrap().count(), 0);
         }

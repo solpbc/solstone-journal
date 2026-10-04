@@ -376,7 +376,7 @@ pub fn resolve_journal_relay_state(journal_root: &Path) -> ResolvedServiceState 
         }
     };
 
-    let instance_id = match crate::link_state_files::load_link_state(journal_root, "solstone") {
+    let instance_id = match crate::link_state_files::load_link_state(journal_root) {
         crate::link_state_files::LinkStateRead::Present(state) if !state.instance_id.is_empty() => {
             state.instance_id
         }

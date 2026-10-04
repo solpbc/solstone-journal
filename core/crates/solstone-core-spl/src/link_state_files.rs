@@ -71,7 +71,12 @@ enum JsonRead {
 /// The legacy top-level path remains authoritative when present. The native
 /// bundle is consulted only when the legacy path is absent, so malformed or
 /// unreadable legacy state cannot be masked by a valid fallback.
-pub fn load_link_state(journal_root: &Path, default_label: &str) -> LinkStateRead {
+/// Reads committed link state beneath a journal root without creating any path.
+///
+/// The legacy top-level path remains authoritative when present. The native
+/// bundle is consulted only when the legacy path is absent, so malformed or
+/// unreadable legacy state cannot be masked by a valid fallback.
+pub fn load_link_state(journal_root: &Path) -> LinkStateRead {
     let link = journal_root.join("link");
     let raw = match read_state_json(&link.join("state.json")) {
         JsonRead::Value(raw) => raw,
@@ -85,10 +90,10 @@ pub fn load_link_state(journal_root: &Path, default_label: &str) -> LinkStateRea
         JsonRead::Malformed => return LinkStateRead::Malformed,
     };
 
-    parse_link_state(raw, default_label)
+    parse_link_state(raw)
 }
 
-fn parse_link_state(raw: Value, default_label: &str) -> LinkStateRead {
+fn parse_link_state(raw: Value) -> LinkStateRead {
     let Some(object) = raw.as_object() else {
         return LinkStateRead::Malformed;
     };
@@ -100,14 +105,11 @@ fn parse_link_state(raw: Value, default_label: &str) -> LinkStateRead {
         return LinkStateRead::Malformed;
     };
 
-    let stored_label = object
+    let home_label = object
         .get("home_label")
         .and_then(Value::as_str)
-        .filter(|value| !value.is_empty());
-    let home_label = match stored_label {
-        Some(value) => value.to_owned(),
-        None => default_label.to_owned(),
-    };
+        .unwrap_or("")
+        .to_owned();
     let locked_at = object.get("locked_at").and_then(Value::as_i64);
 
     LinkStateRead::Present(LinkState {
@@ -281,7 +283,7 @@ mod tests {
         let state_path = journal.path().join("link/state.json");
         let before = fs::read(&state_path)?;
 
-        let loaded = load_link_state(journal.path(), "solstone");
+        let loaded = load_link_state(journal.path());
 
         match loaded {
             LinkStateRead::Present(value) => {
@@ -307,7 +309,7 @@ mod tests {
             r#"{"instance_id":"legacy-home","home_label":"Legacy Study"}"#,
         )?;
 
-        match load_link_state(journal.path(), "solstone") {
+        match load_link_state(journal.path()) {
             LinkStateRead::Present(value) => {
                 assert_eq!(value.instance_id, "legacy-home");
                 assert_eq!(value.home_label, "Legacy Study");
@@ -328,14 +330,14 @@ mod tests {
 
         journal.write("link/state.json", "not json")?;
         assert!(matches!(
-            load_link_state(journal.path(), "solstone"),
+            load_link_state(journal.path()),
             LinkStateRead::Malformed
         ));
 
         fs::remove_file(&legacy)?;
         fs::create_dir_all(&legacy)?;
         assert!(matches!(
-            load_link_state(journal.path(), "solstone"),
+            load_link_state(journal.path()),
             LinkStateRead::Unreadable
         ));
 
@@ -346,7 +348,7 @@ mod tests {
             fs::remove_dir(&legacy)?;
             symlink("missing-state.json", &legacy)?;
             assert!(matches!(
-                load_link_state(journal.path(), "solstone"),
+                load_link_state(journal.path()),
                 LinkStateRead::Unreadable
             ));
         }
@@ -363,7 +365,7 @@ mod tests {
             "link/ca/state.json",
             r#"{"instance_id":"native-home","home_label":"Native Study","locked_at":1700000001}"#,
         )?;
-        match load_link_state(journal.path(), "solstone") {
+        match load_link_state(journal.path()) {
             LinkStateRead::Present(value) => {
                 assert_eq!(value.instance_id, "native-home");
                 assert_eq!(value.home_label, "Native Study");
@@ -374,20 +376,20 @@ mod tests {
 
         fs::remove_file(&native)?;
         assert!(matches!(
-            load_link_state(journal.path(), "solstone"),
+            load_link_state(journal.path()),
             LinkStateRead::Missing
         ));
 
         journal.write("link/ca/state.json", "not json")?;
         assert!(matches!(
-            load_link_state(journal.path(), "solstone"),
+            load_link_state(journal.path()),
             LinkStateRead::Malformed
         ));
 
         fs::remove_file(&native)?;
         fs::create_dir_all(&native)?;
         assert!(matches!(
-            load_link_state(journal.path(), "solstone"),
+            load_link_state(journal.path()),
             LinkStateRead::Unreadable
         ));
 
@@ -398,7 +400,7 @@ mod tests {
             fs::remove_dir(&native)?;
             symlink("missing-state.json", &native)?;
             assert!(matches!(
-                load_link_state(journal.path(), "solstone"),
+                load_link_state(journal.path()),
                 LinkStateRead::Unreadable
             ));
         }
@@ -414,7 +416,7 @@ mod tests {
         native.write("link/ca/state.json", state)?;
         assert!(!native.path().join("link/ca/cert.pem").exists());
         assert!(!native.path().join("link/ca/private.pem").exists());
-        let native_read = load_link_state(native.path(), "Default Home");
+        let native_read = load_link_state(native.path());
         assert!(matches!(
             &native_read,
             LinkStateRead::Present(value)
@@ -424,31 +426,28 @@ mod tests {
         ));
         native.write("link/ca/cert.pem", "not a certificate")?;
         native.write("link/ca/private.pem", "not a private key")?;
-        assert_eq!(load_link_state(native.path(), "Default Home"), native_read);
+        assert_eq!(load_link_state(native.path()), native_read);
 
         let legacy = TempJournal::new()?;
         legacy.write("link/state.json", state)?;
-        assert_eq!(load_link_state(legacy.path(), "Default Home"), native_read);
+        assert_eq!(load_link_state(legacy.path()), native_read);
 
         let defaults =
             r#"{"instance_id":"shared-home","home_label":"","locked_at":"not-an-integer"}"#;
         let native_defaults = TempJournal::new()?;
         native_defaults.write("link/ca/state.json", defaults)?;
-        let native_default_read = load_link_state(native_defaults.path(), "Default Home");
+        let native_default_read = load_link_state(native_defaults.path());
         assert!(matches!(
             &native_default_read,
             LinkStateRead::Present(value)
                 if value.instance_id == "shared-home"
-                    && value.home_label == "Default Home"
+                    && value.home_label.is_empty()
                     && value.locked_at.is_none()
         ));
 
         let legacy_defaults = TempJournal::new()?;
         legacy_defaults.write("link/state.json", defaults)?;
-        assert_eq!(
-            load_link_state(legacy_defaults.path(), "Default Home"),
-            native_default_read
-        );
+        assert_eq!(load_link_state(legacy_defaults.path()), native_default_read);
         Ok(())
     }
 
@@ -474,7 +473,7 @@ mod tests {
             journal.write(relative, contents)?;
             let before = snapshot_tree(journal.path())?;
 
-            let loaded = load_link_state(journal.path(), "solstone");
+            let loaded = load_link_state(journal.path());
 
             if present {
                 assert!(matches!(loaded, LinkStateRead::Present(_)));
@@ -495,7 +494,7 @@ mod tests {
     {
         let missing = TempJournal::new()?;
         assert!(matches!(
-            load_link_state(missing.path(), "solstone"),
+            load_link_state(missing.path()),
             LinkStateRead::Missing
         ));
         assert!(!missing.path().join("link").exists());
@@ -503,39 +502,39 @@ mod tests {
         let malformed = TempJournal::new()?;
         malformed.write("link/state.json", "not json")?;
         assert!(matches!(
-            load_link_state(malformed.path(), "solstone"),
+            load_link_state(malformed.path()),
             LinkStateRead::Malformed
         ));
 
         let unreadable = TempJournal::new()?;
         fs::create_dir_all(unreadable.path().join("link/state.json"))?;
         assert!(matches!(
-            load_link_state(unreadable.path(), "solstone"),
+            load_link_state(unreadable.path()),
             LinkStateRead::Unreadable
         ));
         Ok(())
     }
 
     #[test]
-    fn state_uses_the_supplied_default_for_empty_or_nontext_labels() -> Result<(), Box<dyn Error>> {
+    fn state_uses_empty_string_for_missing_or_nontext_labels() -> Result<(), Box<dyn Error>> {
         let journal = TempJournal::new()?;
 
         journal.write(
             "link/state.json",
             r#"{"instance_id":"home-1","home_label":""}"#,
         )?;
-        match load_link_state(journal.path(), "Default Home") {
-            LinkStateRead::Present(value) => assert_eq!(value.home_label, "Default Home"),
-            _ => return Err("empty state label was not defaulted".into()),
+        match load_link_state(journal.path()) {
+            LinkStateRead::Present(value) => assert_eq!(value.home_label, ""),
+            _ => return Err("empty state label was not loaded as empty".into()),
         }
 
         journal.write(
             "link/state.json",
             r#"{"instance_id":"home-1","home_label":42}"#,
         )?;
-        match load_link_state(journal.path(), "Default Home") {
-            LinkStateRead::Present(value) => assert_eq!(value.home_label, "Default Home"),
-            _ => return Err("nontext state label was not defaulted".into()),
+        match load_link_state(journal.path()) {
+            LinkStateRead::Present(value) => assert_eq!(value.home_label, ""),
+            _ => return Err("nontext state label was not defaulted to empty".into()),
         }
         Ok(())
     }
@@ -553,7 +552,7 @@ mod tests {
         for (locked_at, expected) in cases {
             let payload = format!("{{\"instance_id\":\"home-1\",\"locked_at\":{locked_at}}}");
             journal.write("link/state.json", &payload)?;
-            match load_link_state(journal.path(), "solstone") {
+            match load_link_state(journal.path()) {
                 LinkStateRead::Present(value) => assert_eq!(value.locked_at, expected),
                 _ => return Err("valid state was not loaded".into()),
             }

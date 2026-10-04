@@ -85,7 +85,6 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             "email_addresses",
             "timezone",
         ],
-        "journal" => &["name"],
         "transcribe" => &["backend", "preserve_all", "confidential_audio"],
         "env" => &["PLAUD_ACCESS_TOKEN"],
         "processing" => &[],
@@ -93,14 +92,6 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         "providers" => &["byo_thinking_budget"],
         _ => return invalid_config_value(format!("Unknown section: {section}")),
     };
-    if section == "journal"
-        && data
-            .get("name")
-            .and_then(Value::as_str)
-            .is_some_and(|name| name.trim().is_empty())
-    {
-        return invalid_config_value("Journal name cannot be empty");
-    }
     if section == "transcribe" {
         if data
             .get("backend")
@@ -318,6 +309,12 @@ pub fn project_public_config(mut config: Map<String, Value>) -> Result<Map<Strin
         json!({"PLAUD_ACCESS_TOKEN": env.and_then(|values| values.get("PLAUD_ACCESS_TOKEN")).is_some_and(truthy)}),
     );
     config.remove("providers");
+    if let Some(journal) = config.get_mut("journal").and_then(Value::as_object_mut) {
+        journal.remove("name");
+        if journal.is_empty() {
+            config.remove("journal");
+        }
+    }
     let convey = config
         .entry("convey".to_owned())
         .or_insert_with(|| Value::Object(Map::new()));
@@ -798,5 +795,64 @@ mod tests {
                 assert!(!text.contains("MUST-NOT-LEAK"), "{phase} {name}");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn config_loads_journal_name_projection_omits_it_and_section_journal_write_refused() {
+        let root = crate::test_support::phase_root("rich");
+        let raw_disk: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.path().join("config/journal.json")).expect("raw config"),
+        )
+        .expect("JSON");
+        assert_eq!(raw_disk["journal"]["name"], "Analytical Engine");
+
+        let router = crate::test_support::shell_router(root.path());
+        let get_response = router
+            .clone()
+            .oneshot(
+                Request::get("/app/settings/api/config")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(get_response.status(), axum::http::StatusCode::OK);
+        let body: serde_json::Value = serde_json::from_slice(
+            &to_bytes(get_response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        assert!(body.get("journal").is_none());
+
+        let put_response = router
+            .oneshot(
+                Request::put("/app/settings/api/config")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({
+                            "section": "journal",
+                            "data": { "name": "Difference Engine" }
+                        }))
+                        .expect("body"),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(put_response.status(), axum::http::StatusCode::BAD_REQUEST);
+        let put_body: serde_json::Value = serde_json::from_slice(
+            &to_bytes(put_response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        assert_eq!(put_body["reason_code"], "invalid_config_value");
+        assert_eq!(put_body["detail"], "Unknown section: journal");
+
+        let after_disk: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.path().join("config/journal.json")).expect("after config"),
+        )
+        .expect("JSON");
+        assert_eq!(after_disk["journal"]["name"], "Analytical Engine");
     }
 }

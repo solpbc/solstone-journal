@@ -154,7 +154,7 @@ pub fn enable_spl_with(
     enroll: impl FnOnce(&ServiceIdentity, &str) -> Result<String, EnrollError>,
 ) -> Result<(), EnableSplError> {
     require_journal_config(journal_root)?;
-    let identity = load_or_create_service_identity(journal_root, "solstone")?;
+    let identity = load_or_create_service_identity(journal_root)?;
     let ca = load_service_identity_ca(journal_root)?;
     let token = enroll(&identity, &ca.public_key_spki_pem())?;
     crate::relay_access::mutate_service_configuration(journal_root, || {

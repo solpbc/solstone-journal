@@ -232,6 +232,7 @@ pub enum PairingError {
     Certificate(crate::ca::CaError),
     Ledger(AuthorizedClientsMutationError),
     Attestation(AttestationError),
+    Mark(crate::mark::MarkError),
     Serialization(serde_json::Error),
     Clock,
     JournalConfig,
@@ -257,6 +258,7 @@ impl PairingError {
             | Self::Certificate(_)
             | Self::Ledger(_)
             | Self::Attestation(_)
+            | Self::Mark(_)
             | Self::Serialization(_)
             | Self::Clock
             | Self::JournalConfig
@@ -274,6 +276,7 @@ impl PairingError {
             Self::RelayPairingUnavailable => "relay_pairing_unavailable",
             Self::RelayPairingRegistrationTimedOut => "relay_pairing_registration_timed_out",
             Self::RelayPairingTunnelInstanceMismatch => "relay_pairing_tunnel_instance_mismatch",
+            Self::Mark(_) => "mark_error",
             Self::NonceStore(_)
             | Self::Address(_)
             | Self::PairLink(_)
@@ -300,6 +303,7 @@ impl PairingError {
             | Self::Certificate(_)
             | Self::Ledger(_)
             | Self::Attestation(_)
+            | Self::Mark(_)
             | Self::Serialization(_)
             | Self::Clock
             | Self::JournalConfig
@@ -330,6 +334,7 @@ impl fmt::Display for PairingError {
             Self::Certificate(error) => error.fmt(formatter),
             Self::Ledger(error) => error.fmt(formatter),
             Self::Attestation(error) => error.fmt(formatter),
+            Self::Mark(error) => error.fmt(formatter),
             Self::Serialization(error) => error.fmt(formatter),
             Self::Clock => formatter.write_str("pairing clock is outside the supported range"),
             Self::JournalConfig => formatter.write_str("journal config could not be read"),
@@ -750,6 +755,8 @@ pub fn complete_pairing(
     let attestation =
         mint_home_attestation(identity.ca(), identity.instance_id(), issued.cid(), now)
             .map_err(PairingError::Attestation)?;
+    let home_label =
+        crate::mark::mark_words_from_jid(identity.instance_id()).map_err(PairingError::Mark)?;
     Ok(spl_core::PairResponse {
         client_cert: issued.pem().to_owned(),
         ca_chain: vec![
@@ -757,7 +764,7 @@ pub fn complete_pairing(
                 .expect("committed identity PEM is UTF-8"),
         ],
         instance_id: identity.instance_id().to_owned(),
-        home_label: identity.home_label().to_owned(),
+        home_label,
         fingerprint: issued.cid().to_owned(),
         home_attestation: Some(attestation),
         local_endpoints: ceremony.local_endpoints,
@@ -2308,5 +2315,32 @@ mod tests {
             diag.contains("saved_home=config_unreadable"),
             "expected saved_home=config_unreadable in diag: {diag}"
         );
+    }
+
+    #[test]
+    fn pairing_response_home_label_matches_mark_words_from_jid_and_not_hardcoded() {
+        let temporary = TempDir::new();
+        let instance_id = identity(temporary.path());
+        let expected_label = crate::mark::mark_words_from_jid(&instance_id).unwrap();
+        let store = NonceStore::new(temporary.path());
+        store
+            .add(
+                "test-nonce".into(),
+                "phone".into(),
+                "phone".into(),
+                false,
+                1,
+            )
+            .expect("nonce");
+        let ledger_path = temporary.path().join("link/authorized_clients.json");
+        fs::write(&ledger_path, "[]").expect("empty ledger");
+        let req = pair_request_with(object_fields(json!({
+            "client_label": "client",
+            "platform": "linux"
+        })));
+        let response = ceremony(temporary.path(), "test-nonce", &req).expect("ceremony succeeds");
+        assert_eq!(response.home_label, expected_label);
+        assert_ne!(response.home_label, "solstone");
+        assert_ne!(response.home_label, "Home");
     }
 }

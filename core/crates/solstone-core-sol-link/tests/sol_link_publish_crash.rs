@@ -79,7 +79,7 @@ fn assert_crash_before_publish_then_retry(checkpoint: PublishCheckpoint) {
         "checkpoint: {}",
         checkpoint.as_str()
     );
-    lock_in(temporary.path(), None).unwrap();
+    lock_in(temporary.path()).unwrap();
     assert_complete_bundle(temporary.path());
 }
 

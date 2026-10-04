@@ -75,8 +75,9 @@ struct ConfidentialResponse {
 
 #[derive(Serialize)]
 struct MarkResponse {
-    mark: crate::mark::MarkRenderSpec,
+    mark: Option<crate::mark::MarkRenderSpec>,
     locked: bool,
+    availability: &'static str,
 }
 
 #[derive(Serialize)]
@@ -278,18 +279,25 @@ async fn init_mark(
     match establish::load_committed(&state.journal_root) {
         Ok(Some(link_state)) => match mark_from_jid(&link_state.instance_id) {
             Ok(mark) => Json(MarkResponse {
-                mark: mark.to_render_spec(),
+                mark: Some(mark.to_render_spec()),
                 locked: true,
+                availability: "ready",
             })
             .into_response(),
-            Err(error) => establish_error(error.into()),
+            Err(_) => Json(MarkResponse {
+                mark: None,
+                locked: true,
+                availability: "unavailable",
+            })
+            .into_response(),
         },
         Ok(None) => match establish::current_candidate(&state.journal_root)
             .and_then(|candidate| establish::candidate_mark(&candidate))
         {
             Ok(mark) => Json(MarkResponse {
-                mark: mark.to_render_spec(),
+                mark: Some(mark.to_render_spec()),
                 locked: false,
+                availability: "candidate",
             })
             .into_response(),
             Err(error) => establish_error(error),
@@ -317,8 +325,9 @@ async fn init_mark_regenerate(
             .and_then(|candidate| establish::candidate_mark(&candidate))
         {
             Ok(mark) => Json(MarkResponse {
-                mark: mark.to_render_spec(),
+                mark: Some(mark.to_render_spec()),
                 locked: false,
+                availability: "candidate",
             })
             .into_response(),
             Err(error) => establish_error(error),
@@ -334,14 +343,20 @@ async fn init_mark_lock(
     if !is_local(&basis) {
         return init_local_only();
     }
-    match establish::lock_in(&state.journal_root, None) {
+    match establish::lock_in(&state.journal_root) {
         Ok(link_state) => match mark_from_jid(&link_state.instance_id) {
             Ok(mark) => Json(MarkResponse {
-                mark: mark.to_render_spec(),
+                mark: Some(mark.to_render_spec()),
                 locked: true,
+                availability: "ready",
             })
             .into_response(),
-            Err(error) => establish_error(error.into()),
+            Err(_) => Json(MarkResponse {
+                mark: None,
+                locked: true,
+                availability: "unavailable",
+            })
+            .into_response(),
         },
         Err(EstablishError::NoCandidate) => error_envelope(
             "invalid_operation_for_state",

@@ -2222,12 +2222,17 @@ async fn ac16_server_leaf_matches_reference_contract_and_is_fresh() {
     let (_, leaf) =
         x509_parser::parse_x509_certificate(first_chain[0].as_ref()).expect("leaf parses");
     let (_, ca) = x509_parser::parse_x509_certificate(fixture.ca_der()).expect("CA parses");
+    let expected_cn = format!(
+        "solstone link ({})",
+        solstone_core_sol_link::mark::mark_words_from_jid(fixture.instance_id())
+            .expect("mark words")
+    );
     assert_eq!(
         leaf.subject()
             .iter_common_name()
             .next()
             .and_then(|value| value.as_str().ok()),
-        Some("solstone link (test home)")
+        Some(expected_cn.as_str())
     );
     assert_eq!(leaf.issuer().as_raw(), ca.subject().as_raw());
     assert_eq!(

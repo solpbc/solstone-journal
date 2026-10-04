@@ -49,6 +49,59 @@ pub fn apply_permanent_support_settings_divergence(expected: &mut Value) {
     recompute_case_digests(expected);
 }
 
+/// Permanent narrow divergence introduced by the 2026-10-03 journal-mark
+/// naming decision. The frozen corpus contains two journal rename mutation
+/// probes and five empty-journal-name refusal probes expecting "Journal name cannot be empty".
+/// Because section "journal" is no longer writable, those five probes now
+/// refuse with "Unknown section: journal" while the corrupt-config phase probe
+/// continues to fail with 500 corrupt_config. The projected "journal" config
+/// section is removed from all captured responses.
+pub fn apply_permanent_journal_name_settings_divergence(expected: &mut Value) {
+    assert_eq!(
+        count_keys(expected, "POST journal.rename"),
+        2,
+        "frozen settings corpus contains exactly two journal rename mutation probes"
+    );
+    strip_named_key(expected, "POST journal.rename");
+    assert_eq!(
+        count_keys(expected, "POST config.empty-journal-name"),
+        6,
+        "frozen settings corpus contains exactly six empty-journal-name refusal probes"
+    );
+    update_empty_journal_name_probes(expected);
+    strip_named_key(expected, "journal");
+    recompute_case_digests(expected);
+}
+
+fn update_empty_journal_name_probes(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if let Some(probe) = map.get_mut("POST config.empty-journal-name")
+                && let Some(probe_map) = probe.as_object_mut()
+                && probe_map.get("status") == Some(&Value::from(400))
+            {
+                if let Some(normalized) = probe_map.get_mut("normalized")
+                    && let Some(norm_map) = normalized.as_object_mut()
+                {
+                    norm_map.insert(
+                        "detail".to_owned(),
+                        Value::String("Unknown section: journal".to_owned()),
+                    );
+                }
+            }
+            for child in map.values_mut() {
+                update_empty_journal_name_probes(child);
+            }
+        }
+        Value::Array(items) => {
+            for child in items {
+                update_empty_journal_name_probes(child);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn count_keys(value: &Value, key: &str) -> usize {
     match value {
         Value::Object(map) => {

@@ -786,22 +786,32 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             };
         }
     };
-    let issued =
-        match issue_server_certificate(identity.ca(), identity.home_label(), unix_seconds()) {
-            Ok(issued) => issued,
-            Err(error) => {
-                log::error!("paired-device door could not mint server certificate: {error}");
-                return DoorStart {
-                    outcome: DoorOutcome::Withheld(
-                        DoorWithheldReason::CommittedIdentityUnavailable,
-                    ),
-                    refresh_task: None,
-                    accept_task: None,
-                    pairing_reaper_task: None,
-                    pairing_cap_refusals: None,
-                };
-            }
-        };
+    let label = match solstone_core_sol_link::mark::mark_words_from_jid(identity.instance_id()) {
+        Ok(label) => label,
+        Err(error) => {
+            log::error!("paired-device door could not derive mark words: {error}");
+            return DoorStart {
+                outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
+                refresh_task: None,
+                accept_task: None,
+                pairing_reaper_task: None,
+                pairing_cap_refusals: None,
+            };
+        }
+    };
+    let issued = match issue_server_certificate(identity.ca(), &label, unix_seconds()) {
+        Ok(issued) => issued,
+        Err(error) => {
+            log::error!("paired-device door could not mint server certificate: {error}");
+            return DoorStart {
+                outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
+                refresh_task: None,
+                accept_task: None,
+                pairing_reaper_task: None,
+                pairing_cap_refusals: None,
+            };
+        }
+    };
     // `spl_transport::tls::mtls_config` pins the CA fingerprint but does not
     // check certificate validity. The fresh server leaf therefore retains a
     // 30-day validity window; successful mTLS tests do not exercise that window.
@@ -911,10 +921,12 @@ impl ServerIdentity {
         CaError,
     > {
         if self.issued.needs_renewal(now) {
-            // Assign only after successful issuance. The same committed CA
-            // remains pinned, and already-admitted carriers keep their leaf.
-            self.issued =
-                issue_server_certificate(self.identity.ca(), self.identity.home_label(), now)?;
+            let label =
+                solstone_core_sol_link::mark::mark_words_from_jid(self.identity.instance_id())
+                    .map_err(|_| {
+                        CaError::InvalidCa("could not derive mark words from identity instance id")
+                    })?;
+            self.issued = issue_server_certificate(self.identity.ca(), &label, now)?;
         }
         Ok((
             vec![
@@ -1588,8 +1600,10 @@ mod tests {
         std::fs::write(root.join("link/state.json"), json!({"instance_id": jid_from_spki(ca.spki_der()).expect("jid"), "home_label": "Home"}).to_string()).expect("state");
         let identity = load_committed_identity(root).expect("identity");
         let started = unix_seconds();
-        let issued = issue_server_certificate(identity.ca(), identity.home_label(), started)
-            .expect("startup leaf");
+        let label = solstone_core_sol_link::mark::mark_words_from_jid(identity.instance_id())
+            .expect("label");
+        let issued =
+            issue_server_certificate(identity.ca(), &label, started).expect("startup leaf");
         let cache = Arc::new(Mutex::new(ServerIdentity { identity, issued }));
         let (original, _) = server_identity_for_admission(cache.clone(), started)
             .await

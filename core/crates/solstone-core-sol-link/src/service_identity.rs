@@ -54,7 +54,6 @@ impl std::error::Error for ServiceIdentityError {}
 /// create it from a newly generated (or already committed) CA.
 pub fn load_or_create_service_identity(
     journal_root: &Path,
-    default_label: &str,
 ) -> Result<ServiceIdentity, ServiceIdentityError> {
     let link = journal_root.join("link");
     fs::create_dir_all(&link).map_err(ServiceIdentityError::Io)?;
@@ -62,14 +61,17 @@ pub fn load_or_create_service_identity(
         .map_err(ServiceIdentityError::Lock)?;
     let state_path = link.join("state.json");
 
-    if let Some(state) = load_state(&state_path, default_label)? {
+    if let Some(state) = load_state(&state_path)? {
         return normalize_against_committed_ca(&state_path, state);
     }
 
     let ca = load_or_generate_ca(journal_root)?;
+    let instance_id = jid_from_spki(ca.spki_der()).map_err(ServiceIdentityError::Ca)?;
+    let home_label = crate::mark::mark_words_from_jid(&instance_id)
+        .map_err(|_| ServiceIdentityError::State("failed to derive mark words from jid"))?;
     let state = ServiceIdentity {
-        instance_id: jid_from_spki(ca.spki_der()).map_err(ServiceIdentityError::Ca)?,
-        home_label: default_label.to_owned(),
+        instance_id,
+        home_label,
         locked_at: Some(now_ms()),
     };
     write_state(&state_path, &state)?;
@@ -141,10 +143,7 @@ fn load_or_generate_ca(journal_root: &Path) -> Result<LocalCa, ServiceIdentityEr
     Ok(ca)
 }
 
-fn load_state(
-    path: &Path,
-    default_label: &str,
-) -> Result<Option<ServiceIdentity>, ServiceIdentityError> {
+fn load_state(path: &Path) -> Result<Option<ServiceIdentity>, ServiceIdentityError> {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -165,8 +164,7 @@ fn load_state(
         home_label: object
             .get("home_label")
             .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-            .unwrap_or(default_label)
+            .unwrap_or("")
             .to_owned(),
         locked_at: object.get("locked_at").and_then(Value::as_i64),
     }))
@@ -229,10 +227,10 @@ mod tests {
     #[test]
     fn existing_state_is_returned_unchanged() {
         let journal = TempJournal::new();
-        let original = load_or_create_service_identity(&journal.0, "Study").unwrap();
+        let original = load_or_create_service_identity(&journal.0).unwrap();
         let path = journal.0.join("link/state.json");
         let before = fs::read(&path).unwrap();
-        let state = load_or_create_service_identity(&journal.0, "solstone").unwrap();
+        let state = load_or_create_service_identity(&journal.0).unwrap();
         assert_eq!(state, original);
         assert_eq!(fs::read(path).unwrap(), before);
     }
@@ -240,16 +238,18 @@ mod tests {
     #[test]
     fn absent_state_derives_a_fresh_id_from_the_ca() {
         let journal = TempJournal::new();
-        let state = load_or_create_service_identity(&journal.0, "Home").unwrap();
+        let state = load_or_create_service_identity(&journal.0).unwrap();
         let ca = load_service_identity_ca(&journal.0).unwrap();
-        assert_eq!(state.instance_id, jid_from_spki(ca.spki_der()).unwrap());
-        assert_eq!(state.home_label, "Home");
+        let expected_jid = jid_from_spki(ca.spki_der()).unwrap();
+        let expected_label = crate::mark::mark_words_from_jid(&expected_jid).unwrap();
+        assert_eq!(state.instance_id, expected_jid);
+        assert_eq!(state.home_label, expected_label);
     }
 
     #[test]
     fn inconsistent_id_is_repaired_without_regenerating_the_ca() {
         let journal = TempJournal::new();
-        let initial = load_or_create_service_identity(&journal.0, "Home").unwrap();
+        let initial = load_or_create_service_identity(&journal.0).unwrap();
         let certificate = fs::read(journal.0.join("link/ca/cert.pem")).unwrap();
         write_state(
             &journal.0.join("link/state.json"),
@@ -259,9 +259,9 @@ mod tests {
             },
         )
         .unwrap();
-        let repaired = load_or_create_service_identity(&journal.0, "Other").unwrap();
+        let repaired = load_or_create_service_identity(&journal.0).unwrap();
         assert_eq!(repaired.instance_id, initial.instance_id);
-        assert_eq!(repaired.home_label, "Home");
+        assert_eq!(repaired.home_label, initial.home_label);
         assert_eq!(
             fs::read(journal.0.join("link/ca/cert.pem")).unwrap(),
             certificate

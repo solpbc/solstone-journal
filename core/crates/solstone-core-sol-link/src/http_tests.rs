@@ -233,7 +233,7 @@ async fn identity_is_neutral_until_committed_then_returns_a_render_spec() {
     );
 
     establish::current_candidate(temporary.path()).unwrap();
-    let committed = establish::lock_in(temporary.path(), None).unwrap();
+    let committed = establish::lock_in(temporary.path()).unwrap();
     let response = request(
         temporary.path(),
         AccessBasis::Localhost,
@@ -365,6 +365,7 @@ async fn mark_preview_returns_only_a_render_spec_and_lock_requires_a_candidate()
     .await;
     let body = response_json(preview).await;
     assert_eq!(body["locked"], false);
+    assert_eq!(body["availability"], "candidate");
     assert_mark_render_spec(&body["mark"]);
 }
 
@@ -395,7 +396,7 @@ async fn regenerate_is_blocked_when_identity_is_locked() {
 async fn committed_mark_returns_the_locked_identity_mark() {
     let temporary = TempDir::new();
     establish::current_candidate(temporary.path()).unwrap();
-    let committed = establish::lock_in(temporary.path(), None).unwrap();
+    let committed = establish::lock_in(temporary.path()).unwrap();
     let expected_mark = serde_json::to_value(
         mark_from_jid(&committed.instance_id)
             .unwrap()
@@ -415,7 +416,7 @@ async fn committed_mark_returns_the_locked_identity_mark() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response_json(response).await,
-        json!({"locked":true,"mark":expected_mark})
+        json!({"availability":"ready","locked":true,"mark":expected_mark})
     );
 }
 
@@ -506,7 +507,7 @@ async fn init_redirects_after_finalize() {
     let temporary = TempDir::new();
 
     establish::current_candidate(temporary.path()).unwrap();
-    establish::lock_in(temporary.path(), None).unwrap();
+    establish::lock_in(temporary.path()).unwrap();
     let finalize = request(
         temporary.path(),
         AccessBasis::Localhost,
@@ -555,7 +556,7 @@ async fn init_does_not_overwrite_corrupt_config() {
 async fn finalize_writes_journal_config_with_the_python_response_shape() {
     let temporary = TempDir::new();
     establish::current_candidate(temporary.path()).unwrap();
-    establish::lock_in(temporary.path(), None).unwrap();
+    establish::lock_in(temporary.path()).unwrap();
     let config_path = temporary.path().join("config").join("journal.json");
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
     fs::write(
@@ -770,7 +771,7 @@ fn assert_mark_render_spec(mark: &Value) {
 fn committed_journal() -> TempDir {
     let temporary = TempDir::new();
     establish::current_candidate(temporary.path()).unwrap();
-    establish::lock_in(temporary.path(), None).unwrap();
+    establish::lock_in(temporary.path()).unwrap();
     temporary
 }
 

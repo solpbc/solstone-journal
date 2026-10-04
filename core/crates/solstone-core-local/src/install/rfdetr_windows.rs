@@ -31,7 +31,7 @@ pub const RFDETR_THRESHOLD: &str = "0.25";
 pub const RFDETR_THREADS: &str = "4";
 
 pub const RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE: &str =
-    "Object detection is unavailable. Repair or reinstall the solstone app.";
+    "object detection is unavailable. repair or reinstall your journal.";
 
 pub fn rfdetr_degraded_guidance(os_name: &str, arch: &str) -> &'static str {
     if super::rfdetr_install::rfdetr_uses_package_payload(os_name, arch) {

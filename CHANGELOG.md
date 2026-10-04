@@ -12,6 +12,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the journal is named by its mark. nothing asks for another name, and paired devices and status show the mark words.
+
 - on windows, the thinking page no longer offers to turn on confidential processing, because your journal can't check the service's hardware there yet. it now says confidential processing isn't on windows yet, and so do the home page and the health page, which said processing needed attention, and `solstone journal brain refresh`. if you already turned it on, you can still turn it off on the thinking page. either way, nothing is sent to confidential processing.
 - when activities from two of your sources land in the same facet at the same time, the home page now says where each one came from if your journal can tell, for example "from your watch".
 - when your journal has a meeting's audio, something in that meeting's story written as yours now reads "unknown" unless it quotes your own words from that meeting, from a line your journal recognized as your voice. your morning briefing now works first from your own follow-ups and decisions that quote what you said.

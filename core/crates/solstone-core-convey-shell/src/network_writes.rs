@@ -203,7 +203,7 @@ async fn set_home_address(
         Err(_) => {
             return refusal(
                 "service_operation_failed",
-                "couldn't save your home address",
+                "couldn't save your journal's address",
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
@@ -231,7 +231,7 @@ async fn set_home_address(
     if result.is_err() {
         return refusal(
             "service_operation_failed",
-            "couldn't save your home address",
+            "couldn't save your journal's address",
             StatusCode::INTERNAL_SERVER_ERROR,
         );
     }
@@ -273,7 +273,7 @@ async fn private_link_enable(
             enrollment: value.enrollment,
         })
         .unwrap_or(runtime);
-    let identity = match load_or_create_service_identity(&journal.0, "solstone") {
+    let identity = match load_or_create_service_identity(&journal.0) {
         Ok(value) => value,
         Err(_) => {
             return refusal(

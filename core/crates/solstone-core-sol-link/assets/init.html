@@ -648,6 +648,17 @@
       if (retryButton) retryButton.hidden = true;
     }
 
+    function renderUnavailableMark(display) {
+      if (!display) return;
+      display.innerHTML = '<div class="mark-card unavailable" role="img" aria-label="your journal\'s mark, unavailable right now">' +
+        '<div class="mark-chips">' +
+        '<div class="mark-chip-unavailable" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 2px solid #d1c7b7; background: #eae5dc; border-radius: 12px; box-sizing: border-box;"><span style="font-size: 24px; font-weight: 700; color: #6E6453;">?</span></div>' +
+        '<div class="mark-chip-unavailable" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 2px solid #d1c7b7; background: #eae5dc; border-radius: 12px; box-sizing: border-box;"><span style="font-size: 24px; font-weight: 700; color: #6E6453;">?</span></div>' +
+        '</div>' +
+        '<div class="mark-words"><span>mark</span><span class="mark-sep">·</span><span>unavailable</span></div>' +
+        '</div>';
+    }
+
     function applyLockState(locked) {
       journalMarkLocked = locked === true;
       const regenerateButton = document.getElementById('journal-mark-regenerate');
@@ -663,16 +674,21 @@
       if (finishButton) finishButton.disabled = !journalMarkLocked;
     }
 
+    function validMarkSpec(spec) {
+      const icons = spec ? [spec.icon1, spec.icon2] : [];
+      const words = Array.isArray(spec && spec.words) ? spec.words : [];
+      return icons.length === 2 && icons.every(icon => icon && icon.svg && icon.color && icon.color.hex) && words.length === 2;
+    }
+
     function renderMark(spec, locked) {
       const display = document.getElementById('journal-mark-display');
       const errorEl = document.getElementById('journal-mark-error');
       const retryButton = document.getElementById('journal-mark-retry');
       const icons = spec ? [spec.icon1, spec.icon2] : [];
       const words = Array.isArray(spec && spec.words) ? spec.words : [];
-      const validIcons = icons.length === 2 && icons.every(icon => icon && icon.svg && icon.color && icon.color.hex);
 
       if (!display) return;
-      if (!validIcons || words.length !== 2) {
+      if (!validMarkSpec(spec)) {
         renderGenericMark(display);
         return;
       }
@@ -714,10 +730,21 @@
           retryButton.disabled = true;
           retryButton.textContent = 'trying…';
         }
+        const display = document.getElementById('journal-mark-display');
         try {
           const data = await window.apiJson('/init/mark');
-          renderMark(data.mark, data.locked);
+          if (!data || data.availability === 'none') {
+            renderGenericMark(display);
+            applyLockState(false);
+          } else if ((data.availability === 'candidate' || data.availability === 'ready') && validMarkSpec(data.mark)) {
+            renderMark(data.mark, data.locked);
+          } else {
+            renderUnavailableMark(display);
+            if (data && data.locked) applyLockState(true);
+            else applyLockState(false);
+          }
         } catch (err) {
+          renderUnavailableMark(display);
           showMarkError((err && err.serverMessage) || "couldn't load your mark. try again.");
           if (retryButton) retryButton.hidden = false;
           if (finishButton) finishButton.disabled = true;
@@ -821,7 +848,7 @@
         if (data && data.error) {
           showFinalizeError(errorEl, data.error);
         } else {
-          showFinalizeError(errorEl, 'unexpected response from server. check the browser console.');
+          showFinalizeError(errorEl, "your journal couldn't finish setup. try again.");
         }
       } catch (err) {
         let message = err && err.serverMessage;
