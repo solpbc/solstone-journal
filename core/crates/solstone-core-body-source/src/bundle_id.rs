@@ -4,7 +4,8 @@
 use crate::{BodyString, BodyWireIdentityError, BodyWireIdentityField};
 
 const BUNDLE_ID_LENGTH: usize = 31;
-const PREFIX: &[u8] = b"body-";
+pub const BODY_BUNDLE_DIR_PREFIX: &str = "body-";
+const PREFIX: &[u8] = BODY_BUNDLE_DIR_PREFIX.as_bytes();
 const CROCKFORD32: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /// A validated native body-bundle identifier.

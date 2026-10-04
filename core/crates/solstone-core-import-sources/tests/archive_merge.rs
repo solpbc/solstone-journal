@@ -126,6 +126,54 @@ fn identical_retry_is_noop_and_different_segment_lands_on_a_new_key() {
 }
 
 #[test]
+fn a_segment_the_owner_deleted_is_never_brought_back() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(source.join("chronicle/20260811/120000_60")).unwrap();
+    fs::write(source.join("chronicle/20260811/120000_60/value"), b"one").unwrap();
+    fs::create_dir_all(source.join("chronicle/20260811/130000_60")).unwrap();
+    fs::write(source.join("chronicle/20260811/130000_60/value"), b"two").unwrap();
+    fs::create_dir_all(source.join("chronicle/20260811/140000_60")).unwrap();
+    fs::write(source.join("chronicle/20260811/140000_60/value"), b"three").unwrap();
+    let archive = archive_from(&source, &tree.path);
+    let options = options(&tree);
+
+    // The owner deleted one segment (a tombstone holds its key) and another is
+    // mid-removal (its staged removal sits beside where it was).
+    fs::create_dir_all(target.join("chronicle/20260811/120000_60")).unwrap();
+    fs::write(
+        target.join("chronicle/20260811/120000_60/tombstone.json"),
+        b"{}",
+    )
+    .unwrap();
+    fs::create_dir_all(target.join("chronicle/20260811/.removing_130000_60")).unwrap();
+
+    let result = merge_journal_archive(&archive, &target, &options, None).unwrap();
+    for key in ["120000_60", "130000_60"] {
+        assert!(result.segment_dispositions.iter().any(|item| {
+            item.key == key && item.disposition == SegmentDispositionKind::DeletedByOwner
+        }));
+    }
+    assert!(result.segment_dispositions.iter().any(|item| {
+        item.key == "140000_60" && item.disposition == SegmentDispositionKind::Copied
+    }));
+    assert_eq!(
+        fs::read_dir(target.join("chronicle/20260811/120000_60"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>(),
+        vec![std::ffi::OsString::from("tombstone.json")]
+    );
+    assert!(!target.join("chronicle/20260811/120000_61").exists());
+    assert!(!target.join("chronicle/20260811/130000_60").exists());
+    assert_eq!(
+        fs::read(target.join("chronicle/20260811/140000_60/value")).unwrap(),
+        b"three"
+    );
+}
+
+#[test]
 fn a_moved_segment_never_takes_the_key_another_archive_segment_arrives_with() {
     let tree = TempTree::new();
     let source = tree.path.join("source");

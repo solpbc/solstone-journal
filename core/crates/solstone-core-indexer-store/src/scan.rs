@@ -181,8 +181,11 @@ fn delete_file_chunks(
 }
 
 pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
-    crate::db::prune_authored_chat_paths(journal)?;
     let mut conn = open_index(journal)?;
+    let tx_chat = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    crate::db::delete_by_path_predicate(&tx_chat, crate::db::AUTHORED_CHAT_PATH_PREDICATE)?;
+    tx_chat.commit()?;
+
     let mut report = ScanReport::default();
     let files = discover_indexable_files(journal)?;
 
@@ -262,6 +265,15 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
         removed_count += 1;
     }
     report.removed = removed_count;
+
+    let tx_body = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let body_counts = crate::db::delete_by_path_predicate(
+        &tx_body,
+        &solstone_core_format::body::body_source_predicate(),
+    )?;
+    tx_body.commit()?;
+    report.removed += body_counts.files as usize;
+
     report
         .warnings
         .extend(migrate_segment_aggregates(&mut conn, journal)?);
@@ -408,6 +420,9 @@ fn run_bounded_merge(conn: &mut Connection) -> (usize, Option<String>) {
 
 pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, StoreError> {
     let (rel, path) = resolve_rescan_target(journal, input)?;
+    if solstone_core_format::body::is_body_source_path(&rel) {
+        return Ok(RescanFileStatus::Declined);
+    }
     let resolution = resolve_content_shape(&path, &rel);
     let edge_source = edge_source_for_rel(&rel)?;
     let family = match resolution {
@@ -6024,6 +6039,346 @@ not json
         );
 
         fs::remove_dir_all(root).expect("cleanup concurrent test root");
+    }
+
+    #[test]
+    fn rescan_file_declines_body_paths_and_extracts_control_edges() {
+        let root = temp_root("rescan-body-control");
+        let body_rel =
+            "chronicle/20260731/import.apple_health/132000_60/talents/speaker_labels.json";
+        let ctrl_rel = "chronicle/20260731/default/132000_60/talents/speaker_labels.json";
+        write(
+            &root,
+            body_rel,
+            r#"{"labels":[{"speaker":"alice","sentence_id":0}]}"#,
+        );
+        write(
+            &root,
+            ctrl_rel,
+            r#"{"labels":[{"speaker":"alice","sentence_id":0}]}"#,
+        );
+
+        let body_status = rescan_file(&root, &root.join(body_rel)).expect("rescan body status");
+        assert_eq!(body_status, RescanFileStatus::Declined);
+
+        let ctrl_status = rescan_file(&root, &root.join(ctrl_rel)).expect("rescan control status");
+        assert!(matches!(ctrl_status, RescanFileStatus::Indexed { .. }));
+
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM edge_files WHERE path LIKE '%import.apple_health%'"
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM edge_files WHERE path LIKE '%default%'"
+            ),
+            1
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn prune_body_source_paths_absent_index_creates_no_directory() {
+        let root = temp_root("prune-body-absent");
+        let res = crate::db::prune_body_source_paths(&root).expect("prune absent");
+        assert_eq!(res, None);
+        assert!(!root.join("indexer").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn scan_journal_prunes_body_source_paths_light_and_full() {
+        let root = temp_root("scan-body-prune");
+        let conn = open_index(&root).expect("open index");
+
+        let body_paths = [
+            "20260101/import.apple_health/120000_60/imported.md",
+            "chronicle/20260101/import.apple_health/120000_60/imported.md",
+            "imports/body-01j8k9m0n1p2q3r4s5t6u7v8w9x/summary.md",
+        ];
+
+        for path in body_paths {
+            conn.execute(
+                "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('body text', ?, '20260101', '', '', 'import.apple_health', 0, '')",
+                [path],
+            )
+            .expect("insert chunk");
+            conn.execute("INSERT INTO files(path, mtime) VALUES (?, 1000)", [path])
+                .expect("insert file");
+            replace_chunk_classification(
+                &conn,
+                &ChunkClassification {
+                    path: path.to_string(),
+                    category: Some("transcripts"),
+                    basis: Some("segment_assigned"),
+                    eligible: true,
+                    unclassified: false,
+                    facet_ids: vec!["f1".to_string()],
+                },
+            )
+            .expect("insert classification");
+        }
+
+        // Real files that discovery indexes
+        let ctrl_path = "chronicle/20260102/import.ics/110000_60/event_transcript.md";
+        let non_body_underscore_path =
+            "chronicle/20260102/import.appleXhealth/120000_60/imported.md";
+        write(&root, ctrl_path, "# Control\n\nMeeting.");
+        write(
+            &root,
+            non_body_underscore_path,
+            "# Underscore twin\n\nOther.",
+        );
+
+        // Light scan
+        let report_light = scan_journal(&root, false).expect("light scan");
+        assert!(report_light.removed >= 3);
+
+        for path in body_paths {
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!("SELECT count(*) FROM chunks WHERE path='{path}'")
+                ),
+                0,
+                "chunks must not contain {path}"
+            );
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!("SELECT count(*) FROM files WHERE path='{path}'")
+                ),
+                0,
+                "files must not contain {path}"
+            );
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!("SELECT count(*) FROM chunk_classification WHERE path='{path}'")
+                ),
+                0,
+                "chunk_classification must not contain {path}"
+            );
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!(
+                        "SELECT count(*) FROM chunk_classification_facets WHERE path='{path}'"
+                    )
+                ),
+                0,
+                "chunk_classification_facets must not contain {path}"
+            );
+        }
+
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM files WHERE path LIKE '%import.appleXhealth%'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM files WHERE path LIKE '%import.ics%'"
+            ),
+            1
+        );
+
+        // Full scan
+        scan_journal(&root, true).expect("full scan");
+        for path in body_paths {
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!("SELECT count(*) FROM chunks WHERE path='{path}'")
+                ),
+                0,
+                "chunks must not contain {path} after full scan"
+            );
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!("SELECT count(*) FROM files WHERE path='{path}'")
+                ),
+                0,
+                "files must not contain {path} after full scan"
+            );
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!("SELECT count(*) FROM chunk_classification WHERE path='{path}'")
+                ),
+                0,
+                "chunk_classification must not contain {path} after full scan"
+            );
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!(
+                        "SELECT count(*) FROM chunk_classification_facets WHERE path='{path}'"
+                    )
+                ),
+                0,
+                "chunk_classification_facets must not contain {path} after full scan"
+            );
+        }
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM files WHERE path LIKE '%import.appleXhealth%'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM files WHERE path LIKE '%import.ics%'"
+            ),
+            1
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn predicate_in_deletes_canary_and_keeps_other_rows() {
+        let root = temp_root("predicate-in-canary");
+        let conn = open_index(&root).expect("open index");
+        let canary_path = "20260101/import.canary_body/120000_60/imported.md";
+        let oura_path = "20260101/import.oura/120000_60/imported.md";
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('canary', ?1, '20260101', '', '', 'import.canary_body', 0, '')",
+            params![canary_path],
+        )
+        .expect("insert canary chunk");
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('oura', ?1, '20260101', '', '', 'import.oura', 0, '')",
+            params![oura_path],
+        )
+        .expect("insert oura chunk");
+
+        let pred = solstone_core_format::body::body_source_predicate_in(["import.canary_body"]);
+        conn.execute(&format!("DELETE FROM chunks WHERE {pred}"), [])
+            .expect("execute delete with canary predicate");
+
+        assert_eq!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{canary_path}'")
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{oura_path}'")
+            ),
+            1
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn full_scan_with_body_rows_and_control_completes() {
+        let root = temp_root("full-scan-complete");
+        let conn = open_index(&root).expect("open index");
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('b', '20260101/import.apple_health/120000_60/imported.md', '20260101', '', '', '', 0, '')",
+            [],
+        )
+        .expect("seed body chunk");
+
+        write(
+            &root,
+            "chronicle/20260102/import.ics/110000_60/event_transcript.md",
+            "# Event",
+        );
+
+        let report = scan_journal(&root, true).expect("full scan");
+        assert_eq!(report.failed, 0);
+        assert!(report.warnings.is_empty());
+
+        let state = read_index_build_state(&conn)
+            .expect("read state")
+            .expect("state row exists");
+        assert_eq!(state.state, IndexBuildLifecycle::Complete);
+
+        fs::remove_dir_all(root).expect("cleanup full scan complete root");
+    }
+
+    #[test]
+    fn scan_migrates_pre_classification_database() {
+        let root = temp_root("pre-classification-migration");
+        let index_dir = root.join("indexer");
+        fs::create_dir_all(&index_dir).expect("create indexer dir");
+        let conn = Connection::open(db_path(&root)).expect("open raw db");
+        conn.execute_batch(
+            "CREATE TABLE files(path TEXT PRIMARY KEY, mtime INTEGER);
+             CREATE VIRTUAL TABLE chunks USING fts5(
+                 content,
+                 path UNINDEXED,
+                 day UNINDEXED,
+                 facet UNINDEXED,
+                 agent UNINDEXED,
+                 stream UNINDEXED,
+                 idx UNINDEXED,
+                 time_bucket UNINDEXED
+             );",
+        )
+        .expect("create pre-classification schema");
+
+        let body_path = "20260101/import.apple_health/120000_60/imported.md";
+        let chat_path = "20260101/chat/120000_60/chat.jsonl";
+
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('b', ?, '20260101', '', '', '', 0, '')",
+            [body_path],
+        )
+        .expect("insert body chunk");
+        conn.execute(
+            "INSERT INTO files(path, mtime) VALUES (?, 1000)",
+            [body_path],
+        )
+        .expect("insert body file");
+
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('c', ?, '20260101', '', '', '', 0, '')",
+            [chat_path],
+        )
+        .expect("insert chat chunk");
+        conn.execute(
+            "INSERT INTO files(path, mtime) VALUES (?, 1000)",
+            [chat_path],
+        )
+        .expect("insert chat file");
+        drop(conn);
+
+        scan_journal(&root, false).expect("scan on pre-classification index succeeds");
+
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{body_path}'")
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{chat_path}'")
+            ),
+            0
+        );
+
+        fs::remove_dir_all(root).expect("cleanup pre-classification migration root");
     }
 
     fn chunk_contents_contain(conn: &Connection, needle: &str) -> bool {

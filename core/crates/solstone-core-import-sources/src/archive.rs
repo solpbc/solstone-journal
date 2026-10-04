@@ -30,7 +30,7 @@ use solstone_core_ingest_resolve::segment_key_candidates;
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, PathOrDay, RecordIdentity, Segment,
     StagedDirOptions, StreamLocation, append_jsonl, atomic_replace, contained_path, hold_lock,
-    iter_segments, publish_staged_dir, realpath_non_strict, write_bytes_exclusive,
+    iter_segments, path_lexists, publish_staged_dir, realpath_non_strict, write_bytes_exclusive,
 };
 use solstone_core_segment::touch_stream_health_marker;
 use zip::ZipArchive;
@@ -162,6 +162,10 @@ pub enum SegmentDispositionKind {
     },
     /// Its own key and every key ingest would try held different content.
     DifferingContentCollision,
+    /// The owner deleted this segment from the journal (its key holds a
+    /// tombstone, or its removal is in progress), so the archive's copy is not
+    /// brought back.
+    DeletedByOwner,
 }
 
 /// Whether an archive entity's principal claim was retained, cleared, or separately reported.
@@ -1210,6 +1214,16 @@ fn stage_segments(
             // siblings (`093000_300_a` / `_b`) land at distinct paths.
             let mut relative = segment_relative_for(&day_name, &segment, identity);
             let mut disposition = SegmentDispositionKind::Copied;
+            if deleted_by_owner(&target.join(&relative))? {
+                state.summary.segments_skipped += 1;
+                state.segment_dispositions.push(SegmentDisposition {
+                    day: day_name.clone(),
+                    stream: identity.stream.to_owned(),
+                    key: identity.key.to_owned(),
+                    disposition: SegmentDispositionKind::DeletedByOwner,
+                });
+                continue;
+            }
             if fs::symlink_metadata(target.join(&relative)).is_ok() {
                 match place_colliding_segment(
                     target, &day_name, &segment, identity, &own_paths, state,
@@ -1315,6 +1329,7 @@ fn place_colliding_segment(
                 return Ok(CollisionPlacement::Held);
             }
         } else if free.is_none()
+            && !deleted_by_owner(&destination)?
             && !state.chronicle_units.contains_key(&relative)
             && !own_paths.contains(&relative)
         {
@@ -2893,6 +2908,32 @@ fn join_contained(root: &Path, relative: &str) -> Result<PathBuf, ImportSourcesE
         path: root.to_path_buf(),
         detail: error.to_string(),
     })
+}
+
+const REMOVING_SEGMENT_PREFIX: &str = ".removing_";
+
+/// Whether the owner deleted the segment at `path`: it holds a tombstone, or a
+/// removal of it is in progress beside it.  A merge never lands material there.
+fn deleted_by_owner(path: &Path) -> Result<bool, ImportSourcesError> {
+    let lexists = |candidate: &Path| {
+        path_lexists(candidate).map_err(|error| ImportSourcesError::SegmentMerge {
+            path: candidate.to_path_buf(),
+            detail: error.to_string(),
+        })
+    };
+    let is_dir = fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir());
+    if is_dir && lexists(&path.join("tombstone.json"))? {
+        return Ok(true);
+    }
+    match (
+        path.parent(),
+        path.file_name().and_then(|name| name.to_str()),
+    ) {
+        (Some(parent), Some(name)) => {
+            lexists(&parent.join(format!("{REMOVING_SEGMENT_PREFIX}{name}")))
+        }
+        _ => Ok(false),
+    }
 }
 
 fn segment_relative_for(day: &str, segment: &Segment, identity: RecordIdentity<'_>) -> String {

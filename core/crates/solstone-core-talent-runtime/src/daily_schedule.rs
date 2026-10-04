@@ -157,6 +157,12 @@ fn segment_ranges(
     let mut ranges = iter_segments(journal, PathOrDay::Day(day))
         .map_err(|e| e.to_string())?
         .into_iter()
+        .filter(|segment| match segment.stream() {
+            solstone_core_journal_io::StreamLocation::Named(name) => !name
+                .to_str()
+                .is_some_and(solstone_core_format::body::is_body_stream),
+            solstone_core_journal_io::StreamLocation::Direct => true,
+        })
         .filter_map(|segment| parse_segment(segment.key(), anchor))
         .collect::<Vec<_>>();
     ranges.sort_by_key(|(start, _)| *start);
@@ -253,5 +259,29 @@ mod tests {
                 .join("daily_time")
                 .exists()
         );
+    }
+
+    #[test]
+    fn segment_ranges_omits_body_streams_and_includes_control() {
+        let root = tempfile::tempdir_in("/var/tmp").unwrap();
+        let day_dir = root.path().join("chronicle/20260101");
+        std::fs::create_dir_all(day_dir.join("screen/090000_300")).unwrap();
+        std::fs::create_dir_all(day_dir.join("import.apple_health/100000_300")).unwrap();
+        std::fs::create_dir_all(day_dir.join("import.oura/110000_300")).unwrap();
+        std::fs::create_dir_all(day_dir.join("import.ics/120000_300")).unwrap();
+
+        let ranges = segment_ranges(root.path(), "20260101").unwrap();
+        let anchor = NaiveDate::from_ymd_opt(2000, 1, 1).unwrap();
+        let expected = vec![
+            (
+                anchor.and_hms_opt(9, 0, 0).unwrap(),
+                anchor.and_hms_opt(9, 5, 0).unwrap(),
+            ),
+            (
+                anchor.and_hms_opt(12, 0, 0).unwrap(),
+                anchor.and_hms_opt(12, 5, 0).unwrap(),
+            ),
+        ];
+        assert_eq!(ranges, expected);
     }
 }

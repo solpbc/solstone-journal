@@ -87,6 +87,7 @@ pub fn discover_indexable_files(
     for spec in patterns_for_root(PatternRoot::DayRooted) {
         discover_from_root(day_root, day_root, spec.pattern, &mut files)?;
     }
+    files.retain(|rel, _| !solstone_core_format::body::is_body_source_path(rel));
     Ok(files)
 }
 
@@ -97,6 +98,9 @@ pub fn discover_segment_talent_markdown_files(
     journal: &Path,
     rel_segment: &str,
 ) -> Result<Vec<(String, PathBuf)>, DiscoveryError> {
+    if solstone_core_format::body::is_body_source_path(rel_segment) {
+        return Ok(Vec::new());
+    }
     let segment_dir = resolve_journal_path(journal, rel_segment)?;
     let mut files = Vec::new();
     for suffix in ["talents/*.md", "talents/*/*.md"] {
@@ -407,5 +411,48 @@ mod tests {
                 .expect("valid entity pattern")
                 .matches_path_with(observation_path, options)
         );
+    }
+
+    #[test]
+    fn discovers_excludes_body_source_files_and_talents() {
+        let root = temp_root("body-discovery-refusal");
+        write(
+            &root,
+            "chronicle/20260731/import.apple_health/132000_60/imported.md",
+        );
+        write(
+            &root,
+            "chronicle/20260731/import.apple_health/132000_60/talents/flow.md",
+        );
+        write(&root, "imports/body-01j8k9m0n1p2q3r4s5t6u7v8w9x/summary.md");
+        write(
+            &root,
+            "chronicle/20260731/import.ics/110000_60/event_transcript.md",
+        );
+        write(
+            &root,
+            "chronicle/20260731/import.ics/110000_60/talents/flow.md",
+        );
+
+        let files = discover_indexable_files(&root).expect("discover indexable files");
+        assert_eq!(
+            files.keys().cloned().collect::<Vec<_>>(),
+            vec![
+                "20260731/import.ics/110000_60/event_transcript.md",
+                "20260731/import.ics/110000_60/talents/flow.md",
+            ]
+        );
+
+        let body_talents =
+            discover_segment_talent_markdown_files(&root, "20260731/import.apple_health/132000_60")
+                .expect("discover body segment talents");
+        assert!(body_talents.is_empty());
+
+        let ctrl_talents =
+            discover_segment_talent_markdown_files(&root, "20260731/import.ics/110000_60")
+                .expect("discover control segment talents");
+        assert_eq!(ctrl_talents.len(), 1);
+
+        fs::remove_dir_all(root).expect("cleanup body discovery root");
     }
 }
