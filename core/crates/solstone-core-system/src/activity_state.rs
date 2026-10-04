@@ -493,6 +493,51 @@ impl ActivityStateMachine {
         changes
     }
 
+    /// Add a segment that arrived after newer ones to the open activities it
+    /// belongs to: same day, started before it, and named by its Sense facets.
+    /// Nothing ends and the stream's last segment stays where it is. Returns
+    /// whether any open activity took it.
+    pub fn join_late(&mut self, sense: &Value, segment: &str, day: &str) -> bool {
+        if self.last_segment_day.as_deref() != Some(day)
+            || sense.get("density").and_then(Value::as_str) == Some("idle")
+        {
+            return false;
+        }
+        let facets = sense
+            .get("facets")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_object)
+            .filter(|entry| entry.get("level").and_then(Value::as_str) != Some("low"))
+            .filter_map(|entry| entry.get("facet").and_then(Value::as_str))
+            .collect::<BTreeSet<_>>();
+        let mut joined = false;
+        for (facet, entry) in &mut self.state {
+            let started_before = entry
+                .get("since")
+                .and_then(Value::as_str)
+                .is_some_and(|since| since < segment);
+            if !started_before || !facets.contains(facet.as_str()) {
+                continue;
+            }
+            let segments = entry
+                .entry("segments".to_owned())
+                .or_insert_with(|| json!([]));
+            if let Some(values) = segments.as_array_mut()
+                && !values.iter().any(|value| value.as_str() == Some(segment))
+            {
+                let at = values
+                    .iter()
+                    .position(|value| value.as_str().is_some_and(|key| key > segment))
+                    .unwrap_or(values.len());
+                values.insert(at, json!(segment));
+            }
+            joined = true;
+        }
+        joined
+    }
+
     pub fn close_active(&mut self, segment: &str, created_at: i64) -> Vec<Value> {
         self.end_all(segment, "ended_day_end", created_at)
     }
@@ -965,6 +1010,37 @@ mod tests {
             .find(|change| change["facet"] == "personal")
             .expect("the personal facet opened an activity");
         assert_eq!(opened_personal["description"], "Typed a status report.");
+    }
+
+    #[test]
+    fn a_late_segment_joins_the_open_activity_in_capture_order_without_moving_back() {
+        let mut machine = ActivityStateMachine::default();
+        let work = sense(json!([{"facet": "work", "level": "high"}]));
+        for key in ["090000_300", "091000_300"] {
+            machine.update(&work, key, "20260101", None, 1);
+        }
+        assert!(machine.join_late(&work, "090500_300", "20260101"));
+        let snapshot = machine.snapshot();
+        assert_eq!(
+            snapshot["active"]["work"]["segments"],
+            json!(["090000_300", "090500_300", "091000_300"])
+        );
+        assert_eq!(snapshot["active"]["work"]["id"], "work_090000_300");
+        assert_eq!(snapshot["last_segment_key"], "091000_300");
+
+        // Older than the activity, idle, another facet or another day: not taken.
+        assert!(!machine.join_late(&work, "085500_300", "20260101"));
+        assert!(!machine.join_late(
+            &json!({"density": "idle", "content_type": "idle", "facets": []}),
+            "090200_300",
+            "20260101"
+        ));
+        assert!(!machine.join_late(
+            &sense(json!([{"facet": "home", "level": "high"}])),
+            "090200_300",
+            "20260101"
+        ));
+        assert!(!machine.join_late(&work, "090200_300", "20251231"));
     }
 
     #[test]

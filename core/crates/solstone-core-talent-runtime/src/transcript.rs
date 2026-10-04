@@ -79,9 +79,14 @@ pub(crate) fn load_transcript(
     {
         sources.voices = voice_names(journal);
     }
-    // Python falls back to SOL_STREAM in talents.py:590-592; this native path has no stream
-    // environment seam, so it reads only the composed stream key.
-    let stream = composed.get("stream").and_then(Value::as_str);
+    // An activity's segments are read from the stream its record names, when
+    // the request names none: another stream can hold the same segment key.
+    let stream = composed.get("stream").and_then(Value::as_str).or_else(|| {
+        composed
+            .get("activity")
+            .and_then(|activity| activity.get("stream"))
+            .and_then(Value::as_str)
+    });
     let screen_projection = composed.get("name").and_then(Value::as_str) == Some("screen");
     let span = composed
         .get("span")
@@ -159,6 +164,38 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn an_activity_reads_its_own_streams_segment_when_another_stream_shares_the_key() {
+        let journal = TempDir::new().unwrap();
+        let day = journal.path().join("chronicle/20260903");
+        let own = day.join("tmux/102159_300");
+        fs::create_dir_all(&own).unwrap();
+        fs::write(
+            own.join("tmux_0_screen.jsonl"),
+            include_str!(
+                "../../solstone-core-format/tests/data/golden/tmux-observer-envelope-main.jsonl"
+            ),
+        )
+        .unwrap();
+        // Sorts first, so a lookup by key alone lands here.
+        fs::create_dir_all(day.join("desktop/102159_300")).unwrap();
+        let request = json!({
+            "name": "participation",
+            "day": "20260903",
+            "span": ["102159_300"],
+            "activity": {"id": "terminal_102159_300", "stream": "tmux"},
+            "sources": {"percepts": true}
+        });
+
+        let loaded = load_transcript(journal.path(), request.as_object().unwrap()).unwrap();
+
+        assert!(
+            loaded.text.contains("Terminal session 'main'"),
+            "{}",
+            loaded.text
+        );
+    }
 
     #[test]
     fn only_screen_selects_the_tmux_talent_projection() {

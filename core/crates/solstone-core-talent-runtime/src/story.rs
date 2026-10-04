@@ -317,6 +317,9 @@ fn owner_heard(
 ) -> Option<Vec<String>> {
     let voices = crate::transcript::voice_names(root);
     let day_dir = root.join("chronicle").join(day);
+    // A record that names its stream reads only that stream's audio: another
+    // stream can hold a segment with the same key.
+    let stream = record.get("stream").and_then(Value::as_str);
     let mut audio = false;
     let mut said = Vec::new();
     for segment in record
@@ -330,9 +333,12 @@ fn owner_heard(
             .into_iter()
             .flatten()
             .flatten()
+            .filter(|entry| stream.is_none_or(|stream| entry.file_name() == stream))
             .map(|entry| entry.path().join(segment))
             .collect::<Vec<_>>();
-        dirs.push(day_dir.join(segment));
+        if stream.is_none() {
+            dirs.push(day_dir.join(segment));
+        }
         for dir in dirs.into_iter().filter(|dir| dir.is_dir()) {
             let has_audio = std::fs::read_dir(&dir)
                 .into_iter()

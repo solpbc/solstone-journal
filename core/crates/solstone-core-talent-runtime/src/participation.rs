@@ -127,6 +127,9 @@ pub fn apply_result(
         entry.insert("entity_id".to_owned(), entity_id);
         resolved.push(entry);
     }
+    // The record's own stream, when it names one: another stream can hold a
+    // segment with the same key.
+    let stream = activity.get("stream").and_then(Value::as_str);
     let segments = activity
         .get("segments")
         .and_then(Value::as_array)
@@ -137,7 +140,7 @@ pub fn apply_result(
     if !segments.is_empty()
         && !segments
             .iter()
-            .any(|segment| meeting_detected(journal, day, segment))
+            .any(|segment| meeting_detected(journal, day, segment, stream))
     {
         for entry in &mut resolved {
             if entry.get("role").and_then(Value::as_str) == Some("attendee") {
@@ -158,9 +161,10 @@ pub fn apply_result(
             journal,
             day,
             segment,
+            stream,
             &admitted_entity_ids,
         ));
-        named_speakers.extend(named_speakers_for_segment(journal, day, segment));
+        named_speakers.extend(named_speakers_for_segment(journal, day, segment, stream));
     }
     for entry in &mut resolved {
         if entry.get("role").and_then(Value::as_str) != Some("attendee")
@@ -265,8 +269,13 @@ fn name_resolves_to(
     Ok(false)
 }
 
-fn meeting_detected(journal: &std::path::Path, day: &str, segment: &str) -> bool {
-    segment_talent_json(journal, day, segment, "sense.json")
+fn meeting_detected(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    stream: Option<&str>,
+) -> bool {
+    segment_talent_json(journal, day, segment, stream, "sense.json")
         .and_then(|value| value.get("meeting_detected").and_then(Value::as_bool))
         .unwrap_or(false)
 }
@@ -275,9 +284,10 @@ fn attributed_entity_ids(
     journal: &std::path::Path,
     day: &str,
     segment: &str,
+    stream: Option<&str>,
     admitted_entity_ids: &BTreeSet<String>,
 ) -> BTreeSet<String> {
-    segment_talent_json(journal, day, segment, "speaker_labels.json")
+    segment_talent_json(journal, day, segment, stream, "speaker_labels.json")
         .and_then(|value| value.get("labels").and_then(Value::as_array).cloned())
         .unwrap_or_default()
         .iter()
@@ -288,8 +298,13 @@ fn attributed_entity_ids(
         .collect()
 }
 
-fn named_speakers_for_segment(journal: &std::path::Path, day: &str, segment: &str) -> Vec<String> {
-    segment_talent_json(journal, day, segment, "speakers.json")
+fn named_speakers_for_segment(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    stream: Option<&str>,
+) -> Vec<String> {
+    segment_talent_json(journal, day, segment, stream, "speakers.json")
         .and_then(|value| value.as_array().cloned())
         .unwrap_or_default()
         .iter()
@@ -303,10 +318,10 @@ fn segment_talent_json(
     journal: &std::path::Path,
     day: &str,
     segment: &str,
+    stream: Option<&str>,
     name: &str,
 ) -> Option<Value> {
-    // `find_segment_dir` preserves cluster._find_segment_dir(..., create=False).
-    let directory = find_segment_dir(journal, day, segment, None)?;
+    let directory = find_segment_dir(journal, day, segment, stream)?;
     serde_json::from_str(&fs::read_to_string(directory.join("talents").join(name)).ok()?).ok()
 }
 

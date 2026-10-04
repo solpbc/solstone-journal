@@ -147,7 +147,17 @@ pub(crate) fn build(
     ) {
         context.insert(
             "activity_context".to_owned(),
-            activity_context(journal, day, facet, activity, &span, stream.as_deref()),
+            activity_context(
+                journal,
+                day,
+                facet,
+                activity,
+                &span,
+                activity
+                    .get("stream")
+                    .and_then(Value::as_str)
+                    .or(stream.as_deref()),
+            ),
         );
     }
 

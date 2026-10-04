@@ -998,30 +998,7 @@ pub(crate) fn run_repair_batch_with_activity(
             ));
         }
     }
-    let replay_streams = selected
-        .iter()
-        .map(|(_, stream)| stream.clone())
-        .collect::<std::collections::BTreeSet<_>>();
-    let mut replay_segments = selected.iter().cloned().collect::<Vec<_>>();
-    if !replay_streams.is_empty() {
-        // Repair only the requested segments, but rebuild their activity boundaries
-        // from the whole stream. Starting at a repaired middle segment would give
-        // part of an already published activity a new identity.
-        for entry in iter_segments(&context.journal, PathOrDay::Day(&context.day))
-            .map_err(|error| error.to_string())?
-        {
-            let stream = Some(
-                named_stream(entry.path(), &context.day)
-                    .unwrap_or(DEFAULT_STREAM)
-                    .to_owned(),
-            );
-            if replay_streams.contains(&stream) {
-                replay_segments.push((entry.name().to_string_lossy().into_owned(), stream));
-            }
-        }
-        replay_segments.sort();
-        replay_segments.dedup();
-    }
+    let replay_segments = stream_day_segments(context, &selected)?;
     run_repair_batch(
         context,
         log,
@@ -1050,13 +1027,51 @@ pub(crate) fn run_repair_batch_with_activity(
     })
 }
 
+/// Every segment of the streams `selected` names on the context's day, in
+/// capture order, with the selection itself.
+///
+/// Rebuilding activity boundaries needs the whole stream: starting at a middle
+/// segment would give part of an already published activity a new identity.
+fn stream_day_segments(
+    context: &ThinkContext,
+    selected: &std::collections::BTreeSet<(String, Option<String>)>,
+) -> Result<Vec<(String, Option<String>)>, String> {
+    let streams = selected
+        .iter()
+        .map(|(_, stream)| stream.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut segments = selected.iter().cloned().collect::<Vec<_>>();
+    if !streams.is_empty() {
+        for entry in iter_segments(&context.journal, PathOrDay::Day(&context.day))
+            .map_err(|error| error.to_string())?
+        {
+            let stream = Some(stream_coordinate(entry.path(), &context.day));
+            if streams.contains(&stream) {
+                segments.push((entry.name().to_string_lossy().into_owned(), stream));
+            }
+        }
+        segments.sort();
+        segments.dedup();
+    }
+    Ok(segments)
+}
+
+/// The stream coordinate of a discovered segment directory: its named stream,
+/// or the journal's name for the direct-under-day layout.
+fn stream_coordinate(segment_dir: &std::path::Path, day: &str) -> String {
+    named_stream(segment_dir, day)
+        .unwrap_or(DEFAULT_STREAM)
+        .to_owned()
+}
+
 /// Replay durable Sense output through the activity-state tail.
 ///
-/// Live callers (`hydrate_existing`) advance each stream's saved state; a
-/// batch replay starts every stream fresh and never writes state. Either way
-/// an activity that ends is published, and its talent work recorded, before
-/// any talent runs: the facets crate owns the append-only record, and
-/// `activity_work` owns resuming talent work a stopped run left unfinished.
+/// Live callers (`hydrate_existing`) advance each stream's saved state in
+/// capture order (see [`advance_live_activity_state`]); a batch replay starts
+/// every stream fresh and never writes state. Either way an activity that ends
+/// is published, and its talent work recorded, before any talent runs: the
+/// facets crate owns the append-only record, and `activity_work` owns resuming
+/// talent work a stopped run left unfinished.
 pub(crate) fn replay_activity_state(
     context: &ThinkContext,
     log: &mut RunLogWriter,
@@ -1066,16 +1081,327 @@ pub(crate) fn replay_activity_state(
     skip_activity_prompts: bool,
     hydrate_existing: bool,
 ) -> Result<(), String> {
-    replay_activity_state_selected(
-        context,
-        log,
-        segments,
-        refresh,
-        max_concurrency,
-        skip_activity_prompts,
-        hydrate_existing,
-        None,
+    if !hydrate_existing {
+        return replay_activity_state_selected(
+            context,
+            log,
+            segments,
+            refresh,
+            max_concurrency,
+            skip_activity_prompts,
+            false,
+            None,
+        );
+    }
+    let mut ordered = segments.to_vec();
+    ordered.sort();
+    let errors = ordered
+        .into_iter()
+        .filter_map(|(segment, stream)| {
+            advance_live_activity_state(
+                context,
+                log,
+                &segment,
+                stream.as_deref(),
+                refresh,
+                max_concurrency,
+                skip_activity_prompts,
+            )
+            .err()
+        })
+        .collect::<Vec<_>>();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+/// How long the live tail waits for an earlier segment of the same stream
+/// that has arrived but has no Sense yet, counted from its arrival or from the
+/// stream's latest Sense, whichever is newer. Deliveries land out of order (a
+/// phone relays a watch's backlog newest first), and applying a newer segment
+/// first would end or start activities at the wrong place; while the backlog
+/// is still being thought, the wait goes on.
+const LIVE_ORDER_WAIT_MS: i64 = 15 * 60 * 1000;
+
+/// The longest one earlier segment can hold its stream back, however busy the
+/// stream stays: a segment that never gets Sense must not hold it all day.
+/// Past either limit the tail goes on, and the straggler is late evidence.
+const LIVE_ORDER_HOLD_MS: i64 = 2 * 60 * 60 * 1000;
+
+/// What the live tail does for one stream.
+#[derive(Debug, PartialEq, Eq)]
+enum LiveStep {
+    /// Apply these segments to the saved state, in capture order.
+    Advance(Vec<String>),
+    /// The segment is not newer than the stream's saved one.
+    Late,
+}
+
+fn modified_ms(path: &std::path::Path) -> Option<i64> {
+    let modified = std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()?;
+    i64::try_from(
+        modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis(),
     )
+    .ok()
+}
+
+/// A stream's segments on the context's day after `after`, in capture order,
+/// each with when its Sense was written (`None` while it has none).
+fn stream_segments_after(
+    context: &ThinkContext,
+    state_stream: Option<&str>,
+    after: Option<&str>,
+) -> Result<Vec<(String, std::path::PathBuf, Option<i64>)>, String> {
+    let mut segments = iter_segments(&context.journal, PathOrDay::Day(&context.day))
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|entry| named_stream(entry.path(), &context.day) == state_stream)
+        .map(|entry| {
+            let key = entry.name().to_string_lossy().into_owned();
+            let sensed = modified_ms(&entry.path().join("talents/sense.json"));
+            (key, entry.path().to_path_buf(), sensed)
+        })
+        .filter(|(key, _, _)| after.is_none_or(|after| key.as_str() > after))
+        .collect::<Vec<_>>();
+    segments.sort();
+    Ok(segments)
+}
+
+/// Decide, from a stream's hydrated state, which of its segments the live
+/// tail applies now, in capture order: every segment after the saved one up to
+/// this one that has Sense, and the later ones whose Sense was written before
+/// this one's (they waited for it), stopping before a segment that arrived but
+/// is still being thought (when `wait`). With no saved state, that starts at
+/// the beginning of the day.
+fn plan_live_step(
+    context: &ThinkContext,
+    machine: &ActivityStateMachine,
+    segment: &str,
+    state_stream: Option<&str>,
+    wait: bool,
+) -> Result<LiveStep, String> {
+    let last = machine.last_segment_day().zip(machine.last_segment_key());
+    if last.is_some_and(|last| (context.day.as_str(), segment) <= last) {
+        return Ok(LiveStep::Late);
+    }
+    let after = last.filter(|last| last.0 == context.day).map(|last| last.1);
+    let segments = stream_segments_after(context, state_stream, after)?;
+    let own_sense = segments
+        .iter()
+        .find(|(key, _, _)| key == segment)
+        .and_then(|(_, _, sensed)| *sensed);
+    // Another held segment's recent Sense means its backlog is still moving;
+    // this segment's own Sense, just written, says nothing about that.
+    let latest_sense = segments
+        .iter()
+        .filter(|(key, _, _)| key != segment)
+        .filter_map(|(_, _, sensed)| *sensed)
+        .max();
+    let within = |since: i64, limit: i64| context.now_ms.saturating_sub(since) < limit;
+    let mut keys = Vec::new();
+    for (key, path, sensed) in segments {
+        if let Some(sensed) = sensed {
+            // A later segment thought first is waiting for this one; one
+            // thought since will apply itself.
+            if key.as_str() <= segment || own_sense.is_none_or(|own| sensed < own) {
+                keys.push(key);
+            }
+            continue;
+        }
+        if key == segment {
+            keys.push(key);
+            continue;
+        }
+        let still_coming = newest_segment_input_ms(&path)
+            .ok()
+            .flatten()
+            .is_some_and(|arrived| {
+                within(arrived, LIVE_ORDER_HOLD_MS)
+                    && within(
+                        latest_sense.map_or(arrived, |latest| latest.max(arrived)),
+                        LIVE_ORDER_WAIT_MS,
+                    )
+            });
+        if wait && still_coming {
+            break;
+        }
+    }
+    Ok(LiveStep::Advance(keys))
+}
+
+/// The live activity tail for one thought segment.
+///
+/// In order, the segment (and any later ones of its stream that were waiting
+/// for it) advances the saved state, after anything of the stream's previous
+/// day that was still waiting. A late segment never rewinds it: it joins the
+/// open activity it falls inside, and otherwise its stream's day is rebuilt in
+/// capture order like a repair, which publishes a finished activity that holds
+/// it only under an ID not already written. What a published activity already
+/// holds stays as written.
+fn advance_live_activity_state(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    segment: &str,
+    stream: Option<&str>,
+    refresh: bool,
+    max_concurrency: i64,
+    skip_activity_prompts: bool,
+) -> Result<(), String> {
+    let Some(segment_dir) = find_segment_dir(&context.journal, &context.day, segment, stream)
+    else {
+        return Ok(());
+    };
+    let state_stream = named_stream(&segment_dir, &context.day);
+    let coordinate = stream_coordinate(&segment_dir, &context.day);
+    let mut errors = Vec::new();
+    // A new day ends the previous day's activities; first apply what of that
+    // day was still waiting for an earlier segment.
+    let previous_day = {
+        let _turn = state_turn(context, state_stream);
+        let machine = ActivityStateMachine::hydrate(Some(&context.journal), state_stream);
+        match machine.last_segment_day().zip(machine.last_segment_key()) {
+            Some((day, last)) if day < context.day.as_str() => {
+                let day_context = activity_context(context, day)?;
+                let keys = stream_segments_after(&day_context, state_stream, Some(last))?
+                    .into_iter()
+                    .filter(|(_, _, sensed)| sensed.is_some())
+                    .map(|(key, _, _)| (key, Some(coordinate.clone())))
+                    .collect::<Vec<_>>();
+                (!keys.is_empty()).then_some((day_context, keys))
+            }
+            _ => None,
+        }
+    };
+    if let Some((day_context, keys)) = previous_day
+        && let Err(error) = replay_activity_state_selected(
+            &day_context,
+            log,
+            &keys,
+            refresh,
+            max_concurrency,
+            skip_activity_prompts,
+            true,
+            None,
+        )
+    {
+        errors.push(error);
+    }
+    let step = {
+        let _turn = state_turn(context, state_stream);
+        let mut machine = ActivityStateMachine::hydrate(Some(&context.journal), state_stream);
+        let step = plan_live_step(context, &machine, segment, state_stream, true)?;
+        if step == LiveStep::Late
+            && join_open_activity(
+                context,
+                log,
+                &mut machine,
+                segment,
+                &segment_dir,
+                &coordinate,
+            )?
+        {
+            match persist_activity_state(context, state_stream, &machine) {
+                Ok(()) => log_routing_state(context, log, segment, Some(&coordinate), false)?,
+                Err(error) => errors.push(format!("{segment}: activity state not saved: {error}")),
+            }
+            log::debug!(
+                "think: late {}/{segment} joined its open activity",
+                context.day
+            );
+            None
+        } else {
+            Some(step)
+        }
+    };
+    let applied = match step {
+        None => Ok(()),
+        Some(LiveStep::Advance(keys)) => replay_activity_state_selected(
+            context,
+            log,
+            &keys
+                .into_iter()
+                .map(|key| (key, Some(coordinate.clone())))
+                .collect::<Vec<_>>(),
+            refresh,
+            max_concurrency,
+            skip_activity_prompts,
+            true,
+            None,
+        ),
+        Some(LiveStep::Late) => {
+            log::debug!(
+                "think: late {}/{segment} is replayed with its stream's day",
+                context.day
+            );
+            let selected =
+                std::collections::BTreeSet::from([(segment.to_owned(), Some(coordinate))]);
+            replay_activity_state_selected(
+                context,
+                log,
+                &stream_day_segments(context, &selected)?,
+                refresh,
+                max_concurrency,
+                skip_activity_prompts,
+                false,
+                Some(&selected),
+            )
+        }
+    };
+    if let Err(error) = applied {
+        errors.push(error);
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+/// Add a late segment to the open activity it falls inside, if any.
+fn join_open_activity(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    machine: &mut ActivityStateMachine,
+    segment: &str,
+    segment_dir: &std::path::Path,
+    coordinate: &str,
+) -> Result<bool, String> {
+    let Ok(solstone_core_journal_io::durability::DurableRead::Present(mut sense)) =
+        solstone_core_journal_io::durability::read_json_durable::<Value>(
+            solstone_core_journal_io::durability::ArtifactId::SegmentSense,
+            &segment_dir.join("talents/sense.json"),
+        )
+    else {
+        return Ok(false);
+    };
+    if !valid_activity_sense(&sense) {
+        return Ok(false);
+    }
+    let inventory =
+        observe_declared_facet_inventory(&context.journal).map_err(|error| error.to_string())?;
+    if let Some(object) = sense.as_object_mut() {
+        let (facets, unreadable) = filter_declared_facets(
+            object.get("facets"),
+            &inventory,
+            context,
+            log,
+            segment,
+            Some(coordinate),
+            true,
+        )?;
+        if unreadable {
+            return Ok(false);
+        }
+        object.insert("facets".to_owned(), facets);
+    }
+    Ok(machine.join_late(&sense, segment, &context.day))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1191,6 +1517,7 @@ fn replay_activity_state_selected(
             log,
             &segment,
             &routing_day,
+            state_stream,
             changes,
             &selected_completed(machine, stream.as_deref(), selected),
             refresh,
@@ -1317,6 +1644,7 @@ fn flush_replay_machines(
             log,
             &last_segment,
             &routing_day,
+            stream.as_deref().filter(|stream| *stream != DEFAULT_STREAM),
             changes,
             &selected_completed(machine, stream.as_deref(), selected),
             refresh,
@@ -1355,7 +1683,36 @@ pub(crate) fn close_idle_activities(
     let stream = named_stream(&segment_dir, &context.day);
     let mut talents = Vec::new();
     let mut errors = Vec::new();
+    // Segments the live tail left waiting for an earlier one that never got
+    // its Sense are applied first, so the stream's real last segment is the
+    // one this flush closes.
+    let waiting = {
+        let _turn = state_turn(context, stream);
+        let machine = ActivityStateMachine::hydrate(Some(&context.journal), stream);
+        plan_live_step(context, &machine, segment, stream, false)
+    };
+    let waiting = waiting.unwrap_or_else(|error| {
+        errors.push(error);
+        LiveStep::Late
+    });
+    if let LiveStep::Advance(keys) = waiting
+        && let Err(error) = replay_activity_state_selected(
+            context,
+            log,
+            &keys
+                .into_iter()
+                .map(|key| (key, Some(stream_coordinate(&segment_dir, &context.day))))
+                .collect::<Vec<_>>(),
+            false,
+            max_concurrency,
+            skip_activity_prompts,
+            true,
+            None,
+        )
     {
+        errors.push(error);
+    }
+    'close: {
         // The flush runs in its own queue partition, so a live segment on
         // this stream may be advancing the same state right now.
         let _turn = state_turn(context, stream);
@@ -1365,11 +1722,11 @@ pub(crate) fn close_idle_activities(
         if machine.last_segment_key() != Some(segment)
             || machine.last_segment_day() != Some(context.day.as_str())
         {
-            return Ok(());
+            break 'close;
         }
         let changes = machine.close_active(segment, context.now_ms);
         if changes.is_empty() {
-            return Ok(());
+            break 'close;
         }
         let day = context.day.clone();
         if let Err(error) = publish_ended_activities(
@@ -1377,6 +1734,7 @@ pub(crate) fn close_idle_activities(
             log,
             segment,
             &day,
+            stream,
             changes,
             &machine.completed_activities(),
             false,
@@ -1508,6 +1866,7 @@ fn publish_ended_activities(
     log: &mut RunLogWriter,
     segment: &str,
     routing_day: &str,
+    stream: Option<&str>,
     changes: Vec<Value>,
     completed: &[Value],
     refresh: bool,
@@ -1539,7 +1898,7 @@ fn publish_ended_activities(
                 ]),
             ),
         );
-        let Some(record) = completed.iter().rev().find_map(|record| {
+        let Some(mut record) = completed.iter().rev().find_map(|record| {
             (record.get("id").and_then(Value::as_str) == Some(id)
                 && record.get("facet").and_then(Value::as_str) == Some(facet))
             .then(|| record.as_object().cloned())
@@ -1547,6 +1906,11 @@ fn publish_ended_activities(
         }) else {
             continue;
         };
+        // The record names the stream its segments sit in, so whatever reads
+        // them later finds this stream's and never another's with the same key.
+        if let Some(stream) = stream {
+            record.insert("stream".to_owned(), Value::String(stream.to_owned()));
+        }
         let written =
             match append_activity_record(&context.journal, facet, routing_day, record.clone()) {
                 Ok(AppendOutcome::Written(_)) => true,
@@ -1761,6 +2125,7 @@ pub(crate) fn compute_activity_input_hash(
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
     let day_dir = context.journal.join("chronicle").join(day);
+    let only_stream = record.get("stream").and_then(Value::as_str);
     let mut inputs = Vec::new();
     for segment in &spans {
         let mut sense = Vec::new();
@@ -1774,9 +2139,11 @@ pub(crate) fn compute_activity_input_hash(
         };
         entries.sort();
         for direct in entries {
-            let segment_dir = if direct.file_name().and_then(|name| name.to_str()) == Some(segment)
-                && direct.is_dir()
-            {
+            let name = direct.file_name().and_then(|name| name.to_str());
+            if only_stream.is_some_and(|stream| name != Some(stream)) {
+                continue;
+            }
+            let segment_dir = if name == Some(segment) && direct.is_dir() {
                 direct
             } else {
                 let nested = direct.join(segment);
@@ -2464,6 +2831,7 @@ mod activity_date_tests {
             &mut log,
             "000001_300",
             "20260906",
+            None,
             vec![activity.clone()],
             &[activity],
             false,

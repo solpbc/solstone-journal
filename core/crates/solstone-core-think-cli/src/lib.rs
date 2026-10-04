@@ -3666,7 +3666,8 @@ mod tests {
         }
         let snapshot = journal.path().join("awareness/activity_state/default.json");
         let before = fs::read_to_string(&snapshot).unwrap();
-        let (older_context, _) = recorder_context(journal.path(), day, 10);
+        // A real clock: a day before it is finished, so its replay closes it.
+        let (older_context, _) = recorder_context(journal.path(), day, 1_786_615_200_000);
         segment_dir(journal.path(), day, segment);
         write_sense_output(
             &older_context,
@@ -3694,16 +3695,41 @@ mod tests {
             before,
             "live state must not rewind"
         );
-        assert!(
-            !journal
-                .path()
-                .join("facets/work/activities/20260812.jsonl")
-                .exists()
-        );
-        assert!(
-            work_records(journal.path()).is_empty(),
+        // An older active segment is its own stretch, apart from the open
+        // activity: it is rebuilt with its stream's day and published alone.
+        // An idle or repeated one adds nothing.
+        let records_on = |day: &str| -> Vec<Value> {
+            fs::read_to_string(
+                journal
+                    .path()
+                    .join(format!("facets/work/activities/{day}.jsonl")),
+            )
+            .map(|text| {
+                text.lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect()
+            })
+            .unwrap_or_default()
+        };
+        let separate = (!idle).then(|| format!("work_{segment}"));
+        let ids_on = |day: &str| -> Vec<String> {
+            records_on(day)
+                .iter()
+                .map(|record| record["id"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        let expected = |on: &str| -> Vec<String> {
+            separate.clone().filter(|_| day == on).into_iter().collect()
+        };
+        assert_eq!(ids_on("20260812"), expected("20260812"));
+        assert_eq!(
+            ids_on("20260813"),
+            expected("20260813"),
             "live activity must stay open"
         );
+        if separate.is_some() {
+            assert_eq!(records_on(day)[0]["segments"], serde_json::json!([segment]));
+        }
         assert!(recorder.requests.lock().unwrap().is_empty());
 
         // Exercise the CLI call site too. With no raw input, Sense emits an
@@ -3736,17 +3762,289 @@ mod tests {
             );
             assert_eq!(run.exit_code, 0, "{}", run.stderr);
             assert_eq!(fs::read_to_string(&snapshot).unwrap(), before);
-            assert!(work_records(journal.path()).is_empty());
+            assert_eq!(ids_on("20260812"), expected("20260812"));
+            assert_eq!(ids_on("20260813"), expected("20260813"));
         }
 
         // The real last segment still owns the idle flush, including after an older idle input.
         let mut log = test_log(&context, "flush");
         flush::run(&context, &mut log, "100500_300", Some("default"), 2, true).unwrap();
+        let live = work_records(journal.path())
+            .into_iter()
+            .filter(|record| record["id"] == "work_100000_300")
+            .collect::<Vec<_>>();
+        assert_eq!(live.len(), 1);
+        assert_eq!(
+            live[0]["segments"],
+            serde_json::json!(["100000_300", "100500_300"])
+        );
+        assert_eq!(
+            work_records(journal.path()).len(),
+            1 + expected("20260813").len()
+        );
+    }
+
+    fn work_sense(content: &str) -> Value {
+        serde_json::json!({"density":"active","content_type":content,"activity_summary":"work","facets":[{"facet":"work","level":"high","activity":"work"}]})
+    }
+
+    /// Run the live tail for one `default`-stream segment, as segment thinking does.
+    fn live_tail(context: &context::ThinkContext, segment: &str) {
+        let mut log = test_log(context, "segment");
+        segment::replay_activity_state(
+            context,
+            &mut log,
+            &[(segment.to_owned(), Some("default".to_owned()))],
+            false,
+            2,
+            true,
+            true,
+        )
+        .unwrap();
+    }
+
+    /// A segment that has arrived (it holds input) but has no Sense yet.
+    fn arrived_unsensed(journal: &Path, segment: &str, modified_ms: Option<i64>) {
+        let input = segment_dir(journal, "20260813", segment).join("audio.flac");
+        fs::write(&input, b"audio").unwrap();
+        if let Some(ms) = modified_ms {
+            filetime::set_file_mtime(&input, filetime::FileTime::from_unix_time(ms / 1000, 0))
+                .unwrap();
+        }
+    }
+
+    fn live_snapshot(journal: &Path) -> Value {
+        serde_json::from_slice(
+            &fs::read(journal.join("awareness/activity_state/default.json")).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_delivery_that_lands_out_of_order_is_applied_in_capture_order() {
+        // A phone relays a watch backlog newest first: 090500 is thought while
+        // 090000, already delivered, still waits for its Sense.
+        let journal = tempdir().unwrap();
+        let (context, _) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        live_tail_seed(&context, journal.path());
+        arrived_unsensed(journal.path(), "090000_300", None);
+        segment_dir(journal.path(), "20260813", "090500_300");
+        write_sense_output(&context, "090500_300", work_sense("work"));
+        live_tail(&context, "090500_300");
+        assert_eq!(
+            live_snapshot(journal.path())["last_segment_key"],
+            "084000_300"
+        );
+
+        write_sense_output(&context, "090000_300", work_sense("work"));
+        live_tail(&context, "090000_300");
+        let snapshot = live_snapshot(journal.path());
+        assert_eq!(snapshot["last_segment_key"], "090500_300");
+        assert_eq!(snapshot["active"]["work"]["id"], "work_090000_300");
+        assert_eq!(
+            snapshot["active"]["work"]["segments"],
+            serde_json::json!(["090000_300", "090500_300"])
+        );
+
+        let mut log = test_log(&context, "flush");
+        flush::run(&context, &mut log, "090500_300", Some("default"), 2, true).unwrap();
+        let ids = work_records(journal.path())
+            .iter()
+            .map(|record| record["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["work_084000_300", "work_090000_300"]);
+    }
+
+    /// One earlier activity, ended by the gap before 09:00, so the stream has
+    /// a saved coordinate.
+    fn live_tail_seed(context: &context::ThinkContext, journal: &Path) {
+        segment_dir(journal, "20260813", "084000_300");
+        write_sense_output(context, "084000_300", work_sense("work"));
+        live_tail(context, "084000_300");
+    }
+
+    #[test]
+    fn a_predecessor_that_arrived_long_ago_without_sense_does_not_hold_the_stream_back() {
+        let now_ms = 1_786_615_200_000;
+        let journal = tempdir().unwrap();
+        let (context, _) = recorder_context(journal.path(), "20260813", now_ms);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        live_tail_seed(&context, journal.path());
+        arrived_unsensed(journal.path(), "090000_300", Some(now_ms - 20 * 60 * 1000));
+        segment_dir(journal.path(), "20260813", "090500_300");
+        write_sense_output(&context, "090500_300", work_sense("work"));
+        live_tail(&context, "090500_300");
+        let snapshot = live_snapshot(journal.path());
+        assert_eq!(snapshot["last_segment_key"], "090500_300");
+        assert_eq!(snapshot["active"]["work"]["id"], "work_090500_300");
+    }
+
+    #[test]
+    fn a_backlog_still_being_thought_keeps_its_stream_waiting_up_to_a_limit() {
+        let now_ms = 1_786_615_200_000;
+        let minutes = |m: i64| now_ms - m * 60 * 1000;
+        let set_sense_mtime = |journal: &Path, segment: &str, ms: i64| {
+            let path = segment_dir(journal, "20260813", segment).join("talents/sense.json");
+            filetime::set_file_mtime(&path, filetime::FileTime::from_unix_time(ms / 1000, 0))
+                .unwrap();
+        };
+        for (arrived, held_sensed, waits) in [(20, 5, true), (180, 1, false)] {
+            let journal = tempdir().unwrap();
+            let (context, _) = recorder_context(journal.path(), "20260813", now_ms);
+            solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+                .unwrap();
+            live_tail_seed(&context, journal.path());
+            arrived_unsensed(journal.path(), "090000_300", Some(minutes(arrived)));
+            for key in ["090500_300", "091000_300"] {
+                segment_dir(journal.path(), "20260813", key);
+                write_sense_output(&context, key, work_sense("work"));
+            }
+            // 09:05 was thought earlier and is waiting; 09:10 is thought now.
+            set_sense_mtime(journal.path(), "090500_300", minutes(held_sensed));
+            live_tail(&context, "091000_300");
+            let last = live_snapshot(journal.path())["last_segment_key"].clone();
+            if waits {
+                assert_eq!(last, "084000_300", "a moving backlog keeps waiting");
+            } else {
+                assert_eq!(last, "091000_300", "no segment holds its stream for hours");
+            }
+        }
+    }
+
+    #[test]
+    fn a_new_day_first_applies_what_the_previous_day_left_waiting() {
+        let journal = tempdir().unwrap();
+        let (yesterday, _) = recorder_context(journal.path(), "20260812", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        segment_dir(journal.path(), "20260812", "230000_300");
+        write_sense_output(&yesterday, "230000_300", work_sense("work"));
+        live_tail(&yesterday, "230000_300");
+        // 23:10 waits on 23:05, which has arrived but is still being thought.
+        let input = segment_dir(journal.path(), "20260812", "230500_300").join("audio.flac");
+        fs::write(input, b"audio").unwrap();
+        segment_dir(journal.path(), "20260812", "231000_300");
+        write_sense_output(&yesterday, "231000_300", work_sense("work"));
+        live_tail(&yesterday, "231000_300");
+        assert_eq!(
+            live_snapshot(journal.path())["last_segment_key"],
+            "230000_300"
+        );
+
+        let (today, _) = recorder_context(journal.path(), "20260813", 9);
+        segment_dir(journal.path(), "20260813", "000500_300");
+        write_sense_output(&today, "000500_300", work_sense("work"));
+        live_tail(&today, "000500_300");
+        let records: Vec<Value> =
+            fs::read_to_string(journal.path().join("facets/work/activities/20260812.jsonl"))
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0]["segments"],
+            serde_json::json!(["230000_300", "231000_300"])
+        );
+    }
+
+    #[test]
+    fn the_flush_applies_what_waited_on_a_segment_that_never_got_sense() {
+        let journal = tempdir().unwrap();
+        let (context, _) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        live_tail_seed(&context, journal.path());
+        segment_dir(journal.path(), "20260813", "090500_300");
+        write_sense_output(&context, "090500_300", work_sense("work"));
+        arrived_unsensed(journal.path(), "090000_300", None);
+        live_tail(&context, "090500_300");
+        assert_eq!(
+            live_snapshot(journal.path())["last_segment_key"],
+            "084000_300"
+        );
+
+        let mut log = test_log(&context, "flush");
+        flush::run(&context, &mut log, "090500_300", Some("default"), 2, true).unwrap();
+        let records = work_records(journal.path());
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[1]["id"], "work_090500_300");
+        assert_eq!(
+            live_snapshot(journal.path())["active"],
+            serde_json::json!({})
+        );
+    }
+
+    #[test]
+    fn a_late_segment_inside_the_open_activity_joins_it() {
+        let journal = tempdir().unwrap();
+        let (context, _) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        for key in ["090000_300", "091000_300"] {
+            segment_dir(journal.path(), "20260813", key);
+            write_sense_output(&context, key, work_sense("work"));
+            live_tail(&context, key);
+        }
+        segment_dir(journal.path(), "20260813", "090500_300");
+        write_sense_output(&context, "090500_300", work_sense("work"));
+        live_tail(&context, "090500_300");
+        let snapshot = live_snapshot(journal.path());
+        assert_eq!(snapshot["last_segment_key"], "091000_300");
+        assert_eq!(
+            snapshot["active"]["work"]["segments"],
+            serde_json::json!(["090000_300", "090500_300", "091000_300"])
+        );
+        let mut log = test_log(&context, "flush");
+        flush::run(&context, &mut log, "091000_300", Some("default"), 2, true).unwrap();
         let records = work_records(journal.path());
         assert_eq!(records.len(), 1);
         assert_eq!(
             records[0]["segments"],
-            serde_json::json!(["100000_300", "100500_300"])
+            serde_json::json!(["090000_300", "090500_300", "091000_300"])
+        );
+    }
+
+    #[test]
+    fn a_record_names_its_stream_and_its_input_hash_ignores_a_sibling_with_the_same_key() {
+        let journal = tempdir().unwrap();
+        let (context, _) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        for key in ["090000_300", "090500_300"] {
+            segment_dir(journal.path(), "20260813", key);
+            write_sense_output(&context, key, work_sense("work"));
+            live_tail(&context, key);
+        }
+        let mut log = test_log(&context, "flush");
+        flush::run(&context, &mut log, "090500_300", Some("default"), 2, true).unwrap();
+        let record = work_records(journal.path()).remove(0);
+        assert_eq!(record["stream"], "default");
+
+        let record = record.as_object().unwrap().clone();
+        let before = segment::compute_activity_input_hash(&context, "20260813", &record);
+        let sibling = journal
+            .path()
+            .join("chronicle/20260813/phone/090000_300/talents");
+        fs::create_dir_all(&sibling).unwrap();
+        fs::write(sibling.join("sense.json"), br#"{"density":"idle"}"#).unwrap();
+        assert_eq!(
+            segment::compute_activity_input_hash(&context, "20260813", &record),
+            before
+        );
+        let mut legacy = record.clone();
+        legacy.remove("stream");
+        assert_ne!(
+            segment::compute_activity_input_hash(&context, "20260813", &legacy),
+            segment::compute_activity_input_hash(&context, "20260813", &{
+                let mut without_sibling = legacy.clone();
+                without_sibling.insert("stream".to_owned(), Value::String("default".to_owned()));
+                without_sibling
+            }),
+            "a record without a stream still reads every stream, as before"
         );
     }
 
