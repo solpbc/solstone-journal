@@ -1167,7 +1167,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_refuses_every_channel_before_connecting() {
-        let error = establish_attested_channel_with_clock(
+        let Err(error) = establish_attested_channel_with_clock(
             &RatlsEndpoint::new("127.0.0.1", 1),
             &[0xAB; 32],
             Path::new("nvattest"),
@@ -1179,8 +1179,9 @@ mod tests {
             Duration::from_secs(1),
             0,
             &SystemAdmissionClock,
-        )
-        .unwrap_err();
+        ) else {
+            panic!("a held platform opened a channel");
+        };
         assert_eq!(error.reason_code, "nvattest_platform_unsupported");
     }
 
