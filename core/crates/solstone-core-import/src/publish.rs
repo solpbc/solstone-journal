@@ -14,7 +14,7 @@ pub use solstone_core_indexer_store::scan::RescanFileStatus;
 use solstone_core_indexer_store::scan::rescan_file;
 use solstone_core_journal_io::{AtomicWriteError, JsonWriteOptions, write_json};
 use solstone_core_segment::{
-    StreamAdvance, StreamHints, UnboundStreamAdvanceError, advance_unbound_stream,
+    SegmentError, StreamAdvance, StreamHints, UnboundStreamAdvanceError, advance_unbound_stream,
     touch_stream_health_marker,
 };
 
@@ -94,6 +94,7 @@ pub enum SegmentBindingOutcome {
         prev_segment: Option<String>,
         seq: u64,
     },
+    OwnerDeleted,
     FailedAtAdvance {
         error: String,
     },
@@ -149,6 +150,16 @@ pub struct PublicationRecord {
     pub segments: Vec<SegmentPublicationOutcome>,
     pub indexing: IndexPublicationOutcomes,
     pub day_markers: Vec<DayMarkerOutcome>,
+}
+
+fn is_path_under_segment(path: &Path, day: &str, stream: &str, segment: &str) -> bool {
+    let components: Vec<&str> = path
+        .components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect();
+    components
+        .windows(4)
+        .any(|w| w == ["chronicle", day, stream, segment])
 }
 
 /// Injectable publication side effects. Real and fake implementations share one seam.
@@ -268,18 +279,23 @@ pub fn publish_with_operations(
         } else {
             match operations.advance_stream(input.journal, segment) {
                 Ok(advance) => {
-                    operations.emit_observed(
-                        input.journal,
-                        input.revision,
-                        &segment.day,
-                        &segment.segment,
-                        &segment.stream,
-                    );
+                    if !solstone_core_format::body::is_body_stream(&segment.stream) {
+                        operations.emit_observed(
+                            input.journal,
+                            input.revision,
+                            &segment.day,
+                            &segment.segment,
+                            &segment.stream,
+                        );
+                    }
                     SegmentBindingOutcome::Bound {
                         prev_day: advance.prev_day,
                         prev_segment: advance.prev_segment,
                         seq: advance.seq,
                     }
+                }
+                Err(UnboundStreamAdvanceError::Advance(SegmentError::Tombstoned { .. })) => {
+                    SegmentBindingOutcome::OwnerDeleted
                 }
                 Err(UnboundStreamAdvanceError::Advance(error)) => {
                     failed_streams.insert(segment.stream.clone());
@@ -305,6 +321,13 @@ pub fn publish_with_operations(
 
     let mut indexing = IndexPublicationOutcomes::default();
     for path in input.files_created {
+        let under_deleted = segments.iter().any(|s| {
+            matches!(s.outcome, SegmentBindingOutcome::OwnerDeleted)
+                && is_path_under_segment(path, &s.day, &s.stream, &s.segment)
+        });
+        if under_deleted {
+            continue;
+        }
         match operations.rescan_file(input.journal, path) {
             Ok(RescanFileStatus::Indexed { warnings }) => {
                 indexing.published.push(IndexedFile {
@@ -323,7 +346,12 @@ pub fn publish_with_operations(
     let days = input
         .segments
         .iter()
-        .map(|segment| segment.day.clone())
+        .zip(&segments)
+        .filter(|(s_in, s_out)| {
+            !solstone_core_format::body::is_body_stream(&s_in.stream)
+                && !matches!(s_out.outcome, SegmentBindingOutcome::OwnerDeleted)
+        })
+        .map(|(s_in, _)| s_in.day.clone())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -341,14 +369,25 @@ pub fn publish_with_operations(
             outcome,
         });
     }
-    if !input.files_created.is_empty() && !days.is_empty() {
+    let non_body_non_deleted_file_count = input
+        .files_created
+        .iter()
+        .filter(|path| {
+            !input.segments.iter().zip(&segments).any(|(s_in, s_out)| {
+                (solstone_core_format::body::is_body_stream(&s_in.stream)
+                    || matches!(s_out.outcome, SegmentBindingOutcome::OwnerDeleted))
+                    && is_path_under_segment(path, &s_in.day, &s_in.stream, &s_in.segment)
+            })
+        })
+        .count();
+    if non_body_non_deleted_file_count > 0 && !days.is_empty() {
         operations.emit_enrichment_ready(
             input.journal,
             input.revision,
             input.import_id,
             input.importer,
             &days,
-            u64::try_from(input.files_created.len()).expect("file count fits u64"),
+            u64::try_from(non_body_non_deleted_file_count).expect("file count fits u64"),
         );
     }
 
@@ -422,9 +461,10 @@ mod tests {
     struct FakeOperations {
         advances: RefCell<Vec<Result<StreamAdvance, UnboundStreamAdvanceError>>>,
         rescans: RefCell<Vec<Result<RescanFileStatus, String>>>,
+        rescans_seen: RefCell<Vec<PathBuf>>,
         markers: RefCell<Vec<String>>,
         observed: RefCell<Vec<(String, String, String)>>,
-        enrichment: RefCell<Vec<Vec<String>>>,
+        enrichment: RefCell<Vec<(Vec<String>, u64)>>,
         drains: RefCell<Vec<String>>,
     }
 
@@ -446,7 +486,8 @@ mod tests {
             self.advances.borrow_mut().remove(0)
         }
 
-        fn rescan_file(&self, _: &Path, _: &Path) -> Result<RescanFileStatus, String> {
+        fn rescan_file(&self, _: &Path, path: &Path) -> Result<RescanFileStatus, String> {
+            self.rescans_seen.borrow_mut().push(path.to_path_buf());
             self.rescans.borrow_mut().remove(0)
         }
 
@@ -470,9 +511,11 @@ mod tests {
             _: &str,
             _: &str,
             days: &[String],
-            _: u64,
+            entries_written: u64,
         ) {
-            self.enrichment.borrow_mut().push(days.to_vec());
+            self.enrichment
+                .borrow_mut()
+                .push((days.to_vec(), entries_written));
         }
 
         fn emit_drain(&self, _: &Path, _: Option<&str>, day: &str) {
@@ -616,7 +659,7 @@ mod tests {
         ];
         assert_eq!(*fake.markers.borrow(), expected);
         assert_eq!(*fake.drains.borrow(), expected);
-        assert_eq!(*fake.enrichment.borrow(), vec![expected]);
+        assert_eq!(*fake.enrichment.borrow(), vec![(expected, 1)]);
         assert_eq!(fake.observed.borrow().len(), 4);
     }
 
@@ -770,5 +813,90 @@ mod tests {
             record.segments[2].outcome,
             SegmentBindingOutcome::Bound { .. }
         ));
+    }
+
+    #[test]
+    fn body_stream_skips_observation_markers_drains_and_enrichment() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        for stream in ["import.apple_health", "import.oura", "import.strava"] {
+            let mut s = segment("20260801", "120000_60");
+            s.stream = stream.to_string();
+            let fake = FakeOperations::with_advances(vec![advance(1)]);
+            let record =
+                publish_with_operations(input(temporary.path(), None, &[s], &[]), &fake).unwrap();
+            assert_eq!(record.status, PublicationStatus::Success);
+            assert!(matches!(
+                record.segments[0].outcome,
+                SegmentBindingOutcome::Bound { .. }
+            ));
+            assert!(fake.observed.borrow().is_empty());
+            assert!(record.day_markers.is_empty());
+            assert!(fake.markers.borrow().is_empty());
+            assert!(fake.drains.borrow().is_empty());
+            assert!(fake.enrichment.borrow().is_empty());
+        }
+    }
+
+    #[test]
+    fn real_publish_with_body_stream_declines_file_and_emits_no_stream_side_effects() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let file_path = temporary
+            .path()
+            .join("chronicle/20260801/import.strava/120000_60/body.csv");
+        fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        fs::write(&file_path, "header\n1,2,3\n").unwrap();
+        let mut s = segment("20260801", "120000_60");
+        s.stream = "import.strava".to_string();
+        let files = vec![file_path.clone()];
+
+        let record = publish(input(temporary.path(), None, &[s], &files)).unwrap();
+        assert_eq!(record.status, PublicationStatus::Success);
+        assert_eq!(record.indexing.declined, vec![file_path]);
+        assert!(record.indexing.published.is_empty());
+        assert!(record.day_markers.is_empty());
+    }
+
+    #[test]
+    fn publish_with_tombstoned_segment_binds_owner_deleted_and_skips_rescan() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let seg1 = segment("20260801", "120000_60");
+        let seg2 = segment("20260801", "120100_60");
+        let file1 = temporary
+            .path()
+            .join("chronicle/20260801/import.apple/120000_60/file1.jsonl");
+        let file2 = temporary
+            .path()
+            .join("chronicle/20260801/import.apple/120100_60/file2.jsonl");
+        let files = vec![file1, file2.clone()];
+        let fake = FakeOperations {
+            advances: RefCell::new(vec![
+                Err(UnboundStreamAdvanceError::Advance(
+                    SegmentError::Tombstoned {
+                        path: PathBuf::from("deleted"),
+                    },
+                )),
+                advance(2),
+            ]),
+            rescans: RefCell::new(vec![Ok(RescanFileStatus::Indexed { warnings: vec![] })]),
+            ..FakeOperations::default()
+        };
+        let record =
+            publish_with_operations(input(temporary.path(), None, &[seg1, seg2], &files), &fake)
+                .unwrap();
+        assert_eq!(record.status, PublicationStatus::Success);
+        assert_eq!(
+            record.segments[0].outcome,
+            SegmentBindingOutcome::OwnerDeleted
+        );
+        assert!(matches!(
+            record.segments[1].outcome,
+            SegmentBindingOutcome::Bound { .. }
+        ));
+        assert_eq!(*fake.rescans_seen.borrow(), vec![file2]);
+        assert_eq!(fake.observed.borrow().len(), 1);
+        assert_eq!(
+            *fake.enrichment.borrow(),
+            vec![(vec!["20260801".to_owned()], 1)]
+        );
     }
 }

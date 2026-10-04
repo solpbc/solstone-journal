@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use solstone_core_journal_io::{
     DEFAULT_STREAM, PathError, PathEscapeError, PathOrDay, Segment, contained_path, day_dirs,
-    day_path, iter_segments, iter_stream_segments,
+    day_path, iter_segments, iter_stream_segments, path_lexists,
 };
 
 use crate::SegmentError;
@@ -60,6 +60,59 @@ impl SegmentDir {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// Whether the owner has deleted the segment at `segment_dir`.
+///
+/// True when that path is a directory holding `tombstone.json`, or when its
+/// parent holds the staged removal name: `STAGED_PREFIX` (`.removing_`) plus
+/// the segment's final component. `STAGED_PREFIX` is the retention staging
+/// prefix. This function does not take the removal lock.
+///
+/// Every tombstone and every staged removal means deleted. A writer never
+/// writes into, beside, or in place of one.
+///
+/// A key that any marker of its stream names as `prev` stays deleted. Rewriting
+/// that key at the head would give it a second chain position. Links are by
+/// key, so the chain would loop. `advance_unbound_stream` already forbids
+/// giving a segment a second position. A later release may treat a tombstone as
+/// claimable only for the same `(activity_id, index)` it released. Both the
+/// writer and any later key probe go through that identity rule. A key a
+/// successor still names stays deleted, and the writer steps to the next key.
+/// This function does not implement that release. A later release has to honour
+/// this identity rule.
+///
+/// A caller that probes keys treats `Err` as stop, never as a free key.
+pub fn owner_deleted(segment_dir: &Path) -> Result<bool, SegmentError> {
+    let parent = segment_dir.parent().ok_or(SegmentError::StreamInput(
+        "segment directory must have a parent",
+    ))?;
+    let file_name = segment_dir.file_name().ok_or(SegmentError::StreamInput(
+        "segment directory must have a final component",
+    ))?;
+
+    match std::fs::symlink_metadata(segment_dir) {
+        Ok(metadata) => {
+            if metadata.is_dir() {
+                let tombstone = segment_dir.join("tombstone.json");
+                if path_lexists(&tombstone)? {
+                    return Ok(true);
+                }
+            }
+        }
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(SegmentError::Io {
+                path: segment_dir.to_path_buf(),
+                source,
+            });
+        }
+    }
+
+    let mut staged_name = std::ffi::OsString::from(".removing_");
+    staged_name.push(file_name);
+    let staged_path = parent.join(staged_name);
+    Ok(path_lexists(&staged_path)?)
 }
 
 fn validate_component(value: &str, kind: &'static str) -> Result<(), SegmentError> {
@@ -175,5 +228,39 @@ mod tests {
             SegmentDir::resolve(root, "20260804", "120000_60", DEFAULT_STREAM),
             Err(SegmentError::Path(PathError::Escape(_)))
         ));
+    }
+
+    #[test]
+    fn owner_deleted_predicate_states() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+
+        // 1. Tombstone directory -> true
+        let tombstoned_dir = root.join("tombstoned_seg");
+        fs::create_dir_all(&tombstoned_dir).unwrap();
+        fs::write(tombstoned_dir.join("tombstone.json"), b"{}").unwrap();
+        assert!(owner_deleted(&tombstoned_dir).unwrap());
+
+        // 2. Parent holds .removing_<key> and <key> is absent -> true
+        let parent = root.join("day_dir");
+        fs::create_dir_all(&parent).unwrap();
+        let removing_seg = parent.join("staged_key");
+        fs::create_dir_all(parent.join(".removing_staged_key")).unwrap();
+        assert!(owner_deleted(&removing_seg).unwrap());
+
+        // 3. Live directory -> false
+        let live_dir = root.join("live_seg");
+        fs::create_dir_all(&live_dir).unwrap();
+        assert!(!owner_deleted(&live_dir).unwrap());
+
+        // 4. Nothing at the path -> false
+        let missing_path = root.join("missing_seg");
+        assert!(!owner_deleted(&missing_path).unwrap());
+
+        // 5. A path whose parent is a file -> Err
+        let file_parent = root.join("parent_file");
+        fs::write(&file_parent, b"not a dir").unwrap();
+        let bad_child = file_parent.join("child");
+        assert!(owner_deleted(&bad_child).is_err());
     }
 }

@@ -381,4 +381,69 @@ mod tests {
         assert_eq!(body["ts"], instant.timestamp_millis());
         assert!(root.path().join("awareness/20260510.jsonl").is_file());
     }
+
+    #[tokio::test]
+    async fn update_imports_skips_registered_body_families_and_records_other_sources() {
+        let root = crate::test_support::phase_root("established_empty");
+        let seeded_imports = json!({
+            "has_imported": true,
+            "import_count": 1,
+            "sources_used": ["obsidian"],
+            "offer_declined": null,
+            "last_nudge": null,
+        });
+        let current_json = json!({
+            "imports": seeded_imports.clone()
+        });
+        let current_path = root.path().join("awareness/current.json");
+        std::fs::create_dir_all(current_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &current_path,
+            serde_json::to_vec_pretty(&current_json).unwrap(),
+        )
+        .unwrap();
+        let snapshot_bytes = std::fs::read(&current_path).unwrap();
+
+        let response = routes(
+            root.path().to_path_buf(),
+            crate::test_support::fixed_clock(),
+        )
+        .oneshot(
+            Request::post("/app/awareness/api/imports")
+                .body(Body::from(r#"{"record":"strava"}"#))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("json");
+        assert_eq!(body, seeded_imports);
+        assert_eq!(std::fs::read(&current_path).unwrap(), snapshot_bytes);
+
+        let response2 = routes(
+            root.path().to_path_buf(),
+            crate::test_support::fixed_clock(),
+        )
+        .oneshot(
+            Request::post("/app/awareness/api/imports")
+                .body(Body::from(r#"{"record":"ics"}"#))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+        assert_eq!(response2.status(), StatusCode::OK);
+        let body2: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response2.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("json");
+        assert_eq!(body2["import_count"], 2);
+        assert_eq!(body2["sources_used"], json!(["obsidian", "ics"]));
+    }
 }

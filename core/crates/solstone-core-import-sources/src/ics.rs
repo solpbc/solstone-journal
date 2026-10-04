@@ -187,6 +187,7 @@ pub fn render(
             segment: window.segment_key.clone(),
             name: TRANSCRIPT_FILE,
             contents,
+            units: window.items.len() as u64,
         });
         for (_, entry) in &window.items {
             items.push(event_item(
@@ -209,7 +210,7 @@ pub fn render(
         files,
         items,
         entries: entry_count,
-        summary: format!("imported {entry_count} calendar events across {days} days"),
+        summary: crate::save::ics_summary(entry_count, days),
     })
 }
 

@@ -55,6 +55,7 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
             segment: segment.segment_key.clone(),
             name: TRANSCRIPT_FILE,
             contents,
+            units: segment.entries.len() as u64,
         });
     }
 
@@ -82,11 +83,10 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
 
     RenderedImport {
         source,
-        summary: format!(
-            "imported {} messages from {} conversations across {} days",
+        summary: crate::save::conversations_summary(
             plan.item_count,
             items.len(),
-            plan.affected_days.len()
+            plan.affected_days.len(),
         ),
         entries: plan.item_count,
         files,

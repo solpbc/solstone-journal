@@ -162,6 +162,7 @@ pub fn render_notes(
             segment: window.segment_key.clone(),
             name: TRANSCRIPT_FILE,
             contents,
+            units: window.items.len() as u64,
         });
         for (_, note) in &window.items {
             let mut meta = Map::new();
@@ -192,7 +193,7 @@ pub fn render_notes(
         files,
         items,
         entries: entry_count,
-        summary: format!("imported {entry_count} notes across {days} days"),
+        summary: crate::save::obsidian_summary(entry_count, days),
     }
 }
 

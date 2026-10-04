@@ -251,6 +251,7 @@ where
             journal,
             import_id,
             &rendered,
+            written.entries,
             &written.created,
             &source_hash,
         ),
@@ -278,7 +279,7 @@ where
     success(cli_render::source_import_complete(
         source,
         &ImportResult {
-            entries_written: rendered.entries,
+            entries_written: written.entries,
             entities_seeded: 0,
             files_created: written
                 .created
@@ -286,7 +287,7 @@ where
                 .map(|file| file.path.to_string_lossy().into_owned())
                 .collect(),
             errors: Vec::new(),
-            summary: rendered.summary,
+            summary: written.summary,
             hard_failures: Vec::new(),
             segments: None,
             date_range: projection.date_range,
@@ -303,6 +304,7 @@ fn write_save_manifest(
     journal: &Path,
     import_id: &str,
     rendered: &save::RenderedImport,
+    entry_count: u64,
     created: &[solstone_core_import::text::TextCreated],
     source_hash: &solstone_core_import::SourceHash,
 ) -> Result<(), String> {
@@ -321,7 +323,7 @@ fn write_save_manifest(
         import_id,
         source_type: rendered.source.name(),
         source_hash,
-        entry_count: rendered.entries,
+        entry_count,
         days_affected: &days_affected,
         files_created: &files_created,
         imported_via: "native",
@@ -2238,5 +2240,197 @@ mod tests {
 
         let proj = solstone_core_import::project_import_result(journal.path(), import_id);
         assert_ne!(proj.status, solstone_core_import::ProjectionStatus::Success);
+    }
+
+    #[test]
+    fn chat_reimport_with_tombstone_filters_manifest_and_adjusts_counts() {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+
+        // Build ChatGPT export zip
+        let zip_path = journal.path().join("chatgpt_export.zip");
+        let file = fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file("conversations.json", SimpleFileOptions::default())
+            .unwrap();
+        let conversations_json = serde_json::json!([
+            {
+                "title": "Distinct Title A",
+                "current_node": "m3",
+                "mapping": {
+                    "m1": {
+                        "id": "m1",
+                        "parent": null,
+                        "message": {
+                            "author": { "role": "user" },
+                            "content": { "parts": ["Distinct preview message A"] },
+                            "create_time": 1767225600.0
+                        }
+                    },
+                    "m2": {
+                        "id": "m2",
+                        "parent": "m1",
+                        "message": {
+                            "author": { "role": "assistant" },
+                            "content": { "parts": ["Message A2"] },
+                            "create_time": 1767225660.0
+                        }
+                    },
+                    "m3": {
+                        "id": "m3",
+                        "parent": "m2",
+                        "message": {
+                            "author": { "role": "user" },
+                            "content": { "parts": ["Message A3"] },
+                            "create_time": 1767312000.0
+                        }
+                    }
+                }
+            },
+            {
+                "title": "Distinct Title B",
+                "current_node": "n2",
+                "mapping": {
+                    "n1": {
+                        "id": "n1",
+                        "parent": null,
+                        "message": {
+                            "author": { "role": "user" },
+                            "content": { "parts": ["Message B1"] },
+                            "create_time": 1767398400.0
+                        }
+                    },
+                    "n2": {
+                        "id": "n2",
+                        "parent": "n1",
+                        "message": {
+                            "author": { "role": "assistant" },
+                            "content": { "parts": ["Message B2"] },
+                            "create_time": 1767398460.0
+                        }
+                    }
+                }
+            }
+        ]);
+        zip.write_all(conversations_json.to_string().as_bytes())
+            .unwrap();
+        zip.finish().unwrap();
+
+        let chat_dispatch = |path: &Path, stamp: &str| RegistryDispatch {
+            source: RegistrySource::Chatgpt,
+            media: path.to_path_buf(),
+            timestamp: stamp.to_owned(),
+            dry_run: false,
+            force: false,
+        };
+
+        // Run 1
+        let (run1, id1) = run_bound(chat_dispatch(&zip_path, "20260104_100000"), journal.path());
+        assert_eq!(run1.exit_code, 0, "{}", run1.stderr);
+        let id1 = id1.unwrap();
+        let run1_manifest_path = journal
+            .path()
+            .join(format!("imports/{id1}/content_manifest.jsonl"));
+        let run1_manifest_bytes = fs::read(&run1_manifest_path).unwrap();
+
+        // Tombstone the segment under chronicle/20260101/
+        let day1_dir = journal.path().join("chronicle/20260101/import.chatgpt");
+        for entry in fs::read_dir(&day1_dir).unwrap() {
+            let seg_dir = entry.unwrap().path();
+            if seg_dir.is_dir() {
+                for child in fs::read_dir(&seg_dir).unwrap() {
+                    let child_path = child.unwrap().path();
+                    if child_path.is_file() {
+                        fs::remove_file(&child_path).unwrap();
+                    }
+                }
+                fs::write(seg_dir.join("tombstone.json"), b"{}").unwrap();
+            }
+        }
+
+        // Run 2
+        let (run2, id2) = run_bound(chat_dispatch(&zip_path, "20260104_110000"), journal.path());
+        assert_eq!(run2.exit_code, 0, "{}", run2.stderr);
+        let id2 = id2.unwrap();
+
+        // Run 2 assertions
+        assert!(run2.stdout.contains("entries_written=3"), "{}", run2.stdout);
+        assert!(
+            run2.stdout
+                .contains("imported 3 messages from 2 conversations across 2 days"),
+            "{}",
+            run2.stdout
+        );
+
+        let manifest2_meta: serde_json::Value = serde_json::from_slice(
+            &fs::read(journal.path().join(format!("imports/{id2}/manifest.json"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest2_meta["entry_count"], 3);
+        let days_affected = manifest2_meta["days_affected"].as_array().unwrap();
+        assert_eq!(
+            days_affected,
+            &vec![serde_json::json!("20260102"), serde_json::json!("20260103")]
+        );
+        let files_created = manifest2_meta["files_created"].as_array().unwrap();
+        assert_eq!(files_created.len(), 2);
+
+        let run2_manifest_path = journal
+            .path()
+            .join(format!("imports/{id2}/content_manifest.jsonl"));
+        let run2_manifest_content = fs::read_to_string(&run2_manifest_path).unwrap();
+        let run2_rows: Vec<&str> = run2_manifest_content.lines().collect();
+        assert_eq!(run2_rows.len(), 1);
+        assert!(run2_rows[0].contains("Distinct Title B"));
+        assert!(!run2_manifest_content.contains("Distinct Title A"));
+        assert!(!run2_manifest_content.contains("Distinct preview message A"));
+
+        // Run 1's manifest bytes are unchanged
+        assert_eq!(fs::read(&run1_manifest_path).unwrap(), run1_manifest_bytes);
+
+        // Control journal, no tombstone
+        let control_journal = tempfile::tempdir().unwrap();
+        write_utc_zone(control_journal.path());
+        let (ctrl_run, ctrl_id) = run_bound(
+            chat_dispatch(&zip_path, "20260104_100000"),
+            control_journal.path(),
+        );
+        assert_eq!(ctrl_run.exit_code, 0, "{}", ctrl_run.stderr);
+        let ctrl_id = ctrl_id.unwrap();
+
+        assert!(
+            ctrl_run.stdout.contains("entries_written=5"),
+            "{}",
+            ctrl_run.stdout
+        );
+        assert!(
+            ctrl_run
+                .stdout
+                .contains("imported 5 messages from 2 conversations across 3 days"),
+            "{}",
+            ctrl_run.stdout
+        );
+        let ctrl_manifest_meta: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                control_journal
+                    .path()
+                    .join(format!("imports/{ctrl_id}/manifest.json")),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(ctrl_manifest_meta["entry_count"], 5);
+
+        let ctrl_manifest_content = fs::read_to_string(
+            control_journal
+                .path()
+                .join(format!("imports/{ctrl_id}/content_manifest.jsonl")),
+        )
+        .unwrap();
+        let ctrl_rows: Vec<&str> = ctrl_manifest_content.lines().collect();
+        assert_eq!(ctrl_rows.len(), 2);
     }
 }

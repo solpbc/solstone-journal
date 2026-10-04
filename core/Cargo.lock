@@ -4140,6 +4140,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "solstone-core-body-source",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-indexer-store",

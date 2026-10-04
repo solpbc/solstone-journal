@@ -789,6 +789,27 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             );
         }
     };
+    let is_strava = match &incoming {
+        Incoming::File {
+            original_filename,
+            counted,
+            ..
+        } => solstone_core_import_sources::strava::looks_like_strava_download(
+            counted.path(),
+            Some(original_filename),
+        ),
+        Incoming::Paste { bytes, .. } => {
+            solstone_core_import_sources::strava::looks_like_strava_csv_bytes(bytes)
+        }
+    };
+    if is_strava {
+        return failure(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "strava_download",
+            "this looks like a Strava download, which this page doesn't bring in, so it wasn't kept.",
+            "this looks like a Strava download, which this page doesn't bring in, so it wasn't kept.",
+        );
+    }
     let source_path = match &incoming {
         Incoming::File { counted, .. } => counted.path().to_path_buf(),
         Incoming::Paste { temporary, .. } => temporary.path().to_path_buf(),
@@ -914,6 +935,14 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
             "file_not_found",
             "that file isn't available.",
             format!("Path not found: {local_path}"),
+        );
+    }
+    if solstone_core_import_sources::strava::looks_like_strava_download(local, None) {
+        return failure(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "strava_download",
+            "this looks like a Strava download, which this page doesn't bring in, so it wasn't kept.",
+            "this looks like a Strava download, which this page doesn't bring in, so it wasn't kept.",
         );
     }
     let source_hash = match hash_source(local) {
@@ -1593,6 +1622,7 @@ fn run_inprocess_import(
 mod tests {
     use super::inprocess_producer_request;
     use chrono_tz::Tz;
+    use std::io::Write;
     use std::path::Path;
     use std::{
         cell::RefCell, ffi::OsString, fs, os::unix::fs::PermissionsExt, rc::Rc, time::Duration,
@@ -2900,5 +2930,322 @@ mod tests {
             1,
         );
         assert_eq!(req.heartbeat_interval, Some(Duration::from_secs(60)));
+    }
+
+    fn assert_no_claimed_imports(root: &Path) {
+        assert_save_tmp_clean(root);
+        let imports_dir = root.join("imports");
+        if imports_dir.exists() {
+            let siblings: Vec<_> = fs::read_dir(&imports_dir)
+                .unwrap()
+                .flatten()
+                .filter(|e| e.file_name() != SAVE_TMP_DIR)
+                .collect();
+            assert!(
+                siblings.is_empty(),
+                "expected no claimed import directories, found: {:?}",
+                siblings.iter().map(|e| e.path()).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    fn multipart_upload_bytes(
+        client_item_id: &str,
+        filename: &str,
+        content_type: &str,
+        bytes: &[u8],
+    ) -> (String, Vec<u8>) {
+        let boundary = "testboundary123";
+        let mut body = Vec::new();
+        write!(
+            &mut body,
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\n{client_item_id}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n"
+        )
+        .unwrap();
+        body.extend_from_slice(bytes);
+        write!(&mut body, "\r\n--{boundary}--\r\n").unwrap();
+        (boundary.to_owned(), body)
+    }
+
+    fn make_zip_bytes(entry_path: &str, contents: &[u8]) -> Vec<u8> {
+        let mut cur = std::io::Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut cur);
+            zip.start_file(entry_path, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(contents).unwrap();
+            zip.finish().unwrap();
+        }
+        cur.into_inner()
+    }
+
+    #[tokio::test]
+    async fn save_door_strava_refusals_and_controls() {
+        let root = TempDir::new().unwrap();
+        let zip1 = make_zip_bytes("activities.csv", b"dummy");
+        let (boundary, body) =
+            multipart_upload_bytes("item-1", "export.zip", "application/zip", &zip1);
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save")
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json["reason_code"], "strava_download");
+        assert_no_claimed_imports(root.path());
+
+        let root = TempDir::new().unwrap();
+        let zip2 = make_zip_bytes("export_1/activities.csv", b"dummy");
+        let (boundary, body) =
+            multipart_upload_bytes("item-2", "export_nested.zip", "application/zip", &zip2);
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save")
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json["reason_code"], "strava_download");
+        assert_no_claimed_imports(root.path());
+
+        let root = TempDir::new().unwrap();
+        let (boundary, body) = multipart_upload_bytes(
+            "item-3",
+            "workouts.csv",
+            "text/csv",
+            b"Activity ID,Activity Date\n1,2\n",
+        );
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save")
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json["reason_code"], "strava_download");
+        assert_no_claimed_imports(root.path());
+
+        let root = TempDir::new().unwrap();
+        let (boundary, body) = multipart_upload_bytes(
+            "item-4",
+            "activities.csv",
+            "text/csv",
+            b"Title,Body\nNote,Content\n",
+        );
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save")
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json["reason_code"], "strava_download");
+        assert_no_claimed_imports(root.path());
+
+        let root = TempDir::new().unwrap();
+        let boundary = "paste-boundary";
+        let paste_body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\npaste-1\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"text\"\r\n\r\nActivity ID,Activity Date\r\n1,2026-01-01\r\n--{boundary}--\r\n"
+        );
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(paste_body, boundary))
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json["reason_code"], "strava_download");
+        assert_no_claimed_imports(root.path());
+
+        let root = TempDir::new().unwrap();
+        let zip_bytes = make_zip_bytes("activities.csv", b"dummy");
+        let temp_zip_path = root.path().join("source_for_hash.zip");
+        fs::write(&temp_zip_path, &zip_bytes).unwrap();
+        let hash = hash_source(&temp_zip_path).unwrap();
+        let manifest_dir = root.path().join("imports/20260101_100000");
+        fs::create_dir_all(&manifest_dir).unwrap();
+        fs::write(
+            manifest_dir.join("manifest.json"),
+            serde_json::to_vec(&json!({
+                "source_hash": hash.as_str(),
+                "source_type": "ics",
+                "import_id": "20260101_100000"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let (boundary, body) =
+            multipart_upload_bytes("item-order", "export.zip", "application/zip", &zip_bytes);
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save")
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json["reason_code"], "strava_download");
+
+        let root = TempDir::new().unwrap();
+        let (boundary, body) =
+            multipart_upload_bytes("ctrl-upload", "note.txt", "text/plain", b"regular text");
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save")
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["status"], "staged");
+        let ts = json["timestamp"].as_str().unwrap();
+        assert!(root.path().join("imports").join(ts).is_dir());
+
+        let root = TempDir::new().unwrap();
+        let boundary = "paste-ctrl";
+        let paste_body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\npaste-ctrl\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"text\"\r\n\r\nJust some notes\r\n--{boundary}--\r\n"
+        );
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(paste_body, boundary))
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["status"], "staged");
+        let ts = json["timestamp"].as_str().unwrap();
+        assert!(root.path().join("imports").join(ts).is_dir());
+    }
+
+    #[tokio::test]
+    async fn save_path_door_cases() {
+        let root = TempDir::new().unwrap();
+        let local_zip = root.path().join("owner_export.zip");
+        let zip_bytes = make_zip_bytes("activities.csv", b"owner data");
+        fs::write(&local_zip, &zip_bytes).unwrap();
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save-path")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"client_item_id":"p1","path":local_zip}))
+                            .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json["reason_code"], "strava_download");
+        assert_no_claimed_imports(root.path());
+        assert_eq!(fs::read(&local_zip).unwrap(), zip_bytes);
+
+        let root = TempDir::new().unwrap();
+        let local_dir = root.path().join("strava_folder");
+        fs::create_dir_all(&local_dir).unwrap();
+        let csv_path = local_dir.join("activities.csv");
+        let csv_bytes = b"Activity ID,Activity Date\n1,2026-01-01\n";
+        fs::write(&csv_path, csv_bytes).unwrap();
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save-path")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"client_item_id":"p2","path":local_dir}))
+                            .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json["reason_code"], "strava_download");
+        assert_no_claimed_imports(root.path());
+        assert_eq!(fs::read(&csv_path).unwrap(), csv_bytes);
+
+        let root = TempDir::new().unwrap();
+        let local_file = root.path().join("notes.txt");
+        fs::write(&local_file, b"regular note").unwrap();
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save-path")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"client_item_id":"p3","path":local_file}))
+                            .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["status"], "staged");
+        let ts = json["timestamp"].as_str().unwrap();
+        assert!(root.path().join("imports").join(ts).is_dir());
+
+        let root = TempDir::new().unwrap();
+        let vault_dir = root.path().join("vault");
+        fs::create_dir_all(vault_dir.join("notes")).unwrap();
+        fs::write(vault_dir.join("notes/activities.csv"), b"Title,Body\n1,2\n").unwrap();
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save-path")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"client_item_id":"p4","path":vault_dir}))
+                            .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = response_json(resp).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["status"], "staged");
+        let ts = json["timestamp"].as_str().unwrap();
+        assert!(root.path().join("imports").join(ts).is_dir());
     }
 }

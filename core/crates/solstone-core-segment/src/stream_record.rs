@@ -19,7 +19,9 @@ use sha2::{Digest, Sha256};
 use crate::continuity::{ContinuationBinding, continuation_binding};
 use crate::device::validate_cid;
 use crate::projection::{name_with_ordinal, paired_name_with_suffix, project_paired_stream_base};
-use crate::{Kind, SegmentDir, SegmentError, is_safe_stream_component, project_stream_name};
+use crate::{
+    Kind, SegmentDir, SegmentError, is_safe_stream_component, owner_deleted, project_stream_name,
+};
 
 const REGISTRY_LOCK_NAME: &str = ".registry";
 
@@ -450,6 +452,17 @@ pub fn advance_unbound_stream(
         .map_err(|error| UnboundStreamAdvanceError::Advance(error.into()))?;
     let record =
         read_typed_stream_record(&state_path).map_err(UnboundStreamAdvanceError::Advance)?;
+    match owner_deleted(&segment_dir.path) {
+        Ok(true) => {
+            return Err(UnboundStreamAdvanceError::Advance(
+                SegmentError::Tombstoned {
+                    path: segment_dir.path.clone(),
+                },
+            ));
+        }
+        Ok(false) => {}
+        Err(error) => return Err(UnboundStreamAdvanceError::Advance(error)),
+    }
     let marker_path = segment_dir.path.join("stream.json");
     if let Some((advance, marker_missing)) =
         replayable_unbound_advance(journal, stream, day, segment, record.as_ref(), &marker_path)
@@ -481,8 +494,9 @@ pub fn advance_unbound_stream(
     if let Some(record) = record.as_ref() {
         ensure_unbound_head_marker(journal, stream, record)?;
     }
-    let (record, advance) = update_unbound_record(record, stream, day, segment, hints)
+    let (mut record, advance) = update_unbound_record(record, stream, day, segment, hints)
         .map_err(UnboundStreamAdvanceError::Advance)?;
+    record.last_marker = Some(advance.clone());
     write_stream_record(&state_path, &record).map_err(UnboundStreamAdvanceError::Advance)?;
     write_stream_marker(&marker_path, stream, &advance)?;
     Ok(advance)
@@ -530,6 +544,9 @@ fn ensure_unbound_head_marker(
     };
     let head = SegmentDir::resolve(journal, head_day, head_segment, stream)
         .map_err(UnboundStreamAdvanceError::Advance)?;
+    if owner_deleted(head.path()).map_err(UnboundStreamAdvanceError::Advance)? {
+        return Ok(());
+    }
     let marker_path = head.path().join("stream.json");
     let Some((advance, marker_missing)) = replayable_unbound_advance(
         journal,
@@ -585,6 +602,11 @@ fn replayable_unbound_advance(
 
     let (prev_day, prev_segment) = if record.seq == 1 {
         (None, None)
+    } else if let Some(last_marker) = record.last_marker.as_ref().filter(|m| m.seq == record.seq) {
+        (
+            last_marker.prev_day.clone(),
+            last_marker.prev_segment.clone(),
+        )
     } else {
         let (day, segment) = find_unbound_predecessor(journal, stream, record.seq - 1)?;
         (Some(day), Some(segment))
@@ -968,6 +990,15 @@ fn advance_stream(
             name: name.to_owned(),
         });
     }
+    match owner_deleted(&segment_dir.path) {
+        Ok(true) => {
+            return Err(SegmentError::Tombstoned {
+                path: segment_dir.path.clone(),
+            });
+        }
+        Ok(false) => {}
+        Err(error) => return Err(error),
+    }
     if let Some(record) = record.as_ref() {
         finish_tail_marker(&segment_dir.journal, record)?;
         if record.seq > 0
@@ -1021,6 +1052,9 @@ fn finish_tail_marker(journal: &Path, record: &StreamRecord) -> Result<(), Segme
         return Err(SegmentError::StreamInput("stream tail identity is missing"));
     };
     let tail = SegmentDir::resolve(journal, day, segment, &record.name)?;
+    if owner_deleted(&tail.path)? {
+        return Ok(());
+    }
     let path = tail.path.join("stream.json");
     let existing = read_stream_marker(&path)?;
     let expected = record.last_marker.as_ref().map(|advance| StreamMarker {
@@ -1877,9 +1911,11 @@ mod tests {
         let temporary = TempDir::new();
         let segment =
             SegmentDir::resolve(temporary.path(), "20260804", "120000_60", "workstation").unwrap();
-        let marker_parent = temporary.path().join("chronicle/20260804/workstation");
-        fs::create_dir_all(marker_parent.parent().unwrap()).unwrap();
-        fs::write(&marker_parent, b"not a directory").unwrap();
+        let marker_parent = temporary
+            .path()
+            .join("chronicle/20260804/workstation/120000_60");
+        fs::create_dir_all(&marker_parent).unwrap();
+        fs::create_dir_all(marker_parent.join("stream.json")).unwrap();
 
         assert!(
             advance_stream(
@@ -3106,5 +3142,357 @@ mod tests {
             assert_eq!(fs::read(&first_marker).unwrap(), written);
             assert_eq!(fs::read(&record_path).unwrap(), record_bytes);
         }
+    }
+
+    fn dir_listing(dir: &Path) -> Vec<String> {
+        if !dir.exists() {
+            return vec![];
+        }
+        let mut entries: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        entries.sort();
+        entries
+    }
+
+    #[test]
+    fn unbound_stream_deleted_head_cases() {
+        for stream in ["import.ics", "import.strava"] {
+            // Row 1: last_marker present, tombstone S3, advance S4 -> Ok, seq 4, prev S3, S3 listing unchanged
+            {
+                let temporary = TempDir::new();
+                let root = temporary.path();
+                for key in ["120000_60", "120100_60", "120200_60"] {
+                    advance_unbound_stream(root, stream, "20260804", key, hints()).unwrap();
+                }
+                let s3_dir = root.join(format!("chronicle/20260804/{stream}/120200_60"));
+                fs::write(s3_dir.join("tombstone.json"), b"{}").unwrap();
+                let s3_listing = dir_listing(&s3_dir);
+
+                let adv =
+                    advance_unbound_stream(root, stream, "20260804", "120300_60", hints()).unwrap();
+                assert_eq!(adv.seq, 4);
+                assert_eq!(adv.prev_day.as_deref(), Some("20260804"));
+                assert_eq!(adv.prev_segment.as_deref(), Some("120200_60"));
+                assert_eq!(dir_listing(&s3_dir), s3_listing);
+                let s4_marker = read_stream_marker(
+                    &root.join(format!("chronicle/20260804/{stream}/120300_60/stream.json")),
+                )
+                .unwrap()
+                .unwrap();
+                assert_eq!(s4_marker.seq, 4);
+                assert_eq!(load_record(root, stream).seq, 4);
+            }
+
+            // Row 2: Same after removing last_marker from record
+            {
+                let temporary = TempDir::new();
+                let root = temporary.path();
+                for key in ["120000_60", "120100_60", "120200_60"] {
+                    advance_unbound_stream(root, stream, "20260804", key, hints()).unwrap();
+                }
+                let mut rec = load_record(root, stream);
+                rec.last_marker = None;
+                write_record(root, &rec);
+                let s3_dir = root.join(format!("chronicle/20260804/{stream}/120200_60"));
+                fs::write(s3_dir.join("tombstone.json"), b"{}").unwrap();
+                let s3_listing = dir_listing(&s3_dir);
+
+                let adv =
+                    advance_unbound_stream(root, stream, "20260804", "120300_60", hints()).unwrap();
+                assert_eq!(adv.seq, 4);
+                assert_eq!(adv.prev_day.as_deref(), Some("20260804"));
+                assert_eq!(adv.prev_segment.as_deref(), Some("120200_60"));
+                assert_eq!(dir_listing(&s3_dir), s3_listing);
+            }
+
+            // Row 3: Tombstone S2 and S3, last_marker present, S4 -> Ok, seq 4, prev S3, neither gains stream.json
+            {
+                let temporary = TempDir::new();
+                let root = temporary.path();
+                for key in ["120000_60", "120100_60", "120200_60"] {
+                    advance_unbound_stream(root, stream, "20260804", key, hints()).unwrap();
+                }
+                let s2_dir = root.join(format!("chronicle/20260804/{stream}/120100_60"));
+                let s3_dir = root.join(format!("chronicle/20260804/{stream}/120200_60"));
+                fs::remove_file(s2_dir.join("stream.json")).unwrap();
+                fs::write(s2_dir.join("tombstone.json"), b"{}").unwrap();
+                fs::remove_file(s3_dir.join("stream.json")).unwrap();
+                fs::write(s3_dir.join("tombstone.json"), b"{}").unwrap();
+
+                let adv =
+                    advance_unbound_stream(root, stream, "20260804", "120300_60", hints()).unwrap();
+                assert_eq!(adv.seq, 4);
+                assert_eq!(adv.prev_day.as_deref(), Some("20260804"));
+                assert_eq!(adv.prev_segment.as_deref(), Some("120200_60"));
+                assert!(!s2_dir.join("stream.json").exists());
+                assert!(!s3_dir.join("stream.json").exists());
+            }
+
+            // Row 4: Explicit old-record row: last_marker removed, S2 and S3 tombstoned, S4 bound at seq 4 with prev S3
+            {
+                let temporary = TempDir::new();
+                let root = temporary.path();
+                for key in ["120000_60", "120100_60", "120200_60"] {
+                    advance_unbound_stream(root, stream, "20260804", key, hints()).unwrap();
+                }
+                let mut rec = load_record(root, stream);
+                rec.last_marker = None;
+                write_record(root, &rec);
+                let s2_dir = root.join(format!("chronicle/20260804/{stream}/120100_60"));
+                let s3_dir = root.join(format!("chronicle/20260804/{stream}/120200_60"));
+                fs::remove_file(s2_dir.join("stream.json")).unwrap();
+                fs::write(s2_dir.join("tombstone.json"), b"{}").unwrap();
+                fs::remove_file(s3_dir.join("stream.json")).unwrap();
+                fs::write(s3_dir.join("tombstone.json"), b"{}").unwrap();
+
+                let adv =
+                    advance_unbound_stream(root, stream, "20260804", "120300_60", hints()).unwrap();
+                assert_eq!(adv.seq, 4);
+                assert_eq!(adv.prev_day.as_deref(), Some("20260804"));
+                assert_eq!(adv.prev_segment.as_deref(), Some("120200_60"));
+                assert!(!s2_dir.join("stream.json").exists());
+                assert!(!s3_dir.join("stream.json").exists());
+            }
+        }
+    }
+
+    #[test]
+    fn unbound_stream_mid_removal_head() {
+        for stream in ["import.ics", "import.strava"] {
+            let temporary = TempDir::new();
+            let root = temporary.path();
+            for key in ["120000_60", "120100_60", "120200_60"] {
+                advance_unbound_stream(root, stream, "20260804", key, hints()).unwrap();
+            }
+            let s3_dir = root.join(format!("chronicle/20260804/{stream}/120200_60"));
+            let removing_s3 = root.join(format!("chronicle/20260804/{stream}/.removing_120200_60"));
+            fs::rename(&s3_dir, &removing_s3).unwrap();
+            let removing_listing = dir_listing(&removing_s3);
+
+            let adv =
+                advance_unbound_stream(root, stream, "20260804", "120300_60", hints()).unwrap();
+            assert_eq!(adv.seq, 4);
+            assert_eq!(adv.prev_day.as_deref(), Some("20260804"));
+            assert_eq!(adv.prev_segment.as_deref(), Some("120200_60"));
+            assert!(!s3_dir.exists());
+            assert_eq!(dir_listing(&removing_s3), removing_listing);
+        }
+    }
+
+    #[test]
+    fn unbound_stream_replay_and_recovery() {
+        for stream in ["import.ics", "import.strava"] {
+            // New record: advance S1 S2 S3, delete only S3 stream.json, tombstone S2, advance S4
+            {
+                let temporary = TempDir::new();
+                let root = temporary.path();
+                for key in ["120000_60", "120100_60", "120200_60"] {
+                    advance_unbound_stream(root, stream, "20260804", key, hints()).unwrap();
+                }
+                let s2_dir = root.join(format!("chronicle/20260804/{stream}/120100_60"));
+                let s3_dir = root.join(format!("chronicle/20260804/{stream}/120200_60"));
+                fs::remove_file(s3_dir.join("stream.json")).unwrap();
+                fs::remove_file(s2_dir.join("stream.json")).unwrap();
+                fs::write(s2_dir.join("tombstone.json"), b"{}").unwrap();
+
+                let adv =
+                    advance_unbound_stream(root, stream, "20260804", "120300_60", hints()).unwrap();
+                assert_eq!(adv.seq, 4);
+                assert_eq!(adv.prev_segment.as_deref(), Some("120200_60"));
+                let s3_marker = read_stream_marker(&s3_dir.join("stream.json"))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(s3_marker.seq, 3);
+                assert_eq!(s3_marker.prev_segment.as_deref(), Some("120100_60"));
+            }
+
+            // Legacy record without last_marker: fails with predecessor missing
+            {
+                let temporary = TempDir::new();
+                let root = temporary.path();
+                for key in ["120000_60", "120100_60", "120200_60"] {
+                    advance_unbound_stream(root, stream, "20260804", key, hints()).unwrap();
+                }
+                let mut rec = load_record(root, stream);
+                rec.last_marker = None;
+                write_record(root, &rec);
+                let rec_bytes = fs::read(stream_record_path(root, stream)).unwrap();
+
+                let s2_dir = root.join(format!("chronicle/20260804/{stream}/120100_60"));
+                let s3_dir = root.join(format!("chronicle/20260804/{stream}/120200_60"));
+                fs::remove_file(s3_dir.join("stream.json")).unwrap();
+                fs::remove_file(s2_dir.join("stream.json")).unwrap();
+                fs::write(s2_dir.join("tombstone.json"), b"{}").unwrap();
+                let s4_dir = root.join(format!("chronicle/20260804/{stream}/120300_60"));
+
+                assert!(
+                    advance_unbound_stream(root, stream, "20260804", "120300_60", hints()).is_err()
+                );
+                assert_eq!(
+                    fs::read(stream_record_path(root, stream)).unwrap(),
+                    rec_bytes
+                );
+                assert!(!s3_dir.join("stream.json").exists());
+                assert!(!s4_dir.join("stream.json").exists());
+            }
+
+            // Control: legacy record with S2 live -> scan succeeds
+            {
+                let temporary = TempDir::new();
+                let root = temporary.path();
+                for key in ["120000_60", "120100_60", "120200_60"] {
+                    advance_unbound_stream(root, stream, "20260804", key, hints()).unwrap();
+                }
+                let mut rec = load_record(root, stream);
+                rec.last_marker = None;
+                write_record(root, &rec);
+                let s3_dir = root.join(format!("chronicle/20260804/{stream}/120200_60"));
+                fs::remove_file(s3_dir.join("stream.json")).unwrap();
+
+                let adv =
+                    advance_unbound_stream(root, stream, "20260804", "120300_60", hints()).unwrap();
+                assert_eq!(adv.seq, 4);
+                let s3_marker = read_stream_marker(&s3_dir.join("stream.json"))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(s3_marker.seq, 3);
+                assert_eq!(s3_marker.prev_segment.as_deref(), Some("120100_60"));
+            }
+        }
+    }
+
+    #[test]
+    fn unbound_stream_deleted_target() {
+        for stream in ["import.ics", "import.strava"] {
+            let temporary = TempDir::new();
+            let root = temporary.path();
+            for key in ["120000_60", "120100_60", "120200_60"] {
+                advance_unbound_stream(root, stream, "20260804", key, hints()).unwrap();
+            }
+            let s4_dir = root.join(format!("chronicle/20260804/{stream}/120300_60"));
+            fs::create_dir_all(&s4_dir).unwrap();
+            fs::write(s4_dir.join("tombstone.json"), b"{}").unwrap();
+            let s4_listing = dir_listing(&s4_dir);
+            let rec_bytes = fs::read(stream_record_path(root, stream)).unwrap();
+
+            assert!(matches!(
+                advance_unbound_stream(root, stream, "20260804", "120300_60", hints()),
+                Err(UnboundStreamAdvanceError::Advance(
+                    SegmentError::Tombstoned { .. }
+                ))
+            ));
+            assert_eq!(
+                fs::read(stream_record_path(root, stream)).unwrap(),
+                rec_bytes
+            );
+            assert_eq!(dir_listing(&s4_dir), s4_listing);
+
+            // Head S3 tombstoned, advance S3 again -> Tombstoned, record unchanged, no stream.json in S3
+            let s3_dir = root.join(format!("chronicle/20260804/{stream}/120200_60"));
+            fs::remove_file(s3_dir.join("stream.json")).unwrap();
+            fs::write(s3_dir.join("tombstone.json"), b"{}").unwrap();
+            assert!(matches!(
+                advance_unbound_stream(root, stream, "20260804", "120200_60", hints()),
+                Err(UnboundStreamAdvanceError::Advance(
+                    SegmentError::Tombstoned { .. }
+                ))
+            ));
+            assert_eq!(
+                fs::read(stream_record_path(root, stream)).unwrap(),
+                rec_bytes
+            );
+            assert!(!s3_dir.join("stream.json").exists());
+        }
+    }
+
+    #[test]
+    fn bound_stream_tail_tombstone_cases() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        let advance = |key: &str| {
+            let bound = bind_stream(root, "20260804", key, "phone", CID_A, "", &hints()).unwrap();
+            advance_bound_stream(
+                &bound.stream,
+                "20260804",
+                key,
+                &bound.segment,
+                hints(),
+                CID_A,
+                "",
+            )
+        };
+
+        // 1. Tombstone tail T -> next segment succeeds with seq + 1, prev T, T listing unchanged
+        let _ = advance("120000_60").unwrap();
+        let t_dir = root.join("chronicle/20260804/phone/120000_60");
+        fs::write(t_dir.join("tombstone.json"), b"{}").unwrap();
+        let t_listing = dir_listing(&t_dir);
+
+        let adv2 = advance("120100_60").unwrap();
+        assert_eq!(adv2.seq, 2);
+        assert_eq!(adv2.prev_segment.as_deref(), Some("120000_60"));
+        assert_eq!(dir_listing(&t_dir), t_listing);
+
+        // 2. Mid-removal (.removing_T, T absent) -> next advance succeeds, T/ does not exist afterwards
+        let t2_dir = root.join("chronicle/20260804/phone/120100_60");
+        let removing_t2 = root.join("chronicle/20260804/phone/.removing_120100_60");
+        fs::rename(&t2_dir, &removing_t2).unwrap();
+        let adv3 = advance("120200_60").unwrap();
+        assert_eq!(adv3.seq, 3);
+        assert_eq!(adv3.prev_segment.as_deref(), Some("120100_60"));
+        assert!(!t2_dir.exists());
+
+        // 3. Record with last_marker removed and T tombstoned -> next advance succeeds with prev T and T gains no stream.json
+        let mut rec = load_record(root, "phone");
+        rec.last_marker = None;
+        write_record(root, &rec);
+        let t3_dir = root.join("chronicle/20260804/phone/120200_60");
+        fs::remove_file(t3_dir.join("stream.json")).unwrap();
+        fs::write(t3_dir.join("tombstone.json"), b"{}").unwrap();
+
+        let adv4 = advance("120300_60").unwrap();
+        assert_eq!(adv4.seq, 4);
+        assert_eq!(adv4.prev_segment.as_deref(), Some("120200_60"));
+        assert!(!t3_dir.join("stream.json").exists());
+
+        // 4. Recreated tail: T is mid-removal and T/ exists again beside .removing_T. advance_bound_stream of T returns Tombstoned
+        let removing_t4 = root.join("chronicle/20260804/phone/.removing_120300_60");
+        fs::create_dir_all(&removing_t4).unwrap();
+        let rec_bytes = fs::read(stream_record_path(root, "phone")).unwrap();
+
+        let bound =
+            bind_stream(root, "20260804", "120300_60", "phone", CID_A, "", &hints()).unwrap();
+        assert!(matches!(
+            advance_bound_stream(
+                &bound.stream,
+                "20260804",
+                "120300_60",
+                &bound.segment,
+                hints(),
+                CID_A,
+                "",
+            ),
+            Err(SegmentError::Tombstoned { .. })
+        ));
+        assert_eq!(
+            fs::read(stream_record_path(root, "phone")).unwrap(),
+            rec_bytes
+        );
+
+        // Same expectation for retry_bound_stream
+        assert!(matches!(
+            retry_bound_stream(
+                &bound.stream,
+                "20260804",
+                "120300_60",
+                &bound.segment,
+                hints(),
+                CID_A,
+                "",
+            ),
+            Err(SegmentError::Tombstoned { .. })
+        ));
     }
 }

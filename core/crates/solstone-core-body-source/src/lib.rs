@@ -84,7 +84,8 @@ pub use error::{
 };
 pub use health_card::{
     HEALTH_CARD_STREAM_BY_FAMILY, HealthCardStreamError, SOURCE_APPLE_HEALTH,
-    SOURCE_DEXCOM_CLARITY, SOURCE_OURA, SOURCE_OURA_API, health_card_stream, health_card_streams,
+    SOURCE_DEXCOM_CLARITY, SOURCE_OURA, SOURCE_OURA_API, SOURCE_STRAVA, health_card_stream,
+    health_card_streams,
 };
 pub use health_hash::{
     HealthRecordIdentity, health_hash, health_record_dedupe_key, health_value_hash,

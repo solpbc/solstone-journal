@@ -21,6 +21,7 @@ pub mod producer;
 pub mod registry;
 pub mod save;
 pub mod shared;
+pub mod strava;
 
 pub use producer::{
     NativeProducerError, NativeProducerOutcome, NativeProducerRequest, NullDocumentModelClient,
@@ -29,6 +30,7 @@ pub use producer::{
 pub use shared::{
     ImportPlan, PlannedEntry, PlannedSegment, SkipLocator, SkipReason, SkippedEntry, SourceError,
 };
+pub use strava::{looks_like_strava_csv_bytes, looks_like_strava_download};
 
 /// The independent safety layer that rejected an archive entry.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

@@ -7,6 +7,7 @@ pub const SOURCE_APPLE_HEALTH: &str = "apple_health";
 pub const SOURCE_OURA: &str = "oura";
 pub const SOURCE_OURA_API: &str = "oura_api";
 pub const SOURCE_DEXCOM_CLARITY: &str = "dexcom_clarity";
+pub const SOURCE_STRAVA: &str = "strava";
 
 struct HealthCardFamilyEntry {
     family: &'static str,
@@ -14,7 +15,7 @@ struct HealthCardFamilyEntry {
     is_wire: bool,
 }
 
-const HEALTH_CARD_FAMILY_COUNT: usize = 4;
+const HEALTH_CARD_FAMILY_COUNT: usize = 5;
 
 const HEALTH_CARD_FAMILIES: [HealthCardFamilyEntry; HEALTH_CARD_FAMILY_COUNT] = [
     HealthCardFamilyEntry {
@@ -35,6 +36,11 @@ const HEALTH_CARD_FAMILIES: [HealthCardFamilyEntry; HEALTH_CARD_FAMILY_COUNT] = 
     HealthCardFamilyEntry {
         family: SOURCE_DEXCOM_CLARITY,
         stream: None,
+        is_wire: false,
+    },
+    HealthCardFamilyEntry {
+        family: SOURCE_STRAVA,
+        stream: Some("import.strava"),
         is_wire: false,
     },
 ];
@@ -121,6 +127,7 @@ mod tests {
             "import.apple_health"
         );
         assert_eq!(health_card_stream(SOURCE_OURA_API).unwrap(), "import.oura");
+        assert_eq!(health_card_stream("strava").unwrap(), "import.strava");
         assert!(matches!(
             health_card_stream(SOURCE_OURA).unwrap_err(),
             HealthCardStreamError::NoCardStream { .. }
@@ -135,7 +142,10 @@ mod tests {
         ));
 
         let streams = health_card_streams().collect::<Vec<_>>();
-        assert_eq!(streams, ["import.apple_health", "import.oura"]);
+        assert_eq!(
+            streams,
+            ["import.apple_health", "import.oura", "import.strava"]
+        );
 
         assert_eq!(
             BodySourceFamily::from_bytes(b"apple_health").unwrap(),
@@ -145,6 +155,10 @@ mod tests {
             BodySourceFamily::from_bytes(b"oura_api").unwrap(),
             BodySourceFamily::OuraApi
         );
+        assert!(matches!(
+            BodySourceFamily::from_bytes(b"strava").unwrap_err(),
+            BodySourcePolicyError::InvalidFormat(_)
+        ));
         assert!(matches!(
             BodySourceFamily::from_bytes(b"oura").unwrap_err(),
             BodySourcePolicyError::InvalidFormat(_)
@@ -157,5 +171,6 @@ mod tests {
         assert!(is_manifest_wire_family(SOURCE_OURA_API));
         assert!(!is_manifest_wire_family(SOURCE_OURA));
         assert!(!is_manifest_wire_family(SOURCE_DEXCOM_CLARITY));
+        assert!(!is_manifest_wire_family(SOURCE_STRAVA));
     }
 }

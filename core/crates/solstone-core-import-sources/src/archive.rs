@@ -30,7 +30,7 @@ use solstone_core_ingest_resolve::segment_key_candidates;
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, PathOrDay, RecordIdentity, Segment,
     StagedDirOptions, StreamLocation, append_jsonl, atomic_replace, contained_path, hold_lock,
-    iter_segments, path_lexists, publish_staged_dir, realpath_non_strict, write_bytes_exclusive,
+    iter_segments, publish_staged_dir, realpath_non_strict, write_bytes_exclusive,
 };
 use solstone_core_segment::touch_stream_health_marker;
 use zip::ZipArchive;
@@ -2910,30 +2910,11 @@ fn join_contained(root: &Path, relative: &str) -> Result<PathBuf, ImportSourcesE
     })
 }
 
-const REMOVING_SEGMENT_PREFIX: &str = ".removing_";
-
-/// Whether the owner deleted the segment at `path`: it holds a tombstone, or a
-/// removal of it is in progress beside it.  A merge never lands material there.
 fn deleted_by_owner(path: &Path) -> Result<bool, ImportSourcesError> {
-    let lexists = |candidate: &Path| {
-        path_lexists(candidate).map_err(|error| ImportSourcesError::SegmentMerge {
-            path: candidate.to_path_buf(),
-            detail: error.to_string(),
-        })
-    };
-    let is_dir = fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir());
-    if is_dir && lexists(&path.join("tombstone.json"))? {
-        return Ok(true);
-    }
-    match (
-        path.parent(),
-        path.file_name().and_then(|name| name.to_str()),
-    ) {
-        (Some(parent), Some(name)) => {
-            lexists(&parent.join(format!("{REMOVING_SEGMENT_PREFIX}{name}")))
-        }
-        _ => Ok(false),
-    }
+    solstone_core_segment::owner_deleted(path).map_err(|error| ImportSourcesError::SegmentMerge {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
+    })
 }
 
 fn segment_relative_for(day: &str, segment: &Segment, identity: RecordIdentity<'_>) -> String {
