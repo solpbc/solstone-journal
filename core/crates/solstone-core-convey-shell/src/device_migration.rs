@@ -8,7 +8,7 @@ use std::path::Path;
 use serde_json::Value;
 use solstone_core_segment::{TakeoverPlan, with_takeover_stream_boundary};
 use solstone_core_sol_link::device_migration::{
-    DecisionApply, DecisionRequest, MigrationError, MigrationReasonCode, MigrationView, decide,
+    DecisionApply, DecisionRequest, DecisionResponse, MigrationError, MigrationReasonCode, decide,
     pending_push_cid, record_push_result,
 };
 
@@ -16,7 +16,7 @@ pub(crate) fn decide_and_resume(
     journal: &Path,
     caller_cid: &str,
     raw_body: &[u8],
-) -> Result<MigrationView, MigrationError> {
+) -> Result<DecisionResponse, MigrationError> {
     let mut boundary = |adopted: &str,
                         retired: &str,
                         stored_plan: Option<&Value>,
@@ -40,13 +40,13 @@ pub(crate) fn decide_and_resume(
 
     let view = decide(journal, caller_cid, raw_body, &mut boundary)?;
     let request: DecisionRequest = serde_json::from_slice(raw_body).map_err(|_| unavailable())?;
-    let Some(retired_cid) = pending_push_cid(journal, caller_cid, &request.decision_id)? else {
+    let Some(retired_cid) = pending_push_cid(journal, caller_cid, &request.operation_id)? else {
         return Ok(view);
     };
     if solstone_core_push::remove_cid_registrations(journal, &retired_cid).is_err() {
-        return record_push_result(journal, caller_cid, &request.decision_id, false);
+        return record_push_result(journal, caller_cid, &request.operation_id, false);
     }
-    record_push_result(journal, caller_cid, &request.decision_id, true)
+    record_push_result(journal, caller_cid, &request.operation_id, true)
 }
 
 fn unavailable() -> MigrationError {
@@ -115,8 +115,8 @@ mod tests {
         )
         .unwrap();
         serde_json::to_vec(&DecisionRequest {
-            protocol: 1,
-            decision_id: DECISION.to_owned(),
+            protocol_version: 1,
+            operation_id: DECISION.to_owned(),
             choice: Choice::SameDevice,
             replaces_cid: solstone_core_sol_link::device_migration::ReplacesCid::Missing,
         })

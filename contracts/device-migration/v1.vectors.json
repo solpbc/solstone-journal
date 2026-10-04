@@ -3,19 +3,21 @@
   "regeneration_command": "cargo test --manifest-path core/Cargo.toml -p solstone-core-repository-contracts --lib device_migration_contract::regenerate_device_migration_contract -- --ignored",
   "vectors": {
     "rekey_request": {
-      "protocol": 1,
+      "protocol_version": 1,
       "operation_id": "123e4567-e89b-42d3-a456-426614174000",
       "csr": "-----BEGIN CERTIFICATE REQUEST-----\nfixture\n-----END CERTIFICATE REQUEST-----",
-      "device_label": "Fixture device"
+      "device_label": "Fixture device",
+      "client_label": "Fixture client",
+      "platform": "ios"
     },
     "rekey_created_201": {
       "status": 201,
       "body": {
-        "protocol": 1,
+        "protocol_version": 1,
         "operation_id": "123e4567-e89b-42d3-a456-426614174000",
         "state": "pending",
-        "cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "pairing": {
           "client_cert": "-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----",
           "ca_chain": [
@@ -23,19 +25,34 @@
           ],
           "instance_id": "fixture-instance",
           "home_label": "fixture-home",
-          "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "home_attestation": null
+          "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "home_attestation": "fixture-attestation",
+          "local_endpoints": [
+            {
+              "ip": "192.0.2.10",
+              "port": 7657,
+              "scope": "lan"
+            }
+          ],
+          "relay_access": {
+            "protocol_version": 1,
+            "status": "active",
+            "relay_origin": "https://relay.example.invalid",
+            "instance_id": "fixture-instance",
+            "device_token": "fixture-token",
+            "expires_at": "2026-10-05T00:00:00Z"
+          }
         }
       }
     },
     "rekey_replay_200": {
       "status": 200,
       "body": {
-        "protocol": 1,
+        "protocol_version": 1,
         "operation_id": "123e4567-e89b-42d3-a456-426614174000",
         "state": "pending",
-        "cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "pairing": {
           "client_cert": "-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----",
           "ca_chain": [
@@ -43,59 +60,108 @@
           ],
           "instance_id": "fixture-instance",
           "home_label": "fixture-home",
-          "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "home_attestation": null
+          "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "home_attestation": "fixture-attestation",
+          "local_endpoints": [
+            {
+              "ip": "192.0.2.10",
+              "port": 7657,
+              "scope": "lan"
+            }
+          ],
+          "relay_access": {
+            "protocol_version": 1,
+            "status": "active",
+            "relay_origin": "https://relay.example.invalid",
+            "instance_id": "fixture-instance",
+            "device_token": "fixture-token",
+            "expires_at": "2026-10-05T00:00:00Z"
+          }
         }
       }
     },
-    "migration_views": [
-      {
-        "protocol": 1,
-        "state": "none",
-        "operation_id": null,
-        "decision_id": null,
-        "previous_cid": null,
-        "replaced_cid": null
-      },
-      {
-        "protocol": 1,
+    "rekey_without_network_metadata": {
+      "status": 201,
+      "body": {
+        "protocol_version": 1,
+        "operation_id": "123e4567-e89b-42d3-a456-426614174000",
         "state": "pending",
-        "operation_id": "123e4567-e89b-42d3-a456-426614174000",
-        "decision_id": null,
         "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "pairing": {
+          "client_cert": "-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----",
+          "ca_chain": [
+            "-----BEGIN CERTIFICATE-----\nca-fixture\n-----END CERTIFICATE-----"
+          ],
+          "instance_id": "fixture-instance",
+          "home_label": "fixture-home",
+          "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "home_attestation": "fixture-attestation"
+        }
+      }
+    },
+    "migration_states": [
+      {
+        "protocol_version": 1,
+        "rekey_operation_id": null,
+        "previous_cid": null,
+        "state": "none",
         "replaced_cid": null
       },
       {
-        "protocol": 1,
+        "protocol_version": 1,
+        "rekey_operation_id": "123e4567-e89b-42d3-a456-426614174000",
+        "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "pending",
+        "replaced_cid": null
+      },
+      {
+        "protocol_version": 1,
+        "rekey_operation_id": "123e4567-e89b-42d3-a456-426614174000",
+        "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "state": "new_device",
-        "operation_id": "123e4567-e89b-42d3-a456-426614174000",
-        "decision_id": "123e4567-e89b-42d3-a456-426614174001",
-        "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "replaced_cid": null
       },
       {
-        "protocol": 1,
-        "state": "same_device",
-        "operation_id": "123e4567-e89b-42d3-a456-426614174000",
-        "decision_id": "123e4567-e89b-42d3-a456-426614174002",
+        "protocol_version": 1,
+        "rekey_operation_id": "123e4567-e89b-42d3-a456-426614174000",
         "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "same_device",
         "replaced_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       {
-        "protocol": 1,
-        "state": "replaced_device",
-        "operation_id": null,
-        "decision_id": "123e4567-e89b-42d3-a456-426614174003",
+        "protocol_version": 1,
+        "rekey_operation_id": null,
         "previous_cid": null,
+        "state": "replaced_device",
         "replaced_cid": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
       }
     ],
     "replace_request": {
-      "protocol": 1,
-      "decision_id": "123e4567-e89b-42d3-a456-426614174004",
+      "protocol_version": 1,
+      "operation_id": "123e4567-e89b-42d3-a456-426614174004",
       "choice": "replace_device",
       "replaces_cid": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     },
+    "decision_response": {
+      "protocol_version": 1,
+      "operation_id": "123e4567-e89b-42d3-a456-426614174004",
+      "state": "replaced_device",
+      "previous_cid": null,
+      "cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "replaced_cid": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "display_label": "Fixture device"
+    },
+    "negative": [
+      {
+        "status": 400,
+        "reason_code": "migration_protocol_unsupported"
+      },
+      {
+        "status": 400,
+        "reason_code": "migration_request_invalid"
+      }
+    ],
     "reason_codes": [
       "migration_request_invalid",
       "migration_protocol_unsupported",

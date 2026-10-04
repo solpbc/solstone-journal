@@ -45,13 +45,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "protocol",
+        "protocol_version",
         "operation_id",
         "csr",
-        "device_label"
+        "device_label",
+        "client_label",
+        "platform"
       ],
       "properties": {
-        "protocol": {
+        "protocol_version": {
           "const": 1
         },
         "operation_id": {
@@ -65,6 +67,21 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 80
+        },
+        "client_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "linux",
+            "macos",
+            "windows",
+            "ios",
+            "android"
+          ]
         }
       }
     },
@@ -72,15 +89,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "protocol",
-        "decision_id",
+        "protocol_version",
+        "operation_id",
         "choice"
       ],
       "properties": {
-        "protocol": {
+        "protocol_version": {
           "const": 1
         },
-        "decision_id": {
+        "operation_id": {
           "type": "string",
           "format": "uuid"
         },
@@ -138,15 +155,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "protocol",
+        "protocol_version",
         "operation_id",
         "state",
-        "cid",
         "previous_cid",
+        "cid",
         "pairing"
       ],
       "properties": {
-        "protocol": {
+        "protocol_version": {
           "const": 1
         },
         "operation_id": {
@@ -156,11 +173,11 @@
         "state": {
           "const": "pending"
         },
-        "cid": {
+        "previous_cid": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "previous_cid": {
+        "cid": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
@@ -169,31 +186,21 @@
         }
       }
     },
-    "migration_view": {
+    "migration_state": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "protocol",
-        "state",
-        "operation_id",
-        "decision_id",
+        "protocol_version",
+        "rekey_operation_id",
         "previous_cid",
+        "state",
         "replaced_cid"
       ],
       "properties": {
-        "protocol": {
+        "protocol_version": {
           "const": 1
         },
-        "state": {
-          "$ref": "#/$defs/state"
-        },
-        "operation_id": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "decision_id": {
+        "rekey_operation_id": {
           "type": [
             "string",
             "null"
@@ -205,11 +212,60 @@
             "null"
           ]
         },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
         "replaced_cid": {
           "type": [
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "decision_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol_version",
+        "operation_id",
+        "state",
+        "previous_cid",
+        "cid",
+        "replaced_cid",
+        "display_label"
+      ],
+      "properties": {
+        "protocol_version": {
+          "const": 1
+        },
+        "operation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "previous_cid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "cid": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "replaced_cid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "display_label": {
+          "type": "string"
         }
       }
     }

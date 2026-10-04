@@ -735,7 +735,7 @@ pub(crate) fn uses_relay_pairing(journal_root: &std::path::Path, request: &MintR
     read_posture(journal_root) == "spl" && request.same_machine == Some(false)
 }
 
-fn response_local_endpoints(snapshot: &PairingSnapshot, port: u16) -> Option<Value> {
+pub(crate) fn response_local_endpoints(snapshot: &PairingSnapshot, port: u16) -> Option<Value> {
     let endpoints: Vec<_> = snapshot
         .endpoints
         .iter()
@@ -824,7 +824,7 @@ pub(crate) fn refusal(reason_code: &str, detail: &str, status: StatusCode) -> Re
         .into_response()
 }
 
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock is after the Unix epoch")
