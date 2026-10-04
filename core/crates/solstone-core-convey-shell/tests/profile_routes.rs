@@ -417,7 +417,7 @@ async fn full_uses_enabled_ledger_folds_but_all_declared_profile_data() {
     fixture.activities(
         "work",
         &recent_close_day,
-        &[json!({"id":"recent-close","created_at":timestamp_ago(3),"closures":[{"owner_entity_id":"owner","counterparty_entity_id":"pat","action":"ship the report"}]})],
+        &[json!({"id":"recent-close","created_at":timestamp_ago(3),"closures":[{"owner_entity_id":"owner","counterparty_entity_id":"pat","action":"ship the report","resolution":"done"}]})],
     );
     fixture.activities(
         "work",
@@ -430,7 +430,7 @@ async fn full_uses_enabled_ledger_folds_but_all_declared_profile_data() {
     fixture.activities(
         "work",
         &stale_close_day,
-        &[json!({"id":"stale-close","created_at":timestamp_ago(40),"closures":[{"owner_entity_id":"owner","counterparty_entity_id":"pat","action":"old task"}]})],
+        &[json!({"id":"stale-close","created_at":timestamp_ago(40),"closures":[{"owner_entity_id":"owner","counterparty_entity_id":"pat","action":"old task","resolution":"done"}]})],
     );
     fixture.activities(
         "muted",
@@ -630,7 +630,7 @@ async fn muted_only_profile_data_stays_visible_while_muted_ledger_data_is_exclud
     fixture.activities(
         "muted",
         &day_ago(0),
-        &[json!({"id":"muted-only","created_at":1,"participation":[{"entity_id":"muted_only","role":"attendee"}],"commitments":[{"owner":"Owner","owner_entity_id":"owner","counterparty":"Muted Only","counterparty_entity_id":"muted_only","action":"hidden task"}],"closures":[{"owner_entity_id":"owner","counterparty_entity_id":"muted_only","action":"hidden task"}],"decisions":[{"owner":"Muted Only","owner_entity_id":"muted_only","action":"hidden decision"}]})],
+        &[json!({"id":"muted-only","created_at":1,"participation":[{"entity_id":"muted_only","role":"attendee"}],"commitments":[{"owner":"Owner","owner_entity_id":"owner","counterparty":"Muted Only","counterparty_entity_id":"muted_only","action":"hidden task"}],"closures":[{"owner_entity_id":"owner","counterparty_entity_id":"muted_only","action":"hidden task","resolution":"done"}],"decisions":[{"owner":"Muted Only","owner_entity_id":"muted_only","action":"hidden decision"}]})],
     );
 
     let (_, _, full) = get("/api/profile/muted_only", &fixture).await;

@@ -73,6 +73,7 @@ struct Commitment {
 
 #[derive(Debug, Clone)]
 struct StoryClosure {
+    resolution: String,
     owner_entity_id: Option<String>,
     counterparty_entity_id: Option<String>,
     counterparty_normalized: String,
@@ -93,6 +94,57 @@ struct ManualClose {
 type SortKey = (i64, String, String, String);
 type ScannedRecord = (String, String, Map<String, Value>);
 
+/// Open commitments involving this principal, as known at the end of an analysis day.
+/// Other actors must resolve to named people; names alone never establish ownership.
+pub fn read_owner_open_loops(
+    journal_root: &Path,
+    principal: &str,
+    through_day: &str,
+    as_of: DateTime<Utc>,
+    facets: &[String],
+) -> Result<Vec<LedgerItem>, String> {
+    let people = solstone_core_entity::load_all_journal_entities(journal_root)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|entity| entity.entity_type() == Some("Person"))
+        .filter(|entity| {
+            let name = entity
+                .value
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_lowercase();
+            !name.trim().is_empty()
+                && !matches!(name.as_str(), "unknown" | "your agent" | "you")
+                && !solstone_core_entity::is_placeholder_query(&name)
+        })
+        .map(|entity| entity.id)
+        .collect::<BTreeSet<_>>();
+    let mut records = scan_records_through(journal_root, facets, Some(through_day))
+        .map_err(|error| error.to_string())?;
+    records.retain(|(_, _, record)| record_created_at(record) < as_of.timestamp_millis());
+    for (_, _, record) in &mut records {
+        if let Some(edits) = record.get_mut("edits").and_then(Value::as_array_mut) {
+            edits.retain(|edit| {
+                edit_timestamp_ms(edit.get("timestamp"))
+                    .is_none_or(|timestamp| timestamp < as_of.timestamp_millis())
+            });
+        }
+    }
+    Ok(build_ledger_items(records, as_of)
+        .into_iter()
+        .filter(|item| item.state == "open")
+        .filter(|item| {
+            item.owner_entity_id.as_deref() == Some(principal)
+                || (item.counterparty_entity_id.as_deref() == Some(principal)
+                    && item
+                        .owner_entity_id
+                        .as_deref()
+                        .is_some_and(|id| id != principal && people.contains(id)))
+        })
+        .collect())
+}
+
 pub(crate) fn list(
     journal_root: &Path,
     now: DateTime<Utc>,
@@ -111,9 +163,7 @@ pub(crate) fn list(
         items.retain(|item| item.state == state);
     }
     if let Some(owner) = query.owner.as_deref() {
-        items.retain(|item| {
-            party_matches(owner, Some(&item.owner), item.owner_entity_id.as_deref())
-        });
+        items.retain(|item| item.owner_entity_id.as_deref() == Some(owner));
     }
     if let Some(counterparty) = query.counterparty.as_deref() {
         items.retain(|item| {
@@ -257,9 +307,20 @@ fn enabled_facet_names(journal_root: &Path) -> ProfileResult<Vec<String>> {
 }
 
 fn scan_records(journal_root: &Path, facets: &[String]) -> ProfileResult<Vec<ScannedRecord>> {
+    scan_records_through(journal_root, facets, None)
+}
+
+fn scan_records_through(
+    journal_root: &Path,
+    facets: &[String],
+    through_day: Option<&str>,
+) -> ProfileResult<Vec<ScannedRecord>> {
     let mut records = Vec::new();
     for facet in facets {
         for day in activity_days(journal_root, facet)? {
+            if through_day.is_some_and(|through| day.as_str() > through) {
+                continue;
+            }
             let day_records = load_activity_records(journal_root, facet, &day, false)
                 .map_err(ProfileError::internal)?;
             records.extend(
@@ -382,6 +443,7 @@ fn build_ledger_items(records: Vec<ScannedRecord>, now: DateTime<Utc>) -> Vec<Le
                 continue;
             }
             story_closures.push(StoryClosure {
+                resolution: record_string(raw_closure, "resolution"),
                 owner_entity_id: optional_string(raw_closure.get("owner_entity_id")),
                 counterparty_entity_id: optional_string(raw_closure.get("counterparty_entity_id")),
                 counterparty_normalized: normalize_text(
@@ -496,18 +558,34 @@ fn resolve_state(story: &[&StoryClosure], manual: &[ManualClose]) -> (String, Op
     {
         return (latest.state.clone(), Some(latest.closed_at));
     }
-    if let Some(earliest) = story.iter().min_by_key(|close| close.sort_key.clone()) {
-        return ("closed".to_owned(), Some(earliest.closed_at));
+    if let Some(earliest) = story
+        .iter()
+        .filter(|close| {
+            matches!(
+                close.resolution.as_str(),
+                "done" | "sent" | "signed" | "dropped"
+            )
+        })
+        .min_by_key(|close| close.sort_key.clone())
+    {
+        let state = if earliest.resolution == "dropped" {
+            "dropped"
+        } else {
+            "closed"
+        };
+        return (state.to_owned(), Some(earliest.closed_at));
     }
     ("open".to_owned(), None)
 }
 
 fn story_closure_matches(commitment: &Commitment, closure: &StoryClosure) -> bool {
-    entity_pair_matches(
-        commitment.item.owner_entity_id.as_deref(),
-        closure.owner_entity_id.as_deref(),
-        true,
-    ) && counterparty_matches(commitment, closure)
+    closure.closed_at >= commitment.item.opened_at
+        && entity_pair_matches(
+            commitment.item.owner_entity_id.as_deref(),
+            closure.owner_entity_id.as_deref(),
+            true,
+        )
+        && counterparty_matches(commitment, closure)
         && actions_match(&commitment.action_normalized, &closure.action_normalized)
 }
 
@@ -788,6 +866,146 @@ mod tests {
             top: None,
             facets: None,
         }
+    }
+
+    #[test]
+    fn closure_resolution_and_time_apply_to_stored_items_without_rewriting() {
+        let temporary = journal();
+        facet(temporary.path(), "work", false);
+        for (resolution, expected) in [
+            ("done", "closed"),
+            ("sent", "closed"),
+            ("signed", "closed"),
+            ("dropped", "dropped"),
+            ("deferred", "open"),
+            ("", "open"),
+        ] {
+            rows(
+                temporary.path(),
+                "work",
+                "20260401",
+                &[
+                    json!({"id":"opening","created_at":200,"commitments":[{"owner":"you","owner_entity_id":"owner","action":"send report"}]}),
+                    json!({"id":"closing","created_at":200,"closures":[{"owner_entity_id":"owner","action":"send report","resolution":resolution}]}),
+                ],
+            );
+            let items = list(temporary.path(), now(), list_query(LedgerState::All)).unwrap();
+            assert_eq!(items[0].state, expected, "{resolution}");
+            assert_eq!(items[0].closed_at, (expected != "open").then_some(200));
+        }
+        rows(
+            temporary.path(),
+            "work",
+            "20260401",
+            &[
+                json!({"id":"opening","created_at":200,"commitments":[{"owner":"you","owner_entity_id":"owner","action":"send report"}]}),
+                json!({"id":"too-early","created_at":199,"closures":[{"owner_entity_id":"owner","action":"send report","resolution":"done"}]}),
+            ],
+        );
+        let items = list(temporary.path(), now(), list_query(LedgerState::All)).unwrap();
+        assert_eq!(items[0].state, "open");
+        assert_eq!(items[0].sources.len(), 1);
+    }
+
+    #[test]
+    fn deferral_does_not_prevent_a_later_completion() {
+        let temporary = journal();
+        facet(temporary.path(), "work", false);
+        rows(
+            temporary.path(),
+            "work",
+            "20260401",
+            &[
+                json!({"id":"opening","created_at":100,"commitments":[{"owner":"Owner","owner_entity_id":"owner","counterparty":"Pat","counterparty_entity_id":"pat","action":"send report"}]}),
+                json!({"id":"defer","created_at":200,"closures":[{"owner_entity_id":"owner","counterparty_entity_id":"pat","action":"send report","resolution":"deferred"}]}),
+                json!({"id":"done","created_at":300,"closures":[{"owner_entity_id":"owner","counterparty_entity_id":"pat","action":"send report","resolution":"sent"}]}),
+            ],
+        );
+        let items = list(temporary.path(), now(), list_query(LedgerState::All)).unwrap();
+        assert_eq!(items[0].state, "closed");
+        assert_eq!(items[0].closed_at, Some(300));
+    }
+
+    #[test]
+    fn yours_requires_the_exact_principal_id_and_waiting_requires_a_named_person() {
+        let temporary = journal();
+        facet(temporary.path(), "work", false);
+        write_json(
+            temporary.path(),
+            "entities/pat/entity.json",
+            json!({"id":"pat","name":"Pat","type":"Person"}),
+        );
+        rows(
+            temporary.path(),
+            "work",
+            "20260401",
+            &[json!({"id":"opening","created_at":100,"commitments":[
+                {"owner":"you","owner_entity_id":"owner","action":"your task"},
+                {"owner":"your agent","owner_entity_id":"owner-agent","counterparty_entity_id":"owner","action":"agent task"},
+                {"owner":"unknown","counterparty_entity_id":"owner","action":"unknown task"},
+                {"owner":"you","action":"unresolved task"},
+                {"owner":"Pat","owner_entity_id":"pat","counterparty_entity_id":"owner","action":"waiting task"},
+                {"owner":"Pat","owner_entity_id":"pat","action":"other task"}
+            ]})],
+        );
+        let mut query = list_query(LedgerState::Open);
+        query.owner = Some("owner".into());
+        let yours = list(temporary.path(), now(), query).unwrap();
+        assert_eq!(yours.len(), 1);
+        assert_eq!(yours[0].action, "your task");
+        let involved = super::read_owner_open_loops(
+            temporary.path(),
+            "owner",
+            "20260401",
+            now(),
+            &["work".into()],
+        )
+        .unwrap();
+        assert_eq!(involved.len(), 2);
+        assert!(involved.iter().any(|item| item.action == "waiting task"));
+        assert_eq!(
+            list(temporary.path(), now(), list_query(LedgerState::Open))
+                .unwrap()
+                .len(),
+            6
+        );
+    }
+
+    #[test]
+    fn a_past_briefing_cannot_use_a_later_story_or_manual_close() {
+        let temporary = journal();
+        facet(temporary.path(), "work", false);
+        let item_id = super::dedup_key(Some("owner"), "send report", None);
+        rows(
+            temporary.path(),
+            "work",
+            "20260401",
+            &[
+                json!({"id":"opening","created_at":100,"commitments":[{"owner":"you","owner_entity_id":"owner","action":"send report"}],"edits":[{"fields":["ledger_close"],"timestamp":"2026-04-09T00:00:00Z","ledger_close":{"item_id":item_id,"as_state":"closed"}}]}),
+            ],
+        );
+        rows(
+            temporary.path(),
+            "work",
+            "20260409",
+            &[
+                json!({"id":"later","created_at":200,"closures":[{"owner_entity_id":"owner","action":"send report","resolution":"done"}]}),
+            ],
+        );
+        let involved = super::read_owner_open_loops(
+            temporary.path(),
+            "owner",
+            "20260401",
+            Utc.with_ymd_and_hms(2026, 4, 2, 0, 0, 0).unwrap(),
+            &["work".into()],
+        )
+        .unwrap();
+        assert_eq!(involved.len(), 1);
+        assert!(
+            list(temporary.path(), now(), list_query(LedgerState::Open))
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

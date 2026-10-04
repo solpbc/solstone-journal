@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{Duration, NaiveDate, TimeZone, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{load_activity_records, read_facet_declaration, read_news_file};
 use solstone_core_home::{
@@ -13,6 +13,7 @@ use solstone_core_home::{
     briefing::BriefingDates,
     readers::{enabled_facet_names, read_latest},
 };
+use solstone_core_profile_web::{read_owner_open_loops, types::LedgerItem};
 
 use crate::contract::{GateDecision, PrePostState};
 use crate::{
@@ -85,6 +86,120 @@ pub fn apply_prompt_override(
     };
     apply_template_vars(&mut prepared.config, &state.values);
     Ok(())
+}
+
+/// Keep the two open-loop directions visible even when synthesis omits them.
+/// Model-selected loop sources retain their order, but their text comes from the fold.
+pub(crate) fn preserve_open_loops(
+    output: &str,
+    prepared: &PreparedTalent,
+    state: &PrePostState,
+) -> Result<String, StageError> {
+    let PrePostState::MorningBriefing(state) = state else {
+        return Err(stage_error(
+            "render",
+            "morning_briefing",
+            prepared,
+            "missing briefing state",
+        ));
+    };
+    let Some(loops) = state
+        .values
+        .get("briefing_open_loop_rows")
+        .and_then(Value::as_array)
+    else {
+        return Ok(output.to_owned());
+    };
+    if loops.is_empty() {
+        return Ok(output.to_owned());
+    }
+    let mut body: Value = serde_json::from_str(output)
+        .map_err(|error| stage_error("render", "morning_briefing", prepared, error.to_string()))?;
+    let rows = body
+        .get_mut("needs_attention")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| {
+            stage_error(
+                "render",
+                "morning_briefing",
+                prepared,
+                "missing attention rows",
+            )
+        })?;
+    let mut selected = Vec::new();
+    // A source can hold several commitments. Publish the fold's selected item, never
+    // infer which action or direction a paraphrase of that source meant.
+    for row in rows.iter() {
+        if let Some(item) = loops
+            .iter()
+            .find(|item| item["row"]["source_id"] == row["source_id"])
+            && !selected.contains(&item)
+        {
+            selected.push(item);
+        }
+    }
+    for owed in [true, false] {
+        if !selected.iter().any(|item| item["owed"] == owed)
+            && let Some(item) = loops.iter().find(|item| item["owed"] == owed)
+        {
+            selected.push(item);
+        }
+    }
+    // Bound each direction separately so a voice-heavy direction cannot crowd out
+    // the other. Leave eight of the existing twelve slots for generated day rows.
+    selected.sort_by_key(|item| item["voice"] != true);
+    let (mut owed, mut waiting) = (0, 0);
+    selected.retain(|item| {
+        let count = if item["owed"] == true {
+            &mut owed
+        } else {
+            &mut waiting
+        };
+        *count += 1;
+        *count <= 2
+    });
+    let mut combined = selected
+        .iter()
+        .map(|item| (item["voice"] == true, item["row"].clone()))
+        .collect::<Vec<_>>();
+    let voice_sources = state
+        .values
+        .get("briefing_voice_sources")
+        .and_then(Value::as_array);
+    let mut generated = rows
+        .iter()
+        .filter(|row| {
+            !loops
+                .iter()
+                .any(|item| item["row"]["source_id"] == row["source_id"])
+        })
+        .map(|row| {
+            (
+                voice_sources.is_some_and(|sources| sources.contains(&row["source_id"])),
+                row.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    generated.sort_by_key(|(voice, _)| !voice);
+    generated.truncate(12 - combined.len());
+    combined.extend(generated);
+    combined.sort_by_key(|(voice, _)| !voice);
+    *rows = combined.into_iter().take(12).map(|(_, row)| row).collect();
+    let rendered = serde_json::to_string(&body)
+        .map_err(|error| stage_error("render", "morning_briefing", prepared, error.to_string()))?;
+    if let Some(schema) = prepared.config.get("json_schema") {
+        let checked =
+            solstone_core_generate_wire::validate_schema_with_annotations(&rendered, schema);
+        if checked.validation["valid"] != true {
+            return Err(stage_error(
+                "render",
+                "morning_briefing",
+                prepared,
+                "briefing rows do not fit the output schema",
+            ));
+        }
+    }
+    Ok(rendered)
 }
 
 fn configured_day(prepared: &PreparedTalent) -> String {
@@ -177,14 +292,30 @@ fn build_packet(
         context,
         &mut gaps,
     );
+    let (loops_total, loops) = load_open_loops(
+        &facets,
+        day,
+        dates.presentation,
+        &home,
+        &followups,
+        &mut gaps,
+    );
     let pulse = read_pulse(&home, day, &mut gaps);
-    let paths = followups
+    let mut paths = followups
         .iter()
         .chain(&decisions)
         .map(StoryItem::source)
         .collect::<BTreeSet<_>>();
-    let counts = json!({"segments": paths.len(), "anticipated_activities": today.len(), "facet_newsletters": newsletters.len(), "followups": followups.len()});
-    let metadata = json!({"generated": generated_stamp(&home), "model": model, "sources": counts, "gaps": gaps, "coverage_preamble": coverage_preamble(&counts, &gaps, decisions_total, forward.len(), followups_total)});
+    paths.extend(loops.iter().flat_map(|(item, _)| {
+        item.sources.iter().map(|source| {
+            format!(
+                "facets/{}/activities/{}.jsonl#{}",
+                source.facet, source.day, source.activity_id
+            )
+        })
+    }));
+    let counts = json!({"segments": paths.len(), "anticipated_activities": today.len(), "facet_newsletters": newsletters.len(), "followups": followups.len() + loops.len()});
+    let metadata = json!({"generated": generated_stamp(&home), "model": model, "sources": counts, "gaps": gaps, "coverage_preamble": coverage_preamble(&counts, &gaps, decisions_total, forward.len(), followups_total + loops_total)});
     Ok(Map::from_iter([
         (
             "briefing_analysis_day".into(),
@@ -226,13 +357,188 @@ fn build_packet(
         ),
         (
             "followups".into(),
-            Value::String(render_story_items(&followups)),
+            Value::String(render_followups(&followups, &loops, dates.presentation)),
+        ),
+        (
+            "briefing_open_loop_rows".into(),
+            Value::Array(loops.iter().filter_map(|(item, owed)| {
+                let source = item.sources.iter().find(|source| source.field == "commitments")?;
+                let source_id = format!("sol://facets/{}/activities/{}/{}", source.facet, source.day, source.activity_id);
+                if source_id.chars().count() > 240 { return None; }
+                let age = NaiveDate::parse_from_str(&source.day, "%Y%m%d").ok()
+                    .map(|opened| (dates.presentation - opened).num_days())?;
+                let prefix = if *owed {
+                    format!("what you owe: {}", item.action)
+                } else {
+                    format!("what you're waiting on: {} to {}", item.owner, item.action)
+                };
+                let suffix = format!("; still open for {age} days (opened {}).", source.day);
+                let text = format!("{}{}", prefix.chars().take(700 - suffix.chars().count()).collect::<String>(), suffix);
+                Some(json!({"owed":owed,"voice":item.owner_evidence.as_deref()==Some("voice"),"row":{"text":text,"source_id":source_id}}))
+            }).collect()),
+        ),
+        (
+            "briefing_voice_sources".into(),
+            Value::Array(followups.iter().filter(|item| item.said_by_you()).map(|item| {
+                json!(format!("sol://facets/{}/activities/{}/{}", item.facet, item.day, item.record_id))
+            }).collect()),
         ),
         (
             "decisions".into(),
             Value::String(render_story_items(&decisions)),
         ),
     ]))
+}
+
+/// Add older open loops without changing the analysis day's all-actor selection.
+/// Each direction gets its own cut, with recognized voice first, then newest opening.
+fn load_open_loops(
+    facets: &[(String, String)],
+    day: &str,
+    presentation: NaiveDate,
+    home: &HomeContext,
+    daily: &[StoryItem],
+    gaps: &mut Vec<String>,
+) -> (u64, Vec<(LedgerItem, bool)>) {
+    let result = (|| {
+        let principal = crate::JournalOwner::load(&home.journal_root)?
+            .id
+            .ok_or("principal unavailable")?;
+        let as_of = home
+            .zone()
+            .from_local_datetime(
+                &presentation
+                    .and_hms_opt(0, 0, 0)
+                    .ok_or("invalid presentation date")?,
+            )
+            .earliest()
+            .ok_or("presentation date unavailable")?
+            .with_timezone(&Utc);
+        let names = facets
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>();
+        let items = read_owner_open_loops(&home.journal_root, &principal, day, as_of, &names)?;
+        Ok::<_, String>((principal, items))
+    })();
+    let (principal, items) = match result {
+        Ok(value) => value,
+        Err(error) => {
+            log::warn!("briefing open loops unavailable: {error}");
+            gaps.push("open loops unavailable".into());
+            return (0, Vec::new());
+        }
+    };
+    let mut items = items
+        .into_iter()
+        .filter(|item| {
+            item.sources
+                .iter()
+                .find(|source| source.field == "commitments")
+                .is_some_and(|source| source.day.as_str() < day)
+                && !daily.iter().any(|new| {
+                    normalize_action(&item.action)
+                        == normalize_action(&string_or(new.item.get("action"), ""))
+                        && item.sources.iter().any(|source| {
+                            source.field == "commitments"
+                                && source.day == new.day
+                                && source.facet == new.facet
+                                && source.activity_id == new.record_id
+                        })
+                })
+        })
+        .map(|item| {
+            let owed = item.owner_entity_id.as_deref() == Some(principal.as_str());
+            (item, owed)
+        })
+        .collect::<Vec<_>>();
+    let total = items.len() as u64;
+    items.sort_by_key(|(item, _)| {
+        (
+            item.owner_evidence.as_deref() != Some("voice"),
+            std::cmp::Reverse(item.opened_at),
+            item.id.clone(),
+        )
+    });
+    let mut owed = 0;
+    let mut waiting = 0;
+    items.retain(|(_, yours)| {
+        let count = if *yours { &mut owed } else { &mut waiting };
+        *count += 1;
+        *count <= 10
+    });
+    (total, items)
+}
+
+fn normalize_action(action: &str) -> String {
+    action
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn render_followups(
+    daily: &[StoryItem],
+    loops: &[(LedgerItem, bool)],
+    presentation: NaiveDate,
+) -> String {
+    let mut lines = daily
+        .iter()
+        .map(|item| {
+            (
+                item.said_by_you(),
+                render_story_items(std::slice::from_ref(item)),
+            )
+        })
+        .collect::<Vec<_>>();
+    lines.extend(loops.iter().map(|(item, owed)| {
+        let source = item
+            .sources
+            .iter()
+            .find(|source| source.field == "commitments")
+            .expect("open loop has an opening");
+        let age = NaiveDate::parse_from_str(&source.day, "%Y%m%d")
+            .ok()
+            .map(|opened| (presentation - opened).num_days());
+        let voice = item.owner_evidence.as_deref() == Some("voice");
+        let direction = if *owed {
+            "what you owe"
+        } else {
+            "what you're waiting on"
+        };
+        let mut line = format!(
+            "- {}: {}; actor: {}; opened {}",
+            direction, item.action, item.owner, source.day
+        );
+        if let Some(age) = age {
+            line.push_str(&format!("; open for {age} days"));
+        }
+        if let Some(when) = &item.when {
+            line.push_str(&format!("; stated timing: {when}"));
+        }
+        if voice {
+            line.push_str("; said by you");
+        }
+        line.push_str(&format!(
+            "\n  Source: sol://facets/{}/activities/{}/{}",
+            source.facet, source.day, source.activity_id
+        ));
+        if !item.context.trim().is_empty() {
+            line.push_str(&format!("\n  {}", item.context));
+        }
+        (voice, line)
+    }));
+    lines.sort_by_key(|(voice, _)| !voice);
+    if lines.is_empty() {
+        "(none)".into()
+    } else {
+        lines
+            .into_iter()
+            .map(|(_, line)| line)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 fn load_newsletters(
@@ -535,6 +841,10 @@ fn render_story_items(values: &[StoryItem]) -> String {
                 line.push_str(&format!(", {}", value.title));
             }
             line.push(']');
+            line.push_str(&format!(
+                "\n  Source: sol://facets/{}/activities/{}/{}",
+                value.facet, value.day, value.record_id
+            ));
             let context = field("context");
             if !context.is_empty() {
                 line.push_str(&format!("\n  {context}"));
@@ -578,6 +888,123 @@ fn string_or(value: Option<&Value>, fallback: &str) -> String {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn briefing_adds_owner_directions_with_age_and_keeps_new_items_all_actor() {
+        let root = tempfile::tempdir().unwrap();
+        let facet = root.path().join("facets/work");
+        fs::create_dir_all(facet.join("activities")).unwrap();
+        fs::write(
+            facet.join("facet.json"),
+            json!({"title":"Work"}).to_string(),
+        )
+        .unwrap();
+        for (id, name, principal) in [("owner", "Jordan", true), ("pat", "Pat", false)] {
+            let dir = root.path().join("entities").join(id);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("entity.json"),
+                json!({"id":id,"name":name,"type":"Person","is_principal":principal}).to_string(),
+            )
+            .unwrap();
+        }
+        fs::write(facet.join("activities/20260701.jsonl"), json!({"id":"old","created_at":1782864000000_i64,"commitments":[
+            {"owner":"you","owner_entity_id":"owner","action":"send report","owner_evidence":"voice"},
+            {"owner":"Pat","owner_entity_id":"pat","counterparty_entity_id":"owner","action":"send estimate"},
+            {"owner":"your agent","action":"agent decoy"}
+        ]}).to_string()).unwrap();
+        fs::write(facet.join("activities/20261003.jsonl"), json!({"id":"new","created_at":1790985600000_i64,"commitments":[{"owner":"Someone","action":"new item"}]}).to_string()).unwrap();
+        fs::write(facet.join("activities/20261004.jsonl"), json!({"id":"future","created_at":1791072000000_i64,"closures":[{"owner_entity_id":"owner","action":"send report","resolution":"done"}]}).to_string()).unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let values = build_packet(
+            "20261003",
+            NaiveDate::from_ymd_opt(2026, 10, 3).unwrap(),
+            "test",
+            &context,
+            None,
+        )
+        .unwrap();
+        let text = values["followups"].as_str().unwrap();
+        assert!(text.starts_with("- what you owe: send report"), "{text}");
+        assert!(
+            text.contains("what you're waiting on: send estimate"),
+            "{text}"
+        );
+        assert!(text.contains("open for 95 days"), "{text}");
+        assert!(
+            text.contains("new item") && !text.contains("decoy"),
+            "{text}"
+        );
+        assert!(text.contains("sol://facets/work/activities/20260701/old"));
+    }
+
+    #[test]
+    fn missing_directions_are_published_with_age_and_voice_first() {
+        let prepared = PreparedTalent {
+            name: "morning_briefing".into(),
+            config: Map::new(),
+        };
+        let mut loops = (0..10).map(|n| json!({"owed":true,"voice":true,"row":{"text":format!("what you owe: task {n}; still open for 90 days"),"source_id":format!("sol://owner/{n}")}})).collect::<Vec<_>>();
+        loops.push(json!({"owed":false,"voice":false,"row":{"text":"what you're waiting on: Pat to send report; still open for 90 days","source_id":"sol://waiting/1"}}));
+        let state = PrePostState::MorningBriefing(MorningBriefingPreState {
+            values: Map::from_iter([
+                ("briefing_open_loop_rows".into(), json!(loops)),
+                (
+                    "briefing_voice_sources".into(),
+                    json!(["sol://daily/voice"]),
+                ),
+            ]),
+        });
+        let output = json!({"needs_attention":[{"text":"new voice task","source_id":"sol://daily/voice"}],"your_day":[]}).to_string();
+        let result: Value =
+            serde_json::from_str(&preserve_open_loops(&output, &prepared, &state).unwrap())
+                .unwrap();
+        let rows = result["needs_attention"].as_array().unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0]["source_id"], "sol://owner/0");
+        assert_eq!(rows[1]["source_id"], "sol://daily/voice");
+        assert_eq!(rows[2]["source_id"], "sol://waiting/1");
+        let ranked = json!({"needs_attention": (0..10).map(|n| json!({"text":"misleading urgency","source_id":format!("sol://owner/{n}")})).collect::<Vec<_>>()}).to_string();
+        let result: Value =
+            serde_json::from_str(&preserve_open_loops(&ranked, &prepared, &state).unwrap())
+                .unwrap();
+        let rows = result["needs_attention"].as_array().unwrap();
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().any(|row| row["source_id"] == "sol://waiting/1"));
+        assert!(
+            rows.iter()
+                .all(|row| row["text"].as_str().unwrap().contains("open for 90 days"))
+        );
+        let crowded = json!({"needs_attention": (0..12).map(|_| json!({"text":"new voice task","source_id":"sol://daily/voice"})).collect::<Vec<_>>()}).to_string();
+        let result: Value =
+            serde_json::from_str(&preserve_open_loops(&crowded, &prepared, &state).unwrap())
+                .unwrap();
+        let rows = result["needs_attention"].as_array().unwrap();
+        assert_eq!(rows.len(), 12);
+        assert!(rows.iter().any(|row| row["source_id"] == "sol://owner/0"));
+        assert_eq!(rows.last().unwrap()["source_id"], "sol://waiting/1");
+    }
+
+    #[test]
+    fn unavailable_ledger_contributes_no_loops_and_reports_the_gap() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("entities"), "unreadable entity directory").unwrap();
+        let home = HomeContext::new(root.path(), Utc::now());
+        let mut gaps = Vec::new();
+        let (total, loops) = load_open_loops(
+            &[],
+            "20261003",
+            NaiveDate::from_ymd_opt(2026, 10, 4).unwrap(),
+            &home,
+            &[],
+            &mut gaps,
+        );
+        assert_eq!(total, 0);
+        assert!(loops.is_empty());
+        assert_eq!(gaps.len(), 1);
+    }
 
     #[test]
     fn generated_reads_the_journals_clock_not_this_computers() {
