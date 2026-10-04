@@ -24,6 +24,8 @@ const MAX_SOURCE_SNAPSHOT_RETRIES: usize = 4;
 pub struct ContinuityDocument {
     pub version: u32,
     pub streams: BTreeMap<String, ContinuityRecord>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub write_streams: BTreeMap<String, String>,
 }
 
 impl Default for ContinuityDocument {
@@ -31,6 +33,7 @@ impl Default for ContinuityDocument {
         Self {
             version: 1,
             streams: BTreeMap::new(),
+            write_streams: BTreeMap::new(),
         }
     }
 }
@@ -166,6 +169,7 @@ impl TakeoverGuard {
         let before = document.clone();
         for source in &plan.sources {
             let (Some(stream), true) = (&source.stream, !source.writers.is_empty()) else {
+                update_write_stream(&mut document, &source.source, &plan.adopted_cid, None)?;
                 continue;
             };
             document.streams.insert(
@@ -175,7 +179,14 @@ impl TakeoverGuard {
                     writers: source.writers.clone(),
                 },
             );
+            update_write_stream(
+                &mut document,
+                &source.source,
+                &plan.adopted_cid,
+                Some(stream),
+            )?;
         }
+        validate_continuity(&document)?;
         if document != before {
             write_json(&path, &document, JsonWriteOptions::default())?;
         }
@@ -206,7 +217,12 @@ pub fn read_continuity(journal: &Path) -> Result<ContinuityDocument, SegmentErro
             "continuity record is malformed or unsupported",
         ));
     }
-    let mut source_writers = BTreeSet::new();
+    validate_continuity(&document)?;
+    Ok(document)
+}
+
+fn validate_continuity(document: &ContinuityDocument) -> Result<(), SegmentError> {
+    let mut tail_streams: BTreeMap<(&str, &str), BTreeSet<&str>> = BTreeMap::new();
     for (stream, record) in &document.streams {
         if !is_safe_stream_component(stream)
             || !valid_source(&record.source)
@@ -216,17 +232,97 @@ pub fn read_continuity(journal: &Path) -> Result<ContinuityDocument, SegmentErro
                 .iter()
                 .any(|writer| !is_valid_device_cid(writer))
             || record.writers.iter().collect::<BTreeSet<_>>().len() != record.writers.len()
-            || record
-                .writers
-                .iter()
-                .any(|writer| !source_writers.insert((record.source.as_str(), writer.as_str())))
+        {
+            return Err(SegmentError::StreamInput(
+                "continuity record is malformed or unsupported",
+            ));
+        }
+        if let Some(tail) = record.writers.last() {
+            tail_streams
+                .entry((record.source.as_str(), tail.as_str()))
+                .or_default()
+                .insert(stream.as_str());
+        }
+    }
+
+    for (source, stream) in &document.write_streams {
+        let Some(record) = document.streams.get(stream) else {
+            return Err(SegmentError::StreamInput(
+                "continuity record is malformed or unsupported",
+            ));
+        };
+        let Some(tail) = record.writers.last() else {
+            return Err(SegmentError::StreamInput(
+                "continuity record is malformed or unsupported",
+            ));
+        };
+        if !valid_source(source)
+            || record.source != *source
+            || tail_streams
+                .get(&(source.as_str(), tail.as_str()))
+                .is_none_or(|streams| streams.len() < 2 || !streams.contains(stream.as_str()))
         {
             return Err(SegmentError::StreamInput(
                 "continuity record is malformed or unsupported",
             ));
         }
     }
-    Ok(document)
+    for ((source, _), streams) in &tail_streams {
+        if streams.len() > 1
+            && document
+                .write_streams
+                .get(*source)
+                .is_none_or(|stream| !streams.contains(stream.as_str()))
+        {
+            return Err(SegmentError::StreamInput(
+                "continuity record is malformed or unsupported",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn update_write_stream(
+    document: &mut ContinuityDocument,
+    source: &str,
+    adopted_cid: &str,
+    selected_stream: Option<&str>,
+) -> Result<(), SegmentError> {
+    let tails = document
+        .streams
+        .iter()
+        .filter(|(_, record)| {
+            record.source == source
+                && record
+                    .writers
+                    .last()
+                    .is_some_and(|tail| tail == adopted_cid)
+        })
+        .map(|(stream, _)| stream.as_str())
+        .collect::<BTreeSet<_>>();
+    match tails.len() {
+        0 | 1 => {
+            document.write_streams.remove(source);
+        }
+        _ => {
+            let stream = selected_stream
+                .filter(|stream| tails.contains(stream))
+                .or_else(|| {
+                    document
+                        .write_streams
+                        .get(source)
+                        .map(String::as_str)
+                        .filter(|stream| tails.contains(stream))
+                })
+                .ok_or(SegmentError::StreamInput(
+                    "continuity record is malformed or unsupported",
+                ))?;
+            document
+                .write_streams
+                .insert(source.to_owned(), stream.to_owned());
+        }
+    }
+    Ok(())
 }
 
 pub fn continuation_binding(
@@ -235,24 +331,31 @@ pub fn continuation_binding(
     source: &str,
 ) -> Result<ContinuationBinding, SegmentError> {
     let document = read_continuity(journal)?;
-    let mut found = None;
-    for (stream, record) in document.streams {
-        if record.source != source || !record.writers.iter().any(|writer| writer == cid) {
-            continue;
-        }
-        let binding = if record.writers.last().is_some_and(|tail| tail == cid) {
-            ContinuationBinding::Tail(stream)
-        } else {
-            ContinuationBinding::Ancestor(stream)
-        };
-        if found.is_some() {
-            return Err(SegmentError::StreamInput(
-                "CID appears in multiple continuity chains for one source",
-            ));
-        }
-        found = Some(binding);
+    if let Some(stream) = document.write_streams.get(source)
+        && document
+            .streams
+            .get(stream)
+            .is_some_and(|record| record.writers.last().is_some_and(|tail| tail == cid))
+    {
+        return Ok(ContinuationBinding::Tail(stream.clone()));
     }
-    Ok(found.unwrap_or(ContinuationBinding::None))
+
+    let mut tails = Vec::new();
+    let mut ancestor = None;
+    for (stream, record) in &document.streams {
+        if record.source == source && record.writers.iter().any(|writer| writer == cid) {
+            if record.writers.last().is_some_and(|tail| tail == cid) {
+                tails.push(stream.clone());
+            } else if ancestor.is_none() {
+                ancestor = Some(stream.clone());
+            }
+        }
+    }
+    match tails.as_slice() {
+        [tail] => Ok(ContinuationBinding::Tail(tail.clone())),
+        [] => Ok(ancestor.map_or(ContinuationBinding::None, ContinuationBinding::Ancestor)),
+        _ => Ok(ContinuationBinding::None),
+    }
 }
 
 pub fn visible_stream_names(
@@ -265,8 +368,11 @@ pub fn visible_stream_names(
         .filter(|binding| binding.cid == cid && binding.source == source)
         .map(|binding| binding.name)
         .collect::<BTreeSet<_>>();
-    if let ContinuationBinding::Tail(stream) = continuation_binding(journal, cid, source)? {
-        names.insert(stream);
+    let document = read_continuity(journal)?;
+    for (stream, record) in document.streams {
+        if record.source == source && record.writers.iter().any(|writer| writer == cid) {
+            names.insert(stream);
+        }
     }
     Ok(names.into_iter().collect())
 }
@@ -410,6 +516,7 @@ mod tests {
     const A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     const C: &str = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const D: &str = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
     const DAY: &str = "20261004";
 
     struct Journal(PathBuf);
@@ -558,6 +665,7 @@ mod tests {
         );
         let document = read_continuity(journal.path()).unwrap();
         assert_eq!(document.streams[&origin_stream].writers, vec![A, B, C]);
+        assert!(document.write_streams.is_empty());
         let records = list_stream_bindings(journal.path()).unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].cid, A);
@@ -565,6 +673,121 @@ mod tests {
             continuation_binding(journal.path(), C, "audio").unwrap(),
             ContinuationBinding::Tail(origin_stream)
         );
+    }
+
+    #[test]
+    fn bind_named_stream_prefers_later_sorted_continuation_tail() {
+        let journal = Journal::new();
+        let adopted_stream = bind_named_stream(
+            journal.path(),
+            DAY,
+            "120000_1",
+            "a_adopted",
+            B,
+            "audio",
+            &hints(),
+        )
+        .unwrap()
+        .stream;
+        let selected_stream = bind_named_stream(
+            journal.path(),
+            DAY,
+            "120000_1",
+            "z_selected",
+            A,
+            "audio",
+            &hints(),
+        )
+        .unwrap()
+        .stream;
+        publish_takeover(journal.path(), B, A);
+
+        let bound = bind_named_stream(
+            journal.path(),
+            DAY,
+            "120000_2",
+            &adopted_stream,
+            B,
+            "audio",
+            &hints(),
+        )
+        .unwrap();
+
+        assert_eq!(bound.stream, selected_stream);
+        let bindings = list_stream_bindings(journal.path()).unwrap();
+        assert_eq!(
+            bindings
+                .iter()
+                .find(|binding| binding.name == selected_stream)
+                .unwrap()
+                .cid,
+            A
+        );
+    }
+
+    #[test]
+    fn continuity_later_takeover_same_source_keeps_both_histories_readable() {
+        let journal = Journal::new();
+        let old_stream = bind_named_stream(
+            journal.path(),
+            DAY,
+            "120000_1",
+            "a_origin",
+            A,
+            "audio",
+            &hints(),
+        )
+        .unwrap()
+        .stream;
+        let adopted_stream = bind_named_stream(
+            journal.path(),
+            DAY,
+            "120000_1",
+            "b_adopted",
+            B,
+            "audio",
+            &hints(),
+        )
+        .unwrap()
+        .stream;
+        publish_takeover(journal.path(), B, A);
+        let selected_stream = bind_named_stream(
+            journal.path(),
+            DAY,
+            "120000_1",
+            "c_selected",
+            C,
+            "audio",
+            &hints(),
+        )
+        .unwrap()
+        .stream;
+
+        publish_takeover(journal.path(), B, C);
+
+        let document = read_continuity(journal.path()).unwrap();
+        assert_eq!(
+            document.streams[&old_stream].writers,
+            vec![A.to_owned(), B.to_owned()]
+        );
+        assert_eq!(
+            document.streams[&selected_stream].writers,
+            vec![C.to_owned(), B.to_owned()]
+        );
+        assert_eq!(document.write_streams.get("audio"), Some(&selected_stream));
+        assert_eq!(
+            continuation_binding(journal.path(), B, "audio").unwrap(),
+            ContinuationBinding::Tail(selected_stream.clone())
+        );
+        let visible = visible_stream_names(journal.path(), B, "audio").unwrap();
+        assert!(visible.contains(&old_stream));
+        assert!(visible.contains(&adopted_stream));
+        assert!(visible.contains(&selected_stream));
+        let old_receipts =
+            receipt_cids_for_stream(journal.path(), &old_stream, B, "audio").unwrap();
+        assert_eq!(old_receipts, BTreeSet::from([A.to_owned(), B.to_owned()]));
+        assert!(!old_receipts.contains(C));
+        assert!(!old_receipts.contains(D));
     }
 
     #[test]

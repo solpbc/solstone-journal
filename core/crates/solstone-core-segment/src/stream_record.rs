@@ -291,19 +291,21 @@ pub fn bind_named_stream(
     let binding = StreamBinding { cid, source };
     let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
     let _registry_lock = hold_lock(registry_target, LockOptions::default())?;
-    let name = match continuation_binding(journal, cid, source)? {
-        ContinuationBinding::Tail(name) => name,
+    let tail = match continuation_binding(journal, cid, source)? {
+        ContinuationBinding::Tail(name) => Some(name),
         ContinuationBinding::Ancestor(name) => {
             return Err(SegmentError::StreamBindingConflict { name });
         }
-        ContinuationBinding::None => name.to_owned(),
+        ContinuationBinding::None => None,
     };
-    let state_path = stream_record_path(journal, &name);
+    let name = tail.as_deref().unwrap_or(name);
+    let state_path = stream_record_path(journal, name);
     let _record_lock = hold_lock(&state_path, LockOptions::default())?;
     for (found, record) in read_registry_records(journal)? {
-        if binding_matches(&record, binding)
-            || (found == name && binding_matches_or_tail(journal, &found, &record, binding)?)
-        {
+        let matches_requested_tail =
+            found == name && binding_matches_or_tail(journal, &found, &record, binding)?;
+        let matches_own_binding = tail.is_none() && binding_matches(&record, binding);
+        if matches_requested_tail || matches_own_binding {
             return Ok(BoundStream {
                 stream: found.clone(),
                 segment: SegmentDir::resolve(journal, day, segment, &found)?,
@@ -323,7 +325,7 @@ pub fn bind_named_stream(
             });
         }
         None => {
-            let record = reservation_record(name.clone(), binding, hints, None)?;
+            let record = reservation_record(name.to_owned(), binding, hints, None)?;
             let bytes =
                 serde_json::to_vec(&record).map_err(|source| SegmentError::Serialization {
                     path: state_path.clone(),
@@ -336,7 +338,7 @@ pub fn bind_named_stream(
                 {
                     match read_typed_stream_record(&state_path)? {
                         Some(record)
-                            if binding_matches_or_tail(journal, &name, &record, binding)? => {}
+                            if binding_matches_or_tail(journal, name, &record, binding)? => {}
                         Some(record) if is_unattributed(&record) => {
                             let mut attributed = record;
                             attributed.cid = Some(binding.cid.to_owned());
@@ -344,7 +346,9 @@ pub fn bind_named_stream(
                             write_stream_record(&state_path, &attributed)?;
                         }
                         Some(_) => {
-                            return Err(SegmentError::StreamBindingConflict { name: name.clone() });
+                            return Err(SegmentError::StreamBindingConflict {
+                                name: name.to_owned(),
+                            });
                         }
                         None => {
                             return Err(SegmentError::Io {
@@ -363,7 +367,7 @@ pub fn bind_named_stream(
     }
     Ok(BoundStream {
         stream: name.to_owned(),
-        segment: SegmentDir::resolve(journal, day, segment, &name)?,
+        segment: SegmentDir::resolve(journal, day, segment, name)?,
     })
 }
 
