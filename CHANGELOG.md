@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.32] - 2026-10-04
+
 ### Added
 
 - on windows, your agents can now reach your journal at a public hostname you own, as they can on mac and linux; your OpenSSH forward goes to a local address, `127.0.0.1:7661`, and the agents app shows the command for it. requests stay encrypted until your journal opens them, as long as your route only passes the bytes through; anything that opens them first can read what your agent reads and reuse its access to reach your journal.
@@ -13,7 +15,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - you're no longer asked to name your journal. paired devices and `solstone status` show its mark's two words, and the network page no longer calls your journal "home".
-
 - on windows, the thinking page no longer offers to turn on confidential processing, because your journal can't check the service's hardware there yet. it now says confidential processing isn't on windows yet, and so do the home page and the health page, which said processing needed attention, and `solstone journal brain refresh`. if you already turned it on, you can still turn it off on the thinking page. either way, nothing is sent to confidential processing.
 - when activities from two of your sources land in the same facet at the same time, the home page now says where each one came from if your journal can tell, for example "from your watch".
 - when your journal has a meeting's audio, something in that meeting's story written as yours now reads "unknown" unless it quotes your own words from that meeting, from a line your journal recognized as your voice. your morning briefing now works first from your own follow-ups and decisions that quote what you said.
