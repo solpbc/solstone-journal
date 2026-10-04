@@ -574,6 +574,7 @@ pub fn establish_attested_channel_with_clock(
     epoch: u64,
     clock: &dyn AdmissionClock,
 ) -> Result<AttestedChannel, RatlsChannelError> {
+    refuse_held_platform(std::env::consts::OS)?;
     let addresses = resolve_engine_addresses(endpoint)?;
     let connect_timeout = if addresses.len() > 1 {
         socket_timeout.min(MULTI_ADDRESS_CONNECT_TIMEOUT)
@@ -605,6 +606,18 @@ pub fn establish_attested_channel_with_clock(
             )
         },
     )
+}
+
+/// Refuses before anything is resolved, connected or sent when owners on `os`
+/// are held back from confidential processing. Every channel to the service,
+/// production or qualification, starts here.
+pub(crate) fn refuse_held_platform(os: &str) -> Result<(), RatlsChannelError> {
+    if crate::nvattest_authority::owner_use_held(os) {
+        return Err(RatlsChannelError {
+            reason_code: "nvattest_platform_unsupported",
+        });
+    }
+    Ok(())
 }
 
 /// Most engine addresses one establishment walks. The engine name normally
@@ -1120,6 +1133,55 @@ mod tests {
 
     fn fixed_nonce(length: usize) -> Result<Vec<u8>, RatlsChannelError> {
         Ok(vec![0xAB; length])
+    }
+
+    #[test]
+    fn a_held_platform_opens_no_channel() {
+        assert_eq!(
+            refuse_held_platform("windows"),
+            Err(refused("nvattest_platform_unsupported"))
+        );
+        for os in ["linux", "macos"] {
+            assert_eq!(refuse_held_platform(os), Ok(()), "{os}");
+        }
+    }
+
+    #[cfg(windows)]
+    struct Unreached;
+
+    #[cfg(windows)]
+    impl CompositeVerifier for Unreached {
+        fn verify(
+            &self,
+            _bundle: solstone_core_spp_attest::CpuBundle<'_>,
+            _input: crate::ratls::verify::CompositeVerificationInput<'_>,
+        ) -> Result<crate::cadence::CompositeVerdict, crate::error::CompositeVerificationError>
+        {
+            unreachable!("a held platform never reaches appraisal")
+        }
+    }
+
+    /// On Windows the shared channel entry refuses before it resolves or
+    /// connects. The endpoint is a closed loopback port, so a missing hold
+    /// reads as `gateway_unreachable` rather than passing.
+    #[cfg(windows)]
+    #[test]
+    fn windows_refuses_every_channel_before_connecting() {
+        let error = establish_attested_channel_with_clock(
+            &RatlsEndpoint::new("127.0.0.1", 1),
+            &[0xAB; 32],
+            Path::new("nvattest"),
+            SystemTime::now(),
+            None,
+            None,
+            None,
+            &Unreached,
+            Duration::from_secs(1),
+            0,
+            &SystemAdmissionClock,
+        )
+        .unwrap_err();
+        assert_eq!(error.reason_code, "nvattest_platform_unsupported");
     }
 
     #[test]
