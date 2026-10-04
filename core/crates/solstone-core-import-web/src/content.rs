@@ -338,6 +338,8 @@ fn content_manifest(root: &Path, timestamp: &str) -> Result<(PathBuf, Vec<Value>
                 }
             }
         }
+        let source_type = source_type(&directory);
+        items.retain(|item| !names_deleted_segment(root, &source_type, item));
         return Ok((directory, items));
     }
 
@@ -494,6 +496,55 @@ fn contained_file(root: &Path, path: &Path) -> Result<PathBuf, std::io::Error> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string()))
 }
 
+/// The stream a content row's segment lives in: the segment's own, else the
+/// row's, else the import's source.
+fn segment_stream(segment: &Value, item: &Value, source_type: &str) -> String {
+    segment
+        .get("stream")
+        .and_then(Value::as_str)
+        .or_else(|| item.get("stream").and_then(Value::as_str))
+        .map(|s| {
+            if s.starts_with("import.") {
+                s.to_owned()
+            } else {
+                format!("import.{s}")
+            }
+        })
+        .unwrap_or_else(|| {
+            if source_type.starts_with("import.") {
+                source_type.to_owned()
+            } else {
+                format!("import.{source_type}")
+            }
+        })
+}
+
+/// Whether a content row names a segment the owner has deleted since the import.
+///
+/// A row's title and preview describe its whole conversation or note, so a row
+/// that names any deleted segment is left off the page entirely. A segment that
+/// can't be checked counts as deleted, so its text never shows. A segment whose
+/// name isn't a plain day, stream and key is left to the reader, which refuses it.
+fn names_deleted_segment(root: &Path, source_type: &str, item: &Value) -> bool {
+    item.get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|segment| {
+            let day = segment.get("day").and_then(Value::as_str).unwrap_or("");
+            let key = segment.get("key").and_then(Value::as_str).unwrap_or("");
+            let stream = segment_stream(segment, item, source_type);
+            let Ok(resolved) = solstone_core_segment::SegmentDir::resolve(root, day, key, &stream)
+            else {
+                return false;
+            };
+            !matches!(
+                solstone_core_segment::owner_deleted(resolved.path()),
+                Ok(false)
+            )
+        })
+}
+
 fn read_item_content(
     root: &Path,
     source_type: &str,
@@ -508,24 +559,7 @@ fn read_item_content(
     {
         let day = segment.get("day").and_then(Value::as_str).unwrap_or("");
         let key = segment.get("key").and_then(Value::as_str).unwrap_or("");
-        let stream_name = segment
-            .get("stream")
-            .and_then(Value::as_str)
-            .or_else(|| item.get("stream").and_then(Value::as_str))
-            .map(|s| {
-                if s.starts_with("import.") {
-                    s.to_owned()
-                } else {
-                    format!("import.{s}")
-                }
-            })
-            .unwrap_or_else(|| {
-                if source_type.starts_with("import.") {
-                    source_type.to_owned()
-                } else {
-                    format!("import.{source_type}")
-                }
-            });
+        let stream_name = segment_stream(segment, item, source_type);
 
         if day.len() != 8
             || !day.bytes().all(|b| b.is_ascii_digit())
@@ -655,6 +689,63 @@ mod tests {
             derive_content_items(root, timestamp).is_err(),
             "a corrupt message line must not be skipped"
         );
+    }
+
+    #[test]
+    fn content_rows_naming_a_deleted_segment_are_left_off() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        let timestamp = "20260101_120000";
+        let import_dir = root.join("imports").join(timestamp);
+        fs::create_dir_all(&import_dir).unwrap();
+        fs::write(
+            import_dir.join("imported.json"),
+            json!({"source_type": "chatgpt"}).to_string(),
+        )
+        .unwrap();
+        let stream_dir = root.join("chronicle/20260101/import.chatgpt");
+        for key in ["090000_300", "100000_300", "110000_300", "120000_300"] {
+            fs::create_dir_all(stream_dir.join(key)).unwrap();
+        }
+        let rows = [
+            ("kept", vec!["090000_300"]),
+            ("tombstoned", vec!["090000_300", "100000_300"]),
+            ("mid-removal", vec!["110000_300"]),
+            ("also-kept", vec!["120000_300"]),
+        ];
+        let manifest: String = rows
+            .iter()
+            .map(|(id, keys)| {
+                let segments: Vec<Value> = keys
+                    .iter()
+                    .map(|key| json!({"day": "20260101", "key": key}))
+                    .collect();
+                format!(
+                    "{}\n",
+                    json!({"id": id, "title": format!("title {id}"), "preview": format!("preview {id}"), "segments": segments})
+                )
+            })
+            .collect();
+        fs::write(import_dir.join("content_manifest.jsonl"), manifest).unwrap();
+        let ids = |root: &Path| -> Vec<String> {
+            let (_, items) = content_manifest(root, timestamp).unwrap();
+            items
+                .iter()
+                .map(|item| item["id"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        assert_eq!(
+            ids(root),
+            ["kept", "tombstoned", "mid-removal", "also-kept"]
+        );
+
+        fs::write(stream_dir.join("100000_300/tombstone.json"), b"{}").unwrap();
+        fs::rename(
+            stream_dir.join("110000_300"),
+            stream_dir.join(".removing_110000_300"),
+        )
+        .unwrap();
+        assert_eq!(ids(root), ["kept", "also-kept"]);
     }
 
     #[test]

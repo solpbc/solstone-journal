@@ -4447,6 +4447,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+ "solstone-core-segment",
  "tempfile",
  "tokio",
  "tokio-util",
