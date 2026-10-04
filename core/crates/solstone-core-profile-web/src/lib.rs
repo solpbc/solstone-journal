@@ -11,6 +11,7 @@ use axum::{
 };
 
 pub mod types;
+pub use ledger_fold::read_owner_open_loops;
 
 pub(crate) mod cadence;
 pub(crate) mod error;

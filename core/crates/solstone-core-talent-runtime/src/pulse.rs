@@ -376,6 +376,10 @@ fn read_activity(
         gaps.push(format!("activity record not found: {facet}/{activity}"));
         return None;
     };
+    // A hidden record is intentionally absent from the packet, not a missing source.
+    if record.get("hidden").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
     Some(
         json!({"day": day, "facet": facet, "activity": activity, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "title": string_or(record.get("title"), &activity.replace('_', " ")), "description": string_or(record.get("description"), ""), "details": string_or(record.get("details"), ""), "source": record.get("source").cloned().unwrap_or(Value::Null), "segments": record.get("segments").cloned().unwrap_or_else(|| json!([]))}),
     )
@@ -523,6 +527,38 @@ fn window_value(window: &PulseWindowNote) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_activity_is_omitted_without_a_missing_source_gap() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("facets/work/activities");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("20261003.jsonl"),
+            json!({"id":"private","hidden":true,"details":"hidden details"}).to_string(),
+        )
+        .unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let unit = json!({"facet":"work","activity":"private"});
+        let mut gaps = Vec::new();
+        assert!(
+            read_activity("20261003", unit.as_object().unwrap(), &context, &mut gaps).is_none()
+        );
+        assert!(gaps.is_empty());
+        let missing = json!({"facet":"work","activity":"missing"});
+        assert!(
+            read_activity(
+                "20261003",
+                missing.as_object().unwrap(),
+                &context,
+                &mut gaps
+            )
+            .is_none()
+        );
+        assert_eq!(gaps.len(), 1);
+    }
 
     #[test]
     fn bounded_batch_preserves_input_counts_and_missing_source_gaps() {

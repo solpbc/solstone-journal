@@ -6,6 +6,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- deferred follow-ups stay open, dropped follow-ups are marked dropped, and an earlier completion no longer closes later work.
+- your morning briefing includes what you owe and what you're waiting on, with the age of older open items. activities you've hidden stay out of pulse summaries.
+
 ## [2.0.32] - 2026-10-04
 
 ### Added

@@ -31,6 +31,7 @@ solstone-core-indexer-store.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-indexer.workspace = true
 solstone-core-home.workspace = true
+solstone-core-profile-web.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true

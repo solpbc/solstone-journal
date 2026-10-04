@@ -814,6 +814,20 @@ pub(crate) fn generate_and_write(
         }
     };
     if let Some((stage, state)) = stage {
+        // The briefing's checked output and saved output must be the same bytes.
+        // This uses its existing stage, before either ordinary or frozen daily publication.
+        let response = if stage.stage == contract::StageId::MorningBriefing {
+            match morning_briefing::preserve_open_loops(&response, prepared, &state) {
+                Ok(output) => output,
+                Err(mut error) => {
+                    error.usage = usage;
+                    error.degraded = degraded;
+                    return RuntimeOutcome::StageFailed(error);
+                }
+            }
+        } else {
+            response
+        };
         if stage.unavailable_commit.is_some()
             && prepared
                 .config
@@ -3111,6 +3125,57 @@ mod tests {
         assert_eq!(recorded[0]["status"], "exhausted");
         assert!(recorded[0]["cause"].is_null());
         assert_eq!(recorded[0]["retry"], false);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn briefing_saves_the_same_source_backed_rows_it_returns() {
+        let (root, paths, context) = fixture(
+            "morning_briefing",
+            r#"{
+"type":"generate","max_output_tokens":1024,"schedule":"daily","output":"json","hook":{"pre":"morning_briefing"}
+}"#,
+        );
+        for (id, name, principal) in [("owner", "Jordan", true), ("pat", "Pat", false)] {
+            let dir = context.journal.join("entities").join(id);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("entity.json"),
+                json!({"id":id,"name":name,"type":"Person","is_principal":principal}).to_string(),
+            )
+            .unwrap();
+        }
+        let facet = context.journal.join("facets/work");
+        fs::create_dir_all(facet.join("activities")).unwrap();
+        fs::write(
+            facet.join("facet.json"),
+            json!({"title":"Work"}).to_string(),
+        )
+        .unwrap();
+        fs::write(facet.join("activities/20251201.jsonl"), json!({"id":"old","created_at":1764547200000_i64,"commitments":[{"owner":"you","owner_entity_id":"owner","action":"send report"},{"owner":"Pat","owner_entity_id":"pat","counterparty_entity_id":"owner","action":"send estimate"}]}).to_string()).unwrap();
+        let model_output = json!({"metadata":{},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}).to_string();
+        let client =
+            OneShotClient::at_path(test_support::one_shot_stub(root.path(), &model_output));
+        let output_path = context.journal.join("briefing.json");
+        let mut events = Vec::new();
+        let request = json!({"name":"morning_briefing","day":"20260101","output_path":output_path})
+            .as_object()
+            .unwrap()
+            .clone();
+        let RuntimeOutcome::Finished { output, .. } =
+            execute_request(request, &paths, &context, &client, &mut events)
+        else {
+            panic!("briefing did not finish")
+        };
+        let result: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(result["needs_attention"].as_array().unwrap().len(), 2);
+        assert!(
+            result["needs_attention"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("open for 32 days")
+        );
+        assert_eq!(fs::read_to_string(output_path).unwrap(), output);
     }
 
     #[test]
