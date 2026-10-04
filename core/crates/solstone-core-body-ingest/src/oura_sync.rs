@@ -1434,26 +1434,37 @@ mod tests {
         assert!(!journal.0.join("imports/oura.json").exists());
     }
 
-    #[test]
-    fn cursor_read_refuses_symlinks_fifos_and_oversized_documents() {
+    #[cfg(unix)]
+    mod cursor_read_refuses_symlinks_and_fifos {
+        use std::fs;
         use std::os::unix::fs::symlink;
 
         use nix::sys::stat::Mode;
         use nix::unistd::mkfifo;
 
+        use super::*;
+
+        #[test]
+        fn symlinks_and_fifos() {
+            let journal = journal();
+            fs::create_dir_all(journal.0.join("imports")).expect("imports directory");
+            let cursor = journal.0.join("imports/oura.json");
+            let outside = journal.0.join("outside-cursor.json");
+            fs::write(&outside, b"{}").expect("outside cursor");
+            symlink(&outside, &cursor).expect("cursor symlink");
+            assert_eq!(read_cursor(&journal.0).unwrap_err().stage(), "cursor_read");
+
+            fs::remove_file(&cursor).expect("remove cursor symlink");
+            mkfifo(&cursor, Mode::S_IRUSR | Mode::S_IWUSR).expect("cursor fifo");
+            assert_eq!(read_cursor(&journal.0).unwrap_err().stage(), "cursor_read");
+        }
+    }
+
+    #[test]
+    fn cursor_read_refuses_an_oversized_document() {
         let journal = journal();
         fs::create_dir_all(journal.0.join("imports")).expect("imports directory");
         let cursor = journal.0.join("imports/oura.json");
-        let outside = journal.0.join("outside-cursor.json");
-        fs::write(&outside, b"{}").expect("outside cursor");
-        symlink(&outside, &cursor).expect("cursor symlink");
-        assert_eq!(read_cursor(&journal.0).unwrap_err().stage(), "cursor_read");
-
-        fs::remove_file(&cursor).expect("remove cursor symlink");
-        mkfifo(&cursor, Mode::S_IRUSR | Mode::S_IWUSR).expect("cursor fifo");
-        assert_eq!(read_cursor(&journal.0).unwrap_err().stage(), "cursor_read");
-
-        fs::remove_file(&cursor).expect("remove cursor fifo");
         fs::write(&cursor, vec![b'x'; MAX_CURSOR_BYTES + 1]).expect("oversized cursor");
         assert_eq!(read_cursor(&journal.0).unwrap_err().stage(), "cursor_read");
     }

@@ -227,11 +227,8 @@ fn validate_destinations(value: Option<&Value>) -> Result<(), BodyIngestError> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::os::unix::fs::symlink;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use nix::sys::stat::Mode;
-    use nix::unistd::mkfifo;
     use serde_json::json;
 
     use super::*;
@@ -297,33 +294,49 @@ mod tests {
         fs::remove_dir_all(journal).unwrap();
     }
 
+    #[cfg(unix)]
+    mod approval_read_refuses_symlinks_and_fifos {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+
+        use nix::sys::stat::Mode;
+        use nix::unistd::mkfifo;
+
+        use super::*;
+
+        #[test]
+        fn symlinks_and_fifos() {
+            let journal = temporary_journal();
+            let approval = journal.join(APPLE_PATH);
+            let outside = journal.with_extension("outside-approval.json");
+            fs::write(&outside, b"{}").unwrap();
+            symlink(&outside, &approval).unwrap();
+            assert_eq!(
+                apple_approval(&journal, true).unwrap_err().stage(),
+                "malformed_approval_artifact"
+            );
+
+            fs::remove_file(&approval).unwrap();
+            mkfifo(&approval, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
+            assert_eq!(
+                apple_approval(&journal, true).unwrap_err().stage(),
+                "malformed_approval_artifact"
+            );
+
+            fs::remove_file(outside).unwrap();
+            fs::remove_dir_all(journal).unwrap();
+        }
+    }
+
     #[test]
-    fn approval_read_refuses_symlinks_fifos_and_oversized_documents() {
+    fn approval_read_refuses_an_oversized_document() {
         let journal = temporary_journal();
         let approval = journal.join(APPLE_PATH);
-        let outside = journal.with_extension("outside-approval.json");
-        fs::write(&outside, b"{}").unwrap();
-        symlink(&outside, &approval).unwrap();
-        assert_eq!(
-            apple_approval(&journal, true).unwrap_err().stage(),
-            "malformed_approval_artifact"
-        );
-
-        fs::remove_file(&approval).unwrap();
-        mkfifo(&approval, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
-        assert_eq!(
-            apple_approval(&journal, true).unwrap_err().stage(),
-            "malformed_approval_artifact"
-        );
-
-        fs::remove_file(&approval).unwrap();
         fs::write(&approval, vec![b'x'; MAX_APPROVAL_BYTES + 1]).unwrap();
         assert_eq!(
             apple_approval(&journal, true).unwrap_err().stage(),
             "malformed_approval_artifact"
         );
-
-        fs::remove_file(outside).unwrap();
         fs::remove_dir_all(journal).unwrap();
     }
 }

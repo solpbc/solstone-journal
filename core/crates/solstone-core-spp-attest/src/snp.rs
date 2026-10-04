@@ -1487,15 +1487,28 @@ mod tests {
     }
 
     #[test]
-    fn production_policy_matches_exact_single_pin_invariant() {
+    fn production_policy_admits_qualified_overlap_quotes_and_rejects_mutations() {
+        use crate::nvgpu::{GpuProfiles, StatusMode};
+
         let policy = crate::pins::production_policy();
         assert_eq!(policy.pcr_mode, PcrMode::Pin);
-        assert_eq!(policy.pcr_pins.len(), 1);
-        assert!(
-            policy
-                .pcr_pins
-                .contains("b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3")
-        );
+        let profiles = GpuProfiles::production();
+        // Captured quote-PCR bytes, covering the current engine and both
+        // reboot-qualified firmware states of the sealed appliance.
+        for (fixture, status) in [
+            ("quote.pcrs", StatusMode::OnlineNonce),
+            ("sealed-pre-roll-quote.pcrs", StatusMode::OfflineSignedAge),
+            ("sealed-post-roll-quote.pcrs", StatusMode::OfflineSignedAge),
+        ] {
+            let mut quote = fixture_bytes(fixture);
+            let fingerprint = check_pcr_fingerprint(&quote, &policy).expect("qualified quote");
+            assert_eq!(profiles.select(&fingerprint).unwrap().status(), status);
+            quote[0] ^= 1;
+            assert!(matches!(
+                check_pcr_fingerprint(&quote, &policy),
+                Err(crate::error::PcrFingerprintError::PinMismatch(_))
+            ));
+        }
     }
 
     #[test]

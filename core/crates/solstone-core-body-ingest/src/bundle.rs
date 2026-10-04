@@ -1012,11 +1012,7 @@ const fn error(kind: BodyIngestErrorKind, stage: &'static str) -> BodyIngestErro
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::symlink;
     use std::sync::atomic::{AtomicU64, Ordering};
-
-    use nix::sys::stat::Mode;
-    use nix::unistd::mkfifo;
 
     use super::*;
 
@@ -1042,25 +1038,44 @@ mod tests {
         find_existing(imports, family, &hash, BodyRawRetention::Discard, None).unwrap_err()
     }
 
+    #[cfg(unix)]
+    mod existing_manifest_read_refuses_symlinks_and_fifos {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+
+        use nix::sys::stat::Mode;
+        use nix::unistd::mkfifo;
+
+        use super::*;
+
+        #[test]
+        fn symlinks_and_fifos() {
+            let imports = temporary_imports();
+            let bundle = imports.join("body-00000000000000000000000000");
+            fs::create_dir(&bundle).unwrap();
+            let manifest = bundle.join("manifest.json");
+            let outside = imports.join("outside-manifest.json");
+            fs::write(&outside, b"{}").unwrap();
+            symlink(&outside, &manifest).unwrap();
+            assert_eq!(find_existing_error(&imports).stage(), "existing_manifest");
+
+            fs::remove_file(&manifest).unwrap();
+            mkfifo(&manifest, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
+            assert_eq!(find_existing_error(&imports).stage(), "existing_manifest");
+
+            fs::remove_file(outside).unwrap();
+            fs::remove_dir_all(imports).unwrap();
+        }
+    }
+
     #[test]
-    fn existing_manifest_read_refuses_symlinks_fifos_and_oversized_documents() {
+    fn existing_manifest_read_refuses_an_oversized_document() {
         let imports = temporary_imports();
         let bundle = imports.join("body-00000000000000000000000000");
         fs::create_dir(&bundle).unwrap();
         let manifest = bundle.join("manifest.json");
-        let outside = imports.join("outside-manifest.json");
-        fs::write(&outside, b"{}").unwrap();
-        symlink(&outside, &manifest).unwrap();
-        assert_eq!(find_existing_error(&imports).stage(), "existing_manifest");
-
-        fs::remove_file(&manifest).unwrap();
-        mkfifo(&manifest, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
-        assert_eq!(find_existing_error(&imports).stage(), "existing_manifest");
-
-        fs::remove_file(&manifest).unwrap();
         fs::write(&manifest, vec![b'x'; MAX_EXISTING_MANIFEST_BYTES + 1]).unwrap();
         assert_eq!(find_existing_error(&imports).stage(), "existing_manifest");
-
         fs::remove_dir_all(imports).unwrap();
     }
 }

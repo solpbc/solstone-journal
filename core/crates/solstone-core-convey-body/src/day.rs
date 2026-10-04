@@ -987,7 +987,7 @@ pub(crate) fn workout_item(row: &NormalizedRow) -> Value {
         .unwrap_or_else(|| friendly_type_name(string_field(&row.record_type).unwrap_or("Workout")));
     let metric = |value_key: &str, unit_key: &str, record_type: &str| {
         data.and_then(|data| data.get(value_key))
-            .and_then(Value::as_f64)
+            .and_then(crate::trends::finite_json_number)
             .map(|value| {
                 let unit = data
                     .and_then(|data| data.get(unit_key))
@@ -2143,7 +2143,7 @@ pub(crate) mod tests {
             "Synthetic Watch",
             Some(iso(anchor, "18:00:00")),
             Some(
-                json!({"totalDistance":18.2,"totalDistanceUnit":"km","totalEnergyBurned":620,"totalEnergyBurnedUnit":"kcal"}),
+                json!({"totalDistance":"18.2","totalDistanceUnit":"km","totalEnergyBurned":"620","totalEnergyBurnedUnit":"kcal"}),
             ),
             None,
         );
@@ -3885,5 +3885,173 @@ pub(crate) mod tests {
                 .filter_map(|row| string_field(&row.day).map(str::to_owned))
                 .collect()
         }
+    }
+}
+
+#[cfg(test)]
+mod routine_workout_tests {
+    use super::*;
+
+    #[test]
+    fn workout_item_reads_finite_numbers_and_numeric_strings() {
+        let row1 = NormalizedRow {
+            schema: FieldState::Absent,
+            source_family: FieldState::Absent,
+            record_type: FieldState::Present(Value::String("HKWorkoutActivityTypeCycling".into())),
+            dedupe_key: FieldState::Absent,
+            start_date: FieldState::Absent,
+            start_time: FieldState::Absent,
+            day: FieldState::Absent,
+            kind: FieldState::Absent,
+            import_id: FieldState::Absent,
+            month: FieldState::Absent,
+            end_date: FieldState::Absent,
+            source_record_id: FieldState::Absent,
+            source_name: FieldState::Absent,
+            source_version: FieldState::Absent,
+            unit: FieldState::Absent,
+            normalized_ref: FieldState::Absent,
+            raw_ref: FieldState::Absent,
+            metadata: FieldState::Present(json!({
+                "totalDistance": "5000",
+                "totalDistanceUnit": "m",
+            })),
+            value: ValueState::Absent,
+            import_ids: Vec::new(),
+            extra: Map::new(),
+        };
+        let item1 = workout_item(&row1);
+        assert_eq!(item1["distance"]["value"].as_f64(), Some(5000.0));
+        assert_eq!(item1["distance"]["unit"].as_str(), Some("m"));
+
+        let row2 = NormalizedRow {
+            schema: FieldState::Absent,
+            source_family: FieldState::Absent,
+            record_type: FieldState::Present(Value::String("HKWorkoutActivityTypeCycling".into())),
+            dedupe_key: FieldState::Absent,
+            start_date: FieldState::Absent,
+            start_time: FieldState::Absent,
+            day: FieldState::Absent,
+            kind: FieldState::Absent,
+            import_id: FieldState::Absent,
+            month: FieldState::Absent,
+            end_date: FieldState::Absent,
+            source_record_id: FieldState::Absent,
+            source_name: FieldState::Absent,
+            source_version: FieldState::Absent,
+            unit: FieldState::Absent,
+            normalized_ref: FieldState::Absent,
+            raw_ref: FieldState::Absent,
+            metadata: FieldState::Present(json!({
+                "totalDistance": "18.2",
+                "totalDistanceUnit": "km",
+                "totalEnergyBurned": "620",
+                "totalEnergyBurnedUnit": "kcal",
+            })),
+            value: ValueState::Absent,
+            import_ids: Vec::new(),
+            extra: Map::new(),
+        };
+        let item2 = workout_item(&row2);
+        assert_eq!(item2["distance"]["value"].as_f64(), Some(18.2));
+        assert_eq!(item2["distance"]["unit"].as_str(), Some("km"));
+        assert_eq!(item2["energy"]["value"].as_f64(), Some(620.0));
+        assert_eq!(item2["energy"]["unit"].as_str(), Some("kcal"));
+
+        let row_abc = NormalizedRow {
+            schema: FieldState::Absent,
+            source_family: FieldState::Absent,
+            record_type: FieldState::Present(Value::String("HKWorkoutActivityTypeCycling".into())),
+            dedupe_key: FieldState::Absent,
+            start_date: FieldState::Absent,
+            start_time: FieldState::Absent,
+            day: FieldState::Absent,
+            kind: FieldState::Absent,
+            import_id: FieldState::Absent,
+            month: FieldState::Absent,
+            end_date: FieldState::Absent,
+            source_record_id: FieldState::Absent,
+            source_name: FieldState::Absent,
+            source_version: FieldState::Absent,
+            unit: FieldState::Absent,
+            normalized_ref: FieldState::Absent,
+            raw_ref: FieldState::Absent,
+            metadata: FieldState::Present(json!({
+                "totalDistance": "abc",
+                "totalDistanceUnit": "km",
+            })),
+            value: ValueState::Absent,
+            import_ids: Vec::new(),
+            extra: Map::new(),
+        };
+        let item_abc = workout_item(&row_abc);
+        assert!(item_abc["distance"].is_null());
+
+        for non_finite in ["NaN", "inf", "-inf"] {
+            let row_nf = NormalizedRow {
+                schema: FieldState::Absent,
+                source_family: FieldState::Absent,
+                record_type: FieldState::Present(Value::String(
+                    "HKWorkoutActivityTypeCycling".into(),
+                )),
+                dedupe_key: FieldState::Absent,
+                start_date: FieldState::Absent,
+                start_time: FieldState::Absent,
+                day: FieldState::Absent,
+                kind: FieldState::Absent,
+                import_id: FieldState::Absent,
+                month: FieldState::Absent,
+                end_date: FieldState::Absent,
+                source_record_id: FieldState::Absent,
+                source_name: FieldState::Absent,
+                source_version: FieldState::Absent,
+                unit: FieldState::Absent,
+                normalized_ref: FieldState::Absent,
+                raw_ref: FieldState::Absent,
+                metadata: FieldState::Present(json!({
+                    "totalDistance": non_finite,
+                    "totalDistanceUnit": "km",
+                })),
+                value: ValueState::Absent,
+                import_ids: Vec::new(),
+                extra: Map::new(),
+            };
+            let item_nf = workout_item(&row_nf);
+            assert!(item_nf["distance"].is_null());
+        }
+
+        let row_oura = NormalizedRow {
+            schema: FieldState::Absent,
+            source_family: FieldState::Absent,
+            record_type: FieldState::Present(Value::String("oura.workout".into())),
+            dedupe_key: FieldState::Absent,
+            start_date: FieldState::Absent,
+            start_time: FieldState::Absent,
+            day: FieldState::Absent,
+            kind: FieldState::Absent,
+            import_id: FieldState::Absent,
+            month: FieldState::Absent,
+            end_date: FieldState::Absent,
+            source_record_id: FieldState::Absent,
+            source_name: FieldState::Absent,
+            source_version: FieldState::Absent,
+            unit: FieldState::Absent,
+            normalized_ref: FieldState::Absent,
+            raw_ref: FieldState::Absent,
+            metadata: FieldState::Present(json!({
+                "distance": 7200,
+                "distance_unit": "m",
+                "calories": 510,
+                "calories_unit": "kcal",
+            })),
+            value: ValueState::Absent,
+            import_ids: Vec::new(),
+            extra: Map::new(),
+        };
+        let item_oura = workout_item(&row_oura);
+        assert_eq!(item_oura["distance"]["value"].as_f64(), Some(7200.0));
+        assert_eq!(item_oura["distance"]["unit"].as_str(), Some("m"));
+        assert_eq!(item_oura["energy"]["value"].as_f64(), Some(510.0));
+        assert_eq!(item_oura["energy"]["unit"].as_str(), Some("kcal"));
     }
 }

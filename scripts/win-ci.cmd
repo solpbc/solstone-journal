@@ -165,6 +165,14 @@ echo === cargo test --locked (journal library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib || exit /b 1
 echo === cargo test --locked (ingest resolve: the write path paired apps upload through) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-ingest-resolve --lib || exit /b 1
+echo === cargo test --locked (body source library) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-body-source --lib || exit /b 1
+echo === cargo test --locked (body store library) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-body-store --lib || exit /b 1
+echo === cargo test --locked (body rebuild library) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-body-rebuild --lib || exit /b 1
+echo === cargo test --locked (body ingest library) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-body-ingest --lib || exit /b 1
 echo === cargo test --locked (PDF import worker: signed-package resolution and argv) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-import-sources --lib document::windows_worker || exit /b 1
 echo === cargo test --locked (imported files keep their source time: documents and images) ===
