@@ -1473,4 +1473,78 @@ mod tests {
             "retargeted journal must receive no lock or body state"
         );
     }
+
+    #[test]
+    fn published_workout_pins_dedupe_and_stored_energy() {
+        const EXPORT: &[u8] = br#"<HealthData>
+<Workout workoutActivityType="HKWorkoutActivityTypeCycling" sourceName="Synthetic Watch" sourceVersion="1.0" creationDate="2026-01-02 18:00:00 +0000" startDate="2026-01-02 18:00:00 +0000" endDate="2026-01-02 18:30:00 +0000" totalDistance="18.2" totalDistanceUnit="km">
+<WorkoutStatistics type="HKQuantityTypeIdentifierActiveEnergyBurned" sum="620" unit="kcal"/>
+</Workout>
+</HealthData>
+"#;
+
+        let parsed = parse_export(
+            &mut Cursor::new(EXPORT),
+            &Window::new(None, None).expect("window"),
+            None,
+        )
+        .expect("parse export");
+        assert_eq!(parsed.len(), 1);
+        let identity_metadata = parsed[0].identity_metadata.as_ref();
+        assert!(
+            identity_metadata.is_none_or(|metadata| !metadata.contains_key("totalEnergyBurned")),
+            "identity metadata must not contain totalEnergyBurned"
+        );
+
+        let temporary = TestDir::new();
+        let source_dir = temporary.0.join("source");
+        fs::create_dir(&source_dir).expect("create source directory");
+        fs::write(source_dir.join("export.xml"), EXPORT).expect("write export.xml");
+
+        let journal = temporary.0.join("journal");
+        fs::create_dir(&journal).expect("create journal directory");
+        write_test_approval(&journal, "discard");
+
+        let report = save_apple_before_lock(
+            &source_dir,
+            &journal,
+            &AppleImportOptions {
+                confirm_body_save: true,
+                ..AppleImportOptions::default()
+            },
+            &mut || {},
+        )
+        .expect("save succeeds");
+
+        let bundle_id = report.bundle_id().expect("published bundle id");
+        let normalized_dir = journal.join("imports").join(bundle_id).join("normalized");
+        let mut jsonl_files: Vec<_> = fs::read_dir(&normalized_dir)
+            .expect("read normalized dir")
+            .map(|entry| entry.expect("entry").path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
+            .collect();
+        jsonl_files.sort();
+
+        let mut published_rows = Vec::new();
+        for file in jsonl_files {
+            let content = fs::read_to_string(&file).expect("read jsonl");
+            for line in content.lines() {
+                if !line.trim().is_empty() {
+                    let obj: Value = serde_json::from_str(line).expect("parse row json");
+                    published_rows.push(obj);
+                }
+            }
+        }
+        assert_eq!(published_rows.len(), 1);
+        let published = &published_rows[0];
+
+        assert_eq!(
+            published["dedupe_key"].as_str(),
+            Some("sha256:ad4e0c8a66d5fd0901dac74aa5220d029791a0dd200d008ef09e33914226700d")
+        );
+        assert_eq!(
+            published["metadata"]["totalEnergyBurned"],
+            Value::String("620".into())
+        );
+    }
 }
