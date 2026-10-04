@@ -56,7 +56,7 @@ fn creates_principal_claiming_entity_without_adopting_principal() {
 }
 
 #[test]
-fn identical_retry_is_noop_and_different_segment_is_enumerated() {
+fn identical_retry_is_noop_and_different_segment_lands_on_a_new_key() {
     let tree = TempTree::new();
     let source = tree.path.join("source");
     let target = tree.path.join("target");
@@ -75,27 +75,114 @@ fn identical_retry_is_noop_and_different_segment_is_enumerated() {
         fs::read(target.join("chronicle/20260811/120000_60/value")).unwrap(),
         before
     );
+
+    // Different material under a key this journal already holds lands on the
+    // next key, as an upload would, and the merge completes.
     fs::write(source.join("chronicle/20260811/120000_60/value"), b"two").unwrap();
-    let conflict_archive = archive_from(&source, &tree.path);
-    let conflict = merge_journal_archive(&conflict_archive, &target, &options, None).unwrap();
-    assert!(
-        conflict
-            .segment_dispositions
-            .iter()
-            .any(|item| item.day == "20260811"
-                && item.stream == "_default"
-                && item.key == "120000_60"
-                && item.disposition == SegmentDispositionKind::DifferingContentCollision)
-    );
+    let collision_archive = archive_from(&source, &tree.path);
+    let collision = merge_journal_archive(&collision_archive, &target, &options, None).unwrap();
+    assert_eq!(collision.retry_disposition, RetryDisposition::Applied);
+    assert_eq!(collision.merge_summary.segments_copied, 1);
+    assert_eq!(collision.merge_summary.segments_skipped, 0);
+    assert!(collision.segment_dispositions.iter().any(|item| {
+        item.day == "20260811"
+            && item.stream == "_default"
+            && item.key == "120000_60"
+            && item.disposition
+                == SegmentDispositionKind::CopiedToNewKey {
+                    landed_segment: "120000_61".to_owned(),
+                }
+    }));
     assert_eq!(
         fs::read(target.join("chronicle/20260811/120000_60/value")).unwrap(),
         before
     );
+    assert_eq!(
+        fs::read(target.join("chronicle/20260811/120000_61/value")).unwrap(),
+        b"two"
+    );
+    assert!(matches!(
+        read_health_marker(&target, "20260811", HealthMarkerKind::Stream).unwrap(),
+        HealthMarkerState::Versioned { marker, .. } if marker.generation == 2
+    ));
+
+    // Retrying that merge finds the material where it landed.
+    let retry = merge_journal_archive(&collision_archive, &target, &options, None).unwrap();
+    assert_eq!(retry.retry_disposition, RetryDisposition::IdempotentNoop);
+    assert!(
+        retry
+            .segment_dispositions
+            .iter()
+            .all(|item| item.key != "120000_60"
+                || item.disposition == SegmentDispositionKind::IdenticalExisting)
+    );
+    assert!(!target.join("chronicle/20260811/120000_62").exists());
+
     assert_eq!(fs::read(&archive).unwrap(), archive_before);
     assert_eq!(
         fs::metadata(&archive).unwrap().modified().unwrap(),
         archive_mtime
     );
+}
+
+#[test]
+fn a_moved_segment_never_takes_the_key_another_archive_segment_arrives_with() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    for (segment, value) in [("120000_60", "moved"), ("120000_61", "own key")] {
+        let path = source.join("chronicle/20260811/device").join(segment);
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("value"), value).unwrap();
+    }
+    fs::create_dir_all(target.join("chronicle/20260811/device/120000_60")).unwrap();
+    fs::write(
+        target.join("chronicle/20260811/device/120000_60/value"),
+        b"already here",
+    )
+    .unwrap();
+
+    let archive = archive_from(&source, &tree.path);
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    assert_eq!(result.retry_disposition, RetryDisposition::Applied);
+    let stream = target.join("chronicle/20260811/device");
+    assert_eq!(
+        fs::read(stream.join("120000_60/value")).unwrap(),
+        b"already here"
+    );
+    assert_eq!(
+        fs::read(stream.join("120000_61/value")).unwrap(),
+        b"own key"
+    );
+    assert_eq!(fs::read(stream.join("120000_62/value")).unwrap(), b"moved");
+}
+
+#[test]
+fn a_segment_is_skipped_only_when_every_key_ingest_would_try_differs() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(source.join("chronicle/20260811/120000_60")).unwrap();
+    fs::write(source.join("chronicle/20260811/120000_60/value"), b"new").unwrap();
+    for duration in 60..60 + solstone_core_ingest_resolve::MAX_INGEST_SEGMENT_ATTEMPTS {
+        let path = target
+            .join("chronicle/20260811")
+            .join(format!("120000_{duration}"));
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("value"), b"old").unwrap();
+    }
+
+    let archive = archive_from(&source, &tree.path);
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    assert_eq!(result.retry_disposition, RetryDisposition::Incomplete);
+    assert_eq!(result.merge_summary.segments_skipped, 1);
+    assert_eq!(
+        result.segment_dispositions[0].disposition,
+        SegmentDispositionKind::DifferingContentCollision
+    );
+    assert!(!target.join("chronicle/20260811/120000_160").exists());
 }
 
 #[test]

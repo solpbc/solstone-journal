@@ -26,7 +26,7 @@ pub use quarantine::{QuarantineReceipt, quarantine_failed};
 pub use resolve::{
     ApplyPlan, ConflictPlan, FailedPlan, FileDisposition, HeldEvidence, IngestFile,
     MAX_INGEST_SEGMENT_ATTEMPTS, MissingWriteReason, PlanStatus, PlannedFile, Resolution,
-    ResolveError, UnwrittenReason, resolve_ingest,
+    ResolveError, UnwrittenReason, resolve_ingest, segment_key_candidates,
 };
 pub use solstone_core_journal_io::bump_stream_marker;
 pub use terminal_proof::SegmentTerminalProof;

@@ -237,23 +237,7 @@ pub fn resolve_ingest(
         )));
     }
 
-    let Some((start, duration)) = requested_segment.split_once('_') else {
-        return Err(ResolveError::SegmentInput(
-            "segment must contain a duration",
-        ));
-    };
-    let duration = duration
-        .parse::<u64>()
-        .map_err(|_| ResolveError::SegmentInput("segment duration must be an integer"))?;
-    for offset in 0..MAX_INGEST_SEGMENT_ATTEMPTS {
-        let candidate = if offset == 0 {
-            requested_segment.to_owned()
-        } else {
-            let Some(adjusted_duration) = duration.checked_add(offset) else {
-                return Err(ResolveError::SegmentInput("segment allocation overflow"));
-            };
-            format!("{start}_{adjusted_duration}")
-        };
+    for candidate in segment_key_candidates(requested_segment)? {
         let segment = if candidate == requested_segment {
             requested_handle.clone()
         } else {
@@ -283,6 +267,33 @@ pub fn resolve_ingest(
     Ok(Resolution::Failed(FailedPlan {
         requested_segment: requested_segment.to_owned(),
     }))
+}
+
+/// The keys a segment may land on when its own key is taken by different
+/// content, in the order to try them: the requested key, then the same start
+/// with its duration one second longer each time, [`MAX_INGEST_SEGMENT_ATTEMPTS`]
+/// keys in all.  Ingest and archive merge both land a colliding segment on the
+/// first free key in this order, so the same material finds the same key.
+pub fn segment_key_candidates(requested_segment: &str) -> Result<Vec<String>, ResolveError> {
+    let Some((start, duration)) = requested_segment.split_once('_') else {
+        return Err(ResolveError::SegmentInput(
+            "segment must contain a duration",
+        ));
+    };
+    let duration = duration
+        .parse::<u64>()
+        .map_err(|_| ResolveError::SegmentInput("segment duration must be an integer"))?;
+    (0..MAX_INGEST_SEGMENT_ATTEMPTS)
+        .map(|offset| {
+            if offset == 0 {
+                return Ok(requested_segment.to_owned());
+            }
+            duration
+                .checked_add(offset)
+                .map(|adjusted_duration| format!("{start}_{adjusted_duration}"))
+                .ok_or(ResolveError::SegmentInput("segment allocation overflow"))
+        })
+        .collect()
 }
 
 fn incoming_facts(files: &[IngestFile<'_>]) -> Vec<IncomingFact> {
