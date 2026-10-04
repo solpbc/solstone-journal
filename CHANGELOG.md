@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- on windows, material that arrived late for an earlier day, like what a device was still holding when you paired it again, could be left out of that day's daily results. your journal on windows now brings a day's daily results up to date when something new arrives for it, whatever day it's from, as it does on mac and linux.
+
 ## [2.0.32] - 2026-10-04
 
 ### Added

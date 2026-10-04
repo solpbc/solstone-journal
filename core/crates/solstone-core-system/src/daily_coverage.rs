@@ -843,28 +843,26 @@ pub fn settle_daily_day(
     Ok(true)
 }
 
+/// Whether raw input for `day` moved after its daily work last completed.
+///
+/// This is how material that arrives late -- a device's backlog, whatever its
+/// capture date -- makes an old or finished day owed again.  Health markers are
+/// plain files on every platform the journal ships, so this must hold on every
+/// target: a platform where it reads `false` never processes late material.
 fn raw_marker_dirty(journal: &Path, day: &str) -> Result<bool, String> {
-    #[cfg(unix)]
-    {
-        use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
-        let stream = read_health_marker(journal, day, HealthMarkerKind::Stream)
-            .map_err(|e| e.to_string())?;
-        let daily =
-            read_health_marker(journal, day, HealthMarkerKind::Daily).map_err(|e| e.to_string())?;
-        Ok(match (stream, daily) {
-            (
-                HealthMarkerState::Versioned { marker: stream, .. },
-                HealthMarkerState::Versioned { marker: daily, .. },
-            ) => stream.generation > daily.generation,
-            (HealthMarkerState::Versioned { marker, .. }, _) => marker.generation > 0,
-            _ => false,
-        })
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (journal, day);
-        Ok(false)
-    }
+    use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
+    let stream =
+        read_health_marker(journal, day, HealthMarkerKind::Stream).map_err(|e| e.to_string())?;
+    let daily =
+        read_health_marker(journal, day, HealthMarkerKind::Daily).map_err(|e| e.to_string())?;
+    Ok(match (stream, daily) {
+        (
+            HealthMarkerState::Versioned { marker: stream, .. },
+            HealthMarkerState::Versioned { marker: daily, .. },
+        ) => stream.generation > daily.generation,
+        (HealthMarkerState::Versioned { marker, .. }, _) => marker.generation > 0,
+        _ => false,
+    })
 }
 
 /// Marker/queue tests explicitly configure no daily workloads so they isolate raw-input guards.
@@ -1074,6 +1072,55 @@ mod tests {
         assert_eq!(
             reconcile_days_with_roots(root, &[], now, &talent, &apps).unwrap(),
             vec![day]
+        );
+    }
+
+    /// Late material -- a re-paired device's backlog, say -- reaches a day only
+    /// through that day's stream marker.  On every platform, a moved marker must
+    /// adopt a day older than the first-run boundary and reopen a finished day,
+    /// and publishing the daily marker must settle both again.
+    #[test]
+    fn late_raw_input_adopts_an_old_day_and_reopens_a_finished_one() {
+        use solstone_core_journal_io::{
+            PublishOutcome, bump_stream_marker, publish_daily_marker_if_current,
+        };
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        utc_journal(root, serde_json::json!({}));
+        let (old, finished) = ("20260801", "20260910");
+        source(root, old, "# Flow\nAn old meeting.");
+        source(root, finished, "# Flow\nA meeting.");
+        let now: DateTime<Utc> = "2026-09-14T12:00:00Z".parse().unwrap();
+        assert_eq!(
+            reconcile_days_with_roots(root, &[], now, &talent, &apps).unwrap(),
+            vec![finished]
+        );
+        accept(root, finished, &talent, &apps);
+        assert!(
+            reconcile_days_with_roots(root, &[], now, &talent, &apps)
+                .unwrap()
+                .is_empty()
+        );
+
+        for day in [old, finished] {
+            bump_stream_marker(root, day).unwrap();
+        }
+        assert_eq!(
+            reconcile_days_with_roots(root, &[], now, &talent, &apps).unwrap(),
+            vec![old, finished]
+        );
+
+        accept(root, old, &talent, &apps);
+        for day in [old, finished] {
+            let outcome =
+                publish_daily_marker_if_current(root, day, 1, "fp", || Ok("fp".to_owned()))
+                    .unwrap();
+            assert!(matches!(outcome, PublishOutcome::Published(1)));
+        }
+        assert!(
+            reconcile_days_with_roots(root, &[], now, &talent, &apps)
+                .unwrap()
+                .is_empty()
         );
     }
 

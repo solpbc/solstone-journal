@@ -92,6 +92,8 @@ cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-pro
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-callosum --lib --features full-tests windows_native_tests || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --lib --features full-tests provider_runtime || exit /b 1
+echo === cargo test --locked (late material reaches an old or finished day) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --lib --features full-tests -- --exact daily_coverage::tests::late_raw_input_adopts_an_old_day_and_reopens_a_finished_one daily_coverage::tests::adoption_persists_closed_calendar_boundary_and_reconciles_derived_only_changes daily_coverage::tests::explicit_old_day_registration_survives_restart_and_finds_lost_wake_changes || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-local --lib --features full-tests || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wire --lib || exit /b 1
 echo === cargo test --locked (Windows portal installer Job ownership) ===
