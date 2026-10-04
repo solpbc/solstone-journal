@@ -97,6 +97,8 @@ pub fn health_card_stream(family: &str) -> Result<&'static str, HealthCardStream
     }
 }
 
+/// Anything under these streams is refused by the index, daily evidence, the
+/// transcript reader, and agent tools.
 pub fn health_card_streams() -> impl Iterator<Item = &'static str> {
     HEALTH_CARD_FAMILIES.iter().filter_map(|entry| entry.stream)
 }

@@ -14,4 +14,5 @@ chrono.workspace = true
 glob.workspace = true
 pulldown-cmark.workspace = true
 serde_json.workspace = true
+solstone-core-body-source = { path = "../solstone-core-body-source" }
 solstone-core-talent-config.workspace = true

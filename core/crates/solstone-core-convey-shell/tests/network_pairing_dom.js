@@ -815,6 +815,30 @@ async function main() {
     assert.ok(emptyState.includes(env.window.LinkCopy.DEVICE_PAIR_CTA) || emptyState.includes('DEVICE_PAIR_CTA'));
   });
 
+  await testCase('unpair asks with the unpair copy and removes nothing when declined', async () => {
+    const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
+    const start = workspace.indexOf('function clientNameFor(button) {');
+    const end = workspace.indexOf('\nfunction initClients', start);
+    assert.notStrictEqual(start, -1);
+    assert.notStrictEqual(end, -1);
+    const asked = [];
+    const fetched = [];
+    const context = vm.createContext({
+      window: { LinkCopy: copy },
+      confirm: (message) => { asked.push(message); return false; },
+      fetch: async (url) => { fetched.push(url); return response({}); },
+    });
+    vm.runInContext(workspace.slice(start, end), context);
+    const button = {
+      closest: () => ({ querySelector: () => ({ textContent: 'suze' }) }),
+    };
+    await vm.runInContext('unpairClient', context)('sha256:delivered', button);
+    assert.strictEqual(asked.length, 1);
+    assert.ok(asked[0].includes('suze'), 'the question names the device');
+    assert.ok(copy.UNPAIR_BODY && asked[0].includes(copy.UNPAIR_BODY), 'the question carries the unpair body');
+    assert.deepStrictEqual(fetched, [], 'declining unpairs nothing');
+  });
+
   await testCase('G3-208: only a never-delivered row offers forget, and it asks in place', async () => {
     const start = workspace.indexOf('const CHECK_IN_NOTE =');
     const end = workspace.indexOf('\nfunction renderClients', start);

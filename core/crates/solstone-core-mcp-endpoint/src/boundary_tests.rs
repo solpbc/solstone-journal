@@ -1115,3 +1115,154 @@ fn ac8_ac11_ac12_ac30_bad_live_scope_and_references_fail_closed() {
         Err(McpProbeError::PermissionDenied)
     );
 }
+
+#[test]
+fn whole_journal_transcript_permission_excludes_body_source_streams() {
+    let journal = fixture();
+    let body_segment = journal
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join("import.apple_health")
+        .join("100000_300");
+    fs::create_dir_all(&body_segment).unwrap();
+    fs::write(
+        body_segment.join("meeting_transcript.md"),
+        "body metric transcript content\n",
+    )
+    .unwrap();
+
+    let body_path = "20260914/import.apple_health/100000_300/meeting_transcript.md";
+    let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
+    index
+        .execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+             VALUES ('body indexed content', ?1, ?2, '', 'import.apple_health', 'import.apple_health', 0, '')",
+            params![body_path, DAY],
+        )
+        .unwrap();
+    index
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) \
+             VALUES (?1, 'transcripts', 'segment_assigned', 1, 0)",
+            params![body_path],
+        )
+        .unwrap();
+    let body_row_id: i64 = index
+        .query_row(
+            "SELECT rowid FROM chunks WHERE path=?1",
+            params![body_path],
+            |row| row.get(0),
+        )
+        .unwrap();
+    drop(index);
+
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+
+    let temp_probe_seg = journal
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join("temp_probe")
+        .join("100000_300");
+    fs::create_dir_all(&temp_probe_seg).unwrap();
+    fs::hard_link(
+        body_segment.join("meeting_transcript.md"),
+        temp_probe_seg.join("meeting_transcript.md"),
+    )
+    .unwrap();
+    let probe_segments = solstone_core_journal_io::paths::iter_segments(
+        journal.path(),
+        solstone_core_journal_io::paths::PathOrDay::Day(DAY),
+    )
+    .unwrap();
+    let probe_seg = probe_segments
+        .iter()
+        .find(|s| {
+            s.key() == "100000_300"
+                && matches!(
+                    s.stream(),
+                    solstone_core_journal_io::StreamLocation::Named(n) if n == "temp_probe"
+                )
+        })
+        .unwrap();
+    let probe_page =
+        solstone_core_transcripts::read_segment_transcript_page(probe_seg, None).unwrap();
+    let body_version = probe_page.version.fingerprint();
+    fs::remove_dir_all(
+        journal
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("temp_probe"),
+    )
+    .unwrap();
+
+    let PermissionDecision::Snapshot(snapshot) =
+        evaluate_connection_read(journal.path(), CONNECTION)
+    else {
+        panic!("permission snapshot expected");
+    };
+    let body_entry_ref = crate::dispatch::codec()
+        .mint(
+            CONNECTION,
+            snapshot.generation,
+            crate::references::ReferenceTarget::Entry(crate::references::EntryReference {
+                day: DAY.to_owned(),
+                stream: "import.apple_health".to_owned(),
+                path: body_path.to_owned(),
+                idx: 0,
+                row_id: body_row_id,
+            }),
+        )
+        .unwrap();
+    let body_segment_ref = crate::dispatch::codec()
+        .mint(
+            CONNECTION,
+            snapshot.generation,
+            crate::references::ReferenceTarget::Segment(crate::references::SegmentReference {
+                day: DAY.to_owned(),
+                stream: "import.apple_health".to_owned(),
+                segment: "100000_300".to_owned(),
+                version: body_version,
+                source_index: None,
+                byte_offset: None,
+            }),
+        )
+        .unwrap();
+
+    let list = probe(&journal, "list_transcripts", json!({})).unwrap();
+    let transcripts = list["transcripts"].as_array().unwrap();
+    assert_eq!(transcripts.len(), 1);
+    let control_ref = transcripts[0]["reference"].as_str().unwrap();
+
+    let search_res = probe(&journal, "search", json!({"query": "indexed"})).unwrap();
+    let results = search_res["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["snippet"], "indexed bytes");
+
+    assert_eq!(
+        probe(&journal, "fetch", json!({"reference": body_entry_ref})),
+        Err(McpProbeError::Unavailable)
+    );
+    assert_eq!(
+        probe(
+            &journal,
+            "get_transcript",
+            json!({"reference": body_segment_ref})
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+
+    let page = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference": control_ref}),
+    )
+    .unwrap();
+    let entries = page["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].as_str().unwrap(), "approved transcript");
+}

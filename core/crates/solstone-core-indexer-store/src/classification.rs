@@ -321,6 +321,8 @@ pub fn classify_source(
         || stream == Some("mcp.agent")
         || path.split('/').any(|component| component == "mcp.agent")
         || is_authored_chat_path(path)
+        || solstone_core_format::body::is_body_source_path(path)
+        || stream.is_some_and(solstone_core_format::body::is_body_stream)
     {
         return excluded(path);
     }
@@ -562,11 +564,48 @@ mod tests {
                 "{path}"
             );
         }
-        // AC6: mcp.agent is excluded by path component without stream.json.
         assert!(
             !classify_source(
                 &root,
                 "20260107/default/123456_300/mcp.agent/talents/brief.md",
+                None,
+                &declarations,
+            )
+            .eligible
+        );
+
+        // Body probes
+        assert!(
+            !classify_source(
+                &root,
+                "20260101/field/090000_300/talents/transcript.md",
+                Some("import.oura"),
+                &declarations,
+            )
+            .eligible
+        );
+        assert!(
+            classify_source(
+                &root,
+                "20260101/field/090000_300/talents/transcript.md",
+                Some("field"),
+                &declarations,
+            )
+            .eligible
+        );
+        assert!(
+            !classify_source(
+                &root,
+                "20260107/import.apple_health/123456_300/imported.md",
+                None,
+                &declarations,
+            )
+            .eligible
+        );
+        assert!(
+            !classify_source(
+                &root,
+                "imports/body-01JZ8Y3Q4M5N6P7R8S9T0V1W2X/summary.md",
                 None,
                 &declarations,
             )

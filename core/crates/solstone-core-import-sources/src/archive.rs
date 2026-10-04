@@ -26,10 +26,11 @@ use solstone_core_facets::{
     serialize_observation_rows,
 };
 use solstone_core_import::ImportPreview;
+use solstone_core_ingest_resolve::segment_key_candidates;
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, PathOrDay, RecordIdentity, Segment,
     StagedDirOptions, StreamLocation, append_jsonl, atomic_replace, contained_path, hold_lock,
-    iter_segments, publish_staged_dir, realpath_non_strict, write_bytes_exclusive,
+    iter_segments, path_lexists, publish_staged_dir, realpath_non_strict, write_bytes_exclusive,
 };
 use solstone_core_segment::touch_stream_health_marker;
 use zip::ZipArchive;
@@ -150,11 +151,21 @@ pub struct SegmentDisposition {
     pub disposition: SegmentDispositionKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SegmentDispositionKind {
     Copied,
     IdenticalExisting,
+    /// The segment's own key held different content, so it was copied to the
+    /// first free key ingest would choose for it.
+    CopiedToNewKey {
+        landed_segment: String,
+    },
+    /// Its own key and every key ingest would try held different content.
     DifferingContentCollision,
+    /// The owner deleted this segment from the journal (its key holds a
+    /// tombstone, or its removal is in progress), so the archive's copy is not
+    /// brought back.
+    DeletedByOwner,
 }
 
 /// Whether an archive entity's principal claim was retained, cleared, or separately reported.
@@ -1179,6 +1190,16 @@ fn stage_segments(
         path: chronicle.clone(),
         detail: error.to_string(),
     })?;
+    // Every source segment's own path, so a colliding segment moved to a new
+    // key never takes the key another segment of this archive arrives with.
+    let mut own_paths = BTreeSet::new();
+    for (_, day_name, segments) in &days {
+        for segment in segments {
+            if let Ok(identity) = segment.record_identity() {
+                own_paths.insert(segment_relative_for(day_name, segment, identity));
+            }
+        }
+    }
     for (_day, day_name, segments) in days {
         for segment in segments {
             let identity =
@@ -1191,24 +1212,53 @@ fn stage_segments(
             // Disposition (c): destination follows StreamLocation + exact UTF-8
             // basename so Named("_default") stays under `_default/` and same-key
             // siblings (`093000_300_a` / `_b`) land at distinct paths.
-            let destination = segment_destination_for(target, &day_name, &segment, identity);
-            if fs::symlink_metadata(&destination).is_ok() {
-                let kind = if tree_digest(segment.path())? == tree_digest(&destination)? {
-                    SegmentDispositionKind::IdenticalExisting
-                } else {
-                    state.has_conflict = true;
-                    SegmentDispositionKind::DifferingContentCollision
-                };
+            let mut relative = segment_relative_for(&day_name, &segment, identity);
+            let mut disposition = SegmentDispositionKind::Copied;
+            if deleted_by_owner(&target.join(&relative))? {
                 state.summary.segments_skipped += 1;
                 state.segment_dispositions.push(SegmentDisposition {
                     day: day_name.clone(),
                     stream: identity.stream.to_owned(),
                     key: identity.key.to_owned(),
-                    disposition: kind,
+                    disposition: SegmentDispositionKind::DeletedByOwner,
                 });
                 continue;
             }
-            let relative = segment_relative_for(&day_name, &segment, identity);
+            if fs::symlink_metadata(target.join(&relative)).is_ok() {
+                match place_colliding_segment(
+                    target, &day_name, &segment, identity, &own_paths, state,
+                )? {
+                    CollisionPlacement::Held => {
+                        state.summary.segments_skipped += 1;
+                        state.segment_dispositions.push(SegmentDisposition {
+                            day: day_name.clone(),
+                            stream: identity.stream.to_owned(),
+                            key: identity.key.to_owned(),
+                            disposition: SegmentDispositionKind::IdenticalExisting,
+                        });
+                        continue;
+                    }
+                    CollisionPlacement::Exhausted => {
+                        state.has_conflict = true;
+                        state.summary.segments_skipped += 1;
+                        state.segment_dispositions.push(SegmentDisposition {
+                            day: day_name.clone(),
+                            stream: identity.stream.to_owned(),
+                            key: identity.key.to_owned(),
+                            disposition: SegmentDispositionKind::DifferingContentCollision,
+                        });
+                        continue;
+                    }
+                    CollisionPlacement::Free {
+                        relative: moved,
+                        segment: landed_segment,
+                    } => {
+                        relative = moved;
+                        disposition = SegmentDispositionKind::CopiedToNewKey { landed_segment };
+                    }
+                }
+            }
+            let destination = target.join(&relative);
             state.decision(
                 "prepared",
                 "segments",
@@ -1228,11 +1278,68 @@ fn stage_segments(
                 day: day_name.clone(),
                 stream: identity.stream.to_owned(),
                 key: identity.key.to_owned(),
-                disposition: SegmentDispositionKind::Copied,
+                disposition,
             });
         }
     }
     Ok(())
+}
+
+enum CollisionPlacement {
+    /// The journal already holds this segment's exact content at one of its keys.
+    Held,
+    /// The first key ingest would choose that nothing holds or claims.
+    Free { relative: String, segment: String },
+    /// Every key ingest would try holds different content.
+    Exhausted,
+}
+
+/// Place a segment whose own path in the journal holds different content the
+/// way ingest places a colliding upload: on the first key in
+/// [`segment_key_candidates`] order that is free.  A key that already holds the
+/// same content means the segment is already here -- a merge retried after an
+/// earlier one moved it -- so that wins over any free key.
+fn place_colliding_segment(
+    target: &Path,
+    day: &str,
+    segment: &Segment,
+    identity: RecordIdentity<'_>,
+    own_paths: &BTreeSet<String>,
+    state: &MergeState,
+) -> Result<CollisionPlacement, ImportSourcesError> {
+    // A name that does not begin with its key keeps only its own path.
+    let candidates = match identity.name.strip_prefix(identity.key) {
+        Some(rest) => segment_key_candidates(identity.key)
+            .map_err(|error| ImportSourcesError::SegmentMerge {
+                path: segment.path().to_path_buf(),
+                detail: error.to_string(),
+            })?
+            .into_iter()
+            .map(|key| format!("{key}{rest}"))
+            .collect::<Vec<_>>(),
+        None => vec![identity.name.to_owned()],
+    };
+    let source_digest = tree_digest(segment.path())?;
+    let mut free = None;
+    for name in &candidates {
+        let relative = segment_relative_for(day, segment, RecordIdentity { name, ..identity });
+        let destination = target.join(&relative);
+        if fs::symlink_metadata(&destination).is_ok() {
+            if tree_digest(&destination)? == source_digest {
+                return Ok(CollisionPlacement::Held);
+            }
+        } else if free.is_none()
+            && !deleted_by_owner(&destination)?
+            && !state.chronicle_units.contains_key(&relative)
+            && !own_paths.contains(&relative)
+        {
+            free = Some(CollisionPlacement::Free {
+                relative,
+                segment: name.clone(),
+            });
+        }
+    }
+    Ok(free.unwrap_or(CollisionPlacement::Exhausted))
 }
 
 fn stage_entities(
@@ -2803,6 +2910,32 @@ fn join_contained(root: &Path, relative: &str) -> Result<PathBuf, ImportSourcesE
     })
 }
 
+const REMOVING_SEGMENT_PREFIX: &str = ".removing_";
+
+/// Whether the owner deleted the segment at `path`: it holds a tombstone, or a
+/// removal of it is in progress beside it.  A merge never lands material there.
+fn deleted_by_owner(path: &Path) -> Result<bool, ImportSourcesError> {
+    let lexists = |candidate: &Path| {
+        path_lexists(candidate).map_err(|error| ImportSourcesError::SegmentMerge {
+            path: candidate.to_path_buf(),
+            detail: error.to_string(),
+        })
+    };
+    let is_dir = fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir());
+    if is_dir && lexists(&path.join("tombstone.json"))? {
+        return Ok(true);
+    }
+    match (
+        path.parent(),
+        path.file_name().and_then(|name| name.to_str()),
+    ) {
+        (Some(parent), Some(name)) => {
+            lexists(&parent.join(format!("{REMOVING_SEGMENT_PREFIX}{name}")))
+        }
+        _ => Ok(false),
+    }
+}
+
 fn segment_relative_for(day: &str, segment: &Segment, identity: RecordIdentity<'_>) -> String {
     match segment.stream() {
         StreamLocation::Direct => format!("chronicle/{day}/{}", identity.name),
@@ -2810,15 +2943,6 @@ fn segment_relative_for(day: &str, segment: &Segment, identity: RecordIdentity<'
             format!("chronicle/{day}/{}/{}", identity.stream, identity.name)
         }
     }
-}
-
-fn segment_destination_for(
-    target: &Path,
-    day: &str,
-    segment: &Segment,
-    identity: RecordIdentity<'_>,
-) -> PathBuf {
-    target.join(segment_relative_for(day, segment, identity))
 }
 
 #[cfg(test)]
