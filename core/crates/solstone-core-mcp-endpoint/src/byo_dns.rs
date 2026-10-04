@@ -518,7 +518,6 @@ mod tests {
         assert_eq!(actual, expected);
         assert!(config.domain().is_none());
         assert!(config.search().is_empty());
-        eprintln!("Windows system resolver: {actual:?}");
     }
 
     fn base_records() -> HashMap<String, HostDnsRecords> {
