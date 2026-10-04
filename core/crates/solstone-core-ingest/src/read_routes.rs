@@ -10,7 +10,9 @@ use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
-use solstone_core_segment::{list_days, list_stream_segments, lookup_stream_state};
+use solstone_core_segment::{
+    list_days, list_stream_bindings, list_stream_segments, visible_stream_names,
+};
 
 use crate::health::day_read_reason;
 use crate::listing::{DayListing, ListingError, ListingFile, merge_day_listing, native_events};
@@ -37,9 +39,9 @@ pub async fn ingest_manifest(
             Err((code, status, detail)) => return refusal(code, status, detail),
         };
         let mut result = Map::new();
-        let Some(stream) = context.native_stream else {
+        if context.native_streams.is_empty() {
             return Json(json!({"days": result})).into_response();
-        };
+        }
         let days = match list_days(&state.journal_root) {
             Ok(days) => days
                 .into_iter()
@@ -54,21 +56,32 @@ pub async fn ingest_manifest(
             }
         };
         for day in days {
-            match list_stream_segments(&state.journal_root, &day, &stream) {
-                Ok(segments) if segments.is_empty() => {}
-                Ok(segments) => {
-                    result.insert(day, json!({"segments": segments.len()}));
+            let mut segments = BTreeSet::new();
+            let mut failed = false;
+            for stream in &context.native_streams {
+                match list_stream_segments(&state.journal_root, &day, stream) {
+                    Ok(found) => {
+                        for segment in found {
+                            let Ok(identity) = segment.record_identity() else {
+                                failed = true;
+                                break;
+                            };
+                            let key = identity.name.to_owned();
+                            segments.insert((stream.clone(), key));
+                        }
+                    }
+                    Err(_) => failed = true,
                 }
-                Err(_) => {
-                    // A device told this refuses the whole day and reports itself offline,
-                    // so the journal says so too; nothing else on this side records it.
-                    let reason = day_read_reason(ListingError::JournalRead);
-                    log::warn!(
-                        "device_manifest_day_unreadable day={day} reason={}",
-                        reason.as_str()
-                    );
-                    result.insert(day, json!({"error": reason.as_str()}));
-                }
+            }
+            if failed {
+                let reason = day_read_reason(ListingError::JournalRead);
+                log::warn!(
+                    "device_manifest_day_unreadable day={day} reason={}",
+                    reason.as_str()
+                );
+                result.insert(day, json!({"error": reason.as_str()}));
+            } else if !segments.is_empty() {
+                result.insert(day, json!({"segments": segments.len()}));
             }
         }
         Json(json!({"days": result})).into_response()
@@ -95,7 +108,7 @@ pub async fn ingest_manifest_day(
             &state,
             &context.cid,
             &context.source,
-            context.native_stream.as_deref(),
+            &context.native_streams,
             &day,
         ) {
             Ok(listing) => listing,
@@ -130,7 +143,7 @@ pub async fn ingest_segments(
             &state,
             &context.cid,
             &context.source,
-            context.native_stream.as_deref(),
+            &context.native_streams,
             &day,
         ) {
             Ok(listing) => listing,
@@ -162,7 +175,7 @@ pub async fn ingest_segments(
 struct ListingContext {
     cid: String,
     source: String,
-    native_stream: Option<String>,
+    native_streams: Vec<String>,
 }
 
 fn listing_context(
@@ -179,26 +192,48 @@ fn listing_context(
         .transpose()
         .map_err(|code| (code, StatusCode::BAD_REQUEST, "invalid source".to_owned()))?
         .unwrap_or_default();
-    let binding = lookup_stream_state(&state.journal_root, &cid, &source).map_err(|_| {
-        (
-            ReasonCode::JournalReadFailed,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot resolve journal stream".to_owned(),
-        )
-    })?;
-    if let Some(bound) = &binding
-        && bound.seq == 0
-    {
-        return Err((
-            ReasonCode::StreamBindingIncomplete,
-            StatusCode::CONFLICT,
-            "authenticated stream binding is incomplete".to_owned(),
-        ));
+    let visible_streams =
+        visible_stream_names(&state.journal_root, &cid, &source).map_err(|_| {
+            (
+                ReasonCode::JournalReadFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot resolve journal stream".to_owned(),
+            )
+        })?;
+    let mut native_streams = Vec::new();
+    if !visible_streams.is_empty() {
+        let bindings = list_stream_bindings(&state.journal_root).map_err(|_| {
+            (
+                ReasonCode::JournalReadFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot resolve journal stream".to_owned(),
+            )
+        })?;
+        for stream in &visible_streams {
+            match bindings.iter().find(|binding| binding.name == *stream) {
+                Some(binding) if binding.seq > 0 => native_streams.push(stream.clone()),
+                Some(_) => {}
+                None => {
+                    return Err((
+                        ReasonCode::JournalReadFailed,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "cannot resolve journal stream".to_owned(),
+                    ));
+                }
+            }
+        }
+        if native_streams.is_empty() {
+            return Err((
+                ReasonCode::StreamBindingIncomplete,
+                StatusCode::CONFLICT,
+                "authenticated stream binding is incomplete".to_owned(),
+            ));
+        }
     }
     Ok(ListingContext {
         cid,
         source,
-        native_stream: binding.map(|bound| bound.name),
+        native_streams,
     })
 }
 
@@ -206,10 +241,19 @@ fn day_listing(
     state: &IngestState,
     cid: &str,
     source: &str,
-    native_stream: Option<&str>,
+    native_streams: &[String],
     day: &str,
 ) -> Result<DayListing, ListingError> {
-    let events = native_events(&state.journal_root, day, native_stream, cid, source)?;
+    let mut events = Vec::new();
+    for stream in native_streams {
+        events.extend(native_events(
+            &state.journal_root,
+            day,
+            Some(stream),
+            cid,
+            source,
+        )?);
+    }
     merge_day_listing(&state.journal_root, day, events)
 }
 
@@ -302,6 +346,7 @@ mod access_tests {
         let linked = AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+            leaf_spki: vec![0x30, 0x00],
         };
         assert_eq!(admitted(&linked, &headers), Ok(VALID_CID.to_owned()));
 
@@ -356,6 +401,7 @@ mod listing_context_tests {
         AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+            leaf_spki: vec![0x30, 0x00],
         }
     }
 
@@ -368,25 +414,7 @@ mod listing_context_tests {
     }
 
     fn write_stream(root: &std::path::Path, seq: u64) {
-        let path = root.join("streams/desk_01.json");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(
-            path,
-            json!({
-                "name": "desk_01",
-                "kind": "observer",
-                "host": null,
-                "platform": null,
-                "created_at": 1,
-                "last_day": null,
-                "last_segment": null,
-                "seq": seq,
-                "cid": VALID_CID,
-                "source": "",
-            })
-            .to_string(),
-        )
-        .unwrap();
+        write_stream_record(root, "desk_01", VALID_CID, "", seq);
     }
 
     #[test]
@@ -399,7 +427,7 @@ mod listing_context_tests {
             &SourceQuery { source: None },
         )
         .unwrap();
-        assert_eq!(context.native_stream, None);
+        assert!(context.native_streams.is_empty());
     }
 
     #[test]
@@ -413,7 +441,7 @@ mod listing_context_tests {
             &SourceQuery { source: None },
         )
         .unwrap();
-        assert_eq!(context.native_stream.as_deref(), Some("desk_01"));
+        assert_eq!(context.native_streams, vec!["desk_01"]);
     }
 
     #[test]
@@ -429,5 +457,66 @@ mod listing_context_tests {
         .unwrap_err();
         assert_eq!(error.0, ReasonCode::StreamBindingIncomplete);
         assert_eq!(error.1, StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn listing_context_omits_seq_zero_sibling_but_keeps_advanced_continuation() {
+        const SELECTED_CID: &str =
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        const SOURCE: &str = "audio";
+        const SELECTED_STREAM: &str = "selected_01";
+        const ADOPTED_RESERVATION: &str = "adopted_01";
+
+        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        write_stream_record(journal.path(), SELECTED_STREAM, SELECTED_CID, SOURCE, 3);
+        write_stream_record(journal.path(), ADOPTED_RESERVATION, VALID_CID, SOURCE, 0);
+        fs::write(
+            journal.path().join("streams/continuity.json"),
+            json!({
+                "version": 1,
+                "streams": {
+                    SELECTED_STREAM: {
+                        "source": SOURCE,
+                        "writers": [SELECTED_CID, VALID_CID],
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let context = listing_context(
+            &ingest_state(journal.path()),
+            &linked(),
+            &protocol_headers(),
+            &SourceQuery {
+                source: Some(SOURCE.to_owned()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.native_streams, vec![SELECTED_STREAM]);
+    }
+
+    fn write_stream_record(root: &std::path::Path, name: &str, cid: &str, source: &str, seq: u64) {
+        let path = root.join("streams").join(format!("{name}.json"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            path,
+            json!({
+                "name": name,
+                "kind": "observer",
+                "host": null,
+                "platform": null,
+                "created_at": 1,
+                "last_day": null,
+                "last_segment": null,
+                "seq": seq,
+                "cid": cid,
+                "source": source,
+            })
+            .to_string(),
+        )
+        .unwrap();
     }
 }

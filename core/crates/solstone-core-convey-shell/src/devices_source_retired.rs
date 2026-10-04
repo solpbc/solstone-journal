@@ -79,6 +79,7 @@ async fn devices_source_delete_is_retired_and_preserves_disk_state() {
     request.extensions_mut().insert(AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
         cid: LinkedDeviceCid::try_from(CID).unwrap(),
+        leaf_spki: vec![0x30, 0x00],
     });
 
     let response = app.oneshot(request).await.expect("response");

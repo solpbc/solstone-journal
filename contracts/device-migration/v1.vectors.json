@@ -1,0 +1,115 @@
+{
+  "source": "core/crates/solstone-core-sol-link/src/device_migration.rs",
+  "regeneration_command": "cargo test --manifest-path core/Cargo.toml -p solstone-core-repository-contracts --lib device_migration_contract::regenerate_device_migration_contract -- --ignored",
+  "vectors": {
+    "rekey_request": {
+      "protocol": 1,
+      "operation_id": "123e4567-e89b-42d3-a456-426614174000",
+      "csr": "-----BEGIN CERTIFICATE REQUEST-----\nfixture\n-----END CERTIFICATE REQUEST-----",
+      "device_label": "Fixture device"
+    },
+    "rekey_created_201": {
+      "status": 201,
+      "body": {
+        "protocol": 1,
+        "operation_id": "123e4567-e89b-42d3-a456-426614174000",
+        "state": "pending",
+        "cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pairing": {
+          "client_cert": "-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----",
+          "ca_chain": [
+            "-----BEGIN CERTIFICATE-----\nca-fixture\n-----END CERTIFICATE-----"
+          ],
+          "instance_id": "fixture-instance",
+          "home_label": "fixture-home",
+          "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "home_attestation": null
+        }
+      }
+    },
+    "rekey_replay_200": {
+      "status": 200,
+      "body": {
+        "protocol": 1,
+        "operation_id": "123e4567-e89b-42d3-a456-426614174000",
+        "state": "pending",
+        "cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pairing": {
+          "client_cert": "-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----",
+          "ca_chain": [
+            "-----BEGIN CERTIFICATE-----\nca-fixture\n-----END CERTIFICATE-----"
+          ],
+          "instance_id": "fixture-instance",
+          "home_label": "fixture-home",
+          "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "home_attestation": null
+        }
+      }
+    },
+    "migration_views": [
+      {
+        "protocol": 1,
+        "state": "none",
+        "operation_id": null,
+        "decision_id": null,
+        "previous_cid": null,
+        "replaced_cid": null
+      },
+      {
+        "protocol": 1,
+        "state": "pending",
+        "operation_id": "123e4567-e89b-42d3-a456-426614174000",
+        "decision_id": null,
+        "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "replaced_cid": null
+      },
+      {
+        "protocol": 1,
+        "state": "new_device",
+        "operation_id": "123e4567-e89b-42d3-a456-426614174000",
+        "decision_id": "123e4567-e89b-42d3-a456-426614174001",
+        "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "replaced_cid": null
+      },
+      {
+        "protocol": 1,
+        "state": "same_device",
+        "operation_id": "123e4567-e89b-42d3-a456-426614174000",
+        "decision_id": "123e4567-e89b-42d3-a456-426614174002",
+        "previous_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "replaced_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "protocol": 1,
+        "state": "replaced_device",
+        "operation_id": null,
+        "decision_id": "123e4567-e89b-42d3-a456-426614174003",
+        "previous_cid": null,
+        "replaced_cid": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "replace_request": {
+      "protocol": 1,
+      "decision_id": "123e4567-e89b-42d3-a456-426614174004",
+      "choice": "replace_device",
+      "replaces_cid": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "reason_codes": [
+      "migration_request_invalid",
+      "migration_protocol_unsupported",
+      "migration_csr_invalid",
+      "migration_key_not_fresh",
+      "migration_forbidden",
+      "migration_replay_forbidden",
+      "paired_device_not_found",
+      "migration_operation_conflict",
+      "migration_proof_missing",
+      "migration_already_decided",
+      "migration_self_replacement",
+      "migration_target_conflict",
+      "migration_state_unavailable"
+    ]
+  }
+}

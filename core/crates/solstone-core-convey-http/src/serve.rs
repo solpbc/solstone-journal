@@ -190,6 +190,7 @@ mod tests {
             AccessBasis::LinkedDevice {
                 carrier: Carrier::ViaSpl,
                 cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+                leaf_spki: vec![0x30, 0x00],
             },
             mux_builder,
             "GET /Localhost?basis=Localhost HTTP/1.1\r\nHost: localhost\r\nX-Access-Basis: Localhost\r\nConnection: close\r\n\r\n".to_owned(),

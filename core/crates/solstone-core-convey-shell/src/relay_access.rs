@@ -216,6 +216,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid: unknown_cid,
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             });
         let (status, body) = request(app.clone(), req_unknown).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
@@ -230,6 +231,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid: cid.clone(),
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             });
         let (status, body) = request(app.clone(), req_direct).await;
         assert_eq!(status, StatusCode::OK);
@@ -245,6 +247,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid: cid.clone(),
                 carrier: Carrier::ViaSpl,
+                leaf_spki: vec![0x30, 0x00],
             });
         let (status, body) = request(app.clone(), req_viaspl).await;
         assert_eq!(status, StatusCode::OK);
@@ -261,6 +264,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid,
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             });
         let (status, body) = request(app, req_revoked).await;
         assert_eq!(status, StatusCode::FORBIDDEN);

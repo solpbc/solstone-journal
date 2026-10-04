@@ -379,6 +379,7 @@ mod tests {
             let basis = AccessBasis::LinkedDevice {
                 carrier,
                 cid: cid.clone(),
+                leaf_spki: vec![0x30, 0x00],
             };
             let (status, _) = status_and_reason(guarded(), Some(basis), "spl.local").await;
             assert_eq!(status, StatusCode::OK);

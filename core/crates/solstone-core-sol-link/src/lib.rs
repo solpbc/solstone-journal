@@ -23,6 +23,7 @@ pub mod client_description_store;
 pub mod client_status;
 #[cfg(feature = "host")]
 pub mod committed;
+pub mod device_migration;
 #[cfg(feature = "client")]
 mod direct_seam;
 #[cfg(feature = "host")]

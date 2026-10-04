@@ -141,6 +141,7 @@ mod tests {
         let linked = AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+            leaf_spki: vec![0x30, 0x00],
         };
         assert_eq!(validate_access(&linked), Ok(VALID_CID.to_owned()));
 

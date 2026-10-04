@@ -26,6 +26,7 @@ mod tests {
             assert!(require_access(&AccessBasis::LinkedDevice {
                 carrier,
                 cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+                leaf_spki: vec![0x30, 0x00],
             }));
             assert!(!require_access(&AccessBasis::PairingPeer { carrier }));
         }

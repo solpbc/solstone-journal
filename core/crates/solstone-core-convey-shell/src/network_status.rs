@@ -1788,6 +1788,7 @@ mod tests {
         let linked_basis = AccessBasis::LinkedDevice {
             cid,
             carrier: Carrier::Direct,
+            leaf_spki: vec![0x30, 0x00],
         };
         for prefix in NETWORK_ROUTE_PREFIXES {
             let full_app = crate::router(temporary.path().to_path_buf())

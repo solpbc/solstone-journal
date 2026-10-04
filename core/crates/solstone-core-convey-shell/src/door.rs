@@ -614,6 +614,7 @@ impl PairingCarrierRegistry {
 #[derive(Clone, Debug)]
 struct AcceptedIdentity {
     cid: LinkedDeviceCid,
+    leaf_spki: Vec<u8>,
 }
 
 type IdentityCell = Arc<Mutex<Option<AcceptedIdentity>>>;
@@ -672,6 +673,9 @@ impl ClientCertVerifier for DoorIdentityVerifier {
         .map_err(|_| {
             RustlsError::InvalidCertificate(CertificateError::ApplicationVerificationFailure)
         })?;
+        let leaf_spki = solstone_core_sol_link::ca::leaf_spki_from_der(end_entity.as_ref()).ok_or(
+            RustlsError::InvalidCertificate(CertificateError::ApplicationVerificationFailure),
+        )?;
         let mut identity = self.identity.lock().map_err(|_| {
             RustlsError::InvalidCertificate(CertificateError::ApplicationVerificationFailure)
         })?;
@@ -681,7 +685,7 @@ impl ClientCertVerifier for DoorIdentityVerifier {
             )),
             Some(_) => Ok(ClientCertVerified::assertion()),
             None => {
-                *identity = Some(AcceptedIdentity { cid });
+                *identity = Some(AcceptedIdentity { cid, leaf_spki });
                 Ok(ClientCertVerified::assertion())
             }
         }
@@ -1535,6 +1539,7 @@ fn capture_to_basis(
         Some(accepted) => Some(AccessBasis::LinkedDevice {
             carrier: carrier_from_peer(peer),
             cid: accepted.cid,
+            leaf_spki: accepted.leaf_spki,
         }),
         None if certless_pairing_admitted => Some(AccessBasis::PairingPeer {
             carrier: carrier_from_peer(peer),
@@ -1917,6 +1922,48 @@ mod tests {
             &cid
         ));
     }
+
+    #[test]
+    fn revocation_closes_only_the_removed_cid_on_direct_and_via_spl_carriers() {
+        use solstone_core_sol_link::ledger::{ClientEntry, ClientRole};
+
+        let removed = LinkedDeviceCid::try_from(
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        .unwrap();
+        let retained = LinkedDeviceCid::try_from(
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        )
+        .unwrap();
+        let posture = AuthorizedClientsRead::Present(vec![ClientEntry::new(
+            retained.as_str(),
+            "retained",
+            "2026-09-01T00:00:00Z",
+            "instance",
+            ClientRole::Roleless,
+        )]);
+
+        for carrier in [Carrier::Direct, Carrier::ViaSpl] {
+            let removed_basis = AccessBasis::LinkedDevice {
+                carrier,
+                cid: removed.clone(),
+                leaf_spki: vec![0x30, 0x00],
+            };
+            let retained_basis = AccessBasis::LinkedDevice {
+                carrier,
+                cid: retained.clone(),
+                leaf_spki: vec![0x30, 0x00],
+            };
+            assert!(close_for_revocation(
+                &posture,
+                &linked_device_cid(&removed_basis).unwrap()
+            ));
+            assert!(!close_for_revocation(
+                &posture,
+                &linked_device_cid(&retained_basis).unwrap()
+            ));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1948,6 +1995,7 @@ mod access_tests {
         let linked = AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+            leaf_spki: vec![0x30, 0x00],
         };
         assert_eq!(linked_device_cid(&linked).unwrap().as_str(), VALID_CID);
 

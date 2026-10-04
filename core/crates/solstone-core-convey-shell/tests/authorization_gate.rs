@@ -37,6 +37,7 @@ fn linked_device(fixture: &Fixture, index: usize) -> AccessBasis {
     AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
         cid: LinkedDeviceCid::try_from(cid.as_str()).expect("fixture CID"),
+        leaf_spki: vec![0x30, 0x00],
     }
 }
 
@@ -47,6 +48,7 @@ fn unlisted_linked_device() -> AccessBasis {
             "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         )
         .expect("syntactically valid unlisted CID"),
+        leaf_spki: vec![0x30, 0x00],
     }
 }
 
@@ -591,6 +593,7 @@ async fn about_facts_use_the_production_authorization_and_pairing_layers() {
         AccessBasis::LinkedDevice {
             carrier: Carrier::ViaSpl,
             cid,
+            leaf_spki: vec![0x30, 0x00],
         },
         AccessBasis::Localhost,
     ] {

@@ -2505,6 +2505,7 @@ mod tests {
                 .insert(AccessBasis::LinkedDevice {
                     cid: cid.clone(),
                     carrier: Carrier::Direct,
+                    leaf_spki: vec![0x30, 0x00],
                 });
             let linked_res = owner_routes(temp.path().to_path_buf())
                 .oneshot(linked_req)
@@ -2528,6 +2529,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid,
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             });
         let put_res = owner_routes(temp.path().to_path_buf())
             .oneshot(linked_put)

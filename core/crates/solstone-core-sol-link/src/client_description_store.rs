@@ -300,68 +300,8 @@ pub fn patch_owner_label(
 
     let desc_path = client_descriptions_path(journal_root);
     let _desc_lock = lock_descriptions(&desc_path)?;
-    let mut descriptions = read_descriptions(journal_root)?;
-
-    let existing = descriptions.get(cid).cloned();
-    let now_str = now
-        .format(&Rfc3339)
-        .map_err(|_| DescriptionMutationError::Invalid("failed to format timestamp"))?;
-
-    let final_stored = match existing {
-        None => {
-            if sanitized_label.is_none() {
-                // Identical to absent: no-op, do not write file
-                StoredClientDescription::initial()
-            } else {
-                let new_desc = StoredClientDescription {
-                    protocol_version: 1,
-                    revision: 1,
-                    reported: None,
-                    owner_label: sanitized_label,
-                    updated_at: Some(now_str),
-                };
-                descriptions.insert(cid.to_owned(), new_desc.clone());
-                write_json(
-                    &desc_path,
-                    &descriptions,
-                    JsonWriteOptions {
-                        mode: Some(0o600),
-                        ..JsonWriteOptions::default()
-                    },
-                )
-                .map_err(DescriptionMutationError::Write)?;
-                new_desc
-            }
-        }
-        Some(cur) => {
-            if cur.owner_label == sanitized_label {
-                // No change in owner override: no-op
-                cur
-            } else {
-                let new_desc = StoredClientDescription {
-                    protocol_version: 1,
-                    revision: cur
-                        .revision
-                        .checked_add(1)
-                        .ok_or(DescriptionMutationError::Invalid("revision exhausted"))?,
-                    reported: cur.reported,
-                    owner_label: sanitized_label,
-                    updated_at: Some(now_str),
-                };
-                descriptions.insert(cid.to_owned(), new_desc.clone());
-                write_json(
-                    &desc_path,
-                    &descriptions,
-                    JsonWriteOptions {
-                        mode: Some(0o600),
-                        ..JsonWriteOptions::default()
-                    },
-                )
-                .map_err(DescriptionMutationError::Write)?;
-                new_desc
-            }
-        }
-    };
+    let final_stored =
+        set_owner_label_under_description_lock(journal_root, cid, sanitized_label, now)?;
 
     let display_label = current_display_label(&entry, Some(&final_stored));
 
@@ -374,6 +314,73 @@ pub fn patch_owner_label(
         updated_at: final_stored.updated_at,
         journal: journal_meta,
     })
+}
+
+/// Copy an effective label while the caller already holds the authorization
+/// lock. This acquires only the description lock (auth -> description).
+pub(crate) fn set_owner_label_locked(
+    journal_root: &Path,
+    cid: &str,
+    label: &str,
+    now: OffsetDateTime,
+) -> Result<(), DescriptionMutationError> {
+    let desc_path = client_descriptions_path(journal_root);
+    let _desc_lock = lock_descriptions(&desc_path)?;
+    let label =
+        sanitize_string(Some(label.to_owned()), 80).map_err(DescriptionMutationError::Invalid)?;
+    set_owner_label_under_description_lock(journal_root, cid, label, now)?;
+    Ok(())
+}
+
+fn set_owner_label_under_description_lock(
+    journal_root: &Path,
+    cid: &str,
+    owner_label: Option<String>,
+    now: OffsetDateTime,
+) -> Result<StoredClientDescription, DescriptionMutationError> {
+    let path = client_descriptions_path(journal_root);
+    let mut descriptions = read_descriptions(journal_root)?;
+    let existing = descriptions.get(cid).cloned();
+    if existing
+        .as_ref()
+        .is_some_and(|description| description.owner_label == owner_label)
+    {
+        return Ok(existing.expect("existing owner-label description"));
+    }
+    let now_str = now
+        .format(&Rfc3339)
+        .map_err(|_| DescriptionMutationError::Invalid("failed to format timestamp"))?;
+    let updated = match existing {
+        Some(current) => StoredClientDescription {
+            protocol_version: 1,
+            revision: current
+                .revision
+                .checked_add(1)
+                .ok_or(DescriptionMutationError::Invalid("revision exhausted"))?,
+            reported: current.reported,
+            owner_label,
+            updated_at: Some(now_str),
+        },
+        None if owner_label.is_none() => StoredClientDescription::initial(),
+        None => StoredClientDescription {
+            protocol_version: 1,
+            revision: 1,
+            reported: None,
+            owner_label,
+            updated_at: Some(now_str),
+        },
+    };
+    descriptions.insert(cid.to_owned(), updated.clone());
+    write_json(
+        &path,
+        &descriptions,
+        JsonWriteOptions {
+            mode: Some(0o600),
+            ..JsonWriteOptions::default()
+        },
+    )
+    .map_err(DescriptionMutationError::Write)?;
+    Ok(updated)
 }
 
 /// Remove a client description entry under an already-held authorization lock.

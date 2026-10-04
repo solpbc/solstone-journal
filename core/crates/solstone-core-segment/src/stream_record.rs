@@ -16,6 +16,7 @@ use solstone_core_journal_io::{
 use caseless::default_case_fold_str;
 use sha2::{Digest, Sha256};
 
+use crate::continuity::{ContinuationBinding, continuation_binding};
 use crate::device::validate_cid;
 use crate::projection::{name_with_ordinal, paired_name_with_suffix, project_paired_stream_base};
 use crate::{Kind, SegmentDir, SegmentError, is_safe_stream_component, project_stream_name};
@@ -240,13 +241,19 @@ fn bind_allocated_stream(
         let name = {
             let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
             let registry_lock = hold_lock(registry_target, LockOptions::default())?;
-            allocate(&registry_lock, binding)?
+            match continuation_binding(journal, cid, source)? {
+                ContinuationBinding::Tail(name) => name,
+                ContinuationBinding::Ancestor(name) => {
+                    return Err(SegmentError::StreamBindingConflict { name });
+                }
+                ContinuationBinding::None => allocate(&registry_lock, binding)?,
+            }
         };
         let segment_dir = SegmentDir::resolve(journal, day, segment, &name)?;
         let state_path = stream_record_path(journal, &name);
         let _lock = hold_lock(&state_path, LockOptions::default())?;
         match read_typed_stream_record(&state_path)? {
-            Some(record) if !binding_matches(&record, binding) => {
+            Some(record) if !binding_matches_or_tail(journal, &name, &record, binding)? => {
                 // A non-native writer may have replaced a reservation after the
                 // registry lock was released. Re-enter allocation rather than
                 // adopting its record.
@@ -284,17 +291,24 @@ pub fn bind_named_stream(
     let binding = StreamBinding { cid, source };
     let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
     let _registry_lock = hold_lock(registry_target, LockOptions::default())?;
-    let state_path = stream_record_path(journal, name);
+    let name = match continuation_binding(journal, cid, source)? {
+        ContinuationBinding::Tail(name) => name,
+        ContinuationBinding::Ancestor(name) => {
+            return Err(SegmentError::StreamBindingConflict { name });
+        }
+        ContinuationBinding::None => name.to_owned(),
+    };
+    let state_path = stream_record_path(journal, &name);
     let _record_lock = hold_lock(&state_path, LockOptions::default())?;
-    if let Some((found, _)) = read_registry_records(journal)?
-        .iter()
-        .find(|(_, record)| binding_matches(record, binding))
-    {
-        let stream = found.clone();
-        return Ok(BoundStream {
-            stream: stream.clone(),
-            segment: SegmentDir::resolve(journal, day, segment, &stream)?,
-        });
+    for (found, record) in read_registry_records(journal)? {
+        if binding_matches(&record, binding)
+            || (found == name && binding_matches_or_tail(journal, &found, &record, binding)?)
+        {
+            return Ok(BoundStream {
+                stream: found.clone(),
+                segment: SegmentDir::resolve(journal, day, segment, &found)?,
+            });
+        }
     }
     match read_typed_stream_record(&state_path)? {
         Some(record) if is_unattributed(&record) => {
@@ -309,7 +323,7 @@ pub fn bind_named_stream(
             });
         }
         None => {
-            let record = reservation_record(name.to_owned(), binding, hints, None)?;
+            let record = reservation_record(name.clone(), binding, hints, None)?;
             let bytes =
                 serde_json::to_vec(&record).map_err(|source| SegmentError::Serialization {
                     path: state_path.clone(),
@@ -321,7 +335,8 @@ pub fn bind_named_stream(
                     if source.kind() == std::io::ErrorKind::AlreadyExists =>
                 {
                     match read_typed_stream_record(&state_path)? {
-                        Some(record) if binding_matches(&record, binding) => {}
+                        Some(record)
+                            if binding_matches_or_tail(journal, &name, &record, binding)? => {}
                         Some(record) if is_unattributed(&record) => {
                             let mut attributed = record;
                             attributed.cid = Some(binding.cid.to_owned());
@@ -329,9 +344,7 @@ pub fn bind_named_stream(
                             write_stream_record(&state_path, &attributed)?;
                         }
                         Some(_) => {
-                            return Err(SegmentError::StreamBindingConflict {
-                                name: name.to_owned(),
-                            });
+                            return Err(SegmentError::StreamBindingConflict { name: name.clone() });
                         }
                         None => {
                             return Err(SegmentError::Io {
@@ -350,7 +363,7 @@ pub fn bind_named_stream(
     }
     Ok(BoundStream {
         stream: name.to_owned(),
-        segment: SegmentDir::resolve(journal, day, segment, name)?,
+        segment: SegmentDir::resolve(journal, day, segment, &name)?,
     })
 }
 
@@ -944,7 +957,8 @@ fn advance_stream(
     let _lock = hold_lock(&state_path, LockOptions::default())?;
     let record = read_typed_stream_record(&state_path)?;
     if let Some(record) = record.as_ref()
-        && (record.name != name || !binding_matches(record, binding))
+        && (record.name != name
+            || !binding_matches_or_tail(&segment_dir.journal, name, record, binding)?)
     {
         return Err(SegmentError::StreamBindingConflict {
             name: name.to_owned(),
@@ -1098,6 +1112,9 @@ pub(crate) fn registry_json_paths(journal: &Path) -> Result<Vec<PathBuf>, Segmen
                 source,
             })?
             .is_file()
+            && path
+                .file_name()
+                .is_none_or(|name| name != "continuity.json")
             && path
                 .extension()
                 .is_some_and(|extension| extension == "json")
@@ -1312,6 +1329,22 @@ fn update_unbound_record(
 
 fn binding_matches(record: &StreamRecord, binding: StreamBinding<'_>) -> bool {
     record.cid.as_deref() == Some(binding.cid) && record.source.as_deref() == Some(binding.source)
+}
+
+fn binding_matches_or_tail(
+    journal: &Path,
+    stream: &str,
+    record: &StreamRecord,
+    binding: StreamBinding<'_>,
+) -> Result<bool, SegmentError> {
+    if record.source.as_deref() != Some(binding.source) {
+        return Ok(false);
+    }
+    match continuation_binding(journal, binding.cid, binding.source)? {
+        ContinuationBinding::Tail(name) => Ok(name == stream),
+        ContinuationBinding::Ancestor(_) => Ok(false),
+        ContinuationBinding::None => Ok(binding_matches(record, binding)),
+    }
 }
 
 fn is_unattributed(record: &StreamRecord) -> bool {

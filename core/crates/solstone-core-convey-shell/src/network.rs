@@ -2090,6 +2090,7 @@ mod tests {
         let basis = AccessBasis::LinkedDevice {
             cid,
             carrier: Carrier::Direct,
+            leaf_spki: vec![0x30, 0x00],
         };
 
         for prefix in NETWORK_ROUTE_PREFIXES {

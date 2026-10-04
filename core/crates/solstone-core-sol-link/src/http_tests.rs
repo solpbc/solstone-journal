@@ -41,6 +41,7 @@ async fn init_routes_reject_linked_devices_and_serve_localhost() {
             AccessBasis::LinkedDevice {
                 carrier: Carrier::Direct,
                 cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+                leaf_spki: vec![0x30, 0x00],
             },
             method.clone(),
             path,

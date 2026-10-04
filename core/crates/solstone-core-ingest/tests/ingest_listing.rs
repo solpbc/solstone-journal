@@ -42,6 +42,7 @@ fn basis(cid: &str) -> AccessBasis {
     AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
         cid: LinkedDeviceCid::try_from(cid).expect("valid test cid"),
+        leaf_spki: vec![0x30, 0x00],
     }
 }
 

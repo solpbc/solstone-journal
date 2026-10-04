@@ -9,6 +9,10 @@ pub mod release_manifest;
 pub mod windows_crosscheck;
 pub mod windows_suite;
 
+#[cfg(test)]
+#[path = "contracts/device_migration_contract.rs"]
+mod device_migration_contract;
+
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/authorization_ledger_remove_bounded.rs"]
 mod authorization_ledger_remove_bounded;

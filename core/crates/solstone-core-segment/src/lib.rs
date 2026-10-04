@@ -20,6 +20,7 @@
 
 mod chronicle_migration;
 mod content_name;
+mod continuity;
 mod device;
 mod document_migration;
 mod error;
@@ -41,6 +42,11 @@ pub use chronicle_migration::{
 };
 pub use content_name::{
     ContentName, ContentNameError, RESERVED_SEGMENT_FILENAMES, is_reserved_name,
+};
+pub use continuity::{
+    ContinuationBinding, ContinuityDocument, ContinuityRecord, TakeoverGuard, TakeoverPlan,
+    TakeoverSourcePlan, continuation_binding, read_continuity, receipt_cids_for_stream,
+    visible_stream_names, with_takeover_stream_boundary,
 };
 pub use device::{
     AiChatSource, DeviceSidecarInput, ImportSource, Kind, is_valid_device_cid, write_device,

@@ -5,9 +5,10 @@ use std::path::Path;
 
 use axum::http::StatusCode;
 use solstone_core_segment::{
-    BoundStream, PairedStreamBase, SegmentError, StreamAllocationBase, StreamHints,
-    bind_named_stream, bind_paired_stream, lookup_stream,
+    BoundStream, ContinuationBinding, PairedStreamBase, SegmentError, StreamAllocationBase,
+    StreamHints, bind_named_stream, bind_paired_stream, continuation_binding, lookup_stream,
 };
+use solstone_core_sol_link::device_migration::ingest_blocked;
 use solstone_core_sol_link::ledger::AuthorizationLedger;
 use solstone_core_sol_link::{ClientLabelState, PairingIdentity, PlatformState};
 
@@ -22,6 +23,38 @@ pub(crate) fn bind_ingest_stream(
     source: &str,
     hints: &StreamHints,
 ) -> Result<BoundStream, (ReasonCode, StatusCode, String)> {
+    match ingest_blocked(journal, cid) {
+        Ok(false) => {}
+        Ok(true) | Err(_) => {
+            return Err((
+                ReasonCode::JournalWriteFailed,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "ingest is temporarily unavailable; retry the request".to_owned(),
+            ));
+        }
+    }
+    match continuation_binding(journal, cid, source) {
+        Ok(ContinuationBinding::Tail(name)) => {
+            return map_named_bind(bind_named_stream(
+                journal, day, segment, &name, cid, source, hints,
+            ));
+        }
+        Ok(ContinuationBinding::Ancestor(name)) => {
+            return Err((
+                ReasonCode::ForeignStreamBinding,
+                StatusCode::CONFLICT,
+                format!("stream {name} is bound to another device"),
+            ));
+        }
+        Ok(ContinuationBinding::None) => {}
+        Err(_) => {
+            return Err((
+                ReasonCode::JournalReadFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot resolve journal stream".to_owned(),
+            ));
+        }
+    }
     match lookup_stream(journal, cid, source) {
         Ok(Some(name)) => {
             return map_named_bind(bind_named_stream(
@@ -155,6 +188,8 @@ mod tests {
     use crate::model::ReasonCode;
 
     const CID: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const CID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const CID_C: &str = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
     const DAY: &str = "20260804";
     const SEGMENT: &str = "120000_1";
 
@@ -164,6 +199,52 @@ mod tests {
             host: None,
             platform: None,
         }
+    }
+
+    #[test]
+    fn prepared_takeover_blocks_both_involved_cids_before_registry_and_leaves_others_available() {
+        let root = journal();
+        let mut ledger = AuthorizationLedger::new(root.path());
+        for cid in [CID, CID_B, CID_C] {
+            ledger
+                .add(ClientEntry::new(
+                    cid,
+                    "phone",
+                    "2026-09-01T00:00:00Z",
+                    "instance",
+                    ClientRole::Roleless,
+                ))
+                .unwrap();
+        }
+        let decisions = root.path().join("link/device-migrations/decisions");
+        std::fs::create_dir_all(&decisions).unwrap();
+        std::fs::write(
+            decisions.join("123e4567-e89b-42d3-a456-426614174099.json"),
+            serde_json::json!({
+                "caller_cid": CID_B,
+                "decision_id": "123e4567-e89b-42d3-a456-426614174099",
+                "raw_body": [],
+                "choice": "replace_device",
+                "replaced_cid": CID,
+                "operation_id": null,
+                "continuity_plan": null,
+                "checkpoint": "prepared",
+                "order": 1
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        for cid in [CID, CID_B] {
+            let error =
+                bind_ingest_stream(root.path(), DAY, SEGMENT, cid, "audio", &hints()).unwrap_err();
+            assert_eq!(error.0, ReasonCode::JournalWriteFailed);
+            assert_eq!(error.1, StatusCode::SERVICE_UNAVAILABLE);
+            assert!(!error.2.contains("revoked"));
+        }
+        let unaffected =
+            bind_ingest_stream(root.path(), DAY, SEGMENT, CID_C, "audio", &hints()).unwrap();
+        assert!(!unaffected.stream.is_empty());
     }
 
     fn journal() -> tempfile::TempDir {
@@ -351,7 +432,12 @@ mod tests {
         fs::write(&path, record.to_string()).unwrap();
         let bound = bind(temporary.path()).expect("hit path does not consult the ledger");
         assert_eq!(bound.stream, "desk_01");
-        assert!(!temporary.path().join("link").exists());
+        assert!(
+            !temporary
+                .path()
+                .join("link/authorized_clients.json")
+                .exists()
+        );
     }
 
     #[test]

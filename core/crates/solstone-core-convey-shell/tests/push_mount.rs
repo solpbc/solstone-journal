@@ -29,6 +29,7 @@ fn basis() -> AccessBasis {
     AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
         cid: LinkedDeviceCid::try_from(CID_A).expect("fixture CID"),
+        leaf_spki: vec![0x30, 0x00],
     }
 }
 

@@ -13,6 +13,7 @@ use solstone_core_convey_http::identity::LinkedDeviceCid;
 use solstone_core_journal_io::{
     AtomicWriteError, JsonWriteOptions, LockError, LockOptions, hold_lock, write_json,
 };
+use solstone_core_sol_link::ledger::{AuthorizedClientsRead, read_authorized_clients};
 use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
 use crate::envelope::PushKey;
@@ -67,6 +68,8 @@ impl PushRegistry {
             },
         )
         .map_err(PushStoreError::Lock)?;
+
+        let _authorization_lock = self.hold_authorized_cid(cid)?;
 
         let loaded = self.read_registry()?;
         let mut devices = loaded.registry.devices;
@@ -158,6 +161,8 @@ impl PushRegistry {
             },
         )
         .map_err(PushStoreError::Lock)?;
+
+        let _authorization_lock = self.hold_authorized_cid(cid)?;
 
         let loaded = self.read_registry()?;
         let mut devices = loaded.registry.devices;
@@ -488,6 +493,34 @@ impl PushRegistry {
         })
     }
 
+    fn hold_authorized_cid(
+        &self,
+        cid: &LinkedDeviceCid,
+    ) -> Result<solstone_core_journal_io::FileLock, PushStoreError> {
+        let journal = self
+            .path
+            .parent()
+            .and_then(Path::parent)
+            .ok_or(PushStoreError::AuthorizationUnavailable)?;
+        let path = journal.join("link").join("authorized_clients.json");
+        let lock = hold_lock(&path, LockOptions::default()).map_err(PushStoreError::Lock)?;
+        match read_authorized_clients(&path) {
+            AuthorizedClientsRead::Present(entries)
+                if entries
+                    .iter()
+                    .any(|entry| entry.fingerprint == cid.as_str()) =>
+            {
+                Ok(lock)
+            }
+            AuthorizedClientsRead::Present(_) | AuthorizedClientsRead::Missing => {
+                Err(PushStoreError::Unauthorized)
+            }
+            AuthorizedClientsRead::Unreadable
+            | AuthorizedClientsRead::Malformed
+            | AuthorizedClientsRead::DuplicateCid => Err(PushStoreError::AuthorizationUnavailable),
+        }
+    }
+
     fn write_registry(&self, registry: &RegistryV2) -> Result<(), PushStoreError> {
         write_json(
             &self.path,
@@ -546,6 +579,8 @@ pub enum PushStoreError {
     Parse { path: PathBuf },
     InvalidRegistry { path: PathBuf, detail: &'static str },
     Write(AtomicWriteError),
+    Unauthorized,
+    AuthorizationUnavailable,
     Clock,
 }
 
@@ -565,6 +600,10 @@ impl fmt::Display for PushStoreError {
                 )
             }
             Self::Write(error) => error.fmt(formatter),
+            Self::Unauthorized => formatter.write_str("linked device is not authorized"),
+            Self::AuthorizationUnavailable => {
+                formatter.write_str("authorization ledger is unavailable")
+            }
             Self::Clock => formatter.write_str("could not format push registration timestamp"),
         }
     }
@@ -576,7 +615,11 @@ impl Error for PushStoreError {
             Self::Lock(error) => Some(error),
             Self::Read { source, .. } => Some(source),
             Self::Write(error) => Some(error),
-            Self::Parse { .. } | Self::InvalidRegistry { .. } | Self::Clock => None,
+            Self::Parse { .. }
+            | Self::InvalidRegistry { .. }
+            | Self::Unauthorized
+            | Self::AuthorizationUnavailable
+            | Self::Clock => None,
         }
     }
 }
@@ -816,10 +859,11 @@ pub(crate) fn parse_registered_at(value: &str) -> Option<OffsetDateTime> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::sync::{Arc, Barrier};
+    use std::sync::{Arc, Barrier, mpsc};
     use std::thread;
 
     use solstone_core_convey_http::identity::LinkedDeviceCid;
+    use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
     use tempfile::TempDir;
 
     use super::*;
@@ -835,11 +879,91 @@ mod tests {
     }
 
     fn registry(root: &TempDir) -> PushRegistry {
+        let mut ledger = AuthorizationLedger::new(root.path());
+        for value in [CID_A, CID_B] {
+            if !matches!(
+                read_authorized_clients(&root.path().join("link/authorized_clients.json")),
+                AuthorizedClientsRead::Present(ref entries)
+                    if entries.iter().any(|entry| entry.fingerprint == value)
+            ) {
+                ledger
+                    .add(ClientEntry::new(
+                        value,
+                        "test",
+                        "2026-01-01T00:00:00Z",
+                        "test-instance",
+                        ClientRole::Roleless,
+                    ))
+                    .expect("authorized test device");
+            }
+        }
         PushRegistry::new(root.path())
     }
 
     fn key() -> PushKey {
         PushKey::from_bytes(VALID_KEY)
+    }
+
+    #[test]
+    fn registration_refuses_revoked_cid_for_both_platforms() {
+        let root = TempDir::new_in("/var/tmp").expect("journal root");
+        let reg = registry(&root);
+        AuthorizationLedger::new(root.path())
+            .remove(CID_A)
+            .expect("revoke test device");
+
+        assert!(matches!(
+            reg.register_ios(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                key(),
+            ),
+            Err(PushStoreError::Unauthorized)
+        ));
+        assert!(matches!(
+            reg.register_android(
+                &cid(CID_A),
+                ENDPOINT_1.to_owned(),
+                ANDROID_P256DH.to_owned(),
+                ANDROID_AUTH.to_owned(),
+                key(),
+            ),
+            Err(PushStoreError::Unauthorized)
+        ));
+        assert!(!reg.path().exists());
+    }
+
+    #[test]
+    fn concurrent_registration_rechecks_authorization_after_waiting_for_push_lock() {
+        let root = TempDir::new_in("/var/tmp").expect("journal root");
+        let reg = registry(&root);
+        let push_lock = hold_lock(reg.path(), LockOptions::default()).unwrap();
+        let journal = root.path().to_path_buf();
+        let worker_registry = reg.clone();
+        let (started_tx, started_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            worker_registry.register_ios(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                key(),
+            )
+        });
+        started_rx.recv().unwrap();
+        AuthorizationLedger::new(&journal)
+            .remove(CID_A)
+            .expect("concurrent revocation");
+        drop(push_lock);
+
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(PushStoreError::Unauthorized)
+        ));
+        assert!(!reg.path().exists());
     }
 
     const ANDROID_P256DH: &str =

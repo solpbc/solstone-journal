@@ -11,6 +11,7 @@ use solstone_core_callosum::{DeviceIngestEvent, read_device_ingest_events};
 use solstone_core_ingest_resolve::SegmentTerminalProof;
 use solstone_core_segment::{
     ContentName, SegmentDir, TerminalProofVerifier, is_safe_stream_component, list_stream_segments,
+    receipt_cids_for_stream,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -79,6 +80,7 @@ pub(crate) fn native_events(
             .record_identity()
             .map_err(|_| ListingError::JournalRead)?;
         events.extend(segment_events(
+            journal_root,
             segment.path(),
             day,
             stream,
@@ -92,6 +94,7 @@ pub(crate) fn native_events(
 
 /// Read one segment's custody receipts without accepting corrupt or foreign rows.
 pub(crate) fn segment_events(
+    journal_root: &Path,
     path: &Path,
     day: &str,
     stream: &str,
@@ -99,10 +102,15 @@ pub(crate) fn segment_events(
     cid: &str,
     source: &str,
 ) -> Result<Vec<DeviceIngestEvent>, ListingError> {
+    let receipt_cids = receipt_cids_for_stream(journal_root, stream, cid, source)
+        .map_err(|_| ListingError::JournalRead)?;
+    if receipt_cids.is_empty() {
+        return Err(ListingError::JournalRead);
+    }
     let report = read_device_ingest_events(path).map_err(|_| ListingError::JournalRead)?;
     if report.unparseable > 0
         || report.records.iter().any(|event| {
-            event.cid != cid
+            !receipt_cids.contains(&event.cid)
                 || event.source != source
                 || event.stream != stream
                 || event.day != day
@@ -253,7 +261,20 @@ impl SegmentAccumulator {
 mod tests {
     use std::fs;
 
-    use super::{FileStatus, ListingError, ListingFile, SegmentAccumulator, resolve_file_status};
+    use serde_json::Map;
+    use solstone_core_callosum::{
+        DeviceIngestEvent, DurableEvent, FileDescriptor, append_durable_event,
+    };
+    use solstone_core_segment::{
+        Kind, PairedStreamBase, SegmentDir, StreamAllocationBase, StreamHints,
+        advance_bound_stream, bind_named_stream, bind_paired_stream, list_stream_segments,
+        with_takeover_stream_boundary,
+    };
+
+    use super::{
+        FileStatus, ListingError, ListingFile, SegmentAccumulator, native_events,
+        resolve_file_status, segment_events,
+    };
 
     fn entry(
         name: &str,
@@ -348,5 +369,226 @@ mod tests {
                 .expect("status with depict record"),
             FileStatus::Present
         );
+    }
+
+    #[test]
+    fn continuity_a_to_b_to_c_reads_ancestor_receipts_and_rejects_unrelated() {
+        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let root = dir.path();
+        let stream = append_event(
+            root,
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            None,
+            "120000_1",
+        );
+        publish(
+            root,
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        append_event(
+            root,
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            Some(&stream),
+            "120100_1",
+        );
+        publish(
+            root,
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        );
+        append_event(
+            root,
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            Some(&stream),
+            "120200_1",
+        );
+
+        let events = native_events(
+            root,
+            "20261004",
+            Some(&stream),
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "audio",
+        )
+        .unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.cid.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            ]
+        );
+        assert!(
+            native_events(
+                root,
+                "20261004",
+                Some(&stream),
+                "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "audio",
+            )
+            .is_err()
+        );
+        assert!(
+            native_events(
+                root,
+                "20261004",
+                Some(&stream),
+                "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "video",
+            )
+            .is_err()
+        );
+        assert!(
+            native_events(
+                root,
+                "20261004",
+                Some("unrelated"),
+                "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "audio",
+            )
+            .unwrap()
+            .is_empty()
+        );
+
+        let segment = list_stream_segments(root, "20261004", &stream)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let identity = segment.record_identity().unwrap();
+        assert!(
+            segment_events(
+                root,
+                segment.path(),
+                "20261004",
+                "unrelated",
+                identity.name,
+                "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "audio",
+            )
+            .is_err()
+        );
+        append_durable_event(
+            segment.path(),
+            &DurableEvent::DeviceIngest(DeviceIngestEvent {
+                record_type: "device_ingest".to_owned(),
+                record_version: 1,
+                outcome: "accepted".to_owned(),
+                protocol_version: 3,
+                cid: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                    .to_owned(),
+                source: "audio".to_owned(),
+                stream: stream.clone(),
+                day: "20261004".to_owned(),
+                segment: identity.name.to_owned(),
+                files: Vec::new(),
+                meta: Map::new(),
+                extra: Map::new(),
+            }),
+        )
+        .unwrap();
+        assert!(
+            native_events(
+                root,
+                "20261004",
+                Some(&stream),
+                "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "audio",
+            )
+            .is_err()
+        );
+
+        let rejected = crate::stream_identity::bind_ingest_stream(
+            root,
+            "20261004",
+            "120300_1",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "audio",
+            &hints(),
+        );
+        assert!(rejected.is_err(), "a historical CID cannot upload");
+    }
+
+    fn hints() -> StreamHints {
+        StreamHints {
+            kind: Some(Kind::Observed),
+            host: None,
+            platform: None,
+        }
+    }
+
+    fn append_event(
+        root: &std::path::Path,
+        cid: &str,
+        stream: Option<&str>,
+        segment: &str,
+    ) -> String {
+        let bound = match stream {
+            Some(stream) => {
+                bind_named_stream(root, "20261004", segment, stream, cid, "audio", &hints())
+                    .unwrap()
+            }
+            None => bind_paired_stream(
+                root,
+                "20261004",
+                segment,
+                &PairedStreamBase {
+                    origin: StreamAllocationBase::Device,
+                    input: "phone",
+                },
+                cid,
+                "audio",
+                &hints(),
+            )
+            .unwrap(),
+        };
+        let segment_dir = SegmentDir::resolve(root, "20261004", segment, &bound.stream).unwrap();
+        advance_bound_stream(
+            &bound.stream,
+            "20261004",
+            segment,
+            &segment_dir,
+            hints(),
+            cid,
+            "audio",
+        )
+        .unwrap();
+        let event = DeviceIngestEvent {
+            record_type: "device_ingest".to_owned(),
+            record_version: 1,
+            outcome: "ok".to_owned(),
+            protocol_version: 3,
+            cid: cid.to_owned(),
+            source: "audio".to_owned(),
+            stream: bound.stream.clone(),
+            day: "20261004".to_owned(),
+            segment: segment.to_owned(),
+            files: vec![FileDescriptor {
+                submitted: "capture.json".to_owned(),
+                written: "capture.json".to_owned(),
+                size: 1,
+                sha256: "a".repeat(64),
+                extra: Map::new(),
+            }],
+            meta: Map::new(),
+            extra: Map::new(),
+        };
+        append_durable_event(segment_dir.path(), &DurableEvent::DeviceIngest(event)).unwrap();
+        bound.stream
+    }
+
+    fn publish(root: &std::path::Path, adopted: &str, retired: &str) {
+        with_takeover_stream_boundary(root, adopted, retired, |guard| {
+            let plan = guard.plan(adopted, retired);
+            guard.publish(&plan).unwrap();
+            Ok(())
+        })
+        .unwrap();
     }
 }

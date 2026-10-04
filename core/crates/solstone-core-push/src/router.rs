@@ -1333,6 +1333,7 @@ mod tests {
         AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             cid: LinkedDeviceCid::try_from(cid).expect("fixture CID"),
+            leaf_spki: vec![0x30, 0x00],
         }
     }
 
@@ -1552,6 +1553,7 @@ mod tests {
     #[tokio::test]
     async fn register_at_t1_is_created_and_same_pair_at_t2_updates_key() {
         let root = root();
+        setup_authorized_client(root.path(), CID_A);
         let app = api_router(root.path(), PORTAL_URL);
 
         let t1 = OffsetDateTime::from_unix_timestamp(1_758_672_000).unwrap();
@@ -1629,6 +1631,7 @@ mod tests {
     async fn push_key_is_absent_from_responses_logs_and_debug() {
         test_log::clear_current_thread();
         let root = root();
+        setup_authorized_client(root.path(), CID_A);
         let app = api_router(root.path(), PORTAL_URL);
         set_test_clock(None);
 
@@ -1751,6 +1754,7 @@ mod tests {
     #[tokio::test]
     async fn registration_validation_names_the_failing_field() {
         let root = root();
+        setup_authorized_client(root.path(), CID_A);
         let app = api_router(root.path(), PORTAL_URL);
         set_test_clock(None);
 
@@ -2266,6 +2270,8 @@ mod tests {
     #[tokio::test]
     async fn cid_and_token_rows_stay_unless_that_pair_is_replaced() {
         let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        setup_authorized_client(root.path(), CID_B);
         let app = api_router(root.path(), PORTAL_URL);
         set_test_clock(None);
 
@@ -2357,6 +2363,7 @@ mod tests {
     async fn legacy_v1_is_empty_until_a_write_discards_it() {
         test_log::clear_current_thread();
         let root_legacy = root();
+        setup_authorized_client(root_legacy.path(), CID_A);
         let app = api_router(root_legacy.path(), PORTAL_URL);
         set_test_clock(None);
 
@@ -2411,6 +2418,7 @@ mod tests {
 
         test_log::clear_current_thread();
         let root_empty_v1 = root();
+        setup_authorized_client(root_empty_v1.path(), CID_A);
         let app_empty_v1 = api_router(root_empty_v1.path(), PORTAL_URL);
         let reg_empty_path = root_empty_v1.path().join("config/push-registry.json");
         fs::create_dir_all(root_empty_v1.path().join("config")).unwrap();
@@ -2676,6 +2684,7 @@ mod tests {
     async fn push_test_omits_unauthorized_rows_and_returns_503_if_none_remain() {
         let root = root();
         setup_authorized_client(root.path(), CID_A);
+        setup_authorized_client(root.path(), CID_B);
         let transport = Arc::new(MockTransport::default());
         let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
 
@@ -2691,6 +2700,9 @@ mod tests {
         )
         .await;
         assert_eq!(s, StatusCode::CREATED);
+        solstone_core_sol_link::ledger::AuthorizationLedger::new(root.path())
+            .remove(CID_B)
+            .expect("test device is revoked before push test");
 
         // Test should omit CID_B and return 503 feature_unavailable with zero transport calls
         let (status, body) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
@@ -2783,6 +2795,7 @@ mod tests {
             },
         ] {
             let root = root();
+            setup_authorized_client(root.path(), CID_A);
             let reg_body = valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64);
             let app_reg = api_router(root.path(), PORTAL_URL);
             let (s, _) = call(
@@ -2795,6 +2808,7 @@ mod tests {
             .await;
             assert_eq!(s, StatusCode::CREATED);
 
+            fs::remove_file(root.path().join("link/authorized_clients.json")).unwrap();
             setup_bad_ledger(root.path());
 
             let transport = Arc::new(MockTransport::default());
@@ -3613,6 +3627,8 @@ mod tests {
     #[tokio::test]
     async fn android_web_push_registration_lifecycle_and_delete() {
         let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        setup_authorized_client(root.path(), CID_B);
         let app = api_router(root.path(), PORTAL_URL);
         set_test_clock(None);
 

@@ -117,6 +117,7 @@ mod assets;
 pub mod authorization_gate;
 mod body;
 mod clients;
+mod device_migration;
 #[cfg(test)]
 mod devices_source_retired;
 #[cfg(feature = "host")]

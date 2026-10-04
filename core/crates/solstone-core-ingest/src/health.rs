@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use solstone_core_segment::{list_days, list_stream_bindings};
+use solstone_core_segment::{list_days, list_stream_bindings, read_continuity};
 
 use crate::listing::{ListingError, merge_day_listing, native_events};
 use crate::model::ReasonCode;
@@ -39,6 +39,8 @@ pub fn device_day_listing_faults(
         .into_iter()
         .filter(|binding| binding.seq > 0)
         .collect::<Vec<_>>();
+    let continuity = read_continuity(journal_root)
+        .map_err(|error| format!("stream continuity unreadable: {error}"))?;
     if bindings.is_empty() {
         return Ok(None);
     }
@@ -51,11 +53,17 @@ pub fn device_day_listing_faults(
     let mut faults = Vec::new();
     for day in days.into_iter().rev().take(recent_days) {
         for binding in &bindings {
+            let cid = continuity
+                .streams
+                .get(&binding.name)
+                .filter(|record| record.source == binding.source)
+                .and_then(|record| record.writers.last())
+                .unwrap_or(&binding.cid);
             let listing = native_events(
                 journal_root,
                 &day,
                 Some(&binding.name),
-                &binding.cid,
+                cid,
                 &binding.source,
             )
             .and_then(|events| merge_day_listing(journal_root, &day, events));

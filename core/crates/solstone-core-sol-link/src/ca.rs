@@ -146,6 +146,13 @@ pub fn generate_ca() -> Result<LocalCa, CaError> {
     })
 }
 
+/// Extract the full SubjectPublicKeyInfo DER from a peer certificate leaf.
+pub fn leaf_spki_from_der(certificate_der: &[u8]) -> Option<Vec<u8>> {
+    let (_, certificate) = x509_parser::parse_x509_certificate(certificate_der).ok()?;
+    let spki = certificate.tbs_certificate.subject_pki.raw;
+    (!spki.is_empty()).then(|| spki.to_vec())
+}
+
 pub fn load_ca(certificate_pem: &str, private_key_pem: &str) -> Result<LocalCa, CaError> {
     let (_, pem) = parse_x509_pem(certificate_pem.as_bytes())
         .map_err(|_| CaError::InvalidCa("certificate PEM could not be parsed"))?;

@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
+use solstone_core_journal_io::FileLock;
 use solstone_core_journal_io::{JsonWriteOptions, LockError, LockOptions, hold_lock, write_json};
 #[cfg(windows)]
 use solstone_core_journal_io::{WindowsFileIdentity, windows_file_identity};
@@ -577,9 +578,18 @@ impl AuthorizationLedger {
 
     pub fn add(
         &mut self,
+        entry: ClientEntry,
+    ) -> Result<ClientEntry, AuthorizedClientsMutationError> {
+        let authorization_lock = lock(&self.authorized_clients_path)?;
+        self.add_locked(&authorization_lock, entry)
+    }
+
+    /// Add a row while the caller holds this ledger's authorization lock.
+    pub(crate) fn add_locked(
+        &mut self,
+        _authorization_lock: &FileLock,
         mut entry: ClientEntry,
     ) -> Result<ClientEntry, AuthorizedClientsMutationError> {
-        let _authorization_lock = lock(&self.authorized_clients_path)?;
         let mut clients = load_authorized_for_mutation(&self.authorized_clients_path)
             .map_err(AuthorizedClientsMutationError::Load)?;
         if let Some(existing) = clients.get(&entry.fingerprint) {
@@ -830,7 +840,16 @@ impl AuthorizationLedger {
         &mut self,
         fingerprint: &str,
     ) -> Result<RemoveOutcome, AuthorizedClientsMutationError> {
-        let _authorization_lock = lock(&self.authorized_clients_path)?;
+        let authorization_lock = lock(&self.authorized_clients_path)?;
+        self.remove_locked(&authorization_lock, fingerprint)
+    }
+
+    /// Remove a row while the caller holds this ledger's authorization lock.
+    pub(crate) fn remove_locked(
+        &mut self,
+        _authorization_lock: &FileLock,
+        fingerprint: &str,
+    ) -> Result<RemoveOutcome, AuthorizedClientsMutationError> {
         let mut clients = load_authorized_for_mutation(&self.authorized_clients_path)
             .map_err(AuthorizedClientsMutationError::Load)?;
         if !clients.remove(fingerprint) {

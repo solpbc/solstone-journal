@@ -407,6 +407,7 @@ mod tests {
             AccessBasis::LinkedDevice {
                 carrier: Carrier::Direct,
                 cid,
+                leaf_spki: vec![0x30, 0x00],
             },
             b"",
         )
@@ -433,6 +434,7 @@ mod tests {
             AccessBasis::LinkedDevice {
                 carrier: Carrier::Direct,
                 cid,
+                leaf_spki: vec![0x30, 0x00],
             },
             b"",
         )

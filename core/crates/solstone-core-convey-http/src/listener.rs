@@ -87,6 +87,7 @@ mod tests {
         let direct = duplex_probe(AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+            leaf_spki: vec![0x30, 0x00],
         })
         .await;
         assert!(direct.contains("LinkedDevice { carrier: Direct, cid: LinkedDeviceCid"));
@@ -94,6 +95,7 @@ mod tests {
         let via_spl = duplex_probe(AccessBasis::LinkedDevice {
             carrier: Carrier::ViaSpl,
             cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+            leaf_spki: vec![0x30, 0x00],
         })
         .await;
         assert!(via_spl.contains("LinkedDevice { carrier: ViaSpl, cid: LinkedDeviceCid"));

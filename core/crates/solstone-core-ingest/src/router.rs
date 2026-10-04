@@ -783,6 +783,7 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
         Vec::new()
     } else {
         match crate::listing::segment_events(
+            &state.journal_root,
             applied.segment.path(),
             &envelope.day,
             &bound.stream,
@@ -1524,6 +1525,7 @@ mod tests {
         AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             cid: LinkedDeviceCid::try_from(cid).unwrap(),
+            leaf_spki: vec![0x30, 0x00],
         }
     }
 

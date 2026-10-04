@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Solstone device migration v1",
+  "x-solstone-rust-source": "core/crates/solstone-core-sol-link/src/device_migration.rs",
+  "x-solstone-regeneration-command": "cargo test --manifest-path core/Cargo.toml -p solstone-core-repository-contracts --lib device_migration_contract::regenerate_device_migration_contract -- --ignored",
+  "type": "object",
+  "$defs": {
+    "choice": {
+      "type": "string",
+      "enum": [
+        "new_device",
+        "same_device",
+        "replace_device"
+      ]
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "none",
+        "pending",
+        "new_device",
+        "same_device",
+        "replaced_device"
+      ]
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "migration_request_invalid",
+        "migration_protocol_unsupported",
+        "migration_csr_invalid",
+        "migration_key_not_fresh",
+        "migration_forbidden",
+        "migration_replay_forbidden",
+        "paired_device_not_found",
+        "migration_operation_conflict",
+        "migration_proof_missing",
+        "migration_already_decided",
+        "migration_self_replacement",
+        "migration_target_conflict",
+        "migration_state_unavailable"
+      ]
+    },
+    "rekey_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "operation_id",
+        "csr",
+        "device_label"
+      ],
+      "properties": {
+        "protocol": {
+          "const": 1
+        },
+        "operation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "csr": {
+          "type": "string"
+        },
+        "device_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      }
+    },
+    "decision_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "decision_id",
+        "choice"
+      ],
+      "properties": {
+        "protocol": {
+          "const": 1
+        },
+        "decision_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "choice": {
+          "$ref": "#/$defs/choice"
+        },
+        "replaces_cid": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "choice": {
+                "const": "replace_device"
+              }
+            },
+            "required": [
+              "choice"
+            ]
+          },
+          "then": {
+            "required": [
+              "replaces_cid"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "choice": {
+                "enum": [
+                  "new_device",
+                  "same_device"
+                ]
+              }
+            },
+            "required": [
+              "choice"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "replaces_cid"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "rekey_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "operation_id",
+        "state",
+        "cid",
+        "previous_cid",
+        "pairing"
+      ],
+      "properties": {
+        "protocol": {
+          "const": 1
+        },
+        "operation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "const": "pending"
+        },
+        "cid": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "previous_cid": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "pairing": {
+          "type": "object"
+        }
+      }
+    },
+    "migration_view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "state",
+        "operation_id",
+        "decision_id",
+        "previous_cid",
+        "replaced_cid"
+      ],
+      "properties": {
+        "protocol": {
+          "const": 1
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "operation_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "previous_cid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replaced_cid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

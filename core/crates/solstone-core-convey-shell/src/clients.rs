@@ -8,11 +8,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Json;
 use axum::Router;
+use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_sol_link::client_description::{
@@ -28,6 +30,7 @@ use solstone_core_sol_link::client_status::{
     ClientLedgerUnavailable, ClientReach, ConnectionFreshness, ConnectionGroup, ConnectionState,
     SourceDelivery, inspect_clients_at,
 };
+use solstone_core_sol_link::device_migration::{MigrationError, migration_state, rekey};
 
 use crate::JournalRoot;
 
@@ -73,6 +76,16 @@ pub(crate) fn router(prefix: &str) -> Router {
                 .layer(DefaultBodyLimit::max(16 * 1024)),
         )
         .route(
+            &format!("{prefix}/api/clients/self/rekey"),
+            axum::routing::post(rekey_device).layer(DefaultBodyLimit::max(16 * 1024)),
+        )
+        .route(
+            &format!("{prefix}/api/clients/self/migration"),
+            get(get_migration)
+                .put(put_migration)
+                .layer(DefaultBodyLimit::max(16 * 1024)),
+        )
+        .route(
             &format!("{prefix}/api/clients/{{cid}}"),
             axum::routing::delete(delete_client),
         )
@@ -80,6 +93,92 @@ pub(crate) fn router(prefix: &str) -> Router {
             &format!("{prefix}/api/clients/{{cid}}/label"),
             axum::routing::patch(patch_label).layer(DefaultBodyLimit::max(16 * 1024)),
         )
+}
+
+async fn rekey_device(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    basis: Option<Extension<AccessBasis>>,
+    body: Result<Bytes, axum::extract::rejection::BytesRejection>,
+) -> Response {
+    let Some((cid, leaf_spki)) = migration_caller(basis) else {
+        return migration_forbidden();
+    };
+    let body = match body {
+        Ok(body) => body,
+        Err(_) => return migration_error(MigrationError {
+            reason: solstone_core_sol_link::device_migration::MigrationReasonCode::MigrationRequestInvalid,
+        }),
+    };
+    match rekey(&root.0, &cid, &leaf_spki, &body) {
+        Ok(outcome) => {
+            let status = if outcome.created {
+                StatusCode::CREATED
+            } else {
+                StatusCode::OK
+            };
+            (status, Json(outcome.response)).into_response()
+        }
+        Err(error) => migration_error(error),
+    }
+}
+
+async fn get_migration(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    basis: Option<Extension<AccessBasis>>,
+) -> Response {
+    let Some((cid, _)) = migration_caller(basis) else {
+        return migration_forbidden();
+    };
+    match migration_state(&root.0, &cid) {
+        Ok(view) => Json(view).into_response(),
+        Err(error) => migration_error(error),
+    }
+}
+
+async fn put_migration(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    basis: Option<Extension<AccessBasis>>,
+    body: Result<Bytes, axum::extract::rejection::BytesRejection>,
+) -> Response {
+    let Some((cid, _)) = migration_caller(basis) else {
+        return migration_forbidden();
+    };
+    let body = match body {
+        Ok(body) => body,
+        Err(_) => return migration_error(MigrationError {
+            reason: solstone_core_sol_link::device_migration::MigrationReasonCode::MigrationRequestInvalid,
+        }),
+    };
+    match crate::device_migration::decide_and_resume(&root.0, &cid, &body) {
+        Ok(view) => Json(view).into_response(),
+        Err(error) => migration_error(error),
+    }
+}
+
+fn migration_caller(basis: Option<Extension<AccessBasis>>) -> Option<(String, Vec<u8>)> {
+    match basis.map(|Extension(basis)| basis) {
+        Some(AccessBasis::LinkedDevice { cid, leaf_spki, .. }) => {
+            Some((cid.as_str().to_owned(), leaf_spki))
+        }
+        Some(AccessBasis::Localhost | AccessBasis::PairingPeer { .. }) | None => None,
+    }
+}
+
+fn migration_forbidden() -> Response {
+    error_envelope(
+        "migration_forbidden",
+        "migration_forbidden",
+        "migration_forbidden",
+        StatusCode::FORBIDDEN,
+    )
+    .into_response()
+}
+
+fn migration_error(error: MigrationError) -> Response {
+    let code = error.reason_code();
+    let status =
+        StatusCode::from_u16(error.status_code()).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
+    error_envelope(code, code, code, status).into_response()
 }
 
 pub(crate) async fn redirect_app() -> Redirect {
@@ -648,6 +747,7 @@ mod tests {
             Some(AccessBasis::LinkedDevice {
                 cid,
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             }),
         ] {
             let mut req = Request::get("/app/network/api/clients")
@@ -712,6 +812,30 @@ mod tests {
             assert_eq!(row["capture_state"], "degraded");
             assert!(row["failing"].as_bool().expect("failing boolean"));
             assert!(row["source_delivery"].is_null());
+        }
+    }
+
+    #[tokio::test]
+    async fn migration_get_is_mounted_on_both_network_prefixes() {
+        let cid = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid, "phone")]));
+        let app = crate::router(journal.0.path().to_path_buf());
+
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let mut req = Request::get(format!("{prefix}/api/clients/self/migration"))
+                .body(Body::empty())
+                .expect("request");
+            req.extensions_mut().insert(AccessBasis::LinkedDevice {
+                carrier: Carrier::Direct,
+                cid: LinkedDeviceCid::try_from(cid).expect("fixture cid"),
+                leaf_spki: vec![0x30, 0x00],
+            });
+            let (status, body) = request(app.clone(), req).await;
+            assert_eq!(status, StatusCode::OK, "{prefix}");
+            assert_eq!(body["protocol"], 1);
+            assert_eq!(body["state"], "none");
+            assert!(body["replaced_cid"].is_null());
         }
     }
 
@@ -1065,6 +1189,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid: cid.clone(),
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             });
         let (status, body) = request(app.clone(), req_direct).await;
         assert_eq!(status, StatusCode::OK);
@@ -1091,6 +1216,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid: cid.clone(),
                 carrier: Carrier::ViaSpl,
+                leaf_spki: vec![0x30, 0x00],
             });
         let (status, body) = request(app.clone(), req_viaspl).await;
         assert_eq!(status, StatusCode::OK);
@@ -1151,6 +1277,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid: cid.clone(),
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             });
         let (status, body) = request(app.clone(), req_invalid).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1173,6 +1300,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid: cid.clone(),
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             });
         let (status, body) = request(app.clone(), req_conflict).await;
         assert_eq!(status, StatusCode::CONFLICT);
@@ -1208,6 +1336,7 @@ mod tests {
             .insert(AccessBasis::LinkedDevice {
                 cid: cid.clone(),
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             });
         let (status, body) = request(app.clone(), req_valid).await;
         assert_eq!(status, StatusCode::OK);
@@ -1229,6 +1358,7 @@ mod tests {
         req_get.extensions_mut().insert(AccessBasis::LinkedDevice {
             cid: cid.clone(),
             carrier: Carrier::Direct,
+            leaf_spki: vec![0x30, 0x00],
         });
         let (status, body) = request(app.clone(), req_get).await;
         assert_eq!(status, StatusCode::OK);
@@ -1259,6 +1389,7 @@ mod tests {
                 .insert(AccessBasis::LinkedDevice {
                     cid: cid.clone(),
                     carrier: Carrier::Direct,
+                    leaf_spki: vec![0x30, 0x00],
                 });
             let (status, body) = request(sep_app.clone(), req_patch_remote).await;
             assert_eq!(status, StatusCode::OK, "{prefix}");
@@ -1332,6 +1463,7 @@ mod tests {
         req_put.extensions_mut().insert(AccessBasis::LinkedDevice {
             cid: cid.clone(),
             carrier: Carrier::Direct,
+            leaf_spki: vec![0x30, 0x00],
         });
         let (status, body) = request(app.clone(), req_put).await;
         assert_eq!(status, StatusCode::OK);
@@ -1398,6 +1530,7 @@ mod tests {
             req.extensions_mut().insert(AccessBasis::LinkedDevice {
                 cid: cid.clone(),
                 carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
             });
             req
         };

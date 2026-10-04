@@ -57,6 +57,7 @@ pub enum AccessBasis {
     LinkedDevice {
         carrier: Carrier,
         cid: LinkedDeviceCid,
+        leaf_spki: Vec<u8>,
     },
     /// An accepted cert-less carrier restricted by the door's pairing confinement.
     PairingPeer {
@@ -79,7 +80,11 @@ mod tests {
         fn assert_access_basis_is_exhaustive(basis: AccessBasis) {
             match basis {
                 AccessBasis::Localhost => {}
-                AccessBasis::LinkedDevice { carrier: _, cid: _ } => {}
+                AccessBasis::LinkedDevice {
+                    carrier: _,
+                    cid: _,
+                    leaf_spki: _,
+                } => {}
                 AccessBasis::PairingPeer { carrier: _ } => {}
             }
         }
@@ -96,6 +101,7 @@ mod tests {
         assert_access_basis_is_exhaustive(AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+            leaf_spki: vec![0x30, 0x00],
         });
         assert_access_basis_is_exhaustive(AccessBasis::PairingPeer {
             carrier: Carrier::Direct,

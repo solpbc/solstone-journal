@@ -72,6 +72,14 @@ where
     let value = format!("sha256:{}", spl_core::ca::sha256_hex(leaf.as_ref()));
     let cid = LinkedDeviceCid::try_from(value.as_str())
         .map_err(|_| io::Error::other("device-door peer certificate identifier is invalid"))?;
+    let (_, parsed_leaf) = x509_parser::parse_x509_certificate(leaf.as_ref())
+        .map_err(|_| io::Error::other("device-door peer certificate SPKI is invalid"))?;
+    let leaf_spki = parsed_leaf.tbs_certificate.subject_pki.raw.to_vec();
+    if leaf_spki.is_empty() {
+        return Err(io::Error::other(
+            "device-door peer certificate SPKI is invalid",
+        ));
+    }
     let builder = tcp_builder();
 
     serve_connection(
@@ -80,6 +88,7 @@ where
         AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             cid,
+            leaf_spki,
         },
         &builder,
     )
