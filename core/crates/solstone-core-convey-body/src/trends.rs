@@ -537,14 +537,19 @@ fn value_float(row: &NormalizedRow) -> Option<f64> {
         _ => None,
     }
 }
+pub(crate) fn finite_json_number(value: &Value) -> Option<f64> {
+    match value {
+        Value::Number(number) => number.as_f64(),
+        Value::String(text) => text.parse::<f64>().ok(),
+        _ => None,
+    }
+    .filter(|number| number.is_finite())
+}
+
 fn metadata_float(row: &NormalizedRow, key: &str) -> Option<f64> {
     match &row.metadata {
         FieldState::Present(Value::Object(metadata)) => {
-            metadata.get(key).and_then(|value| match value {
-                Value::Number(value) => value.as_f64(),
-                Value::String(value) => value.parse().ok(),
-                _ => None,
-            })
+            metadata.get(key).and_then(finite_json_number)
         }
         _ => None,
     }
