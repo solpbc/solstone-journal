@@ -41,6 +41,9 @@ pub enum RecordedOutcome {
     Empty,
     Refused,
     Error,
+    Stored,
+    Replayed,
+    Deleted,
     /// An admission with no outcome sibling. The call may or may not have run:
     /// the process that would have recorded which is the one that did not
     /// survive, so this value exists only here and never on disk.
@@ -55,6 +58,9 @@ impl RecordedOutcome {
             Self::Empty => "empty",
             Self::Refused => "refused",
             Self::Error => "error",
+            Self::Stored => "stored",
+            Self::Replayed => "replayed",
+            Self::Deleted => "deleted",
             Self::Uncertain => "uncertain",
         }
     }
@@ -68,6 +74,9 @@ impl RecordedOutcome {
             "empty" => Some(Self::Empty),
             "refused" => Some(Self::Refused),
             "error" => Some(Self::Error),
+            "stored" => Some(Self::Stored),
+            "replayed" => Some(Self::Replayed),
+            "deleted" => Some(Self::Deleted),
             "uncertain" => Some(Self::Uncertain),
             _ => None,
         }
@@ -79,6 +88,9 @@ impl RecordedOutcome {
             Outcome::Empty => Self::Empty,
             Outcome::Refused => Self::Refused,
             Outcome::Error => Self::Error,
+            Outcome::Stored => Self::Stored,
+            Outcome::Replayed => Self::Replayed,
+            Outcome::Deleted => Self::Deleted,
         }
     }
 }
@@ -750,7 +762,16 @@ mod tests {
         assert!(page.next.is_none());
 
         assert!(RecordedOutcome::from_token("anything").is_none());
-        for token in ["served", "empty", "refused", "error", "uncertain"] {
+        for token in [
+            "served",
+            "empty",
+            "refused",
+            "error",
+            "uncertain",
+            "stored",
+            "replayed",
+            "deleted",
+        ] {
             assert_eq!(
                 RecordedOutcome::from_token(token).map(RecordedOutcome::token),
                 Some(token)

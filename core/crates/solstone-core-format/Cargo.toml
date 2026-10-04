@@ -10,9 +10,11 @@ publish = false
 workspace = true
 
 [dependencies]
-chrono.workspace = true
+chrono = { workspace = true, features = ["serde"] }
 glob.workspace = true
 pulldown-cmark.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 solstone-core-body-source = { path = "../solstone-core-body-source" }
 solstone-core-talent-config.workspace = true

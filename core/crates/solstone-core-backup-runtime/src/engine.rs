@@ -2030,6 +2030,7 @@ mod tests {
     fn excludes_are_exact_and_keep_durable_health() {
         assert!(!BACKUP_EXCLUDES.contains(&"health"));
         assert!(!BACKUP_EXCLUDES.contains(&"chatgpt-sign-in.json"));
+        assert!(!BACKUP_EXCLUDES.contains(&"config"));
     }
     #[test]
     fn backup_excludes_endpoint_key_material_by_its_resolved_path() {

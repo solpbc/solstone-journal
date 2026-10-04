@@ -5895,6 +5895,24 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
             .entries
             .iter()
             .map(|entry| {
+                let result = entry.result.as_ref().map(|result| {
+                    let mut output = serde_json::json!({
+                        "count": result.count,
+                        "targets": result.targets,
+                        "targets_truncated": result.targets_truncated,
+                        "digest": result.digest,
+                    });
+                    if let Some(origin) = result.origin.as_ref() {
+                        output["origin"] = origin.clone();
+                    }
+                    if let Some(created_at) = result.created_at.as_ref() {
+                        output["created_at"] = serde_json::json!(created_at);
+                    }
+                    if let Some(byte_count) = result.byte_count {
+                        output["byte_count"] = serde_json::json!(byte_count);
+                    }
+                    output
+                });
                 serde_json::json!({
                     "day": entry.day,
                     "segment": entry.segment,
@@ -5909,12 +5927,7 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
                         "arguments": request.arguments,
                         "arguments_omitted": request.arguments_omitted,
                     })),
-                    "result": entry.result.as_ref().map(|result| serde_json::json!({
-                        "count": result.count,
-                        "targets": result.targets,
-                        "targets_truncated": result.targets_truncated,
-                        "digest": result.digest,
-                    })),
+                    "result": result,
                 })
             })
             .collect::<Vec<_>>();
@@ -5993,6 +6006,15 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
                 "    result:  {} result(s), digest {}{targets}",
                 result.count, result.digest
             );
+            if let Some(origin) = result.origin.as_ref() {
+                println!("    origin:  {origin}");
+            }
+            if let Some(created_at) = result.created_at {
+                println!("    created: {created_at}");
+            }
+            if let Some(byte_count) = result.byte_count {
+                println!("    bytes:   {byte_count}");
+            }
         }
     }
 

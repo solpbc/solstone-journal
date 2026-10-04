@@ -3781,6 +3781,19 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-mcp-endpoint::mcp_endpoint_memory_publication"
+package = "solstone-core-mcp-endpoint"
+target = "mcp_endpoint_memory_publication"
+set = "component"
+areas = ["journal", "trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-local::frozen_local_oracles"
 package = "solstone-core-local"
 target = "frozen_local_oracles"

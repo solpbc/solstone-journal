@@ -33,9 +33,12 @@ use std::path::Path;
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use solstone_core_journal_io::atomic::{
+    DetailedAtomicError, ExclusivePublication, write_bytes_exclusive_detailed,
+};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, PathError, SegmentDeconflictError, day_path,
-    find_available_segment, segment_path, write_bytes_exclusive,
+    AtomicWriteError, AtomicWriteOptions, FinalNameConfirmation, MetadataDurability, PathError,
+    SegmentDeconflictError, StageCleanup, day_path, find_available_segment, segment_path,
 };
 
 /// The admission file inside one audit segment.
@@ -73,6 +76,7 @@ pub enum ToolName {
     GetTranscript,
     ListEntities,
     GetEntity,
+    SaveMemory,
 }
 
 impl ToolName {
@@ -87,6 +91,7 @@ impl ToolName {
             Self::GetTranscript => "get_transcript",
             Self::ListEntities => "list_entities",
             Self::GetEntity => "get_entity",
+            Self::SaveMemory => "save_memory",
         }
     }
 
@@ -102,6 +107,7 @@ impl ToolName {
             Self::GetTranscript,
             Self::ListEntities,
             Self::GetEntity,
+            Self::SaveMemory,
         ]
         .into_iter()
         .find(|tool| tool.token() == value)
@@ -179,6 +185,9 @@ pub enum Outcome {
     Refused,
     /// Authorized, but the tool could not complete.
     Error,
+    Stored,
+    Replayed,
+    Deleted,
 }
 
 impl Outcome {
@@ -189,6 +198,9 @@ impl Outcome {
             Self::Empty => "empty",
             Self::Refused => "refused",
             Self::Error => "error",
+            Self::Stored => "stored",
+            Self::Replayed => "replayed",
+            Self::Deleted => "deleted",
         }
     }
 }
@@ -213,6 +225,15 @@ pub struct ResultShape {
     /// `next_cursor` removed and object keys sorted. It is a digest of the
     /// content, not of the exact bytes on the wire.
     pub digest: String,
+    /// Source-keyed origin for a private memory record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Value>,
+    /// First reservation time for a private memory record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
+    /// Exact UTF-8 byte count for a private memory record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byte_count: Option<usize>,
 }
 
 /// One MCP tool outcome, published after the prepared response is approved.
@@ -256,6 +277,13 @@ pub enum AuditWriteError {
     NoAvailableSegment,
     Serialization(serde_json::Error),
     AtomicWrite(AtomicWriteError),
+    DetailedAtomic(DetailedAtomicError),
+    /// Publication occurred, but the final name, cleanup, or metadata durability
+    /// could not be confirmed. The destination may exist.
+    PublishedUnconfirmed {
+        path: std::path::PathBuf,
+    },
+    ParentSync(PathError),
 }
 
 impl fmt::Display for AuditWriteError {
@@ -281,6 +309,20 @@ impl fmt::Display for AuditWriteError {
                     "could not publish MCP audit interaction: {error}"
                 )
             }
+            Self::DetailedAtomic(error) => {
+                write!(
+                    formatter,
+                    "could not publish MCP audit interaction: {error}"
+                )
+            }
+            Self::PublishedUnconfirmed { path } => write!(
+                formatter,
+                "MCP audit publication {} could not be confirmed",
+                path.display()
+            ),
+            Self::ParentSync(error) => {
+                write!(formatter, "could not sync MCP audit parent: {error}")
+            }
         }
     }
 }
@@ -292,6 +334,9 @@ impl Error for AuditWriteError {
             Self::SegmentAllocation(error) => Some(error),
             Self::Serialization(error) => Some(error),
             Self::AtomicWrite(error) => Some(error),
+            Self::DetailedAtomic(error) => Some(error),
+            Self::ParentSync(error) => Some(error),
+            Self::PublishedUnconfirmed { .. } => None,
             Self::NoAvailableSegment => None,
         }
     }
@@ -373,25 +418,22 @@ where
             .ok_or(AuditWriteError::NoAvailableSegment)?;
         let segment_directory = segment_path(journal_root, &day_key, &segment, AUDIT_STREAM, true)
             .map_err(AuditWriteError::SegmentPath)?;
+        sync_audit_parent_chain(journal_root, &day_key, &segment)?;
         before_publish();
-        match write_bytes_exclusive(
-            segment_directory.join(INTERACTION_FILE),
-            &contents,
-            AtomicWriteOptions::default(),
-        ) {
-            Ok(()) => {
+        let path = segment_directory.join(INTERACTION_FILE);
+        match write_bytes_exclusive_detailed(&path, &contents, AtomicWriteOptions::default()) {
+            Ok(publication) if exclusive_confirmed(&publication) => {
                 return Ok(AuditCoordinates {
                     day,
                     stream: AUDIT_STREAM.to_owned(),
                     segment,
                 });
             }
-            Err(AtomicWriteError::Io { source, .. })
-                if source.kind() == std::io::ErrorKind::AlreadyExists =>
-            {
+            Ok(_) => return Err(AuditWriteError::PublishedUnconfirmed { path }),
+            Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => {
                 candidate = segment;
             }
-            Err(error) => return Err(AuditWriteError::AtomicWrite(error)),
+            Err(error) => return Err(AuditWriteError::DetailedAtomic(error)),
         }
     }
 
@@ -428,12 +470,50 @@ pub fn write_outcome_record(
         result,
     };
     let contents = serde_json::to_vec(&record).map_err(AuditWriteError::Serialization)?;
-    write_bytes_exclusive(
-        segment_directory.join(OUTCOME_FILE),
-        &contents,
-        AtomicWriteOptions::default(),
-    )
-    .map_err(AuditWriteError::AtomicWrite)
+    sync_audit_parent_chain(journal_root, &day_key, &coordinates.segment)?;
+    let path = segment_directory.join(OUTCOME_FILE);
+    match write_bytes_exclusive_detailed(&path, &contents, AtomicWriteOptions::default()) {
+        Ok(publication) if exclusive_confirmed(&publication) => Ok(()),
+        Ok(_) => Err(AuditWriteError::PublishedUnconfirmed { path }),
+        Err(error) => Err(AuditWriteError::DetailedAtomic(error)),
+    }
+}
+
+fn exclusive_confirmed(publication: &ExclusivePublication) -> bool {
+    let name = matches!(
+        publication.final_name,
+        FinalNameConfirmation::Confirmed { .. }
+    );
+    let cleanup = matches!(publication.cleanup, StageCleanup::Removed);
+    #[cfg(unix)]
+    let durability = matches!(publication.durability, MetadataDurability::Confirmed);
+    #[cfg(windows)]
+    let durability = matches!(
+        publication.durability,
+        MetadataDurability::Unproven { source: None }
+    );
+    name && cleanup && durability
+}
+
+fn sync_audit_parent_chain(
+    journal_root: &Path,
+    day: &str,
+    segment: &str,
+) -> Result<(), AuditWriteError> {
+    // Sync each containing directory in the chain so a newly created parent
+    // entry is durable before the child admission/outcome is published.
+    #[cfg(unix)]
+    solstone_core_journal_io::sync_root(journal_root).map_err(AuditWriteError::ParentSync)?;
+    for relative in [
+        "chronicle".to_owned(),
+        format!("chronicle/{day}"),
+        format!("chronicle/{day}/{AUDIT_STREAM}"),
+        format!("chronicle/{day}/{AUDIT_STREAM}/{segment}"),
+    ] {
+        solstone_core_journal_io::sync_dir(journal_root, &relative)
+            .map_err(AuditWriteError::ParentSync)?;
+    }
+    Ok(())
 }
 
 /// Build a bounded result shape from the owner coordinates a call served.
@@ -447,6 +527,9 @@ pub fn result_shape(count: usize, targets: Vec<String>, digest: String) -> Resul
         targets,
         targets_truncated: truncated,
         digest,
+        origin: None,
+        created_at: None,
+        byte_count: None,
     }
 }
 
@@ -492,6 +575,35 @@ mod tests {
             arguments: serde_json::Map::new(),
             permission: None,
         }
+    }
+
+    #[test]
+    fn save_memory_vocabulary_and_legacy_result_shapes_round_trip() {
+        assert_eq!(
+            ToolName::from_token("save_memory"),
+            Some(ToolName::SaveMemory)
+        );
+        assert_eq!(ToolName::SaveMemory.token(), "save_memory");
+        for (outcome, token) in [
+            (Outcome::Stored, "stored"),
+            (Outcome::Replayed, "replayed"),
+            (Outcome::Deleted, "deleted"),
+        ] {
+            assert_eq!(outcome.token(), token);
+            assert_eq!(
+                serde_json::from_str::<Outcome>(&format!("\"{token}\"")).unwrap(),
+                outcome
+            );
+        }
+        let legacy: super::ResultShape = serde_json::from_value(json!({
+            "count": 1,
+            "targets": [],
+            "digest": "legacy"
+        }))
+        .unwrap();
+        assert!(legacy.origin.is_none());
+        assert!(legacy.created_at.is_none());
+        assert!(legacy.byte_count.is_none());
     }
 
     #[test]
