@@ -34,6 +34,7 @@ mod http1;
 mod jsonrpc;
 pub mod lan_door;
 pub mod local_door;
+mod memory;
 mod oauth;
 mod owner_state;
 mod owner_web;
@@ -75,6 +76,9 @@ pub use local_door::{
     LocalDoorRun, LocalDoorState, read_local_door_state, run_local_door_async,
     run_local_door_with_hosted_parent, write_local_door_state,
 };
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use memory::append_connection_memory_test_hook;
 pub use oauth::store::{
     CreatedPairingCode, OAuthClientSummary, OAuthGrantSummary, OAuthStore, OAuthStoreError,
     PairingCodeSummary,

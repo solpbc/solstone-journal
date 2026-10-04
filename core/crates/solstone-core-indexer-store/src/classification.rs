@@ -319,6 +319,7 @@ pub fn classify_source(
 ) -> ChunkClassification {
     if path.starts_with("entity_search:")
         || stream == Some("mcp.agent")
+        || stream.is_some_and(|name| name.starts_with("agent-memory-"))
         || path.split('/').any(|component| component == "mcp.agent")
         || is_authored_chat_path(path)
         || solstone_core_format::body::is_body_source_path(path)
@@ -524,6 +525,26 @@ mod tests {
             &declarations,
         );
         assert!(!mcp.eligible);
+
+        let memory = classify_source(
+            &root,
+            "20260107/agent-memory-a1b2/030405_1/note.txt",
+            Some("agent-memory-a1b2"),
+            &declarations,
+        );
+        assert!(!memory.eligible);
+    }
+
+    #[test]
+    fn classify_source_excludes_agent_memory_stream_prefix() {
+        let root = reserve_temp_path("classification-agent-memory");
+        let classification = classify_source(
+            &root,
+            "20260107/agent-memory-abc/030405_1/note.txt",
+            Some("agent-memory-abc"),
+            &FacetDeclarationSet::default(),
+        );
+        assert!(!classification.eligible);
     }
 
     #[test]

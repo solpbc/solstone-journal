@@ -14,6 +14,7 @@ pub enum Kind {
     Browser,
     Imported(ImportSource),
     Unknown,
+    AgentMemory,
 }
 
 impl Kind {
@@ -26,7 +27,7 @@ impl Kind {
     pub fn import_source(&self) -> Option<&ImportSource> {
         match self {
             Self::Imported(source) => Some(source),
-            Self::Observed | Self::Browser | Self::Unknown => None,
+            Self::Observed | Self::Browser | Self::Unknown | Self::AgentMemory => None,
         }
     }
 
@@ -46,6 +47,7 @@ impl Kind {
             Self::Browser => "browser",
             Self::Imported(_) => "import",
             Self::Unknown => "unknown",
+            Self::AgentMemory => "agent_memory",
         }
     }
 }
@@ -253,5 +255,8 @@ mod tests {
         assert!(!imported.is_browser());
         assert!(Kind::Browser.is_browser());
         assert!(!Kind::Browser.is_imported());
+        let memory = Kind::AgentMemory;
+        assert_eq!(memory.compat_label(), "agent_memory");
+        assert_eq!(memory.import_source(), None);
     }
 }

@@ -164,11 +164,15 @@ mod tests {
         assert!(!deny_member("chronicle/foo/apps/x"));
         assert!(deny_member("apps/observer/x.json"));
         assert!(deny_member("config/journal.json"));
+        assert!(deny_member("config/agent-memory/source/operation.json"));
         assert!(deny_member("mcp-endpoint/pop.ed25519.pk8"));
         assert!(deny_member("mcp-endpoint/.create.lock"));
         assert!(!deny_member("chronicle/mcp-endpoint/keep.bin"));
         assert!(!deny_member(
             "chronicle/20260101/mcp.agent/120000_1/interaction.json"
+        ));
+        assert!(!deny_member(
+            "chronicle/20260101/agent-memory-source/120000_1/note.txt"
         ));
     }
 

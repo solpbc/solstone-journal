@@ -99,4 +99,16 @@ fn backup_argv_excludes_the_chatgpt_sign_in_file_and_its_moved_aside_copies() {
             "{name} is left out: {patterns:?}"
         );
     }
+
+    let memory_dir = resolved.join("config/agent-memory").join("a".repeat(64));
+    fs::create_dir_all(&memory_dir).expect("memory directory");
+    let memory_file = memory_dir.join(format!("{}.json", "b".repeat(64)));
+    fs::write(&memory_file, b"{}").expect("memory record");
+    let memory_path = crate::restic_filesystem_path(&memory_file);
+    assert!(
+        !patterns
+            .iter()
+            .any(|pattern| excluded_by(pattern, &memory_path)),
+        "private memory record is left out: {patterns:?}"
+    );
 }

@@ -2,16 +2,28 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use solstone_core_journal_io::atomic::{BoundAtomicOutcome, atomic_replace_bound};
+#[cfg(windows)]
+use solstone_core_journal_io::atomic::{DetailedAtomicOutcome, atomic_replace_detailed};
+use solstone_core_journal_io::atomic::{
+    ExclusivePublication, FinalNameConfirmation, MetadataDurability, StageCleanup,
+    write_bytes_exclusive_detailed,
+};
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, DEFAULT_STREAM, FileLock, JsonWriteOptions, LockOptions,
     MalformedPolicy, PathOrDay, ReadError, Removed, day_dirs, hold_lock, iter_segments,
     path_lexists, read_json, remove_file, write_bytes_exclusive, write_json,
 };
+#[cfg(unix)]
+use solstone_core_journal_io::{FlatDirectory, JournalRoot};
 
 use caseless::default_case_fold_str;
 use sha2::{Digest, Sha256};
@@ -371,6 +383,336 @@ pub fn bind_named_stream(
         stream: name.to_owned(),
         segment: SegmentDir::resolve(journal, day, segment, name)?,
     })
+}
+
+/// Bind the deterministic memory stream without adopting unattributed rows.
+/// The registry lock serializes the `(cid, source)` uniqueness check; the
+/// record lock protects an existing name or its exclusive reservation.
+pub fn bind_agent_memory_stream(
+    journal: &Path,
+    day: &str,
+    segment: &str,
+    name: &str,
+    cid: &str,
+    source: &str,
+) -> Result<BoundStream, SegmentError> {
+    validate_cid(cid)?;
+    if !is_safe_stream_component(name)
+        || source.len() != 64
+        || !source
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        || cid.strip_prefix("sha256:") != Some(source)
+        || name != format!("agent-memory-{source}")
+    {
+        return Err(SegmentError::StreamInput(
+            "memory stream must be a safe agent-memory component",
+        ));
+    }
+    let segment_dir = SegmentDir::resolve(journal, day, segment, name)?;
+    let binding = StreamBinding { cid, source };
+    let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
+    let _registry_lock = hold_lock(registry_target, LockOptions::default())?;
+    let state_path = stream_record_path(journal, name);
+    let _record_lock = hold_lock(&state_path, LockOptions::default())?;
+
+    if read_registry_records(journal)?
+        .iter()
+        .any(|(other_name, record)| other_name != name && binding_matches(record, binding))
+    {
+        return Err(SegmentError::StreamBindingConflict {
+            name: name.to_owned(),
+        });
+    }
+
+    if let Some(record) = read_typed_stream_record(&state_path)? {
+        if record.name == name
+            && record.kind == Kind::AgentMemory.compat_label()
+            && binding_matches(&record, binding)
+        {
+            return Ok(BoundStream {
+                stream: name.to_owned(),
+                segment: segment_dir,
+            });
+        }
+        return Err(SegmentError::StreamBindingConflict {
+            name: name.to_owned(),
+        });
+    }
+
+    let hints = StreamHints {
+        kind: Some(Kind::AgentMemory),
+        ..StreamHints::default()
+    };
+    let record = reservation_record(name.to_owned(), binding, &hints, None)?;
+    let bytes = serde_json::to_vec(&record).map_err(|source| SegmentError::Serialization {
+        path: state_path.clone(),
+        source,
+    })?;
+    match write_bytes_exclusive_detailed(&state_path, &bytes, AtomicWriteOptions::default()) {
+        Ok(publication) if exclusive_publication_confirmed(&publication) => {}
+        Ok(_) => {
+            return Err(SegmentError::StreamInput(
+                "memory binding was not confirmed",
+            ));
+        }
+        Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => {
+            let Some(record) = read_typed_stream_record(&state_path)? else {
+                return Err(SegmentError::StreamInput("memory stream record is missing"));
+            };
+            if record.name != name
+                || record.kind != Kind::AgentMemory.compat_label()
+                || !binding_matches(&record, binding)
+            {
+                return Err(SegmentError::StreamBindingConflict {
+                    name: name.to_owned(),
+                });
+            }
+        }
+        Err(error) => return Err(detailed_atomic_segment_error(error)),
+    }
+    Ok(BoundStream {
+        stream: name.to_owned(),
+        segment: segment_dir,
+    })
+}
+
+/// Advance only a bound `agent_memory` stream. The caller must not hold the
+/// stream-record lock; this function owns it from tail recovery through marker
+/// publication.
+pub fn advance_agent_memory_stream(
+    stream: &str,
+    day: &str,
+    segment: &str,
+    segment_dir: &SegmentDir,
+    cid: &str,
+    source: &str,
+) -> Result<StreamAdvance, SegmentError> {
+    validate_cid(cid)?;
+    if !is_safe_stream_component(stream)
+        || source.len() != 64
+        || !source
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        || cid.strip_prefix("sha256:") != Some(source)
+        || stream != format!("agent-memory-{source}")
+        || day != segment_dir.day
+        || segment != segment_dir.segment
+        || stream != segment_dir.stream
+    {
+        return Err(SegmentError::StreamInput(
+            "memory advance does not match its segment directory",
+        ));
+    }
+    let journal = &segment_dir.journal;
+    let state_path = stream_record_path(journal, stream);
+    let _lock = hold_lock(&state_path, LockOptions::default())?;
+    let mut record =
+        read_typed_stream_record(&state_path)?.ok_or(SegmentError::StreamBindingConflict {
+            name: stream.to_owned(),
+        })?;
+    if record.name != stream
+        || record.kind != Kind::AgentMemory.compat_label()
+        || !binding_matches(&record, StreamBinding { cid, source })
+    {
+        return Err(SegmentError::StreamBindingConflict {
+            name: stream.to_owned(),
+        });
+    }
+
+    finish_agent_memory_tail(journal, &record)?;
+    let marker_path = segment_dir.path.join("stream.json");
+    if record.last_day.as_deref() == Some(day) && record.last_segment.as_deref() == Some(segment) {
+        let advance = record.last_marker.clone().ok_or(SegmentError::StreamInput(
+            "memory stream tail has no recorded marker",
+        ))?;
+        match read_stream_marker(&marker_path)? {
+            Some(marker) if stream_marker_matches(&marker, stream, &advance) => {
+                return Ok(advance);
+            }
+            Some(_) => {
+                return Err(SegmentError::StreamInput(
+                    "memory segment marker conflicts with stream state",
+                ));
+            }
+            None => {
+                let bytes = stream_marker_bytes(stream, &advance, &marker_path)?;
+                replace_bound(
+                    journal,
+                    &segment_relative(day, stream, segment),
+                    "stream.json",
+                    &bytes,
+                )?;
+                return Ok(advance);
+            }
+        }
+    }
+
+    let predecessor = StreamAdvance {
+        prev_day: record.last_day.clone(),
+        prev_segment: record.last_segment.clone(),
+        seq: record
+            .seq
+            .checked_add(1)
+            .ok_or(SegmentError::StreamInput("stream sequence overflow"))?,
+    };
+    record.last_day = Some(day.to_owned());
+    record.last_segment = Some(segment.to_owned());
+    record.seq = predecessor.seq;
+    record.last_marker = Some(predecessor.clone());
+    let bytes = serde_json::to_vec(&record).map_err(|source| SegmentError::Serialization {
+        path: state_path.clone(),
+        source,
+    })?;
+    replace_bound(journal, "streams", &format!("{stream}.json"), &bytes)?;
+
+    let marker_bytes = stream_marker_bytes(stream, &predecessor, &marker_path)?;
+    replace_bound(
+        journal,
+        &segment_relative(day, stream, segment),
+        "stream.json",
+        &marker_bytes,
+    )?;
+    Ok(predecessor)
+}
+
+fn finish_agent_memory_tail(journal: &Path, record: &StreamRecord) -> Result<(), SegmentError> {
+    let (Some(day), Some(segment)) = (&record.last_day, &record.last_segment) else {
+        if record.seq == 0 && record.last_marker.is_none() {
+            return Ok(());
+        }
+        return Err(SegmentError::StreamInput(
+            "memory stream tail is incomplete",
+        ));
+    };
+    let Some(advance) = record.last_marker.as_ref() else {
+        return Err(SegmentError::StreamInput(
+            "memory stream tail marker is missing",
+        ));
+    };
+    if advance.seq != record.seq {
+        return Err(SegmentError::StreamInput(
+            "memory stream tail sequence conflicts",
+        ));
+    }
+    let tail = SegmentDir::resolve(journal, day, segment, &record.name)?;
+    let parent = tail.path.parent().unwrap_or(journal);
+    let staged = parent.join(format!(".removing_{segment}"));
+    let staged_exists = fs::symlink_metadata(&staged).is_ok();
+    let live_exists =
+        fs::symlink_metadata(&tail.path).is_ok_and(|metadata| metadata.file_type().is_dir());
+    if !live_exists || staged_exists || path_lexists(&tail.path.join("tombstone.json"))? {
+        return Ok(());
+    }
+    let marker_path = tail.path.join("stream.json");
+    match read_stream_marker(&marker_path)? {
+        Some(marker) if stream_marker_matches(&marker, &record.name, advance) => Ok(()),
+        Some(_) => Err(SegmentError::StreamInput(
+            "memory predecessor marker conflicts with stream state",
+        )),
+        None => {
+            let bytes = stream_marker_bytes(&record.name, advance, &marker_path)?;
+            replace_bound(
+                journal,
+                &segment_relative(day, &record.name, segment),
+                "stream.json",
+                &bytes,
+            )
+        }
+    }
+}
+
+fn stream_marker_matches(marker: &StreamMarker, stream: &str, advance: &StreamAdvance) -> bool {
+    marker.stream == stream
+        && marker.prev_day == advance.prev_day
+        && marker.prev_segment == advance.prev_segment
+        && marker.seq == advance.seq
+}
+
+fn stream_marker_bytes(
+    stream: &str,
+    advance: &StreamAdvance,
+    path: &Path,
+) -> Result<Vec<u8>, SegmentError> {
+    serde_json::to_vec(&StreamMarker {
+        stream: stream.to_owned(),
+        prev_day: advance.prev_day.clone(),
+        prev_segment: advance.prev_segment.clone(),
+        seq: advance.seq,
+    })
+    .map_err(|source| SegmentError::Serialization {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn segment_relative(day: &str, stream: &str, segment: &str) -> String {
+    format!("chronicle/{day}/{stream}/{segment}")
+}
+
+fn exclusive_publication_confirmed(publication: &ExclusivePublication) -> bool {
+    let final_name = matches!(
+        publication.final_name,
+        FinalNameConfirmation::Confirmed { .. }
+    );
+    let cleanup = matches!(publication.cleanup, StageCleanup::Removed);
+    #[cfg(unix)]
+    let durability = matches!(publication.durability, MetadataDurability::Confirmed);
+    #[cfg(windows)]
+    let durability = matches!(
+        publication.durability,
+        MetadataDurability::Unproven { source: None }
+    );
+    final_name && cleanup && durability
+}
+
+fn detailed_atomic_segment_error(
+    error: solstone_core_journal_io::atomic::DetailedAtomicError,
+) -> SegmentError {
+    SegmentError::Io {
+        path: error.path,
+        source: error.source,
+    }
+}
+
+fn replace_bound(
+    journal: &Path,
+    relative_parent: &str,
+    name: &str,
+    bytes: &[u8],
+) -> Result<(), SegmentError> {
+    let destination = journal.join(relative_parent).join(name);
+    #[cfg(unix)]
+    {
+        let root = JournalRoot::open(journal).map_err(|error| SegmentError::Io {
+            path: journal.to_path_buf(),
+            source: std::io::Error::other(error.to_string()),
+        })?;
+        let directory =
+            FlatDirectory::open(&root, Path::new(relative_parent)).map_err(|error| {
+                SegmentError::Io {
+                    path: destination.clone(),
+                    source: std::io::Error::other(error.to_string()),
+                }
+            })?;
+        match atomic_replace_bound(&directory, OsStr::new(name), bytes, 0o600) {
+            Ok(BoundAtomicOutcome::Published { .. }) => Ok(()),
+            Ok(_) => Err(SegmentError::StreamInput(
+                "memory stream publication was not confirmed",
+            )),
+            Err(error) => Err(detailed_atomic_segment_error(error)),
+        }
+    }
+    #[cfg(windows)]
+    {
+        match atomic_replace_detailed(&destination, bytes, 0o600) {
+            Ok(DetailedAtomicOutcome::Published) => Ok(()),
+            Ok(_) => Err(SegmentError::StreamInput(
+                "memory stream publication was not confirmed",
+            )),
+            Err(error) => Err(detailed_atomic_segment_error(error)),
+        }
+    }
 }
 
 /// Advance a stream previously bound by `bind_stream`, for the segment
@@ -3494,5 +3836,178 @@ mod tests {
             ),
             Err(SegmentError::Tombstoned { .. })
         ));
+    }
+
+    #[test]
+    fn agent_memory_binding_refuses_unattributed_foreign_and_wrong_kind_rows() {
+        let source = "f".repeat(64);
+        let cid = format!("sha256:{source}");
+        let stream = format!("agent-memory-{source}");
+        for existing in [
+            record(&stream, None, None, 0, 1),
+            record(&stream, Some(&cid), Some(&source), 0, 1),
+        ] {
+            let temporary = TempDir::new();
+            solstone_core_journal_io::create_segment_strict(
+                temporary.path(),
+                "20260804",
+                &stream,
+                "120000_1",
+            )
+            .unwrap();
+            fs::create_dir_all(temporary.path().join("streams")).unwrap();
+            write_json(
+                stream_record_path(temporary.path(), &stream),
+                &existing,
+                JsonWriteOptions::default(),
+            )
+            .unwrap();
+            assert!(
+                bind_agent_memory_stream(
+                    temporary.path(),
+                    "20260804",
+                    "120000_1",
+                    &stream,
+                    &cid,
+                    &source,
+                )
+                .is_err()
+            );
+        }
+
+        let temporary = TempDir::new();
+        solstone_core_journal_io::create_segment_strict(
+            temporary.path(),
+            "20260804",
+            &stream,
+            "120000_1",
+        )
+        .unwrap();
+        fs::create_dir_all(temporary.path().join("streams")).unwrap();
+        write_json(
+            stream_record_path(temporary.path(), "other"),
+            &record("other", Some(&cid), Some(&source), 0, 1),
+            JsonWriteOptions::default(),
+        )
+        .unwrap();
+        assert!(
+            bind_agent_memory_stream(
+                temporary.path(),
+                "20260804",
+                "120000_1",
+                &stream,
+                &cid,
+                &source,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn agent_memory_binding_creates_and_reuses_only_its_kind() {
+        let temporary = TempDir::new();
+        let source = "f".repeat(64);
+        let cid = format!("sha256:{source}");
+        let stream = format!("agent-memory-{source}");
+        solstone_core_journal_io::create_segment_strict(
+            temporary.path(),
+            "20260804",
+            &stream,
+            "120000_1",
+        )
+        .unwrap();
+
+        let first = bind_agent_memory_stream(
+            temporary.path(),
+            "20260804",
+            "120000_1",
+            &stream,
+            &cid,
+            &source,
+        )
+        .unwrap();
+        let record_path = stream_record_path(temporary.path(), &stream);
+        let before = fs::read(&record_path).unwrap();
+        let stored: StreamRecord = serde_json::from_slice(&before).unwrap();
+        assert_eq!(stored.kind, Kind::AgentMemory.compat_label());
+
+        let second = bind_agent_memory_stream(
+            temporary.path(),
+            "20260804",
+            "120000_1",
+            &stream,
+            &cid,
+            &source,
+        )
+        .unwrap();
+        assert_eq!(first.stream, second.stream);
+        assert_eq!(first.segment, second.segment);
+        assert_eq!(fs::read(record_path).unwrap(), before);
+    }
+
+    #[test]
+    fn agent_memory_advance_skips_deleted_tail_and_recovers_live_missing_marker() {
+        let temporary = TempDir::new();
+        let source = "f".repeat(64);
+        let cid = format!("sha256:{source}");
+        let stream = format!("agent-memory-{source}");
+        for segment in ["120000_1", "120100_1", "120200_1"] {
+            solstone_core_journal_io::create_segment_strict(
+                temporary.path(),
+                "20260804",
+                &stream,
+                segment,
+            )
+            .unwrap();
+        }
+        let first = bind_agent_memory_stream(
+            temporary.path(),
+            "20260804",
+            "120000_1",
+            &stream,
+            &cid,
+            &source,
+        )
+        .unwrap();
+        let first_advance = advance_agent_memory_stream(
+            &stream,
+            "20260804",
+            "120000_1",
+            &first.segment,
+            &cid,
+            &source,
+        )
+        .unwrap();
+        assert_eq!(first_advance.seq, 1);
+
+        let first_marker = first.segment.path().join("stream.json");
+        fs::remove_file(&first_marker).unwrap();
+        fs::write(first.segment.path().join("tombstone.json"), b"{}").unwrap();
+        fs::remove_dir_all(first.segment.path()).unwrap();
+
+        let second_dir =
+            SegmentDir::resolve(temporary.path(), "20260804", "120100_1", &stream).unwrap();
+        let second = advance_agent_memory_stream(
+            &stream,
+            "20260804",
+            "120100_1",
+            &second_dir,
+            &cid,
+            &source,
+        )
+        .unwrap();
+        assert_eq!(second.seq, 2);
+        assert!(!first.segment.path().exists());
+        assert!(!first_marker.exists());
+
+        let second_marker = second_dir.path().join("stream.json");
+        fs::remove_file(&second_marker).unwrap();
+        let third_dir =
+            SegmentDir::resolve(temporary.path(), "20260804", "120200_1", &stream).unwrap();
+        let third =
+            advance_agent_memory_stream(&stream, "20260804", "120200_1", &third_dir, &cid, &source)
+                .unwrap();
+        assert_eq!(third.seq, 3);
+        assert!(second_marker.is_file());
     }
 }
