@@ -548,6 +548,79 @@ async fn full_uses_enabled_ledger_folds_but_all_declared_profile_data() {
 }
 
 #[tokio::test]
+async fn what_the_owner_said_by_voice_leads_open_loops_and_decisions_and_nothing_else_moves() {
+    let fixture = Fixture::new();
+    fixture.established();
+    fixture.entity("pat", "Pat", &[], "person", false);
+    fixture.entity("owner", "Owner", &[], "person", true);
+    fixture.facet("work", false);
+    let oldest = day_ago(12);
+    let older = day_ago(9);
+    let newer = day_ago(2);
+    fixture.activities(
+        "work",
+        &oldest,
+        &[json!({"id":"oldest","created_at":timestamp_ago(12),
+            "commitments":[{"owner":"you","owner_entity_id":"owner","counterparty":"Pat","counterparty_entity_id":"pat","action":"oldest unmarked"}]})],
+    );
+    fixture.activities(
+        "work",
+        &older,
+        &[json!({"id":"older","created_at":timestamp_ago(9),
+            "commitments":[{"owner":"you","owner_entity_id":"owner","counterparty":"Pat","counterparty_entity_id":"pat","action":"older unmarked"}],
+            "decisions":[{"owner":"you","owner_entity_id":"owner","action":"older said","context":"with Pat","owner_evidence":"voice"}],
+            "participation":[{"entity_id":"pat","role":"attendee"}]})],
+    );
+    fixture.activities(
+        "work",
+        &newer,
+        &[json!({"id":"newer","created_at":timestamp_ago(2),
+            "commitments":[{"owner":"you","owner_entity_id":"owner","counterparty":"Pat","counterparty_entity_id":"pat","action":"newer said","owner_evidence":"voice"}],
+            "decisions":[{"owner":"you","owner_entity_id":"owner","action":"newer unmarked"}]})],
+    );
+
+    let (_, _, full) = get("/api/profile/pat", &fixture).await;
+    let full = body_json(&full);
+    let actions = |key: &str| {
+        full[key]
+            .as_array()
+            .expect(key)
+            .iter()
+            .map(|item| item["action"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    // Oldest first is the open ledger's order; the voice-backed item leads it
+    // and the two unmarked items keep that order between them.
+    assert_eq!(
+        actions("open_with_them"),
+        ["newer said", "oldest unmarked", "older unmarked"]
+    );
+    assert_eq!(full["open_with_them"][0]["owner_evidence"], "voice");
+    assert!(full["open_with_them"][1].get("owner_evidence").is_none());
+
+    // A decision is on its owner's profile. Newest first is the decisions'
+    // order; the voice-backed one leads it.
+    let (_, _, own) = get("/api/profile/owner", &fixture).await;
+    let own = body_json(&own);
+    let decisions = own["decisions_involving_them"]
+        .as_array()
+        .expect("decisions")
+        .iter()
+        .map(|item| item["action"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(decisions, ["older said", "newer unmarked"]);
+    assert_eq!(
+        own["decisions_involving_them"][0]["owner_evidence"],
+        "voice"
+    );
+    assert!(
+        own["decisions_involving_them"][1]
+            .get("owner_evidence")
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn muted_only_profile_data_stays_visible_while_muted_ledger_data_is_excluded() {
     let fixture = Fixture::new();
     fixture.established();

@@ -11,6 +11,9 @@ use crate::pagination::paginate_collection;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
 const ENTITY_NOT_FOUND: &str = "entity_not_found";
+/// Follows what the owner said, by their recognized voice. Without it an item
+/// has no voice evidence, which is not the same as being someone else's.
+const SAID_BY_YOU: &str = "said by you";
 
 #[must_use]
 pub fn brief(ctx: CommandContext<'_>) -> CommandOutput {
@@ -157,7 +160,7 @@ pub fn item(ctx: CommandContext<'_>) -> CommandOutput {
     stdout(vec![format!(
         "{} is {}.",
         field(&item, "id"),
-        field(&item, "state")
+        with_said_by_you(&item, field(&item, "state"))
     )])
 }
 
@@ -438,7 +441,7 @@ fn render_decisions_table(items: &[Value]) -> Vec<String> {
                 field(item, "id"),
                 field(item, "day"),
                 field(item, "owner"),
-                field(item, "action"),
+                with_said_by_you(item, field(item, "action")),
                 field(item, "context"),
             ]
         })
@@ -484,7 +487,7 @@ fn render_table(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
 }
 
 fn item_summary(item: &Value) -> String {
-    if truthy(item.get("counterparty")) {
+    let summary = if truthy(item.get("counterparty")) {
         format!(
             "{}: {} -> {}",
             field(item, "owner"),
@@ -493,6 +496,15 @@ fn item_summary(item: &Value) -> String {
         )
     } else {
         format!("{}: {}", field(item, "owner"), field(item, "summary"))
+    };
+    with_said_by_you(item, summary)
+}
+
+fn with_said_by_you(item: &Value, text: String) -> String {
+    if item.get("owner_evidence").and_then(Value::as_str) == Some("voice") {
+        format!("{text}; {SAID_BY_YOU}")
+    } else {
+        text
     }
 }
 
@@ -854,6 +866,67 @@ mod tests {
         transport_item.assert_done();
         assert_eq!(output_item.exit, 2);
         assert!(output_item.stderr.contains("ITEM_ID"));
+    }
+
+    #[test]
+    fn what_the_owner_said_by_voice_is_marked_and_nothing_else_is() {
+        let profile = json!({
+            "name": "Pat", "type": "person", "facets": ["work"], "is_self": false,
+            "blocked": false, "cadence": {},
+            "open_with_them": [
+                {"id": "said", "state": "open", "age_days": 1, "owner": "you",
+                 "summary": "send the deck", "counterparty": "Pat", "owner_evidence": "voice"},
+                {"id": "plain", "state": "open", "age_days": 4, "owner": "you",
+                 "summary": "book the room", "counterparty": "Pat"}
+            ],
+            "closed_with_them_30d": [
+                {"id": "done", "closed_at": 1, "owner": "you", "summary": "share notes",
+                 "owner_evidence": "voice"}
+            ],
+            "decisions_involving_them": [
+                {"id": "chose", "day": "20261003", "owner": "Pat", "action": "go with plan b"}
+            ]
+        });
+        let lines = render_full(&profile);
+        let row = |id: &str| {
+            lines
+                .iter()
+                .find(|line| line.starts_with(id))
+                .unwrap_or_else(|| panic!("row {id}"))
+                .clone()
+        };
+        assert!(row("said").contains(SAID_BY_YOU));
+        assert!(row("done").contains(SAID_BY_YOU));
+        assert!(!row("plain").contains(SAID_BY_YOU));
+        assert!(!row("chose").contains(SAID_BY_YOU));
+    }
+
+    #[test]
+    fn profile_item_marks_what_the_owner_said_by_voice() {
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: "/api/ledger/item123".to_string(),
+                params: vec![],
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: json!({"id": "item123", "state": "open", "owner_evidence": "voice"})
+                    .to_string()
+                    .into_bytes(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }]);
+
+        let args = vec!["item123".to_string()];
+        let output = item(test_ctx(&args, &transport));
+        transport.assert_done();
+        assert_eq!(output.exit, 0);
+        assert!(output.stdout.contains(SAID_BY_YOU));
     }
 
     #[test]

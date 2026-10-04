@@ -29,11 +29,12 @@ pub(crate) fn full(
     let descriptions = load_facet_descriptions(journal_root, &target)?;
     let (cadence, sources) =
         compute_cadence(journal_root, &target.entity_id, include_mentions, now)?;
-    let open_with_them = list(
+    let mut open_with_them = list(
         journal_root,
         now.with_timezone(&Utc),
         ledger_query(LedgerState::Open, &target.entity_id, None),
     )?;
+    said_by_you_first(&mut open_with_them, |item| item.owner_evidence.as_deref());
     let closed_with_them_30d = list(
         journal_root,
         now.with_timezone(&Utc),
@@ -43,7 +44,7 @@ pub(crate) fn full(
             Some(day_minus(now, 30)),
         ),
     )?;
-    let decisions_involving_them = decisions(
+    let mut decisions_involving_them = decisions(
         journal_root,
         DecisionQuery {
             owner: None,
@@ -53,6 +54,9 @@ pub(crate) fn full(
             facets: None,
         },
     )?;
+    said_by_you_first(&mut decisions_involving_them, |decision| {
+        decision.owner_evidence.as_deref()
+    });
 
     Ok(Some(Profile {
         entity_id: target.entity_id,
@@ -149,6 +153,14 @@ fn ledger_query(
         sort: None,
         facets: None,
     }
+}
+
+/// What the owner said, by their recognized voice, comes first; the order is
+/// otherwise kept. A missing mark means no voice evidence, not someone else's,
+/// so nothing is dropped or reordered among the unmarked. Closed items keep
+/// their recency order and are not passed through here.
+fn said_by_you_first<T>(items: &mut [T], evidence: impl Fn(&T) -> Option<&str>) {
+    items.sort_by_key(|item| evidence(item) != Some("voice"));
 }
 
 fn day_minus(now: DateTime<FixedOffset>, days: i64) -> String {
