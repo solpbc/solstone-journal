@@ -2,12 +2,14 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
+use std::path::Path;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_convey_shell::router;
+use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
 use tower::ServiceExt;
 
 const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -31,6 +33,18 @@ fn basis() -> AccessBasis {
         cid: LinkedDeviceCid::try_from(CID_A).expect("fixture CID"),
         leaf_spki: vec![0x30, 0x00],
     }
+}
+
+fn authorize_client(journal: &Path) {
+    AuthorizationLedger::new(journal)
+        .add(ClientEntry::new(
+            CID_A,
+            "Test Device",
+            "2026-01-01T00:00:00Z",
+            "test-instance",
+            ClientRole::Roleless,
+        ))
+        .expect("authorized test device");
 }
 
 async fn call_raw(
@@ -93,6 +107,7 @@ fn deregistration() -> Vec<u8> {
 #[tokio::test]
 async fn all_push_routes_resolve_through_the_composed_shell_router() {
     let journal = established_journal();
+    authorize_client(journal.path());
     let app = router(journal.path().to_path_buf());
 
     let (status, body) = call(
@@ -121,11 +136,6 @@ async fn all_push_routes_resolve_through_the_composed_shell_router() {
     assert_eq!(body["items"][0]["target"], "...cdef");
     assert!(body["cursor"].is_null());
 
-    let (status, body) = call(&app, "POST", "/api/push/test", Body::empty(), Some(basis())).await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(body["reason_code"], "feature_unavailable");
-    assert_eq!(body["detail"], "no devices to reach");
-
     let (status, body_bytes) = call_raw(
         &app,
         "DELETE",
@@ -136,11 +146,17 @@ async fn all_push_routes_resolve_through_the_composed_shell_router() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(body_bytes.is_empty());
+
+    let (status, body) = call(&app, "POST", "/api/push/test", Body::empty(), Some(basis())).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["reason_code"], "feature_unavailable");
+    assert_eq!(body["detail"], "no devices to reach");
 }
 
 #[tokio::test]
 async fn malformed_ledger_with_recipient_returns_push_ledger_unavailable() {
     let journal = established_journal();
+    authorize_client(journal.path());
     let app = router(journal.path().to_path_buf());
 
     let (status, _) = call(
