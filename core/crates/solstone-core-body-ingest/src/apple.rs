@@ -1115,13 +1115,23 @@ fn collect_files_with_limits(
                 return Err(source_error("source_asset_limit"));
             }
             let path = entry.path();
+            // The raw path is stored with `/` between its parts on every platform, so it
+            // is built from the path's own components rather than its native string: on
+            // Windows the native string separates them with `\`.
             let relative = path
                 .strip_prefix(root)
                 .map_err(|_| source_error("source_tree"))?
-                .to_str()
-                .filter(|value| !value.contains('\\') && value.len() <= MAX_RAW_PATH_BYTES)
-                .ok_or_else(|| source_error("source_name"))?
-                .to_owned();
+                .components()
+                .map(|component| match component {
+                    std::path::Component::Normal(name) => {
+                        name.to_str().filter(|name| !name.contains(['/', '\\']))
+                    }
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()
+                .map(|names| names.join("/"))
+                .filter(|value| value.len() <= MAX_RAW_PATH_BYTES)
+                .ok_or_else(|| source_error("source_name"))?;
             assets.push(RawAsset::File {
                 source: path,
                 relative,
