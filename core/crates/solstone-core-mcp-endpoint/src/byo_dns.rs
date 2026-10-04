@@ -215,6 +215,7 @@ fn parse_caa_issue_value(value: &str) -> Option<(String, HashMap<String, String>
 pub static TEST_VERDICT_OVERRIDE: std::sync::RwLock<Option<DnsVerdict>> =
     std::sync::RwLock::new(None);
 
+#[cfg(not(windows))]
 fn load_system_resolver_config() -> Result<
     (
         hickory_resolver::config::ResolverConfig,
@@ -247,6 +248,48 @@ fn load_system_resolver_config() -> Result<
     }
     if count == 0 {
         return Err("no nameservers found in /etc/resolv.conf".to_string());
+    }
+    Ok((config, hickory_resolver::config::ResolverOpts::default()))
+}
+
+#[cfg(windows)]
+fn load_system_resolver_config() -> Result<
+    (
+        hickory_resolver::config::ResolverConfig,
+        hickory_resolver::config::ResolverOpts,
+    ),
+    String,
+> {
+    let adapters = ipconfig::get_adapters().map_err(|e| e.to_string())?;
+    resolver_config_from_nameservers(
+        adapters
+            .iter()
+            .flat_map(|adapter| adapter.dns_servers().iter().copied()),
+    )
+}
+
+#[cfg(any(windows, test))]
+fn resolver_config_from_nameservers(
+    nameservers: impl IntoIterator<Item = std::net::IpAddr>,
+) -> Result<
+    (
+        hickory_resolver::config::ResolverConfig,
+        hickory_resolver::config::ResolverOpts,
+    ),
+    String,
+> {
+    let mut config = hickory_resolver::config::ResolverConfig::new();
+    for ip in nameservers {
+        config.add_name_server(hickory_resolver::config::NameServerConfig {
+            socket_addr: std::net::SocketAddr::new(ip, 53),
+            protocol: hickory_resolver::config::Protocol::Udp,
+            tls_dns_name: None,
+            trust_negative_responses: true,
+            bind_addr: None,
+        });
+    }
+    if config.name_servers().is_empty() {
+        return Err("no nameservers found in Windows adapter configuration".to_string());
     }
     Ok((config, hickory_resolver::config::ResolverOpts::default()))
 }
@@ -433,6 +476,50 @@ mod tests {
 
     const URI: &str = "https://acme-v02.api.letsencrypt.org/acme/acct/12345678";
     const HOST: &str = "mcp.example.com";
+
+    #[test]
+    fn configured_nameservers_only_no_public_fallback_or_search_suffix() {
+        let ips = [
+            "192.0.2.53".parse().unwrap(),
+            "2001:db8::53".parse().unwrap(),
+        ];
+        let (config, _) = resolver_config_from_nameservers(ips).unwrap();
+        let servers = config.name_servers();
+        assert_eq!(servers.len(), ips.len());
+        for (server, ip) in servers.iter().zip(ips) {
+            assert_eq!(server.socket_addr, std::net::SocketAddr::new(ip, 53));
+            assert_eq!(server.protocol, hickory_resolver::config::Protocol::Udp);
+        }
+        assert!(config.domain().is_none());
+        assert!(config.search().is_empty());
+        assert!(resolver_config_from_nameservers([]).is_err());
+    }
+
+    #[cfg(all(windows, feature = "full-tests"))]
+    #[test]
+    fn windows_system_resolver_uses_actual_adapter_dns_servers() {
+        // Exercise the production loader, never TEST_VERDICT_OVERRIDE. This
+        // catches a Unix-file read and a substituted public resolver on Windows.
+        let expected: Vec<_> = ipconfig::get_adapters()
+            .unwrap()
+            .iter()
+            .flat_map(|adapter| adapter.dns_servers().iter().copied())
+            .collect();
+        assert!(
+            !expected.is_empty(),
+            "native host needs configured DNS servers"
+        );
+        let (config, _) = load_system_resolver_config().unwrap();
+        let actual: Vec<_> = config
+            .name_servers()
+            .iter()
+            .map(|server| server.socket_addr.ip())
+            .collect();
+        assert_eq!(actual, expected);
+        assert!(config.domain().is_none());
+        assert!(config.search().is_empty());
+        eprintln!("Windows system resolver: {actual:?}");
+    }
 
     fn base_records() -> HashMap<String, HostDnsRecords> {
         let mut map = HashMap::new();

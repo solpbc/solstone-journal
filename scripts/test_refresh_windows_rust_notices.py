@@ -5,6 +5,8 @@
 """Dependency-edge admission regressions for the mechanical notice refresh."""
 import copy
 import unittest
+import tempfile
+from pathlib import Path
 
 import refresh_windows_rust_notices as refresh
 
@@ -398,6 +400,93 @@ class RegistryAdditionInsideClosure(unittest.TestCase):
         for value in ("webview", "webview@", "@1.0.0", "a@b@c"):
             with self.assertRaisesRegex(refresh.RefreshError, "NAME@VERSION"):
                 refresh.parse_admissions([value])
+
+
+class ShippedFeaturesAndPromotions(unittest.TestCase):
+    def test_metadata_uses_canonical_shipped_features(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            features = root / "core/distribution/shipped-core-features.txt"
+            features.parent.mkdir(parents=True)
+            features.write_text("# release features\njournal-mcp-endpoint\nother # enabled\n\n")
+            completed = type("Result", (), {"returncode": 0, "stdout": b"{}"})()
+            with patch.object(refresh.subprocess, "run", return_value=completed) as run:
+                refresh.query_cargo_metadata(root)
+            argv = run.call_args.args[0]
+            self.assertEqual(argv[-4:], ["--features", "solstone-core/journal-mcp-endpoint", "--features", "solstone-core/other"])
+
+    def test_existing_gain_requires_explicit_promotion_and_stale_review_refuses(self):
+        identity = f"digest@1.0.0 ({SOURCE})"
+        old = {"workspace:app": {"deps": []}, identity: {"deps": []}}
+        new = copy.deepcopy(old)
+        new["workspace:app"]["deps"] = [{"pkg": identity, "dep_kinds": [{"kind": None}]}]
+        with self.assertRaises(refresh.RefreshError):
+            refresh.require_explained_notice_closure(old, new, ["app"])
+        self.assertEqual(refresh.require_explained_notice_closure(old, new, ["app"], promoted=frozenset({identity})), {identity})
+        with self.assertRaisesRegex(refresh.RefreshError, "do not reach"):
+            refresh.require_explained_notice_closure(old, old, ["app"], promoted=frozenset({identity}))
+
+    def test_standard_apache_requires_published_option_and_preserves_default_refusal(self):
+        import io
+        import tarfile
+        row = {"name": "digest", "version": "1.0.0", "source": SOURCE,
+               "license_expression": "Apache-2.0 OR MIT", "notice_references": []}
+        import json
+        root = Path(refresh.__file__).resolve().parent.parent
+        index = json.loads((root / refresh.INDEX_RELATIVE_PATH).read_text())
+        span = next(item for item in index["notice_texts"] if item["sha256"] == "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30")
+        text = (root / refresh.NOTICES_RELATIVE_PATH).read_bytes()[span["byte_start_inclusive"]:span["byte_end_exclusive"]]
+        with tempfile.TemporaryDirectory() as scratch:
+            archive = Path(scratch) / "source.tar.gz"
+            def write(expression, notice=False):
+                with tarfile.open(archive, "w:gz") as tar:
+                    data = f'[package]\nname="digest"\nversion="1.0.0"\nlicense="{expression}"\n'.encode()
+                    info = tarfile.TarInfo("vendor/digest-1.0.0/Cargo.toml")
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+                    if notice:
+                        info = tarfile.TarInfo("vendor/digest-1.0.0/NOTICE")
+                        info.size = 11
+                        tar.addfile(info, io.BytesIO(b"attribution"))
+            write(row["license_expression"])
+            with self.assertRaises(refresh.RefreshError):
+                refresh.promote_notice_rows(archive, [row])
+            promoted, texts = refresh.promote_notice_rows(archive, [row], frozenset({("digest", "1.0.0")}), fetch=lambda url: (200, text))
+            self.assertEqual(texts, {refresh.sha256_bytes(text): text})
+            self.assertEqual(promoted[0]["notice_references"][0]["source"]["license_identifier"], "Apache-2.0")
+            with self.assertRaisesRegex(refresh.RefreshError, "could not be acquired"):
+                refresh.promote_notice_rows(archive, [row], frozenset({("digest", "1.0.0")}), fetch=lambda url: (200, text + b"changed"))
+            write(row["license_expression"], notice=True)
+            with self.assertRaisesRegex(refresh.RefreshError, "absent text"):
+                refresh.promote_notice_rows(archive, [row], frozenset({("digest", "1.0.0")}), fetch=lambda url: (200, text))
+            row["license_expression"] = "MIT"
+            write("MIT")
+            with self.assertRaisesRegex(refresh.RefreshError, "licence option"):
+                refresh.promote_notice_rows(archive, [row], frozenset({("digest", "1.0.0")}))
+
+    def test_promotion_reproduces_acquired_text_and_refuses_changed_notice(self):
+        import io
+        import tarfile
+        text = b"MIT licence text with original attribution\n"
+        row = {"name": "digest", "version": "1.0.0", "source": SOURCE,
+               "license_expression": "MIT", "windows_notice_population": False,
+               "notice_references": [{"bytes": len(text), "sha256": refresh.sha256_bytes(text),
+                                      "source": {"kind": "cargo-registry-archive", "member": "LICENSE"}}]}
+        with tempfile.TemporaryDirectory() as scratch:
+            archive = Path(scratch) / "source.tar.gz"
+            with tarfile.open(archive, "w:gz") as tar:
+                for member, data in {"Cargo.toml": b'[package]\nname="digest"\nversion="1.0.0"\nlicense="MIT"\n', "LICENSE": text}.items():
+                    info = tarfile.TarInfo("vendor/digest-1.0.0/" + member)
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+            rows, texts = refresh.promote_notice_rows(archive, [row])
+            self.assertTrue(rows[0]["windows_notice_population"])
+            self.assertEqual(texts, {refresh.sha256_bytes(text): text})
+            self.assertFalse(row["windows_notice_population"])
+            row["notice_references"][0]["sha256"] = "0" * 64
+            with self.assertRaisesRegex(refresh.RefreshError, "source text"):
+                refresh.promote_notice_rows(archive, [row])
 
 
 class AddedWorkspaceCrate(unittest.TestCase):

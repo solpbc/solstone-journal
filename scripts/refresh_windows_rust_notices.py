@@ -61,6 +61,16 @@ refuses. Licence terms the crate's own texts do not cover -- a vendored
 prebuilt binary under someone else's licence, for one -- are outside this
 script's view, and the named review has to account for them separately.
 
+An unchanged registry package newly reached by a shipped feature can instead
+be named with `--admit-closure-promotion NAME@VERSION`. The prior acquired
+source bytes stay unchanged; its licence texts are verified against that
+companion and added to NOTICES. Removals and unnamed gains still refuse.
+Cargo metadata always includes the canonical shipped-core-features list.
+A reviewed promotion that declares an Apache-2.0 option but publishes no text
+can name `--admit-standard-apache-text NAME@VERSION`. This acquires the
+canonical Apache text at its reviewed digest; it cannot replace an existing
+crate notice or select a licence the package does not declare.
+
 The same shapes may come with a **new workspace crate**, such as a new Windows
 inventory binary root. It is admitted only when `core/Cargo.toml` declares it
 as a workspace member or exclude, and when every dependency edge it records
@@ -73,7 +83,7 @@ It refuses -- loudly, with the reason -- rather than proceed, when:
     reaches the Windows notice closure without being named for admission, or
     whose licence expression is not wholly permissive. That is a real
     dependency change and needs licence review, not a mechanical refresh.
-  * a package named for admission is not an addition in this lock, or does not
+  * a package named for addition is not an addition in this lock, or does not
     reach the Windows notice closure. A stale review is not a review.
   * an external row changed source and either side is not a `git+` source.
   * the **Windows notice closure** changed -- the non-dev reach of the Windows
@@ -184,6 +194,16 @@ def load_index(repo: Path) -> dict[str, Any]:
     return json.loads((repo / INDEX_RELATIVE_PATH).read_bytes())
 
 
+def shipped_feature_arguments(repo: Path) -> list[str]:
+    features = (repo / "core/distribution/shipped-core-features.txt").read_text()
+    return [
+        argument
+        for line in features.splitlines()
+        if (feature := line.split("#", 1)[0].strip())
+        for argument in ("--features", f"solstone-core/{feature}")
+    ]
+
+
 def query_cargo_metadata(repo: Path) -> dict[str, Any]:
     result = subprocess.run(
         [
@@ -197,6 +217,7 @@ def query_cargo_metadata(repo: Path) -> dict[str, Any]:
             "1",
             "--filter-platform",
             FILTER_PLATFORM,
+            *shipped_feature_arguments(repo),
         ],
         capture_output=True,
         check=False,
@@ -685,15 +706,18 @@ def require_explained_notice_closure(
     added: frozenset[str] = frozenset(),
     admitted: frozenset[str] = frozenset(),
     added_workspace: frozenset[str] = frozenset(),
+    promoted: frozenset[str] = frozenset(),
 ) -> frozenset[str]:
     """Return what the Windows notice closure gained, once every gain is a
-    registry addition named for admission.
+    registry addition or unchanged registry package named for admission.
 
     `added` and `admitted` are normalized identities: every registry package
     the lock adds, and the ones the operator named after licence review. A
     Windows inventory root the prior graph lacks is admitted only when it is a
     workspace crate this lock adds; the prior closure is then walked from the
     roots the prior graph has, and the new one from all of them.
+    `promoted` names unchanged registry packages entering the closure, whose
+    acquired licence texts will be verified against the prior companion.
     """
     missing = [
         root
@@ -709,23 +733,24 @@ def require_explained_notice_closure(
     )
     after = selected_from_graph(new_graph, roots)
     gained = after - before
-    unexplained = sorted((before - after) | (gained - added))
+    unexplained = sorted((before - after) | (gained - added - promoted))
     if unexplained:
         raise RefreshError(
             "the Windows notice closure changed beyond the packages this lock "
             f"adds ({unexplained}): a feature flag or dependency edge moved an "
             "existing package in or out of the Windows binary reach. Fresh "
             "acquisition required; refusing rather than publish an "
-            "attestation for an unverified closure."
+            "attestation for an unverified closure. Review unchanged registry gains "
+            "and name each with --admit-closure-promotion NAME@VERSION."
         )
-    unnamed = sorted(gained - admitted)
+    unnamed = sorted(gained - admitted - promoted)
     if unnamed:
         raise RefreshError(
             f"added package(s) {unnamed} reach the Windows notice closure. That "
             "needs licence review, not a mechanical refresh; name each reviewed "
             "package with --admit-closure-addition NAME@VERSION."
         )
-    stale = sorted(admitted - gained)
+    stale = sorted((admitted | promoted) - gained)
     if stale:
         raise RefreshError(
             f"package(s) named for admission {stale} do not reach the Windows "
@@ -1338,6 +1363,67 @@ def added_package_rows(
     return rows, members, texts
 
 
+def promote_notice_rows(
+    prior_archive: Path, rows: list[dict[str, Any]],
+    standard_apache: frozenset[tuple[str, str]] = frozenset(),
+    fetch: Any = http_fetch,
+) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
+    promoted, texts = [], {}
+    with tarfile.open(prior_archive, "r:gz") as archive:
+        members = archive.getnames()
+        for row in rows:
+            prefix = f"vendor/{row['name']}-{row['version']}/"
+            package = tomllib.loads(archive.extractfile(prefix + "Cargo.toml").read().decode())["package"]
+            package["source"] = row["source"]
+            if (package["name"], package["version"], package.get("license")) != (
+                row["name"], row["version"], row["license_expression"]
+            ):
+                raise RefreshError("promotion manifest does not match the acquired index row")
+            require_permissive_additions({"packages": [package]}, [row])
+            references = []
+            for reference in row["notice_references"]:
+                source = reference["source"]
+                member = source["member"]
+                if source["kind"] != "cargo-registry-archive" or Path(member).name != member:
+                    raise RefreshError("promotion notice must name a top-level crate archive member")
+                data = archive.extractfile(prefix + member).read()
+                if sha256_bytes(data) != reference["sha256"] or len(data) != reference["bytes"]:
+                    raise RefreshError("promotion notice does not match the acquired source text")
+                references.append((reference, data))
+            if (row["name"], row["version"]) in standard_apache:
+                has_notice = any(
+                    member.startswith(prefix)
+                    and Path(member).name.upper().startswith(LICENSE_FILE_PREFIXES)
+                    for member in members
+                )
+                if references or has_notice or package.get("license") not in (
+                    "Apache-2.0", "Apache-2.0 OR MIT", "MIT OR Apache-2.0", "MIT/Apache-2.0"
+                ):
+                    raise RefreshError("standard Apache text requires an absent text and an explicit Apache-2.0 licence option")
+                url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                status, data = fetch(url)
+                if status != 200 or sha256_bytes(data) != "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30":
+                    raise RefreshError("canonical Apache-2.0 licence text could not be acquired")
+                references = [({"bytes": len(data), "sha256": sha256_bytes(data), "source": {
+                    "kind": "standard-license-text", "source_url": url,
+                    "license_identifier": "Apache-2.0", "declaration": package["license"],
+                }}, data)]
+            elif not references:
+                references = pinned_upstream_licence_references(
+                    row["name"], package.get("repository"), row.get("vcs", {}), fetch
+                )
+            if not references:
+                raise RefreshError("promotion has no acquired licence texts")
+            new_row = copy.deepcopy(row)
+            new_row["notice_references"] = [reference for reference, _ in references]
+            new_row["notice_status"] = "texts-acquired"
+            new_row["windows_notice_population"] = True
+            promoted.append(new_row)
+            for reference, data in references:
+                texts[reference["sha256"]] = data
+    return promoted, texts
+
+
 NOTICES_HEADER = b"Rust dependency notices\n\n"
 
 
@@ -1387,6 +1473,8 @@ def refresh(
     out_dir: Path,
     vendor_dir: Path | None = None,
     admissions: frozenset[tuple[str, str]] = frozenset(),
+    promotions: frozenset[tuple[str, str]] = frozenset(),
+    standard_apache: frozenset[tuple[str, str]] = frozenset(),
 ) -> dict[str, Any]:
     old = load_index(repo)
 
@@ -1450,6 +1538,24 @@ def refresh(
             "additions in this lock; refusing a review that does not describe it"
         )
 
+    if not standard_apache <= promotions:
+        raise RefreshError("standard licence review must name an admitted closure promotion")
+    promotion_rows = [
+        row for row in old["packages"]
+        if (row["name"], row["version"]) in promotions
+    ]
+    if {(row["name"], row["version"]) for row in promotion_rows} != promotions or any(
+        row["windows_notice_population"]
+        or not row["source"].startswith("registry+")
+        or not any(
+            (p["name"], p["version"], p["source"], p.get("checksum"))
+            == (row["name"], row["version"], row["source"], row["archive_sha256"])
+            for p in existing_new_external
+        )
+        for row in promotion_rows
+    ):
+        raise RefreshError("promotions must name unchanged registry packages outside the prior notice closure")
+
     workspace_delta = workspace_version_or_existing_dependency_edge_delta(
         old_lock,
         new_lock,
@@ -1482,6 +1588,7 @@ def refresh(
             if (row["name"], row["version"]) in admissions
         ),
         added_workspace=added_workspace,
+        promoted=frozenset(added_identity(row) for row in promotion_rows),
     )
 
     selected = {
@@ -1570,6 +1677,9 @@ def refresh(
         if collisions:
             raise RefreshError(f"added members collide with substitutions: {collisions}")
         substitutions |= added_members
+
+    promoted_rows, promoted_texts = promote_notice_rows(prior_archive_path, promotion_rows, standard_apache)
+    added_texts |= promoted_texts
 
     # A substitution whose bytes already match is not a change, and the
     # controls below are stated in terms of changes. Running this tool against
@@ -1735,6 +1845,9 @@ def refresh(
             key=lambda row: row["name"].lower(),
         )
         new_index["population"]["source_package_count"] = len(new_external)
+    if promoted_rows:
+        by_identity = {row["identity"]: row for row in promoted_rows}
+        new_index["packages"] = [by_identity.get(row["identity"], row) for row in new_index["packages"]]
     if gained:
         count = old["population"]["windows_notice_package_count"] + len(gained)
         if count != len(selected):
@@ -1762,6 +1875,12 @@ def refresh(
         )
         new_index["notices_sha256"] = sha256_bytes(new_notices)
     new_index["cargo_lock_sha256"] = lock_hash
+    new_index["population"]["query"] = (
+        "cargo metadata --manifest-path core/Cargo.toml --locked --offline --format-version 1 "
+        f"--filter-platform {FILTER_PLATFORM} {' '.join(shipped_feature_arguments(repo))}; "
+        "inventory roots; follow non-dev dependency edges"
+    )
+    new_index["population"]["shipped_feature_arguments"] = shipped_feature_arguments(repo)
     new_index["population"]["query_utc"] = datetime.datetime.now(
         datetime.timezone.utc
     ).isoformat()
@@ -1813,6 +1932,7 @@ def refresh(
             for row in added_rows
             if row["windows_notice_population"]
         ],
+        "promoted_existing_packages": [row["identity"] for row in promoted_rows],
         "added_notice_texts": sorted(set(added_texts) - set(committed_texts)),
         "windows_notice_package_count": len(selected),
         "external_package_count": len(new_external),
@@ -1885,6 +2005,14 @@ def main(argv: list[str] | None = None) -> int:
             "in-closure addition not named here refuses."
         ),
     )
+    parser.add_argument(
+        "--admit-closure-promotion", action="append", default=[], metavar="NAME@VERSION",
+        help="reviewed unchanged registry package entering the shipped-feature notice closure",
+    )
+    parser.add_argument(
+        "--admit-standard-apache-text", action="append", default=[], metavar="NAME@VERSION",
+        help="reviewed promotion publishing an Apache-2.0 option but no text; acquire the canonical licence",
+    )
     args = parser.parse_args(argv)
 
     repo = args.repo.resolve()
@@ -1903,6 +2031,8 @@ def main(argv: list[str] | None = None) -> int:
             out_dir,
             args.vendor_dir.resolve() if args.vendor_dir else None,
             parse_admissions(args.admit_closure_addition),
+            parse_admissions(args.admit_closure_promotion),
+            parse_admissions(args.admit_standard_apache_text),
         )
     except RefreshError as error:
         print(f"refresh refused: {error}", file=sys.stderr)

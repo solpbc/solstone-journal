@@ -23,6 +23,8 @@ import tomllib
 import urllib.request
 from pathlib import Path
 
+from refresh_windows_rust_notices import shipped_feature_arguments
+
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "core/distribution"
 LOCK = ROOT / "core/Cargo.lock"
@@ -49,6 +51,7 @@ def closure(target: str, triple: str) -> tuple[list[str], dict[str, dict]]:
     command = [
         "cargo", "metadata", "--manifest-path", str(ROOT / "core/Cargo.toml"),
         "--locked", "--offline", "--format-version", "1", "--filter-platform", triple,
+        *shipped_feature_arguments(ROOT),
     ]
     result = subprocess.run(command, capture_output=True, check=False)
     if result.returncode:
@@ -215,6 +218,7 @@ def write(target: str, triple: str, old_index: dict, known_texts: dict[str, byte
         "schema": "solstone.rust-notices.v1",
         "target": target,
         "filter_platform": triple,
+        "shipped_feature_arguments": shipped_feature_arguments(ROOT),
         "cargo_lock_sha256": digest(LOCK.read_bytes()),
         "notices_sha256": digest(notices),
         "packages": selected,
@@ -235,6 +239,7 @@ def check(target: str, triple: str) -> None:
         index["schema"] != "solstone.rust-notices.v1"
         or index["target"] != target
         or index["filter_platform"] != triple
+        or index.get("shipped_feature_arguments") != shipped_feature_arguments(ROOT)
         or index["cargo_lock_sha256"] != digest(LOCK.read_bytes())
         or index["notices_sha256"] != digest(notices)
         or [package["identity"] for package in index["packages"]] != identities

@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- on windows, your own hostname can now get past the DNS check, which was looking for a file used on mac and linux. it uses the DNS servers configured on your PC.
+
 ## [2.0.32] - 2026-10-04
 
 ### Added

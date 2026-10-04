@@ -60,6 +60,9 @@ x509-parser = { version = "0.16.0", features = ["verify"] }
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 
+[target.'cfg(windows)'.dependencies]
+ipconfig = { version = "0.3.2", default-features = false }
+
 [dev-dependencies]
 proc-macro2 = "1.0.107"
 rusqlite.workspace = true
