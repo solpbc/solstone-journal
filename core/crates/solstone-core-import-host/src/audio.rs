@@ -696,6 +696,19 @@ fn allocate_segment_directory(
             candidate.second()
         );
         let path = parent.join(&segment);
+        // A segment the owner is removing has been moved aside, so nothing sits at
+        // its name; claiming that name would put new audio where a deletion is in
+        // progress. Step past it, as past any segment already there.
+        match solstone_core_segment::owner_deleted(&path) {
+            Ok(false) => {}
+            Ok(true) => continue,
+            Err(error) => {
+                return Err(ImportError::AudioSegmentDirectory {
+                    path,
+                    message: error.to_string(),
+                });
+            }
+        }
         match fs::create_dir(&path) {
             Ok(()) => return Ok((segment, path)),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,

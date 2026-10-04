@@ -510,6 +510,35 @@ async fn ac5_dropped_chunks_are_read_back_from_the_durable_record() {
 }
 
 #[tokio::test]
+async fn allocation_steps_past_a_segment_mid_removal() {
+    let temp = TempDir::new().unwrap();
+    let initial = request(&temp, "mid-removal");
+    let parent = initial
+        .journal_root
+        .join("chronicle")
+        .join(&initial.day)
+        .join(&initial.stream);
+    // An owner removal in progress: the segment has been moved aside under its
+    // staged name, and nothing sits at its own name.
+    fs::create_dir_all(parent.join(".removing_120000_300")).unwrap();
+    fs::write(parent.join(".removing_120000_300/marker"), b"removing").unwrap();
+    let outcome = fake_import(
+        initial.clone(),
+        300.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await
+    .unwrap();
+    assert_eq!(created(&outcome).segments[0].segment, "120001_300");
+    assert!(!parent.join("120000_300").exists());
+    assert_eq!(
+        fs::read(parent.join(".removing_120000_300/marker")).unwrap(),
+        b"removing"
+    );
+}
+
+#[tokio::test]
 async fn ac6_allocation_is_exclusive_bounded_and_cleans_failed_leaves() {
     let temp = TempDir::new().unwrap();
     let initial = request(&temp, "collision");
