@@ -67,7 +67,7 @@ pub use body_row_event::{
 pub use body_shard_validator::{BodyShardValidator, ValidatedBodyShard};
 pub use body_source_family::BodySourceFamily;
 pub use body_source_hash::BodySourceHash;
-pub use bundle_id::BundleId;
+pub use bundle_id::{BODY_BUNDLE_DIR_PREFIX, BundleId};
 pub use candidate::{FieldState, LedgerCandidate, LedgerSchema, ValueState, project};
 pub use canonicalize::canonicalize;
 pub use coordinate::Coordinate;

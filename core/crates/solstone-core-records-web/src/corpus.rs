@@ -777,3 +777,76 @@ async fn reflection_search_hit_includes_week_url_when_page_exists() {
     assert_eq!(hit4["agent"], "flow");
     assert!(hit4.get("week_url").is_none());
 }
+
+#[test]
+fn read_by_path_refuses_body_source_paths_and_serves_control() {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime")
+        .block_on(async {
+            let id = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let root = PathBuf::from("/var/tmp").join(format!("records-web-read-path-{id}"));
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(&root).unwrap();
+
+            let write_file = |rel: &str, content: &str| {
+                let full = root.join(rel);
+                fs::create_dir_all(full.parent().unwrap()).unwrap();
+                fs::write(full, content).unwrap();
+            };
+
+            let seg = "120000_60";
+            let month = "202607";
+            let bundle_id = "01j8k9m0n1p2q3r4s5t6u7v8w9x";
+
+            let path_apple =
+                format!("chronicle/20260731/import.apple_health/{seg}/day_summary_transcript.md");
+            let path_bundle = format!("imports/body-{bundle_id}/normalized/{month}.jsonl");
+            let path_ctrl = format!("chronicle/20260731/import.ics/{seg}/event_transcript.md");
+
+            write_file(&path_apple, "secret apple data");
+            write_file(&path_bundle, "secret bundle data");
+            write_file(&path_ctrl, "control ics data");
+
+            // Probes
+            let req_apple1 = format!(
+                "/app/search/api/read?path=20260731//import.apple_health/{seg}/day_summary_transcript.md"
+            );
+            let req_apple2 = format!(
+                "/app/search/api/read?path=./chronicle/20260731/import.apple_health/{seg}/day_summary_transcript.md"
+            );
+            let req_bundle =
+                format!("/app/search/api/read?path=imports/body-{bundle_id}/normalized/{month}.jsonl");
+            let req_ctrl =
+                format!("/app/search/api/read?path=20260731//import.ics/{seg}/event_transcript.md");
+
+            let res_apple1 = request(&root, &req_apple1).await;
+            assert_eq!(res_apple1.status(), StatusCode::NOT_FOUND);
+            let body1 = to_bytes(res_apple1.into_body(), 16384).await.unwrap();
+            assert!(!body1
+                .windows(b"secret apple data".len())
+                .any(|w| w == b"secret apple data"));
+
+            let res_apple2 = request(&root, &req_apple2).await;
+            assert_eq!(res_apple2.status(), StatusCode::NOT_FOUND);
+            let body2 = to_bytes(res_apple2.into_body(), 16384).await.unwrap();
+            assert!(!body2
+                .windows(b"secret apple data".len())
+                .any(|w| w == b"secret apple data"));
+
+            let res_bundle = request(&root, &req_bundle).await;
+            assert_eq!(res_bundle.status(), StatusCode::NOT_FOUND);
+            let body_b = to_bytes(res_bundle.into_body(), 16384).await.unwrap();
+            assert!(!body_b
+                .windows(b"secret bundle data".len())
+                .any(|w| w == b"secret bundle data"));
+
+            let res_ctrl = request(&root, &req_ctrl).await;
+            assert_eq!(res_ctrl.status(), StatusCode::OK);
+            let json_ctrl = response_json(res_ctrl).await;
+            assert_eq!(json_ctrl["content"], "control ics data");
+
+            let _ = fs::remove_dir_all(&root);
+        });
+}

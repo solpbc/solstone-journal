@@ -324,6 +324,27 @@ async fn read_api(journal_root: PathBuf, Query(query): Query<ReadQuery>) -> Resp
             }
         }
     };
+    let resolved_path =
+        match solstone_core_journal_io::bounded_read::resolve_read_path(&journal_root, &rel) {
+            Ok(path) => path,
+            Err(JournalReadError::Path(detail)) => return invalid_path(&detail),
+            Err(JournalReadError::NotFound) => return file_not_found("journal file not found"),
+            Err(JournalReadError::TooLarge(detail)) => return invalid_value(&detail),
+            Err(JournalReadError::Encoding(detail)) => return file_read_failed(&detail),
+            Err(JournalReadError::Io) => return file_read_failed("unable to read journal file"),
+        };
+    let canonical_root = journal_root
+        .canonicalize()
+        .unwrap_or_else(|_| journal_root.clone());
+    let canonical_path = resolved_path
+        .canonicalize()
+        .unwrap_or_else(|_| resolved_path.clone());
+    if let Ok(stripped) = canonical_path.strip_prefix(&canonical_root) {
+        let normalized = stripped.to_string_lossy().replace('\\', "/");
+        if solstone_core_format::body::is_body_source_path(&normalized) {
+            return body_not_readable("body data is not readable through this tool");
+        }
+    }
     match read_text(&journal_root, &rel) {
         Ok(content) => axum::Json(json!({"path": rel, "content": content})).into_response(),
         Err(JournalReadError::Path(detail)) => invalid_path(&detail),
@@ -769,6 +790,15 @@ fn file_not_found(detail: &str) -> Response {
     error_envelope(
         "file_not_found",
         "that file isn't available.",
+        detail,
+        StatusCode::NOT_FOUND,
+    )
+    .into_response()
+}
+fn body_not_readable(detail: &str) -> Response {
+    error_envelope(
+        "body_not_readable",
+        "body data is not readable through this tool.",
         detail,
         StatusCode::NOT_FOUND,
     )
