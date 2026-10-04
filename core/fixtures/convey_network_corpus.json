@@ -281,7 +281,7 @@
             "UNPAIR_AMBIGUOUS_LABEL_CANDIDATE_FORMAT": "- paired {paired_at}, fingerprint {short_fp}",
             "UNPAIR_AMBIGUOUS_LABEL_COMMAND_FORMAT": "  solstone call link unpair {fingerprint}",
             "UNPAIR_AMBIGUOUS_LABEL_HEADER_FORMAT": "more than one device is named '{label}'. pick the one you mean and run its command:",
-            "UNPAIR_BODY": "this device loses access to your journal immediately and can't reconnect until you pair it again. anything stored on the device stays on the device.",
+            "UNPAIR_BODY": "this device loses access to your journal immediately and can't reconnect until you pair it again. anything stored on the device stays on the device, and anything still waiting to be sent goes to the journal you pair it with next.",
             "UNPAIR_FAIL_TOAST": "couldn't unpair this device",
             "UNPAIR_SUCCESS_TOAST": "unpaired",
             "UNPAIR_TITLE_FORMAT": "unpair '{label}'?",

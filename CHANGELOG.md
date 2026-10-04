@@ -6,9 +6,15 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- when you unpair a device on the network page, your journal now tells you that anything still waiting on it goes to the journal you pair it with next.
+
 ### Fixed
 
 - on windows, your own hostname can now get past the DNS check, which was looking for a file used on mac and linux. it uses the DNS servers configured on your PC.
+- on windows, material that arrived late for an earlier day, like what a device was still holding when you paired it again, could be left out of that day's daily results. your journal on windows now brings a day's daily results up to date when something new arrives for it, whatever day it's from, as it does on mac and linux.
+- when you merged another journal's archive into yours, material from one of your sources could be left out if your journal already had different material from that source at the same moment, and the merge was marked incomplete. your journal now keeps it alongside what's there when it can find a free place for it, the way it does when a device sends material for a moment it already holds.
 
 ## [2.0.32] - 2026-10-04
 

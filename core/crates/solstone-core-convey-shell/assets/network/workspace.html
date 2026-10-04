@@ -2286,7 +2286,9 @@ function clientNameFor(button) {
 
 async function unpairClient(cid, button) {
   const name = clientNameFor(button);
-  if (!confirm(`remove "${name}"? this disconnects that device from your journal.`)) {
+  const copy = window.LinkCopy || {};
+  const title = (copy.UNPAIR_TITLE_FORMAT || "unpair '{label}'?").replace('{label}', name);
+  if (!confirm(copy.UNPAIR_BODY ? `${title}\n\n${copy.UNPAIR_BODY}` : title)) {
     return;
   }
 
