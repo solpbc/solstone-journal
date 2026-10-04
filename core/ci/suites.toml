@@ -1006,7 +1006,7 @@ prerequisites = ["cargo-cache"]
 timeout = "slow"
 default_full = true
 runtime = "none"
-features = ["full-tests"]
+features = ["full-tests", "test-hooks"]
 
 [[package_suites]]
 id = "package::solstone-core-mcp-audit"
@@ -1183,8 +1183,9 @@ areas = ["ingest"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-segment-cli"
@@ -3790,7 +3791,7 @@ platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
-required_features = ["test-hooks"]
+required_features = ["full-tests", "test-hooks"]
 runtime = "none"
 
 [[suites]]

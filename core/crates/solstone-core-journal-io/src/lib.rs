@@ -209,7 +209,8 @@ pub use readers::{
 };
 pub use readers::{
     JsonlReadReport, JsonlRecord, MalformedPolicy, read_bytes, read_json, read_jsonl,
-    read_jsonl_with_report, read_optional_text, read_regular_file_capped, read_text,
+    read_jsonl_with_report, read_optional_text, read_regular_file_capped,
+    read_relative_file_bounded, read_text,
 };
 pub use removal::{remove_contained_tree, remove_dir_all};
 pub use snapshot::{
@@ -218,8 +219,9 @@ pub use snapshot::{
 #[cfg(any(unix, windows))]
 pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};
 pub use strict_segment::{
-    ExactLookupError, StrictCreateError, create_segment_strict, preflight_segment_admission,
-    resolve_segment_exact, resolve_segment_locator_exact, resolve_stream_exact,
+    ExactLookupError, StrictCreateError, create_segment_parent_strict, create_segment_strict,
+    preflight_segment_admission, resolve_segment_exact, resolve_segment_locator_exact,
+    resolve_stream_exact,
 };
 #[cfg(windows)]
 pub use windows_disk_space::{WindowsDiskSpace, windows_available_disk_bytes, windows_disk_space};

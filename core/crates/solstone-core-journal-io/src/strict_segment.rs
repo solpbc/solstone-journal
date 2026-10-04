@@ -170,6 +170,33 @@ pub fn create_segment_strict(
 ) -> Result<PathBuf, StrictCreateError> {
     let admitted =
         admit_segment(journal_root, day, stream, segment).map_err(StrictCreateError::Admission)?;
+    create_admitted_parent(journal_root, day, &admitted)?;
+    fs::create_dir_all(&admitted.segment_dir).map_err(|source| StrictCreateError::CreateIo {
+        path: admitted.segment_dir.clone(),
+        source,
+    })?;
+    Ok(admitted.segment_dir)
+}
+
+/// Admit a segment's names and create only its containing day/stream ancestry.
+/// The segment itself remains absent so its live-name lock can precede creation.
+pub fn create_segment_parent_strict(
+    journal_root: &Path,
+    day: &str,
+    stream: &str,
+    segment: &str,
+) -> Result<PathBuf, StrictCreateError> {
+    let admitted =
+        admit_segment(journal_root, day, stream, segment).map_err(StrictCreateError::Admission)?;
+    create_admitted_parent(journal_root, day, &admitted)?;
+    Ok(admitted.stream_dir)
+}
+
+fn create_admitted_parent(
+    journal_root: &Path,
+    day: &str,
+    admitted: &AdmittedPaths,
+) -> Result<(), StrictCreateError> {
     day_path(journal_root, day, true).map_err(|error| match error {
         PathError::Io { path, source } => StrictCreateError::CreateIo { path, source },
         other => StrictCreateError::Admission(from_path_error(other)),
@@ -180,11 +207,7 @@ pub fn create_segment_strict(
             source,
         })?;
     }
-    fs::create_dir_all(&admitted.segment_dir).map_err(|source| StrictCreateError::CreateIo {
-        path: admitted.segment_dir.clone(),
-        source,
-    })?;
-    Ok(admitted.segment_dir)
+    Ok(())
 }
 
 /// Resolve an existing named stream directory without following symlinks.

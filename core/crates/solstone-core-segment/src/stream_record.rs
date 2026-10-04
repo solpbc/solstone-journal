@@ -425,7 +425,9 @@ pub fn bind_agent_memory_stream(
         });
     }
 
-    if let Some(record) = read_typed_stream_record(&state_path)? {
+    if let Some(record) =
+        read_memory_json::<StreamRecord>(journal, Path::new(&format!("streams/{name}.json")))?
+    {
         if record.name == name
             && record.kind == Kind::AgentMemory.compat_label()
             && binding_matches(&record, binding)
@@ -457,7 +459,11 @@ pub fn bind_agent_memory_stream(
             ));
         }
         Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => {
-            let Some(record) = read_typed_stream_record(&state_path)? else {
+            let Some(record) = read_memory_json::<StreamRecord>(
+                journal,
+                Path::new(&format!("streams/{name}.json")),
+            )?
+            else {
                 return Err(SegmentError::StreamInput("memory stream record is missing"));
             };
             if record.name != name
@@ -477,9 +483,10 @@ pub fn bind_agent_memory_stream(
     })
 }
 
-/// Advance only a bound `agent_memory` stream. The caller must not hold the
-/// stream-record lock; this function owns it from tail recovery through marker
-/// publication.
+/// Advance only a bound `agent_memory` stream while the caller holds the exact
+/// current live-name lock. The function snapshots the head, coordinates that
+/// predecessor's live name, then takes the stream record lock and revalidates
+/// the snapshot before publication. It never reacquires the caller's lock.
 pub fn advance_agent_memory_stream(
     stream: &str,
     day: &str,
@@ -487,6 +494,7 @@ pub fn advance_agent_memory_stream(
     segment_dir: &SegmentDir,
     cid: &str,
     source: &str,
+    current_live_lock: &FileLock,
 ) -> Result<StreamAdvance, SegmentError> {
     validate_cid(cid)?;
     if !is_safe_stream_component(stream)
@@ -504,29 +512,103 @@ pub fn advance_agent_memory_stream(
             "memory advance does not match its segment directory",
         ));
     }
+    if current_live_lock.path() != segment_dir.path() {
+        return Err(SegmentError::StreamInput(
+            "memory advance does not hold its current live-name lock",
+        ));
+    }
     let journal = &segment_dir.journal;
     let state_path = stream_record_path(journal, stream);
-    let _lock = hold_lock(&state_path, LockOptions::default())?;
-    let mut record =
-        read_typed_stream_record(&state_path)?.ok_or(SegmentError::StreamBindingConflict {
-            name: stream.to_owned(),
-        })?;
-    if record.name != stream
-        || record.kind != Kind::AgentMemory.compat_label()
-        || !binding_matches(&record, StreamBinding { cid, source })
+    let snapshot =
+        read_memory_json::<StreamRecord>(journal, Path::new(&format!("streams/{stream}.json")))?
+            .ok_or(SegmentError::StreamBindingConflict {
+                name: stream.to_owned(),
+            })?;
+    if snapshot.name != stream
+        || snapshot.kind != Kind::AgentMemory.compat_label()
+        || !binding_matches(&snapshot, StreamBinding { cid, source })
     {
         return Err(SegmentError::StreamBindingConflict {
             name: stream.to_owned(),
         });
     }
 
-    finish_agent_memory_tail(journal, &record)?;
+    let _predecessor_lock = match (&snapshot.last_day, &snapshot.last_segment) {
+        (Some(previous_day), Some(previous_segment)) => {
+            let previous = SegmentDir::resolve(journal, previous_day, previous_segment, stream)?;
+            if previous.path() == segment_dir.path() {
+                None
+            } else if previous.path().parent().is_some_and(Path::is_dir) {
+                Some(hold_lock(previous.path(), LockOptions::default())?)
+            } else {
+                // A removed predecessor's ancestry is not recreated for a lock.
+                None
+            }
+        }
+        (None, None) => None,
+        _ => {
+            return Err(SegmentError::StreamInput(
+                "memory stream head is incomplete",
+            ));
+        }
+    };
+    let _record_lock = hold_lock(&state_path, LockOptions::default())?;
+    let mut record =
+        read_memory_json::<StreamRecord>(journal, Path::new(&format!("streams/{stream}.json")))?
+            .ok_or(SegmentError::StreamBindingConflict {
+                name: stream.to_owned(),
+            })?;
+    if record.name != stream
+        || record.kind != Kind::AgentMemory.compat_label()
+        || !binding_matches(&record, StreamBinding { cid, source })
+        || record.last_day != snapshot.last_day
+        || record.last_segment != snapshot.last_segment
+        || record.seq != snapshot.seq
+        || record.last_marker != snapshot.last_marker
+    {
+        return Err(SegmentError::StreamInput(
+            "memory stream head changed while coordinating live names",
+        ));
+    }
+
+    // A readable head may come from a published-but-unconfirmed replacement.
+    // Confirm this mutable record before returning or recovering its marker.
+    let head_bytes = serde_json::to_vec(&record).map_err(|source| SegmentError::Serialization {
+        path: state_path.clone(),
+        source,
+    })?;
+    replace_bound(journal, "streams", &format!("{stream}.json"), &head_bytes)?;
+
     let marker_path = segment_dir.path.join("stream.json");
+    if let Some(marker) = read_memory_marker(segment_dir)? {
+        if marker.stream != stream || marker.seq == 0 || marker.seq > record.seq {
+            return Err(SegmentError::StreamInput(
+                "memory segment marker conflicts with stream state",
+            ));
+        }
+        let advance = StreamAdvance {
+            prev_day: marker.prev_day,
+            prev_segment: marker.prev_segment,
+            seq: marker.seq,
+        };
+        let is_head = record.last_day.as_deref() == Some(day)
+            && record.last_segment.as_deref() == Some(segment);
+        if (advance.seq == record.seq || is_head)
+            && (!is_head || record.last_marker.as_ref() != Some(&advance))
+        {
+            return Err(SegmentError::StreamInput(
+                "memory segment marker conflicts with its recorded head",
+            ));
+        }
+        return Ok(advance);
+    }
+
+    finish_agent_memory_tail(journal, &record)?;
     if record.last_day.as_deref() == Some(day) && record.last_segment.as_deref() == Some(segment) {
         let advance = record.last_marker.clone().ok_or(SegmentError::StreamInput(
             "memory stream tail has no recorded marker",
         ))?;
-        match read_stream_marker(&marker_path)? {
+        match read_memory_marker(segment_dir)? {
             Some(marker) if stream_marker_matches(&marker, stream, &advance) => {
                 return Ok(advance);
             }
@@ -576,6 +658,28 @@ pub fn advance_agent_memory_stream(
     Ok(predecessor)
 }
 
+/// Read one memory original's marker without creating or repairing anything.
+pub fn read_agent_memory_chain(
+    segment_dir: &SegmentDir,
+) -> Result<Option<StreamAdvance>, SegmentError> {
+    let Some(marker) = read_memory_marker(segment_dir)? else {
+        return Ok(None);
+    };
+    if marker.stream != segment_dir.stream
+        || marker.seq == 0
+        || marker.prev_day.is_some() != marker.prev_segment.is_some()
+    {
+        return Err(SegmentError::StreamInput(
+            "memory segment marker conflicts with its coordinate",
+        ));
+    }
+    Ok(Some(StreamAdvance {
+        prev_day: marker.prev_day,
+        prev_segment: marker.prev_segment,
+        seq: marker.seq,
+    }))
+}
+
 fn finish_agent_memory_tail(journal: &Path, record: &StreamRecord) -> Result<(), SegmentError> {
     let (Some(day), Some(segment)) = (&record.last_day, &record.last_segment) else {
         if record.seq == 0 && record.last_marker.is_none() {
@@ -605,7 +709,7 @@ fn finish_agent_memory_tail(journal: &Path, record: &StreamRecord) -> Result<(),
         return Ok(());
     }
     let marker_path = tail.path.join("stream.json");
-    match read_stream_marker(&marker_path)? {
+    match read_memory_marker(&tail)? {
         Some(marker) if stream_marker_matches(&marker, &record.name, advance) => Ok(()),
         Some(_) => Err(SegmentError::StreamInput(
             "memory predecessor marker conflicts with stream state",
@@ -620,6 +724,49 @@ fn finish_agent_memory_tail(journal: &Path, record: &StreamRecord) -> Result<(),
             )
         }
     }
+}
+
+fn read_memory_json<T: serde::de::DeserializeOwned>(
+    journal: &Path,
+    relative: &Path,
+) -> Result<Option<T>, SegmentError> {
+    let root =
+        solstone_core_journal_io::journal_root::JournalRoot::open(journal).map_err(|error| {
+            SegmentError::Io {
+                path: journal.to_path_buf(),
+                source: std::io::Error::other(error.to_string()),
+            }
+        })?;
+    let observed = solstone_core_journal_io::read_relative_file_bounded(&root, relative, 16 * 1024)
+        .map_err(|error| SegmentError::Io {
+            path: journal.join(relative),
+            source: std::io::Error::other(error.to_string()),
+        })?;
+    observed
+        .map(|observed| {
+            serde_json::from_slice(&observed.bytes).map_err(|source| {
+                SegmentError::Read(ReadError::Malformed(
+                    solstone_core_journal_io::MalformedDataError {
+                        path: journal.join(relative),
+                        line: None,
+                        source,
+                    },
+                ))
+            })
+        })
+        .transpose()
+}
+
+fn read_memory_marker(segment: &SegmentDir) -> Result<Option<StreamMarker>, SegmentError> {
+    read_memory_json(
+        &segment.journal,
+        &Path::new(&segment_relative(
+            &segment.day,
+            &segment.stream,
+            &segment.segment,
+        ))
+        .join("stream.json"),
+    )
 }
 
 fn stream_marker_matches(marker: &StreamMarker, stream: &str, advance: &StreamAdvance) -> bool {
@@ -3838,6 +3985,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn agent_memory_binding_refuses_unattributed_foreign_and_wrong_kind_rows() {
         let source = "f".repeat(64);
@@ -3903,6 +4051,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn agent_memory_binding_creates_and_reuses_only_its_kind() {
         let temporary = TempDir::new();
@@ -3945,6 +4094,7 @@ mod tests {
         assert_eq!(fs::read(record_path).unwrap(), before);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn agent_memory_advance_skips_deleted_tail_and_recovers_live_missing_marker() {
         let temporary = TempDir::new();
@@ -3969,6 +4119,7 @@ mod tests {
             &source,
         )
         .unwrap();
+        let first_live_lock = hold_lock(first.segment.path(), LockOptions::default()).unwrap();
         let first_advance = advance_agent_memory_stream(
             &stream,
             "20260804",
@@ -3976,9 +4127,11 @@ mod tests {
             &first.segment,
             &cid,
             &source,
+            &first_live_lock,
         )
         .unwrap();
         assert_eq!(first_advance.seq, 1);
+        drop(first_live_lock);
 
         let first_marker = first.segment.path().join("stream.json");
         fs::remove_file(&first_marker).unwrap();
@@ -3987,6 +4140,7 @@ mod tests {
 
         let second_dir =
             SegmentDir::resolve(temporary.path(), "20260804", "120100_1", &stream).unwrap();
+        let second_live_lock = hold_lock(second_dir.path(), LockOptions::default()).unwrap();
         let second = advance_agent_memory_stream(
             &stream,
             "20260804",
@@ -3994,9 +4148,11 @@ mod tests {
             &second_dir,
             &cid,
             &source,
+            &second_live_lock,
         )
         .unwrap();
         assert_eq!(second.seq, 2);
+        drop(second_live_lock);
         assert!(!first.segment.path().exists());
         assert!(!first_marker.exists());
 
@@ -4004,9 +4160,17 @@ mod tests {
         fs::remove_file(&second_marker).unwrap();
         let third_dir =
             SegmentDir::resolve(temporary.path(), "20260804", "120200_1", &stream).unwrap();
-        let third =
-            advance_agent_memory_stream(&stream, "20260804", "120200_1", &third_dir, &cid, &source)
-                .unwrap();
+        let third_live_lock = hold_lock(third_dir.path(), LockOptions::default()).unwrap();
+        let third = advance_agent_memory_stream(
+            &stream,
+            "20260804",
+            "120200_1",
+            &third_dir,
+            &cid,
+            &source,
+            &third_live_lock,
+        )
+        .unwrap();
         assert_eq!(third.seq, 3);
         assert!(second_marker.is_file());
     }

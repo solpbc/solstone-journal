@@ -6,7 +6,7 @@
 use std::io;
 use std::path::Path;
 
-use solstone_core_journal_io::{FileLock, LockError, LockOptions, hold_lock};
+use solstone_core_journal_io::{BoundParentLock, FileLock, LockError, LockOptions, hold_lock};
 
 const SOURCE_MUTATION_LOCK_PREFIX: &str = ".source-";
 const SOURCE_MUTATION_LOCK_SUFFIX: &str = ".mutation";
@@ -18,6 +18,52 @@ const SOURCE_MUTATION_LOCK_SUFFIX: &str = ".mutation";
 /// inside it, never before it.
 pub fn hold_source_mutation(journal_root: &Path, source: &str) -> Result<FileLock, LockError> {
     hold_source_mutation_with_options(journal_root, source, LockOptions::default())
+}
+
+/// Hold the same source sidecar for an agent-memory source under a bound parent.
+/// A substituted stream registry cannot redirect even the lock's creation.
+pub fn hold_agent_memory_mutation(
+    journal: &Path,
+    source: &str,
+) -> Result<BoundParentLock, LockError> {
+    use solstone_core_journal_io::{JournalRoot, acquire_existing_parent_lock_bound};
+    use std::ffi::OsStr;
+    if source.len() != 64
+        || !source
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    {
+        return Err(invalid_source_error(journal));
+    }
+    let map_error = |error: String| LockError::Io {
+        path: journal.join("streams"),
+        source: io::Error::other(error),
+    };
+    let root = JournalRoot::open(journal).map_err(|error| map_error(error.to_string()))?;
+    #[cfg(unix)]
+    let directory = solstone_core_journal_io::create_or_open_flat_directory_bound(
+        &root,
+        OsStr::new("streams"),
+        0o700,
+        root.canonical_path(),
+    )
+    .map_err(|error| map_error(error.to_string()))?;
+    #[cfg(windows)]
+    let directory = solstone_core_journal_io::create_or_open_windows_flat_directory_bound(
+        &root,
+        OsStr::new("streams"),
+        root.canonical_path(),
+    )
+    .map_err(|error| map_error(error.to_string()))?;
+    let name = format!("{SOURCE_MUTATION_LOCK_PREFIX}{source}{SOURCE_MUTATION_LOCK_SUFFIX}.lock");
+    let options = LockOptions::default();
+    acquire_existing_parent_lock_bound(
+        &directory,
+        OsStr::new(&name),
+        options.timeout,
+        options.poll_interval,
+    )
+    .map_err(|error| map_error(error.to_string()))
 }
 
 fn hold_source_mutation_with_options(
@@ -121,5 +167,15 @@ mod tests {
             }
         }
         assert!(!journal.exists());
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn agent_memory_source_lock_refuses_a_substituted_registry_without_writing_outside() {
+        let journal = TempDir::new();
+        let outside = TempDir::new();
+        std::os::unix::fs::symlink(outside.path(), journal.path().join("streams")).unwrap();
+        assert!(hold_agent_memory_mutation(journal.path(), &"a".repeat(64)).is_err());
+        assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
     }
 }
