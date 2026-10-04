@@ -2635,7 +2635,11 @@ mod tests {
             "gateway_unreachable",
         );
 
-        let now_check = now + Duration::seconds(1);
+        // The refusal is stamped by the wall clock when it is written, and a
+        // record stamped after the read time projects as invalid. Read after
+        // the write, not one second after the test began: the fingerprint
+        // work above can take longer than that on a loaded host.
+        let now_check = Utc::now() + Duration::seconds(1);
         let context = HomeContext::with_zone(ready_path, now_check, chrono_tz::Tz::UTC);
         let snapshot = build_brain_snapshot(&context);
         assert_eq!(snapshot["state"], "blocked");
@@ -2693,6 +2697,7 @@ mod tests {
             &config_map,
             "certificate_invalid",
         );
+        let now_check = Utc::now() + Duration::seconds(1);
         let context2 = HomeContext::with_zone(mid_check_path, now_check, chrono_tz::Tz::UTC);
         let snapshot2 = build_brain_snapshot(&context2);
         assert_eq!(snapshot2["state"], "unhealthy");
