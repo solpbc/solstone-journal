@@ -61,12 +61,7 @@ const CASES: &[Case] = &[
 struct Install {
     root: PathBuf,
     journal: PathBuf,
-}
-
-impl Drop for Install {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
-    }
+    _directory: tempfile::TempDir,
 }
 
 fn build_binary(package: &str, binary: &str) -> PathBuf {
@@ -99,16 +94,18 @@ fn build_binary(package: &str, binary: &str) -> PathBuf {
 /// The dispatcher and its native siblings, copied into one private directory
 /// so `journal` resolves exactly these binaries beside itself.
 fn install() -> Install {
-    let root = std::env::temp_dir().join(format!(
-        "solstone-hosted-native-exit-{}",
-        std::process::id()
-    ));
+    let directory = tempfile::Builder::new()
+        .prefix("solstone-hosted-native-exit-")
+        .tempdir()
+        .expect("private installed binaries");
+    let root = directory.path().to_path_buf();
     let bin = root.join("bin");
     fs::create_dir_all(&bin).expect("create binary directory");
     fs::create_dir_all(root.join("journal")).expect("create journal directory");
     let install = Install {
         journal: bin.join("journal.exe"),
         root,
+        _directory: directory,
     };
     fs::copy(
         env!("CARGO_BIN_EXE_solstone-core-journal"),
@@ -226,11 +223,7 @@ fn unhosted_journal_brain_owner_dispatches_to_native_binary() {
     let core_dest = install.root.join("bin/solstone-core.exe");
     fs::copy(&core_binary, &core_dest).expect("copy solstone-core native sibling");
 
-    let journal_dir = std::env::temp_dir().join(format!(
-        "solstone-hosted-brain-journal-{}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&journal_dir);
+    let journal_dir = install.root.join("journal");
     fs::create_dir_all(journal_dir.join("config")).expect("create config dir");
     fs::write(
         journal_dir.join("config/journal.json"),
@@ -295,6 +288,4 @@ fn unhosted_journal_brain_owner_dispatches_to_native_binary() {
     let refresh_json: serde_json::Value =
         serde_json::from_slice(&refresh_output.stdout).expect("refresh json");
     assert_eq!(refresh_json["reason_code"], "stale_expected_fingerprint");
-
-    let _ = fs::remove_dir_all(&journal_dir);
 }
