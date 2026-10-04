@@ -10,7 +10,7 @@ use solstone_core_journal_io::{BoundPublicationPrimitive, run_with_bound_publica
 fn parent_sync_fault_cannot_return_a_stored_result() {
     let journal = tempfile::Builder::new()
         .prefix("solstone-agent-memory-")
-        .tempdir_in("/var/tmp")
+        .tempdir()
         .expect("journal fixture");
     let now = Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap();
     let (result, fault_consumed) =

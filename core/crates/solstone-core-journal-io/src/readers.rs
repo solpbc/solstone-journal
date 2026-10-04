@@ -521,10 +521,71 @@ pub fn read_bytes(path: impl AsRef<Path>, default: Vec<u8>) -> Result<Vec<u8>, R
     }
 }
 
-/// Read a small regular file, opened once without following a symlink and
-/// never blocking on a FIFO. A file longer than `max_bytes`, or anything that
-/// isn't a regular file, is an error: the caller gets all of the file or
-/// nothing.
+/// Read a bounded regular descendant through retained native directory handles.
+/// Refuse substituted components and return absence without creating ancestry.
+#[cfg(any(unix, windows))]
+pub fn read_relative_file_bounded(
+    root: &crate::journal_root::JournalRoot,
+    relative: &Path,
+    maximum: usize,
+) -> Result<Option<crate::observation::FileObservation>, crate::errors::FlatDirectoryError> {
+    use crate::errors::FlatDirectoryError;
+    let invalid = || FlatDirectoryError::InvalidRelativePath {
+        path: relative.to_path_buf(),
+        reason: "expected a regular filename below a nonempty relative directory",
+    };
+    if relative
+        .components()
+        .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(invalid());
+    }
+    let parent = relative
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(invalid)?;
+    let name = relative.file_name().ok_or_else(invalid)?;
+    #[cfg(unix)]
+    {
+        let directory = match crate::flat_directory::FlatDirectory::open(root, parent) {
+            Ok(directory) => directory,
+            Err(FlatDirectoryError::Io { source, .. })
+                if source.kind() == io::ErrorKind::NotFound =>
+            {
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        };
+        crate::flat_directory::read_observed_file_bounded(&directory, name, maximum)
+    }
+    #[cfg(windows)]
+    {
+        use crate::windows_sync_dir::{
+            WindowsFlatDirectory, open_windows_flat_directory_bound,
+            read_windows_observed_file_bounded,
+        };
+        let mut opened: Option<WindowsFlatDirectory> = None;
+        let mut diagnostic = root.canonical_path().to_path_buf();
+        for component in parent.components() {
+            let next = match &opened {
+                Some(directory) => {
+                    open_windows_flat_directory_bound(directory, component.as_os_str(), &diagnostic)
+                }
+                None => open_windows_flat_directory_bound(root, component.as_os_str(), &diagnostic),
+            }?;
+            let Some(next) = next else {
+                return Ok(None);
+            };
+            opened = Some(next);
+            diagnostic.push(component);
+        }
+        let directory = opened.ok_or_else(invalid)?;
+        read_windows_observed_file_bounded(&directory, name, maximum)
+    }
+}
+
+/// Read a small regular file, opened once without following a Unix symlink and
+/// never blocking on a Unix FIFO. Return the whole file within the byte cap.
 pub fn read_regular_file_capped(
     path: impl AsRef<Path>,
     max_bytes: u64,
@@ -593,6 +654,69 @@ fn io_error(path: &Path, source: io::Error) -> ReadError {
     ReadError::Io {
         path: path.to_path_buf(),
         source,
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod relative_tests {
+    use super::*;
+    use crate::JournalRoot;
+
+    #[test]
+    fn bounded_descendant_read_preserves_bytes_refuses_growth_and_does_not_create_absence() {
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-relative-read-")
+            .tempdir()
+            .unwrap();
+        fs::create_dir_all(journal.path().join("a/b")).unwrap();
+        fs::write(journal.path().join("a/b/note.txt"), b"\r\n\0exact").unwrap();
+        let root = JournalRoot::open(journal.path()).unwrap();
+        let relative = Path::new("a/b/note.txt");
+        assert_eq!(
+            read_relative_file_bounded(&root, relative, 8)
+                .unwrap()
+                .unwrap()
+                .bytes,
+            b"\r\n\0exact"
+        );
+        assert!(read_relative_file_bounded(&root, relative, 7).is_err());
+        assert!(
+            read_relative_file_bounded(&root, Path::new("a/missing/note.txt"), 8)
+                .unwrap()
+                .is_none()
+        );
+        assert!(!journal.path().join("a/missing").exists());
+        assert!(read_relative_file_bounded(&root, Path::new("../note.txt"), 8).is_err());
+        assert!(read_relative_file_bounded(&root, Path::new("a/b"), 8).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_descendant_read_refuses_both_linked_parents_and_linked_leaves() {
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-relative-links-")
+            .tempdir()
+            .unwrap();
+        let outside = tempfile::Builder::new()
+            .prefix("solstone-relative-outside-")
+            .tempdir()
+            .unwrap();
+        fs::create_dir(journal.path().join("a")).unwrap();
+        fs::write(outside.path().join("note.txt"), b"outside").unwrap();
+        std::os::unix::fs::symlink(outside.path(), journal.path().join("a/linked")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("note.txt"),
+            journal.path().join("a/note.txt"),
+        )
+        .unwrap();
+        let root = JournalRoot::open(journal.path()).unwrap();
+        assert!(read_relative_file_bounded(&root, Path::new("a/linked/note.txt"), 64).is_err());
+        assert!(read_relative_file_bounded(&root, Path::new("a/note.txt"), 64).is_err());
+        assert_eq!(
+            fs::read(outside.path().join("note.txt")).unwrap(),
+            b"outside"
+        );
     }
 }
 

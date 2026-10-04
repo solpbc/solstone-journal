@@ -3,24 +3,26 @@
 
 //! Private connection-owned memory append state machine.
 
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::Serialize;
 use serde_json::{Map, Value};
 use solstone_core_format::agent_memory::{
-    ChainPredecessor, Coordinate, OperationRecord, Origin, Readiness, SourceKey, digest,
-    validate_operation_id, validate_record,
+    ChainPredecessor, Coordinate, MAX_METADATA_BYTES, MAX_NOTE_BYTES, OperationRecord, Origin,
+    OriginKind, Readiness, ReadyDocument, SourceKey, digest, ready_document,
+    validate_creation_label, validate_operation_id, validate_ready_document, validate_record,
+    validate_record_header,
 };
 use solstone_core_journal_io::atomic::{
     DetailedAtomicOutcome, ExclusivePublication, FinalNameConfirmation, MetadataDurability,
     StageCleanup, atomic_replace_detailed, write_bytes_exclusive_detailed,
 };
 use solstone_core_journal_io::{
-    AtomicWriteOptions, find_available_segment, path_lexists, sync_dir,
+    AtomicWriteOptions, find_available_segment_with_occupied, path_lexists, sync_dir,
 };
 use solstone_core_mcp_audit::{
     Admission, AuditCoordinates, AuditWriteError, Outcome, ResultShape, ToolName,
@@ -31,10 +33,9 @@ use solstone_core_retention::{
 };
 use solstone_core_segment::{
     SegmentDir, StreamAdvance, advance_agent_memory_stream, bind_agent_memory_stream,
-    hold_source_mutation,
+    hold_agent_memory_mutation, read_agent_memory_chain,
 };
 
-const MAX_NOTE_BYTES: usize = 32_768;
 const MAX_SEGMENT_ATTEMPTS: usize = 128;
 const NOTE_FILE: &str = "note.txt";
 const ORIGIN_FILE: &str = "origin.json";
@@ -58,6 +59,13 @@ pub(crate) struct AppendReceipt {
     pub created_at: DateTime<Utc>,
     pub digest: String,
     pub byte_count: usize,
+}
+
+/// Values supplied by the authenticated transport after it has verified a
+/// connection. This private input cannot grant owner-read append authority.
+pub(crate) struct AuthenticatedMemorySource<'a> {
+    pub verified_id: &'a str,
+    pub creation_label: &'a str,
 }
 
 /// A validation or pre-publication failure.
@@ -176,6 +184,10 @@ trait AppendStore {
         source: &SourceKey,
         coordinate: &Coordinate,
     ) -> Result<StreamAdvance, StoreFailure>;
+    fn read_chain(
+        &mut self,
+        coordinate: &Coordinate,
+    ) -> Result<Option<StreamAdvance>, StoreFailure>;
     fn write_outcome(
         &mut self,
         location: &AuditLocation,
@@ -208,23 +220,43 @@ enum AdmissionFailure {
 )]
 pub(crate) fn append_connection_memory(
     journal: &Path,
-    verified_id: &str,
+    source: AuthenticatedMemorySource<'_>,
     text: &str,
     operation_id: &str,
     now: DateTime<Utc>,
 ) -> Result<AppendResult, AppendError> {
-    append_with(
+    append_with_source(
         &mut JournalStore::new(journal),
-        verified_id,
+        source,
         text,
         operation_id,
         now,
     )
 }
 
+#[cfg(all(test, not(feature = "full-tests")))]
 fn append_with<S: AppendStore>(
     store: &mut S,
     verified_id: &str,
+    text: &str,
+    operation_id: &str,
+    now: DateTime<Utc>,
+) -> Result<AppendResult, AppendError> {
+    append_with_source(
+        store,
+        AuthenticatedMemorySource {
+            verified_id,
+            creation_label: "authenticated connection",
+        },
+        text,
+        operation_id,
+        now,
+    )
+}
+
+fn append_with_source<S: AppendStore>(
+    store: &mut S,
+    source_input: AuthenticatedMemorySource<'_>,
     text: &str,
     operation_id: &str,
     now: DateTime<Utc>,
@@ -237,8 +269,10 @@ fn append_with<S: AppendStore>(
     }
     validate_operation_id(operation_id)
         .map_err(|_| AppendError("invalid memory operation identifier"))?;
+    validate_creation_label(source_input.creation_label)
+        .map_err(|_| AppendError("invalid memory creation label"))?;
 
-    let source = SourceKey::from_verified_id(verified_id);
+    let source = SourceKey::from_verified_id(source_input.verified_id);
     let address = OperationAddress::new(&source, operation_id);
     let note_digest = digest(note);
     store
@@ -246,7 +280,7 @@ fn append_with<S: AppendStore>(
         .map_err(|_| AppendError("memory source lock could not be acquired"))?;
 
     let audit = match store.admit(
-        verified_id,
+        source_input.verified_id,
         &source,
         operation_id,
         &note_digest,
@@ -325,6 +359,8 @@ fn append_with<S: AppendStore>(
                     digest: note_digest.clone(),
                     byte_count: note.len(),
                     created_at: now,
+                    origin_kind: OriginKind::AgentMemory,
+                    creation_label: source_input.creation_label.to_owned(),
                     coordinate,
                     phase: Readiness::Reserved,
                     chain: None,
@@ -335,8 +371,10 @@ fn append_with<S: AppendStore>(
         }
     };
 
-    if is_new {
-        match save_record(store, &address, &record, true) {
+    // Reconfirm a recovered reservation and its ancestry before source mutation.
+    // Visibility after an interrupted publication is not durability proof.
+    {
+        match save_record(store, &address, &record, is_new) {
             Publication::Confirmed => {}
             Publication::PublishedUnconfirmed => {
                 return Ok(AppendResult::UncertainRetry {
@@ -390,13 +428,18 @@ fn append_with<S: AppendStore>(
     let origin = origin_for(&record, &source);
     let origin_bytes = serde_json::to_vec(&origin)
         .map_err(|_| AppendError("memory origin could not be serialized"))?;
-    let ready_bytes = ready_bytes(&record)?;
 
     if was_ready {
-        if !file_equals(store, &record.coordinate, NOTE_FILE, note)?
-            || !file_equals(store, &record.coordinate, ORIGIN_FILE, &origin_bytes)?
-            || !file_equals(store, &record.coordinate, READY_FILE, &ready_bytes)?
-        {
+        let complete = file_equals(store, &record.coordinate, NOTE_FILE, note)
+            .and_then(|note_matches| {
+                Ok(note_matches
+                    && file_equals(store, &record.coordinate, ORIGIN_FILE, &origin_bytes)?)
+            })
+            .and_then(|source_matches| {
+                Ok(source_matches
+                    && ready_matches(store, &record.coordinate, &record, &source, note)?)
+            });
+        if !matches!(complete, Ok(true)) {
             return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
         }
         let receipt = receipt(&record, &source);
@@ -451,9 +494,13 @@ fn append_with<S: AppendStore>(
                 });
             }
         }
-    } else if !file_equals(store, &record.coordinate, NOTE_FILE, note)?
-        || !file_equals(store, &record.coordinate, ORIGIN_FILE, &origin_bytes)?
-    {
+    } else if !matches!(
+        file_equals(store, &record.coordinate, NOTE_FILE, note),
+        Ok(true)
+    ) || !matches!(
+        file_equals(store, &record.coordinate, ORIGIN_FILE, &origin_bytes),
+        Ok(true)
+    ) {
         return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
     }
 
@@ -472,6 +519,9 @@ fn append_with<S: AppendStore>(
             seq: advance.seq,
         });
         record.phase = Readiness::Chained;
+        if validate_record(&record, &source, operation_id, note).is_err() {
+            return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
+        }
         match save_record(store, &address, &record, false) {
             Publication::Confirmed => {}
             Publication::PublishedUnconfirmed | Publication::NotPublished => {
@@ -483,18 +533,17 @@ fn append_with<S: AppendStore>(
     }
 
     if record.phase == Readiness::Chained {
+        let actual_chain = store.read_chain(&record.coordinate);
+        let chain_matches = matches!((actual_chain, record.chain.as_ref()), (Ok(Some(actual)), Some(expected))
+            if actual.seq == expected.seq && actual.prev_day == expected.prev_day && actual.prev_segment == expected.prev_segment);
+        if !chain_matches {
+            return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
+        }
+        let ready_bytes = ready_bytes(&record, &source)?;
         match store.publish_file(&record.coordinate, READY_FILE, &ready_bytes) {
             FilePublication::Confirmed => {}
             FilePublication::Conflict => {
-                if !file_equals(store, &record.coordinate, READY_FILE, &ready_bytes)? {
-                    return terminal_error(
-                        store,
-                        &audit,
-                        now,
-                        RECORD_VALIDATION_REASON,
-                        operation_id,
-                    );
-                }
+                return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
             }
             FilePublication::PublishedUnconfirmed | FilePublication::NotPublished => {
                 return Ok(AppendResult::UncertainRetry {
@@ -579,7 +628,9 @@ fn write_terminal<S: AppendStore>(
 
 fn origin_for(record: &OperationRecord, source: &SourceKey) -> Origin {
     Origin {
+        kind: record.origin_kind,
         source_key: source.clone(),
+        creation_label: record.creation_label.clone(),
         created_at: record.created_at,
         stream: record.coordinate.stream.clone(),
         segment: record.coordinate.segment.clone(),
@@ -603,27 +654,47 @@ fn result_shape_for(receipt: &AppendReceipt) -> ResultShape {
     result
 }
 
-#[derive(Serialize)]
-struct ReadyDocument<'a> {
-    coordinate: &'a Coordinate,
-    digest: &'a str,
-    created_at: DateTime<Utc>,
-    byte_count: usize,
+fn ready_bytes(record: &OperationRecord, source: &SourceKey) -> Result<Vec<u8>, AppendError> {
+    let document = ready_document(record, source)
+        .map_err(|_| AppendError("memory readiness could not be serialized"))?;
+    serde_json::to_vec(&document)
+        .map_err(|_| AppendError("memory readiness could not be serialized"))
 }
 
-fn ready_bytes(record: &OperationRecord) -> Result<Vec<u8>, AppendError> {
-    serde_json::to_vec(&ReadyDocument {
-        coordinate: &record.coordinate,
-        digest: &record.digest,
-        created_at: record.created_at,
-        byte_count: record.byte_count,
-    })
-    .map_err(|_| AppendError("memory readiness could not be serialized"))
+fn ready_matches<S: AppendStore>(
+    store: &mut S,
+    coordinate: &Coordinate,
+    record: &OperationRecord,
+    source: &SourceKey,
+    note: &[u8],
+) -> Result<bool, AppendError> {
+    let Some(bytes) = store
+        .read_file(coordinate, READY_FILE)
+        .map_err(|_| AppendError("memory file could not be read"))?
+    else {
+        return Ok(false);
+    };
+    let actual: ReadyDocument = serde_json::from_slice(&bytes)
+        .map_err(|_| AppendError("memory readiness could not be read"))?;
+    validate_ready_document(&actual, source, note)
+        .map_err(|_| AppendError("memory readiness could not be validated"))?;
+    let expected = ready_document(record, source)
+        .map_err(|_| AppendError("memory readiness could not be serialized"))?;
+    let chain = store
+        .read_chain(coordinate)
+        .map_err(|_| AppendError("memory chain could not be read"))?;
+    Ok(actual == expected
+        && chain.is_some_and(|chain| {
+            chain.seq == actual.chain.seq
+                && chain.prev_day == actual.chain.prev_day
+                && chain.prev_segment == actual.chain.prev_segment
+        }))
 }
 
 struct JournalStore<'a> {
     journal: &'a Path,
-    source_lock: Option<solstone_core_journal_io::FileLock>,
+    source_lock: Option<solstone_core_journal_io::BoundParentLock>,
+    live_name_lock: Option<solstone_core_journal_io::FileLock>,
 }
 
 impl<'a> JournalStore<'a> {
@@ -631,11 +702,24 @@ impl<'a> JournalStore<'a> {
         Self {
             journal,
             source_lock: None,
+            live_name_lock: None,
         }
     }
 
     fn operation_path(&self, address: &OperationAddress) -> PathBuf {
         self.journal.join(address.relative())
+    }
+
+    fn read_bounded(
+        &self,
+        relative: &Path,
+        maximum: usize,
+    ) -> Result<Option<Vec<u8>>, StoreFailure> {
+        let root = solstone_core_journal_io::journal_root::JournalRoot::open(self.journal)
+            .map_err(|_| StoreFailure("memory journal could not be admitted"))?;
+        solstone_core_journal_io::read_relative_file_bounded(&root, relative, maximum)
+            .map(|observed| observed.map(|observed| observed.bytes))
+            .map_err(|_| StoreFailure("memory file could not be read safely"))
     }
 
     fn segment_dir(&self, coordinate: &Coordinate) -> Result<SegmentDir, StoreFailure> {
@@ -671,11 +755,11 @@ impl<'a> JournalStore<'a> {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     fs::create_dir(&path)
                         .map_err(|_| StoreFailure("memory directory create failed"))?;
-                    let parent = relative.parent().unwrap_or(Path::new(""));
-                    sync_parent(self.journal, parent)?;
                 }
                 Err(_) => return Err(StoreFailure("memory directory could not be inspected")),
             }
+            let parent = relative.parent().unwrap_or(Path::new(""));
+            sync_parent(self.journal, parent)?;
         }
         let operation_relative = address.relative();
         let relative = operation_relative
@@ -691,40 +775,90 @@ impl<'a> JournalStore<'a> {
         &self,
         address: &OperationAddress,
     ) -> Result<Option<Vec<u8>>, StoreFailure> {
-        let path = self.operation_path(address);
         let relative = address.relative();
-        match fs::symlink_metadata(&path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(_) => Err(StoreFailure("memory operation path could not be inspected")),
-            Ok(metadata) if metadata.file_type().is_file() => {
-                solstone_core_journal_io::contained_path(self.journal, &relative)
-                    .map_err(|_| StoreFailure("memory operation path escaped the journal"))?;
-                fs::read(path)
-                    .map(Some)
-                    .map_err(|_| StoreFailure("memory operation record could not be read"))
+        self.read_bounded(Path::new(&relative), MAX_METADATA_BYTES)
+    }
+
+    fn occupied_coordinates(
+        &self,
+        stream: &str,
+        day: &str,
+    ) -> Result<HashSet<String>, StoreFailure> {
+        let source_component = stream
+            .strip_prefix("agent-memory-")
+            .filter(|component| component.len() == 64)
+            .ok_or(StoreFailure("memory stream is invalid"))?;
+        let source = SourceKey::parse(format!("sha256:{source_component}"))
+            .map_err(|_| StoreFailure("memory source is invalid"))?;
+        let relative = format!("config/agent-memory/{source_component}");
+        let directory = self.journal.join(&relative);
+        match fs::symlink_metadata(&directory) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(HashSet::new()),
+            Err(_) => {
+                return Err(StoreFailure(
+                    "memory reservation directory could not be inspected",
+                ));
             }
-            Ok(_) => Err(StoreFailure(
-                "memory operation record is not a regular file",
-            )),
+            Ok(metadata) if !metadata.file_type().is_dir() => {
+                return Err(StoreFailure("memory reservation path is not a directory"));
+            }
+            Ok(_) => {}
         }
+        solstone_core_journal_io::contained_path(self.journal, &relative)
+            .map_err(|_| StoreFailure("memory reservation path escaped the journal"))?;
+        let mut occupied = HashSet::new();
+        for entry in fs::read_dir(directory)
+            .map_err(|_| StoreFailure("memory reservation directory could not be read"))?
+        {
+            let entry =
+                entry.map_err(|_| StoreFailure("memory reservation entry could not be read"))?;
+            if solstone_core_journal_io::atomic::is_publication_candidate_name(&entry.file_name()) {
+                continue;
+            }
+            let metadata = entry
+                .file_type()
+                .map_err(|_| StoreFailure("memory reservation entry could not be inspected"))?;
+            if !metadata.is_file() {
+                return Err(StoreFailure(
+                    "memory reservation entry is not a regular file",
+                ));
+            }
+            let bytes = self
+                .read_bounded(
+                    &Path::new(&relative).join(entry.file_name()),
+                    MAX_METADATA_BYTES,
+                )?
+                .ok_or(StoreFailure("memory reservation record disappeared"))?;
+            let record: OperationRecord = serde_json::from_slice(&bytes)
+                .map_err(|_| StoreFailure("memory reservation record is invalid"))?;
+            validate_record_header(&record, &source)
+                .map_err(|_| StoreFailure("memory reservation record is invalid"))?;
+            if entry.file_name()
+                != std::ffi::OsStr::new(&format!("{}.json", digest(record.operation_id.as_bytes())))
+            {
+                return Err(StoreFailure(
+                    "memory reservation filename does not match its operation",
+                ));
+            }
+            if record.coordinate.day == day && record.coordinate.stream == stream {
+                occupied.insert(record.coordinate.segment);
+            }
+        }
+        Ok(occupied)
     }
 }
 
 impl AppendStore for JournalStore<'_> {
     fn hold_source(&mut self, source_component: &str) -> Result<(), StoreFailure> {
-        let streams_preexisted = self.journal.join("streams").is_dir();
         self.source_lock = Some(
-            hold_source_mutation(self.journal, source_component)
+            hold_agent_memory_mutation(self.journal, source_component)
                 .map_err(|_| StoreFailure("memory source lock failed"))?,
         );
-        if !streams_preexisted {
-            #[cfg(unix)]
-            solstone_core_journal_io::sync_root(self.journal)
-                .map_err(|_| StoreFailure("memory source parent sync failed"))?;
-        } else {
-            sync_dir(self.journal, "streams")
-                .map_err(|_| StoreFailure("memory source parent sync failed"))?;
-        }
+        #[cfg(unix)]
+        solstone_core_journal_io::sync_root(self.journal)
+            .map_err(|_| StoreFailure("memory source parent sync failed"))?;
+        sync_dir(self.journal, "streams")
+            .map_err(|_| StoreFailure("memory source parent sync failed"))?;
         Ok(())
     }
 
@@ -779,9 +913,15 @@ impl AppendStore for JournalStore<'_> {
         let day = now.format("%Y%m%d").to_string();
         let candidate = format!("{}_1", now.format("%H%M%S"));
         let parent = self.journal.join("chronicle").join(&day).join(stream);
-        let segment = find_available_segment(&parent, &candidate, MAX_SEGMENT_ATTEMPTS)
-            .map_err(|_| StoreFailure("memory coordinate allocation failed"))?
-            .ok_or(StoreFailure("memory coordinate allocation exhausted"))?;
+        let occupied = self.occupied_coordinates(stream, &day)?;
+        let segment = find_available_segment_with_occupied(
+            &parent,
+            &candidate,
+            MAX_SEGMENT_ATTEMPTS,
+            &occupied,
+        )
+        .map_err(|_| StoreFailure("memory coordinate allocation failed"))?
+        .ok_or(StoreFailure("memory coordinate allocation exhausted"))?;
         Ok(Coordinate {
             day,
             stream: stream.to_owned(),
@@ -824,19 +964,32 @@ impl AppendStore for JournalStore<'_> {
             .map(|(parent, _)| parent)
             .ok_or(StoreFailure("memory segment parent is invalid"))?;
         let parent = self.journal.join(parent_rel);
-        if !path_lexists(&parent)
-            .map_err(|_| StoreFailure("memory segment parent lookup failed"))?
+        // Exact lookup refuses linked ancestry even when its target remains
+        // inside this journal. A containment-only check could adopt another
+        // stream's tombstone or create a lock in that other stream.
+        if solstone_core_journal_io::resolve_stream_exact(
+            self.journal,
+            &coordinate.day,
+            &coordinate.stream,
+        )
+        .map_err(|_| StoreFailure("memory segment parent lookup failed"))?
+        .is_none()
         {
-            return Ok(SegmentObservation::Missing);
+            solstone_core_journal_io::create_segment_parent_strict(
+                self.journal,
+                &coordinate.day,
+                &coordinate.stream,
+                &coordinate.segment,
+            )
+            .map_err(|_| StoreFailure("memory segment parent create failed"))?;
         }
-        solstone_core_journal_io::contained_path(self.journal, parent_rel)
-            .map_err(|_| StoreFailure("memory segment parent escaped the journal"))?;
         let live = self.journal.join(&relative);
-        let _live_name_lock = solstone_core_journal_io::hold_lock(
+        let live_name_lock = solstone_core_journal_io::hold_lock(
             &live,
             solstone_core_journal_io::LockOptions::default(),
         )
         .map_err(|_| StoreFailure("memory live-name lock failed"))?;
+        self.live_name_lock = Some(live_name_lock);
         let staged = parent.join(staged_name(&coordinate.segment));
         if path_lexists(&staged).map_err(|_| StoreFailure("memory staged path lookup failed"))? {
             return Ok(SegmentObservation::Staged);
@@ -860,6 +1013,9 @@ impl AppendStore for JournalStore<'_> {
     }
 
     fn create_segment(&mut self, coordinate: &Coordinate) -> Result<(), StoreFailure> {
+        if self.live_name_lock.is_none() {
+            return Err(StoreFailure("memory current live-name lock is missing"));
+        }
         solstone_core_journal_io::create_segment_strict(
             self.journal,
             &coordinate.day,
@@ -894,15 +1050,19 @@ impl AppendStore for JournalStore<'_> {
         name: &str,
     ) -> Result<Option<Vec<u8>>, StoreFailure> {
         let segment = self.segment_dir(coordinate)?;
-        let path = segment.path().join(name);
-        match fs::symlink_metadata(&path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(_) => Err(StoreFailure("memory file could not be inspected")),
-            Ok(metadata) if metadata.file_type().is_file() => fs::read(path)
-                .map(Some)
-                .map_err(|_| StoreFailure("memory file could not be read")),
-            Ok(_) => Err(StoreFailure("memory file is not regular")),
-        }
+        let relative = segment
+            .path()
+            .strip_prefix(self.journal)
+            .map_err(|_| StoreFailure("memory file escaped the journal"))?
+            .join(name);
+        self.read_bounded(
+            &relative,
+            if name == NOTE_FILE {
+                MAX_NOTE_BYTES
+            } else {
+                MAX_METADATA_BYTES
+            },
+        )
     }
 
     fn publish_file(
@@ -921,11 +1081,13 @@ impl AppendStore for JournalStore<'_> {
             Ok(_) => FilePublication::PublishedUnconfirmed,
             Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => {
                 match self.read_file(coordinate, name) {
+                    // Create-exclusive publication flushed the original inode
+                    // before exposing its name. Reconfirm the containing names
+                    // on retry without replacing the immutable source sibling.
                     Ok(Some(existing)) if existing == bytes => {
-                        match atomic_replace_detailed(&path, bytes, 0o600) {
-                            Ok(DetailedAtomicOutcome::Published) => FilePublication::Confirmed,
-                            Ok(_) => FilePublication::PublishedUnconfirmed,
-                            Err(_) => FilePublication::NotPublished,
+                        match sync_chronicle_chain(self.journal, coordinate) {
+                            Ok(()) => FilePublication::Confirmed,
+                            Err(_) => FilePublication::PublishedUnconfirmed,
                         }
                     }
                     Ok(Some(_)) => FilePublication::Conflict,
@@ -942,6 +1104,10 @@ impl AppendStore for JournalStore<'_> {
         coordinate: &Coordinate,
     ) -> Result<StreamAdvance, StoreFailure> {
         let segment = self.segment_dir(coordinate)?;
+        let live_name_lock = self
+            .live_name_lock
+            .as_ref()
+            .ok_or(StoreFailure("memory current live-name lock is missing"))?;
         advance_agent_memory_stream(
             &coordinate.stream,
             &coordinate.day,
@@ -949,6 +1115,7 @@ impl AppendStore for JournalStore<'_> {
             &segment,
             source.as_str(),
             source.component(),
+            live_name_lock,
         )
         .map_err(|_| StoreFailure("memory stream advance was not confirmed"))
     }
@@ -974,6 +1141,14 @@ impl AppendStore for JournalStore<'_> {
             Err(AuditWriteError::PublishedUnconfirmed { .. }) => Publication::PublishedUnconfirmed,
             Err(_) => Publication::NotPublished,
         }
+    }
+
+    fn read_chain(
+        &mut self,
+        coordinate: &Coordinate,
+    ) -> Result<Option<StreamAdvance>, StoreFailure> {
+        read_agent_memory_chain(&self.segment_dir(coordinate)?)
+            .map_err(|_| StoreFailure("memory chain could not be read"))
     }
 }
 
@@ -1028,9 +1203,18 @@ pub fn append_connection_memory_test_hook(
     operation_id: &str,
     now: DateTime<Utc>,
 ) -> Result<bool, String> {
-    append_connection_memory(journal, verified_id, text, operation_id, now)
-        .map(|result| matches!(result, AppendResult::Stored(_) | AppendResult::Replayed(_)))
-        .map_err(|error| error.to_string())
+    append_connection_memory(
+        journal,
+        AuthenticatedMemorySource {
+            verified_id,
+            creation_label: "authenticated connection",
+        },
+        text,
+        operation_id,
+        now,
+    )
+    .map(|result| matches!(result, AppendResult::Stored(_) | AppendResult::Replayed(_)))
+    .map_err(|error| error.to_string())
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
@@ -1051,8 +1235,9 @@ mod tests {
     use solstone_core_mcp_audit::{Outcome, ResultShape};
 
     use super::{
-        AdmissionFailure, AppendResult, AppendStore, AuditLocation, FilePublication,
-        OperationAddress, Publication, SegmentObservation, StoreFailure, append_with,
+        AdmissionFailure, AppendResult, AppendStore, AuditLocation, AuthenticatedMemorySource,
+        FilePublication, OperationAddress, Publication, SegmentObservation, StoreFailure,
+        append_with, append_with_source,
     };
 
     #[derive(Default)]
@@ -1069,6 +1254,8 @@ mod tests {
         outcomes: Vec<Outcome>,
         coordinate_number: usize,
         sequences: HashMap<String, u64>,
+        chains: HashMap<String, solstone_core_segment::StreamAdvance>,
+        last_coordinates: HashMap<String, Coordinate>,
     }
 
     impl MemoryStore {
@@ -1217,14 +1404,28 @@ mod tests {
             coordinate: &Coordinate,
         ) -> Result<solstone_core_segment::StreamAdvance, StoreFailure> {
             self.events.push("advance".into());
+            if let Some(chain) = self.chains.get(&Self::coordinate_key(coordinate)) {
+                return Ok(chain.clone());
+            }
             let key = coordinate.stream.clone();
-            let sequence = self.sequences.entry(key).or_default();
+            let sequence = self.sequences.entry(key.clone()).or_default();
             *sequence += 1;
-            Ok(solstone_core_segment::StreamAdvance {
-                prev_day: None,
-                prev_segment: None,
+            let previous = self.last_coordinates.insert(key, coordinate.clone());
+            let chain = solstone_core_segment::StreamAdvance {
+                prev_day: previous.as_ref().map(|coordinate| coordinate.day.clone()),
+                prev_segment: previous.map(|coordinate| coordinate.segment),
                 seq: *sequence,
-            })
+            };
+            self.chains
+                .insert(Self::coordinate_key(coordinate), chain.clone());
+            Ok(chain)
+        }
+
+        fn read_chain(
+            &mut self,
+            coordinate: &Coordinate,
+        ) -> Result<Option<solstone_core_segment::StreamAdvance>, StoreFailure> {
+            Ok(self.chains.get(&Self::coordinate_key(coordinate)).cloned())
         }
 
         fn write_outcome(
@@ -1421,6 +1622,38 @@ mod tests {
     }
 
     #[test]
+    fn trusted_creation_label_is_captured_once_and_not_rewritten_by_rename() {
+        let mut store = MemoryStore::default();
+        let first = append_with_source(
+            &mut store,
+            AuthenticatedMemorySource {
+                verified_id: "oauth:grant",
+                creation_label: "original connection",
+            },
+            "note",
+            "op",
+            now(),
+        )
+        .unwrap();
+        let replay = append_with_source(
+            &mut store,
+            AuthenticatedMemorySource {
+                verified_id: "oauth:grant",
+                creation_label: "renamed connection",
+            },
+            "note",
+            "op",
+            now() + chrono::Duration::days(1),
+        )
+        .unwrap();
+        let (AppendResult::Stored(first), AppendResult::Replayed(replay)) = (first, replay) else {
+            panic!("expected stored then replayed memory");
+        };
+        assert_eq!(first.origin.creation_label, "original connection");
+        assert_eq!(replay.origin, first.origin);
+    }
+
+    #[test]
     fn admission_and_reservation_publication_failures_do_not_claim_storage() {
         let mut admission_missing = MemoryStore {
             admission: Some(Publication::NotPublished),
@@ -1571,20 +1804,232 @@ mod full_tests {
 
     use chrono::{TimeZone, Utc};
     use solstone_core_format::agent_memory::{
-        Coordinate, OperationRecord, Readiness, SourceKey, digest,
+        Coordinate, OperationRecord, OriginKind, Readiness, SourceKey, digest,
     };
 
-    use super::{AppendResult, OperationAddress, append_connection_memory};
+    use super::{
+        AppendResult, AuthenticatedMemorySource, OperationAddress, append_connection_memory,
+    };
 
     fn fixture() -> tempfile::TempDir {
         tempfile::Builder::new()
             .prefix("solstone-memory-full-")
-            .tempdir_in("/var/tmp")
+            .tempdir()
             .expect("journal fixture")
     }
 
     fn now() -> chrono::DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap()
+    }
+
+    fn authenticated(verified_id: &str) -> AuthenticatedMemorySource<'_> {
+        AuthenticatedMemorySource {
+            verified_id,
+            creation_label: "authenticated connection",
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_chronicle_stream_cannot_adopt_another_sources_tombstone_or_write_its_lock() {
+        let journal = fixture();
+        let other = journal.path().join("chronicle/20260102/other-source");
+        fs::create_dir_all(other.join("120000_1")).unwrap();
+        fs::write(other.join("120000_1/tombstone.json"), b"{}").unwrap();
+        let source = SourceKey::from_verified_id("bearer:linked-stream");
+        let reservation = OperationRecord {
+            operation_id: "op".into(),
+            digest: digest(b"note"),
+            byte_count: 4,
+            created_at: now(),
+            origin_kind: OriginKind::AgentMemory,
+            creation_label: "authenticated connection".into(),
+            coordinate: Coordinate {
+                day: "20260102".into(),
+                stream: format!("agent-memory-{}", source.component()),
+                segment: "120000_1".into(),
+            },
+            phase: Readiness::Reserved,
+            chain: None,
+        };
+        let recovery = journal
+            .path()
+            .join(OperationAddress::new(&source, "op").relative());
+        fs::create_dir_all(recovery.parent().unwrap()).unwrap();
+        fs::write(recovery, serde_json::to_vec(&reservation).unwrap()).unwrap();
+        std::os::unix::fs::symlink(
+            &other,
+            journal
+                .path()
+                .join("chronicle/20260102")
+                .join(format!("agent-memory-{}", source.component())),
+        )
+        .unwrap();
+        assert!(matches!(
+            append_connection_memory(
+                journal.path(),
+                authenticated("bearer:linked-stream"),
+                "note",
+                "op",
+                now(),
+            ),
+            Ok(AppendResult::UncertainRetry { .. }) | Err(_)
+        ));
+        assert!(!other.join("120000_1.lock").exists());
+        assert_eq!(fs::read_dir(&other).unwrap().count(), 1);
+        assert!(!other.join("120000_1/note.txt").exists());
+        assert_eq!(
+            fs::read(other.join("120000_1/tombstone.json")).unwrap(),
+            b"{}"
+        );
+    }
+
+    #[cfg(all(unix, feature = "test-hooks"))]
+    #[test]
+    fn immutable_publication_retry_confirms_the_original_inode_without_replacement() {
+        use super::{AppendStore, FilePublication, JournalStore};
+        use solstone_core_journal_io::{
+            BoundPublicationPrimitive, run_with_bound_publication_fault,
+        };
+        use std::os::unix::fs::MetadataExt;
+        let journal = fixture();
+        let source = SourceKey::from_verified_id("bearer:immutable-publication");
+        let coordinate = Coordinate {
+            day: "20260102".into(),
+            stream: format!("agent-memory-{}", source.component()),
+            segment: "120000_1".into(),
+        };
+        let mut store = JournalStore::new(journal.path());
+        store.hold_source(source.component()).unwrap();
+        store.observe_segment(&coordinate).unwrap();
+        store.create_segment(&coordinate).unwrap();
+        let (outcome, consumed) =
+            run_with_bound_publication_fault(BoundPublicationPrimitive::ParentSync, 1, 5, || {
+                store.publish_file(&coordinate, "note.txt", b"original")
+            });
+        assert!(consumed);
+        assert_eq!(outcome, FilePublication::PublishedUnconfirmed);
+        let path = store
+            .segment_dir(&coordinate)
+            .unwrap()
+            .path()
+            .join("note.txt");
+        let original = fs::metadata(&path).unwrap();
+        assert_eq!(
+            store.publish_file(&coordinate, "note.txt", b"original"),
+            FilePublication::Confirmed
+        );
+        let retried = fs::metadata(&path).unwrap();
+        assert_eq!(retried.ino(), original.ino());
+        assert_eq!(retried.modified().unwrap(), original.modified().unwrap());
+        assert_eq!(
+            store.publish_file(&coordinate, "note.txt", b"different"),
+            FilePublication::Conflict
+        );
+        assert_eq!(fs::read(path).unwrap(), b"original");
+    }
+
+    #[test]
+    fn malformed_marker_replay_reports_failure_without_quarantining_or_repairing_it() {
+        let journal = fixture();
+        let AppendResult::Stored(first) = append_connection_memory(
+            journal.path(),
+            authenticated("bearer:corrupt-marker"),
+            "note",
+            "op",
+            now(),
+        )
+        .unwrap() else {
+            panic!("original append should complete");
+        };
+        let marker = journal
+            .path()
+            .join("chronicle/20260102")
+            .join(first.origin.stream)
+            .join(first.origin.segment)
+            .join("stream.json");
+        fs::write(&marker, b"{").unwrap();
+        assert!(
+            append_connection_memory(
+                journal.path(),
+                authenticated("bearer:corrupt-marker"),
+                "note",
+                "op",
+                now(),
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&marker).unwrap(), b"{");
+        let error_outcomes = fs::read_dir(journal.path().join("chronicle/20260102/mcp.agent"))
+            .unwrap()
+            .filter_map(|entry| {
+                let path = entry.unwrap().path().join("outcome.json");
+                fs::read(path).ok().map(|bytes| {
+                    serde_json::from_slice::<solstone_core_mcp_audit::OutcomeRecord>(&bytes)
+                        .unwrap()
+                })
+            })
+            .filter(|outcome| outcome.outcome == solstone_core_mcp_audit::Outcome::Error)
+            .count();
+        assert_eq!(error_outcomes, 1);
+    }
+
+    #[test]
+    fn owner_retention_consumes_the_original_operation_and_later_appends_skip_its_tail() {
+        let journal = fixture();
+        let AppendResult::Stored(first) = append_connection_memory(
+            journal.path(),
+            authenticated("bearer:owner-delete"),
+            "original",
+            "op",
+            now(),
+        )
+        .unwrap() else {
+            panic!("original append should complete");
+        };
+        let target = solstone_core_retention::receipt::Target {
+            day: "20260102".into(),
+            stream: first.origin.stream.clone(),
+            dir: first.origin.segment.clone(),
+        };
+        let removed = solstone_core_retention::door::remove_segments(
+            journal.path(),
+            std::slice::from_ref(&target),
+            &now().to_rfc3339(),
+            solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
+            "journal-owner",
+        );
+        assert!(removed.removed_paths().next().is_some());
+        assert!(matches!(
+            append_connection_memory(
+                journal.path(),
+                authenticated("bearer:owner-delete"),
+                "original",
+                "op",
+                now(),
+            ),
+            Ok(AppendResult::Deleted(_))
+        ));
+        let AppendResult::Stored(second) = append_connection_memory(
+            journal.path(),
+            authenticated("bearer:owner-delete"),
+            "later",
+            "new-op",
+            now(),
+        )
+        .unwrap() else {
+            panic!("later append should complete");
+        };
+        assert_ne!(first.origin.segment, second.origin.segment);
+        let original = journal
+            .path()
+            .join("chronicle")
+            .join(target.day)
+            .join(target.stream)
+            .join(target.dir);
+        assert!(!original.join("note.txt").exists());
+        assert!(!original.join("stream.json").exists());
+        assert!(original.join("tombstone.json").is_file());
     }
 
     #[test]
@@ -1601,6 +2046,8 @@ mod full_tests {
             digest: digest(b"note"),
             byte_count: 4,
             created_at: now(),
+            origin_kind: OriginKind::AgentMemory,
+            creation_label: "authenticated connection".into(),
             coordinate: Coordinate {
                 day: "../escape".into(),
                 stream: format!("agent-memory-{}", source.component()),
@@ -1614,7 +2061,10 @@ mod full_tests {
         assert!(
             append_connection_memory(
                 journal.path(),
-                "bearer:corrupt-coordinate",
+                AuthenticatedMemorySource {
+                    verified_id: "bearer:corrupt-coordinate",
+                    creation_label: "authenticated connection",
+                },
                 "note",
                 "op",
                 now()
@@ -1650,8 +2100,17 @@ mod full_tests {
         .unwrap();
 
         assert!(
-            append_connection_memory(journal.path(), "bearer:symlink", "note", "op", now())
-                .is_err()
+            append_connection_memory(
+                journal.path(),
+                AuthenticatedMemorySource {
+                    verified_id: "bearer:symlink",
+                    creation_label: "authenticated connection",
+                },
+                "note",
+                "op",
+                now(),
+            )
+            .is_err()
         );
         assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
     }
@@ -1661,8 +2120,16 @@ mod full_tests {
         let root = std::env::var_os("SOLSTONE_MEMORY_CHILD_ROOT");
         if let Some(root) = root {
             let root = std::path::PathBuf::from(root);
-            let result =
-                append_connection_memory(&root, "bearer:multi-process", "note", "same-op", now());
+            let result = append_connection_memory(
+                &root,
+                AuthenticatedMemorySource {
+                    verified_id: "bearer:multi-process",
+                    creation_label: "authenticated connection",
+                },
+                "note",
+                "same-op",
+                now(),
+            );
             assert!(matches!(
                 result,
                 Ok(AppendResult::Stored(_) | AppendResult::Replayed(_))
@@ -1703,5 +2170,124 @@ mod full_tests {
             .join(record.coordinate.segment)
             .join("note.txt");
         assert_eq!(fs::read(note).unwrap(), b"note");
+    }
+
+    #[test]
+    fn durable_reservation_occupies_its_coordinate_before_segment_creation() {
+        let journal = fixture();
+        let source = SourceKey::from_verified_id("bearer:reservation");
+        let address = OperationAddress::new(&source, "A");
+        let coordinate = Coordinate {
+            day: "20260102".into(),
+            stream: format!("agent-memory-{}", source.component()),
+            segment: "120000_1".into(),
+        };
+        let reservation = OperationRecord {
+            operation_id: "A".into(),
+            digest: digest(b"a"),
+            byte_count: 1,
+            created_at: now(),
+            origin_kind: OriginKind::AgentMemory,
+            creation_label: "authenticated connection".into(),
+            coordinate: coordinate.clone(),
+            phase: Readiness::Reserved,
+            chain: None,
+        };
+        let operation_path = journal.path().join(address.relative());
+        fs::create_dir_all(operation_path.parent().unwrap()).unwrap();
+        fs::write(operation_path, serde_json::to_vec(&reservation).unwrap()).unwrap();
+
+        let AppendResult::Stored(second) = append_connection_memory(
+            journal.path(),
+            authenticated("bearer:reservation"),
+            "b",
+            "B",
+            now(),
+        )
+        .unwrap() else {
+            panic!("second operation should complete");
+        };
+        let AppendResult::Stored(first) = append_connection_memory(
+            journal.path(),
+            authenticated("bearer:reservation"),
+            "a",
+            "A",
+            now() + chrono::Duration::minutes(5),
+        )
+        .unwrap() else {
+            panic!("reserved operation should complete");
+        };
+        assert_eq!(first.origin.coordinate("20260102"), coordinate);
+        assert_eq!(first.created_at, now());
+        assert_ne!(second.origin.segment, first.origin.segment);
+    }
+
+    #[test]
+    fn recovered_marker_keeps_its_original_chain_after_a_later_head_commits() {
+        let journal = fixture();
+        let source = SourceKey::from_verified_id("bearer:marker-recovery");
+        let AppendResult::Stored(first) = append_connection_memory(
+            journal.path(),
+            authenticated("bearer:marker-recovery"),
+            "a",
+            "A",
+            now(),
+        )
+        .unwrap() else {
+            panic!("first operation should complete");
+        };
+        let address = OperationAddress::new(&source, "A");
+        let record_path = journal.path().join(address.relative());
+        let mut record: OperationRecord =
+            serde_json::from_slice(&fs::read(&record_path).unwrap()).unwrap();
+        let marker_path = journal
+            .path()
+            .join("chronicle")
+            .join("20260102")
+            .join(&record.coordinate.stream)
+            .join(&record.coordinate.segment)
+            .join("stream.json");
+        let original_marker = fs::read(&marker_path).unwrap();
+        record.phase = Readiness::Noted;
+        record.chain = None;
+        fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+
+        let AppendResult::Stored(second) = append_connection_memory(
+            journal.path(),
+            authenticated("bearer:marker-recovery"),
+            "b",
+            "B",
+            now(),
+        )
+        .unwrap() else {
+            panic!("later operation should complete");
+        };
+        assert_ne!(first.origin.segment, second.origin.segment);
+        assert!(matches!(
+            append_connection_memory(
+                journal.path(),
+                authenticated("bearer:marker-recovery"),
+                "a",
+                "A",
+                now() + chrono::Duration::minutes(1),
+            ),
+            Ok(AppendResult::Stored(_))
+        ));
+        let recovered: OperationRecord =
+            serde_json::from_slice(&fs::read(record_path).unwrap()).unwrap();
+        assert_eq!(recovered.chain.as_ref().map(|chain| chain.seq), Some(1));
+        assert_eq!(fs::read(&marker_path).unwrap(), original_marker);
+        let stream_state: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                journal
+                    .path()
+                    .join("streams")
+                    .join(format!("{}.json", recovered.coordinate.stream)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stream_state["seq"], 2);
+        assert_eq!(stream_state["last_segment"], second.origin.segment);
     }
 }

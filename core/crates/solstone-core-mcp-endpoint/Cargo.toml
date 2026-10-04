@@ -86,7 +86,7 @@ required-features = ["test-hooks"]
 [[test]]
 name = "mcp_endpoint_memory_publication"
 path = "tests/mcp_endpoint_memory_publication.rs"
-required-features = ["test-hooks"]
+required-features = ["full-tests", "test-hooks"]
 
 [lints]
 workspace = true
