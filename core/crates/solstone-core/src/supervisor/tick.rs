@@ -1516,14 +1516,20 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
         log::debug!("supervisor: MCP audit segment is not enriched: {day}/{segment}");
         return;
     }
-    state.flush.pending.insert(
-        stream.clone(),
-        PendingFlush {
-            last_segment_ts: Instant::now(),
-            day: day.clone(),
-            segment: segment.to_owned(),
-        },
-    );
+    // Late evidence still gets thought, but cannot displace the newer
+    // segment whose live activity must be closed when this stream goes quiet.
+    if state.flush.pending.get(&stream).is_none_or(|pending| {
+        (day.as_str(), segment) >= (pending.day.as_str(), pending.segment.as_str())
+    }) {
+        state.flush.pending.insert(
+            stream.clone(),
+            PendingFlush {
+                last_segment_ts: Instant::now(),
+                day: day.clone(),
+                segment: segment.to_owned(),
+            },
+        );
+    }
     let mut tail = vec![
         "think".to_owned(),
         "-v".to_owned(),
@@ -2068,6 +2074,49 @@ mod tests {
                 (Some("phone"), "091000_300")
             ]
         );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn late_segments_are_thought_live_without_replacing_the_latest_idle_flush() {
+        let journal = TempDir::new().expect("temporary journal");
+        let mut state = queue_only_state(journal.path()).await;
+        for (day, segment) in [
+            ("20260831", "100500_300"),
+            ("20260831", "090000_300"),
+            ("20260830", "230000_300"),
+        ] {
+            let observed: CallosumEnvelope = serde_json::from_value(json!({
+                "tract": "observe", "event": "observed", "day": day,
+                "stream": "desktop", "segment": segment
+            }))
+            .unwrap();
+            handle_segment_observed(&mut state, &observed);
+            assert!(
+                state
+                    .queue
+                    .contains_reference(&format!("supervisor-observed-{day}-{segment}")),
+                "late segments must still be thought"
+            );
+        }
+        let pending = state
+            .flush
+            .pending
+            .get(&Some("desktop".to_owned()))
+            .unwrap();
+        assert_eq!(
+            (&pending.day[..], &pending.segment[..]),
+            ("20260831", "100500_300")
+        );
+        let due = pending.last_segment_ts + FLUSH_TIMEOUT;
+        check_segment_flush(&state.journal, &state.queue, &mut state.flush, None, due);
+        assert!(
+            state
+                .queue
+                .contains_reference("supervisor-flush-20260831-100500_300")
+        );
+        assert!(state.flush.pending.is_empty());
     }
 
     #[cfg(all(test, feature = "full-tests"))]

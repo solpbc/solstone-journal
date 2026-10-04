@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- reprocessing older material, or receiving it late, could end an activity still underway or keep it open after an hour of quiet. older material now leaves the current activity's start and end alone.
 - in the story of a meeting, message or email, reading an email, an inbox, an invitation or a settings page could be written as something you owe, finished or decided. your journal now asks for the story to count a message or choice on screen as yours only when you sent or submitted it.
 - retrying processing for part of an earlier day could add an extra activity for the middle of one already in your journal. it now uses the surrounding activity boundaries.
 - when activities ended together and the journal stopped while writing the first one's story, the ones after it could be left out of your journal. every ended activity is now saved before any story is written, and an unfinished story is picked up again on its own.

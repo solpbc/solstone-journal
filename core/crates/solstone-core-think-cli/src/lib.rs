@@ -511,8 +511,8 @@ where
                 parsed.live,
                 &skip_talents,
             );
-            // Source-derived, not measured: thinking.py:2021-2030 advances
-            // activity state after every direct segment Sense run.
+            // Direct and live runs share the ordered live-state tail. Older
+            // coordinates are thought without advancing that stream's state.
             let result = result.map(|mut result| {
                 if let Err(error) = segment::replay_activity_state(
                     &context,
@@ -3610,6 +3610,133 @@ mod tests {
     }
 
     #[test]
+    fn older_prior_day_segment_preserves_live_activity() {
+        assert_old_segment_preserves_live_activity("20260812", "230000_300", false);
+    }
+
+    #[test]
+    fn older_idle_segment_preserves_live_activity() {
+        assert_old_segment_preserves_live_activity("20260813", "090000_300", true);
+    }
+
+    #[test]
+    fn older_active_segment_preserves_live_activity() {
+        assert_old_segment_preserves_live_activity("20260813", "090000_300", false);
+    }
+
+    #[test]
+    fn repeated_segment_preserves_live_activity() {
+        assert_old_segment_preserves_live_activity("20260813", "100500_300", true);
+    }
+
+    fn assert_old_segment_preserves_live_activity(day: &str, segment: &str, idle: bool) {
+        let journal = tempdir().unwrap();
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        let work = serde_json::json!({"density":"active","content_type":"work","activity_summary":"work","facets":[{"facet":"work","level":"high","activity":"work"}]});
+        let mut log = test_log(&context, "segment");
+        for key in ["100000_300", "100500_300"] {
+            segment_dir(journal.path(), &context.day, key);
+            write_sense_output(&context, key, work.clone());
+            segment::replay_activity_state(
+                &context,
+                &mut log,
+                &[(key.to_owned(), Some("default".to_owned()))],
+                false,
+                2,
+                true,
+                true,
+            )
+            .unwrap();
+        }
+        let snapshot = journal.path().join("awareness/activity_state/default.json");
+        let before = fs::read_to_string(&snapshot).unwrap();
+        let (older_context, _) = recorder_context(journal.path(), day, 10);
+        segment_dir(journal.path(), day, segment);
+        write_sense_output(
+            &older_context,
+            segment,
+            if idle {
+                serde_json::json!({"density":"idle","content_type":"idle","facets":[]})
+            } else {
+                work
+            },
+        );
+        // This is the common tail of direct segment runs, with and without --live.
+        let mut log = test_log(&older_context, "segment");
+        segment::replay_activity_state(
+            &older_context,
+            &mut log,
+            &[(segment.to_owned(), Some("default".to_owned()))],
+            true,
+            2,
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&snapshot).unwrap(),
+            before,
+            "live state must not rewind"
+        );
+        assert!(
+            !journal
+                .path()
+                .join("facets/work/activities/20260812.jsonl")
+                .exists()
+        );
+        assert!(
+            work_records(journal.path()).is_empty(),
+            "live activity must stay open"
+        );
+        assert!(recorder.requests.lock().unwrap().is_empty());
+
+        // Exercise the CLI call site too. With no raw input, Sense emits an
+        // idle projection locally; neither spelling may close live activity.
+        for live in [false, true] {
+            let mut args = vec![
+                "--day".to_owned(),
+                day.to_owned(),
+                "--segment".to_owned(),
+                segment.to_owned(),
+                "--stream".to_owned(),
+                "default".to_owned(),
+                "--no-activity-prompts".to_owned(),
+                "--refresh".to_owned(),
+            ];
+            if live {
+                args.push("--live".to_owned());
+            }
+            let run = run_cli_with(
+                &args,
+                journal.path(),
+                |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+                || false,
+                || NaiveDate::from_ymd_opt(2026, 8, 13).unwrap(),
+                || 1_786_615_200_000,
+                || Some(8),
+                || (false, LocalEndpointResolution::Bundled),
+                || Some(4),
+                &solstone_core_system::process::ChildLaunchContext::default(),
+            );
+            assert_eq!(run.exit_code, 0, "{}", run.stderr);
+            assert_eq!(fs::read_to_string(&snapshot).unwrap(), before);
+            assert!(work_records(journal.path()).is_empty());
+        }
+
+        // The real last segment still owns the idle flush, including after an older idle input.
+        let mut log = test_log(&context, "flush");
+        flush::run(&context, &mut log, "100500_300", Some("default"), 2, true).unwrap();
+        let records = work_records(journal.path());
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0]["segments"],
+            serde_json::json!(["100000_300", "100500_300"])
+        );
+    }
+
+    #[test]
     fn flush_ends_the_activity_left_open_when_capture_stopped() {
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
@@ -4122,9 +4249,8 @@ mod tests {
 
     #[test]
     fn activity_replay_reruns_only_when_its_durable_input_changes() {
-        // Source-derived, not measured: thinking.py:335-375 compares the
-        // activity input provenance after an existing record, rerunning only
-        // when the span's durable Sense input changed.
+        // Historical replay reconstructs the span from its durable input;
+        // the live tail intentionally ignores coordinates it already passed.
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
@@ -4157,14 +4283,14 @@ mod tests {
             ("090500_300".to_owned(), Some("default".to_owned())),
         ];
         let mut log = test_log(&context, "segment");
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
+        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, false)
             .unwrap();
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
+        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, false)
             .unwrap();
         assert_eq!(recorder.requests.lock().unwrap().len(), 1);
         let path = segment_dir(journal.path(), "20260813", "090000_300").join("talents/sense.json");
         fs::write(path, br#"{"density":"active","content_type":"work","activity_summary":"changed","facets":[{"facet":"work"}]}"#).unwrap();
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
+        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, false)
             .unwrap();
         assert_eq!(recorder.requests.lock().unwrap().len(), 2);
     }
