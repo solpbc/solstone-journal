@@ -35,6 +35,9 @@ pub use nvattest::{
 };
 pub use nvattest_authority::confidential_verifier_on_this_platform;
 pub use nvattest_install::ensure_nvattest_installed;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use nvattest_install::ensure_nvattest_installed_on_for_tests as ensure_nvattest_installed_on;
 #[cfg(all(unix, feature = "test-hooks"))]
 #[doc(hidden)]
 pub use nvattest_install::ensure_nvattest_installed_with_for_tests as ensure_nvattest_installed_with;

@@ -62,16 +62,29 @@ struct Source {
     version: String,
 }
 
-/// Whether this build can run the hardware check on the service at all. A
-/// platform with no verifier target can never verify the service, so
-/// confidential processing is not offered there; every other answer about the
-/// check comes from running it.
+/// Windows owners can't use confidential processing until it is qualified on
+/// Windows against the live service. While this is false, nothing offers the
+/// feature, installs a verifier or opens a channel on Windows. It changes in its
+/// own commit after that qualification; no configuration, environment variable
+/// or feature can lift the hold.
+const WINDOWS_OWNER_USE_QUALIFIED: bool = false;
+
+/// Whether owners on `os` are held back from confidential processing even when
+/// this build has a verifier for the platform. A held platform is not offered
+/// the feature, installs no verifier and opens no channel to the service.
+pub(crate) fn owner_use_held(os: &str) -> bool {
+    os == "windows" && !WINDOWS_OWNER_USE_QUALIFIED
+}
+
+/// Whether confidential processing is offered on this platform: it has a
+/// verifier target and its owners are not held back. Every other answer about
+/// the hardware check comes from running it.
 pub fn confidential_verifier_on_this_platform() -> bool {
     verifier_on_platform(std::env::consts::OS, std::env::consts::ARCH)
 }
 
 fn verifier_on_platform(os: &str, arch: &str) -> bool {
-    cfg!(unix) && nvattest_platform_key(os, arch).is_some()
+    nvattest_platform_key(os, arch).is_some() && !owner_use_held(os)
 }
 
 pub(crate) fn nvattest_platform_key(os: &str, arch: &str) -> Option<&'static str> {
@@ -79,6 +92,7 @@ pub(crate) fn nvattest_platform_key(os: &str, arch: &str) -> Option<&'static str
         ("linux", "x86_64") => Some("linux-x86_64"),
         ("linux", "aarch64") => Some("linux-aarch64"),
         ("macos", "aarch64") => Some("macos-arm64"),
+        ("windows", "x86_64") => Some("windows-x86_64"),
         _ => None,
     }
 }
@@ -162,7 +176,10 @@ mod tests {
             nvattest_platform_key("macos", "aarch64"),
             Some("macos-arm64")
         );
-        assert_eq!(nvattest_platform_key("windows", "x86_64"), None);
+        assert_eq!(
+            nvattest_platform_key("windows", "x86_64"),
+            Some("windows-x86_64")
+        );
         assert_eq!(nvattest_platform_key("macos", "x86_64"), None);
         assert_eq!(nvattest_platform_key("linux", "arm"), None);
     }
@@ -172,7 +189,7 @@ mod tests {
         assert_eq!(
             super::confidential_verifier_on_this_platform(),
             !cfg!(windows),
-            "every shipped journal target but Windows has a verifier target"
+            "every shipped journal target but Windows offers confidential processing"
         );
         assert!(!super::verifier_on_platform("windows", "x86_64"));
         if cfg!(unix) {
@@ -183,6 +200,16 @@ mod tests {
             ] {
                 assert!(super::verifier_on_platform(os, arch), "{os}-{arch}");
             }
+        }
+    }
+
+    #[test]
+    fn windows_owners_are_held_back_even_with_a_verifier_target() {
+        assert!(super::owner_use_held("windows"));
+        assert!(nvattest_platform_key("windows", "x86_64").is_some());
+        assert!(!super::verifier_on_platform("windows", "x86_64"));
+        for os in ["linux", "macos"] {
+            assert!(!super::owner_use_held(os), "{os}");
         }
     }
 

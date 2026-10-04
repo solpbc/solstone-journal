@@ -8,32 +8,75 @@ use crate::NvattestEnsureStatus;
 #[cfg(unix)]
 use crate::check_nvattest_readiness;
 #[cfg(unix)]
-use crate::nvattest_authority::{
-    AuthorityError, NVATTEST_AUTHORITY_JSON, NvattestArtifactSpec, nvattest_platform_key,
-    parse_nvattest_target,
-};
+use crate::nvattest_authority::{AuthorityError, NvattestArtifactSpec, parse_nvattest_target};
+use crate::nvattest_authority::{NVATTEST_AUTHORITY_JSON, nvattest_platform_key, owner_use_held};
 #[cfg(unix)]
 use solstone_core_artifact_download::{
-    ArchiveError, DownloadHostPolicy, PRODUCTION_DOWNLOAD_POLICY, clear_macos_quarantine,
-    download_verified_origin, make_executable,
+    ArchiveError, clear_macos_quarantine, download_verified_origin, make_executable,
 };
+use solstone_core_artifact_download::{DownloadHostPolicy, PRODUCTION_DOWNLOAD_POLICY};
 
-#[cfg(not(unix))]
-pub fn ensure_nvattest_installed(_nvattest_dir: &Path) -> NvattestEnsureStatus {
-    NvattestEnsureStatus::PlatformUnsupported
+/// Installs the verifier for the running platform. A platform whose owners are
+/// held back from confidential processing installs nothing and touches nothing.
+pub fn ensure_nvattest_installed(nvattest_dir: &Path) -> NvattestEnsureStatus {
+    ensure_nvattest_installed_on(
+        nvattest_dir,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        NVATTEST_AUTHORITY_JSON,
+        &PRODUCTION_DOWNLOAD_POLICY,
+    )
+}
+
+pub(crate) fn ensure_nvattest_installed_on(
+    nvattest_dir: &Path,
+    os: &str,
+    arch: &str,
+    authority_json: &str,
+    policy: &DownloadHostPolicy<'_>,
+) -> NvattestEnsureStatus {
+    if owner_use_held(os) {
+        return NvattestEnsureStatus::PlatformUnsupported;
+    }
+    match nvattest_platform_key(os, arch) {
+        None => NvattestEnsureStatus::PlatformUnsupported,
+        Some(platform) => install_for_platform(nvattest_dir, platform, authority_json, policy),
+    }
 }
 
 #[cfg(unix)]
-pub fn ensure_nvattest_installed(nvattest_dir: &Path) -> NvattestEnsureStatus {
-    match nvattest_platform_key(std::env::consts::OS, std::env::consts::ARCH) {
-        None => NvattestEnsureStatus::PlatformUnsupported,
-        Some(platform) => ensure_nvattest_installed_with(
-            nvattest_dir,
-            platform,
-            NVATTEST_AUTHORITY_JSON,
-            &PRODUCTION_DOWNLOAD_POLICY,
-        ),
-    }
+fn install_for_platform(
+    nvattest_dir: &Path,
+    platform: &str,
+    authority_json: &str,
+    policy: &DownloadHostPolicy<'_>,
+) -> NvattestEnsureStatus {
+    ensure_nvattest_installed_with(nvattest_dir, platform, authority_json, policy)
+}
+
+/// This platform has no verifier installer.
+#[cfg(not(unix))]
+fn install_for_platform(
+    _nvattest_dir: &Path,
+    _platform: &str,
+    _authority_json: &str,
+    _policy: &DownloadHostPolicy<'_>,
+) -> NvattestEnsureStatus {
+    NvattestEnsureStatus::PlatformUnsupported
+}
+
+/// [`ensure_nvattest_installed`] for a named platform, as the production entry
+/// runs it.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn ensure_nvattest_installed_on_for_tests(
+    nvattest_dir: &Path,
+    os: &str,
+    arch: &str,
+    authority_json: &str,
+    policy: &DownloadHostPolicy<'_>,
+) -> NvattestEnsureStatus {
+    ensure_nvattest_installed_on(nvattest_dir, os, arch, authority_json, policy)
 }
 
 #[cfg(unix)]

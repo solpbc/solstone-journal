@@ -104,6 +104,12 @@ pub fn run_qualification_with_clock(
         });
     }
 
+    crate::ratls::channel::refuse_held_platform(std::env::consts::OS).map_err(|error| {
+        QualificationError {
+            reason_code: error.reason_code,
+        }
+    })?;
+
     // Qualification appraises one named machine. A host that resolves to more
     // than one address would let the walk qualify whichever engine answered.
     let resolved = (request.host.as_str(), request.port)
