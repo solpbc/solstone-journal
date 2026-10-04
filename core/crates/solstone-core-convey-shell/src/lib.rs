@@ -791,7 +791,7 @@ fn router_with_hosted_parent(
                 operation_registry.clone(),
                 pair_windows.clone(),
             ))
-            .merge(clients::router(prefix));
+            .merge(clients::router(prefix, pair_windows.clone()));
     }
     let routes = routes
         .route("/app/devices", get(clients::redirect_app))

@@ -78,7 +78,7 @@
 
 use serde_json::{Map, Value};
 
-const MAX_CLIENT_LABEL_BYTES: usize = 253;
+pub(crate) const MAX_CLIENT_LABEL_BYTES: usize = 253;
 
 /// Closed pairer-supplied platform vocabulary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
