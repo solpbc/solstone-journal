@@ -650,7 +650,8 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             );
         }
     };
-    // A segment the owner removed holds only its tombstone. A device still
+    // A segment the owner removed holds only its tombstone, and one being removed
+    // has been moved aside under its staged name. A device still
     // holding its own copy is told so, distinctly, before anything touches the
     // segment directory. The answer keeps the shape this case always had (a 500
     // `failed` outcome), so devices already in the field handle it exactly as
@@ -1178,11 +1179,8 @@ fn segment_removed(
     segment: &str,
 ) -> Result<bool, ()> {
     let segment = SegmentDir::resolve(journal_root, day, segment, stream).map_err(|_| ())?;
-    match std::fs::symlink_metadata(segment.path().join("tombstone.json")) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(_) => Err(()),
-    }
+    // A tombstone and a removal still in progress both mean the owner deleted it.
+    solstone_core_segment::owner_deleted(segment.path()).map_err(|_| ())
 }
 
 fn resolve_and_apply(
@@ -2291,6 +2289,39 @@ mod tests {
             names,
             vec!["tombstone.json"],
             "a refused re-send leaves nothing behind"
+        );
+
+        let (status, body) = call_upload(&app, kept, "audio.flac", b"other").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn a_resend_into_a_segment_mid_removal_is_refused_as_removed() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let app = router(&root);
+        let removing =
+            json!({"day":"20260804","segment":"140000_1","files":[{"submitted":"audio.flac"}]});
+        let kept =
+            json!({"day":"20260804","segment":"150000_1","files":[{"submitted":"audio.flac"}]});
+        assert_eq!(
+            call_upload(&app, removing.clone(), "audio.flac", b"sound")
+                .await
+                .1["status"],
+            "ok"
+        );
+        // What an owner's removal looks like while it runs: the segment has been
+        // moved aside under its staged name and nothing sits at its own name.
+        let parent = root.join("chronicle/20260804/device");
+        fs::rename(parent.join("140000_1"), parent.join(".removing_140000_1")).unwrap();
+
+        let (status, body) = call_upload(&app, removing, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "segment_removed");
+        assert!(
+            !parent.join("140000_1").exists(),
+            "nothing is created where a removal is running"
         );
 
         let (status, body) = call_upload(&app, kept, "audio.flac", b"other").await;
