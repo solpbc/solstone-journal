@@ -2224,7 +2224,7 @@ async fn ac16_server_leaf_matches_reference_contract_and_is_fresh() {
     let (_, ca) = x509_parser::parse_x509_certificate(fixture.ca_der()).expect("CA parses");
     let expected_cn = format!(
         "solstone link ({})",
-        solstone_core_sol_link::mark::mark_words_from_jid(fixture.instance_id())
+        solstone_core_sol_link::mark::mark_words_from_jid(&fixture.instance_id)
             .expect("mark words")
     );
     assert_eq!(
@@ -3386,7 +3386,10 @@ async fn pair_response_is_canonical_and_omits_empty_local_endpoints_on_raw_json(
         pair.instance_id,
         solstone_core_sol_link::ca::jid_from_spki(identity.ca().spki_der()).expect("CA JID")
     );
-    assert_eq!(pair.home_label, "test home");
+    assert_eq!(
+        pair.home_label,
+        solstone_core_sol_link::mark::mark_words_from_jid(&pair.instance_id).expect("mark words")
+    );
     assert_eq!(pair.ca_chain.len(), 1);
     let (_, returned_ca) = parse_x509_pem(pair.ca_chain[0].as_bytes()).expect("returned CA PEM");
     assert_eq!(returned_ca.contents, fixture.ca_der());

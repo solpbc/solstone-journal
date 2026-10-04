@@ -79,15 +79,13 @@ fn update_empty_journal_name_probes(value: &mut Value) {
             if let Some(probe) = map.get_mut("POST config.empty-journal-name")
                 && let Some(probe_map) = probe.as_object_mut()
                 && probe_map.get("status") == Some(&Value::from(400))
+                && let Some(normalized) = probe_map.get_mut("normalized")
+                && let Some(norm_map) = normalized.as_object_mut()
             {
-                if let Some(normalized) = probe_map.get_mut("normalized")
-                    && let Some(norm_map) = normalized.as_object_mut()
-                {
-                    norm_map.insert(
-                        "detail".to_owned(),
-                        Value::String("Unknown section: journal".to_owned()),
-                    );
-                }
+                norm_map.insert(
+                    "detail".to_owned(),
+                    Value::String("Unknown section: journal".to_owned()),
+                );
             }
             for child in map.values_mut() {
                 update_empty_journal_name_probes(child);
