@@ -217,7 +217,23 @@ pub fn parse_wrapper(command: WrapperCommand, content: &str) -> Option<ParsedWra
         version,
     )
     .ok()?;
-    if canonical != content {
+    // Published guarded version-8 wrappers used the alias in this comment.
+    // Accept that exact predecessor rendering; every executable line and guard
+    // must still match the checked template byte for byte.
+    let published_v8 = (version == 8).then(|| {
+        canonical.replacen(
+            &format!(
+                "# {} — managed by 'solstone journal config'. Edits will be overwritten.\n",
+                command.as_str()
+            ),
+            &format!(
+                "# {} — managed by 'journal config'. Edits will be overwritten.\n",
+                command.as_str()
+            ),
+            1,
+        )
+    });
+    if canonical != content && published_v8.as_deref() != Some(content) {
         return None;
     }
     Some(ParsedWrapper {
@@ -1272,6 +1288,35 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn published_guarded_v8_wrappers_keep_their_checked_identity() {
+        for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
+            let journal = Path::new("/journal");
+            let target = Path::new("/install/bin").join(command.as_str());
+            let fields = guard_for(journal);
+            let current = render_wrapper(command, journal, &target, &fields).unwrap();
+            let published = current.replacen(
+                "managed by 'solstone journal config'.",
+                "managed by 'journal config'.",
+                1,
+            );
+            let parsed = parse_wrapper(command, &published).unwrap();
+            assert_eq!(parsed.version, 8);
+            assert_eq!(parsed.sol_bin, target);
+            assert_eq!(parsed.guard, Some(fields));
+            for altered in [
+                published.replace("exec \"$SOL_BIN\" \"$@\"", "exec /foreign/journal \"$@\""),
+                format!("{published}SOL_BIN='/foreign/journal'\n"),
+                published.replace(
+                    "managed by 'journal config'.",
+                    "managed by 'journal setup'.",
+                ),
+            ] {
+                assert!(parse_wrapper(command, &altered).is_none());
+            }
+        }
     }
 
     #[test]

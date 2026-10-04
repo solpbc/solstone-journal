@@ -293,7 +293,7 @@ mod tests {
 
     fn expected() -> crate::CallosumEnvelope {
         serde_json::from_str(
-            r#"{"tract":"supervisor","event":"request","ref":"browser:fixture","cmd":["journal","indexer","--rescan-file","20260930/device_browser_9e92ab54/174500_599/browser_pages.jsonl"]}"#,
+            r#"{"tract":"supervisor","event":"request","ref":"browser:fixture","cmd":["solstone","journal","indexer","--rescan-file","20260930/device_browser_9e92ab54/174500_599/browser_pages.jsonl"]}"#,
         )
         .unwrap()
     }
@@ -303,7 +303,7 @@ mod tests {
         let mut expected = expected();
         expected.ts = Some(42);
         let mut wrong = serde_json::to_value(&expected).unwrap();
-        wrong["cmd"] = serde_json::json!(["journal", "indexer", "--rescan"]);
+        wrong["cmd"] = serde_json::json!(["solstone", "journal", "indexer", "--rescan"]);
         let mut wrong_timestamp = serde_json::to_value(&expected).unwrap();
         wrong_timestamp["ts"] = serde_json::json!(43);
         let stream = format!(

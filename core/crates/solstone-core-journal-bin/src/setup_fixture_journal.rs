@@ -31,7 +31,10 @@ fn no_probe(_context: &SetupContext<'_>) -> Result<bool, String> {
 }
 
 fn main() -> ExitCode {
-    let argv = env::args_os().skip(1).collect::<Vec<_>>();
+    let mut argv = env::args_os().skip(1).collect::<Vec<_>>();
+    if argv.first().is_some_and(|argument| argument == "journal") {
+        argv.remove(0);
+    }
     if argv.first().is_some_and(|argument| argument == "setup") {
         let home = env::var_os("HOME")
             .map(PathBuf::from)
@@ -50,9 +53,7 @@ fn main() -> ExitCode {
             bin_dir.clone(),
             Seams {
                 runner: Box::new(ProcessCommandRunner),
-                service_ops: Box::new(NativeServiceOps {
-                    journal_bin: bin_dir.join("journal"),
-                }),
+                service_ops: Box::new(NativeServiceOps::new(&bin_dir)),
                 check_report_builder: Box::new(AvailableCheck),
                 already_keeps_journal_probe: no_probe,
                 prompt: Box::new(AcceptPrompt),

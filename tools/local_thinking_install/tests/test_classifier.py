@@ -6,7 +6,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tools.local_thinking_install.fixtures import write_prior_mlx_status
 from tools.local_thinking_install.harness import (
@@ -20,7 +20,38 @@ from tools.local_thinking_install.harness import (
     validate_direct_run_dir,
     wait_until_mlx_replaced,
 )
-from tools.local_thinking_install.portal import HttpResponse
+from tools.local_thinking_install.portal import HttpResponse, PortalProcess
+
+
+class TestPortalShutdown(unittest.TestCase):
+    def run_shutdown(self, inventories: list[str], timeout: float) -> tuple:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            portal = PortalProcess(root / "bin/journal", root / "journal", root / "log", 5015, root)
+            portal.process = Mock(pid=1234, returncode=0)
+            responses = [Mock(stdout=text.replace("FIXTURE", str(root))) for text in inventories]
+            with patch("tools.local_thinking_install.portal.os.killpg"), patch(
+                "tools.local_thinking_install.portal.subprocess.run", side_effect=responses,
+            ), patch("tools.local_thinking_install.portal.time.sleep", return_value=None):
+                error = portal.stop(timeout_seconds=timeout)
+            import json
+            receipt = json.loads((root / "process-cleanup.json").read_text())
+            return error, receipt
+
+    def test_coordinator_drain_is_observed_before_cleanup(self) -> None:
+        error, receipt = self.run_shutdown([
+            "1235 1 FIXTURE/bin/solstone-core __parent-loss-coordinator", "",
+        ], 1.0)
+        self.assertIsNone(error)
+        self.assertEqual(receipt["remaining_fixture_processes"], [])
+        self.assertEqual(len(receipt["observed_during_shutdown"]), 1)
+
+    def test_a_survivor_at_deadline_still_refuses_cleanup(self) -> None:
+        error, receipt = self.run_shutdown([
+            "1235 1 FIXTURE/bin/solstone-core __parent-loss-coordinator",
+        ], 0.0)
+        self.assertIn("Fixture processes remain", error)
+        self.assertEqual(len(receipt["remaining_fixture_processes"]), 1)
 
 
 class TestBootstrapClassifier(unittest.TestCase):
@@ -73,6 +104,56 @@ class TestBootstrapClassifier(unittest.TestCase):
         self.assertNotIn("observing", RUNTIME_TERMINAL_PHASES)
         self.assertNotIn("stopped", RUNTIME_TERMINAL_PHASES)
         self.assertNotIn("warming", RUNTIME_TERMINAL_PHASES)
+
+    def test_runtime_waits_for_install_observation_to_catch_up(self) -> None:
+        outcome, answer, _ = self.run_runtime_sequence([
+            {"phase": "artifact-not-ready", "reason_code": "install-in-progress", "poll": True},
+            {"phase": "ready"},
+        ])
+        self.assertEqual(outcome, "passed")
+        self.assertEqual(answer, "generated response")
+
+    def test_other_artifact_refusal_still_terminates(self) -> None:
+        outcome, answer, _ = self.run_runtime_sequence([
+            {"phase": "artifact-not-ready", "reason_code": "artifact-missing", "poll": True},
+        ])
+        self.assertEqual(outcome, "runtime_terminal_artifact-not-ready_artifact-missing")
+        self.assertIsNone(answer)
+
+    def test_install_refusal_without_poll_still_terminates(self) -> None:
+        outcome, answer, _ = self.run_runtime_sequence([
+            {"phase": "artifact-not-ready", "reason_code": "install-in-progress", "poll": False},
+        ])
+        self.assertEqual(outcome, "runtime_terminal_artifact-not-ready_install-in-progress")
+        self.assertIsNone(answer)
+
+    def run_runtime_sequence(self, runtime_payloads: list[dict]) -> tuple:
+        responses = [
+            HttpResponse(200, {}, "", {"install_state": "installed"}, None),
+            HttpResponse(200, {}, "", {}, None),
+            *[HttpResponse(200, {}, "", payload, None) for payload in runtime_payloads],
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir, patch(
+            "tools.local_thinking_install.harness.send_http_request", side_effect=responses,
+        ), patch(
+            "tools.local_thinking_install.harness.time.sleep", return_value=None,
+        ), patch(
+            "tools.local_thinking_install.harness.run_generate_proof",
+            return_value=(True, "generated response", None),
+        ), patch(
+            "tools.local_thinking_install.harness.helper_inspect_status",
+            return_value={"ok": True, "install_state": "installed"},
+        ), patch(
+            "tools.local_thinking_install.harness.is_leftover_mlx", return_value=False,
+        ), patch(
+            "tools.local_thinking_install.harness.sys.platform", "linux",
+        ):
+            root = Path(tmp_dir)
+            return run_post_admit_checks(
+                port=5015, staged_core_bin=root / "solstone-core",
+                journal_dir=root / "journal", case_name="prior_mlx",
+                case_dir=root, helper_bin=root / "helper", install_timeout_seconds=1.0,
+            )
 
     def test_500_spawn_unavailable_refusal(self) -> None:
         detail_msg = (

@@ -439,7 +439,7 @@ import json
 import subprocess
 
 proc = subprocess.Popen(
-    ["journal", "setup", "--jsonl", "--yes"],
+    ["solstone", "journal", "setup", "--jsonl", "--yes"],
     stdout=subprocess.PIPE,
     text=True,
     bufsize=1,

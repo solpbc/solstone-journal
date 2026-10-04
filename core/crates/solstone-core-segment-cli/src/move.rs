@@ -190,7 +190,7 @@ pub(crate) fn render_plan(plan: &MovePlan) -> String {
     }
     match &plan.index {
         SegmentIndexStatus::Ready { chunks, .. } => output.push_str(&format!("  index chunks: {chunks}\n")),
-        SegmentIndexStatus::Unreadable { error } => output.push_str(&format!("  index read error: {error} (delete+reindex will be attempted; run: journal indexer --rescan)\n")),
+        SegmentIndexStatus::Unreadable { error } => output.push_str(&format!("  index read error: {error} (delete+reindex will be attempted; run: solstone journal indexer --rescan)\n")),
         SegmentIndexStatus::Absent => {}
     }
     output.push_str(&format!(
@@ -331,7 +331,7 @@ pub(crate) fn execute_plan(
                 &mut stderr,
                 5,
                 "index prune",
-                format!("{error}; run: journal indexer --rescan"),
+                format!("{error}; run: solstone journal indexer --rescan"),
             ),
         }
         let mut indexed = 0_u64;
@@ -343,7 +343,7 @@ pub(crate) fn execute_plan(
                     &mut stderr,
                     5,
                     "re-index",
-                    format!("{error}; run: journal indexer --rescan"),
+                    format!("{error}; run: solstone journal indexer --rescan"),
                 ),
             }
         }

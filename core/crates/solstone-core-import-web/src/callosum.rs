@@ -149,7 +149,14 @@ mod tests {
 
         let watch = TaskWatch::subscribe(root.path()).await.unwrap();
         watch
-            .request("task-1", &["journal".to_owned(), "importer".to_owned()])
+            .request(
+                "task-1",
+                &[
+                    "solstone".to_owned(),
+                    "journal".to_owned(),
+                    "importer".to_owned(),
+                ],
+            )
             .unwrap();
         let request = loop {
             let message = supervisor.next_message().await.unwrap();
@@ -158,7 +165,10 @@ mod tests {
             }
         };
         assert_eq!(request.extra["ref"], "task-1");
-        assert_eq!(request.extra["cmd"], json!(["journal", "importer"]));
+        assert_eq!(
+            request.extra["cmd"],
+            json!(["solstone", "journal", "importer"])
+        );
         assert_eq!(request.extra["queue_if_active_cmd_differs"], true);
         for (reference, exit_code) in [("another-task", 0), ("task-1", 2)] {
             let fields = Map::from_iter([

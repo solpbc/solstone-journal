@@ -140,13 +140,15 @@ mod windows_lifecycle {
             Ok(output) if output.status.success() => {}
             Ok(output) => {
                 eprintln!(
-                    "journal service cleanup failed during uninstall: {}",
+                    "solstone journal service cleanup failed during uninstall: {}",
                     String::from_utf8_lossy(&output.stderr)
                 );
                 std::process::exit(1);
             }
             Err(error) => {
-                eprintln!("journal service cleanup could not start during uninstall: {error}");
+                eprintln!(
+                    "solstone journal service cleanup could not start during uninstall: {error}"
+                );
                 std::process::exit(1);
             }
         }

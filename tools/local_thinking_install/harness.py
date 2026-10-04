@@ -422,7 +422,6 @@ def run_generate_proof(
         "attempt_index": 0,
         "exclusive_admission": False,
         "system_instruction": None,
-        "thinking_budget": None,
         "transport_retries": None,
     }
     input_bytes = json.dumps(request_payload).encode("utf-8")
@@ -642,7 +641,13 @@ def run_post_admit_checks(
                 break
             if phase in RUNTIME_TERMINAL_PHASES:
                 reason = r_resp.json_data.get("reason_code") or "unspecified"
-                return f"runtime_terminal_{phase}_{reason}", None, None
+                install_still_observed = (
+                    phase == "artifact-not-ready"
+                    and reason == "install-in-progress"
+                    and r_resp.json_data.get("poll") is True
+                )
+                if not install_still_observed:
+                    return f"runtime_terminal_{phase}_{reason}", None, None
         time.sleep(1.0)
 
     if not runtime_ready:

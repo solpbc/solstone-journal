@@ -118,7 +118,7 @@ pub(crate) fn run(
     if args.segment.is_none() {
         writeln!(
             out,
-            "Pre-phase:  journal sense --day {} -j {default_describe_jobs}",
+            "Pre-phase:  solstone journal sense --day {} -j {default_describe_jobs}",
             context.day
         )
         .expect("write string");
@@ -138,7 +138,7 @@ pub(crate) fn run(
         )?;
     }
     if args.segment.is_none() {
-        out.push_str("Post-phase: journal indexer --rescan\nPost-phase: journal journal-stats\n");
+        out.push_str("Post-phase: solstone journal indexer --rescan\nPost-phase: solstone journal journal-stats\n");
     }
     Ok(out)
 }

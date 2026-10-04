@@ -224,7 +224,7 @@ pub(crate) fn decide(c: &JournalChange) -> Decision {
 }
 fn plan(c: &JournalChange, d: &Decision) -> String {
     let mut lines = vec![
-        "journal config journal - plan summary".into(),
+        "solstone journal config journal - plan summary".into(),
         "".into(),
         format!(
             "current: {} ({})",
@@ -1496,14 +1496,14 @@ mod tests {
         let d = decision(Action::Switch, 1);
         assert_eq!(
             plan(&c, &d),
-            "journal config journal - plan summary\n\ncurrent: /current (not active)\ntarget:  /target (not active)\naction:  switch\nservice: not installed; will rewrite wrapper\n\ncurrent journal is left intact. to re-adopt it later: solstone journal config journal /current --switch --yes\n\nre-run with --yes to proceed"
+            "solstone journal config journal - plan summary\n\ncurrent: /current (not active)\ntarget:  /target (not active)\naction:  switch\nservice: not installed; will rewrite wrapper\n\ncurrent journal is left intact. to re-adopt it later: solstone journal config journal /current --switch --yes\n\nre-run with --yes to proceed"
         );
 
         let c = change(Some(RequestedAction::Move));
         let d = decision(Action::Move, 0);
         assert_eq!(
             plan(&c, &d),
-            "journal config journal - plan summary\n\ncurrent: /current (not active)\ntarget:  /target (not active)\naction:  move\nservice: not installed; will move and rewrite wrapper\nfilesystem: same device\n\nre-run with --yes to proceed"
+            "solstone journal config journal - plan summary\n\ncurrent: /current (not active)\ntarget:  /target (not active)\naction:  move\nservice: not installed; will move and rewrite wrapper\nfilesystem: same device\n\nre-run with --yes to proceed"
         );
     }
 

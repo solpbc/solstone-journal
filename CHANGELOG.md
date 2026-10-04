@@ -26,6 +26,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.0.31] - 2026-10-03
 
+### Added
+
+- on windows, you can now turn on solstone.me in the agents app, so agents anywhere, like Claude on the web, can reach your journal at its own address, the same way they do on mac and linux, and the agents app is still where you choose what each one may see. your own hostname isn't available on windows yet.
+
 ### Changed
 
 - command-line help and install instructions now use `solstone journal`, such as `solstone journal setup`. `journal` still runs the same commands.

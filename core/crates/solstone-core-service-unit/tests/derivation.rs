@@ -21,7 +21,7 @@ mod support;
 const HOME: &str = "/home/sol";
 const PATH: &str = "/usr/bin:/bin";
 const RUNTIME_DIR: &str = "/opt/sol/bin";
-const LAUNCHER: &str = "/home/sol/.local/bin/journal";
+const LAUNCHER: &str = "/home/sol/.local/bin/solstone";
 const PORT: &str = "5015";
 
 static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -123,9 +123,10 @@ fn one_input_at_a_time_changes_only_its_derived_field() {
 
     let (plist, unit) = render(&baseline_env, LAUNCHER, "5 815${PORT}%");
     assert_eq!(arguments(&plist)[0], arguments(&baseline_plist)[0]);
-    assert_eq!(arguments(&plist)[1], "start");
-    assert_eq!(arguments(&plist)[2], "5 815${PORT}%");
-    assert_eq!(unit.exec_start[2], "5 815${PORT}%");
+    assert_eq!(arguments(&plist)[1], "journal");
+    assert_eq!(arguments(&plist)[2], "start");
+    assert_eq!(arguments(&plist)[3], "5 815${PORT}%");
+    assert_eq!(unit.exec_start[3], "5 815${PORT}%");
     assert_eq!(environment(&plist), environment(&baseline_plist));
     assert!(
         !plist

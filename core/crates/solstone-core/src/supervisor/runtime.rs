@@ -400,6 +400,8 @@ impl AppService {
 
     fn production_argv(self, journal_binary: &Path, convey_port: u16) -> Vec<String> {
         let mut argv = vec![journal_binary.display().to_string()];
+        #[cfg(windows)]
+        argv.push("journal".to_owned());
         match self {
             Self::Convey => argv.extend([
                 "convey".to_owned(),
@@ -906,7 +908,7 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
 
 fn resolve_journal_binary_from(exe_dir: &Path) -> PathBuf {
     let name = if cfg!(windows) {
-        "journal.exe"
+        "solstone.exe"
     } else {
         "solstone-core-journal"
     };
@@ -922,7 +924,7 @@ fn resolve_journal_binary() -> Result<PathBuf, String> {
         )
     })?;
     // Use the packaged Journal entry point beside this executable. Windows
-    // installs it as journal.exe; Unix installs it as solstone-core-journal.
+    // installs it as solstone.exe; Unix installs it as solstone-core-journal.
     Ok(resolve_journal_binary_from(exe_dir))
 }
 
@@ -2144,7 +2146,7 @@ mod tests {
     fn resolves_packaged_windows_journal_entry_point() {
         let directory = std::path::Path::new(r"C:\Program Files\solstone\bin");
         let journal = super::resolve_journal_binary_from(directory);
-        assert_eq!(journal, directory.join("journal.exe"));
+        assert_eq!(journal, directory.join("solstone.exe"));
         assert_ne!(journal, directory.join("solstone-core.exe"));
         assert_ne!(journal, directory.join("solstone-core-journal.exe"));
     }
@@ -2410,7 +2412,7 @@ mod tests {
         let argv =
             super::AppService::McpLocalDoor.production_argv(std::path::Path::new("journal"), 5015);
         assert_eq!(
-            &argv[1..],
+            &argv[if cfg!(windows) { 2 } else { 1 }..],
             ["mcp".to_owned(), "local-door".to_owned()].as_slice()
         );
     }

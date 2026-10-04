@@ -1000,9 +1000,7 @@ pub fn run_owner_setup_native(args: SetupArgs) -> ExitCode {
         executable_dir.clone(),
         Seams {
             runner: Box::new(ProcessCommandRunner),
-            service_ops: Box::new(NativeServiceOps {
-                journal_bin: executable_dir.join("journal"),
-            }),
+            service_ops: Box::new(NativeServiceOps::new(&executable_dir)),
             check_report_builder: Box::new(NativeCheckReportBuilder),
             already_keeps_journal_probe: native_already_keeps_journal_probe,
             prompt: Box::new(TerminalPrompt),
