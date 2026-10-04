@@ -63,9 +63,10 @@ struct Source {
 }
 
 /// Windows owners can't use confidential processing until it is qualified on
-/// Windows against the live service. This constant is the only thing that
-/// changes that, and it changes in its own commit after that qualification. No
-/// configuration, environment variable or feature can lift the hold.
+/// Windows against the live service. While this is false, nothing offers the
+/// feature, installs a verifier or opens a channel on Windows. It changes in its
+/// own commit after that qualification; no configuration, environment variable
+/// or feature can lift the hold.
 const WINDOWS_OWNER_USE_QUALIFIED: bool = false;
 
 /// Whether owners on `os` are held back from confidential processing even when
