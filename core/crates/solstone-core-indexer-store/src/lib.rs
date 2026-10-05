@@ -10,6 +10,7 @@ pub mod retention;
 pub mod scan;
 
 pub use retention::RetentionIndex;
+pub use scan::{SavedPublicationAttempt, SavedPublicationOutcome, attempt_saved_publication};
 
 #[cfg(test)]
 mod test_support;

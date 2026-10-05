@@ -104,6 +104,7 @@ fn finished(record: &DailyUnitRecord) -> Result<RuntimeOutcome, String> {
         },
         usage,
         degraded,
+        output_changed: None,
     })
 }
 
@@ -239,6 +240,7 @@ pub(crate) fn execute(
             context,
             generated,
             skip,
+            writer,
         );
         Ok(match outcome {
             Ok(outcome) => Ok(outcome),
@@ -304,6 +306,7 @@ pub(crate) fn execute(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn publish(
     authority: &mut DailyUnitAuthority,
     token: &str,
@@ -312,6 +315,7 @@ fn publish(
     context: &ExecutionContext,
     generated: crate::GeneratedTalentResponse,
     skip: bool,
+    writer: &mut (impl Write + ?Sized),
 ) -> Result<RuntimeOutcome, StageError> {
     let name = &prepared.name;
     let record = authority.record().expect("checked publication authority");
@@ -366,8 +370,34 @@ fn publish(
         authority.checkpoint().map_err(|e| failure(name, e))?;
         publication
     };
-    let disposition =
-        crate::writers::publish_daily_publication(authority, token, &publication, context)?;
+    let mut changed_paths = Vec::new();
+    let publication_result = crate::writers::publish_daily_publication(
+        authority,
+        token,
+        &publication,
+        context,
+        &mut changed_paths,
+    );
+    // This branch is the configured writer, as in preparation above. Derive
+    // ownership from the stage contract rather than adding it to retained plans.
+    let configured_output = !skip && stage.is_none_or(|(spec, _)| spec.commit.is_none());
+    let output_changed = if configured_output {
+        for rel in &changed_paths {
+            let full = context.journal.join(rel);
+            let attempt = solstone_core_indexer_store::attempt_saved_publication(
+                &context.journal,
+                &full,
+                |j, p| {
+                    solstone_core_indexer_store::scan::rescan_file(j, p).map_err(|e| e.to_string())
+                },
+            );
+            crate::emit_index_attempt(writer, &attempt);
+        }
+        Some(!changed_paths.is_empty())
+    } else {
+        None
+    };
+    let disposition = publication_result?;
     let output = if let Some((spec, state)) = stage {
         if let Some(override_output) = spec.output_override {
             override_output(&response, prepared, state)?
@@ -406,6 +436,7 @@ fn publish(
         disposition,
         usage,
         degraded,
+        output_changed,
     })
 }
 
@@ -417,6 +448,130 @@ mod tests {
     use std::path::Path;
     #[cfg(all(test, feature = "full-tests"))]
     use std::time::{Duration, Instant};
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn saved_daily_output_is_indexed_before_later_publication_or_override_error() {
+        fn fail_override(
+            _: &str,
+            prepared: &PreparedTalent,
+            _: &PrePostState,
+        ) -> Result<String, StageError> {
+            Err(StageError::new(
+                "output_override",
+                "test",
+                &prepared.name,
+                "later override failed",
+            ))
+        }
+        static FAILING_OVERRIDE: StageSpec = StageSpec {
+            stage: crate::contract::StageId::Documents,
+            gate: None,
+            build: None,
+            prompt_override: None,
+            commit: None,
+            unavailable_commit: None,
+            unavailable_before_generate: None,
+            writes_as_intent: None,
+            output_override: Some(fail_override),
+        };
+        for mode in ["later_action", "override", "override_index_error"] {
+            let root = tempfile::tempdir().unwrap();
+            let context = ExecutionContext {
+                journal: root.path().to_path_buf(),
+            };
+            let relative = "chronicle/20260101/talents/plain.md";
+            let path = context.journal.join(relative);
+            let identity = DailyUnitIdentity::new("20260101", "plain", None);
+            let prepared = PreparedTalent {
+                name: "plain".into(),
+                config: json!({"day":"20260101", "output_path":path})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            };
+            let mut actions = vec![json!({"owner":"output", "path":relative,
+                "facet_identity":null, "before":null, "after":b"saved daily searchable text".to_vec()})];
+            if mode == "later_action" {
+                let blocked = "chronicle/20260101/talents/blocked.md";
+                fs::create_dir_all(context.journal.join(blocked)).unwrap();
+                actions.push(json!({"owner":"output", "path":blocked,
+                    "facet_identity":null, "before":null, "after":b"blocked output".to_vec()}));
+            }
+            if mode == "override_index_error" {
+                fs::write(context.journal.join("indexer"), b"not a directory").unwrap();
+            }
+            let stage = (mode != "later_action").then_some((&FAILING_OVERRIDE, PrePostState::None));
+            let mut events = Vec::new();
+            with_daily_unit_authority(&context.journal, &identity, |authority| {
+                let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+                record.lock_token = Some("attempt".into());
+                record.generated_result =
+                    Some(json!({"response":"retained response", "usage":null, "degraded":null}));
+                // The pre-existing retained plan shape carries no derived-index ownership flag.
+                record.action_plan = Some(json!({"actions":actions, "no_output":false}));
+                *authority.record_mut() = Some(record);
+                authority.checkpoint()?;
+                let result = publish(
+                    authority,
+                    "attempt",
+                    &prepared,
+                    stage.as_ref(),
+                    &context,
+                    ("unused generated response".into(), None, None),
+                    false,
+                    &mut events,
+                );
+                let error = result.unwrap_err();
+                if mode != "later_action" {
+                    assert_eq!(error.phase, "output_override");
+                    assert_eq!(error.detail, "later override failed");
+                } else {
+                    assert_eq!(error.phase, "publication");
+                }
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(
+                fs::read_to_string(&path).unwrap(),
+                "saved daily searchable text"
+            );
+            let attempts: Vec<Value> = String::from_utf8(events)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            assert_eq!(attempts.len(), 1, "{mode}: {attempts:?}");
+            assert_eq!(attempts[0]["event"], "index.attempt");
+            assert_eq!(attempts[0]["path"], "20260101/talents/plain.md");
+            if mode == "override_index_error" {
+                assert_eq!(attempts[0]["outcome"], "failed");
+                assert!(
+                    attempts[0]["cause"]
+                        .as_str()
+                        .is_some_and(|cause| !cause.is_empty())
+                );
+            } else {
+                assert_eq!(attempts[0]["outcome"], "indexed");
+                let results = solstone_core_indexer_query::search(
+                    &context.journal,
+                    solstone_core_indexer_query::OwnerBoundary,
+                    &solstone_core_indexer_query::SearchRequest::new(
+                        "saved daily searchable",
+                        Default::default(),
+                    ),
+                    chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(results.results.len(), 1);
+                assert!(
+                    results.results[0]
+                        .text
+                        .contains("saved daily searchable text")
+                );
+            }
+        }
+    }
 
     fn fixture(
         root: &Path,
