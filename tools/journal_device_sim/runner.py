@@ -265,6 +265,21 @@ def _safe_content_name(value: Any) -> bool:
     )
 
 
+def _safe_journal_component(value: Any) -> bool:
+    """Match the journal's safe single-component stream/segment rule."""
+
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and value not in {".", ".."}
+        and not value.startswith(".")
+        and "/" not in value
+        and "\\" not in value
+        and "\x00" not in value
+        and not any("A" <= character <= "Z" for character in value)
+    )
+
+
 def _confined_bytes(root: Path, path: Path, limit: int, label: str) -> bytes:
     """Open a root-relative regular file once and read at most limit+1 bytes."""
 
@@ -836,9 +851,7 @@ class Simulator:
                     f"existing state segment {fixture_id} has invalid requested_segment"
                 )
             landed = entry.get("landed_segment")
-            if landed is not None and (
-                not isinstance(landed, str) or not _SEGMENT_KEY_RE.fullmatch(landed)
-            ):
+            if landed is not None and not _safe_journal_component(landed):
                 raise SimulationFailure(
                     f"existing state segment {fixture_id} has invalid landed_segment"
                 )
@@ -1059,12 +1072,29 @@ class Simulator:
         total = response.body.get("total")
         if isinstance(total, bool) or not isinstance(total, int) or total != len(items):
             raise SimulationFailure("ingest listing total does not match its items")
+        wire_keys: set[str] = set()
         for item in items:
             if not isinstance(item, dict):
                 raise SimulationFailure("ingest listing item is not an object")
             key = item.get("key")
-            if not isinstance(key, str) or not _SEGMENT_KEY_RE.fullmatch(key):
+            if not _safe_journal_component(key):
                 raise SimulationFailure("ingest listing item has an invalid key")
+            if key in wire_keys:
+                raise SimulationFailure("ingest listing contains duplicate wire keys")
+            wire_keys.add(key)
+            physical_segment = item.get("segment")
+            stream = item.get("stream")
+            if (physical_segment is None) != (stream is None):
+                raise SimulationFailure(
+                    "ingest listing item must include both segment and stream"
+                )
+            if physical_segment is not None and (
+                not _safe_journal_component(physical_segment)
+                or not _safe_journal_component(stream)
+            ):
+                raise SimulationFailure(
+                    "ingest listing item has an invalid physical locator"
+                )
             if not isinstance(item.get("observed"), bool):
                 raise SimulationFailure("ingest listing item observed must be boolean")
             original = item.get("original_key")
@@ -1252,32 +1282,60 @@ class Simulator:
             matched.append(candidate)
         return matched
 
+    @staticmethod
+    def _physical_segment_name(item: dict[str, Any]) -> str | None:
+        segment = item.get("segment")
+        stream = item.get("stream")
+        if segment is None and stream is None:
+            key = item.get("key")
+            return key if isinstance(key, str) else None
+        if isinstance(segment, str) and isinstance(stream, str):
+            return segment
+        return None
+
     def _find_listing_item(
         self,
         listing: dict[str, Any],
         segment: FixtureSegment,
         landed_segment: str | None,
     ) -> dict[str, Any] | None:
-        candidates = []
-        for item in listing.get("items", []):
-            if not isinstance(item, dict) or self._matched_files(item, segment) is None:
-                continue
-            key = item.get("key")
-            if not isinstance(key, str) or not _SEGMENT_KEY_RE.fullmatch(key):
-                continue
-            if landed_segment and item.get("key") != landed_segment:
-                continue
-            if not landed_segment and not (
-                item.get("key") == segment.segment
+        items = [item for item in listing.get("items", []) if isinstance(item, dict)]
+        if landed_segment is not None:
+            alias_matches = [
+                item
+                for item in items
+                if item.get("segment") is not None
+                and item.get("stream") is not None
+                and item.get("key") == landed_segment
+            ]
+            identity_matches = alias_matches or [
+                item
+                for item in items
+                if self._physical_segment_name(item) == landed_segment
+            ]
+        else:
+            identity_matches = [
+                item
+                for item in items
+                if item.get("key") == segment.segment
+                or self._physical_segment_name(item) == segment.segment
                 or item.get("original_key") == segment.segment
-            ):
-                continue
-            candidates.append(item)
-        if len(candidates) > 1:
+            ]
+
+        hash_matches = [
+            item for item in identity_matches if self._matched_files(item, segment) is not None
+        ]
+        if len(hash_matches) > 1:
             raise SimulationFailure(
-                f"listing is ambiguous for fixture {segment.fixture_id}; {len(candidates)} matches"
+                f"listing is ambiguous for fixture {segment.fixture_id}; {len(hash_matches)} matches"
             )
-        return candidates[0] if candidates else None
+        if hash_matches:
+            return hash_matches[0]
+        if identity_matches:
+            raise SimulationFailure(
+                f"listing hash mismatch for fixture {segment.fixture_id}"
+            )
+        return None
 
     @staticmethod
     def _manifest_files_match(
@@ -1293,7 +1351,11 @@ class Simulator:
         )
 
     def _journal_candidate(
-        self, segment: FixtureSegment, mapped_day: str, landed_segment: str
+        self,
+        segment: FixtureSegment,
+        mapped_day: str,
+        landed_segment: str,
+        listing_item: dict[str, Any] | None = None,
     ) -> tuple[
         Path,
         dict[str, Any],
@@ -1306,15 +1368,38 @@ class Simulator:
             raise SimulationFailure(
                 "white-box verification has no authenticated client CID"
             )
-        if not _SEGMENT_KEY_RE.fullmatch(landed_segment):
-            raise SimulationFailure("receiver returned an invalid landed segment key")
+        if not _safe_journal_component(landed_segment):
+            raise SimulationFailure("receiver returned an invalid landed segment")
+        if listing_item is None:
+            if not _SEGMENT_KEY_RE.fullmatch(landed_segment):
+                raise SimulationFailure("receiver returned an invalid landed segment")
+            physical_segment = landed_segment
+            selected_stream = None
+        else:
+            key = listing_item.get("key")
+            physical_segment = self._physical_segment_name(listing_item)
+            if (
+                not isinstance(key, str)
+                or physical_segment is None
+                or landed_segment not in {key, physical_segment}
+            ):
+                raise SimulationFailure("receiver returned an invalid landed segment")
+            selected_stream = listing_item.get("stream")
+        if not _safe_journal_component(physical_segment) or (
+            selected_stream is not None
+            and not _safe_journal_component(selected_stream)
+        ):
+            raise SimulationFailure("receiver returned an invalid landed segment")
         day_root = self.journal_root / "chronicle" / mapped_day
         if not _plain_descendant(self.journal_root, day_root, directory=True):
             return None
-        try:
-            streams = tuple(day_root.iterdir())
-        except OSError as error:
-            raise SimulationFailure("receiving journal day cannot be inspected") from error
+        if selected_stream is not None:
+            streams = (day_root / selected_stream,)
+        else:
+            try:
+                streams = tuple(day_root.iterdir())
+            except OSError as error:
+                raise SimulationFailure("receiving journal day cannot be inspected") from error
         candidates: list[
             tuple[
                 Path,
@@ -1325,7 +1410,7 @@ class Simulator:
             ]
         ] = []
         for stream in streams:
-            path = stream / landed_segment
+            path = stream / physical_segment
             if not _plain_descendant(self.journal_root, path, directory=True):
                 continue
             try:
@@ -1353,7 +1438,7 @@ class Simulator:
                     events,
                     segment,
                     mapped_day,
-                    landed_segment,
+                    physical_segment,
                     stream.name,
                     self.expected_cid,
                 )
@@ -1442,7 +1527,9 @@ class Simulator:
     ) -> tuple[bool, Path | None, dict[str, Any] | None]:
         if self.journal_root is None:
             return True, None, None
-        candidate = self._journal_candidate(segment, mapped_day, landed_segment)
+        candidate = self._journal_candidate(
+            segment, mapped_day, landed_segment, listing_item
+        )
         if candidate is None:
             return False, None, None
         path, ingest, events, event_recovery, matching_events = candidate
@@ -1733,7 +1820,10 @@ class Simulator:
                     set(segment.expectation.file_statuses)
                 )
                 outputs_ok, journal_oracles = self._white_box_oracles(
-                    segment, mapped_day, str(item["key"]), item
+                    segment,
+                    mapped_day,
+                    self._physical_segment_name(item) or str(item["key"]),
+                    item,
                 )
                 if statuses_ok and outputs_ok:
                     return item, journal_oracles, True
@@ -1956,10 +2046,20 @@ class Simulator:
         resumed: bool,
         response: HttpResponse | None,
     ) -> dict[str, Any]:
-        landed_segment = str(item["key"])
-        if not _SEGMENT_KEY_RE.fullmatch(landed_segment):
-            raise SimulationFailure("listing returned an invalid landed segment key")
         entry = self.state["segments"].setdefault(segment.fixture_id, {})
+        wire_key = item.get("key")
+        physical_segment = self._physical_segment_name(item)
+        if not isinstance(wire_key, str) or physical_segment is None:
+            raise SimulationFailure("listing returned an invalid landed segment")
+        saved_segment = entry.get("landed_segment")
+        if saved_segment is None:
+            landed_segment = physical_segment
+        elif saved_segment in {wire_key, physical_segment}:
+            landed_segment = saved_segment
+        else:
+            raise SimulationFailure(
+                f"fixture {segment.fixture_id} saved landed identity does not match listing item"
+            )
         entry.update({"phase": "reconciled", "landed_segment": landed_segment})
         if response is not None:
             entry["last_response_status"] = response.status
@@ -1970,7 +2070,7 @@ class Simulator:
         duplicate = (
             None
             if duplicate_from_state
-            else self._verify_duplicate(client, segment, envelope, landed_segment)
+            else self._verify_duplicate(client, segment, envelope, physical_segment)
         )
         if duplicate is not None:
             entry["duplicate_proven"] = True
@@ -2013,10 +2113,7 @@ class Simulator:
                 "use a fresh state directory after correcting the receiver"
             )
         landed_segment = prior.get("landed_segment")
-        if landed_segment is not None and not (
-            isinstance(landed_segment, str)
-            and _SEGMENT_KEY_RE.fullmatch(landed_segment)
-        ):
+        if landed_segment is not None and not _safe_journal_component(landed_segment):
             raise SimulationFailure("existing state has an invalid landed segment key")
         prior_response: HttpResponse | None = None
         raw_accepted = prior.get("accepted_response")
@@ -2032,7 +2129,10 @@ class Simulator:
             accepted_landed = self._validate_upload_response(
                 prior_response, segment, envelope
             )
-            if accepted_landed != landed_segment:
+            if landed_segment is not None and (
+                not isinstance(landed_segment, str)
+                or not _safe_journal_component(landed_segment)
+            ):
                 raise SimulationFailure(
                     f"fixture {segment.fixture_id} accepted state changed its landed segment"
                 )
@@ -2061,6 +2161,10 @@ class Simulator:
                     client, segment, mapped_day, str(item["key"]), wait=True
                 )
             if item is not None and ready:
+                if prior_response is not None and self._physical_segment_name(item) != accepted_landed:
+                    raise SimulationFailure(
+                        f"fixture {segment.fixture_id} accepted response changed its physical segment"
+                    )
                 self._verify_fixture_bytes(segment)
                 return self._finish_segment(
                     client=client,
@@ -2083,6 +2187,7 @@ class Simulator:
         attempts_this_run = 0
         while attempts_this_run < self.config.max_attempts:
             response: HttpResponse | None = None
+            accepted_physical: str | None = None
             entry = self.state["segments"].setdefault(segment.fixture_id, {})
             try:
                 with self._fixture_uploads(segment) as uploads:
@@ -2155,7 +2260,7 @@ class Simulator:
                                 f"fixture {segment.fixture_id} expected upload status "
                                 f"{segment.expectation.upload_statuses}, got {response_status!r}"
                             )
-                        landed_segment = self._validate_upload_response(
+                        accepted_physical = self._validate_upload_response(
                             response, segment, envelope
                         )
                     except SimulationFailure as caught:
@@ -2172,17 +2277,21 @@ class Simulator:
                         )
                         self._save_state()
                         raise
-                    entry.update(
-                        {
-                            "phase": "accepted",
-                            "landed_segment": landed_segment,
-                            "last_response_status": response.status,
-                            "accepted_response": {
-                                "http_status": response.status,
-                                "body": response.body,
-                            },
-                        }
-                    )
+                    accepted_update = {
+                        "phase": "accepted",
+                        "last_response_status": response.status,
+                        "accepted_response": {
+                            "http_status": response.status,
+                            "body": response.body,
+                        },
+                    }
+                    saved_landed_segment = entry.get("landed_segment")
+                    if isinstance(saved_landed_segment, str):
+                        landed_segment = saved_landed_segment
+                    else:
+                        landed_segment = accepted_physical
+                        accepted_update["landed_segment"] = accepted_physical
+                    entry.update(accepted_update)
                     entry.pop("contract_failure", None)
                     self._save_state()
                 elif response.status >= 500:
@@ -2236,7 +2345,24 @@ class Simulator:
                 retry_after_uncertainty = True
                 continue
             if item is not None:
-                landed_segment = str(item["key"])
+                wire_key = item.get("key")
+                physical_segment = self._physical_segment_name(item)
+                if not isinstance(wire_key, str) or physical_segment is None:
+                    raise SimulationFailure("listing returned an invalid landed segment")
+                if (
+                    response is not None
+                    and response.status == 200
+                    and accepted_physical != physical_segment
+                ):
+                    raise SimulationFailure(
+                        f"fixture {segment.fixture_id} accepted response changed its physical segment"
+                    )
+                if landed_segment is None:
+                    landed_segment = physical_segment
+                elif landed_segment not in {wire_key, physical_segment}:
+                    raise SimulationFailure(
+                        f"fixture {segment.fixture_id} saved landed identity changed"
+                    )
                 if not ready:
                     item, journal_oracles, ready = self._reconcile(
                         client, segment, mapped_day, landed_segment, wait=True
@@ -2323,6 +2449,7 @@ class Simulator:
                     f"ingest day manifest {day}/{source} has the wrong shape"
                 )
             listed_segments = day_manifest["segments"]
+            listed_identities: set[tuple[str | None, str]] = set()
             for segment, landed in entries:
                 item = self._find_listing_item(listing, segment, landed)
                 if item is None:
@@ -2334,7 +2461,14 @@ class Simulator:
                     raise SimulationFailure(
                         f"final listing lost requested-key lineage for {segment.fixture_id}"
                     )
-                raw_day_entry = listed_segments.get(landed)
+                physical_segment = self._physical_segment_name(item)
+                if physical_segment is None:
+                    raise SimulationFailure(
+                        f"final listing omitted physical identity for {segment.fixture_id}"
+                    )
+                stream = item.get("stream")
+                listed_identities.add((stream if isinstance(stream, str) else None, physical_segment))
+                raw_day_entry = listed_segments.get(item["key"])
                 if not isinstance(raw_day_entry, dict):
                     raise SimulationFailure(
                         f"day manifest omitted fixture {segment.fixture_id}"
@@ -2366,7 +2500,7 @@ class Simulator:
                 if isinstance(day_summary, dict)
                 else None
             )
-            distinct_landed = len({landed for _, landed in entries})
+            distinct_landed = len(listed_identities)
             if (
                 isinstance(segment_count, bool)
                 or not isinstance(segment_count, int)

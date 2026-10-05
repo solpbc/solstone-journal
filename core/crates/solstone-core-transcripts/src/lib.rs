@@ -566,13 +566,6 @@ fn process_segment(
     projection: PerceptProjection,
     memory: &mut MemoryContext,
 ) -> Vec<Entry> {
-    if let StreamLocation::Named(name) = &segment.stream
-        && name
-            .to_str()
-            .is_some_and(solstone_core_format::body::is_body_stream)
-    {
-        return Vec::new();
-    }
     let Some((start, end)) = segment_times(day, &segment.key) else {
         return Vec::new();
     };
@@ -1870,70 +1863,5 @@ mod tests {
         );
         assert!(markdown.contains("Good row"));
         assert_eq!(counts.transcripts, 1);
-    }
-
-    #[test]
-    fn cluster_and_cluster_period_exclude_body_streams() {
-        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
-        let day_dir = root.path().join("chronicle/20260101");
-        let body_seg = day_dir.join("import.apple_health/100000_300");
-        let screen_seg = day_dir.join("screen/110000_300");
-        fs::create_dir_all(&body_seg).unwrap();
-        fs::create_dir_all(body_seg.join("talents")).unwrap();
-        fs::create_dir_all(&screen_seg).unwrap();
-        fs::write(
-            body_seg.join("day_summary_transcript.md"),
-            "# Excluded Body Metric\nSteps: 10000",
-        )
-        .unwrap();
-        fs::write(
-            body_seg.join("talents/brief.md"),
-            "# Excluded Body Briefing\nMetric summary",
-        )
-        .unwrap();
-        fs::write(
-            body_seg.join("x_transcript.jsonl"),
-            "{\"start\":\"00:00:00\",\"text\":\"Excluded jsonl transcript\"}\n",
-        )
-        .unwrap();
-        fs::write(
-            screen_seg.join("capture_audio.jsonl"),
-            "{\"start\":\"00:00:00\",\"text\":\"Visible screen transcript\"}\n",
-        )
-        .unwrap();
-
-        let (markdown, counts) = cluster(
-            root.path(),
-            "20260101",
-            &sources(true, true, TalentSource::All),
-        );
-        assert!(!markdown.contains("Excluded Body Metric"));
-        assert!(!markdown.contains("Excluded Body Briefing"));
-        assert!(!markdown.contains("Excluded jsonl transcript"));
-        assert!(markdown.contains("Visible screen transcript"));
-        assert_eq!(counts.transcripts, 1);
-
-        let (period_md, period_counts) = cluster_period(
-            root.path(),
-            "20260101",
-            "100000_300",
-            &sources(true, true, TalentSource::All),
-            Some("import.apple_health"),
-        );
-        assert!(!period_md.contains("Excluded Body Metric"));
-        assert!(!period_md.contains("Excluded Body Briefing"));
-        assert!(!period_md.contains("Excluded jsonl transcript"));
-        assert_eq!(period_counts.transcripts, 0);
-        assert_eq!(period_counts.total(), 0);
-
-        let (control_md, control_counts) = cluster_period(
-            root.path(),
-            "20260101",
-            "110000_300",
-            &sources(true, true, TalentSource::All),
-            Some("screen"),
-        );
-        assert!(control_md.contains("Visible screen transcript"));
-        assert!(control_counts.total() > 0);
     }
 }

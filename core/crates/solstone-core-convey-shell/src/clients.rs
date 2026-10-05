@@ -17,6 +17,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_journal_config::read_direct_door_port;
 use solstone_core_sol_link::client_description::{
     JournalIdentityMeta, PatchClientLabelRequest, PutSelfDescriptionRequest,
     StoredClientDescription, current_display_label,
@@ -30,9 +31,16 @@ use solstone_core_sol_link::client_status::{
     ClientLedgerUnavailable, ClientReach, ConnectionFreshness, ConnectionGroup, ConnectionState,
     SourceDelivery, inspect_clients_at,
 };
-use solstone_core_sol_link::device_migration::{MigrationError, migration_state, rekey};
+use solstone_core_sol_link::device_migration::{
+    MigrationError, MigrationIssuanceContext, migration_state, rekey,
+};
+use solstone_core_sol_link::pairing::RelayAccessSnapshot;
+use solstone_core_sol_link::pairing::addresses::{
+    PairingSnapshot, SystemInterfaceSource, SystemRouteIpv4Source, snapshot_from_sources,
+};
 
 use crate::JournalRoot;
+use crate::pair_window_manager::PairWindowManager;
 
 const CLIENT_ENTRY_FIELDS: [&str; 29] = [
     "cid",
@@ -66,7 +74,7 @@ const CLIENT_ENTRY_FIELDS: [&str; 29] = [
     "description_updated_at",
 ];
 
-pub(crate) fn router(prefix: &str) -> Router {
+pub(crate) fn router(prefix: &str, pair_windows: Arc<PairWindowManager>) -> Router {
     Router::new()
         .route(&format!("{prefix}/api/clients"), get(list))
         .route(
@@ -93,11 +101,15 @@ pub(crate) fn router(prefix: &str) -> Router {
             &format!("{prefix}/api/clients/{{cid}}/label"),
             axum::routing::patch(patch_label).layer(DefaultBodyLimit::max(16 * 1024)),
         )
+        .layer(Extension(pair_windows))
 }
 
 async fn rekey_device(
     Extension(root): Extension<Arc<JournalRoot>>,
+    Extension(pair_windows): Extension<Arc<PairWindowManager>>,
     basis: Option<Extension<AccessBasis>>,
+    snapshot: Option<Extension<PairingSnapshot>>,
+    relay_access: Option<Extension<RelayAccessSnapshot>>,
     body: Result<Bytes, axum::extract::rejection::BytesRejection>,
 ) -> Response {
     let Some((cid, leaf_spki)) = migration_caller(basis) else {
@@ -109,7 +121,30 @@ async fn rekey_device(
             reason: solstone_core_sol_link::device_migration::MigrationReasonCode::MigrationRequestInvalid,
         }),
     };
-    match rekey(&root.0, &cid, &leaf_spki, &body) {
+    let snapshot = match snapshot {
+        Some(Extension(snapshot)) => snapshot,
+        None => match snapshot_from_sources(&SystemInterfaceSource, &SystemRouteIpv4Source) {
+            Ok(snapshot) => snapshot,
+            Err(_) => return migration_state_unavailable(),
+        },
+    };
+    let port = match read_direct_door_port(&root.0) {
+        Ok(port) => port,
+        Err(_) => return migration_state_unavailable(),
+    };
+    let local_endpoints = crate::network::response_local_endpoints(&snapshot, port);
+    let relay_access = relay_access
+        .map(|Extension(snapshot)| snapshot)
+        .or_else(|| {
+            pair_windows
+                .relay_access()
+                .try_current(&root.0, crate::network::now())
+        });
+    let issuance = MigrationIssuanceContext {
+        local_endpoints,
+        relay_access,
+    };
+    match rekey(&root.0, &cid, &leaf_spki, &body, &issuance) {
         Ok(outcome) => {
             let status = if outcome.created {
                 StatusCode::CREATED
@@ -120,6 +155,13 @@ async fn rekey_device(
         }
         Err(error) => migration_error(error),
     }
+}
+
+fn migration_state_unavailable() -> Response {
+    migration_error(MigrationError {
+        reason:
+            solstone_core_sol_link::device_migration::MigrationReasonCode::MigrationStateUnavailable,
+    })
 }
 
 async fn get_migration(
@@ -670,6 +712,7 @@ mod tests {
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
+    use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
     use serde_json::{Value, json};
     use tower::ServiceExt;
 
@@ -704,6 +747,52 @@ mod tests {
             fs::create_dir_all(&link).expect("link directory");
             fs::write(link.join("devices.json"), activity.to_string()).expect("activity metadata");
         }
+    }
+
+    fn migration_identity(journal: &std::path::Path) -> (String, Vec<u8>, String) {
+        use solstone_core_sol_link::ca::{generate_ca, jid_from_spki, sign_csr};
+        use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
+
+        let ca = generate_ca().expect("test CA");
+        let instance_id = jid_from_spki(ca.spki_der()).expect("instance ID");
+        let ca_dir = journal.join("link/ca");
+        fs::create_dir_all(&ca_dir).expect("CA directory");
+        fs::write(ca_dir.join("cert.pem"), ca.certificate_pem()).expect("CA certificate");
+        fs::write(ca_dir.join("private.pem"), ca.private_key_pem()).expect("CA key");
+        fs::write(
+            journal.join("link/state.json"),
+            serde_json::to_vec(&json!({"instance_id": instance_id, "home_label": "Test Home"}))
+                .unwrap(),
+        )
+        .expect("link state");
+
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("client key");
+        let csr = CertificateParams::default()
+            .serialize_request(&key)
+            .expect("client CSR")
+            .pem()
+            .expect("CSR PEM");
+        let cert = sign_csr(&ca, &csr, "Old phone").expect("client certificate");
+        let cid = cert.cid().to_owned();
+        let (_, pem) = x509_parser::pem::parse_x509_pem(cert.pem().as_bytes()).unwrap();
+        let (_, leaf) = x509_parser::parse_x509_certificate(&pem.contents).unwrap();
+        let leaf_spki = leaf.tbs_certificate.subject_pki.raw.to_vec();
+        AuthorizationLedger::new(journal)
+            .add(ClientEntry::new(
+                &cid,
+                "Old phone",
+                "2026-09-01T00:00:00Z",
+                &instance_id,
+                ClientRole::Roleless,
+            ))
+            .expect("authorized client");
+        let new_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("new client key");
+        let new_csr = CertificateParams::default()
+            .serialize_request(&new_key)
+            .expect("new client CSR")
+            .pem()
+            .expect("new CSR PEM");
+        (cid, leaf_spki, new_csr)
     }
 
     fn client(cid: &str, label: &str) -> Value {
@@ -833,9 +922,129 @@ mod tests {
             });
             let (status, body) = request(app.clone(), req).await;
             assert_eq!(status, StatusCode::OK, "{prefix}");
-            assert_eq!(body["protocol"], 1);
+            assert_eq!(body["protocol_version"], 1);
             assert_eq!(body["state"], "none");
+            assert!(body["rekey_operation_id"].is_null());
+            assert!(body["previous_cid"].is_null());
             assert!(body["replaced_cid"].is_null());
+        }
+    }
+
+    #[tokio::test]
+    async fn migration_rekey_handlers_use_injected_issuance_context_for_both_carriers_and_prefixes()
+    {
+        use solstone_core_sol_link::pairing::RelayAccessSnapshot;
+        use solstone_core_sol_link::pairing::addresses::{
+            EndpointScope, LocalEndpoint, PairingSnapshot,
+        };
+
+        let journal = EstablishedJournal::new();
+        let (cid, leaf_spki, csr) = migration_identity(journal.0.path());
+        let app = crate::router(journal.0.path().to_path_buf());
+        let snapshot = PairingSnapshot {
+            endpoints: vec![LocalEndpoint {
+                ip: "192.0.2.44".parse().unwrap(),
+                scope: EndpointScope::Lan,
+            }],
+            route_ipv4: None,
+        };
+        let relay = RelayAccessSnapshot {
+            protocol_version: 2,
+            status: "ready".to_owned(),
+            relay_origin: "https://relay.example.invalid".to_owned(),
+            instance_id: "fixture-instance".to_owned(),
+            device_token: "injected-token".to_owned(),
+            expires_at: "2026-09-02T00:00:00Z".to_owned(),
+        };
+        let expected_endpoints = json!([{"ip": "192.0.2.44", "port": 7657, "scope": "lan"}]);
+
+        let cases = [
+            (
+                "/app/network",
+                Carrier::Direct,
+                "123e4567-e89b-42d3-a456-426614174100",
+            ),
+            (
+                "/app/network",
+                Carrier::ViaSpl,
+                "123e4567-e89b-42d3-a456-426614174101",
+            ),
+            (
+                "/app/link",
+                Carrier::Direct,
+                "123e4567-e89b-42d3-a456-426614174102",
+            ),
+            (
+                "/app/link",
+                Carrier::ViaSpl,
+                "123e4567-e89b-42d3-a456-426614174103",
+            ),
+        ];
+        for (prefix, carrier, operation_id) in cases {
+            let mut req = Request::post(format!("{prefix}/api/clients/self/rekey"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "protocol_version": 1,
+                        "operation_id": operation_id,
+                        "csr": csr.clone(),
+                        "device_label": "New phone",
+                        "client_label": "Request client label",
+                        "platform": "android"
+                    })
+                    .to_string(),
+                ))
+                .unwrap();
+            req.extensions_mut().insert(AccessBasis::LinkedDevice {
+                carrier,
+                cid: LinkedDeviceCid::try_from(cid.as_str()).unwrap(),
+                leaf_spki: leaf_spki.clone(),
+            });
+            req.extensions_mut().insert(snapshot.clone());
+            req.extensions_mut().insert(relay.clone());
+
+            let (status, body) = request(app.clone(), req).await;
+            assert_eq!(status, StatusCode::CREATED, "{prefix} {carrier:?}");
+            assert_eq!(body["protocol_version"], 1);
+            assert_eq!(body["state"], "pending");
+            assert_eq!(body["pairing"]["fingerprint"], body["cid"]);
+            assert_eq!(body["pairing"]["local_endpoints"], expected_endpoints);
+            assert_eq!(
+                body["pairing"]["relay_access"]["device_token"],
+                "injected-token"
+            );
+
+            let operation_path = journal
+                .0
+                .path()
+                .join("link/device-migrations/operations")
+                .join(format!("{operation_id}.json"));
+            let record: Value = serde_json::from_slice(&fs::read(operation_path).unwrap()).unwrap();
+            assert_eq!(record["pairing"]["local_endpoints"], expected_endpoints);
+            assert_eq!(
+                record["pairing"]["relay_access"],
+                serde_json::to_value(&relay).unwrap()
+            );
+        }
+
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            for basis in [
+                AccessBasis::Localhost,
+                AccessBasis::PairingPeer {
+                    carrier: Carrier::Direct,
+                },
+            ] {
+                let mut req = Request::post(format!("{prefix}/api/clients/self/rekey"))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap();
+                req.extensions_mut().insert(basis);
+                req.extensions_mut().insert(snapshot.clone());
+                req.extensions_mut().insert(relay.clone());
+                let (status, body) = request(app.clone(), req).await;
+                assert_eq!(status, StatusCode::FORBIDDEN, "{prefix}");
+                assert_eq!(body["reason_code"], "migration_forbidden");
+            }
         }
     }
 

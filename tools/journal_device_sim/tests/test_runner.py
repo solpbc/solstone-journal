@@ -52,6 +52,7 @@ class FakeIngestState:
         self.status_extra: dict[str, Any] = {}
         self.observed: object = False
         self.listing_total_delta = 0
+        self.hide_listing_reads = 0
         self.listing_http_status = 200
         self.listing_file_status = "present"
         self.post_http_status = 200
@@ -117,11 +118,15 @@ def handler_for(state: FakeIngestState) -> type[BaseHTTPRequestHandler]:
             if parsed.path.startswith("/app/devices/ingest/segments/"):
                 day = parsed.path.rsplit("/", 1)[-1]
                 with state.lock:
-                    items = [
-                        item["listing"]
-                        for item in state.items
-                        if item["day"] == day and item["source"] == source
-                    ]
+                    if state.hide_listing_reads > 0:
+                        state.hide_listing_reads -= 1
+                        items = []
+                    else:
+                        items = [
+                            item["listing"]
+                            for item in state.items
+                            if item["day"] == day and item["source"] == source
+                        ]
                 self._json(
                     state.listing_http_status,
                     {
@@ -241,7 +246,9 @@ def handler_for(state: FakeIngestState) -> type[BaseHTTPRequestHandler]:
                 if exact is not None:
                     response = {
                         "status": "duplicate",
-                        "existing_segment": exact["listing"]["key"],
+                        "existing_segment": exact["listing"].get(
+                            "segment", exact["listing"]["key"]
+                        ),
                         "message": "segment content already held",
                         "meta": envelope["meta"],
                         "file_descriptors": response_descriptors("already_held"),
@@ -1931,6 +1938,320 @@ class RunnerTests(unittest.TestCase):
                 simulator._matched_files(item, segment),
                 [item["files"][0]],
             )
+
+    @staticmethod
+    def _listing_item(
+        key: str,
+        segment: str,
+        stream: str,
+        submitted: str,
+        size: int,
+        sha256: str,
+        *,
+        status: str = "present",
+    ) -> dict[str, Any]:
+        return {
+            "key": key,
+            "segment": segment,
+            "stream": stream,
+            "observed": False,
+            "files": [
+                {
+                    "name": submitted,
+                    "submitted_name": submitted,
+                    "size": size,
+                    "sha256": sha256,
+                    "status": status,
+                }
+            ],
+        }
+
+    def test_saved_basename_does_not_retarget_to_lexically_earlier_twin(self) -> None:
+        with TemporaryDirectory() as temporary:
+            simulator = Simulator(self._config(temporary, "http://127.0.0.1:9"))
+            segment = simulator.segments[0]
+            expected = segment.files[0]
+            listing = {
+                "items": [
+                    self._listing_item(
+                        f"{segment.segment}~browser_a",
+                        segment.segment,
+                        "browser_a",
+                        expected.submitted,
+                        expected.size,
+                        "f" * 64,
+                    ),
+                    self._listing_item(
+                        f"{segment.segment}~browser_z",
+                        segment.segment,
+                        "browser_z",
+                        expected.submitted,
+                        expected.size,
+                        expected.sha256,
+                    ),
+                ]
+            }
+            selected = simulator._find_listing_item(listing, segment, segment.segment)
+            self.assertEqual(selected["stream"], "browser_z")
+
+    def test_equal_byte_different_status_twins_refuse_as_ambiguous(self) -> None:
+        with TemporaryDirectory() as temporary:
+            simulator = Simulator(self._config(temporary, "http://127.0.0.1:9"))
+            segment = simulator.segments[0]
+            expected = segment.files[0]
+            listing = {
+                "items": [
+                    self._listing_item(
+                        f"{segment.segment}~browser_a",
+                        segment.segment,
+                        "browser_a",
+                        expected.submitted,
+                        expected.size,
+                        expected.sha256,
+                        status="present",
+                    ),
+                    self._listing_item(
+                        f"{segment.segment}~browser_b",
+                        segment.segment,
+                        "browser_b",
+                        expected.submitted,
+                        expected.size,
+                        expected.sha256,
+                        status="processed",
+                    ),
+                ]
+            }
+            with self.assertRaisesRegex(SimulationFailure, "listing is ambiguous"):
+                simulator._find_listing_item(listing, segment, segment.segment)
+
+    def test_uncertain_retry_keeps_saved_alias_across_equal_byte_twins(self) -> None:
+        state = FakeIngestState()
+        state.hide_listing_reads = 1
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            simulator = Simulator(self._config(temporary, bridge_url))
+            segment = simulator.segments[0]
+            expected = segment.files[0]
+            mapped_day = simulator.day_map[segment.day]
+            saved_alias = f"{segment.segment}~browser_a"
+            state.items.extend(
+                {
+                    "day": mapped_day,
+                    "source": segment.source,
+                    "listing": self._listing_item(
+                        f"{segment.segment}~{stream}",
+                        segment.segment,
+                        stream,
+                        expected.submitted,
+                        expected.size,
+                        expected.sha256,
+                    ),
+                }
+                for stream in ("browser_a", "browser_z")
+            )
+            simulator.state["segments"][segment.fixture_id] = {
+                "phase": "uncertain",
+                "mapped_day": mapped_day,
+                "requested_segment": segment.segment,
+                "landed_segment": saved_alias,
+            }
+            simulator._save_state()
+
+            result = simulator._upload_one(BridgeHttpClient(bridge_url, 5), segment)
+
+            self.assertEqual(result["listing"]["stream"], "browser_a")
+            self.assertEqual(result["landed_segment"], saved_alias)
+            self.assertEqual(
+                simulator.state["segments"][segment.fixture_id]["landed_segment"],
+                saved_alias,
+            )
+
+    def test_hash_mismatch_refuses_without_reupload(self) -> None:
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            simulator = Simulator(self._config(temporary, bridge_url))
+            segment = simulator.segments[0]
+            expected = segment.files[0]
+            mapped_day = simulator.day_map[segment.day]
+            item = {
+                "key": segment.segment,
+                "observed": False,
+                "files": [
+                    {
+                        "name": expected.submitted,
+                        "size": expected.size,
+                        "sha256": "f" * 64,
+                        "status": "present",
+                    }
+                ],
+            }
+            state.items.append(
+                {"day": mapped_day, "source": segment.source, "listing": item}
+            )
+            entry = simulator.state["segments"].setdefault(segment.fixture_id, {})
+            entry.update(
+                {
+                    "phase": "reconciled",
+                    "mapped_day": mapped_day,
+                    "requested_segment": segment.segment,
+                    "landed_segment": segment.segment,
+                }
+            )
+            simulator._save_state()
+            with self.assertRaisesRegex(SimulationFailure, "listing hash mismatch"):
+                simulator._upload_one(BridgeHttpClient(bridge_url, 5), segment)
+            self.assertEqual(state.posts, 0)
+
+    def test_unknown_landed_identity_does_not_select_a_twin(self) -> None:
+        with TemporaryDirectory() as temporary:
+            simulator = Simulator(self._config(temporary, "http://127.0.0.1:9"))
+            segment = simulator.segments[0]
+            expected = segment.files[0]
+            listing = {
+                "items": [
+                    self._listing_item(
+                        "080000_99~browser_a",
+                        "080000_99",
+                        "browser_a",
+                        expected.submitted,
+                        expected.size,
+                        expected.sha256,
+                    )
+                ]
+            }
+            self.assertIsNone(
+                simulator._find_listing_item(listing, segment, "unknown-landed")
+            )
+
+    def test_alias_is_not_opened_as_a_directory(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            journal_root = root / "journal"
+            journal_root.mkdir()
+            self._write_journal_identity(journal_root, "fake-journal-instance")
+            base = self._config(temporary, "http://127.0.0.1:9")
+            config = replace(base, journal_root=journal_root)
+            simulator = Simulator(config)
+            segment = simulator.segments[0]
+            physical = self._write_journal_segment(simulator, segment.fixture_id)
+            alias = f"{segment.segment}~browser_a"
+            item = {
+                "key": alias,
+                "segment": segment.segment,
+                "stream": segment.source,
+            }
+            candidate = simulator._journal_candidate(
+                segment, simulator.day_map[segment.day], alias, item
+            )
+            self.assertIsNotNone(candidate)
+            self.assertEqual(candidate[0], physical)
+            self.assertNotEqual(candidate[0].name, alias)
+
+    def test_saved_plain_basename_does_not_open_unrelated_tilde_directory(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            journal_root = root / "journal"
+            journal_root.mkdir()
+            self._write_journal_identity(journal_root, "fake-journal-instance")
+            config = replace(
+                self._config(temporary, "http://127.0.0.1:9"),
+                journal_root=journal_root,
+            )
+            simulator = Simulator(config)
+            segment = simulator.segments[0]
+            physical = self._write_journal_segment(simulator, segment.fixture_id)
+            planted = (
+                journal_root
+                / "chronicle"
+                / simulator.day_map[segment.day]
+                / (segment.source or "device")
+                / f"{segment.segment}~browser_b"
+            )
+            planted.mkdir(parents=True)
+            (planted / "ingest.json").write_text("{}\n", encoding="utf-8")
+            item = {"key": segment.segment}
+            candidate = simulator._journal_candidate(
+                segment,
+                simulator.day_map[segment.day],
+                segment.segment,
+                item,
+            )
+            self.assertIsNotNone(candidate)
+            self.assertEqual(candidate[0], physical)
+            self.assertNotEqual(candidate[0], planted)
+
+    def test_resume_and_duplicate_check_keep_saved_physical_stream(self) -> None:
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            config = self._config(temporary, bridge_url)
+            simulator = Simulator(config)
+            segment = simulator.segments[0]
+            expected = segment.files[0]
+            stream = segment.source or "device"
+            alias = f"{segment.segment}~{stream}"
+            item = self._listing_item(
+                alias,
+                segment.segment,
+                stream,
+                expected.submitted,
+                expected.size,
+                expected.sha256,
+            )
+            mapped_day = simulator.day_map[segment.day]
+            state.items.append(
+                {
+                    "day": mapped_day,
+                    "source": segment.source,
+                    "listing": item,
+                }
+            )
+            entry = simulator.state["segments"].setdefault(segment.fixture_id, {})
+            entry.update(
+                {
+                    "phase": "reconciled",
+                    "mapped_day": mapped_day,
+                    "requested_segment": segment.segment,
+                    "landed_segment": segment.segment,
+                }
+            )
+            simulator._save_state()
+            client = BridgeHttpClient(bridge_url, 5)
+            result = simulator._upload_one(client, segment)
+            self.assertEqual(result["landed_segment"], segment.segment)
+            self.assertEqual(state.items[0]["listing"]["key"], alias)
+            self.assertEqual(
+                result["duplicate_response"]["existing_segment"], segment.segment
+            )
+            self.assertEqual(
+                simulator.state["segments"][segment.fixture_id]["landed_segment"],
+                segment.segment,
+            )
+
+    def test_listing_rejects_duplicate_wire_keys(self) -> None:
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            simulator = Simulator(self._config(temporary, bridge_url))
+            segment = simulator.segments[0]
+            expected = segment.files[0]
+            item = self._listing_item(
+                segment.segment,
+                segment.segment,
+                segment.source or "device",
+                expected.submitted,
+                expected.size,
+                expected.sha256,
+            )
+            state.items.extend(
+                [
+                    {"day": simulator.day_map[segment.day], "source": segment.source, "listing": item},
+                    {"day": simulator.day_map[segment.day], "source": segment.source, "listing": dict(item)},
+                ]
+            )
+            with self.assertRaisesRegex(SimulationFailure, "duplicate wire keys"):
+                simulator._listing(
+                    BridgeHttpClient(bridge_url, 5),
+                    segment,
+                    simulator.day_map[segment.day],
+                )
 
     def test_state_cannot_resume_against_another_journal(self) -> None:
         first = FakeIngestState()

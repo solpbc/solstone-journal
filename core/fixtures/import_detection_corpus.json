@@ -18,7 +18,8 @@
       "image",
       "journal_archive",
       "apple_health",
-      "oura"
+      "oura",
+      "strava"
     ],
     "file_patterns_are_NOT_the_predicate": "file_patterns is DISPLAY metadata shown by --list-importers. detect() is the predicate and they disagree: six importers advertise *.zip but discriminate by ARCHIVE CONTENT, and obsidian advertises *.md but detect() returns False for any FILE \u2014 it requires a DIRECTORY plus .obsidian/, logseq/, or >=3 non-hidden .md files. A native port that built detection from file_patterns would be wrong for every importer.",
     "zip_claimants": [

@@ -71,6 +71,11 @@ pub enum RemovalReason {
     OwnerSegmentDelete,
     /// The configured retention policy reached them.
     RetentionPolicy,
+    /// The owner deleted the whole import run these segments came from. Importing
+    /// that run's download again may place the same content beside them, so this
+    /// reason is not an owner's lasting delete, and the owner-delete receipt check
+    /// doesn't accept it.
+    ImportRunRelease,
 }
 
 /// Who performed the removal.
@@ -169,10 +174,11 @@ mod tests {
     }
 
     #[test]
-    fn carries_the_reason_it_was_given_for_both_members_of_the_closed_set() {
+    fn carries_the_reason_it_was_given_for_every_member_of_the_closed_set() {
         for (reason, rendered) in [
             (RemovalReason::OwnerSegmentDelete, "owner_segment_delete"),
             (RemovalReason::RetentionPolicy, "retention_policy"),
+            (RemovalReason::ImportRunRelease, "import_run_release"),
         ] {
             let mut body = body();
             body.reason = reason;

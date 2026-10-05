@@ -253,6 +253,48 @@ fn clean_optional(value: Option<&Value>) -> Option<String> {
 
 /// The stored importer source hint. Earlier builds stored an absent hint as the literal
 /// string "null", which names no importer source, so it reads as absent too.
+/// The import card that brings in a Strava download.
+const STRAVA_SOURCE: &str = "strava";
+
+/// How long a Strava upload may wait to be started before it is removed.
+const ABANDONED_STRAVA_UPLOAD: Duration = Duration::from_secs(60 * 60);
+
+/// Remove Strava downloads uploaded on the Strava card and never imported.
+///
+/// The card promises the download isn't kept. A run removes its upload when it
+/// ends; an upload whose import was never started (the owner left the card) is
+/// removed here once it has waited an hour. Best effort: a failure leaves it for
+/// the next start.
+pub(crate) fn sweep_abandoned_strava_uploads(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root.join("imports")) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let id = entry.file_name().to_string_lossy().into_owned();
+        if id.starts_with('.') || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let Ok(metadata) = read_import_metadata(root, &id) else {
+            continue;
+        };
+        if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE) {
+            continue;
+        }
+        let old_enough = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= ABANDONED_STRAVA_UPLOAD);
+        if old_enough
+            && solstone_core_import::project_import_result(root, &id).status
+                == solstone_core_import::ProjectionStatus::Pending
+        {
+            let _ = solstone_core_import::remove_import_records(root, &id);
+        }
+    }
+}
+
 fn source_hint(metadata: &ImportMetadata) -> Option<String> {
     clean_optional(metadata.get("source_hint")).filter(|hint| hint != "null")
 }
@@ -802,12 +844,15 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             solstone_core_import_sources::strava::looks_like_strava_csv_bytes(bytes)
         }
     };
-    if is_strava {
+    // The Strava card is the one door that takes a Strava download: its importer
+    // reads only the workout list, and the run removes the upload when it ends.
+    let strava_card = text_value(&data, "source_hint").trim() == STRAVA_SOURCE;
+    if is_strava && !strava_card {
         return failure(
             StatusCode::UNPROCESSABLE_ENTITY,
             "strava_download",
-            "this looks like a Strava download, which this page doesn't bring in, so it wasn't kept.",
-            "this looks like a Strava download, which this page doesn't bring in, so it wasn't kept.",
+            "this looks like a Strava download, so your journal didn't keep it. use the Strava card so only your workouts are read.",
+            "this looks like a Strava download, so your journal didn't keep it. use the Strava card so only your workouts are read.",
         );
     }
     let source_path = match &incoming {
@@ -826,7 +871,9 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             "client_item_id already staged for different content; use a new client_item_id or re-fetch the existing item",
         );
     }
-    if manifest_exists(&state.root, &source_hash) {
+    // Importing the same Strava download again is how a deleted import is brought
+    // back, and it re-places only what is missing, so it is never refused as a repeat.
+    if !strava_card && manifest_exists(&state.root, &source_hash) {
         return invalid_state("content already imported");
     }
     if let Some(existing) = staged_by_source_hash(&state.root, &source_hash) {
@@ -941,8 +988,8 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         return failure(
             StatusCode::UNPROCESSABLE_ENTITY,
             "strava_download",
-            "this looks like a Strava download, which this page doesn't bring in, so it wasn't kept.",
-            "this looks like a Strava download, which this page doesn't bring in, so it wasn't kept.",
+            "this looks like a Strava download, so your journal didn't keep it. use the Strava card so only your workouts are read.",
+            "this looks like a Strava download, so your journal didn't keep it. use the Strava card so only your workouts are read.",
         );
     }
     let source_hash = match hash_source(local) {
@@ -1019,10 +1066,11 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
     if import_is_running_or_successful(&state.root, timestamp, &metadata) {
         return invalid_state("import already started or processed");
     }
-    if metadata
-        .get("source_hash")
-        .and_then(Value::as_str)
-        .is_some_and(|hash| manifest_exists(&state.root, &SourceHash::new(hash.to_owned())))
+    if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE)
+        && metadata
+            .get("source_hash")
+            .and_then(Value::as_str)
+            .is_some_and(|hash| manifest_exists(&state.root, &SourceHash::new(hash.to_owned())))
     {
         return invalid_state("content already imported");
     }
@@ -1295,10 +1343,11 @@ where
             ));
         }
     };
-    if metadata
-        .get("source_hash")
-        .and_then(Value::as_str)
-        .is_some_and(|hash| manifest_exists(root, &SourceHash::new(hash.to_owned())))
+    if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE)
+        && metadata
+            .get("source_hash")
+            .and_then(Value::as_str)
+            .is_some_and(|hash| manifest_exists(root, &SourceHash::new(hash.to_owned())))
     {
         return invalid_state("content already imported; will not start");
     }
@@ -2965,6 +3014,91 @@ mod tests {
         body.extend_from_slice(bytes);
         write!(&mut body, "\r\n--{boundary}--\r\n").unwrap();
         (boundary.to_owned(), body)
+    }
+
+    fn strava_card_upload(client_item_id: &str, bytes: &[u8]) -> (String, Vec<u8>) {
+        let boundary = "testboundary123";
+        let mut body = Vec::new();
+        write!(
+            &mut body,
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"source_hint\"\r\n\r\nstrava\r\n"
+        )
+        .unwrap();
+        let (_, upload) =
+            multipart_upload_bytes(client_item_id, "export.zip", "application/zip", bytes);
+        body.extend_from_slice(&upload);
+        (boundary.to_owned(), body)
+    }
+
+    #[tokio::test]
+    async fn the_strava_card_takes_a_strava_download_and_takes_it_again() {
+        let root = TempDir::new().unwrap();
+        let zip = make_zip_bytes("activities.csv", b"Activity ID,Activity Date\n1,2\n");
+        for item in ["card-1", "card-2"] {
+            let (boundary, body) = strava_card_upload(item, &zip);
+            let resp = crate::routes(root.path().to_path_buf())
+                .oneshot(
+                    Request::post("/app/import/api/save")
+                        .header(
+                            "content-type",
+                            format!("multipart/form-data; boundary={boundary}"),
+                        )
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let (status, json) = response_json(resp).await;
+            assert_eq!(status, StatusCode::OK, "{item}: {json}");
+            // A finished Strava run records a manifest with the download's hash; the
+            // same download is still taken, because importing it again is how a
+            // deleted import comes back.
+            let download = root.path().join("download.zip");
+            std::fs::write(&download, &zip).unwrap();
+            let hash = hash_source(&download).unwrap();
+            std::fs::remove_file(&download).unwrap();
+            let manifest_dir = root.path().join("imports").join("20260801_000000");
+            std::fs::create_dir_all(&manifest_dir).unwrap();
+            std::fs::write(
+                manifest_dir.join("manifest.json"),
+                serde_json::json!({"source_hash": hash.as_str(), "source_type": "strava"})
+                    .to_string(),
+            )
+            .unwrap();
+            assert!(manifest_exists(root.path(), &hash));
+        }
+    }
+
+    #[test]
+    fn a_strava_upload_left_unstarted_for_an_hour_is_removed() {
+        let root = TempDir::new().unwrap();
+        let stage = |id: &str, hint: &str, age_secs: u64| {
+            let dir = root.path().join("imports").join(id);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("export.zip"), b"zip").unwrap();
+            std::fs::write(
+                dir.join("import.json"),
+                serde_json::json!({"source_hint": hint, "original_filename": "export.zip"})
+                    .to_string(),
+            )
+            .unwrap();
+            let when = std::time::SystemTime::now() - Duration::from_secs(age_secs);
+            std::fs::File::open(&dir)
+                .unwrap()
+                .set_modified(when)
+                .unwrap();
+            dir
+        };
+        let abandoned = stage("20260801_000000", "strava", 2 * 60 * 60);
+        let fresh = stage("20260801_010000", "strava", 60);
+        let other = stage("20260801_020000", "chatgpt", 2 * 60 * 60);
+        super::sweep_abandoned_strava_uploads(root.path());
+        assert!(
+            !abandoned.exists(),
+            "an abandoned Strava upload is not kept"
+        );
+        assert!(fresh.is_dir(), "an upload still within its hour stays");
+        assert!(other.is_dir(), "other sources are untouched");
     }
 
     fn make_zip_bytes(entry_path: &str, contents: &[u8]) -> Vec<u8> {

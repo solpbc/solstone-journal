@@ -285,6 +285,11 @@ fn write_private(path: &Path, contents: &[u8]) -> Result<(), SaveError> {
     })
 }
 
+/// Stream hints for an imported source stream.
+pub fn stream_hints(source: RegistrySource) -> StreamHints {
+    hints(source)
+}
+
 fn hints(source: RegistrySource) -> StreamHints {
     let source = match source {
         RegistrySource::Chatgpt => ImportSource::AiChat(AiChatSource::ChatGpt),

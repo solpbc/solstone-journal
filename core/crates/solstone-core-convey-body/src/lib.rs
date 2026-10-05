@@ -20,6 +20,7 @@ mod seed;
 mod shard;
 mod signature;
 mod sleep;
+mod strava;
 mod trends;
 mod window;
 

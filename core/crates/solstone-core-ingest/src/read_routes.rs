@@ -7,7 +7,7 @@ use axum::Json;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, json};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_segment::{
@@ -15,7 +15,10 @@ use solstone_core_segment::{
 };
 
 use crate::health::day_read_reason;
-use crate::listing::{DayListing, ListingError, ListingFile, merge_day_listing, native_events};
+use crate::listing::{
+    DayListing, ListingError, listing_files_json, merge_day_listing, native_events,
+    segment_item_json,
+};
 use crate::model::ReasonCode;
 use crate::router::{IngestState, refusal};
 use crate::validation::{validate_access, validate_day, validate_protocol, validate_source};
@@ -117,7 +120,12 @@ pub async fn ingest_manifest_day(
         let segments = listing
             .segments
             .into_iter()
-            .map(|segment| (segment.key, json!({"files": files_value(&segment.files)})))
+            .map(|segment| {
+                (
+                    segment.key,
+                    json!({"files": listing_files_json(&segment.files)}),
+                )
+            })
             .collect::<Map<_, _>>();
         Json(json!({"version": 1, "day": day, "segments": segments})).into_response()
     })
@@ -152,19 +160,7 @@ pub async fn ingest_segments(
         let items = listing
             .segments
             .iter()
-            .map(|segment| {
-                let mut item = Map::new();
-                item.insert("key".to_owned(), Value::String(segment.key.clone()));
-                item.insert("observed".to_owned(), Value::Bool(segment.observed));
-                item.insert("files".to_owned(), files_value(&segment.files));
-                if let Some(original_key) = &segment.original_key {
-                    item.insert(
-                        "original_key".to_owned(),
-                        Value::String(original_key.clone()),
-                    );
-                }
-                Value::Object(item)
-            })
+            .map(segment_item_json)
             .collect::<Vec<_>>();
         Json(json!({"protocol_version": 3, "total": items.len(), "items": items})).into_response()
     })
@@ -255,31 +251,6 @@ fn day_listing(
         )?);
     }
     merge_day_listing(&state.journal_root, day, events)
-}
-
-fn files_value(files: &[ListingFile]) -> Value {
-    Value::Array(
-        files
-            .iter()
-            .map(|file| {
-                let mut value = Map::new();
-                value.insert("name".to_owned(), Value::String(file.name.clone()));
-                value.insert("size".to_owned(), Value::from(file.size));
-                value.insert("sha256".to_owned(), Value::String(file.sha256.clone()));
-                value.insert(
-                    "status".to_owned(),
-                    Value::String(file.status.as_str().to_owned()),
-                );
-                if let Some(submitted_name) = &file.submitted_name {
-                    value.insert(
-                        "submitted_name".to_owned(),
-                        Value::String(submitted_name.clone()),
-                    );
-                }
-                Value::Object(value)
-            })
-            .collect(),
-    )
 }
 
 fn day_refusal(day: &str, error: ListingError) -> Response {

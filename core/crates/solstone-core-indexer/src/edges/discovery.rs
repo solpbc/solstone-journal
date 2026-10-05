@@ -25,7 +25,6 @@ pub fn discover_edge_files(journal: &Path) -> Result<BTreeMap<String, PathBuf>, 
     for spec in patterns_for_root(PatternRoot::DayRooted) {
         discover_from_root(day_root, day_root, spec.pattern, &mut files)?;
     }
-    files.retain(|rel, _| !solstone_core_format::body::is_body_source_path(rel));
     Ok(files)
 }
 
@@ -86,25 +85,5 @@ mod tests {
             ]
         );
         fs::remove_dir_all(root).expect("cleanup edge discovery root");
-    }
-
-    #[test]
-    fn discover_edge_files_excludes_body_source_paths() {
-        let root = temp_root("body-edge-refusal");
-        write(
-            &root,
-            "chronicle/20260430/import.apple_health/090000_300/talents/speaker_labels.json",
-        );
-        write(
-            &root,
-            "chronicle/20260430/default/090000_300/talents/speaker_labels.json",
-        );
-
-        let files = discover_edge_files(&root).expect("discover edge files");
-        assert_eq!(
-            files.keys().cloned().collect::<Vec<_>>(),
-            vec!["20260430/default/090000_300/talents/speaker_labels.json"]
-        );
-        fs::remove_dir_all(root).expect("cleanup body edge discovery root");
     }
 }

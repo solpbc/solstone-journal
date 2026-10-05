@@ -616,7 +616,7 @@ fn live_allows(
         .is_ok_and(|classification| boundary.allows_classification(&classification))
 }
 
-pub(crate) fn codec() -> &'static ReferenceCodec {
+fn codec() -> &'static ReferenceCodec {
     REFERENCES.get_or_init(|| {
         ReferenceCodec::new().expect("system randomness initializes MCP reference codec")
     })

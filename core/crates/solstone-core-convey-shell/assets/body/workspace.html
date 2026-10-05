@@ -728,6 +728,34 @@ a.body-day-cell:focus-visible {
   font-weight: var(--weight-medium);
 }
 
+.body-workouts li.body-workout-strava {
+  flex-wrap: wrap;
+}
+
+.body-workout-details {
+  flex-basis: 100%;
+  color: var(--ink-soft, var(--ink));
+  font-size: 13px;
+}
+
+.body-workout-delete {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.body-workout-delete[data-confirming] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .body-table-wrap {
   background: var(--paper);
   border: 1px solid var(--hairline);
@@ -1545,7 +1573,7 @@ a.body-day-cell:focus-visible {
       // S-8, H-4.
       return html([
         renderHeader("body", "your body, brought into your journal.", false),
-        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. imports use the command line for now and require a privacy setup. <a href="https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md" target="_blank" rel="noopener noreferrer">read about body imports and setup requirements</a>.</p>',
+        '<p class="body-subtitle">nothing here yet. bring in your workouts from a Strava download on the <a href="/app/import/">import page</a>. Apple Health and Oura imports still use the command line and need a privacy setup. <a href="https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md" target="_blank" rel="noopener noreferrer">read about body imports</a>.</p>',
       ]);
     }
     return html([
@@ -1690,6 +1718,97 @@ a.body-day-cell:focus-visible {
     ]);
   }
 
+  function renderStravaWorkout(workout) {
+    const id = escapeHtml(workout.strava_activity_id);
+    const details = asArray(workout.details);
+    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} &middot; Strava</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" aria-label="delete ${escapeHtml(workout.name)}">delete</button>${details.length ? `<span class="body-workout-details">Strava's figures: ${details.map(escapeHtml).join(" &middot; ")}</span>` : ""}</li>`;
+  }
+
+  // Deleting a Strava workout takes every piece of it, on every day it covers.
+  // The first press asks; the second deletes, with ten seconds to cancel. The
+  // outcome is read back from the journal, never assumed.
+  const STRAVA_API = "/app/transcripts/api/strava";
+  function bodyToast(options) {
+    const notifications = window.AppServices && window.AppServices.notifications;
+    return notifications ? notifications.show({ app: "body", ...options }) : null;
+  }
+  function resetStravaButton(button) {
+    button.removeAttribute("data-confirming");
+    button.textContent = "delete";
+    button.parentElement?.querySelector("[data-strava-note]")?.remove();
+  }
+  async function watchStravaDelete(pending, rows, button, waitMs) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? waitMs : 1000));
+      const response = await fetch(`${STRAVA_API}/delete-status/${encodeURIComponent(pending)}`).catch(() => null);
+      if (!response || !response.ok) continue;
+      const status = await response.json().catch(() => ({}));
+      if (status.state === "pending") continue;
+      if (status.state === "deleted") {
+        bodyToast({ icon: "trash-2", title: "workout deleted", autoDismiss: 4000 });
+      } else if (status.state !== "cancelled") {
+        rows.forEach((row) => { row.hidden = false; });
+        resetStravaButton(button);
+        bodyToast({ icon: "alert-triangle", title: status.state === "incomplete" ? "workout only partly deleted" : "workout not deleted", message: status.reason || "", autoDismiss: 8000 });
+      }
+      return;
+    }
+    bodyToast({ icon: "clock", title: "this delete hasn't finished yet", message: "reload in a minute to see whether it's gone.", autoDismiss: 8000 });
+  }
+  if (!window.__bodyStravaDeleteBound) {
+  window.__bodyStravaDeleteBound = true;
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-strava-delete]");
+    if (!button) return;
+    if (!button.hasAttribute("data-confirming")) {
+      button.setAttribute("data-confirming", "");
+      button.textContent = "delete this workout?";
+      const note = document.createElement("span");
+      note.className = "body-workout-details";
+      note.setAttribute("data-strava-note", "");
+      note.innerHTML = "this deletes the whole workout from your journal, on every day it covers. importing a Strava download again won't bring it back, unless its start time or length has changed on Strava. <details><summary>what stays</summary>the start time and length of each of its pieces stay, marked as a Strava workout you deleted and when, so a later import skips this workout. a delete doesn't reach copies made before it, in encrypted backup or wherever your journal folder was copied.</details>";
+      button.insertAdjacentElement("afterend", note);
+      return;
+    }
+    button.parentElement?.querySelector("[data-strava-note]")?.remove();
+    const id = button.getAttribute("data-strava-delete");
+    const rows = Array.from(document.querySelectorAll(`[data-strava-row="${CSS.escape(id)}"]`));
+    try {
+      const response = await fetch(`${STRAVA_API}/workout/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error((data && data.error) || "that workout couldn't be deleted.");
+      rows.forEach((row) => { row.hidden = true; });
+      const waitMs = ((data.ttl_seconds || 10) + 1) * 1000;
+      let toast = null;
+      toast = bodyToast({
+        icon: "trash-2",
+        title: "deleting workout…",
+        message: "you can cancel for 10 seconds",
+        dismissible: true,
+        autoDismiss: 10000,
+        buttons: [{
+          label: "cancel",
+          dismiss: false,
+          onClick: async () => {
+            const cancel = await fetch(`${STRAVA_API}/cancel-delete/${encodeURIComponent(data.pending)}`, { method: "POST" }).catch(() => null);
+            const result = cancel && cancel.ok ? await cancel.json().catch(() => ({})) : {};
+            if (result.cancelled) {
+              rows.forEach((row) => { row.hidden = false; });
+              resetStravaButton(button);
+              window.AppServices?.notifications?.dismiss(toast);
+              bodyToast({ icon: "rotate-ccw", title: "delete cancelled", autoDismiss: 4000 });
+            }
+          },
+        }],
+      });
+      watchStravaDelete(data.pending, rows, button, waitMs);
+    } catch (error) {
+      resetStravaButton(button);
+      bodyToast({ icon: "alert-triangle", title: "workout not deleted", message: String(error.message || error), autoDismiss: 6000 });
+    }
+  });
+  }
+
   function renderActivityCard(activity) {
     if (!activity) return "";
     const workouts = asArray(activity.workouts);
@@ -1698,7 +1817,7 @@ a.body-day-cell:focus-visible {
     return html([
       '<section class="body-card" aria-labelledby="body-activity-title">',
       '<h2 id="body-activity-title" class="body-question-title">how active was I?</h2>',
-      workouts.length ? `<ul class="body-workouts">${workouts.map((workout) => `<li><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""}${workout.source ? ` &middot; ${escapeHtml(workout.source)}` : ""}</span></li>`).join("")}</ul>` : "",
+      workouts.length ? `<ul class="body-workouts">${workouts.map((workout) => workout.strava_activity_id ? renderStravaWorkout(workout) : `<li><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""}${workout.source ? ` &middot; ${escapeHtml(workout.source)}` : ""}</span></li>`).join("")}</ul>` : "",
       running.length ? `<h3 class="body-card-label">running dynamics</h3><ul class="body-facts">${running.map((item) => `<li><span>${escapeHtml(item.label)}</span>${item.summary ? `<strong class="body-num">${escapeHtml(item.summary)}</strong>` : `<strong><span class="body-num">${escapeHtml(item.count_label)}</span> <span class="body-fact-kind">entries</span></strong>`}</li>`).join("")}</ul>` : "",
       activity.steps ? (activity.steps.mode === "total" ? `<p class="body-primary-line"><span class="body-num">${escapeHtml(activity.steps.total_label)}</span> steps &middot; ${escapeHtml(activity.steps.source)}${activity.steps.others_label ? ` &middot; ${escapeHtml(activity.steps.others_label)}` : ""}</p>` : `<p class="body-primary-line">step-count samples: <span class="body-num">${escapeHtml(activity.steps.samples_label)}</span></p>`) : "",
       counters.length ? `<ul class="body-facts">${counters.map((counter) => `<li><span>${escapeHtml(counter.label)}</span>${counter.value ? `<strong class="body-num">${escapeHtml(counter.value)}</strong>` : `<strong><span class="body-num">${escapeHtml(counter.count_label)}</span> <span class="body-fact-kind">${Number(counter.count) === 1 ? "entry" : "entries"}</span></strong>`}</li>`).join("")}</ul>` : "",

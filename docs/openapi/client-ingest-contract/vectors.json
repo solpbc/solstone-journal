@@ -84,6 +84,116 @@
       "pointers": [
         "/reason_code"
       ]
+    },
+    {
+      "decision": {
+        "accepted": true,
+        "kind": "listing_collision_identity",
+        "selected": [
+          {
+            "key": "120000_10~browser_a",
+            "segment": "120000_10",
+            "stream": "browser_a"
+          },
+          {
+            "key": "120000_10~browser_b",
+            "segment": "120000_10",
+            "stream": "browser_b"
+          }
+        ]
+      },
+      "fixture_id": "declared.client.ingestSegments.collision.same_basename_distinct_streams",
+      "id": "client.ingestSegments.collision.same_basename_distinct_streams",
+      "input": {
+        "items": [
+          {
+            "files": [
+              {
+                "name": "browser_pages.jsonl",
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 17,
+                "status": "present"
+              }
+            ],
+            "key": "120000_10~browser_a",
+            "observed": false,
+            "segment": "120000_10",
+            "stream": "browser_a"
+          },
+          {
+            "files": [
+              {
+                "name": "browser_pages.jsonl",
+                "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "size": 19,
+                "status": "present"
+              }
+            ],
+            "key": "120000_10~browser_b",
+            "observed": false,
+            "segment": "120000_10",
+            "stream": "browser_b"
+          }
+        ],
+        "protocol_version": 3,
+        "total": 2
+      },
+      "kind": "declared",
+      "pointers": [
+        "/items/0/key",
+        "/items/1/key",
+        "/items/0/stream",
+        "/items/1/stream"
+      ]
+    },
+    {
+      "decision": {
+        "accepted": false,
+        "kind": "consumer_refusal",
+        "reason_code": "duplicate_listing_key",
+        "selected_keys": []
+      },
+      "fixture_id": "declared.client.ingestSegments.collision.duplicate_wire_key_refused",
+      "id": "client.ingestSegments.collision.duplicate_wire_key_refused",
+      "input": {
+        "items": [
+          {
+            "files": [
+              {
+                "name": "browser_pages.jsonl",
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 17,
+                "status": "present"
+              }
+            ],
+            "key": "120000_10~browser_a",
+            "observed": false,
+            "segment": "120000_10",
+            "stream": "browser_a"
+          },
+          {
+            "files": [
+              {
+                "name": "browser_pages.jsonl",
+                "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "size": 19,
+                "status": "present"
+              }
+            ],
+            "key": "120000_10~browser_a",
+            "observed": false,
+            "segment": "120000_10",
+            "stream": "browser_b"
+          }
+        ],
+        "protocol_version": 3,
+        "total": 2
+      },
+      "kind": "declared",
+      "pointers": [
+        "/items/0/key",
+        "/items/1/key"
+      ]
     }
   ]
 }
