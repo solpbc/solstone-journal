@@ -799,12 +799,19 @@ async fn takeover_collision_listing_preserves_both_histories_on_both_routes() {
     publish_takeover(journal.path(), CID_B, CID_A);
     let before = snapshot_tree(&journal.path().join("chronicle").join(TAKEOVER_DAY));
 
-    for _ in 0..2 {
+    seed_authorized_client(journal.path(), CID_C);
+    seed_authorized_client(journal.path(), CID_E);
+    let mut previous_cid = CID_B;
+    for reader_cid in [CID_B, CID_C, CID_E] {
+        if reader_cid != previous_cid {
+            publish_takeover(journal.path(), reader_cid, previous_cid);
+        }
+        previous_cid = reader_cid;
         let (status, listing) = request(
             &app,
             "GET",
             "/app/devices/ingest/segments/20261004?source=browser",
-            CID_B,
+            reader_cid,
             Vec::new(),
             None,
         )
@@ -838,7 +845,7 @@ async fn takeover_collision_listing_preserves_both_histories_on_both_routes() {
             &app,
             "GET",
             "/app/devices/ingest/manifest/20261004?source=browser",
-            CID_B,
+            reader_cid,
             Vec::new(),
             None,
         )
