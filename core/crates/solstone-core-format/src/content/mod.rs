@@ -29,7 +29,7 @@ pub use crate::matcher::PatternRoot;
 pub use projections::{render_browser_text, render_morning_briefing_text, render_raw_screen_text};
 pub use shape::{SHAPE_SIDECAR_BASENAME, parse_shape_name, resolve_content_shape};
 pub use talent_projections::{
-    TalentTextProjection, iter_talent_text_projections, talent_projection_map,
+    ConsumedOriginal, TalentTextProjection, iter_talent_text_projections, talent_projection_map,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +48,8 @@ pub enum Family {
     Screen,
     Sense,
     MorningBriefing,
+    /// A validated private memory original. This family is path-selected only.
+    AgentMemory,
 }
 
 /// Content that can be rendered for direct consumption but is deliberately
@@ -59,7 +61,7 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 14] = [
+const ALL_FAMILIES: [Family; 15] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
@@ -74,6 +76,7 @@ const ALL_FAMILIES: [Family; 14] = [
     Family::Screen,
     Family::Sense,
     Family::MorningBriefing,
+    Family::AgentMemory,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,6 +171,15 @@ pub(crate) struct KnownUnindexedPattern {
 }
 
 pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
+    FamilyPattern {
+        pattern: "*/agent-memory-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/*/note.txt",
+        family: Family::AgentMemory,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::JournalWide,
+        },
+    },
     FamilyPattern {
         pattern: "*/talents/*.md",
         family: Family::Markdown,
@@ -523,10 +535,34 @@ pub fn produce_chunks_by_shape(
         Family::Screen => screen::render(records),
         Family::Sense => sense::render(records),
         Family::MorningBriefing => morning_briefing::render(records),
+        Family::AgentMemory => ProducedChunks {
+            chunks: Vec::new(),
+            agent_override: Some("memory".to_string()),
+            header: None,
+            error: Some("agent-memory notes render from literal text".to_string()),
+            warnings: Vec::new(),
+        },
     }
 }
 
 pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
+    if family == Family::AgentMemory {
+        return ProducedChunks {
+            chunks: if text.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![IndexChunk {
+                    content: text.to_string(),
+                    occurrence_time_ms: None,
+                    source: None,
+                }]
+            },
+            agent_override: Some("memory".to_string()),
+            header: None,
+            error: None,
+            warnings: Vec::new(),
+        };
+    }
     if family == Family::Markdown {
         let formatted = format_markdown(text);
         return ProducedChunks {
@@ -630,6 +666,7 @@ fn parse_records_for_family(family: Family, text: &str) -> Vec<JsonObject> {
         Family::Documents | Family::Screen | Family::Sense | Family::MorningBriefing => {
             parse_json_object(text)
         }
+        Family::AgentMemory => Vec::new(),
         _ => parse_jsonl_objects(text),
     }
 }
@@ -1214,6 +1251,48 @@ mod tests {
         ] {
             assert_eq!(classify(path), ContentResolution::Indexed(family), "{path}");
         }
+    }
+
+    #[test]
+    fn agent_memory_pattern_admits_only_the_note_path_and_emits_literal_text() {
+        let rel = format!(
+            "20240101/agent-memory-{}/120000_60/note.txt",
+            "a".repeat(64)
+        );
+        assert_eq!(
+            classify(&rel),
+            ContentResolution::Indexed(Family::AgentMemory)
+        );
+        assert_eq!(
+            classify("20240101/talents/memory.md"),
+            ContentResolution::Indexed(Family::Markdown)
+        );
+        assert_eq!(
+            classify(&rel.replace("note.txt", "origin.json")),
+            ContentResolution::Unrecognized
+        );
+        let uppercase = format!(
+            "20240101/agent-memory-{}/120000_60/note.txt",
+            "A".repeat(64)
+        );
+        assert_eq!(classify(&uppercase), ContentResolution::Unrecognized);
+
+        let produced = produce_chunks(
+            Family::AgentMemory,
+            &rel,
+            "# authored heading\n\nplain note text",
+        );
+        assert_eq!(produced.agent_override.as_deref(), Some("memory"));
+        assert_eq!(produced.chunks.len(), 1);
+        assert_eq!(
+            produced.chunks[0].content,
+            "# authored heading\n\nplain note text"
+        );
+        assert!(
+            produce_chunks(Family::AgentMemory, &rel, "  \n ")
+                .chunks
+                .is_empty()
+        );
     }
 
     #[test]

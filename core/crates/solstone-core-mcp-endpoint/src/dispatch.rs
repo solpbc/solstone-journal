@@ -11,12 +11,17 @@ use std::sync::OnceLock;
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_format::agent_memory::{
+    ChainPredecessor, Coordinate, Origin, ReadyDocument, SourceKey,
+};
 use solstone_core_indexer_query::{
     AdmittedCategory, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest,
-    ConnectionStartAfter, IndexedEntry, QueryBoundary, read_indexed_entry, search_connection,
+    ConnectionStartAfter, IndexedEntry, MemoryOriginalRow, OwnMemoryOpenError, QueryBoundary,
+    open_own_memory_index, read_indexed_entry, read_own_memory_row, search_connection,
 };
 use solstone_core_indexer_store::classification::{FacetDeclarationSet, classify_source};
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
+use solstone_core_memory_original::{OriginalRead, read_original};
 
 use solstone_core_mcp_audit::{Admission, AuditCoordinates, Outcome, result_shape};
 
@@ -134,6 +139,9 @@ pub fn run_mcp_probe(
     arguments: &Value,
 ) -> Result<Value, McpProbeError> {
     let entry = crate::registry::tool_by_wire_name(tool).ok_or(McpProbeError::InvalidTool)?;
+    if entry.tool_name.is_memory() {
+        return Err(McpProbeError::InvalidTool);
+    }
     dispatch_authenticated_tool_call(
         journal_root,
         DispatchPrincipal {
@@ -482,6 +490,9 @@ fn validate(entry: &ToolEntry, arguments: Option<&Value>) -> Result<ValidatedToo
         crate::jsonrpc::ToolName::GetEntity => {
             crate::tools::entities::validate_get(arguments).map(ValidatedTool::GetEntity)
         }
+        crate::jsonrpc::ToolName::SaveMemory | crate::jsonrpc::ToolName::RecallMemory => {
+            return Err(DispatchError::InvalidInput);
+        }
     };
     validated.map_err(|error| match error {
         ToolError::InvalidInput => DispatchError::InvalidInput,
@@ -709,6 +720,17 @@ fn search(
                 live_dropped = true;
                 continue;
             }
+            let memory_origin = if hit.metadata.stream.starts_with("agent-memory-") {
+                let Some(origin) =
+                    memory_hit_origin(journal_root, &hit.metadata.path, &hit.metadata.stream)
+                else {
+                    live_dropped = true;
+                    continue;
+                };
+                Some(origin)
+            } else {
+                None
+            };
             targets.push(format!("{}#{}", hit.metadata.path, hit.metadata.idx));
             let reference = codec()
                 .mint(
@@ -723,12 +745,16 @@ fn search(
                     }),
                 )
                 .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
-            results.push(json!({
+            let mut value = json!({
                 "title": format!("Indexed journal entry — {}", hit.metadata.day),
                 "date": hit.metadata.day,
                 "snippet": snippet(&hit.text),
                 "reference": reference,
-            }));
+            });
+            if let Some(origin) = memory_origin {
+                value["origin"] = public_memory_origin(&origin);
+            }
+            results.push(value);
             if results.len() == request.limit {
                 break;
             }
@@ -878,12 +904,94 @@ fn fetch(
     else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
+    let mut value = json!({"title": format!("Indexed journal entry — {}", entry.day), "date": entry.day, "text": text});
+    if entry.stream.starts_with("agent-memory-") {
+        let origin = memory_hit_origin(journal_root, &entry.path, &entry.stream)
+            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        value["origin"] = public_memory_origin(&origin);
+    }
     let target = format!("{}#{}", entry.path, entry.idx);
-    Ok(Prepared::new(
-        json!({"title": format!("Indexed journal entry — {}", entry.day), "date": entry.day, "text": text}),
-        1,
-        vec![target],
-    ))
+    Ok(Prepared::new(value, 1, vec![target]))
+}
+
+fn memory_hit_origin(journal_root: &Path, path: &str, stream: &str) -> Option<Origin> {
+    let component = stream.strip_prefix("agent-memory-")?;
+    let Ok(source_key) = SourceKey::parse(format!("sha256:{component}")) else {
+        return None;
+    };
+    let parts = path
+        .strip_prefix("chronicle/")
+        .unwrap_or(path)
+        .split('/')
+        .collect::<Vec<_>>();
+    let [day, path_stream, segment, note] = parts.as_slice() else {
+        return None;
+    };
+    if *note != "note.txt" || *path_stream != stream {
+        return None;
+    }
+    let coordinate = Coordinate {
+        day: (*day).to_owned(),
+        stream: stream.to_owned(),
+        segment: (*segment).to_owned(),
+    };
+    let live = match read_original(journal_root, &source_key, &coordinate) {
+        OriginalRead::Ready {
+            bytes,
+            origin,
+            ready,
+        } => (bytes, origin, ready),
+        _ => return None,
+    };
+    let connection = match open_own_memory_index(journal_root, std::time::Duration::from_secs(5)) {
+        Ok(connection) => connection,
+        Err(OwnMemoryOpenError::Pending | OwnMemoryOpenError::Unavailable) => return None,
+    };
+    let row = read_own_memory_row(&connection, source_key.as_str(), path)
+        .ok()
+        .flatten()?;
+    memory_row_matches_live(&row, &source_key, &coordinate, &live.0, &live.1, &live.2)
+        .then_some(live.1)
+}
+
+fn public_memory_origin(origin: &Origin) -> Value {
+    json!({"kind": origin.kind, "creation_label": origin.creation_label, "created_at": origin.created_at})
+}
+
+pub(crate) fn memory_row_matches_live(
+    row: &MemoryOriginalRow,
+    source_key: &SourceKey,
+    coordinate: &Coordinate,
+    bytes: &[u8],
+    origin: &Origin,
+    ready: &ReadyDocument,
+) -> bool {
+    let Ok(cached_origin) = serde_json::from_str::<Origin>(&row.origin_json) else {
+        return false;
+    };
+    let Ok(cached_chain) = serde_json::from_str::<ChainPredecessor>(&row.chain_json) else {
+        return false;
+    };
+    let Ok(cached_created_at) = chrono::DateTime::parse_from_rfc3339(&row.created_at) else {
+        return false;
+    };
+    row.path
+        == format!(
+            "{}/{}/{}/note.txt",
+            coordinate.day, coordinate.stream, coordinate.segment
+        )
+        && row.day == coordinate.day
+        && row.stream == coordinate.stream
+        && row.segment == coordinate.segment
+        && row.source_key == source_key.as_str()
+        && row.bytes == bytes
+        && cached_origin == *origin
+        && row.digest == ready.digest
+        && row.byte_count == bytes.len()
+        && row.byte_count == ready.byte_count
+        && row.creation_label == origin.creation_label
+        && cached_created_at.with_timezone(&Utc) == ready.created_at
+        && cached_chain == ready.chain
 }
 
 fn list_facets(

@@ -44,7 +44,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, iter_segments};
+use solstone_core_journal_io::iter_segments;
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::writers::{WriteIntent, index_warning};
@@ -872,6 +872,16 @@ pub fn write_page(
     markdown: &str,
     document: &str,
 ) -> Result<(), StageError> {
+    write_page_with_sources(journal, start, markdown, document, &[])
+}
+
+pub(crate) fn write_page_with_sources(
+    journal: &Path,
+    start: &str,
+    markdown: &str,
+    document: &str,
+    sources: &[solstone_core_format::content::ConsumedOriginal],
+) -> Result<(), StageError> {
     let target_dir = journal.join("reflections/weekly");
     fs::create_dir_all(&target_dir).map_err(|e| {
         StageError::new(
@@ -885,28 +895,32 @@ pub fn write_page(
     let md_path = target_dir.join(format!("{start}.md"));
     let json_path = target_dir.join(format!("{start}.json"));
 
-    atomic_replace(&md_path, markdown.as_bytes(), AtomicWriteOptions::default()).map_err(|e| {
-        StageError::new(
-            "write",
-            "weekly_reflection",
-            "weekly_reflection",
-            format!("failed to write markdown {}: {e}", md_path.display()),
-        )
-    })?;
-
-    atomic_replace(
-        &json_path,
-        document.as_bytes(),
-        AtomicWriteOptions::default(),
-    )
-    .map_err(|e| {
-        StageError::new(
-            "write",
-            "weekly_reflection",
-            "weekly_reflection",
-            format!("failed to write json {}: {e}", json_path.display()),
-        )
-    })?;
+    crate::writers::write_output_with_sources(md_path.clone(), markdown, sources).map_err(
+        |error| {
+            StageError::new(
+                "write",
+                "weekly_reflection",
+                "weekly_reflection",
+                format!(
+                    "failed to write markdown sources {}: {error}",
+                    md_path.display()
+                ),
+            )
+        },
+    )?;
+    crate::writers::write_output_with_sources(json_path.clone(), document, sources).map_err(
+        |error| {
+            StageError::new(
+                "write",
+                "weekly_reflection",
+                "weekly_reflection",
+                format!(
+                    "failed to write document sources {}: {error}",
+                    json_path.display()
+                ),
+            )
+        },
+    )?;
 
     match rescan_file(journal, &md_path) {
         Ok(RescanFileStatus::Indexed { warnings }) => {

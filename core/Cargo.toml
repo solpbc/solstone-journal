@@ -7,6 +7,7 @@ members = [
     "crates/solstone-core-check",
     "crates/solstone-core-indexer",
     "crates/solstone-core-format",
+    "crates/solstone-core-memory-original",
     "crates/solstone-core-indexer-store",
     "crates/solstone-core-indexer-query",
     "crates/solstone-core-entity",
@@ -156,6 +157,7 @@ solstone-core-facets = { path = "crates/solstone-core-facets" }
 solstone-core-observe-audio = { path = "crates/solstone-core-observe-audio" }
 solstone-core-indexer = { path = "crates/solstone-core-indexer" }
 solstone-core-format = { path = "crates/solstone-core-format" }
+solstone-core-memory-original = { path = "crates/solstone-core-memory-original" }
 solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
 solstone-core-indexer-query = { path = "crates/solstone-core-indexer-query" }
 solstone-core-ingest = { path = "crates/solstone-core-ingest" }

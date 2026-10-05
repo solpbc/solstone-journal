@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Minimal JSON-RPC 2.0 envelopes for the read-only MCP surface.
+//! Minimal JSON-RPC 2.0 envelopes for the MCP surface.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -46,7 +46,7 @@ pub(crate) enum McpMethod {
     ToolsCall(ToolName),
 }
 
-/// The closed read-only tool registry.
+/// The closed tool registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolName {
     ListFacets,
@@ -56,6 +56,14 @@ pub(crate) enum ToolName {
     GetTranscript,
     ListEntities,
     GetEntity,
+    SaveMemory,
+    RecallMemory,
+}
+
+impl ToolName {
+    pub(crate) const fn is_memory(self) -> bool {
+        matches!(self, Self::SaveMemory | Self::RecallMemory)
+    }
 }
 
 impl JsonRpcResponse {
@@ -247,7 +255,9 @@ pub(crate) fn tool_arguments(request: &JsonRpcRequest) -> Option<&Value> {
 }
 
 fn valid_id(id: Option<&Value>) -> bool {
-    id.is_none_or(|value| value.is_null() || value.is_string() || value.is_number())
+    id.is_none_or(|value| {
+        value.is_null() || value.is_number() || value.as_str().is_some_and(|id| id.len() <= 1024)
+    })
 }
 
 fn response_id(id: Option<&Value>) -> Value {
@@ -337,6 +347,8 @@ mod tests {
         assert_eq!(
             names,
             [
+                "save_memory",
+                "recall_memory",
                 "list_facets",
                 "search",
                 "fetch",

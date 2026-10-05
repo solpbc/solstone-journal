@@ -18,13 +18,18 @@ pub enum QueryBoundary {
     /// journal sources. It is not the widest connection and does not consult
     /// the admitted-family map.
     Owner,
+    /// Verified principal's own private originals. This never widens into an
+    /// owner query or a connection category grant.
+    OwnMemory {
+        source_key: String,
+    },
     Connection(ConnectionBoundary),
 }
 
 impl QueryBoundary {
     pub fn connection(&self) -> Option<&ConnectionBoundary> {
         match self {
-            Self::Owner => None,
+            Self::Owner | Self::OwnMemory { .. } => None,
             Self::Connection(boundary) => Some(boundary),
         }
     }

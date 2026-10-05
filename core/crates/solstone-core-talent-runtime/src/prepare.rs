@@ -65,7 +65,7 @@ pub fn prepare(
     )
     .map_err(PrepareFailure::Refusal)?;
     for (key, value) in request {
-        if !value.is_null() && key != "unavailable_selection" {
+        if !value.is_null() && key != "unavailable_selection" && key != "_memory_sources" {
             composed.insert(key, value);
         }
     }
@@ -136,6 +136,15 @@ pub fn prepare(
     {
         let loaded = transcript::load_transcript(&context.journal, &composed)
             .map_err(PrepareFailure::Refusal)?;
+        if loaded.memory_incomplete {
+            return Err(PrepareFailure::Refusal(
+                "private memory context is incomplete".to_owned(),
+            ));
+        }
+        composed.insert(
+            "_memory_sources".to_owned(),
+            serde_json::to_value(&loaded.memory_sources).unwrap_or(Value::Array(Vec::new())),
+        );
         let mut transcript = loaded.text;
         let counts = loaded.counts;
         let mut screen_cuts = loaded.screen_cuts;
@@ -470,8 +479,19 @@ mod tests {
     use std::fs;
 
     use serde_json::json;
+    #[cfg(feature = "full-tests")]
+    use solstone_core_format::agent_memory::SourceKey;
 
     use super::*;
+
+    #[cfg(feature = "full-tests")]
+    fn test_scratch_root() -> std::path::PathBuf {
+        if cfg!(windows) {
+            std::env::temp_dir()
+        } else {
+            std::path::PathBuf::from("/var/tmp")
+        }
+    }
 
     #[test]
     fn criterion_3_and_25_request_refusals_preserve_equal_echoes() {
@@ -706,6 +726,87 @@ mod tests {
         let prepared = prepare(request, &paths, &context, PrepareMode::Preview)
             .expect("preview mode must skip the no-brain check");
         assert_eq!(prepared.config["provider"], "none");
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn corrupt_memory_in_a_mixed_segment_refuses_preparation_without_output() {
+        let root = tempfile::Builder::new()
+            .prefix("solstone-memory-prepare-refusal-")
+            .tempdir_in(test_scratch_root())
+            .unwrap();
+        let talent_root = root.path().join("talent");
+        let apps_root = root.path().join("apps");
+        let templates_dir = root.path().join("templates");
+        let journal = root.path().join("journal");
+        let day = "20260102";
+        for directory in [
+            talent_root.clone(),
+            apps_root.clone(),
+            templates_dir.clone(),
+            journal.join("config"),
+        ] {
+            fs::create_dir_all(directory).unwrap();
+        }
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"none"}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            talent_root.join("probe.md"),
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"load\":{\"transcripts\":true},\"output\":\"json\"\n}\nAnalyze the input.",
+        )
+        .unwrap();
+
+        let source = SourceKey::from_verified_id("corrupt-memory-source");
+        let stream = format!("agent-memory-{}", source.component());
+        let segment = journal
+            .join("chronicle")
+            .join(day)
+            .join(&stream)
+            .join("090000_60");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("note.txt"), b"not a validated original").unwrap();
+        fs::write(segment.join("ready.json"), b"not json").unwrap();
+        fs::write(
+            segment.join("stream.json"),
+            serde_json::json!({
+                "stream": stream,
+                "prev_day": null,
+                "prev_segment": null,
+                "seq": 1
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            segment.join("audio.jsonl"),
+            r#"{"start":"00:00:00","text":"readable ordinary transcript"}"#,
+        )
+        .unwrap();
+
+        let expected_output = journal
+            .join("chronicle")
+            .join(day)
+            .join("talents/probe.json");
+        let result = prepare(
+            json!({"name":"probe","day":day})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &RuntimePaths {
+                talent_root,
+                apps_root,
+                templates_dir,
+            },
+            &ExecutionContext {
+                journal: journal.clone(),
+            },
+            PrepareMode::Preview,
+        );
+        assert!(matches!(result, Err(PrepareFailure::Refusal(_))));
+        assert!(!expected_output.exists());
     }
 
     #[test]

@@ -4524,6 +4524,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-format",
  "solstone-core-indexer",
+ "solstone-core-memory-original",
  "solstone-core-retention",
 ]
 
@@ -4819,6 +4820,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-mcp-audit",
+ "solstone-core-memory-original",
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-sol-link",
@@ -4835,6 +4837,17 @@ dependencies = [
  "tower",
  "webpki-roots 1.0.9",
  "x509-parser",
+]
+
+[[package]]
+name = "solstone-core-memory-original"
+version = "2.0.32"
+dependencies = [
+ "serde",
+ "serde_json",
+ "solstone-core-format",
+ "solstone-core-journal-io",
+ "solstone-core-segment",
 ]
 
 [[package]]
@@ -4979,11 +4992,13 @@ dependencies = [
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
  "solstone-core-facets",
+ "solstone-core-format",
  "solstone-core-home",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-memory-original",
  "tokio",
  "tower",
 ]
@@ -5749,6 +5764,7 @@ dependencies = [
  "serde_json",
  "solstone-core-format",
  "solstone-core-journal-io",
+ "solstone-core-memory-original",
  "tempfile",
 ]
 

@@ -8,6 +8,7 @@ use std::time::UNIX_EPOCH;
 
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use solstone_core_format::agent_memory::{Coordinate, Origin, ReadyDocument, SourceKey};
 use solstone_core_format::content::{
     ContentResolution, Family, classify, produce_chunks, resolve_content_shape,
 };
@@ -27,6 +28,7 @@ use solstone_core_indexer::entity_search::{
 };
 use solstone_core_indexer::metadata::extract_path_metadata;
 use solstone_core_indexer::stream::extract_stream;
+use solstone_core_memory_original::{OriginalRead, read_original};
 
 use crate::StoreError;
 use crate::classification::{FacetDeclarationSet, classify_source};
@@ -177,7 +179,85 @@ fn delete_file_chunks(
         conn.execute("DELETE FROM chunks WHERE path=?", [path])?;
     }
     delete_chunk_classification(conn, path)?;
+    conn.execute("DELETE FROM memory_originals WHERE path=?", [path])?;
     Ok(())
+}
+
+#[derive(Clone, Debug)]
+struct ReadyMemoryOriginal {
+    coordinate: Coordinate,
+    source_key: SourceKey,
+    bytes: Vec<u8>,
+    origin: Origin,
+    ready: ReadyDocument,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MemoryScanDecision {
+    Index,
+    Skip,
+    Cleanup,
+}
+
+fn memory_scan_decision(
+    ready: bool,
+    memory_row_exists: bool,
+    mtime_matches: bool,
+) -> MemoryScanDecision {
+    if !ready {
+        MemoryScanDecision::Cleanup
+    } else if memory_row_exists && mtime_matches {
+        MemoryScanDecision::Skip
+    } else {
+        MemoryScanDecision::Index
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn read_memory_original(journal: &Path, rel: &str) -> Result<ReadyMemoryOriginal, OriginalRead> {
+    let parts = rel
+        .strip_prefix("chronicle/")
+        .unwrap_or(rel)
+        .split('/')
+        .collect::<Vec<_>>();
+    let [day, stream, segment, note] = parts.as_slice() else {
+        return Err(OriginalRead::Corrupt);
+    };
+    if *note != "note.txt" {
+        return Err(OriginalRead::Corrupt);
+    }
+    let Some(component) = stream.strip_prefix("agent-memory-") else {
+        return Err(OriginalRead::Corrupt);
+    };
+    let source_key =
+        SourceKey::parse(format!("sha256:{component}")).map_err(|_| OriginalRead::Corrupt)?;
+    let coordinate = Coordinate {
+        day: (*day).to_owned(),
+        stream: (*stream).to_owned(),
+        segment: (*segment).to_owned(),
+    };
+    match read_original(journal, &source_key, &coordinate) {
+        OriginalRead::Ready {
+            bytes,
+            origin,
+            ready,
+        } => Ok(ReadyMemoryOriginal {
+            coordinate,
+            source_key,
+            bytes,
+            origin,
+            ready,
+        }),
+        other => Err(other),
+    }
+}
+
+fn memory_original_exists(conn: &Connection, path: &str) -> Result<bool, StoreError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM memory_originals WHERE path=?)",
+        [path],
+        |row| row.get::<_, bool>(0),
+    )?)
 }
 
 pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
@@ -189,9 +269,22 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
     let db_mtimes = load_file_mtimes(&conn)?;
     let mut to_index = Vec::new();
     for (rel, path) in &files {
-        match file_mtime_secs(path) {
+        let memory_note = is_memory_note(rel);
+        let observed_mtime = if memory_note {
+            memory_file_mtime_secs(path)
+        } else {
+            file_mtime_secs(path)
+        };
+        match observed_mtime {
             Ok(mtime) => {
-                if db_mtimes.get(rel) != Some(&mtime) {
+                let needs_index = if memory_note {
+                    // Readiness can change while a newer sibling preserves the
+                    // composite mtime. Validate before considering a cache hit.
+                    true
+                } else {
+                    db_mtimes.get(rel) != Some(&mtime)
+                };
+                if needs_index {
                     to_index.push((rel.clone(), path.clone(), mtime));
                 }
             }
@@ -200,6 +293,9 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
                 report
                     .warnings
                     .push(format!("mtime read failed for {rel}: {error}"));
+                if memory_note {
+                    to_index.push((rel.clone(), path.clone(), 0));
+                }
             }
         }
     }
@@ -211,6 +307,7 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
             .map(|(rel, _, _)| rel.clone())
             .chain(removed.iter().cloned()),
     );
+    let mut invalid_memory_removed = 0;
     for (rel, path, mtime) in &to_index {
         let family = match resolve_content_shape(path, rel) {
             ContentResolution::Indexed(family) => family,
@@ -223,6 +320,58 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
             }
             ContentResolution::Unindexed(_) | ContentResolution::IndexedElsewhere => continue,
         };
+        let memory_original = if family == Family::AgentMemory {
+            match read_memory_original(journal, rel) {
+                Ok(original) => Some(original),
+                Err(result) => {
+                    let has_memory_row = memory_original_exists(&conn, rel)?;
+                    debug_assert_eq!(
+                        memory_scan_decision(
+                            false,
+                            has_memory_row,
+                            db_mtimes.get(rel) == Some(mtime),
+                        ),
+                        MemoryScanDecision::Cleanup
+                    );
+                    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                    let chunk_rows = pending_chunks.take(&tx, rel)?;
+                    delete_file_chunks(&tx, rel, Some(&chunk_rows))?;
+                    invalid_memory_removed +=
+                        tx.execute("DELETE FROM files WHERE path=?", [rel])?;
+                    tx.commit()?;
+                    report.skipped += 1;
+                    if matches!(
+                        result,
+                        OriginalRead::Corrupt | OriginalRead::Unavailable { .. }
+                    ) {
+                        report.failed += 1;
+                        report.warnings.push(format!(
+                            "memory original is incomplete for {rel}: {}",
+                            original_read_label(&result)
+                        ));
+                    } else {
+                        report.benign_skips.push(format!(
+                            "memory original is not ready for {rel}: {}",
+                            original_read_label(&result)
+                        ));
+                    }
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+        if family == Family::AgentMemory {
+            let has_memory_row = memory_original_exists(&conn, rel)?;
+            if memory_scan_decision(
+                memory_original.is_some(),
+                has_memory_row,
+                db_mtimes.get(rel) == Some(mtime),
+            ) == MemoryScanDecision::Skip
+            {
+                continue;
+            }
+        }
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let chunk_rows = pending_chunks.take(&tx, rel)?;
         let warnings = match ensure_file_current(
@@ -233,6 +382,7 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
             *mtime,
             FileUpdate::Scan(&chunk_rows),
             family,
+            memory_original.as_ref(),
         ) {
             Ok(warnings) => warnings,
             Err(StoreError::Io(error)) => {
@@ -261,7 +411,7 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
         tx.commit()?;
         removed_count += 1;
     }
-    report.removed = removed_count;
+    report.removed = removed_count + invalid_memory_removed;
     report
         .warnings
         .extend(migrate_segment_aggregates(&mut conn, journal)?);
@@ -422,11 +572,30 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     if !path.is_file() {
         return Err(StoreError::MissingFile(path));
     }
+    let memory_original = if family == Some(Family::AgentMemory) {
+        match read_memory_original(journal, &rel) {
+            Ok(original) => Some(original),
+            Err(_) => {
+                let mut conn = open_index(journal)?;
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                delete_file_chunks(&tx, &rel, None)?;
+                tx.execute("DELETE FROM files WHERE path=?", [&rel])?;
+                tx.commit()?;
+                return Ok(RescanFileStatus::Declined);
+            }
+        }
+    } else {
+        None
+    };
     let mut edge_resolver = EdgeResolver::new(journal);
     if edge_source.is_some() {
         edge_resolver.preflight_owner_timezone()?;
     }
-    let mtime = file_mtime_secs(&path)?;
+    let mtime = if family == Some(Family::AgentMemory) {
+        memory_file_mtime_secs(&path)?
+    } else {
+        file_mtime_secs(&path)?
+    };
     let mut conn = open_index(journal)?;
     // Immediate, not deferred: this reads current state (ensure_file_current's
     // mtime comparison) before writing. A deferred transaction's read snapshot
@@ -446,6 +615,7 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
             mtime,
             FileUpdate::Force,
             family,
+            memory_original.as_ref(),
         )?);
     }
     if edge_source.is_some() {
@@ -881,6 +1051,7 @@ fn migrate_segment_aggregate(
             mtime,
             FileUpdate::IfChanged,
             family,
+            None,
         ) {
             Ok(mut file_warnings) => warnings.append(&mut file_warnings),
             Err(StoreError::Io(error)) => {
@@ -1120,6 +1291,7 @@ enum FileUpdate<'a> {
 // The parameter list is the shared state both callers must agree on; grouping it
 // into a struct would move the same fields behind a name without reducing what a
 // caller has to get right. Accepted deliberately and scoped to this item.
+#[allow(clippy::too_many_arguments)]
 fn ensure_file_current(
     conn: &Connection,
     journal: &Path,
@@ -1128,13 +1300,18 @@ fn ensure_file_current(
     mtime: i64,
     update: FileUpdate<'_>,
     family: Family,
+    memory_original: Option<&ReadyMemoryOriginal>,
 ) -> Result<Vec<String>, StoreError> {
     let stored_mtime = conn
         .query_row("SELECT mtime FROM files WHERE path=?", [rel], |row| {
             row.get(0)
         })
         .optional()?;
-    if !matches!(update, FileUpdate::Force) && stored_mtime == Some(mtime) {
+    if !matches!(update, FileUpdate::Force)
+        && stored_mtime == Some(mtime)
+        && (family != Family::AgentMemory
+            || (memory_original.is_some() && memory_original_exists(conn, rel)?))
+    {
         return Ok(Vec::new());
     }
     let known_chunk_rows = match update {
@@ -1142,12 +1319,13 @@ fn ensure_file_current(
         FileUpdate::Force | FileUpdate::IfChanged => None,
     };
     delete_file_chunks(conn, rel, known_chunk_rows)?;
-    let warnings = index_file(conn, journal, rel, path, family).map_err(|warning| {
-        StoreError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            warning,
-        ))
-    })?;
+    let warnings =
+        index_file(conn, journal, rel, path, family, memory_original).map_err(|warning| {
+            StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                warning,
+            ))
+        })?;
     conn.execute(
         "REPLACE INTO files(path, mtime) VALUES (?, ?)",
         params![rel, mtime],
@@ -1161,9 +1339,17 @@ fn index_file(
     rel: &str,
     path: &Path,
     family: Family,
+    memory_original: Option<&ReadyMemoryOriginal>,
 ) -> Result<Vec<String>, String> {
-    let text = fs::read_to_string(path)
-        .map_err(|error| format!("content read failed for {rel}: {error}"))?;
+    let text = if family == Family::AgentMemory {
+        let original = memory_original
+            .ok_or_else(|| format!("validated memory original missing for {rel}"))?;
+        String::from_utf8(original.bytes.clone())
+            .map_err(|error| format!("memory original is not UTF-8 for {rel}: {error}"))?
+    } else {
+        fs::read_to_string(path)
+            .map_err(|error| format!("content read failed for {rel}: {error}"))?
+    };
     let produced = produce_chunks(family, rel, &text);
     let metadata = extract_path_metadata(rel);
     let facet = metadata.facet.to_lowercase();
@@ -1203,6 +1389,30 @@ fn index_file(
     }
     replace_chunk_classification(conn, &classification)
         .map_err(|error| format!("classification insert failed for {rel}: {error}"))?;
+    if let Some(original) = memory_original {
+        let origin_json = serde_json::to_string(&original.origin)
+            .map_err(|error| format!("memory origin serialization failed for {rel}: {error}"))?;
+        let chain_json = serde_json::to_string(&original.ready.chain)
+            .map_err(|error| format!("memory chain serialization failed for {rel}: {error}"))?;
+        conn.execute(
+            "INSERT INTO memory_originals(path, day, stream, segment, source_key, bytes, origin_json, digest, byte_count, created_at, creation_label, chain_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                rel,
+                original.coordinate.day,
+                original.coordinate.stream,
+                original.coordinate.segment,
+                original.source_key.as_str(),
+                original.bytes,
+                origin_json,
+                original.ready.digest,
+                original.ready.byte_count as i64,
+                original.ready.created_at.to_rfc3339(),
+                original.origin.creation_label,
+                chain_json,
+            ],
+        )
+        .map_err(|error| format!("memory original insert failed for {rel}: {error}"))?;
+    }
     Ok(warnings)
 }
 
@@ -1231,6 +1441,56 @@ fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
     Ok(duration.as_secs() as i64)
 }
 
+fn is_memory_note(rel: &str) -> bool {
+    solstone_core_format::content::resolve_spec(rel)
+        .is_some_and(|spec| spec.family == Family::AgentMemory)
+}
+
+fn memory_file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
+    let segment = path
+        .parent()
+        .ok_or_else(|| StoreError::MissingFile(path.to_path_buf()))?;
+    let mut newest = None;
+    for candidate in [
+        path.to_path_buf(),
+        segment.join("origin.json"),
+        segment.join("ready.json"),
+        segment.join("stream.json"),
+    ] {
+        match fs::symlink_metadata(&candidate) {
+            Ok(metadata) => {
+                let duration =
+                    metadata
+                        .modified()?
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|error| {
+                            StoreError::Io(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                error,
+                            ))
+                        })?;
+                let seconds = duration.as_secs() as i64;
+                newest = Some(newest.map_or(seconds, |current: i64| current.max(seconds)));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(StoreError::Io(error)),
+        }
+    }
+    Ok(newest.unwrap_or_default())
+}
+
+fn original_read_label(read: &OriginalRead) -> String {
+    match read {
+        OriginalRead::Absent => "absent".into(),
+        OriginalRead::Unready => "unready".into(),
+        OriginalRead::Deleted => "deleted".into(),
+        OriginalRead::Staged => "staged".into(),
+        OriginalRead::Corrupt => "corrupt".into(),
+        OriginalRead::Unavailable { detail } => format!("unavailable ({detail})"),
+        OriginalRead::Ready { .. } => "ready".into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1253,6 +1513,60 @@ mod tests {
         fs::create_dir_all(path.parent().expect("test path should have parent"))
             .expect("create parent");
         fs::write(path, text).expect("write test file");
+    }
+
+    #[test]
+    fn unready_memory_is_never_a_current_index_row() {
+        assert_eq!(
+            memory_scan_decision(false, false, false),
+            MemoryScanDecision::Cleanup
+        );
+        assert_eq!(
+            memory_scan_decision(true, false, true),
+            MemoryScanDecision::Index
+        );
+        assert_eq!(
+            memory_scan_decision(true, true, true),
+            MemoryScanDecision::Skip
+        );
+
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE files(path TEXT PRIMARY KEY, mtime INTEGER);
+                 CREATE TABLE memory_originals(path TEXT PRIMARY KEY);",
+            )
+            .unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM files", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM memory_originals", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        if memory_scan_decision(false, false, false) == MemoryScanDecision::Cleanup {
+            connection
+                .execute("DELETE FROM files WHERE path=?", ["unready/note.txt"])
+                .unwrap();
+            connection
+                .execute(
+                    "DELETE FROM memory_originals WHERE path=?",
+                    ["unready/note.txt"],
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM files", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
     }
 
     #[test]

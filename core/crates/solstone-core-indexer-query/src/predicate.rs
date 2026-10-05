@@ -16,7 +16,7 @@ pub struct PredicateInput {
 }
 
 /// The date filter selected by Python-compatible precedence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum EffectiveDateConstraint {
     None,
     Exact(String),

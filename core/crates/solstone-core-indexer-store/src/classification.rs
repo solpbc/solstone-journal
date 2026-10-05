@@ -317,15 +317,18 @@ pub fn classify_source(
     stream: Option<&str>,
     declarations: &FacetDeclarationSet,
 ) -> ChunkClassification {
+    let spec = resolve_spec(path);
+    let agent_memory_note =
+        spec.is_some_and(|spec| spec.family == solstone_core_format::content::Family::AgentMemory);
     if path.starts_with("entity_search:")
         || stream == Some("mcp.agent")
-        || stream.is_some_and(|name| name.starts_with("agent-memory-"))
+        || (stream.is_some_and(|name| name.starts_with("agent-memory-")) && !agent_memory_note)
         || path.split('/').any(|component| component == "mcp.agent")
         || is_authored_chat_path(path)
     {
         return excluded(path);
     }
-    let Some(spec) = resolve_spec(path) else {
+    let Some(spec) = spec else {
         return excluded(path);
     };
     let IndexDisposition::Admitted { category, basis } = spec.disposition else {
@@ -524,25 +527,54 @@ mod tests {
         );
         assert!(!mcp.eligible);
 
+        let source = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let memory_stream = format!("agent-memory-{source}");
         let memory = classify_source(
             &root,
-            "20260107/agent-memory-a1b2/030405_1/note.txt",
-            Some("agent-memory-a1b2"),
+            &format!("20260107/{memory_stream}/030405_1/note.txt"),
+            Some(&memory_stream),
             &declarations,
         );
-        assert!(!memory.eligible);
+        assert!(memory.eligible);
+        assert_eq!(memory.category, Some("transcripts"));
+        assert_eq!(memory.basis, Some("journal_wide"));
+        assert!(
+            !classify_source(
+                &root,
+                &format!("20260107/{memory_stream}/030405_1/origin.json"),
+                Some(&memory_stream),
+                &declarations,
+            )
+            .eligible
+        );
     }
 
     #[test]
     fn classify_source_excludes_agent_memory_stream_prefix() {
         let root = reserve_temp_path("classification-agent-memory");
+        let source = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let stream = format!("agent-memory-{source}");
         let classification = classify_source(
             &root,
-            "20260107/agent-memory-abc/030405_1/note.txt",
-            Some("agent-memory-abc"),
+            &format!("20260107/{stream}/030405_1/ready.json"),
+            Some(&stream),
             &FacetDeclarationSet::default(),
         );
         assert!(!classification.eligible);
+        let talent = classify_source(
+            &root,
+            "20260107/talents/memory.md",
+            Some(&stream),
+            &FacetDeclarationSet::default(),
+        );
+        assert!(!talent.eligible);
+        let note = classify_source(
+            &root,
+            &format!("20260107/{stream}/030405_1/note.txt"),
+            Some(&stream),
+            &FacetDeclarationSet::default(),
+        );
+        assert!(note.eligible);
     }
 
     #[test]

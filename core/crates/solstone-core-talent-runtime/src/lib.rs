@@ -179,8 +179,11 @@ pub fn check_segment_has_no_input(
     if !transcript::sources_are_enabled(sources) {
         return false;
     }
-    let (text, counts) =
+    let (text, counts, memory) =
         transcript::load_segment_transcript(journal, day, segment, stream, sources);
+    if memory.incomplete {
+        return false;
+    }
     if solstone_core_transcripts::is_no_input(&text, &counts) {
         return true;
     }
@@ -668,7 +671,7 @@ fn finish_unavailable(
         Err(error) => return RuntimeOutcome::StageFailed(error),
     };
     let disposition = match stage.writes_as_intent {
-        Some(apply) => match apply(plan, context) {
+        Some(apply) => match apply(plan, context, prepared) {
             Ok(disposition) => disposition,
             Err(error) => return RuntimeOutcome::StageFailed(error),
         },
@@ -886,7 +889,7 @@ pub(crate) fn generate_and_write(
                 }
             };
             disposition = match stage.writes_as_intent {
-                Some(apply) => match apply(plan, context) {
+                Some(apply) => match apply(plan, context, prepared) {
                     Ok(value) => value,
                     Err(mut error) => {
                         if error.usage.is_none() {

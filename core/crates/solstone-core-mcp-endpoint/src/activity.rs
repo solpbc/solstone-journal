@@ -10,7 +10,7 @@
 //! component — so extending `ConnectionBoundary` to a second store would have
 //! been guarding a table that does not exist. What keeps this reader away from
 //! the boundary it audits is the **closed registry**: `tools/call` can only
-//! name one of the seven [`crate::registry::TOOLS`] rows, and the dispatcher
+//! name one of the closed [`crate::registry::TOOLS`] rows, and the dispatcher
 //! matches a closed enum, so no wire input reaches this function.
 //!
 //! ⛔ Owner authentication only. This is reached from `journal mcp activity`,
@@ -792,7 +792,7 @@ mod tests {
                 entry.wire_name
             );
         }
-        assert_eq!(crate::registry::TOOLS.len(), 7);
+        assert_eq!(crate::registry::TOOLS.len(), 9);
         assert!(crate::registry::tool_by_wire_name("list_activity").is_none());
         assert!(crate::registry::tool_by_wire_name("get_agent_interaction").is_none());
     }

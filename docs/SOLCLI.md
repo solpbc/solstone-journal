@@ -218,12 +218,14 @@ Command names are lowercase single words, or hyphenated multi-word
 
 ## Journal MCP Endpoint
 
-The journal MCP endpoint serves seven read-only journal tools:
+The journal MCP endpoint serves `save_memory` and `recall_memory` alongside seven
+read-only journal tools:
 `list_facets`, `search`, `fetch`, `list_transcripts`, `get_transcript`,
 `list_entities`, and `get_entity`. It exists only in builds compiled with the
 `journal-mcp-endpoint` Cargo feature. Every released journal is built with it
 (`core/distribution/shipped-core-features.txt`); a build without it starts none
-of the doors below.
+of the doors below. The [agent memory contract](MCP_OAUTH.md#agent-memories)
+describes saving, retries and recall.
 
 An agent reaches the endpoint through one of four doors. Each door has its own
 listener, and `solstone journal mcp pairing generate --door` names the door a pairing

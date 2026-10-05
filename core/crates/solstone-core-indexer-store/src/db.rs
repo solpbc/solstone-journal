@@ -21,6 +21,11 @@ pub struct StreamPruneCounts {
 }
 
 const CREATE_FILES: &str = "CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, mtime INTEGER)";
+const CREATE_MEMORY_ORIGINALS: &str = "CREATE TABLE IF NOT EXISTS memory_originals(\
+path TEXT PRIMARY KEY, day TEXT NOT NULL, stream TEXT NOT NULL, segment TEXT NOT NULL, \
+source_key TEXT NOT NULL, bytes BLOB NOT NULL, origin_json TEXT NOT NULL, digest TEXT NOT NULL, \
+byte_count INTEGER NOT NULL, created_at TEXT NOT NULL, creation_label TEXT NOT NULL, chain_json TEXT NOT NULL)";
+const CREATE_MEMORY_ORIGINALS_SOURCE_DAY_PATH: &str = "CREATE INDEX IF NOT EXISTS memory_originals_source_day_path ON memory_originals(source_key, day DESC, path DESC)";
 const CREATE_CHUNKS: &str = "\
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(
 content,
@@ -213,6 +218,7 @@ pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
     tx.execute("DROP TABLE IF EXISTS edges", [])?;
     tx.execute("DROP TABLE IF EXISTS edge_files", [])?;
     tx.execute("DROP TABLE IF EXISTS files", [])?;
+    tx.execute("DROP TABLE IF EXISTS memory_originals", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_classification_facets", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_classification", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_classification_backfill", [])?;
@@ -235,12 +241,15 @@ pub fn prune_chunks_by_stream(
     let mut conn = open_index(journal)?;
     let tx = conn.transaction()?;
     let paths = {
-        let mut statement = tx.prepare("SELECT DISTINCT path FROM chunks WHERE stream=?")?;
+        let mut statement = tx.prepare(
+            "SELECT path FROM chunks WHERE stream=? UNION SELECT path FROM memory_originals WHERE stream=?",
+        )?;
         statement
-            .query_map([stream], |row| row.get::<_, String>(0))?
+            .query_map(params![stream, stream], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?
     };
     let chunks = tx.execute("DELETE FROM chunks WHERE stream=?", [stream])? as u64;
+    tx.execute("DELETE FROM memory_originals WHERE stream=?", [stream])?;
     let mut files = 0;
     for path in paths {
         delete_chunk_classification(&tx, &path)?;
@@ -290,6 +299,7 @@ pub fn prune_by_paths(
         };
         delete_chunk_classifications_by_predicate(&tx, &pred)?;
         counts.chunks += execute_prune_predicate(&tx, "chunks", &pred)?;
+        execute_prune_predicate(&tx, "memory_originals", &pred)?;
         counts.files += execute_prune_predicate(&tx, "files", &pred)?;
     }
     tx.commit()?;
@@ -399,6 +409,8 @@ fn migrate_legacy_chunks(conn: &Connection) -> Result<(), StoreError> {
 fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_FILES, [])?;
     conn.execute(CREATE_CHUNKS, [])?;
+    conn.execute(CREATE_MEMORY_ORIGINALS, [])?;
+    conn.execute(CREATE_MEMORY_ORIGINALS_SOURCE_DAY_PATH, [])?;
     conn.execute(CREATE_EDGE_FILES, [])?;
     conn.execute(CREATE_EDGES, [])?;
     conn.execute(CREATE_EDGES_PATH_INDEX, [])?;

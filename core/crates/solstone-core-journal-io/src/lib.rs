@@ -181,7 +181,9 @@ pub use legacy_log_alias::{
 #[cfg(any(unix, windows))]
 pub use locking::lock_is_held;
 #[cfg(any(unix, windows))]
-pub use locking::{BoundParentLock, acquire_existing_parent_lock_bound};
+pub use locking::{
+    BoundParentLock, acquire_existing_parent_lock_bound, open_existing_parent_lock_bound,
+};
 #[cfg(any(unix, windows))]
 pub use locking::{
     DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, ExistingParentLock, FileLock, LockOptions,

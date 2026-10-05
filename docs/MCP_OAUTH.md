@@ -153,3 +153,48 @@ If it is unreadable or corrupt, OAuth issuance and redemption fail closed
 independent and is not affected. Recover by restoring or removing the
 corrupt file. New OAuth state starts empty; existing OAuth grants are
 lost, static tokens are not.
+
+
+## Agent memories
+
+Every active bearer or OAuth connection can call `save_memory` and `recall_memory`,
+including when its ordinary read grant is absent, limited or unavailable. Both
+methods stay within that connection's own source. Other journal tools keep the
+owner's existing read permissions. There is no separate write permission.
+
+`save_memory` accepts only `content` and `operation_id`. Content is nonempty exact
+UTF-8, up to 32,768 decoded bytes. The operation id is 1–128 ASCII letters, digits,
+periods, underscores, colons or hyphens. Save once per intended note. If the response is lost or
+says `uncertain_retry`, retry with the same operation id and exact content. A
+successful retry returns the original coordinate, timestamp and origin rather
+than another note. Reusing an id with different bytes is refused. A `deleted`
+receipt means the owner removed that original; retry cannot recreate it.
+
+Receipts contain no note body. `own_recall` is `ready`, `pending`, `unavailable`
+or `deleted`; it describes the original's verified index readiness.
+`ordinary_readable` reports whether the current ordinary grant also admits that
+indexed original. Notification delivery is best effort: a stored note can remain
+pending until normal indexing runs, even with thinking turned off.
+
+`recall_memory` accepts optional `query`, `limit`, `day`, `day_from`, `day_to` and
+`continuation`. Omit `query` to browse. An explicitly empty query does not browse.
+Dates use `YYYYMMDD`. Pages return whole original notes with authenticated origin,
+defaulting to five and capped at 20 notes and 65,536 content bytes. Neither
+summaries nor other connections' memories are returned. Follow `continuation`
+with the same query and date filters. Cursors can expire after an endpoint
+restart. `complete: false` with a reason means coverage or execution could not be
+confirmed; an empty incomplete page does not prove there are no memories.
+
+A bearer token's durable id and an OAuth consent identify separate sources.
+Renaming a connection or refreshing OAuth access preserves its source. Replacing
+a bearer token or authorizing a new OAuth consent creates a new source. Ordinary
+read-grant changes do not revoke own recall; revoking the credential does.
+New originals use the owner's journal day. A retry retains its reserved day even
+if the timezone changes.
+
+Owners can inspect original notes and body-free request outcomes in their journal.
+Deleting an original does not erase existing derivatives, copies already read by
+an agent or backups. Backup restoration preserves retry consumption only when the
+matching identity and operation records are restored together. An older backup
+can roll consumption back. Windows file publication is checked, but this does
+not promise directory-entry durability across sudden power loss.

@@ -553,6 +553,12 @@ fn open_index_reader(
     journal: &Path,
     boundary: &QueryBoundary,
 ) -> Result<QueryConnection, IndexAccessError> {
+    if matches!(boundary, QueryBoundary::OwnMemory { .. }) {
+        return Err(IndexAccessError::Unreadable {
+            path: solstone_core_indexer_store::db::db_path(journal),
+            detail: "own-memory reads use the dedicated private index opener".to_owned(),
+        });
+    }
     let path = solstone_core_indexer_store::db::db_path(journal);
     if !path.is_file() {
         return Err(IndexAccessError::Absent { path });

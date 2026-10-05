@@ -656,6 +656,18 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-memory-original"
+package = "solstone-core-memory-original"
+set = "component"
+areas = ["formats"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+features = ["full-tests"]
+
+[[package_suites]]
 id = "package::solstone-core-generate"
 package = "solstone-core-generate"
 set = "component"

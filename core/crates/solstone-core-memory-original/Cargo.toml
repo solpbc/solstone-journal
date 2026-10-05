@@ -2,23 +2,22 @@
 # Copyright (c) 2026 sol pbc
 
 [package]
-name = "solstone-core-transcripts"
+name = "solstone-core-memory-original"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[lints]
-workspace = true
-
 [dependencies]
-chrono.workspace = true
-log.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 solstone-core-format.workspace = true
 solstone-core-journal-io.workspace = true
-solstone-core-memory-original.workspace = true
+solstone-core-segment.workspace = true
 
-[dev-dependencies]
-tempfile = "3.24.0"
+[features]
+full-tests = []
+
+[lints]
+workspace = true

@@ -35,6 +35,55 @@ use crate::tokens::{TokenStore, TokenStoreError, VerifiedToken};
 const PROXY_PREFACE_DEADLINE: Duration = Duration::from_secs(2);
 const TLS_HANDSHAKE_DEADLINE: Duration = Duration::from_secs(5);
 
+/// Fixed own-memory authority. Only this verified transport module constructs it;
+/// a caller-supplied DispatchPrincipal or owner probe cannot do so.
+pub(crate) struct MemoryAuthority<'a> {
+    verified: &'a VerifiedToken,
+    creation_label: String,
+}
+
+impl<'a> MemoryAuthority<'a> {
+    fn verified(journal: &Path, verified: &'a VerifiedToken) -> Self {
+        let label = if verified.id.starts_with("oauth:") {
+            OAuthStore::open(journal)
+                .list_clients()
+                .ok()
+                .and_then(|clients| {
+                    clients
+                        .into_iter()
+                        .find(|client| client.client_id == verified.agent_identity)
+                        .and_then(|client| client.client_name)
+                })
+        } else {
+            Some(verified.agent_identity.clone())
+        };
+        let mut safe = String::new();
+        for character in label.as_deref().unwrap_or("connected agent").trim().chars() {
+            if character.is_control() || matches!(character, '<' | '>') {
+                continue;
+            }
+            if safe.len() + character.len_utf8() > 256 {
+                break;
+            }
+            safe.push(character);
+        }
+        if safe.trim().is_empty() {
+            safe = "connected agent".into();
+        }
+        Self {
+            verified,
+            creation_label: safe,
+        }
+    }
+
+    pub(crate) fn id(&self) -> &str {
+        &self.verified.id
+    }
+    pub(crate) fn label(&self) -> &str {
+        &self.creation_label
+    }
+}
+
 /// Failure while running the TCP accept loop.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum ServerError {
@@ -697,6 +746,16 @@ fn execute_tool_call(
     journal_root: &std::path::Path,
     tools_list_changed: bool,
 ) -> HttpResponse {
+    if tool_name.is_memory() {
+        return crate::memory_tools::execute(
+            journal_root,
+            &MemoryAuthority::verified(journal_root, verified),
+            request,
+            tool_name,
+            chrono::Utc::now(),
+            tools_list_changed,
+        );
+    }
     // ⚠ On the wire every refusal stays closed and indistinguishable. The
     // owner's log is where a refusal is told apart from a served call, and the
     // shared dispatcher keeps this denial path identical for wire and probe.
@@ -1825,6 +1884,8 @@ mod tests {
         assert_eq!(
             names,
             [
+                "save_memory",
+                "recall_memory",
                 "list_facets",
                 "search",
                 "fetch",
@@ -1878,7 +1939,7 @@ mod tests {
         )
         .await
         .0;
-        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 7);
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 9);
 
         // Control: while the grant has not moved, nothing is flagged.
         let fresh = post_json_with_headers(
@@ -1988,7 +2049,7 @@ mod tests {
         )
         .await
         .0;
-        assert_eq!(empty["result"]["tools"], json!([]));
+        assert_eq!(empty["result"]["tools"].as_array().unwrap().len(), 2);
         let late_verified = TokenStore::open(server.journal.path())
             .verify(&unpermissioned.token)
             .expect("verifies token");
@@ -2056,7 +2117,7 @@ mod tests {
         )
         .await
         .0;
-        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 7);
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 9);
         let search = post_json_with_headers(
             &mut client,
             &token.token,
@@ -2402,6 +2463,683 @@ mod tests {
         }
     }
 
+    fn memory_call(name: &str, arguments: Value) -> Value {
+        json!({"jsonrpc":"2.0", "id":70, "method":"tools/call", "params":{"name":name,"arguments":arguments}})
+    }
+
+    fn memory_result(response: &Value) -> &Value {
+        assert!(
+            response.get("error").is_none(),
+            "memory call must be a tool result"
+        );
+        assert_ne!(response["result"]["isError"], true);
+        let structured = &response["result"]["structuredContent"];
+        let text: Value =
+            serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(
+            &text, structured,
+            "both representations preserve the same whole result"
+        );
+        structured
+    }
+
+    async fn exercise_memory_postures(
+        server: &ServerHarness,
+        client: &mut TlsStream<TcpStream>,
+        token: &str,
+        identity: &str,
+    ) {
+        use crate::permissions::{PermissionStore, ReadPermission, ReadScope};
+        let store = PermissionStore::open(server.journal.path());
+        let permission_file = server.journal.path().join("mcp-endpoint/permissions.json");
+        for posture in 0..5 {
+            match posture {
+                0 => {
+                    store.remove_connection(identity).unwrap();
+                }
+                1 => {
+                    store
+                        .set_permission(
+                            identity,
+                            ReadPermission {
+                                categories: Vec::new(),
+                                scope: ReadScope::WholeJournal,
+                            },
+                        )
+                        .unwrap();
+                }
+                2 => {
+                    store
+                        .set_permission(
+                            identity,
+                            ReadPermission {
+                                categories: vec!["transcripts".into()],
+                                scope: ReadScope::Facets {
+                                    ids: vec!["not-this-source".into()],
+                                },
+                            },
+                        )
+                        .unwrap();
+                }
+                3 => server.grant_permission(identity),
+                4 => fs::write(&permission_file, b"malformed permission ledger").unwrap(),
+                _ => unreachable!(),
+            }
+            let advertised = post_json(
+                client,
+                token,
+                json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
+            )
+            .await;
+            let names = advertised["result"]["tools"].as_array().unwrap();
+            for name in ["save_memory", "recall_memory"] {
+                assert!(names.iter().any(|tool| tool["name"] == name));
+            }
+            let operation = format!("posture-{posture}");
+            let saved = post_json(
+                client,
+                token,
+                memory_call(
+                    "save_memory",
+                    json!({"operation_id":operation,"content":"posture original exact"}),
+                ),
+            )
+            .await;
+            assert_eq!(memory_result(&saved)["status"], "stored");
+            let pending = post_json(client, token, memory_call("recall_memory", json!({}))).await;
+            assert_eq!(memory_result(&pending)["complete"], false);
+            assert_eq!(memory_result(&pending)["reason"], "memory_index_pending");
+            assert_eq!(
+                memory_result(&saved)["origin"]["source_key"],
+                solstone_core_format::agent_memory::SourceKey::from_verified_id(identity).as_str()
+            );
+            solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+            let recalled = post_json(
+                client,
+                token,
+                memory_call("recall_memory", json!({"limit":20})),
+            )
+            .await;
+            assert_eq!(memory_result(&recalled)["complete"], true);
+            assert_eq!(
+                memory_result(&recalled)["notes"].as_array().unwrap().len(),
+                posture + 1
+            );
+            assert!(
+                memory_result(&recalled)["notes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|note| note["content"] == "posture original exact")
+            );
+            let replay = post_json(
+                client,
+                token,
+                memory_call(
+                    "save_memory",
+                    json!({"operation_id":operation,"content":"posture original exact"}),
+                ),
+            )
+            .await;
+            let receipt = memory_result(&replay);
+            assert_eq!(receipt["status"], "replayed");
+            assert_eq!(receipt["own_recall"], "ready");
+            assert_eq!(receipt["ordinary_readable"], posture == 3);
+        }
+        fs::remove_file(permission_file).unwrap();
+        server.grant_permission(identity);
+    }
+
+    #[tokio::test]
+    async fn memory_bearer_wire_postures_identity_cursor_and_revocation() {
+        use crate::permissions::PermissionStore;
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let token = server.create_unpermissioned_token("same label");
+        let token_store = TokenStore::open(server.journal.path());
+        let verified = token_store.verify(&token.token).unwrap();
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+        exercise_memory_postures(&server, &mut client, &token.token, &verified.id).await;
+        token_store
+            .rename_by_id(
+                verified.id.strip_prefix("bearer:").unwrap(),
+                "renamed agent",
+            )
+            .unwrap();
+        let other = server.create_unpermissioned_token("same label");
+        let other_saved = post_json(
+            &mut client,
+            &other.token,
+            memory_call(
+                "save_memory",
+                json!({"operation_id":"posture-0","content":"other private original"}),
+            ),
+        )
+        .await;
+        assert_ne!(
+            memory_result(&other_saved)["origin"]["source_key"],
+            solstone_core_format::agent_memory::SourceKey::from_verified_id(&verified.id).as_str()
+        );
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+        let first = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({"limit":1})),
+        )
+        .await;
+        let cursor = memory_result(&first)["continuation"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let permission_file = server.journal.path().join("mcp-endpoint/permissions.json");
+        PermissionStore::open(server.journal.path())
+            .remove_connection(&verified.id)
+            .unwrap();
+        fs::write(&permission_file, b"malformed permission ledger").unwrap();
+        let continued = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({"limit":20,"continuation":cursor})),
+        )
+        .await;
+        assert_eq!(
+            memory_result(&continued)["notes"].as_array().unwrap().len(),
+            4
+        );
+        assert!(
+            memory_result(&continued)["notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|note| note["content"] == "posture original exact")
+        );
+        let wrong_identity = post_json(
+            &mut client,
+            &other.token,
+            memory_call("recall_memory", json!({"continuation":cursor})),
+        )
+        .await;
+        assert_eq!(
+            memory_result(&wrong_identity)["reason"],
+            "memory_recall_cursor_invalid"
+        );
+        assert_eq!(memory_result(&wrong_identity)["complete"], false);
+        for (tool, args) in [
+            (
+                "save_memory",
+                json!({"operation_id":"forbidden","content":"redirect","source":"other"}),
+            ),
+            ("recall_memory", json!({"source_key":"other"})),
+            (
+                "save_memory",
+                json!({"operation_id":"bad","content":"x".repeat(32769)}),
+            ),
+        ] {
+            let invalid = post_json(&mut client, &token.token, memory_call(tool, args)).await;
+            assert_eq!(invalid["error"]["code"], -32602);
+        }
+        let activity = crate::activity::read_activity(
+            server.journal.path(),
+            &crate::activity::ActivityQuery {
+                tool: Some(solstone_core_mcp_audit::ToolName::RecallMemory),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(activity.entries.len(), 13);
+        assert!(
+            activity.entries.iter().all(|entry| entry
+                .request
+                .as_ref()
+                .unwrap()
+                .permission
+                .is_none())
+        );
+        let audit_text = serde_json::to_string(
+            &activity
+                .entries
+                .iter()
+                .map(|entry| &entry.request)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        assert!(
+            !audit_text.contains("posture original exact") && !audit_text.contains(&token.token)
+        );
+        token_store
+            .revoke_by_id(verified.id.strip_prefix("bearer:").unwrap())
+            .unwrap();
+        let (status, _, _) = post_json_response_with_headers(
+            &mut client,
+            &token.token,
+            memory_call(
+                "save_memory",
+                json!({"operation_id":"revoked","content":"blocked"}),
+            ),
+            &[],
+        )
+        .await;
+        assert_eq!(status, 401);
+        drop(client);
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn memory_wire_exact_escaped_limits_both_framings_and_whole_page() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let token = server.create_unpermissioned_token("bounded note");
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let text = "\0".repeat(32768);
+        let unit = "🪨\0\r\n\"\\# note\n";
+        let mut mixed = unit.repeat(32768 / unit.len());
+        mixed.push_str(&"x".repeat(32768 - mixed.len()));
+        assert_eq!(mixed.len(), 32768);
+        for (operation, content, chunked) in [
+            ("escaped-length", &text, false),
+            ("escaped-chunked", &text, true),
+            ("mixed", &mixed, true),
+        ] {
+            let request = memory_call(
+                "save_memory",
+                json!({"operation_id":operation,"content":content}),
+            );
+            let (status, bytes, _) = if chunked {
+                let body = serde_json::to_string(&request).unwrap();
+                let request = format!(
+                    "POST /mcp HTTP/1.1\r\nHost: {HOSTNAME}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+                    token.token,
+                    body.len(),
+                    body
+                );
+                exchange_http(&mut client, &request).await
+            } else {
+                post_json_response_with_headers(&mut client, &token.token, request, &[]).await
+            };
+            assert_eq!(status, 200);
+            assert_eq!(
+                memory_result(&serde_json::from_slice::<Value>(&bytes).unwrap())["byte_count"],
+                32768
+            );
+        }
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+        let (status, bytes, _) = post_json_response_with_headers(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({"limit":20})),
+            &[],
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(bytes.len() <= 1024 * 1024);
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        let result = memory_result(&value);
+        let notes = result["notes"].as_array().unwrap();
+        assert_eq!(notes.len(), 2);
+        assert_eq!(
+            notes
+                .iter()
+                .map(|note| note["content"].as_str().unwrap().len())
+                .sum::<usize>(),
+            65536
+        );
+        assert!(notes.iter().all(|note| {
+            [text.as_str(), mixed.as_str()].contains(&note["content"].as_str().unwrap())
+        }));
+        assert!(result["continuation"].is_string());
+        let next = post_json(
+            &mut client,
+            &token.token,
+            memory_call(
+                "recall_memory",
+                json!({"continuation":result["continuation"]}),
+            ),
+        )
+        .await;
+        assert_eq!(memory_result(&next)["notes"].as_array().unwrap().len(), 1);
+        let mut request = memory_call("recall_memory", json!({}));
+        request["id"] = json!("x".repeat(1025));
+        let invalid = post_json(&mut client, &token.token, request).await;
+        assert!(invalid.get("error").is_some());
+        drop(client);
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn memory_wire_final_receipt_faults_retry_deletion_and_missing_terminal() {
+        use crate::memory_tools::faults::{self, Fault};
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let token = server.create_token("fault original");
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        faults::set(server.journal.path(), Fault::Preparation);
+        let call = memory_call(
+            "save_memory",
+            json!({"operation_id":"prepare","content":"committed secret original"}),
+        );
+        let failed = post_json(&mut client, &token.token, call.clone()).await;
+        assert_eq!(memory_result(&failed)["status"], "uncertain_retry");
+        let page = crate::activity::read_activity(
+            server.journal.path(),
+            &crate::activity::ActivityQuery {
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(
+            page.entries[0].outcome,
+            crate::activity::RecordedOutcome::Error
+        );
+        let retry = post_json(&mut client, &token.token, call.clone()).await;
+        assert_eq!(memory_result(&retry)["status"], "replayed");
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+        faults::set(server.journal.path(), Fault::RevokeRead);
+        let changed_grant = post_json(&mut client, &token.token, call.clone()).await;
+        assert_eq!(memory_result(&changed_grant)["status"], "uncertain_retry");
+        let retry = post_json(&mut client, &token.token, call.clone()).await;
+        assert_eq!(memory_result(&retry)["ordinary_readable"], false);
+        faults::set(server.journal.path(), Fault::Delete);
+        let deleted_mid_receipt = post_json(&mut client, &token.token, call.clone()).await;
+        assert_eq!(
+            memory_result(&deleted_mid_receipt)["status"],
+            "uncertain_retry"
+        );
+        let deleted = post_json(&mut client, &token.token, call).await;
+        assert_eq!(memory_result(&deleted)["status"], "deleted");
+        faults::set(server.journal.path(), Fault::Terminal);
+        let call = memory_call(
+            "save_memory",
+            json!({"operation_id":"terminal","content":"second secret original"}),
+        );
+        let failed = post_json(&mut client, &token.token, call.clone()).await;
+        assert_eq!(memory_result(&failed)["status"], "uncertain_retry");
+        let page = crate::activity::read_activity(
+            server.journal.path(),
+            &crate::activity::ActivityQuery {
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(page.entries.len(), 7);
+        assert_eq!(
+            page.entries[0].outcome,
+            crate::activity::RecordedOutcome::Uncertain
+        );
+        let retry = post_json(&mut client, &token.token, call).await;
+        assert_eq!(memory_result(&retry)["status"], "replayed");
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+        faults::set(server.journal.path(), Fault::Terminal);
+        let recall = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({})),
+        )
+        .await;
+        assert_eq!(
+            recall["error"]["data"]["reason"],
+            "memory_audit_unavailable"
+        );
+        assert!(recall["result"]["structuredContent"].is_null());
+        let page = crate::activity::read_activity(
+            server.journal.path(),
+            &crate::activity::ActivityQuery {
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(page.entries.len(), 9);
+        assert_eq!(
+            page.entries[0].outcome,
+            crate::activity::RecordedOutcome::Uncertain
+        );
+        for entry in &page.entries {
+            let text =
+                serde_json::to_string(&json!({"request":entry.request,"result":entry.result}))
+                    .unwrap();
+            assert!(!text.contains("secret original") && !text.contains(&token.token));
+        }
+        drop(client);
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn memory_wire_owner_day_restart_and_immutable_notifications() {
+        use chrono::{TimeZone, Utc};
+        use solstone_core_callosum::test_fixture::OneShotListener;
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(Arc::clone(&server_config)).await;
+        fs::create_dir_all(server.journal.path().join("config")).unwrap();
+        fs::write(
+            server.journal.path().join("config/journal.json"),
+            json!({"identity":{"timezone":"Pacific/Honolulu"},"think":{"enabled":false}})
+                .to_string(),
+        )
+        .unwrap();
+        crate::memory_tools::faults::set_now(
+            server.journal.path(),
+            Utc.with_ymd_and_hms(2026, 9, 1, 0, 30, 0).unwrap(),
+        );
+        let token = server.create_unpermissioned_token("immutable original");
+        let listener = OneShotListener::bind(server.journal.path().join("health/callosum.sock"));
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let call = memory_call(
+            "save_memory",
+            json!({"operation_id":"zone","content":"immutable day original"}),
+        );
+        let saved = post_json(&mut client, &token.token, call.clone()).await;
+        let coordinate = memory_result(&saved)["coordinate"].clone();
+        assert_eq!(coordinate["day"], "20260831");
+        let notifications = listener.finish(2);
+        assert_eq!(
+            notifications[0]["cmd"][3],
+            server
+                .journal
+                .path()
+                .join("chronicle")
+                .join(coordinate["day"].as_str().unwrap())
+                .join(coordinate["stream"].as_str().unwrap())
+                .join(coordinate["segment"].as_str().unwrap())
+                .join("note.txt")
+                .to_string_lossy()
+                .as_ref()
+        );
+        assert_eq!(notifications[1]["day"], coordinate["day"]);
+        let activity = crate::activity::read_activity(
+            server.journal.path(),
+            &crate::activity::ActivityQuery {
+                limit: 10,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(activity.entries[0].day, "20260831");
+        drop(client);
+        let journal = server.stop().await;
+        fs::write(
+            journal.path().join("config/journal.json"),
+            json!({"identity":{"timezone":"Asia/Tokyo"}}).to_string(),
+        )
+        .unwrap();
+        let server = ServerHarness::start_with_journal(server_config, journal).await;
+        let listener = OneShotListener::bind(server.journal.path().join("health/callosum.sock"));
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let replay = post_json(&mut client, &token.token, call).await;
+        assert_eq!(memory_result(&replay)["status"], "replayed");
+        assert_eq!(memory_result(&replay)["coordinate"], coordinate);
+        let notifications = listener.finish(2);
+        assert_eq!(notifications[1]["day"], coordinate["day"]);
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+        let recall = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({"day":"20260831"})),
+        )
+        .await;
+        assert_eq!(
+            memory_result(&recall)["notes"][0]["content"],
+            "immutable day original"
+        );
+        drop(client);
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn memory_wire_index_states_and_admission_before_original_mutation() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(Arc::clone(&server_config)).await;
+        let token = server.create_unpermissioned_token("index states");
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let empty = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({})),
+        )
+        .await;
+        assert_eq!(memory_result(&empty)["complete"], true);
+        assert_eq!(memory_result(&empty)["notes"], json!([]));
+        assert!(!server.journal.path().join("streams").exists());
+        let call = memory_call(
+            "save_memory",
+            json!({"operation_id":"original","content":"exact live original"}),
+        );
+        let saved = post_json(&mut client, &token.token, call.clone()).await;
+        let coordinate = memory_result(&saved)["coordinate"].clone();
+        let note_dir = server
+            .journal
+            .path()
+            .join("chronicle")
+            .join(coordinate["day"].as_str().unwrap())
+            .join(coordinate["stream"].as_str().unwrap())
+            .join(coordinate["segment"].as_str().unwrap());
+        let conflict = post_json(
+            &mut client,
+            &token.token,
+            memory_call(
+                "save_memory",
+                json!({"operation_id":"original","content":"changed bytes"}),
+            ),
+        )
+        .await;
+        assert_eq!(
+            conflict["error"]["data"]["reason"],
+            "memory_operation_conflict"
+        );
+        assert_eq!(
+            fs::read(note_dir.join("note.txt")).unwrap(),
+            b"exact live original"
+        );
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+        let ready = fs::read(note_dir.join("ready.json")).unwrap();
+        fs::remove_file(note_dir.join("ready.json")).unwrap();
+        let unready = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({})),
+        )
+        .await;
+        assert_eq!(memory_result(&unready)["complete"], false);
+        assert_eq!(memory_result(&unready)["notes"], json!([]));
+        fs::write(note_dir.join("ready.json"), ready).unwrap();
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), false).unwrap();
+        let live = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({})),
+        )
+        .await;
+        assert_eq!(
+            memory_result(&live)["notes"][0]["content"],
+            "exact live original"
+        );
+        let database = solstone_core_indexer_store::db::db_path(server.journal.path());
+        let backup = database.with_extension("test-backup");
+        fs::rename(&database, &backup).unwrap();
+        fs::write(&database, b"corrupt sqlite file").unwrap();
+        let corrupt = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({})),
+        )
+        .await;
+        assert_eq!(memory_result(&corrupt)["complete"], false);
+        assert_eq!(
+            memory_result(&corrupt)["reason"],
+            "memory_index_unavailable"
+        );
+        let replay = post_json(&mut client, &token.token, call).await;
+        assert_eq!(memory_result(&replay)["status"], "replayed");
+        assert_eq!(memory_result(&replay)["own_recall"], "unavailable");
+        fs::remove_file(&database).unwrap();
+        fs::rename(backup, database).unwrap();
+        let target = solstone_core_retention::receipt::Target {
+            day: coordinate["day"].as_str().unwrap().into(),
+            stream: coordinate["stream"].as_str().unwrap().into(),
+            dir: coordinate["segment"].as_str().unwrap().into(),
+        };
+        let removed = solstone_core_retention::door::remove_segments(
+            server.journal.path(),
+            &[target],
+            &chrono::Utc::now().to_rfc3339(),
+            solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
+            "journal-owner",
+        );
+        assert!(removed.removed_paths().next().is_some());
+        let deleted = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({})),
+        )
+        .await;
+        assert_eq!(memory_result(&deleted)["notes"], json!([]));
+        drop(client);
+        server.stop().await;
+
+        let server = ServerHarness::start(server_config).await;
+        let token = server.create_unpermissioned_token("admission failure");
+        fs::write(
+            server.journal.path().join("chronicle"),
+            b"occupied admission namespace",
+        )
+        .unwrap();
+        let mut client = connect_tls(server.address, client_config).await;
+        let denied = post_json(
+            &mut client,
+            &token.token,
+            memory_call(
+                "save_memory",
+                json!({"operation_id":"blocked","content":"must not be written"}),
+            ),
+        )
+        .await;
+        assert_eq!(denied["error"]["data"]["reason"], "memory_save_unavailable");
+        assert!(!server.journal.path().join("config/agent-memory").exists());
+        assert!(
+            !fs::read_dir(server.journal.path().join("streams"))
+                .unwrap()
+                .any(|entry| {
+                    entry
+                        .unwrap()
+                        .path()
+                        .extension()
+                        .is_some_and(|extension| extension == "json")
+                })
+        );
+        assert_eq!(
+            fs::read(server.journal.path().join("chronicle")).unwrap(),
+            b"occupied admission namespace"
+        );
+        drop(client);
+        server.stop().await;
+    }
+
     #[tokio::test]
     async fn oauth_end_to_end_through_the_tls_listener() {
         let (server_config, client_config) = tls_configs();
@@ -2597,6 +3335,7 @@ mod tests {
             json!({"title": "Indexed journal entry — 20260831", "date": "20260831", "text": "MCP fixture search needle"})
         );
         assert_eq!(audit_record_count(server.journal.path()), 2);
+        exercise_memory_postures(&server, &mut client, &access, &verified_oauth.id).await;
 
         {
             let _guard = OauthNowGuard;
@@ -2627,6 +3366,21 @@ mod tests {
         let rotated = serde_json::from_slice::<Value>(&body).unwrap();
         let access2 = rotated["access_token"].as_str().unwrap().to_owned();
         let refresh2 = rotated["refresh_token"].as_str().unwrap().to_owned();
+        let replay = post_json(
+            &mut client,
+            &access2,
+            memory_call(
+                "save_memory",
+                json!({"operation_id":"posture-0","content":"posture original exact"}),
+            ),
+        )
+        .await;
+        assert_eq!(memory_result(&replay)["status"], "replayed");
+        assert_eq!(
+            memory_result(&replay)["origin"]["source_key"],
+            solstone_core_format::agent_memory::SourceKey::from_verified_id(&verified_oauth.id)
+                .as_str()
+        );
         drop(client);
         let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
         post_json_with_headers(
@@ -2952,7 +3706,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unpermissioned_token_receives_empty_tools_list_and_call_refusal() {
+    async fn unpermissioned_token_receives_memory_pair_and_ordinary_call_refusal() {
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(server_config).await;
         let token = server.create_unpermissioned_token("unpermissioned-agent");
@@ -2969,7 +3723,10 @@ mod tests {
             }),
         )
         .await;
-        assert_eq!(list_resp["result"]["tools"], json!([]));
+        let tools = list_resp["result"]["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[0]["name"], "save_memory");
+        assert_eq!(tools[1]["name"], "recall_memory");
 
         let call_resp = post_json(
             &mut client,

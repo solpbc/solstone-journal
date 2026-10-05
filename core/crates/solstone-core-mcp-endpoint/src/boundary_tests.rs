@@ -24,6 +24,101 @@ const STREAM: &str = "default";
 const SEGMENT: &str = "090000_300";
 const PATH: &str = "20260914/default/090000_300/talents/brief.md";
 
+#[test]
+fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() {
+    use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
+    use chrono::TimeZone;
+    let journal = tempfile::Builder::new()
+        .prefix("ordinary-memory-grant-")
+        .tempdir_in(crate::test_scratch())
+        .unwrap();
+    let AppendResult::Stored(receipt) = append_connection_memory(
+        journal.path(),
+        AuthenticatedMemorySource {
+            verified_id: "bearer:other-memory-writer",
+            creation_label: "other writer",
+        },
+        "crossmemoryneedle other agent original",
+        "ordinary-grant-operation",
+        chrono::Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap(),
+    )
+    .unwrap() else {
+        panic!("fixture writer must store");
+    };
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        probe(&journal, "search", json!({"query":"crossmemoryneedle"})),
+        Err(McpProbeError::PermissionDenied)
+    );
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    let result = probe(&journal, "search", json!({"query":"crossmemoryneedle"})).unwrap();
+    let results = result["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["origin"]["kind"], "agent_memory");
+    assert_eq!(results[0]["origin"]["creation_label"], "other writer");
+    assert!(results[0]["origin"].get("stream").is_none());
+    assert!(results[0]["origin"].get("segment").is_none());
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference":results[0]["reference"]}),
+    )
+    .unwrap();
+    assert_eq!(fetched["origin"], results[0]["origin"]);
+    assert!(
+        fetched["text"]
+            .as_str()
+            .unwrap()
+            .contains("crossmemoryneedle other agent original")
+    );
+    let codec = crate::references::ReferenceCodec::new().unwrap();
+    let own = crate::memory_recall::recall(
+        journal.path(),
+        &codec,
+        CONNECTION,
+        CONNECTION,
+        "reader-credential",
+        crate::memory_recall::RecallArgs::default(),
+        chrono::NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+    );
+    assert!(own.complete);
+    assert!(own.notes.is_empty());
+    fs::remove_file(
+        journal
+            .path()
+            .join("chronicle/20260102")
+            .join(receipt.origin.stream)
+            .join(receipt.origin.segment)
+            .join("ready.json"),
+    )
+    .unwrap();
+    assert!(
+        probe(&journal, "search", json!({"query":"crossmemoryneedle"})).unwrap()["results"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        probe(
+            &journal,
+            "fetch",
+            json!({"reference":results[0]["reference"]})
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+}
+
 fn fixture() -> tempfile::TempDir {
     let journal = tempfile::Builder::new()
         .prefix("solstone-mcp-boundary-")

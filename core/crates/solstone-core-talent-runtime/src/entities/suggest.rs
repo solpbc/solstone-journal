@@ -8,6 +8,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use solstone_core_format::content::ConsumedOriginal;
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
@@ -88,6 +89,17 @@ pub fn build(
     let assembly = assemble_suggest_context(&context.journal, facet, day).map_err(|e| {
         RuntimeOutcome::StageFailed(stage_error("build", "entities:entity_suggest", talent, e))
     })?;
+    let memory_sources = serde_json::to_value(&assembly.memory_sources).map_err(|error| {
+        RuntimeOutcome::StageFailed(stage_error(
+            "build",
+            "entities:entity_suggest",
+            talent,
+            error.to_string(),
+        ))
+    })?;
+    talent
+        .config
+        .insert("_memory_sources".to_owned(), memory_sources);
 
     Ok(PrePostState::EntitySuggest(SuggestState {
         context: Some(assembly.context),
@@ -234,6 +246,7 @@ pub fn commit(
 struct SuggestContextAssembly {
     context: String,
     served_ids: BTreeSet<String>,
+    memory_sources: Vec<ConsumedOriginal>,
 }
 
 fn assemble_suggest_context(
@@ -294,6 +307,7 @@ fn assemble_suggest_context(
         return Ok(SuggestContextAssembly {
             context: "No active entities found in today's content.".to_owned(),
             served_ids: BTreeSet::new(),
+            memory_sources: Vec::new(),
         });
     }
 
@@ -304,9 +318,16 @@ fn assemble_suggest_context(
 
     let mut sections = Vec::with_capacity(selected.len());
     let mut served_ids = BTreeSet::new();
+    let mut memory_sources = Vec::new();
 
     for (entity, rows) in &selected {
-        let packet = render_suggest_entity_packet(journal, facet, day, entity, rows)?;
+        let (packet, packet_sources) =
+            render_suggest_entity_packet(journal, facet, day, entity, rows)?;
+        for source in packet_sources {
+            if !memory_sources.contains(&source) {
+                memory_sources.push(source);
+            }
+        }
         served_ids.insert(entity.entity_id.clone());
         sections.push(packet);
     }
@@ -334,6 +355,7 @@ fn assemble_suggest_context(
     Ok(SuggestContextAssembly {
         context,
         served_ids,
+        memory_sources,
     })
 }
 
@@ -343,7 +365,7 @@ fn render_suggest_entity_packet(
     day: &str,
     entity: &solstone_core_facets::ScopedFacetEntity,
     detected_rows: &[Value],
-) -> Result<String, String> {
+) -> Result<(String, Vec<ConsumedOriginal>), String> {
     let name = entity
         .identity
         .get("name")
@@ -433,23 +455,33 @@ fn render_suggest_entity_packet(
     parts.push(String::new());
     parts.push("Source evidence:".to_owned());
 
-    let mut segment_labels = BTreeSet::new();
+    let mut segment_labels = Vec::new();
+    let mut seen_labels = BTreeSet::new();
     for row in detected_rows {
         if let Some(Value::Array(segments)) = row.get("segments") {
             for seg in segments {
                 if let Some(label) = seg.as_str().filter(|l| !l.trim().is_empty()) {
-                    segment_labels.insert(label.to_owned());
+                    let label = label.to_owned();
+                    if seen_labels.insert(label.clone()) {
+                        segment_labels.push(label);
+                    }
                 }
             }
         }
     }
 
     let mut source_excerpts = Vec::new();
+    let mut memory_sources = Vec::new();
     for label in segment_labels {
         if source_excerpts.len() >= MAX_SOURCE_SEGMENTS {
             break;
         }
-        if let Some(text) = load_segment_text(journal, day, &label) {
+        if let Some((text, sources)) = load_segment_text(journal, day, &label)? {
+            for source in sources {
+                if !memory_sources.contains(&source) {
+                    memory_sources.push(source);
+                }
+            }
             source_excerpts.push((label, text));
         }
     }
@@ -496,39 +528,46 @@ fn render_suggest_entity_packet(
         ));
     }
 
-    Ok(rendered)
+    Ok((rendered, memory_sources))
 }
 
 fn joined_chars(parts: &[String]) -> usize {
     parts.iter().map(|part| part.chars().count()).sum::<usize>() + parts.len().saturating_sub(1)
 }
 
-fn load_segment_text(journal: &Path, day: &str, label: &str) -> Option<String> {
+fn load_segment_text(
+    journal: &Path,
+    day: &str,
+    label: &str,
+) -> Result<Option<(String, Vec<ConsumedOriginal>)>, String> {
     let parts = label.split('/').collect::<Vec<_>>();
     let (seg_day, stream, seg_key) = match parts.as_slice() {
         [seg_day, seg] => (*seg_day, solstone_core_journal_io::DEFAULT_STREAM, *seg),
         [seg_day, stream, seg] if !stream.is_empty() => (*seg_day, *stream, *seg),
-        _ => return None,
+        _ => return Ok(None),
     };
     if seg_day != day {
-        return None;
+        return Ok(None);
     }
     let source_config = Map::from_iter([
         ("transcripts".to_owned(), Value::Bool(true)),
         ("percepts".to_owned(), Value::Bool(true)),
         ("talents".to_owned(), Value::Bool(false)),
     ]);
-    let (source, counts) = crate::transcript::load_segment_transcript(
+    let (source, counts, memory) = crate::transcript::load_segment_transcript(
         journal,
         day,
         seg_key,
         Some(stream),
         &source_config,
     );
+    if memory.incomplete {
+        return Err("private memory context is incomplete".to_owned());
+    }
     if counts.total() == 0 {
-        None
+        Ok(None)
     } else {
-        Some(source)
+        Ok(Some((source, memory.sources)))
     }
 }
 
@@ -695,8 +734,9 @@ mod tests {
             serde_json::json!({"description": "t".repeat(600)}),
         ];
 
-        let packet = render_suggest_entity_packet(temp.path(), "work", day, &entity, &detected)
-            .expect("full evidence is trimmed to the packet budget");
+        let (packet, _) =
+            render_suggest_entity_packet(temp.path(), "work", day, &entity, &detected)
+                .expect("full evidence is trimmed to the packet budget");
 
         assert!(packet.chars().count() <= MAX_ENTITY_CONTEXT_CHARS);
         for label in labels {
