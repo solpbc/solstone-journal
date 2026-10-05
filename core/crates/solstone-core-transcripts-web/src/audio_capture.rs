@@ -37,6 +37,10 @@ struct Source {
     dropped_frames: u64,
     writer_status: String,
     failures: Vec<Failure>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    statistics_available: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    statistics_complete: Option<bool>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -66,6 +70,8 @@ struct Capture {
     remix: Vec<Remix>,
     app_version: Option<String>,
     app_build: Option<String>,
+    #[serde(default)]
+    failures: Option<Vec<Failure>>,
 }
 
 pub(crate) fn read_audio_capture(dir: &Path) -> Option<Value> {
@@ -133,23 +139,74 @@ fn capture_valid(capture: &Capture) -> bool {
             .as_ref()
             .is_none_or(|s| text_valid(s, 64))
         && capture.app_build.as_ref().is_none_or(|s| text_valid(s, 64))
+        && capture
+            .failures
+            .as_ref()
+            .is_none_or(|rows| failures_valid(rows))
         && capture.sources.iter().all(|source| {
             text_valid(&source.source_id, 512)
                 && matches!(source.kind.as_str(), "system" | "microphone")
                 && state_rank(&source.state).is_some()
                 && matches!(
                     source.writer_status.as_str(),
-                    "recording" | "completed" | "failed" | "no_audio"
+                    "recording" | "completed" | "failed" | "no_audio" | "unknown"
                 )
+                && (source.statistics_complete != Some(true)
+                    || source.statistics_available == Some(true))
                 && source.accepted_frames <= source.received_frames
                 && source.dropped_frames <= source.received_frames
-                && source.failures.len() <= FAILURE_LIMIT
-                && source
-                    .failures
-                    .iter()
-                    .all(|f| text_valid(&f.stage, 64) && text_valid(&f.domain, 128) && f.count > 0)
+                && failures_valid(&source.failures)
         })
         && capture.remix.iter().all(|row| remix_valid(row, true))
+}
+
+fn failures_valid(rows: &[Failure]) -> bool {
+    rows.len() <= FAILURE_LIMIT
+        && rows
+            .iter()
+            .all(|f| text_valid(&f.stage, 64) && text_valid(&f.domain, 128) && f.count > 0)
+}
+
+fn merge_failures(current: &mut Vec<Failure>, incoming: Vec<Failure>) -> bool {
+    let mut bounded = true;
+    for failure in incoming {
+        if let Some(old) = current.iter_mut().find(|f| {
+            f.stage == failure.stage && f.domain == failure.domain && f.code == failure.code
+        }) {
+            old.count = old.count.max(failure.count);
+        } else if current.len() < FAILURE_LIMIT {
+            current.push(failure);
+        } else {
+            bounded = false;
+        }
+    }
+    bounded
+}
+
+fn merge_statistics_flags(source: &mut Source, previous: &Source) {
+    if source.statistics_available.is_none()
+        && previous.statistics_available.is_none()
+        && source.statistics_complete.is_none()
+        && previous.statistics_complete.is_none()
+    {
+        return;
+    }
+    let complete = |candidate: &Source, other: &Source| {
+        candidate.statistics_available == Some(true)
+            && candidate.statistics_complete == Some(true)
+            && candidate.received_frames >= other.received_frames
+            && candidate.accepted_frames >= other.accepted_frames
+            && candidate.dropped_frames >= other.dropped_frames
+    };
+    let old_covers = complete(previous, source);
+    let new_covers = complete(source, previous);
+    if old_covers && !new_covers {
+        source.writer_status = previous.writer_status.clone();
+    }
+    source.statistics_available = Some(
+        source.statistics_available == Some(true) || previous.statistics_available == Some(true),
+    );
+    source.statistics_complete = Some(old_covers || new_covers);
 }
 
 fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
@@ -160,6 +217,7 @@ fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
     let mut remix = BTreeMap::<String, Remix>::new();
     let mut app_version = None;
     let mut app_build = None;
+    let mut failures: Option<Vec<Failure>> = None;
     for value in values {
         seen = true;
         if value.to_string().len() > CAPTURE_BYTES_LIMIT {
@@ -179,14 +237,22 @@ fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
         }
         app_version = capture.app_version.or(app_version);
         app_build = capture.app_build.or(app_build);
+        if let Some(incoming) = capture.failures {
+            if !incoming.is_empty() && state_rank(&state) < state_rank("partial") {
+                state = "partial".to_owned();
+            }
+            unavailable |= !merge_failures(failures.get_or_insert_with(Vec::new), incoming);
+        }
         for mut source in capture.sources {
-            if !source.failures.is_empty()
-                || source.dropped_frames > 0
-                || source.writer_status == "failed"
+            if source.state != "failed"
+                && (!source.failures.is_empty()
+                    || source.dropped_frames > 0
+                    || source.writer_status == "failed")
             {
                 source.state = "partial".to_owned();
             }
             if let Some(previous) = sources.get(&source.source_id) {
+                merge_statistics_flags(&mut source, previous);
                 source.expected |= previous.expected;
                 source.started |= previous.started;
                 source.received_frames = source.received_frames.max(previous.received_frames);
@@ -196,19 +262,7 @@ fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
                     source.state = previous.state.clone();
                 }
                 let incoming = std::mem::replace(&mut source.failures, previous.failures.clone());
-                for failure in incoming {
-                    if let Some(current) = source.failures.iter_mut().find(|f| {
-                        f.stage == failure.stage
-                            && f.domain == failure.domain
-                            && f.code == failure.code
-                    }) {
-                        current.count = current.count.max(failure.count);
-                    } else if source.failures.len() < FAILURE_LIMIT {
-                        source.failures.push(failure);
-                    } else {
-                        unavailable = true;
-                    }
-                }
+                unavailable |= !merge_failures(&mut source.failures, incoming);
             }
             if state_rank(&source.state) > state_rank(&state) {
                 state = source.state.clone();
@@ -242,11 +296,13 @@ fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
     if state == "recording" {
         state = "interrupted".to_owned();
     }
-    Some(
-        json!({"version": 1, "state": state, "evidence_unavailable": unavailable,
+    let mut result = json!({"version": 1, "state": state, "evidence_unavailable": unavailable,
         "app_version": app_version, "app_build": app_build,
-        "sources": sources.into_values().collect::<Vec<_>>(), "remix": remix.into_values().collect::<Vec<_>>() }),
-    )
+        "sources": sources.into_values().collect::<Vec<_>>(), "remix": remix.into_values().collect::<Vec<_>>() });
+    if let Some(failures) = failures {
+        result["failures"] = json!(failures);
+    }
+    Some(result)
 }
 
 pub(crate) fn warnings(capture: &Value, now: DateTime<Utc>) -> Vec<WarningDetail> {
@@ -349,6 +405,75 @@ mod tests {
         assert_eq!(detail.len(), 1);
         assert_eq!(detail[0].kind, "audio_capture_history");
         assert!(detail[0].message.contains("latest copy completed"));
+    }
+    #[test]
+    fn optional_statistics_survive_projection_without_blessing_lower_bounds() {
+        let source = json!({"source_id": "system", "kind": "system", "expected": true,
+            "started": true, "state": "finished", "received_frames": 0, "accepted_frames": 0,
+            "dropped_frames": 0, "writer_status": "no_audio", "failures": []});
+        let legacy = json!({"version": 1, "state": "finished", "sources": [source]});
+        let legacy_result = project([&legacy].into_iter()).unwrap();
+        assert!(
+            legacy_result["sources"][0]
+                .get("statistics_available")
+                .is_none()
+        );
+        assert!(legacy_result.get("failures").is_none());
+        let mut zero = legacy.clone();
+        zero["sources"][0]["statistics_available"] = json!(true);
+        zero["sources"][0]["statistics_complete"] = json!(true);
+        let zero_result = project([&zero].into_iter()).unwrap();
+        assert_eq!(zero_result["sources"][0]["statistics_complete"], true);
+        assert_eq!(zero_result["sources"][0]["accepted_frames"], 0);
+        let mut lower = zero.clone();
+        lower["state"] = json!("partial");
+        lower["sources"][0]["state"] = json!("partial");
+        lower["sources"][0]["received_frames"] = json!(960);
+        lower["sources"][0]["accepted_frames"] = json!(480);
+        lower["sources"][0]["statistics_complete"] = json!(false);
+        lower["sources"][0]["writer_status"] = json!("unknown");
+        lower["sources"][0]["failures"] =
+            json!([{"stage": "finish", "domain": "timeout", "code": 1, "count": 1}]);
+        for values in [[&zero, &lower], [&lower, &zero]] {
+            let result = project(values.into_iter()).unwrap();
+            assert_eq!(result["sources"][0]["statistics_available"], true);
+            assert_eq!(result["sources"][0]["statistics_complete"], false);
+            assert_eq!(result["sources"][0]["received_frames"], 960);
+            assert_eq!(result["state"], "partial");
+        }
+        let mut late = lower.clone();
+        late["state"] = json!("finished");
+        late["sources"][0]["state"] = json!("finished");
+        late["sources"][0]["statistics_complete"] = json!(true);
+        late["sources"][0]["writer_status"] = json!("completed");
+        late["sources"][0]["accepted_frames"] = json!(960);
+        late["sources"][0]["failures"] = json!([]);
+        let result = project([&lower, &late, &lower].into_iter()).unwrap();
+        assert_eq!(result["sources"][0]["statistics_complete"], true);
+        assert_eq!(result["sources"][0]["writer_status"], "completed");
+        assert_eq!(result["sources"][0]["accepted_frames"], 960);
+        assert_eq!(
+            result["sources"][0]["failures"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(result["state"], "partial");
+        lower["sources"][0]["state"] = json!("failed");
+        let result = project([&lower, &late].into_iter()).unwrap();
+        assert_eq!(result["sources"][0]["state"], "failed");
+        assert_eq!(result["state"], "failed");
+    }
+
+    #[test]
+    fn capture_level_failure_survives_duplicates_without_invented_sources() {
+        let capture = json!({"version": 1, "state": "failed", "sources": [],
+            "failures": [{"stage": "listing", "domain": "Cocoa", "code": 1, "count": 1}]});
+        let later = json!({"version": 1, "state": "finished", "sources": [], "failures": []});
+        let result = project([&capture, &capture, &later].into_iter()).unwrap();
+        assert_eq!(result["state"], "failed");
+        assert_eq!(result["sources"], json!([]));
+        assert_eq!(result["failures"].as_array().unwrap().len(), 1);
+        assert_eq!(result["failures"][0]["count"], 1);
+        assert_eq!(warnings(&result, Utc::now()).len(), 1);
     }
     #[test]
     fn swift_emitted_capture_survives_duplicate_receipts_without_audio() {

@@ -26,6 +26,8 @@
         "source_id" : "system",
         "started" : true,
         "state" : "partial",
+        "statistics_available" : true,
+        "statistics_complete" : true,
         "writer_status" : "completed"
       },
       {
@@ -45,7 +47,9 @@
         "source_id" : "mic",
         "started" : false,
         "state" : "partial",
-        "writer_status" : "recording"
+        "statistics_available" : false,
+        "statistics_complete" : false,
+        "writer_status" : "unknown"
       }
     ],
     "state" : "partial",

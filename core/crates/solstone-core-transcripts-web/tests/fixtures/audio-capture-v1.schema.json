@@ -7,6 +7,33 @@
     "app_version" : {
       "type" : "string"
     },
+    "failures" : {
+      "items" : {
+        "properties" : {
+          "code" : {
+            "type" : "integer"
+          },
+          "count" : {
+            "type" : "integer"
+          },
+          "domain" : {
+            "type" : "string"
+          },
+          "stage" : {
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "code",
+          "count",
+          "domain",
+          "stage"
+        ],
+        "type" : "object"
+      },
+      "maxItems" : 16,
+      "type" : "array"
+    },
     "remix" : {
       "items" : {
         "properties" : {
@@ -147,12 +174,19 @@
               "unknown"
             ]
           },
+          "statistics_available" : {
+            "type" : "boolean"
+          },
+          "statistics_complete" : {
+            "type" : "boolean"
+          },
           "writer_status" : {
             "enum" : [
               "recording",
               "completed",
               "failed",
-              "no_audio"
+              "no_audio",
+              "unknown"
             ]
           }
         },

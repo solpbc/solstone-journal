@@ -1120,6 +1120,21 @@ mod tests {
                 super::prepare_segment(root, "20260929", "phone", "211400_300", chrono::Utc::now())
                     .unwrap();
             assert_eq!(value["audio_capture"]["state"], "partial");
+            let sources = value["audio_capture"]["sources"].as_array().unwrap();
+            let system = sources
+                .iter()
+                .find(|row| row["source_id"] == "system")
+                .unwrap();
+            let mic = sources
+                .iter()
+                .find(|row| row["source_id"] == "mic")
+                .unwrap();
+            assert_eq!(system["statistics_available"], true);
+            assert_eq!(system["statistics_complete"], true);
+            assert_eq!(system["accepted_frames"], 960);
+            assert_eq!(mic["statistics_available"], false);
+            assert_eq!(mic["statistics_complete"], false);
+            assert_eq!(mic["writer_status"], "unknown");
             assert_eq!(value["warnings"], 2);
             assert_eq!(value["warning_details"][0]["type"], "audio_capture");
             assert!(value["audio_file"].is_null());
