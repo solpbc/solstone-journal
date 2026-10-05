@@ -11,12 +11,17 @@ use std::sync::OnceLock;
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_format::agent_memory::{
+    ChainPredecessor, Coordinate, Origin, ReadyDocument, SourceKey,
+};
 use solstone_core_indexer_query::{
     AdmittedCategory, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest,
-    ConnectionStartAfter, IndexedEntry, QueryBoundary, read_indexed_entry, search_connection,
+    ConnectionStartAfter, IndexedEntry, MemoryOriginalRow, OwnMemoryOpenError, QueryBoundary,
+    open_own_memory_index, read_indexed_entry, read_own_memory_row, search_connection,
 };
 use solstone_core_indexer_store::classification::{FacetDeclarationSet, classify_source};
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
+use solstone_core_memory_original::{OriginalRead, read_original};
 
 use solstone_core_mcp_audit::{Admission, AuditCoordinates, Outcome, result_shape};
 
@@ -709,6 +714,17 @@ fn search(
                 live_dropped = true;
                 continue;
             }
+            if hit.metadata.stream.starts_with("agent-memory-")
+                && !memory_hit_matches_caller(
+                    journal_root,
+                    principal,
+                    &hit.metadata.path,
+                    &hit.metadata.stream,
+                )
+            {
+                live_dropped = true;
+                continue;
+            }
             targets.push(format!("{}#{}", hit.metadata.path, hit.metadata.idx));
             let reference = codec()
                 .mint(
@@ -878,12 +894,100 @@ fn fetch(
     else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
+    if entry.stream.starts_with("agent-memory-")
+        && !memory_hit_matches_caller(journal_root, principal, &entry.path, &entry.stream)
+    {
+        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    }
     let target = format!("{}#{}", entry.path, entry.idx);
     Ok(Prepared::new(
         json!({"title": format!("Indexed journal entry — {}", entry.day), "date": entry.day, "text": text}),
         1,
         vec![target],
     ))
+}
+
+fn memory_hit_matches_caller(
+    journal_root: &Path,
+    principal: DispatchPrincipal<'_>,
+    path: &str,
+    stream: &str,
+) -> bool {
+    let source_key = SourceKey::from_verified_id(principal.agent_identity);
+    if stream != format!("agent-memory-{}", source_key.component()) {
+        return false;
+    }
+    let parts = path
+        .strip_prefix("chronicle/")
+        .unwrap_or(path)
+        .split('/')
+        .collect::<Vec<_>>();
+    let [day, path_stream, segment, note] = parts.as_slice() else {
+        return false;
+    };
+    if *note != "note.txt" || *path_stream != stream {
+        return false;
+    }
+    let coordinate = Coordinate {
+        day: (*day).to_owned(),
+        stream: stream.to_owned(),
+        segment: (*segment).to_owned(),
+    };
+    let live = match read_original(journal_root, &source_key, &coordinate) {
+        OriginalRead::Ready {
+            bytes,
+            origin,
+            ready,
+        } => (bytes, origin, ready),
+        _ => return false,
+    };
+    let connection = match open_own_memory_index(journal_root, std::time::Duration::from_secs(5)) {
+        Ok(connection) => connection,
+        Err(OwnMemoryOpenError::Pending | OwnMemoryOpenError::Unavailable) => return false,
+    };
+    let Some(row) = read_own_memory_row(&connection, source_key.as_str(), path)
+        .ok()
+        .flatten()
+    else {
+        return false;
+    };
+    memory_row_matches_live(&row, &source_key, &coordinate, &live.0, &live.1, &live.2)
+}
+
+fn memory_row_matches_live(
+    row: &MemoryOriginalRow,
+    source_key: &SourceKey,
+    coordinate: &Coordinate,
+    bytes: &[u8],
+    origin: &Origin,
+    ready: &ReadyDocument,
+) -> bool {
+    let Ok(cached_origin) = serde_json::from_str::<Origin>(&row.origin_json) else {
+        return false;
+    };
+    let Ok(cached_chain) = serde_json::from_str::<ChainPredecessor>(&row.chain_json) else {
+        return false;
+    };
+    let Ok(cached_created_at) = chrono::DateTime::parse_from_rfc3339(&row.created_at) else {
+        return false;
+    };
+    row.path
+        == format!(
+            "{}/{}/{}/note.txt",
+            coordinate.day, coordinate.stream, coordinate.segment
+        )
+        && row.day == coordinate.day
+        && row.stream == coordinate.stream
+        && row.segment == coordinate.segment
+        && row.source_key == source_key.as_str()
+        && row.bytes == bytes
+        && cached_origin == *origin
+        && row.digest == ready.digest
+        && row.byte_count == bytes.len()
+        && row.byte_count == ready.byte_count
+        && row.creation_label == origin.creation_label
+        && cached_created_at.with_timezone(&Utc) == ready.created_at
+        && cached_chain == ready.chain
 }
 
 fn list_facets(

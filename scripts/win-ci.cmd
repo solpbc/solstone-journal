@@ -200,6 +200,7 @@ echo === cargo test --locked (agent connector boundary suite) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-mcp-endpoint --lib --features full-tests,test-hooks -- --test-threads=1 || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-segment --lib --features full-tests agent_memory_ -- --test-threads=1 || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib --features full-tests relative_tests -- --test-threads=1 || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-memory-original --lib --features full-tests windows_path_proof -- --test-threads=1 || exit /b 1
 echo JOURNAL_WIN_CI_MCP_ENDPOINT=executed/pass
 echo === cargo test --locked (journal doctor library, platform checks included) ===
 :: Every other leg compiles the doctor only as a dependency.

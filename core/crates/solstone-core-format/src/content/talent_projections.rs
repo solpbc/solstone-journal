@@ -6,6 +6,9 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path};
 
+use crate::agent_memory::{Coordinate, Origin, SourceKey, validate_coordinate, validate_origin};
+use serde::{Deserialize, Serialize};
+
 use super::{
     ContentResolution, parse_records_for_family, produce_chunks_by_shape, resolve_content_shape,
 };
@@ -17,6 +20,14 @@ pub struct TalentTextProjection {
     pub relative_path: String,
     pub source_suffix: String,
     pub text: String,
+    pub sources: Vec<ConsumedOriginal>,
+}
+
+/// One trusted original consumed by a talent derivative.
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ConsumedOriginal {
+    pub coordinate: Coordinate,
+    pub origin: Origin,
 }
 
 /// Return one rendered text projection per talent-output key.
@@ -72,6 +83,7 @@ pub fn iter_talent_text_projections(
                     relative_path: format!("{key}.json"),
                     source_suffix: ".json".to_string(),
                     text,
+                    sources: read_sources(&json_path)?,
                 });
             }
             continue;
@@ -79,7 +91,7 @@ pub fn iter_talent_text_projections(
 
         let md_path = talents_dir.join(format!("{key}.md"));
         if md_path.is_file() {
-            let text = fs::read_to_string(md_path)?.trim().to_string();
+            let text = fs::read_to_string(&md_path)?.trim().to_string();
             if !text.is_empty() {
                 projections.push(TalentTextProjection {
                     key: key.clone(),
@@ -87,11 +99,48 @@ pub fn iter_talent_text_projections(
                     relative_path: format!("{key}.md"),
                     source_suffix: ".md".to_string(),
                     text,
+                    sources: read_sources(&md_path)?,
                 });
             }
         }
     }
     Ok(projections)
+}
+
+fn read_sources(output_path: &Path) -> io::Result<Vec<ConsumedOriginal>> {
+    let mut sidecar_name = output_path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing output filename"))?
+        .to_os_string();
+    sidecar_name.push(".sources.json");
+    let sidecar = output_path.with_file_name(sidecar_name);
+    let metadata = match fs::symlink_metadata(&sidecar) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    if !metadata.file_type().is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "talent source sidecar is not a regular file",
+        ));
+    }
+    let sources: Vec<ConsumedOriginal> = serde_json::from_slice(&fs::read(sidecar)?)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    for source in &sources {
+        let source_key = SourceKey::parse(source.origin.source_key.as_str().to_owned())
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        validate_coordinate(&source.coordinate, &source_key)
+            .and_then(|()| validate_origin(&source.origin, &source_key))
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        if source.origin.coordinate(source.coordinate.day.clone()) != source.coordinate {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "talent source sidecar origin does not match coordinate",
+            ));
+        }
+    }
+    Ok(sources)
 }
 
 /// Return talent-output projections keyed by their relative stem path.
@@ -121,6 +170,10 @@ fn collect_keys(root: &Path, directory: &Path, keys: &mut BTreeSet<String>) -> i
                 path.extension().and_then(|suffix| suffix.to_str()),
                 Some("json" | "md")
             )
+            || path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".sources.json"))
         {
             continue;
         }

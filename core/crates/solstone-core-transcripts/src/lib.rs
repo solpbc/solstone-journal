@@ -8,12 +8,14 @@ use std::path::{Path, PathBuf};
 
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use serde_json::{Map, Value};
+use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
 use solstone_core_format::content::{
     Family, RawPerceptFamily, iter_talent_text_projections, produce_chunks,
     produce_raw_percept_chunks, produce_screen_talent_raw_screen_chunks,
 };
 use solstone_core_format::segment::segment_parse;
 use solstone_core_journal_io::paths::{PathOrDay, StreamLocation, iter_segments};
+use solstone_core_memory_original::{OriginalRead, read_original};
 
 mod segment_page;
 
@@ -88,6 +90,13 @@ pub struct SourceCounts {
     pub talents: usize,
 }
 
+/// Trusted source metadata consumed while building one cluster.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MemoryContext {
+    pub sources: Vec<solstone_core_format::content::ConsumedOriginal>,
+    pub incomplete: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScreenCut {
     pub byte_offset: usize,
@@ -127,7 +136,7 @@ impl SourceCounts {
         let mut counts = Self::default();
         for entry in entries {
             match entry.prefix {
-                "transcript" => counts.transcripts += 1,
+                "transcript" | "memory_original" => counts.transcripts += 1,
                 "percept" | "browser" => counts.percepts += 1,
                 "agent_output" => counts.talents += 1,
                 _ => {}
@@ -163,6 +172,7 @@ struct Entry {
     stream: Option<String>,
     output_name: Option<String>,
     screen_cuts: Vec<ScreenCut>,
+    memory_origin: Option<Origin>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -214,6 +224,14 @@ pub fn cluster(root: &Path, day: &str, sources: &Sources) -> (String, SourceCoun
     (transcript.text, counts)
 }
 
+pub fn cluster_with_memory(
+    root: &Path,
+    day: &str,
+    sources: &Sources,
+) -> (ScreenTranscript, SourceCounts, MemoryContext) {
+    cluster_with_projection_and_memory(root, day, sources, PerceptProjection::Generic)
+}
+
 pub fn cluster_for_screen_talent(
     root: &Path,
     day: &str,
@@ -222,12 +240,32 @@ pub fn cluster_for_screen_talent(
     cluster_with_projection(root, day, sources, PerceptProjection::ScreenTalent)
 }
 
+pub fn cluster_for_screen_talent_with_memory(
+    root: &Path,
+    day: &str,
+    sources: &Sources,
+) -> (ScreenTranscript, SourceCounts, MemoryContext) {
+    cluster_with_projection_and_memory(root, day, sources, PerceptProjection::ScreenTalent)
+}
+
 fn cluster_with_projection(
     root: &Path,
     day: &str,
     sources: &Sources,
     projection: PerceptProjection,
 ) -> (ScreenTranscript, SourceCounts) {
+    let (transcript, counts, _) =
+        cluster_with_projection_and_memory(root, day, sources, projection);
+    (transcript, counts)
+}
+
+fn cluster_with_projection_and_memory(
+    root: &Path,
+    day: &str,
+    sources: &Sources,
+    projection: PerceptProjection,
+) -> (ScreenTranscript, SourceCounts, MemoryContext) {
+    let mut memory = MemoryContext::default();
     let day_dir = day_dir(root, day);
     // Python's day_path at solstone/think/utils.py:289 creates this directory before
     // cluster.py:794-797 checks it. Native reads stay non-creating: native think creates
@@ -236,9 +274,10 @@ fn cluster_with_projection(
         return (
             ScreenTranscript::plain(format!("Day folder not found: {}", day_dir.display())),
             SourceCounts::default(),
+            memory,
         );
     }
-    let entries = load_day(root, day, sources, projection);
+    let entries = load_day(root, day, sources, projection, &mut memory);
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
         (
@@ -247,9 +286,10 @@ fn cluster_with_projection(
                 day_dir.display()
             )),
             counts,
+            memory,
         )
     } else {
-        (groups_to_markdown(entries), counts)
+        (groups_to_markdown(entries), counts, memory)
     }
 }
 
@@ -263,6 +303,23 @@ pub fn cluster_period(
     let (transcript, counts) =
         cluster_period_with_projection(root, day, key, sources, stream, PerceptProjection::Generic);
     (transcript.text, counts)
+}
+
+pub fn cluster_period_with_memory(
+    root: &Path,
+    day: &str,
+    key: &str,
+    sources: &Sources,
+    stream: Option<&str>,
+) -> (ScreenTranscript, SourceCounts, MemoryContext) {
+    cluster_period_with_projection_and_memory(
+        root,
+        day,
+        key,
+        sources,
+        stream,
+        PerceptProjection::Generic,
+    )
 }
 
 pub fn cluster_period_for_screen_talent(
@@ -282,6 +339,23 @@ pub fn cluster_period_for_screen_talent(
     )
 }
 
+pub fn cluster_period_for_screen_talent_with_memory(
+    root: &Path,
+    day: &str,
+    key: &str,
+    sources: &Sources,
+    stream: Option<&str>,
+) -> (ScreenTranscript, SourceCounts, MemoryContext) {
+    cluster_period_with_projection_and_memory(
+        root,
+        day,
+        key,
+        sources,
+        stream,
+        PerceptProjection::ScreenTalent,
+    )
+}
+
 fn cluster_period_with_projection(
     root: &Path,
     day: &str,
@@ -290,13 +364,28 @@ fn cluster_period_with_projection(
     stream: Option<&str>,
     projection: PerceptProjection,
 ) -> (ScreenTranscript, SourceCounts) {
+    let (transcript, counts, _) =
+        cluster_period_with_projection_and_memory(root, day, key, sources, stream, projection);
+    (transcript, counts)
+}
+
+fn cluster_period_with_projection_and_memory(
+    root: &Path,
+    day: &str,
+    key: &str,
+    sources: &Sources,
+    stream: Option<&str>,
+    projection: PerceptProjection,
+) -> (ScreenTranscript, SourceCounts, MemoryContext) {
+    let mut memory = MemoryContext::default();
     let Some(segment) = find_segment(root, day, key, stream) else {
         return (
             ScreenTranscript::plain(format!("Segment folder not found: {day}/{key}")),
             SourceCounts::default(),
+            memory,
         );
     };
-    let entries = process_segment(&segment, day, sources, projection);
+    let entries = process_segment(root, &segment, day, sources, projection, &mut memory);
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
         (
@@ -304,9 +393,10 @@ fn cluster_period_with_projection(
                 "No transcript, screen, or browser files found for segment {key}"
             )),
             counts,
+            memory,
         )
     } else {
-        (groups_to_markdown(entries), counts)
+        (groups_to_markdown(entries), counts, memory)
     }
 }
 
@@ -319,6 +409,23 @@ pub fn cluster_span(
 ) -> Result<(String, SourceCounts), String> {
     cluster_span_with_projection(root, day, span, sources, stream, PerceptProjection::Generic)
         .map(|(transcript, counts)| (transcript.text, counts))
+}
+
+pub fn cluster_span_with_memory(
+    root: &Path,
+    day: &str,
+    span: &[&str],
+    sources: &Sources,
+    stream: Option<&str>,
+) -> Result<(ScreenTranscript, SourceCounts, MemoryContext), String> {
+    cluster_span_with_projection_and_memory(
+        root,
+        day,
+        span,
+        sources,
+        stream,
+        PerceptProjection::Generic,
+    )
 }
 
 pub fn cluster_span_for_screen_talent(
@@ -338,6 +445,23 @@ pub fn cluster_span_for_screen_talent(
     )
 }
 
+pub fn cluster_span_for_screen_talent_with_memory(
+    root: &Path,
+    day: &str,
+    span: &[&str],
+    sources: &Sources,
+    stream: Option<&str>,
+) -> Result<(ScreenTranscript, SourceCounts, MemoryContext), String> {
+    cluster_span_with_projection_and_memory(
+        root,
+        day,
+        span,
+        sources,
+        stream,
+        PerceptProjection::ScreenTalent,
+    )
+}
+
 fn cluster_span_with_projection(
     root: &Path,
     day: &str,
@@ -346,6 +470,18 @@ fn cluster_span_with_projection(
     stream: Option<&str>,
     projection: PerceptProjection,
 ) -> Result<(ScreenTranscript, SourceCounts), String> {
+    cluster_span_with_projection_and_memory(root, day, span, sources, stream, projection)
+        .map(|(transcript, counts, _)| (transcript, counts))
+}
+
+fn cluster_span_with_projection_and_memory(
+    root: &Path,
+    day: &str,
+    span: &[&str],
+    sources: &Sources,
+    stream: Option<&str>,
+    projection: PerceptProjection,
+) -> Result<(ScreenTranscript, SourceCounts, MemoryContext), String> {
     let mut found = Vec::new();
     let mut missing = Vec::new();
     for key in span {
@@ -360,9 +496,10 @@ fn cluster_span_with_projection(
             missing.join(", ")
         ));
     }
+    let mut memory = MemoryContext::default();
     let mut entries = found
         .iter()
-        .flat_map(|segment| process_segment(segment, day, sources, projection))
+        .flat_map(|segment| process_segment(root, segment, day, sources, projection, &mut memory))
         .collect::<Vec<_>>();
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
@@ -372,10 +509,11 @@ fn cluster_span_with_projection(
                 span.join(", ")
             )),
             counts,
+            memory,
         ));
     }
     entries.sort_by_key(|entry| entry.timestamp);
-    Ok((groups_to_markdown(entries), counts))
+    Ok((groups_to_markdown(entries), counts, memory))
 }
 
 pub fn cluster_range(
@@ -392,10 +530,16 @@ pub fn cluster_range(
     let end =
         NaiveDateTime::parse_from_str(&format!("{}{end}", date.format("%Y%m%d")), "%Y%m%d%H%M%S")
             .map_err(range_error)?;
-    let entries = load_day(root, day, sources, PerceptProjection::Generic)
-        .into_iter()
-        .filter(|entry| entry.segment_start < end && entry.segment_end > start)
-        .collect();
+    let entries = load_day(
+        root,
+        day,
+        sources,
+        PerceptProjection::Generic,
+        &mut MemoryContext::default(),
+    )
+    .into_iter()
+    .filter(|entry| entry.segment_start < end && entry.segment_end > start)
+    .collect();
     Ok(groups_to_markdown(entries).text)
 }
 
@@ -408,20 +552,23 @@ fn load_day(
     day: &str,
     sources: &Sources,
     projection: PerceptProjection,
+    memory: &mut MemoryContext,
 ) -> Vec<Entry> {
     let mut entries = all_segments(root, day)
         .into_iter()
-        .flat_map(|segment| process_segment(&segment, day, sources, projection))
+        .flat_map(|segment| process_segment(root, &segment, day, sources, projection, memory))
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     entries
 }
 
 fn process_segment(
+    root: &Path,
     segment: &Segment,
     day: &str,
     sources: &Sources,
     projection: PerceptProjection,
+    memory: &mut MemoryContext,
 ) -> Vec<Entry> {
     if let StreamLocation::Named(name) = &segment.stream
         && name
@@ -433,10 +580,61 @@ fn process_segment(
     let Some((start, end)) = segment_times(day, &segment.key) else {
         return Vec::new();
     };
-    let stream = stream_marker(&segment.path);
+    let stream = segment
+        .record_stream()
+        .map(str::to_owned)
+        .or_else(|| stream_marker(&segment.path));
     let mut entries = Vec::new();
     let files = sorted_files(&segment.path);
     if sources.transcripts {
+        if let Some(stream_name) = stream
+            .as_deref()
+            .filter(|name| name.starts_with("agent-memory-"))
+        {
+            let source_key = stream_name
+                .strip_prefix("agent-memory-")
+                .and_then(|component| SourceKey::parse(format!("sha256:{component}")).ok());
+            if let Some(source_key) = source_key {
+                let coordinate = Coordinate {
+                    day: day.to_owned(),
+                    stream: stream_name.to_owned(),
+                    segment: segment.key.clone(),
+                };
+                match read_original(root, &source_key, &coordinate) {
+                    OriginalRead::Ready { bytes, origin, .. } => {
+                        let note = String::from_utf8(bytes)
+                            .expect("the shared original reader validates UTF-8");
+                        remember_memory_source(
+                            memory,
+                            solstone_core_format::content::ConsumedOriginal {
+                                coordinate,
+                                origin: origin.clone(),
+                            },
+                        );
+                        let mut memory_entry = entry(
+                            start,
+                            end,
+                            segment,
+                            "memory_original",
+                            note,
+                            stream.clone(),
+                            None,
+                        );
+                        memory_entry.memory_origin = Some(origin);
+                        entries.push(memory_entry);
+                    }
+                    OriginalRead::Corrupt | OriginalRead::Unavailable { .. } => {
+                        memory.incomplete = true;
+                    }
+                    OriginalRead::Absent
+                    | OriginalRead::Unready
+                    | OriginalRead::Deleted
+                    | OriginalRead::Staged => {}
+                }
+            } else {
+                memory.incomplete = true;
+            }
+        }
         let mut transcript = files
             .iter()
             .filter(|path| {
@@ -603,22 +801,29 @@ fn process_segment(
             TalentSource::All => true,
             TalentSource::Only(stems) => stems.contains(stem),
         };
-        if let Ok(projections) = iter_talent_text_projections(&talents, "", Some(&stem_filter)) {
-            for projection in projections {
-                if !projection.text.trim().is_empty() {
-                    entries.push(Entry {
-                        timestamp: start,
-                        segment_key: segment.key.clone(),
-                        segment_start: start,
-                        segment_end: end,
-                        prefix: "agent_output",
-                        content: projection.text,
-                        stream: stream.clone(),
-                        output_name: Some(projection.stem),
-                        screen_cuts: Vec::new(),
-                    });
+        match iter_talent_text_projections(&talents, "", Some(&stem_filter)) {
+            Ok(projections) => {
+                for projection in projections {
+                    if !projection.text.trim().is_empty() {
+                        for source in projection.sources {
+                            remember_memory_source(memory, source);
+                        }
+                        entries.push(Entry {
+                            timestamp: start,
+                            segment_key: segment.key.clone(),
+                            segment_start: start,
+                            segment_end: end,
+                            prefix: "agent_output",
+                            content: projection.text,
+                            stream: stream.clone(),
+                            output_name: Some(projection.stem),
+                            screen_cuts: Vec::new(),
+                            memory_origin: None,
+                        });
+                    }
                 }
             }
+            Err(_) => memory.incomplete = true,
         }
     }
     entries
@@ -830,6 +1035,16 @@ fn entry(
         stream,
         output_name,
         screen_cuts: Vec::new(),
+        memory_origin: None,
+    }
+}
+
+fn remember_memory_source(
+    memory: &mut MemoryContext,
+    source: solstone_core_format::content::ConsumedOriginal,
+) {
+    if !memory.sources.contains(&source) {
+        memory.sources.push(source);
     }
 }
 
@@ -865,6 +1080,17 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
                     "### {}",
                     transcript_header(entry.stream.as_deref())
                 )),
+                "memory_original" => {
+                    lines.push("### Private memory original".into());
+                    let origin = entry
+                        .memory_origin
+                        .as_ref()
+                        .expect("memory original carries its trusted origin");
+                    lines.push(format!(
+                        "Origin: {}",
+                        serde_json::to_string(origin).expect("origin serializes")
+                    ));
+                }
                 "percept" => lines.push("### Screen Activity".into()),
                 "browser" => lines.push("### Browser Content".into()),
                 "agent_output" => lines.push(format!(
@@ -873,7 +1099,11 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
                 )),
                 _ => continue,
             }
-            let trimmed = entry.content.trim();
+            let trimmed = if entry.prefix == "memory_original" {
+                entry.content.as_str()
+            } else {
+                entry.content.trim()
+            };
             let trimmed_start = entry.content.len() - entry.content.trim_start().len();
             let content_line = lines.len();
             lines.push(trimmed.into());

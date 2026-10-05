@@ -14,8 +14,8 @@ pub const SHAPE_SIDECAR_BASENAME: &str = "shape.json";
 
 /// Map a written PascalCase shape name onto a content resolution.
 ///
-/// The sixteen names are the fourteen [`Family`] variants plus the two
-/// unindexed raw-percept families. Unknown spellings return [`None`].
+/// The writable names are the ordinary content families and two unindexed
+/// raw-percept families. Path-owned families cannot be selected by sidecar.
 pub fn parse_shape_name(name: &str) -> Option<ContentResolution> {
     Some(match name {
         "Markdown" => ContentResolution::Indexed(Family::Markdown),
@@ -55,6 +55,9 @@ enum WrittenLookup {
 pub fn resolve_content_shape(content_path: &Path, rel: &str) -> ContentResolution {
     if crate::body::is_body_source_path(rel) {
         return ContentResolution::Unrecognized;
+    }
+    if super::resolve_spec(rel).is_some_and(|spec| spec.family == Family::AgentMemory) {
+        return ContentResolution::Indexed(Family::AgentMemory);
     }
     match lookup_written_shape(content_path) {
         WrittenLookup::Absent | WrittenLookup::Omitted => classify(rel),
@@ -176,6 +179,7 @@ mod tests {
         for name in ["markdown", "", "IndexedElsewhere"] {
             assert_eq!(parse_shape_name(name), None, "{name:?}");
         }
+        assert_eq!(parse_shape_name("AgentMemory"), None);
     }
 
     #[test]
@@ -210,6 +214,35 @@ mod tests {
                 .expect("path spec after sidecar")
                 .disposition,
             disposition
+        );
+    }
+
+    #[test]
+    fn agent_memory_note_ignores_shape_sidecars_and_other_files_cannot_select_it() {
+        let temporary = TempDir::new("agent-memory-shapes");
+        let note_rel = format!(
+            "20260107/agent-memory-{}/120000_60/note.txt",
+            "a".repeat(64)
+        );
+        let note_path = content_path(&temporary.path, &note_rel);
+        write(
+            &note_path.with_file_name(SHAPE_SIDECAR_BASENAME),
+            r#"{"note.txt":"Markdown"}"#,
+        );
+        assert_eq!(
+            resolve_content_shape(&note_path, &note_rel),
+            ContentResolution::Indexed(Family::AgentMemory)
+        );
+
+        let other_rel = "20260107/talents/memory.md";
+        let other_path = content_path(&temporary.path, other_rel);
+        write(
+            &other_path.with_file_name(SHAPE_SIDECAR_BASENAME),
+            r#"{"memory.md":"AgentMemory"}"#,
+        );
+        assert_eq!(
+            resolve_content_shape(&other_path, other_rel),
+            ContentResolution::Unrecognized
         );
     }
 

@@ -14,6 +14,7 @@ axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+rusqlite.workspace = true
 solstone-core-convey-http.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
@@ -21,10 +22,10 @@ solstone-core-home.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-memory-original.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
-rusqlite.workspace = true
 solstone-core-convey-shell.workspace = true
 solstone-core-indexer-query = { workspace = true, features = ["test-hooks"] }
 solstone-core-indexer-store.workspace = true

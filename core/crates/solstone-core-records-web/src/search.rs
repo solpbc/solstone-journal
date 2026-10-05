@@ -14,11 +14,16 @@ use chrono::{Datelike, NaiveDate};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_format::agent_memory::{
+    ChainPredecessor, Coordinate, Origin, ReadyDocument, SourceKey,
+};
 use solstone_core_indexer_query::{
     IndexAccessError, IndexedEntry, OwnerBoundary, OwnerIndex, QueryBoundary, SearchRequest,
     open_owner_index, read_indexed_entry,
 };
+use solstone_core_indexer_query::{MemoryOriginalRow, open_own_memory_index, read_own_memory_row};
 use solstone_core_journal_io::bounded_read::{JournalReadError, MAX_BYTES, read_text};
+use solstone_core_memory_original::{OriginalRead, read_original};
 
 use crate::talent_outputs;
 
@@ -148,10 +153,28 @@ pub(crate) fn search_response_with_index(
 
     let mut day_results = Vec::new();
     let facets = facets(journal_root);
+    let has_memory_hits = day_hits_vec.iter().any(|(_, hits)| {
+        hits.iter()
+            .any(|hit| hit.metadata.stream.starts_with("agent-memory-"))
+    });
+    let memory_index = has_memory_hits
+        .then(|| open_own_memory_index(journal_root, std::time::Duration::from_secs(1)).ok())
+        .flatten();
     for ((day, total), (_hit_day, hits)) in page.into_iter().zip(day_hits_vec) {
         let results = hits
             .into_iter()
-            .map(|hit| {
+            .filter_map(|hit| {
+                let memory = if hit.metadata.stream.starts_with("agent-memory-") {
+                    let connection = memory_index.as_ref()?;
+                    Some(owner_memory_descriptor(
+                        journal_root,
+                        connection,
+                        &hit.metadata.path,
+                        &hit.metadata.stream,
+                    )?)
+                } else {
+                    None
+                };
                 let readable = readable_record(&hit.text);
                 // Fresh-eyes 3 #3: when the readable sentences hold no match
                 // the stored record becomes the excerpt, and sending it again
@@ -183,10 +206,14 @@ pub(crate) fn search_response_with_index(
                     "idx": hit.metadata.idx,
                     "score": hit.score,
                 });
+                if let Some((creation_label, origin)) = memory {
+                    hit_obj["creation_label"] = Value::String(creation_label);
+                    hit_obj["origin"] = origin;
+                }
                 if let (Some(url), Value::Object(map)) = (week_url, &mut hit_obj) {
                     map.insert("week_url".to_string(), Value::String(url));
                 }
-                hit_obj
+                Some(hit_obj)
             })
             .collect::<Vec<_>>();
         day_results.push(json!({
@@ -204,6 +231,82 @@ pub(crate) fn search_response_with_index(
         "days": day_results,
     }))
     .into_response()
+}
+
+fn owner_memory_descriptor(
+    journal: &std::path::Path,
+    connection: &rusqlite::Connection,
+    path: &str,
+    stream: &str,
+) -> Option<(String, Value)> {
+    let component = stream.strip_prefix("agent-memory-")?;
+    let source_key = SourceKey::parse(format!("sha256:{component}")).ok()?;
+    let parts = path
+        .strip_prefix("chronicle/")
+        .unwrap_or(path)
+        .split('/')
+        .collect::<Vec<_>>();
+    let [day, path_stream, segment, note] = parts.as_slice() else {
+        return None;
+    };
+    if *path_stream != stream || *note != "note.txt" {
+        return None;
+    }
+    let coordinate = Coordinate {
+        day: (*day).to_owned(),
+        stream: stream.to_owned(),
+        segment: (*segment).to_owned(),
+    };
+    let (bytes, origin, ready) = match read_original(journal, &source_key, &coordinate) {
+        OriginalRead::Ready {
+            bytes,
+            origin,
+            ready,
+        } => (bytes, origin, ready),
+        _ => return None,
+    };
+    let row = read_own_memory_row(connection, source_key.as_str(), path).ok()??;
+    if !owner_row_matches(&row, &source_key, &coordinate, &bytes, &origin, &ready) {
+        return None;
+    }
+    let origin_value = serde_json::to_value(&origin).ok()?;
+    Some((origin.creation_label, origin_value))
+}
+
+fn owner_row_matches(
+    row: &MemoryOriginalRow,
+    source_key: &SourceKey,
+    coordinate: &Coordinate,
+    bytes: &[u8],
+    origin: &Origin,
+    ready: &ReadyDocument,
+) -> bool {
+    let Ok(cached_origin) = serde_json::from_str::<Origin>(&row.origin_json) else {
+        return false;
+    };
+    let Ok(cached_chain) = serde_json::from_str::<ChainPredecessor>(&row.chain_json) else {
+        return false;
+    };
+    let Ok(created_at) = chrono::DateTime::parse_from_rfc3339(&row.created_at) else {
+        return false;
+    };
+    row.path
+        == format!(
+            "{}/{}/{}/note.txt",
+            coordinate.day, coordinate.stream, coordinate.segment
+        )
+        && row.day == coordinate.day
+        && row.stream == coordinate.stream
+        && row.segment == coordinate.segment
+        && row.source_key == source_key.as_str()
+        && row.bytes == bytes
+        && row.digest == ready.digest
+        && row.byte_count == bytes.len()
+        && row.byte_count == ready.byte_count
+        && row.creation_label == origin.creation_label
+        && cached_origin == *origin
+        && created_at.with_timezone(&chrono::Utc) == ready.created_at
+        && cached_chain == ready.chain
 }
 
 #[derive(Default, Deserialize)]

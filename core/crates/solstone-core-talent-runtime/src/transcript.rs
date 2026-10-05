@@ -5,17 +5,21 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::{Map, Value};
+use solstone_core_format::content::ConsumedOriginal;
 use solstone_core_talent_config::{get_output_name, get_talent_filter, source_is_enabled};
 use solstone_core_transcripts::{
-    ScreenCut, ScreenTranscript, SourceCounts, Sources, TalentSource, VoiceNames, cluster,
-    cluster_for_screen_talent, cluster_period, cluster_period_for_screen_talent, cluster_span,
-    cluster_span_for_screen_talent,
+    MemoryContext, ScreenCut, SourceCounts, Sources, TalentSource, VoiceNames,
+    cluster_for_screen_talent_with_memory, cluster_period,
+    cluster_period_for_screen_talent_with_memory, cluster_period_with_memory,
+    cluster_span_for_screen_talent_with_memory, cluster_span_with_memory, cluster_with_memory,
 };
 
 pub(crate) struct LoadedTranscript {
     pub text: String,
     pub counts: SourceCounts,
     pub screen_cuts: Vec<ScreenCut>,
+    pub memory_sources: Vec<ConsumedOriginal>,
+    pub memory_incomplete: bool,
 }
 
 pub(crate) fn sources_from_config(config: &Map<String, Value>) -> Sources {
@@ -93,30 +97,33 @@ pub(crate) fn load_transcript(
         .and_then(Value::as_array)
         .map(|span| span.iter().filter_map(Value::as_str).collect::<Vec<_>>())
         .unwrap_or_default();
-    let (transcript, counts) = if !span.is_empty() {
+    let (transcript, counts, memory) = if !span.is_empty() {
         if screen_projection {
-            cluster_span_for_screen_talent(journal, day, &span, &sources, stream)
+            cluster_span_for_screen_talent_with_memory(journal, day, &span, &sources, stream)
         } else {
-            cluster_span(journal, day, &span, &sources, stream)
-                .map(|(text, counts)| (ScreenTranscript::plain(text), counts))
+            cluster_span_with_memory(journal, day, &span, &sources, stream)
         }?
     } else if let Some(segment) = composed.get("segment").and_then(Value::as_str) {
         if screen_projection {
-            cluster_period_for_screen_talent(journal, day, segment, &sources, stream)
+            cluster_period_for_screen_talent_with_memory(journal, day, segment, &sources, stream)
         } else {
-            let (text, counts) = cluster_period(journal, day, segment, &sources, stream);
-            (ScreenTranscript::plain(text), counts)
+            cluster_period_with_memory(journal, day, segment, &sources, stream)
         }
     } else if screen_projection {
-        cluster_for_screen_talent(journal, day, &sources)
+        cluster_for_screen_talent_with_memory(journal, day, &sources)
     } else {
-        let (text, counts) = cluster(journal, day, &sources);
-        (ScreenTranscript::plain(text), counts)
+        cluster_with_memory(journal, day, &sources)
     };
+    let MemoryContext {
+        sources: memory_sources,
+        incomplete: memory_incomplete,
+    } = memory;
     Ok(LoadedTranscript {
         text: transcript.text,
         counts,
         screen_cuts: transcript.cuts,
+        memory_sources,
+        memory_incomplete,
     })
 }
 

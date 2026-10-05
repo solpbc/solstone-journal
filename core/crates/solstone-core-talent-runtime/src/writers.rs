@@ -12,6 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde_json::{Map, Value};
+use solstone_core_format::content::ConsumedOriginal;
 use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
 use solstone_core_journal_io::{AtomicWriteError, AtomicWriteOptions, atomic_replace, write_jsonl};
 
@@ -133,9 +134,19 @@ pub fn write_output_if_configured(
         if !contained.starts_with(&directory) {
             return Err("activity output is outside its destination facet".to_owned());
         }
-        return write_output(contained, output).map_err(|error| error.to_string());
+        return write_output_with_sources(contained, output, &trusted_sources(prepared))
+            .map_err(|error| error.to_string());
     }
-    write_output(path, output).map_err(|error| error.to_string())
+    write_output_with_sources(path, output, &trusted_sources(prepared))
+        .map_err(|error| error.to_string())
+}
+
+fn trusted_sources(prepared: &PreparedTalent) -> Vec<ConsumedOriginal> {
+    prepared
+        .config
+        .get("_memory_sources")
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+        .unwrap_or_default()
 }
 
 pub fn write_output(path: PathBuf, output: &str) -> Result<bool, std::io::Error> {
@@ -156,9 +167,59 @@ pub fn write_output(path: PathBuf, output: &str) -> Result<bool, std::io::Error>
     }
 }
 
+pub(crate) fn write_output_with_sources(
+    path: PathBuf,
+    output: &str,
+    sources: &[ConsumedOriginal],
+) -> Result<bool, std::io::Error> {
+    let changed = write_output(path.clone(), output)?;
+    let mut sidecar_name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "missing filename"))?
+        .to_os_string();
+    sidecar_name.push(".sources.json");
+    let sidecar = path.with_file_name(sidecar_name);
+    if sources.is_empty() {
+        match fs::remove_file(sidecar) {
+            Ok(()) => return Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(changed),
+            Err(error) => return Err(error),
+        }
+    }
+    let bytes = serde_json::to_vec(sources).map_err(std::io::Error::other)?;
+    let previous_matches = sidecar.exists() && fs::read(&sidecar)? == bytes;
+    if !previous_matches {
+        atomic_replace(&sidecar, &bytes, AtomicWriteOptions::default()).map_err(
+            |error| match error {
+                #[cfg(windows)]
+                AtomicWriteError::PublicationUncertain { .. } => std::io::Error::other(error),
+                AtomicWriteError::Io { source, .. } => source,
+            },
+        )?;
+        return Ok(true);
+    }
+    Ok(changed)
+}
+
 pub fn apply(
     plan: CommitPlan,
     context: &ExecutionContext,
+) -> Result<CommitDisposition, StageError> {
+    apply_with_sources(plan, context, &[])
+}
+
+pub(crate) fn apply_prepared(
+    plan: CommitPlan,
+    context: &ExecutionContext,
+    prepared: &PreparedTalent,
+) -> Result<CommitDisposition, StageError> {
+    apply_with_sources(plan, context, &trusted_sources(prepared))
+}
+
+fn apply_with_sources(
+    plan: CommitPlan,
+    context: &ExecutionContext,
+    sources: &[ConsumedOriginal],
 ) -> Result<CommitDisposition, StageError> {
     match plan {
         CommitPlan::NoOutput => Ok(CommitDisposition::CommittedNoOutput),
@@ -167,7 +228,7 @@ pub fn apply(
             agent,
             mut record,
         }) => {
-            append_day_record(&context.journal, &day, &agent, &mut record)?;
+            append_day_record_with_sources(&context.journal, &day, &agent, &mut record, sources)?;
             Ok(CommitDisposition::Written)
         }
         CommitPlan::Write(WriteIntent::Story {
@@ -200,14 +261,16 @@ pub fn apply(
             let Some(output_path) = output_path else {
                 return Ok(CommitDisposition::CommittedNoOutput);
             };
-            write_output(PathBuf::from(output_path), &output).map_err(|error| {
-                StageError::new(
-                    "write-intent",
-                    "daily_schedule",
-                    "daily_schedule",
-                    error.to_string(),
-                )
-            })?;
+            write_output_with_sources(PathBuf::from(output_path), &output, sources).map_err(
+                |error| {
+                    StageError::new(
+                        "write-intent",
+                        "daily_schedule",
+                        "daily_schedule",
+                        error.to_string(),
+                    )
+                },
+            )?;
             Ok(CommitDisposition::Written)
         }
         CommitPlan::Write(WriteIntent::Participation {
@@ -290,7 +353,7 @@ pub fn apply(
                 .join(&facet)
                 .join("entities")
                 .join(format!("{day}_observer_suggestions.json"));
-            write_output(path, &format!("{output}\n")).map_err(|e| {
+            write_output_with_sources(path, &format!("{output}\n"), sources).map_err(|e| {
                 StageError::new(
                     "write-intent",
                     "entities:entity_suggest",
@@ -357,7 +420,13 @@ pub fn apply(
             markdown,
             document,
         }) => {
-            crate::weekly_reflection::write_page(&context.journal, &start, &markdown, &document)?;
+            crate::weekly_reflection::write_page_with_sources(
+                &context.journal,
+                &start,
+                &markdown,
+                &document,
+                sources,
+            )?;
             Ok(CommitDisposition::Written)
         }
     }
@@ -369,6 +438,20 @@ pub fn append_day_record(
     agent: &str,
     record: &mut Map<String, Value>,
 ) -> Result<(), StageError> {
+    append_day_record_with_sources(journal, day, agent, record, &[])
+}
+
+fn append_day_record_with_sources(
+    journal: &std::path::Path,
+    day: &str,
+    agent: &str,
+    record: &mut Map<String, Value>,
+    sources: &[ConsumedOriginal],
+) -> Result<(), StageError> {
+    record.insert(
+        "sources".to_owned(),
+        serde_json::to_value(sources).map_err(|error| stage_error(agent, error.to_string()))?,
+    );
     if !record.contains_key("ts") {
         record.insert(
             "ts".to_owned(),
@@ -431,11 +514,26 @@ mod tests {
     use std::io::Cursor;
     use std::os::unix::fs::MetadataExt;
 
+    #[cfg(all(test, feature = "full-tests"))]
+    use chrono::{TimeZone, Utc};
     use nix::fcntl::{Flock, FlockArg};
     use serde_json::json;
+    #[cfg(all(test, feature = "full-tests"))]
+    use solstone_core_format::agent_memory::{Coordinate, Origin, OriginKind, SourceKey};
+    #[cfg(all(test, feature = "full-tests"))]
+    use solstone_core_format::content::{ConsumedOriginal, iter_talent_text_projections};
     use solstone_core_journal_io::{MalformedPolicy, read_jsonl};
 
     use super::*;
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn test_scratch_root() -> std::path::PathBuf {
+        if cfg!(windows) {
+            std::env::temp_dir()
+        } else {
+            std::path::PathBuf::from("/var/tmp")
+        }
+    }
 
     #[test]
     fn activity_commit_intents_fence_replacement_and_deletion_before_side_effects() {
@@ -702,6 +800,71 @@ mod tests {
         assert!(write_output(path.clone(), "one").unwrap());
         assert!(!write_output(path.clone(), "one").unwrap());
         assert_eq!(fs::read(path).unwrap(), b"one");
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn derivative_sidecars_preserve_consumed_sources_without_reading_body_lineage() {
+        let root = tempfile::Builder::new()
+            .prefix("solstone-talent-source-sidecars-")
+            .tempdir_in(test_scratch_root())
+            .unwrap();
+        let talents = root.path().join("chronicle/20260102/talents");
+        fs::create_dir_all(&talents).unwrap();
+        let created_at = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        let consumed = |identity: &str, segment: &str, label: &str| {
+            let source_key = SourceKey::from_verified_id(identity);
+            let coordinate = Coordinate {
+                day: "20260102".to_owned(),
+                stream: format!("agent-memory-{}", source_key.component()),
+                segment: segment.to_owned(),
+            };
+            ConsumedOriginal {
+                origin: Origin {
+                    kind: OriginKind::AgentMemory,
+                    source_key,
+                    creation_label: label.to_owned(),
+                    created_at,
+                    stream: coordinate.stream.clone(),
+                    segment: coordinate.segment.clone(),
+                },
+                coordinate,
+            }
+        };
+        let original_a = consumed("source-a", "030405_1", "A");
+        let original_b = consumed("source-b", "030406_1", "B");
+        let forged = consumed("forged-source", "030407_1", "forged");
+
+        write_output_with_sources(
+            talents.join("first.md"),
+            &format!("Body text claims {:?} was an original.", forged.coordinate),
+            std::slice::from_ref(&original_a),
+        )
+        .unwrap();
+        let first_projections =
+            iter_talent_text_projections(&talents, "chronicle/20260102/talents", None).unwrap();
+        assert_eq!(first_projections.len(), 1);
+        let first = first_projections
+            .into_iter()
+            .find(|projection| projection.stem == "first")
+            .unwrap();
+        assert_eq!(first.sources, vec![original_a.clone()]);
+
+        let mut second_sources = first.sources;
+        second_sources.push(original_b.clone());
+        write_output_with_sources(
+            talents.join("second.md"),
+            "Authored derivative",
+            &second_sources,
+        )
+        .unwrap();
+        let second = iter_talent_text_projections(&talents, "chronicle/20260102/talents", None)
+            .unwrap()
+            .into_iter()
+            .find(|projection| projection.stem == "second")
+            .unwrap();
+        assert_eq!(second.sources, vec![original_a, original_b]);
+        assert!(!second.sources.contains(&forged));
     }
 
     #[test]

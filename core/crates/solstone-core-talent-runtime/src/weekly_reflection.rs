@@ -872,6 +872,16 @@ pub fn write_page(
     markdown: &str,
     document: &str,
 ) -> Result<(), StageError> {
+    write_page_with_sources(journal, start, markdown, document, &[])
+}
+
+pub(crate) fn write_page_with_sources(
+    journal: &Path,
+    start: &str,
+    markdown: &str,
+    document: &str,
+    sources: &[solstone_core_format::content::ConsumedOriginal],
+) -> Result<(), StageError> {
     let target_dir = journal.join("reflections/weekly");
     fs::create_dir_all(&target_dir).map_err(|e| {
         StageError::new(
@@ -907,6 +917,33 @@ pub fn write_page(
             format!("failed to write json {}: {e}", json_path.display()),
         )
     })?;
+
+    crate::writers::write_output_with_sources(md_path.clone(), markdown, sources).map_err(
+        |error| {
+            StageError::new(
+                "write",
+                "weekly_reflection",
+                "weekly_reflection",
+                format!(
+                    "failed to write markdown sources {}: {error}",
+                    md_path.display()
+                ),
+            )
+        },
+    )?;
+    crate::writers::write_output_with_sources(json_path.clone(), document, sources).map_err(
+        |error| {
+            StageError::new(
+                "write",
+                "weekly_reflection",
+                "weekly_reflection",
+                format!(
+                    "failed to write document sources {}: {error}",
+                    json_path.display()
+                ),
+            )
+        },
+    )?;
 
     match rescan_file(journal, &md_path) {
         Ok(RescanFileStatus::Indexed { warnings }) => {

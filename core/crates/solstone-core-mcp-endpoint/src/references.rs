@@ -23,6 +23,7 @@ pub(crate) enum ReferenceKind {
     Segment,
     Entity,
     Cursor,
+    MemoryRecall,
 }
 
 impl ReferenceKind {
@@ -32,6 +33,7 @@ impl ReferenceKind {
             Self::Segment => 2,
             Self::Entity => 3,
             Self::Cursor => 4,
+            Self::MemoryRecall => 5,
         }
     }
 
@@ -41,6 +43,7 @@ impl ReferenceKind {
             2 => Some(Self::Segment),
             3 => Some(Self::Entity),
             4 => Some(Self::Cursor),
+            5 => Some(Self::MemoryRecall),
             _ => None,
         }
     }
@@ -88,12 +91,24 @@ pub(crate) struct CursorReference {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct MemoryRecallCursor {
+    pub source_key: String,
+    pub query: Option<String>,
+    pub day: Option<String>,
+    pub day_from: Option<String>,
+    pub day_to: Option<String>,
+    pub anchor_day: String,
+    pub anchor_path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "target", rename_all = "snake_case")]
 pub(crate) enum ReferenceTarget {
     Entry(EntryReference),
     Segment(SegmentReference),
     Entity(EntityReference),
     Cursor(CursorReference),
+    MemoryRecall(MemoryRecallCursor),
 }
 
 impl ReferenceTarget {
@@ -103,6 +118,7 @@ impl ReferenceTarget {
             Self::Segment(_) => ReferenceKind::Segment,
             Self::Entity(_) => ReferenceKind::Entity,
             Self::Cursor(_) => ReferenceKind::Cursor,
+            Self::MemoryRecall(_) => ReferenceKind::MemoryRecall,
         }
     }
 }

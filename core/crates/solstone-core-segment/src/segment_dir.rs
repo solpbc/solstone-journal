@@ -5,10 +5,22 @@ use std::path::{Path, PathBuf};
 
 use solstone_core_journal_io::{
     DEFAULT_STREAM, PathError, PathEscapeError, PathOrDay, Segment, contained_path, day_dirs,
-    day_path, iter_segments, iter_stream_segments, path_lexists,
+    day_path, iter_segments, iter_stream_segments,
 };
 
 use crate::SegmentError;
+
+const TOMBSTONE_NAME: &str = "tombstone.json";
+const STAGED_PREFIX: &str = ".removing_";
+
+/// Non-mutating state of an owner-deleted segment path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OwnerDeletionState {
+    Live,
+    Deleted,
+    Staged,
+    Occupied,
+}
 
 /// A resolved journal segment directory with no creation side effect.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,13 +76,13 @@ impl SegmentDir {
 
 /// Whether the owner has deleted the segment at `segment_dir`.
 ///
-/// True when that path is a directory holding `tombstone.json`, or when its
-/// parent holds the staged removal name: `STAGED_PREFIX` (`.removing_`) plus
-/// the segment's final component. `STAGED_PREFIX` is the retention staging
-/// prefix. This function does not take the removal lock.
+/// True when that path holds `tombstone.json`, its parent holds the staged
+/// removal name, or either marker name is occupied by an unrecognized path.
+/// The staged name is `STAGED_PREFIX` (`.removing_`) plus the segment's final
+/// component. This function does not take the removal lock.
 ///
-/// Every tombstone and every staged removal means deleted. A writer never
-/// writes into, beside, or in place of one.
+/// A tombstone or staged removal means deleted. An occupied marker path that
+/// is not a recognized tombstone or staged directory still occupies the key.
 ///
 /// A key that any marker of its stream names as `prev` stays deleted. Rewriting
 /// that key at the head would give it a second chain position. Links are by
@@ -84,6 +96,12 @@ impl SegmentDir {
 ///
 /// A caller that probes keys treats `Err` as stop, never as a free key.
 pub fn owner_deleted(segment_dir: &Path) -> Result<bool, SegmentError> {
+    Ok(owner_deletion_state(segment_dir)? != OwnerDeletionState::Live)
+}
+
+/// Distinguish a live segment, a tombstoned segment, a staged removal, and an
+/// occupied marker without acquiring the retention lock or creating state.
+pub fn owner_deletion_state(segment_dir: &Path) -> Result<OwnerDeletionState, SegmentError> {
     let parent = segment_dir.parent().ok_or(SegmentError::StreamInput(
         "segment directory must have a parent",
     ))?;
@@ -94,9 +112,19 @@ pub fn owner_deleted(segment_dir: &Path) -> Result<bool, SegmentError> {
     match std::fs::symlink_metadata(segment_dir) {
         Ok(metadata) => {
             if metadata.is_dir() {
-                let tombstone = segment_dir.join("tombstone.json");
-                if path_lexists(&tombstone)? {
-                    return Ok(true);
+                let tombstone = segment_dir.join(TOMBSTONE_NAME);
+                match std::fs::symlink_metadata(&tombstone) {
+                    Ok(metadata) if metadata.file_type().is_symlink() => {
+                        return Ok(OwnerDeletionState::Occupied);
+                    }
+                    Ok(_) => return Ok(OwnerDeletionState::Deleted),
+                    Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(source) => {
+                        return Err(SegmentError::Io {
+                            path: tombstone,
+                            source,
+                        });
+                    }
                 }
             }
         }
@@ -109,10 +137,21 @@ pub fn owner_deleted(segment_dir: &Path) -> Result<bool, SegmentError> {
         }
     }
 
-    let mut staged_name = std::ffi::OsString::from(".removing_");
+    let mut staged_name = std::ffi::OsString::from(STAGED_PREFIX);
     staged_name.push(file_name);
     let staged_path = parent.join(staged_name);
-    Ok(path_lexists(&staged_path)?)
+    match std::fs::symlink_metadata(&staged_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Ok(OwnerDeletionState::Occupied),
+        Ok(metadata) if metadata.is_dir() => Ok(OwnerDeletionState::Staged),
+        Ok(_) => Ok(OwnerDeletionState::Occupied),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+            Ok(OwnerDeletionState::Live)
+        }
+        Err(source) => Err(SegmentError::Io {
+            path: staged_path,
+            source,
+        }),
+    }
 }
 
 fn validate_component(value: &str, kind: &'static str) -> Result<(), SegmentError> {
@@ -262,5 +301,38 @@ mod tests {
         fs::write(&file_parent, b"not a dir").unwrap();
         let bad_child = file_parent.join("child");
         assert!(owner_deleted(&bad_child).is_err());
+
+        // 6. A non-directory staged marker still occupies the key.
+        let occupied_seg = parent.join("occupied_key");
+        fs::write(parent.join(".removing_occupied_key"), b"occupied").unwrap();
+        assert!(owner_deleted(&occupied_seg).unwrap());
+        assert_eq!(
+            owner_deletion_state(&occupied_seg).unwrap(),
+            OwnerDeletionState::Occupied
+        );
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn tombstone_symlink_occupies_key_without_mutation() {
+        use std::os::unix::fs::MetadataExt;
+
+        let temporary = TempDir::new();
+        let segment = temporary.path().join("segment");
+        fs::create_dir_all(&segment).unwrap();
+        let target = temporary.path().join("target");
+        fs::write(&target, b"target").unwrap();
+        let tombstone = segment.join("tombstone.json");
+        symlink(&target, &tombstone).unwrap();
+        let inode = fs::symlink_metadata(&tombstone).unwrap().ino();
+
+        assert!(owner_deleted(&segment).unwrap());
+        assert_eq!(
+            owner_deletion_state(&segment).unwrap(),
+            OwnerDeletionState::Occupied
+        );
+        let metadata = fs::symlink_metadata(&tombstone).unwrap();
+        assert!(metadata.file_type().is_symlink());
+        assert_eq!(metadata.ino(), inode);
     }
 }

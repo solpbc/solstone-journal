@@ -668,7 +668,7 @@ fn finish_unavailable(
         Err(error) => return RuntimeOutcome::StageFailed(error),
     };
     let disposition = match stage.writes_as_intent {
-        Some(apply) => match apply(plan, context) {
+        Some(apply) => match apply(plan, context, prepared) {
             Ok(disposition) => disposition,
             Err(error) => return RuntimeOutcome::StageFailed(error),
         },
@@ -886,7 +886,7 @@ pub(crate) fn generate_and_write(
                 }
             };
             disposition = match stage.writes_as_intent {
-                Some(apply) => match apply(plan, context) {
+                Some(apply) => match apply(plan, context, prepared) {
                     Ok(value) => value,
                     Err(mut error) => {
                         if error.usage.is_none() {
