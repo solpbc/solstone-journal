@@ -9,7 +9,7 @@ pub use daily::{
 pub(crate) use daily::{bind_output_action, prepare_frozen_output_action};
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 use solstone_core_format::content::ConsumedOriginal;
@@ -157,14 +157,8 @@ pub fn write_output(path: PathBuf, output: &str) -> Result<bool, std::io::Error>
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    match atomic_replace(&path, bytes, AtomicWriteOptions::default()) {
-        Ok(()) => Ok(true),
-        #[cfg(windows)]
-        Err(error @ AtomicWriteError::PublicationUncertain { .. }) => {
-            Err(std::io::Error::other(error))
-        }
-        Err(AtomicWriteError::Io { source, .. }) => Err(source),
-    }
+    replace_output_bytes(&path, bytes)?;
+    Ok(true)
 }
 
 pub(crate) fn write_output_with_sources(
@@ -172,33 +166,57 @@ pub(crate) fn write_output_with_sources(
     output: &str,
     sources: &[ConsumedOriginal],
 ) -> Result<bool, std::io::Error> {
-    let changed = write_output(path.clone(), output)?;
     let mut sidecar_name = path
         .file_name()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "missing filename"))?
         .to_os_string();
     sidecar_name.push(".sources.json");
     let sidecar = path.with_file_name(sidecar_name);
-    if sources.is_empty() {
-        match fs::remove_file(sidecar) {
-            Ok(()) => return Ok(true),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(changed),
-            Err(error) => return Err(error),
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let previous_sidecar = match fs::read(&sidecar) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    let next_sidecar = if sources.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_vec(sources).map_err(std::io::Error::other)?)
+    };
+    let sidecar_changed = previous_sidecar != next_sidecar;
+    if sidecar_changed {
+        publish_sidecar(&sidecar, next_sidecar.as_deref())?;
+    }
+    match write_output(path, output) {
+        Ok(changed) => Ok(changed || sidecar_changed),
+        Err(body_error) => {
+            if sidecar_changed {
+                publish_sidecar(&sidecar, previous_sidecar.as_deref())?;
+            }
+            Err(body_error)
         }
     }
-    let bytes = serde_json::to_vec(sources).map_err(std::io::Error::other)?;
-    let previous_matches = sidecar.exists() && fs::read(&sidecar)? == bytes;
-    if !previous_matches {
-        atomic_replace(&sidecar, &bytes, AtomicWriteOptions::default()).map_err(
-            |error| match error {
-                #[cfg(windows)]
-                AtomicWriteError::PublicationUncertain { .. } => std::io::Error::other(error),
-                AtomicWriteError::Io { source, .. } => source,
-            },
-        )?;
-        return Ok(true);
+}
+
+fn publish_sidecar(path: &Path, bytes: Option<&[u8]>) -> Result<(), std::io::Error> {
+    match bytes {
+        Some(bytes) => replace_output_bytes(path, bytes),
+        None => match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        },
     }
-    Ok(changed)
+}
+
+fn replace_output_bytes(path: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
+    atomic_replace(path, bytes, AtomicWriteOptions::default()).map_err(|error| match error {
+        #[cfg(windows)]
+        AtomicWriteError::PublicationUncertain { .. } => std::io::Error::other(error),
+        AtomicWriteError::Io { source, .. } => source,
+    })
 }
 
 pub fn apply(
@@ -865,6 +883,38 @@ mod tests {
             .unwrap();
         assert_eq!(second.sources, vec![original_a, original_b]);
         assert!(!second.sources.contains(&forged));
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn source_sidecar_is_removed_when_body_write_fails() {
+        let root = tempfile::Builder::new()
+            .prefix("solstone-talent-sidecar-rollback-")
+            .tempdir_in(test_scratch_root())
+            .unwrap();
+        let output = root.path().join("output.md");
+        fs::create_dir_all(&output).unwrap();
+        let sidecar = root.path().join("output.md.sources.json");
+        let source_key = SourceKey::from_verified_id("rollback-source");
+        let coordinate = Coordinate {
+            day: "20260102".to_owned(),
+            stream: format!("agent-memory-{}", source_key.component()),
+            segment: "030405_1".to_owned(),
+        };
+        let source = ConsumedOriginal {
+            origin: Origin {
+                kind: OriginKind::AgentMemory,
+                source_key,
+                creation_label: "rollback test".to_owned(),
+                created_at: Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap(),
+                stream: coordinate.stream.clone(),
+                segment: coordinate.segment.clone(),
+            },
+            coordinate,
+        };
+
+        assert!(write_output_with_sources(output, "body", &[source]).is_err());
+        assert!(!sidecar.exists());
     }
 
     #[test]

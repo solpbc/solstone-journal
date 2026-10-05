@@ -179,8 +179,11 @@ pub fn check_segment_has_no_input(
     if !transcript::sources_are_enabled(sources) {
         return false;
     }
-    let (text, counts) =
+    let (text, counts, memory) =
         transcript::load_segment_transcript(journal, day, segment, stream, sources);
+    if memory.incomplete {
+        return false;
+    }
     if solstone_core_transcripts::is_no_input(&text, &counts) {
         return true;
     }

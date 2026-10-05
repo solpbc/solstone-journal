@@ -254,9 +254,9 @@ fn cluster_with_projection(
     sources: &Sources,
     projection: PerceptProjection,
 ) -> (ScreenTranscript, SourceCounts) {
-    let (transcript, counts, _) =
+    let (transcript, counts, memory) =
         cluster_with_projection_and_memory(root, day, sources, projection);
-    (transcript, counts)
+    (disclose_memory_incomplete(transcript, &memory), counts)
 }
 
 fn cluster_with_projection_and_memory(
@@ -364,9 +364,9 @@ fn cluster_period_with_projection(
     stream: Option<&str>,
     projection: PerceptProjection,
 ) -> (ScreenTranscript, SourceCounts) {
-    let (transcript, counts, _) =
+    let (transcript, counts, memory) =
         cluster_period_with_projection_and_memory(root, day, key, sources, stream, projection);
-    (transcript, counts)
+    (disclose_memory_incomplete(transcript, &memory), counts)
 }
 
 fn cluster_period_with_projection_and_memory(
@@ -470,8 +470,9 @@ fn cluster_span_with_projection(
     stream: Option<&str>,
     projection: PerceptProjection,
 ) -> Result<(ScreenTranscript, SourceCounts), String> {
-    cluster_span_with_projection_and_memory(root, day, span, sources, stream, projection)
-        .map(|(transcript, counts, _)| (transcript, counts))
+    cluster_span_with_projection_and_memory(root, day, span, sources, stream, projection).map(
+        |(transcript, counts, memory)| (disclose_memory_incomplete(transcript, &memory), counts),
+    )
 }
 
 fn cluster_span_with_projection_and_memory(
@@ -530,17 +531,12 @@ pub fn cluster_range(
     let end =
         NaiveDateTime::parse_from_str(&format!("{}{end}", date.format("%Y%m%d")), "%Y%m%d%H%M%S")
             .map_err(range_error)?;
-    let entries = load_day(
-        root,
-        day,
-        sources,
-        PerceptProjection::Generic,
-        &mut MemoryContext::default(),
-    )
-    .into_iter()
-    .filter(|entry| entry.segment_start < end && entry.segment_end > start)
-    .collect();
-    Ok(groups_to_markdown(entries).text)
+    let mut memory = MemoryContext::default();
+    let entries = load_day(root, day, sources, PerceptProjection::Generic, &mut memory)
+        .into_iter()
+        .filter(|entry| entry.segment_start < end && entry.segment_end > start)
+        .collect();
+    Ok(disclose_memory_incomplete(groups_to_markdown(entries), &memory).text)
 }
 
 fn range_error(error: impl fmt::Display) -> RangeError {
@@ -1048,6 +1044,21 @@ fn remember_memory_source(
     }
 }
 
+const INCOMPLETE_MEMORY_NOTICE: &str = "Private memory context is incomplete.";
+
+fn disclose_memory_incomplete(
+    mut transcript: ScreenTranscript,
+    memory: &MemoryContext,
+) -> ScreenTranscript {
+    if memory.incomplete && transcript.text.lines().last() != Some(INCOMPLETE_MEMORY_NOTICE) {
+        if !transcript.text.is_empty() && !transcript.text.ends_with('\n') {
+            transcript.text.push('\n');
+        }
+        transcript.text.push_str(INCOMPLETE_MEMORY_NOTICE);
+    }
+    transcript
+}
+
 fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
     entries.sort_by_key(|entry| entry.timestamp);
     let mut groups: Vec<Vec<Entry>> = Vec::new();
@@ -1294,6 +1305,36 @@ mod tests {
 
     fn only(stems: &[&str]) -> TalentSource {
         TalentSource::Only(stems.iter().map(|stem| (*stem).to_owned()).collect())
+    }
+
+    #[test]
+    fn disclose_memory_incomplete_appends_the_notice_once() {
+        let incomplete = MemoryContext {
+            sources: Vec::new(),
+            incomplete: true,
+        };
+        let transcript = disclose_memory_incomplete(
+            ScreenTranscript::plain("existing text".to_owned()),
+            &incomplete,
+        );
+        assert_eq!(
+            transcript.text,
+            format!("existing text\n{INCOMPLETE_MEMORY_NOTICE}")
+        );
+        let already_disclosed = disclose_memory_incomplete(transcript, &incomplete);
+        assert_eq!(
+            already_disclosed
+                .text
+                .matches(INCOMPLETE_MEMORY_NOTICE)
+                .count(),
+            1
+        );
+
+        let complete = disclose_memory_incomplete(
+            ScreenTranscript::plain("complete text".to_owned()),
+            &MemoryContext::default(),
+        );
+        assert_eq!(complete.text, "complete text");
     }
 
     #[test]

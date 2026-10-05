@@ -44,7 +44,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, iter_segments};
+use solstone_core_journal_io::iter_segments;
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::writers::{WriteIntent, index_warning};
@@ -894,29 +894,6 @@ pub(crate) fn write_page_with_sources(
 
     let md_path = target_dir.join(format!("{start}.md"));
     let json_path = target_dir.join(format!("{start}.json"));
-
-    atomic_replace(&md_path, markdown.as_bytes(), AtomicWriteOptions::default()).map_err(|e| {
-        StageError::new(
-            "write",
-            "weekly_reflection",
-            "weekly_reflection",
-            format!("failed to write markdown {}: {e}", md_path.display()),
-        )
-    })?;
-
-    atomic_replace(
-        &json_path,
-        document.as_bytes(),
-        AtomicWriteOptions::default(),
-    )
-    .map_err(|e| {
-        StageError::new(
-            "write",
-            "weekly_reflection",
-            "weekly_reflection",
-            format!("failed to write json {}: {e}", json_path.display()),
-        )
-    })?;
 
     crate::writers::write_output_with_sources(md_path.clone(), markdown, sources).map_err(
         |error| {

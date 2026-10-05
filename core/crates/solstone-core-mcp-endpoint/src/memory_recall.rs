@@ -25,7 +25,9 @@ use solstone_core_journal_io::readers::read_relative_file_bounded;
 use solstone_core_journal_io::strict_segment::resolve_stream_exact;
 use solstone_core_memory_original::{OriginalRead, read_original};
 
-use crate::references::{MemoryRecallCursor, ReferenceCodec, ReferenceKind, ReferenceTarget};
+use crate::references::{
+    MemoryRecallCursor, ReferenceCodec, ReferenceError, ReferenceKind, ReferenceTarget,
+};
 
 const RECALL_DEADLINE: Duration = Duration::from_secs(5);
 const DEFAULT_LIMIT: usize = 5;
@@ -196,6 +198,7 @@ pub(crate) fn recall(
     let mut anchor = cursor_anchor;
     let mut inclusive = true;
     let mut continuation = None;
+    let mut continuation_mint_failed = false;
     let mut reason = None;
     let mut exhausted = false;
 
@@ -245,7 +248,7 @@ pub(crate) fn recall(
         let candidate = validate_candidate(journal, &source_key, &row, deadline);
         if deadline_passed(deadline) {
             if matches!(candidate, Candidate::Ready(_)) {
-                continuation = mint_cursor(
+                continuation = match mint_cursor(
                     codec,
                     connection_identity,
                     permission_generation,
@@ -253,7 +256,13 @@ pub(crate) fn recall(
                     normalized_query.clone(),
                     &args,
                     row_anchor,
-                );
+                ) {
+                    Ok(token) => Some(token),
+                    Err(_) => {
+                        continuation_mint_failed = true;
+                        None
+                    }
+                };
             }
             reason = Some("memory_recall_budget_exhausted");
             exhausted = true;
@@ -264,7 +273,7 @@ pub(crate) fn recall(
                 if notes.len() >= limit
                     || page_bytes.saturating_add(note.bytes.len()) > MAX_PAGE_BYTES
                 {
-                    continuation = mint_cursor(
+                    continuation = match mint_cursor(
                         codec,
                         connection_identity,
                         permission_generation,
@@ -272,7 +281,13 @@ pub(crate) fn recall(
                         normalized_query.clone(),
                         &args,
                         row_anchor,
-                    );
+                    ) {
+                        Ok(token) => Some(token),
+                        Err(_) => {
+                            continuation_mint_failed = true;
+                            None
+                        }
+                    };
                     break;
                 }
                 page_bytes += note.bytes.len();
@@ -297,14 +312,15 @@ pub(crate) fn recall(
         // The page has no safe first-unreturned coordinate. Retrying from the
         // same request cannot skip a row; a fresh browse remains available.
     }
-    let complete = reason.is_none() && continuation.is_none();
+    let complete = page_is_complete(reason, continuation.as_deref(), continuation_mint_failed);
     RecallPage {
         notes,
         continuation,
         reason,
         query_reason: query.reason,
         complete,
-        self_resolution: reason.map(|_| "Retry recall or start a fresh query."),
+        self_resolution: (reason.is_some() || continuation_mint_failed)
+            .then_some("Retry recall or start a fresh query."),
     }
 }
 
@@ -356,22 +372,28 @@ fn mint_cursor(
     query: Option<String>,
     args: &RecallArgs,
     anchor: (String, String),
-) -> Option<String> {
-    codec
-        .mint(
-            connection_identity,
-            permission_generation,
-            ReferenceTarget::MemoryRecall(MemoryRecallCursor {
-                source_key: source_key.as_str().to_owned(),
-                query,
-                day: args.day.clone(),
-                day_from: args.day_from.clone(),
-                day_to: args.day_to.clone(),
-                anchor_day: anchor.0,
-                anchor_path: anchor.1,
-            }),
-        )
-        .ok()
+) -> Result<String, ReferenceError> {
+    codec.mint(
+        connection_identity,
+        permission_generation,
+        ReferenceTarget::MemoryRecall(MemoryRecallCursor {
+            source_key: source_key.as_str().to_owned(),
+            query,
+            day: args.day.clone(),
+            day_from: args.day_from.clone(),
+            day_to: args.day_to.clone(),
+            anchor_day: anchor.0,
+            anchor_path: anchor.1,
+        }),
+    )
+}
+
+fn page_is_complete(
+    reason: Option<&'static str>,
+    continuation: Option<&str>,
+    continuation_mint_failed: bool,
+) -> bool {
+    reason.is_none() && continuation.is_none() && !continuation_mint_failed
 }
 
 enum Candidate {
@@ -775,6 +797,12 @@ mod tests {
             remaining_at(deadline, now + Duration::from_secs(6)),
             Duration::ZERO
         );
+    }
+
+    #[test]
+    fn required_continuation_without_token_keeps_page_incomplete() {
+        assert!(!page_is_complete(None, None, true));
+        assert!(page_is_complete(None, None, false));
     }
 
     #[test]
