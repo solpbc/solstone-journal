@@ -2,9 +2,12 @@
 
 Local pairing and OAuth for the journal MCP endpoint. This is an MVP:
 it is not intended for a public or untrusted client population. There is
-no scope support, no client secrets or confidential clients, no third-party
+no OAuth scope-string support, no client secrets or confidential clients, no third-party
 dynamic redirect registration beyond the fixed allowlist, and only one
 active pairing code at a time.
+
+During consent, the owner chooses whole-journal or facet access and the content
+categories the connection may read. These permissions are stored per grant.
 
 Static bearer tokens remain available and independent: `solstone journal mcp token
 create|list|revoke`. A client may authenticate with either scheme on each
@@ -116,8 +119,15 @@ Only these callback shapes are admitted:
   Codex-style `/callback/<id>` path)
 - exactly `https://claude.ai/api/mcp/auth_callback`
 - exactly `https://chatgpt.com/connector_platform_oauth_redirect`
+- `https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-<id>`
+  for the observed Gemini custom-app callback shape. `<id>` is one nonempty
+  segment of at most 160 ASCII letters, digits, underscores or hyphens.
 
 Nothing else is accepted.
+
+Hosted callbacks require HTTPS with no explicit port, query or fragment. The
+complete registered path must match; another account or server's path is refused.
+An admitted Google callback is a destination, not verified client identity.
 
 The journal advertises issuer identification and includes the exact advertised
 issuer in both successful and error OAuth redirects.
