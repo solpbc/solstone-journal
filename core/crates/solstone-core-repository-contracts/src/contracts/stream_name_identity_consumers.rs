@@ -292,6 +292,8 @@ fn expected_consumers() -> BTreeSet<(String, String)> {
     [
         // import publication; unbound stream names are import-created
         ("solstone-core-import/src/publish.rs", "advance_stream"),
+        // Strava placement reads the fixed stream name import.strava
+        ("solstone-core-import-sources/src/strava.rs", "place"),
         // operator CLI move seam; name comes from the relocation request
         ("solstone-core-segment-cli/src/move.rs", "relocate"),
         // operator CLI helper; name is the marker/argv stream token

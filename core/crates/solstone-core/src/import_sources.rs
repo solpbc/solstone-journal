@@ -3,6 +3,7 @@
 
 //! Top-level dispatch for source bodies that depend on the import contract.
 
+use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -24,8 +25,9 @@ use solstone_core_import_sources::archive::{
 };
 use solstone_core_import_sources::{
     ImportSourcesError, MergeMutationState, chatgpt, claude, document, gemini, ics, image,
-    obsidian, save,
+    obsidian, save, strava,
 };
+use solstone_core_journal_io::{DEFAULT_LOCK_TIMEOUT, LockOptions, hold_lock};
 
 struct SupervisorRescan {
     journal: PathBuf,
@@ -100,6 +102,7 @@ pub fn run_bound(dispatch: RegistryDispatch, journal: &Path) -> (CliRun, Option<
         RegistrySource::Document => run_document(dispatch, journal, &mut selected),
         RegistrySource::Image => run_image(dispatch, journal, &mut selected),
         RegistrySource::JournalArchive => run_archive(dispatch, journal, &mut selected),
+        RegistrySource::Strava => run_strava(dispatch, journal, &mut selected),
         RegistrySource::AppleHealth | RegistrySource::Oura => {
             unreachable!("resolver preempts body")
         }
@@ -849,7 +852,7 @@ fn refuse_if_live_running(
 }
 
 fn render_result(source: RegistrySource, result: ImportResult) -> CliRun {
-    if result.entries_written > 0 && result.hard_failures.is_empty() {
+    if result.hard_failures.is_empty() && (result.entries_written > 0 || result.errors.is_empty()) {
         success(cli_render::source_import_complete(source, &result))
     } else {
         failure(cli_render::source_import_failure(source, &result))
@@ -887,6 +890,307 @@ fn failure(stderr: String) -> CliRun {
         stderr,
         exit_code: 1,
     }
+}
+
+const STRAVA_RAW_RETENTION: &str = "discard";
+
+pub(crate) fn run_strava(
+    dispatch: RegistryDispatch,
+    journal: &Path,
+    selected: &mut Option<String>,
+) -> CliRun {
+    run_strava_internal(dispatch, journal, selected, None)
+}
+
+#[cfg(test)]
+pub struct StravaRunHook<'a> {
+    pub fault: Option<&'a strava::ReadFault>,
+    pub after_lock: Option<&'a (dyn Fn(&Path) + 'a)>,
+    pub before_apply: Option<&'a (dyn Fn(&Path) + 'a)>,
+    pub lock_timeout: Option<std::time::Duration>,
+    pub stop_before_finish: bool,
+}
+
+#[cfg(test)]
+pub fn run_strava_hooked(
+    dispatch: RegistryDispatch,
+    journal: &Path,
+    selected: &mut Option<String>,
+    hook: Option<&StravaRunHook<'_>>,
+) -> CliRun {
+    run_strava_internal(dispatch, journal, selected, hook)
+}
+
+fn run_strava_internal(
+    mut dispatch: RegistryDispatch,
+    journal: &Path,
+    selected: &mut Option<String>,
+    #[cfg(test)] hook: Option<&StravaRunHook<'_>>,
+    #[cfg(not(test))] _hook: Option<()>,
+) -> CliRun {
+    let source = dispatch.source;
+    let name = source.name();
+    let action_label = if dispatch.dry_run {
+        "preview"
+    } else {
+        "import"
+    };
+
+    // 1. read_zone_record
+    let pre_lock_zone = match strava::read_zone_record(journal) {
+        Ok(z) => z,
+        Err(e) => return failure(format!("{name} {action_label} failed: {e}\n")),
+    };
+
+    // 2. read_workouts at DEFAULT_LIST_CAP
+    let workouts = match strava::read_workouts(&dispatch.media, strava::DEFAULT_LIST_CAP) {
+        Ok(w) => w,
+        Err(e) => return failure(format!("{name} {action_label} failed: {e}\n")),
+    };
+
+    #[cfg(test)]
+    let fault = hook.and_then(|h| h.fault);
+    #[cfg(not(test))]
+    let fault = None;
+
+    // 3. place as fail-fast
+    let pre_placement = match strava::place(journal, &workouts.workouts, pre_lock_zone, fault) {
+        Ok(p) => p,
+        Err(e) => return failure(format!("{name} {action_label} failed: {e}\n")),
+    };
+
+    // 4. dry_run
+    if dispatch.dry_run {
+        let mut summary = strava::format_count_summary(&pre_placement.counts);
+        let owner_z = solstone_core_journal_config::owner_zone(journal);
+        if pre_placement.zone.name() != owner_z.name() {
+            summary.push_str(&format!(" zone={}", pre_placement.zone.name()));
+        }
+        let date_range = match (&pre_placement.first_day, &pre_placement.last_day) {
+            (Some(f), Some(l)) => (f.clone(), l.clone()),
+            _ => (String::new(), String::new()),
+        };
+        let preview = solstone_core_import::ImportPreview {
+            date_range,
+            item_count: pre_placement.counts.new_workouts as u64,
+            entity_count: pre_placement.counts.tiles_to_create as u64,
+            summary,
+        };
+        return success(cli_render::source_preview(source, &preview));
+    }
+
+    // 5. Ignore dispatch.force. No same-file skip.
+
+    // 6. hold_lock
+    #[cfg(test)]
+    let lock_timeout = hook
+        .and_then(|h| h.lock_timeout)
+        .unwrap_or(DEFAULT_LOCK_TIMEOUT);
+    #[cfg(not(test))]
+    let lock_timeout = DEFAULT_LOCK_TIMEOUT;
+
+    let _source_lock = match hold_lock(
+        journal.join("imports/.strava"),
+        LockOptions {
+            timeout: lock_timeout,
+            mode: Some(0o600),
+            ..LockOptions::default()
+        },
+    ) {
+        Ok(lock) => lock,
+        Err(_) => return failure(format!("{name} import failed: strava_lock_unavailable\n")),
+    };
+
+    #[cfg(test)]
+    if let Some(after_lock) = hook.and_then(|h| h.after_lock) {
+        after_lock(journal);
+    }
+
+    // 7. Re-read the zone record & place again
+    let post_lock_zone = match strava::read_zone_record(journal) {
+        Ok(z) => z,
+        Err(_) => return failure(format!("{name} import failed: strava_zone_unrecognised\n")),
+    };
+    let placement = match strava::place(journal, &workouts.workouts, post_lock_zone, fault) {
+        Ok(p) => p,
+        Err(e) => return failure(format!("{name} import failed: {e}\n")),
+    };
+
+    // 8. claim_dispatch_id, refuse_if_live_running, admit_running_attempt
+    if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
+        return failure(format!("{name} import failed: {error}\n"));
+    }
+    if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, source) {
+        return refused;
+    }
+
+    let import_id = dispatch.timestamp.as_str();
+    let generation = match solstone_core_import::admit_running_attempt(
+        journal,
+        import_id,
+        now_ms(),
+        Some("strava"),
+    ) {
+        Ok(facts) => facts.generation,
+        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+    };
+
+    let finish = |input| finish_import_attempt(journal, import_id, generation, name, input);
+
+    // 9. create_zone_record if absent
+    if post_lock_zone.is_none()
+        && let Err(error) = strava::create_zone_record(journal, placement.zone)
+    {
+        let _ = finish(ImportTerminalInput::Failed(&[]));
+        return failure(format!("{name} import failed: {error}\n"));
+    }
+
+    // 10. before_apply callback
+    #[cfg(test)]
+    if let Some(before_apply) = hook.and_then(|h| h.before_apply) {
+        before_apply(journal);
+    }
+
+    // 11. apply, then write_rendered
+    let (rendered, _) = strava::apply(&placement, import_id);
+    let written = save::write_rendered(journal, Some(import_id), &rendered);
+
+    // 12. Write error / reconciliation
+    let written_keys: HashSet<(String, String)> = written
+        .created
+        .iter()
+        .map(|file| (file.day.clone(), file.segment.clone()))
+        .collect();
+    let skipped_keys: HashSet<(String, String)> = written.skipped_deleted.iter().cloned().collect();
+    let (corrected_counts, planned_publish) = strava::reconcile_written(
+        &placement,
+        &written_keys,
+        &skipped_keys,
+        written.error.is_some(),
+    );
+
+    let mut publish_slice: Vec<solstone_core_import::text::TextCreated> = Vec::new();
+    for p in planned_publish {
+        if let Some(c) = written
+            .created
+            .iter()
+            .find(|c| c.day == p.day && c.segment == p.segment)
+        {
+            publish_slice.push(c.clone());
+        } else {
+            publish_slice.push(solstone_core_import::text::TextCreated {
+                day: p.day.clone(),
+                segment: p.segment.clone(),
+                stream: "import.strava".to_owned(),
+                hints: save::stream_hints(RegistrySource::Strava),
+                path: PathBuf::from(format!(
+                    "chronicle/{}/import.strava/{}/workout.json",
+                    p.day, p.segment
+                )),
+            });
+        }
+    }
+
+    if let Some(save_error) = written.error {
+        let _ = finish(ImportTerminalInput::Failed(&publish_slice));
+        let count_line = strava::format_count_summary(&corrected_counts);
+        return failure(format!(
+            "{name} import failed: {save_error}\n{count_line}\n"
+        ));
+    }
+
+    // 13. stop_before_finish
+    #[cfg(test)]
+    if hook.map(|h| h.stop_before_finish).unwrap_or(false) {
+        return success(String::new());
+    }
+
+    // 14. No write error: manifest
+    let source_hash = match solstone_core_import::hash_source(&dispatch.media) {
+        Ok(hash) => hash,
+        Err(error) => {
+            let _ = finish(ImportTerminalInput::Failed(&[]));
+            return failure(format!("{name} import failed: {error}\n"));
+        }
+    };
+
+    let mut days_affected: Vec<String> = placement
+        .tiles
+        .iter()
+        .filter_map(|t| match t {
+            strava::TileAction::Created { day, segment, .. } => {
+                let key = (day.clone(), segment.clone());
+                if written_keys.contains(&key) && !skipped_keys.contains(&key) {
+                    Some(day.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    days_affected.sort();
+    days_affected.dedup();
+
+    let manifest_res =
+        solstone_core_import::write_manifest(&solstone_core_import::ManifestWriteRequest {
+            journal_root: journal,
+            import_id,
+            source_type: "strava",
+            source_hash: &source_hash,
+            entry_count: corrected_counts.new_workouts as u64,
+            days_affected: &days_affected,
+            files_created: &[],
+            imported_via: "native",
+            link_id: None,
+            observer_handle: None,
+            raw_retention: Some(STRAVA_RAW_RETENTION),
+        });
+    if let Err(error) = manifest_res {
+        let _ = finish(ImportTerminalInput::Failed(&publish_slice));
+        return failure(format!("{name} import failed: {error}\n"));
+    }
+
+    // 15. finish Success
+    match finish(ImportTerminalInput::Success(&publish_slice)) {
+        Ok(ImportFinish::Applied) => {}
+        Ok(ImportFinish::Stale) => {
+            return failure(format!(
+                "{name} import failed: attempt {import_id}:{generation} was superseded\n"
+            ));
+        }
+        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+    }
+
+    let projection = solstone_core_import::project_import_result(journal, import_id);
+    if projection.status != solstone_core_import::ProjectionStatus::Success {
+        return failure(format!(
+            "{name} import saved to your journal, but it could not confirm the entries are ready to search; run it again\n"
+        ));
+    }
+
+    let mut summary = strava::format_count_summary(&corrected_counts);
+    let owner_z = solstone_core_journal_config::owner_zone(journal);
+    if placement.zone.name() != owner_z.name() {
+        summary.push_str(&format!(" zone={}", placement.zone.name()));
+    }
+
+    let result = ImportResult {
+        entries_written: corrected_counts.new_workouts as u64,
+        entities_seeded: 0,
+        files_created: vec![],
+        errors: Vec::new(),
+        summary,
+        hard_failures: Vec::new(),
+        segments: None,
+        date_range: projection.date_range,
+        merge_summary: None,
+        principal_collision: None,
+        merge_log_path: None,
+        merge_staging_path: None,
+        raw_retention: Some(STRAVA_RAW_RETENTION.to_owned()),
+    };
+    render_result(source, result)
 }
 
 #[cfg(test)]
@@ -2432,5 +2736,1663 @@ mod tests {
         .unwrap();
         let ctrl_rows: Vec<&str> = ctrl_manifest_content.lines().collect();
         assert_eq!(ctrl_rows.len(), 2);
+    }
+
+    fn strava_dispatch(csv_path: &Path, timestamp: &str) -> RegistryDispatch {
+        RegistryDispatch {
+            source: RegistrySource::Strava,
+            media: csv_path.to_path_buf(),
+            timestamp: timestamp.to_owned(),
+            dry_run: false,
+            force: false,
+        }
+    }
+
+    fn write_custom_zone(journal: &Path, zone: &str) {
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            format!(r#"{{"identity":{{"timezone":"{zone}"}}}}"#),
+        )
+        .unwrap();
+    }
+
+    const HEADER_ENGLISH_103: &str = "Activity ID,Activity Date,Activity Name,Activity Type,Activity Description,Elapsed Time,Distance,Max Heart Rate,Relative Effort,Commute,Activity Private Note,Activity Gear,Filename,Athlete Weight,Bike Weight,Elapsed Time,Moving Time,Distance,Max Speed,Average Speed,Elevation Gain,Elevation Loss,Elevation Low,Elevation High,Max Grade,Average Grade,Average Positive Grade,Average Negative Grade,Max Cadence,Average Cadence,Max Heart Rate,Average Heart Rate,Max Watts,Average Watts,Calories,Max Temperature,Average Temperature,Relative Effort,Total Work,Number of Runs,Uphill Time,Downhill Time,Other Time,Perceived Exertion,Type,Start Time,Weighted Average Power,Power Count,Prefer Perceived Exertion,Perceived Relative Effort,Commute,Total Weight Lifted,From Upload,Grade Adjusted Distance,Weather Observation Time,Weather Condition,Weather Temperature,Apparent Temperature,Dewpoint,Humidity,Weather Pressure,Wind Speed,Wind Gust,Wind Bearing,Precipitation Intensity,Sunrise Time,Sunset Time,Moon Phase,Bike,Gear,Precipitation Probability,Precipitation Type,Cloud Cover,Weather Visibility,UV Index,Weather Ozone,Jump Count,Total Grit,Average Flow,Flagged,Average Elapsed Speed,Dirt Distance,Newly Explored Distance,Newly Explored Dirt Distance,Activity Count,Total Steps,Carbon Saved,Pool Length,Training Load,Intensity,Average Grade Adjusted Pace,Timer Time,Total Cycles,Recovery,With Pet,Competition,Long Run,For a Cause,With Kid,Downhill Distance,Total Sets,Total Reps,Media\n";
+    const HEADER_GERMAN_92: &str = "Aktivitäts-ID,Aktivitätsdatum,Name der Aktivität,Aktivitätsart,Aktivitätsbeschreibung,Verstrichene Zeit,Distanz,Max. Herzfrequenz,Relative Leistung,Pendeln,Hinweis zur Privatsphäre für Aktivitäten,Aktivitätsausrüstung,Dateiname,Sportlergewicht,Fahrradgewicht,Verstrichene Zeit,Bewegungszeit,Distanz,Höchstgeschw.,Durchschnittliche Geschwindigkeit,Höhenzunahme,Höhenunterschied,Min. Höhe,Max. Höhe,Max. Steigung,Durchschnittliche Steigung,Durchschnittliche positive Steigung,Durchschnittliche negative Steigung,Max. Tritt-/Schrittfrequenz,Durchschnittliche Trittfrequenz,Max. Herzfrequenz,Durchschnittliche Herzfrequenz,Max. Watt,Durchschnittliche Watt,Kalorien,Max. Temperatur,Durchschnittliche Temperatur,Relative Leistung,Gesamtarbeit,Anzahl Läufe,Bergaufzeit,Bergabzeit,Andere Zeit,Gefühlte Anstrengung,Art,Startzeit,Gewichtete durchschnittliche Leistung,Leistungszahl,Gefühlte Anstrengung verwenden,Gefühlte relative Leistung,Pendeln,Insgesamt gestemmtes Gewicht,Von Upload,Auf Steigung angepasste Distanz,Wetterbeobachtungszeit,Wetterlage,Wetter: Temperatur,Scheinbare Temperatur,Taupunkt,Luftfeuchtigkeit,Wetter: Druck,Windgeschwindigkeit,Windböe,Windrichtung,Niederschlagsintensität,Sonnenaufgangszeit,Sonnenuntergangszeit,Mondphase,Fahrrad,Ausrüstung,Niederschlagswahrscheinlichkeit,Niederschlagsart,Wolkendecke,Wetter: Sichtbarkeit,UV-Index,Wetter: Ozon,Sprunganzahl,Schwierigkeit insgesamt,Durchschnittlicher Flow,Markiert,Durchschnittsgeschwindigkeit im Aufzeichnungszeitraum,Auf Schotter zurückgelegte Distanz,Neu getestete Distanz,Neu getestete Schotterdistanz,Aktivitätsanzahl,Schritte insgesamt,Eingesparte CO₂-Emissionen,Pool-Länge,Trainingsbelastung,Intensität,Durchschnittliches auf Steigung angepasstes Tempo,Medien\n";
+    const HEADER_ENGLISH_86: &str = "Activity ID,Activity Date,Activity Name,Activity Type,Activity Description,Elapsed Time,Distance,Max Heart Rate,Relative Effort,Commute,Activity Private Note,Activity Gear,Filename,Athlete Weight,Bike Weight,Elapsed Time,Moving Time,Distance,Max Speed,Average Speed,Elevation Gain,Elevation Loss,Elevation Low,Elevation High,Max Grade,Average Grade,Average Positive Grade,Average Negative Grade,Max Cadence,Average Cadence,Max Heart Rate,Average Heart Rate,Max Watts,Average Watts,Calories,Max Temperature,Average Temperature,Relative Effort,Total Work,Number of Runs,Uphill Time,Downhill Time,Other Time,Perceived Exertion,Type,Start Time,Weighted Average Power,Power Count,Prefer Perceived Exertion,Perceived Relative Effort,Commute,Total Weight Lifted,From Upload,Grade Adjusted Distance,Weather Observation Time,Weather Condition,Weather Temperature,Apparent Temperature,Dewpoint,Humidity,Weather Pressure,Wind Speed,Wind Gust,Wind Bearing,Precipitation Intensity,Sunrise Time,Sunset Time,Moon Phase,Bike,Gear,Precipitation Probability,Precipitation Type,Cloud Cover,Weather Visibility,UV Index,Weather Ozone,Jump Count,Total Grit,Average Flow,Flagged,Average Elapsed Speed,Dirt Distance,Newly Explored Distance,Newly Explored Dirt Distance,Activity Count,Media\n";
+
+    fn build_csv(header: &str, rows: &[&[(&str, usize, &str)]]) -> String {
+        let cols: Vec<&str> = header.trim_end_matches('\n').split(',').collect();
+        let mut out = header.to_owned();
+
+        for row in rows {
+            let mut col_occurrences: std::collections::BTreeMap<&str, usize> =
+                std::collections::BTreeMap::new();
+            let mut line_fields = Vec::with_capacity(cols.len());
+
+            for col in &cols {
+                let occ = col_occurrences.entry(col).or_insert(0);
+                *occ += 1;
+                let cur_occ = *occ;
+
+                let val = row
+                    .iter()
+                    .find(|(name, o, _)| name == col && *o == cur_occ)
+                    .map(|(_, _, v)| *v)
+                    .unwrap_or("");
+                line_fields.push(val);
+            }
+
+            out.push_str(&line_fields.join(","));
+            out.push('\n');
+        }
+
+        out
+    }
+
+    fn make_en_csv_103(rows: &[(&str, &str, &str, u64, f64)]) -> String {
+        let row_refs: Vec<Vec<(&str, usize, String)>> = rows
+            .iter()
+            .map(|(id, date_str, name, elapsed, dist)| {
+                vec![
+                    ("Activity ID", 1, id.to_string()),
+                    ("Activity Date", 1, format!("\"{date_str}\"")),
+                    ("Activity Name", 1, (*name).to_string()),
+                    ("Activity Type", 1, "Run".to_string()),
+                    ("Elapsed Time", 1, "9999".to_string()),
+                    ("Elapsed Time", 2, elapsed.to_string()),
+                    ("Moving Time", 1, elapsed.to_string()),
+                    ("Distance", 1, "99.9".to_string()),
+                    ("Distance", 2, dist.to_string()),
+                    ("Elevation Gain", 1, "100".to_string()),
+                    ("Average Heart Rate", 1, "140".to_string()),
+                    ("Max Heart Rate", 1, "999".to_string()),
+                    ("Max Heart Rate", 2, "160".to_string()),
+                    ("Average Watts", 1, "200".to_string()),
+                    ("Weighted Average Power", 1, "210".to_string()),
+                    ("Calories", 1, "350".to_string()),
+                    ("Commute", 1, "false".to_string()),
+                    ("Commute", 2, "true".to_string()),
+                    ("Filename", 1, format!("activities/{id}.gpx")),
+                ]
+            })
+            .collect();
+
+        let row_tuples: Vec<Vec<(&str, usize, &str)>> = row_refs
+            .iter()
+            .map(|r| r.iter().map(|(n, o, v)| (*n, *o, v.as_str())).collect())
+            .collect();
+
+        let row_slices: Vec<&[(&str, usize, &str)]> =
+            row_tuples.iter().map(|r| r.as_slice()).collect();
+        build_csv(HEADER_ENGLISH_103, &row_slices)
+    }
+
+    fn make_de_csv_92(rows: &[(&str, &str, &str, u64, &str)]) -> String {
+        let row_refs: Vec<Vec<(&str, usize, String)>> = rows
+            .iter()
+            .map(|(id, date_str, name, elapsed, dist)| {
+                let dist_val = if dist.contains(',') && !dist.starts_with('"') {
+                    format!("\"{dist}\"")
+                } else {
+                    (*dist).to_string()
+                };
+                vec![
+                    ("Aktivitäts-ID", 1, id.to_string()),
+                    ("Aktivitätsdatum", 1, format!("\"{date_str}\"")),
+                    ("Name der Aktivität", 1, (*name).to_string()),
+                    ("Aktivitätsart", 1, "Run".to_string()),
+                    ("Verstrichene Zeit", 1, "9999".to_string()),
+                    ("Verstrichene Zeit", 2, elapsed.to_string()),
+                    ("Bewegungszeit", 1, elapsed.to_string()),
+                    ("Distanz", 1, "\"10,20\"".to_string()),
+                    ("Distanz", 2, dist_val),
+                    ("Höhenzunahme", 1, "100".to_string()),
+                    ("Durchschnittliche Herzfrequenz", 1, "140".to_string()),
+                    ("Max. Herzfrequenz", 1, "999".to_string()),
+                    ("Max. Herzfrequenz", 2, "160".to_string()),
+                    ("Durchschnittliche Watt", 1, "200".to_string()),
+                    (
+                        "Gewichtete durchschnittliche Leistung",
+                        1,
+                        "210".to_string(),
+                    ),
+                    ("Kalorien", 1, "350".to_string()),
+                    ("Pendeln", 1, "false".to_string()),
+                    ("Pendeln", 2, "true".to_string()),
+                    ("Dateiname", 1, format!("activities/{id}.gpx")),
+                ]
+            })
+            .collect();
+
+        let row_tuples: Vec<Vec<(&str, usize, &str)>> = row_refs
+            .iter()
+            .map(|r| r.iter().map(|(n, o, v)| (*n, *o, v.as_str())).collect())
+            .collect();
+
+        let row_slices: Vec<&[(&str, usize, &str)]> =
+            row_tuples.iter().map(|r| r.as_slice()).collect();
+        build_csv(HEADER_GERMAN_92, &row_slices)
+    }
+
+    #[test]
+    fn strava_preview_success_and_date_range() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[
+            (
+                "101",
+                "Aug 10, 2026, 06:30:00 AM",
+                "Morning Run",
+                300,
+                5000.0,
+            ),
+            (
+                "102",
+                "Aug 12, 2026, 07:00:00 AM",
+                "Morning Ride",
+                600,
+                15000.0,
+            ),
+        ]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let mut dispatch = strava_dispatch(&csv_file, "20260812_090000");
+        dispatch.dry_run = true;
+
+        let (run, id) = run_bound(dispatch, journal.path());
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(id.is_none());
+        assert!(
+            run.stdout.contains("strava preview: date_range=20260810..20260812 items=2 entities=3 summary=new=2 tiles_to_create=3"),
+            "{}",
+            run.stdout
+        );
+    }
+
+    #[test]
+    fn strava_preview_unparseable_date_fails() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[("101", "Not A Date", "Bad Run", 300, 5000.0)]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let mut dispatch = strava_dispatch(&csv_file, "20260812_090000");
+        dispatch.dry_run = true;
+
+        let (run, _) = run_bound(dispatch, journal.path());
+        assert_ne!(run.exit_code, 0);
+        assert!(run.stderr.contains("strava preview failed:"));
+    }
+
+    #[test]
+    fn strava_import_english_single_and_multi_day() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[
+            (
+                "101",
+                "Aug 10, 2026, 06:30:00 AM",
+                "Morning Run",
+                300,
+                5000.0,
+            ),
+            (
+                "102",
+                "Aug 11, 2026, 07:00:00 AM",
+                "Morning Ride",
+                600,
+                15000.0,
+            ),
+        ]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let dispatch = strava_dispatch(&csv_file, "20260811_090000");
+        let (run, id) = run_bound(dispatch, journal.path());
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        let import_id = id.unwrap();
+        assert!(
+            run.stdout
+                .contains("strava import complete: entries_written=2")
+        );
+
+        // Check chronicle segment files
+        let tile_day1 = journal
+            .path()
+            .join("chronicle/20260810/import.strava/063000_300");
+        assert!(tile_day1.join("workout.json").is_file());
+
+        let tile_day2_1 = journal
+            .path()
+            .join("chronicle/20260811/import.strava/070000_300");
+        let tile_day2_2 = journal
+            .path()
+            .join("chronicle/20260811/import.strava/070500_300");
+        assert!(tile_day2_1.join("workout.json").is_file());
+        assert!(tile_day2_2.join("workout.json").is_file());
+
+        // Check manifest
+        let manifest_path = journal
+            .path()
+            .join(format!("imports/{import_id}/manifest.json"));
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        assert_eq!(manifest["source_type"], "strava");
+        assert_eq!(manifest["entry_count"], 2);
+        assert_eq!(manifest["raw_retention"], "discard");
+        assert!(manifest["source_hash"].as_str().is_some());
+        assert!(journal.path().join("imports/.strava-zone.json").is_file());
+    }
+
+    #[test]
+    fn strava_import_german_headers_and_dates() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_de_csv_92(&[("201", "10.08.2026, 06:30:00", "Morgenlauf", 300, "5,0")]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let dispatch = strava_dispatch(&csv_file, "20260810_090000");
+        let (run, id) = run_bound(dispatch, journal.path());
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(id.is_some());
+        assert!(
+            run.stdout
+                .contains("strava import complete: entries_written=1")
+        );
+
+        let tile = journal
+            .path()
+            .join("chronicle/20260810/import.strava/063000_300");
+        assert!(tile.join("workout.json").is_file());
+    }
+
+    #[test]
+    fn strava_shuffled_rows_produce_identical_placement() {
+        let journal1 = tempfile::tempdir().unwrap();
+        let journal2 = tempfile::tempdir().unwrap();
+        write_utc_zone(journal1.path());
+        write_utc_zone(journal2.path());
+
+        let row_a = ("301", "Aug 10, 2026, 06:00:00 AM", "Run A", 300, 5000.0);
+        let row_b = ("302", "Aug 10, 2026, 12:00:00 PM", "Run B", 300, 5000.0);
+        let row_c = ("303", "Aug 11, 2026, 08:00:00 AM", "Run C", 300, 5000.0);
+
+        let csv1 = journal1.path().join("activities.csv");
+        let csv2 = journal2.path().join("activities.csv");
+
+        fs::write(&csv1, make_en_csv_103(&[row_a, row_b, row_c]).as_bytes()).unwrap();
+        fs::write(&csv2, make_en_csv_103(&[row_c, row_a, row_b]).as_bytes()).unwrap();
+
+        let (run1, id1) = run_bound(strava_dispatch(&csv1, "20260811_120000"), journal1.path());
+        let (run2, id2) = run_bound(strava_dispatch(&csv2, "20260811_120000"), journal2.path());
+
+        assert_eq!(run1.exit_code, 0);
+        assert_eq!(run2.exit_code, 0);
+        assert_eq!(id1, id2);
+
+        // Verify tiles match
+        for key in ["060000_300", "120000_300"] {
+            let p1 = journal1
+                .path()
+                .join("chronicle/20260810/import.strava")
+                .join(key)
+                .join("workout.json");
+            let p2 = journal2
+                .path()
+                .join("chronicle/20260810/import.strava")
+                .join(key)
+                .join("workout.json");
+            assert_eq!(
+                fs::read_to_string(p1).unwrap(),
+                fs::read_to_string(p2).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn strava_reimport_idempotent_and_skips_unchanged() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[(
+            "401",
+            "Aug 10, 2026, 06:30:00 AM",
+            "Morning Run",
+            300,
+            5000.0,
+        )]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        // Run 1
+        let (run1, id1) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0);
+        assert!(run1.stdout.contains("entries_written=1"));
+        let id1 = id1.unwrap();
+
+        // Run 2 on same CSV
+        let (run2, id2) = run_bound(
+            strava_dispatch(&csv_file, "20260810_110000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+        assert!(run2.stdout.contains("entries_written=0"));
+        let id2 = id2.unwrap();
+        assert_ne!(id1, id2);
+
+        // Content of workout.json retains original import_id
+        let workout_json: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                journal
+                    .path()
+                    .join("chronicle/20260810/import.strava/063000_300/workout.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(workout_json["import_id"], id1);
+    }
+
+    #[test]
+    fn strava_reimport_with_tombstone_preserves_deletion() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[
+            ("501", "Aug 10, 2026, 06:00:00 AM", "Run 1", 300, 5000.0),
+            ("502", "Aug 10, 2026, 12:00:00 PM", "Run 2", 300, 5000.0),
+        ]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        // Run 1
+        let (run1, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0);
+
+        // Place tombstone on Run 1
+        let tile1 = journal
+            .path()
+            .join("chronicle/20260810/import.strava/060000_300");
+        fs::write(tile1.join("tombstone.json"), b"{}").unwrap();
+
+        // Run 2 with expanded CSV
+        let content2 = make_en_csv_103(&[
+            ("501", "Aug 10, 2026, 06:00:00 AM", "Run 1", 300, 5000.0),
+            ("502", "Aug 10, 2026, 12:00:00 PM", "Run 2", 300, 5000.0),
+            ("503", "Aug 11, 2026, 08:00:00 AM", "Run 3", 300, 5000.0),
+        ]);
+        let csv_file2 = journal.path().join("activities2.csv");
+        fs::write(&csv_file2, content2.as_bytes()).unwrap();
+
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file2, "20260811_100000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+        assert!(run2.stdout.contains("entries_written=1"), "{}", run2.stdout);
+
+        // Run 1 stays deleted (tombstoned), Run 3 is created, no _301 created
+        assert!(tile1.join("tombstone.json").is_file());
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260810/import.strava/060000_301")
+                .exists()
+        );
+        assert!(
+            journal
+                .path()
+                .join("chronicle/20260811/import.strava/080000_300/workout.json")
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn strava_cli_connectivity_and_registration() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        fs::write(&csv_file, b"arbitrary").unwrap();
+
+        let lookup_env = |var: &str| {
+            if var == "SOL_SKIP_SUPERVISOR_CHECK" {
+                Some("1".to_string())
+            } else {
+                None
+            }
+        };
+        let connectivity = || false;
+
+        let strava_args = vec![
+            "--source".to_string(),
+            "strava".to_string(),
+            csv_file.to_str().unwrap().to_string(),
+        ];
+        let outcome_strava = solstone_core_import_host::cli_argv::run_cli_with(
+            &strava_args,
+            journal.path(),
+            lookup_env,
+            connectivity,
+        );
+        let run = match outcome_strava {
+            solstone_core_import_host::cli_argv::CliOutcome::Rendered(run) => run,
+            solstone_core_import_host::cli_argv::CliOutcome::Imported { run, .. } => run,
+            solstone_core_import_host::cli_argv::CliOutcome::Registry(dispatch) => {
+                run(dispatch, journal.path())
+            }
+        };
+        assert_ne!(run.exit_code, 0);
+        assert!(!journal.path().join("imports").exists());
+
+        let ics_file = journal.path().join("test.ics");
+        fs::write(&ics_file, b"BEGIN:VCALENDAR\nEND:VCALENDAR\n").unwrap();
+        let ics_args = vec![
+            "--source".to_string(),
+            "ics".to_string(),
+            ics_file.to_str().unwrap().to_string(),
+        ];
+        let outcome_ics = solstone_core_import_host::cli_argv::run_cli_with(
+            &ics_args,
+            journal.path(),
+            lookup_env,
+            connectivity,
+        );
+        match outcome_ics {
+            solstone_core_import_host::cli_argv::CliOutcome::Registry(dispatch) => {
+                assert_eq!(dispatch.source, RegistrySource::Ics);
+            }
+            other => panic!("expected CliOutcome::Registry with Ics, got {:?}", other),
+        }
+
+        assert!(RegistrySource::from_name("strava").is_none());
+        assert_eq!(RegistrySource::Strava.name(), "strava");
+        assert!(solstone_core_format::body::is_body_stream("import.strava"));
+        assert!(
+            !solstone_core_import_sources::registry::claims(RegistrySource::Strava, &csv_file)
+                .unwrap()
+        );
+        assert_eq!(RegistrySource::from_name("ics"), Some(RegistrySource::Ics));
+    }
+
+    fn assert_no_sentinels_in_dir(dir: &Path) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.is_dir() {
+                    assert_no_sentinels_in_dir(&path);
+                } else if path.is_file() {
+                    let text = fs::read_to_string(&path).unwrap_or_default();
+                    assert!(!text.contains("SENTINEL_DESC"), "found in {:?}", path);
+                    assert!(!text.contains("SENTINEL_NOTE"), "found in {:?}", path);
+                    assert!(!text.contains("SENTINEL_GEAR"), "found in {:?}", path);
+                    assert!(!text.contains("SENTINEL_MEDIA"), "found in {:?}", path);
+                    assert!(!text.contains("SENTINEL_WEATHER"), "found in {:?}", path);
+                    assert!(!text.contains("SENTINEL_DIST"), "found in {:?}", path);
+                    assert!(!text.contains("SENTINEL_EFFORT"), "found in {:?}", path);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn strava_sentinels_not_written_to_journal() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+
+        let row: &[(&str, usize, &str)] = &[
+            ("Activity ID", 1, "901"),
+            ("Activity Date", 1, "\"Aug 10, 2026, 06:30:00 AM\""),
+            ("Activity Name", 1, "Sentinel Run"),
+            ("Activity Type", 1, "Run"),
+            ("Activity Description", 1, "SENTINEL_DESC"),
+            ("Activity Private Note", 1, "SENTINEL_NOTE"),
+            ("Activity Gear", 1, "SENTINEL_GEAR"),
+            ("Media", 1, "SENTINEL_MEDIA"),
+            ("Weather Condition", 1, "SENTINEL_WEATHER"),
+            ("Distance", 1, "SENTINEL_DIST"),
+            ("Distance", 2, "5000"),
+            ("Relative Effort", 1, "SENTINEL_EFFORT"),
+            ("Elapsed Time", 2, "300"),
+            ("Filename", 1, "activities/901.gpx"),
+        ];
+        let content = build_csv(HEADER_ENGLISH_103, &[row]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let (run, id) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        let import_id = id.unwrap();
+
+        assert_no_sentinels_in_dir(&journal.path().join("chronicle"));
+
+        assert!(
+            !journal
+                .path()
+                .join(format!("imports/{import_id}/activities.csv"))
+                .exists()
+        );
+        assert!(
+            !journal
+                .path()
+                .join(format!("imports/{import_id}/source"))
+                .exists()
+        );
+    }
+
+    #[test]
+    fn strava_error_codes_claim_no_attempts_and_print_code() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+
+        // 1. List missing
+        let missing_csv = journal.path().join("nonexistent.csv");
+        let (run, _) = run_bound(
+            strava_dispatch(&missing_csv, "20260810_100001"),
+            journal.path(),
+        );
+        assert_ne!(run.exit_code, 0);
+        assert!(run.stderr.contains("strava_list_missing"), "{}", run.stderr);
+        assert!(!journal.path().join("imports/20260810_100001").exists());
+
+        // 2. Zip unreadable
+        let bad_zip = journal.path().join("bad.zip");
+        fs::write(&bad_zip, b"PK\x03\x04corrupted_zip_bytes").unwrap();
+        let (run, _) = run_bound(strava_dispatch(&bad_zip, "20260810_100002"), journal.path());
+        assert_ne!(run.exit_code, 0);
+        assert!(
+            run.stderr.contains("strava_zip_unreadable"),
+            "{}",
+            run.stderr
+        );
+        assert!(!journal.path().join("imports/20260810_100002").exists());
+
+        // 3. Language unsupported
+        let unsupp_csv = journal.path().join("unsupported.csv");
+        fs::write(
+            &unsupp_csv,
+            b"Date,Time,Activity,Steps\n2026-01-01,10:00,Walk,100\n",
+        )
+        .unwrap();
+        let (run, _) = run_bound(
+            strava_dispatch(&unsupp_csv, "20260810_100003"),
+            journal.path(),
+        );
+        assert_ne!(run.exit_code, 0);
+        assert!(
+            run.stderr.contains("strava_language_unsupported"),
+            "{}",
+            run.stderr
+        );
+        assert!(!journal.path().join("imports/20260810_100003").exists());
+
+        // 4. Layout unrecognised (3 ways)
+        // 4a. Missing kept column (drop Filename)
+        let cols_86: Vec<&str> = HEADER_ENGLISH_86.trim_end().split(',').collect();
+        let dropped_cols: Vec<&str> = cols_86.into_iter().filter(|c| *c != "Filename").collect();
+        let bad_hdr_csv = journal.path().join("bad_hdr.csv");
+        fs::write(&bad_hdr_csv, format!("{}\n", dropped_cols.join(","))).unwrap();
+        let (run, _) = run_bound(
+            strava_dispatch(&bad_hdr_csv, "20260810_100004"),
+            journal.path(),
+        );
+        assert_ne!(run.exit_code, 0);
+        assert!(
+            run.stderr.contains("strava_layout_unrecognised"),
+            "{}",
+            run.stderr
+        );
+        assert!(!journal.path().join("imports/20260810_100004").exists());
+
+        // 4b. Single distance column
+        let cols_103: Vec<&str> = HEADER_ENGLISH_103.trim_end().split(',').collect();
+        let mut first_dist_dropped = false;
+        let mut single_dist_cols = Vec::new();
+        for c in cols_103 {
+            if c == "Distance" && !first_dist_dropped {
+                first_dist_dropped = true;
+            } else {
+                single_dist_cols.push(c);
+            }
+        }
+        let single_dist_csv = journal.path().join("single_dist.csv");
+        fs::write(
+            &single_dist_csv,
+            format!("{}\n", single_dist_cols.join(",")),
+        )
+        .unwrap();
+        let (run, _) = run_bound(
+            strava_dispatch(&single_dist_csv, "20260810_100005"),
+            journal.path(),
+        );
+        assert_ne!(run.exit_code, 0);
+        assert!(
+            run.stderr.contains("strava_layout_unrecognised"),
+            "{}",
+            run.stderr
+        );
+        assert!(!journal.path().join("imports/20260810_100005").exists());
+
+        // 4c. No valid date format across decoded rows
+        let bad_dates_csv = journal.path().join("bad_dates.csv");
+        let row_bad_date: &[(&str, usize, &str)] = &[
+            ("Activity ID", 1, "1"),
+            ("Activity Date", 1, "not-a-valid-date"),
+            ("Activity Name", 1, "Run"),
+            ("Activity Type", 1, "Run"),
+            ("Elapsed Time", 2, "300"),
+        ];
+        fs::write(
+            &bad_dates_csv,
+            build_csv(HEADER_ENGLISH_103, &[row_bad_date]).as_bytes(),
+        )
+        .unwrap();
+        let (run, _) = run_bound(
+            strava_dispatch(&bad_dates_csv, "20260810_100006"),
+            journal.path(),
+        );
+        assert_ne!(run.exit_code, 0);
+        assert!(
+            run.stderr.contains("strava_layout_unrecognised"),
+            "{}",
+            run.stderr
+        );
+        assert!(!journal.path().join("imports/20260810_100006").exists());
+
+        // 5. No workouts (header-only)
+        let hdr_only_csv = journal.path().join("hdr_only.csv");
+        fs::write(&hdr_only_csv, HEADER_ENGLISH_103.as_bytes()).unwrap();
+        let (run, _) = run_bound(
+            strava_dispatch(&hdr_only_csv, "20260810_100007"),
+            journal.path(),
+        );
+        assert_ne!(run.exit_code, 0);
+        assert!(run.stderr.contains("strava_no_workouts"), "{}", run.stderr);
+        assert!(!journal.path().join("imports/20260810_100007").exists());
+    }
+
+    #[test]
+    fn strava_simultaneous_start_and_timing_collisions() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+
+        let content = make_en_csv_103(&[
+            ("101", "Aug 10, 2026, 07:00:00 AM", "Run 1", 300, 5000.0),
+            ("102", "Aug 10, 2026, 07:00:00 AM", "Run 2", 300, 5000.0),
+            (
+                "103",
+                "Aug 10, 2026, 08:00:00 AM",
+                "Long Run",
+                3600,
+                15000.0,
+            ),
+            ("104", "Aug 10, 2026, 08:05:00 AM", "Short Run", 300, 1000.0),
+        ]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let (run, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+
+        let p101 = journal
+            .path()
+            .join("chronicle/20260810/import.strava/070000_300/workout.json");
+        let p102 = journal
+            .path()
+            .join("chronicle/20260810/import.strava/070000_301/workout.json");
+        assert!(p101.is_file());
+        assert!(p102.is_file());
+        let v101: serde_json::Value = serde_json::from_slice(&fs::read(p101).unwrap()).unwrap();
+        let v102: serde_json::Value = serde_json::from_slice(&fs::read(p102).unwrap()).unwrap();
+        assert_eq!(v101["activity_id"], 101);
+        assert_eq!(v102["activity_id"], 102);
+
+        let p104 = journal
+            .path()
+            .join("chronicle/20260810/import.strava/080500_301/workout.json");
+        assert!(p104.is_file());
+        let v104: serde_json::Value = serde_json::from_slice(&fs::read(p104).unwrap()).unwrap();
+        assert_eq!(v104["activity_id"], 104);
+    }
+
+    #[test]
+    fn strava_duplicate_identity_canonical_selection() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+
+        let day_dir = journal.path().join("chronicle/20260810/import.strava");
+        fs::create_dir_all(day_dir.join("070000_99")).unwrap();
+        fs::create_dir_all(day_dir.join("070000_100")).unwrap();
+
+        let make_tile_json = |act_id: u64, name: &str| -> String {
+            serde_json::json!({
+                "schema": "solstone.import.strava.tile.v1",
+                "import_id": "20260810_010000",
+                "activity_id": act_id,
+                "zone": "UTC",
+                "tile": {
+                    "index": 0,
+                    "count": 1,
+                    "start": "2026-08-10T07:00:00+00:00",
+                    "end": "2026-08-10T07:05:00+00:00",
+                    "seconds": 300
+                },
+                "workout": {
+                    "name": name,
+                    "type": "Run",
+                    "start": "2026-08-10T07:00:00+00:00",
+                    "elapsed_seconds": 300,
+                    "moving_seconds": 300,
+                    "distance_m": 5000.0,
+                    "elevation_gain_m": 100.0,
+                    "heart_rate_avg_bpm": 140.0,
+                    "heart_rate_max_bpm": 160.0,
+                    "power_avg_w": 200.0,
+                    "power_weighted_w": 210.0,
+                    "calories_kcal": 350.0,
+                    "commute": true,
+                    "entered_by_hand": false
+                }
+            })
+            .to_string()
+        };
+
+        fs::write(
+            day_dir.join("070000_99/workout.json"),
+            make_tile_json(101, "Old Name"),
+        )
+        .unwrap();
+        fs::write(
+            day_dir.join("070000_100/workout.json"),
+            make_tile_json(101, "Duplicate Copy"),
+        )
+        .unwrap();
+
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[(
+            "101",
+            "Aug 10, 2026, 07:00:00 AM",
+            "Updated Name",
+            300,
+            5000.0,
+        )]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let (run, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(run.stdout.contains("updated=1"), "{}", run.stdout);
+
+        let v99: serde_json::Value =
+            serde_json::from_slice(&fs::read(day_dir.join("070000_99/workout.json")).unwrap())
+                .unwrap();
+        assert_eq!(v99["workout"]["name"], "Updated Name");
+
+        let v100: serde_json::Value =
+            serde_json::from_slice(&fs::read(day_dir.join("070000_100/workout.json")).unwrap())
+                .unwrap();
+        assert_eq!(v100["workout"]["name"], "Duplicate Copy");
+    }
+
+    #[test]
+    fn strava_reimport_renamed_and_timing_changed() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+
+        // Run 1: initial
+        let content1 = make_en_csv_103(&[(
+            "101",
+            "Aug 10, 2026, 07:00:00 AM",
+            "Initial Name",
+            300,
+            5000.0,
+        )]);
+        fs::write(&csv_file, content1.as_bytes()).unwrap();
+        let (run1, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0);
+        assert!(run1.stdout.contains("entries_written=1"));
+
+        // Run 2: renamed -> present_updated, empty days_affected, entries_written=0 / entry_count=0
+        let content2 = make_en_csv_103(&[(
+            "101",
+            "Aug 10, 2026, 07:00:00 AM",
+            "Renamed Workout",
+            300,
+            5000.0,
+        )]);
+        fs::write(&csv_file, content2.as_bytes()).unwrap();
+        let (run2, id2) = run_bound(
+            strava_dispatch(&csv_file, "20260810_110000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+        assert!(run2.stdout.contains("entries_written=0"));
+        assert!(run2.stdout.contains("present_updated=1"));
+        let manifest_path2 = journal
+            .path()
+            .join(format!("imports/{}/manifest.json", id2.as_ref().unwrap()));
+        let manifest2: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path2).unwrap()).unwrap();
+        assert_eq!(manifest2["entry_count"], 0);
+        assert_eq!(manifest2["days_affected"], serde_json::json!([]));
+        let pub_rec2 = solstone_core_import::publish::read_publication_record(
+            &journal
+                .path()
+                .join(format!("imports/{}", id2.as_ref().unwrap())),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(pub_rec2.segments.is_empty());
+
+        // Run 3: timing changed -> present_timing_changed=1
+        let content3 = make_en_csv_103(&[(
+            "101",
+            "Aug 10, 2026, 07:00:00 AM",
+            "Renamed Workout",
+            600,
+            5000.0,
+        )]);
+        fs::write(&csv_file, content3.as_bytes()).unwrap();
+        let (run3, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_120000"),
+            journal.path(),
+        );
+        assert_eq!(run3.exit_code, 0);
+        assert!(run3.stdout.contains("present_timing_changed=1"));
+
+        // Run 4: same instant different date format -> unchanged
+        let row_diff_fmt: &[(&str, usize, &str)] = &[
+            ("Activity ID", 1, "101"),
+            ("Activity Date", 1, "\"10 Aug 2026, 07:00:00\""),
+            ("Activity Name", 1, "Renamed Workout"),
+            ("Activity Type", 1, "Run"),
+            ("Elapsed Time", 1, "9999"),
+            ("Elapsed Time", 2, "300"),
+            ("Moving Time", 1, "300"),
+            ("Distance", 1, "99.9"),
+            ("Distance", 2, "5000"),
+            ("Elevation Gain", 1, "100"),
+            ("Average Heart Rate", 1, "140"),
+            ("Max Heart Rate", 1, "999"),
+            ("Max Heart Rate", 2, "160"),
+            ("Average Watts", 1, "200"),
+            ("Weighted Average Power", 1, "210"),
+            ("Calories", 1, "350"),
+            ("Commute", 1, "false"),
+            ("Commute", 2, "true"),
+            ("Filename", 1, "activities/101.gpx"),
+        ];
+        let content4 = build_csv(HEADER_ENGLISH_103, &[row_diff_fmt]);
+        fs::write(&csv_file, content4.as_bytes()).unwrap();
+        let (run4, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_130000"),
+            journal.path(),
+        );
+        assert_eq!(run4.exit_code, 0);
+        assert!(run4.stdout.contains("present_unchanged=1"));
+    }
+
+    #[test]
+    fn strava_tombstone_and_unknown_reason_preservation() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+
+        let content = make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 600, 5000.0)]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+        let (run1, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0);
+
+        let tile1 = journal
+            .path()
+            .join("chronicle/20260810/import.strava/070000_300");
+        let tile2 = journal
+            .path()
+            .join("chronicle/20260810/import.strava/070500_300");
+        fs::write(
+            tile1.join("tombstone.json"),
+            br#"{"reason":"user_deleted"}"#,
+        )
+        .unwrap();
+        fs::write(
+            tile2.join("tombstone.json"),
+            br#"{"reason":"some_alien_reason"}"#,
+        )
+        .unwrap();
+
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_110000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+        assert!(run2.stdout.contains("stayed_deleted=2"));
+        assert!(run2.stdout.contains("entries_written=0"));
+    }
+
+    #[test]
+    fn strava_zone_record_permutations() {
+        let journal = tempfile::tempdir().unwrap();
+        write_custom_zone(journal.path(), "Asia/Tokyo");
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 600, 5000.0)]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        // Run 1: seeds zone record Asia/Tokyo
+        let (run1, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0);
+        let zone_file = journal.path().join("imports/.strava-zone.json");
+        assert!(
+            fs::read_to_string(&zone_file)
+                .unwrap()
+                .contains("Asia/Tokyo")
+        );
+
+        // Journal identity changes to Denver, but import continues using Tokyo
+        let zone_bytes_before = fs::read(&zone_file).unwrap();
+        write_custom_zone(journal.path(), "America/Denver");
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_110000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+        assert!(run2.stdout.contains("zone=Asia/Tokyo"), "{}", run2.stdout);
+        assert_eq!(fs::read(&zone_file).unwrap(), zone_bytes_before);
+        assert!(!journal.path().join("chronicle/20260809").exists());
+        assert!(
+            fs::read_to_string(&zone_file)
+                .unwrap()
+                .contains("Asia/Tokyo")
+        );
+
+        // Invalid zone in record -> strava_zone_unrecognised
+        fs::write(&zone_file, br#"{"zone":"Mars/Olympus"}"#).unwrap();
+        let (run3, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_120000"),
+            journal.path(),
+        );
+        assert_ne!(run3.exit_code, 0);
+        assert!(
+            run3.stderr.contains("strava_zone_unrecognised"),
+            "{}",
+            run3.stderr
+        );
+
+        // Corrupted JSON -> strava_zone_unrecognised
+        fs::write(&zone_file, b"not-valid-json").unwrap();
+        let (run4, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_130000"),
+            journal.path(),
+        );
+        assert_ne!(run4.exit_code, 0);
+        assert!(
+            run4.stderr.contains("strava_zone_unrecognised"),
+            "{}",
+            run4.stderr
+        );
+
+        // Delete zone record: seeds from live tiles
+        fs::remove_file(&zone_file).unwrap();
+        let (run5, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_140000"),
+            journal.path(),
+        );
+        assert_eq!(run5.exit_code, 0);
+        assert!(
+            fs::read_to_string(&zone_file)
+                .unwrap()
+                .contains("Asia/Tokyo")
+        );
+
+        // Two canonical tiles for workout 101 with different zones -> zone_conflict
+        let day_dir = journal.path().join("chronicle/20260810/import.strava");
+        let diff_zone_json = serde_json::json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "import_id": "20260810_010000",
+            "activity_id": 101,
+            "zone": "America/New_York",
+            "tile": {
+                "index": 1,
+                "count": 2,
+                "start": "2026-08-10T08:05:00-04:00",
+                "end": "2026-08-10T08:10:00-04:00",
+                "seconds": 300
+            },
+            "workout": {
+                "name": "Run",
+                "type": "Run",
+                "start": "2026-08-10T08:00:00-04:00",
+                "elapsed_seconds": 600,
+                "moving_seconds": 600,
+                "distance_m": 5000.0,
+                "elevation_gain_m": 100.0,
+                "heart_rate_avg_bpm": 140.0,
+                "heart_rate_max_bpm": 160.0,
+                "power_avg_w": 200.0,
+                "power_weighted_w": 210.0,
+                "calories_kcal": 350.0,
+                "commute": true,
+                "entered_by_hand": false
+            }
+        });
+        fs::write(
+            day_dir.join("070500_300/workout.json"),
+            diff_zone_json.to_string(),
+        )
+        .unwrap();
+        fs::remove_file(&zone_file).unwrap();
+        let (run6, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_150000"),
+            journal.path(),
+        );
+        assert_eq!(run6.exit_code, 0);
+        assert!(run6.stdout.contains("zone_conflict=1"));
+
+        // Seeding with two live tiles (Denver lower, Tokyo higher, no record, journal Tokyo)
+        let journal_seed = tempfile::tempdir().unwrap();
+        write_custom_zone(journal_seed.path(), "Asia/Tokyo");
+        let day_dir_seed = journal_seed.path().join("chronicle/20260810/import.strava");
+        fs::create_dir_all(day_dir_seed.join("070000_300")).unwrap();
+        fs::create_dir_all(day_dir_seed.join("080000_300")).unwrap();
+        let tile_denver = serde_json::json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "import_id": "20260810_010000",
+            "activity_id": 201,
+            "zone": "America/Denver",
+            "tile": { "index": 0, "count": 1, "start": "2026-08-10T07:00:00-06:00", "end": "2026-08-10T07:05:00-06:00", "seconds": 300 },
+            "workout": { "name": "Run", "type": "Run", "start": "2026-08-10T07:00:00-06:00", "elapsed_seconds": 300, "moving_seconds": 300, "distance_m": 1000.0, "elevation_gain_m": 0.0, "heart_rate_avg_bpm": null, "heart_rate_max_bpm": null, "power_avg_w": null, "power_weighted_w": null, "calories_kcal": null, "commute": false, "entered_by_hand": false }
+        });
+        let tile_tokyo = serde_json::json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "import_id": "20260810_010000",
+            "activity_id": 202,
+            "zone": "Asia/Tokyo",
+            "tile": { "index": 0, "count": 1, "start": "2026-08-10T08:00:00+09:00", "end": "2026-08-10T08:05:00+09:00", "seconds": 300 },
+            "workout": { "name": "Run", "type": "Run", "start": "2026-08-10T08:00:00+09:00", "elapsed_seconds": 300, "moving_seconds": 300, "distance_m": 1000.0, "elevation_gain_m": 0.0, "heart_rate_avg_bpm": null, "heart_rate_max_bpm": null, "power_avg_w": null, "power_weighted_w": null, "calories_kcal": null, "commute": false, "entered_by_hand": false }
+        });
+        fs::write(
+            day_dir_seed.join("070000_300/workout.json"),
+            tile_denver.to_string(),
+        )
+        .unwrap();
+        fs::write(
+            day_dir_seed.join("080000_300/workout.json"),
+            tile_tokyo.to_string(),
+        )
+        .unwrap();
+        let csv_seed = journal_seed.path().join("activities.csv");
+        let content_seed =
+            make_en_csv_103(&[("301", "Aug 10, 2026, 09:00:00 AM", "Run", 300, 1000.0)]);
+        fs::write(&csv_seed, content_seed.as_bytes()).unwrap();
+        let (run_seed, _) = run_bound(
+            strava_dispatch(&csv_seed, "20260810_160000"),
+            journal_seed.path(),
+        );
+        assert_eq!(run_seed.exit_code, 0);
+        let seeded_rec =
+            fs::read_to_string(journal_seed.path().join("imports/.strava-zone.json")).unwrap();
+        assert!(seeded_rec.contains("America/Denver"));
+
+        // New workout's zone and record match
+        let new_tile_str = fs::read_to_string(
+            journal_seed
+                .path()
+                .join("chronicle/20260810/import.strava/090000_300/workout.json"),
+        )
+        .unwrap();
+        let new_tile_json: serde_json::Value = serde_json::from_str(&new_tile_str).unwrap();
+        assert_eq!(new_tile_json["zone"], "America/Denver");
+
+        // Third journal: zone Asia/Tokyo, no zone record, two live schema-v1 tiles on 20260810.
+        // 070000_300 has "zone":"Mars/Olympus". 080000_300 has "zone":"America/Denver".
+        // Import one new workout. The created imports/.strava-zone.json contains America/Denver and does not contain Asia/Tokyo.
+        let journal_unp = tempfile::tempdir().unwrap();
+        write_custom_zone(journal_unp.path(), "Asia/Tokyo");
+        let day_dir_unp = journal_unp.path().join("chronicle/20260810/import.strava");
+        fs::create_dir_all(day_dir_unp.join("070000_300")).unwrap();
+        fs::create_dir_all(day_dir_unp.join("080000_300")).unwrap();
+        let tile_mars = serde_json::json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "import_id": "20260810_010000",
+            "activity_id": 201,
+            "zone": "Mars/Olympus",
+            "tile": { "index": 0, "count": 1, "start": "2026-08-10T07:00:00-06:00", "end": "2026-08-10T07:05:00-06:00", "seconds": 300 },
+            "workout": { "name": "Run", "type": "Run", "start": "2026-08-10T07:00:00-06:00", "elapsed_seconds": 300, "moving_seconds": 300, "distance_m": 1000.0, "elevation_gain_m": 0.0, "heart_rate_avg_bpm": null, "heart_rate_max_bpm": null, "power_avg_w": null, "power_weighted_w": null, "calories_kcal": null, "commute": false, "entered_by_hand": false }
+        });
+        let tile_denver2 = serde_json::json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "import_id": "20260810_010000",
+            "activity_id": 202,
+            "zone": "America/Denver",
+            "tile": { "index": 0, "count": 1, "start": "2026-08-10T08:00:00-06:00", "end": "2026-08-10T08:05:00-06:00", "seconds": 300 },
+            "workout": { "name": "Run", "type": "Run", "start": "2026-08-10T08:00:00-06:00", "elapsed_seconds": 300, "moving_seconds": 300, "distance_m": 1000.0, "elevation_gain_m": 0.0, "heart_rate_avg_bpm": null, "heart_rate_max_bpm": null, "power_avg_w": null, "power_weighted_w": null, "calories_kcal": null, "commute": false, "entered_by_hand": false }
+        });
+        fs::write(
+            day_dir_unp.join("070000_300/workout.json"),
+            tile_mars.to_string(),
+        )
+        .unwrap();
+        fs::write(
+            day_dir_unp.join("080000_300/workout.json"),
+            tile_denver2.to_string(),
+        )
+        .unwrap();
+        let csv_unp = journal_unp.path().join("activities.csv");
+        let content_unp =
+            make_en_csv_103(&[("301", "Aug 10, 2026, 09:00:00 AM", "Run", 300, 1000.0)]);
+        fs::write(&csv_unp, content_unp.as_bytes()).unwrap();
+        let (run_unp, _) = run_bound(
+            strava_dispatch(&csv_unp, "20260810_160000"),
+            journal_unp.path(),
+        );
+        assert_eq!(run_unp.exit_code, 0);
+        let seeded_rec_unp =
+            fs::read_to_string(journal_unp.path().join("imports/.strava-zone.json")).unwrap();
+        assert!(seeded_rec_unp.contains("America/Denver"));
+        assert!(!seeded_rec_unp.contains("Asia/Tokyo"));
+    }
+
+    #[test]
+    fn strava_partial_failure_and_recovery() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0)]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let target_seg = journal
+            .path()
+            .join("chronicle/20260810/import.strava/070000_300");
+        let blocker_fn = |p: &Path| {
+            let seg = p.join("chronicle/20260810/import.strava/070000_300");
+            fs::create_dir_all(seg.join("workout.json")).unwrap();
+        };
+        let hook1 = StravaRunHook {
+            fault: None,
+            after_lock: None,
+            before_apply: Some(&blocker_fn),
+            lock_timeout: None,
+            stop_before_finish: false,
+        };
+        let mut selected = None;
+        let dispatch1 = strava_dispatch(&csv_file, "20260810_100000");
+        let run1 = run_strava_hooked(dispatch1, journal.path(), &mut selected, Some(&hook1));
+        assert_ne!(run1.exit_code, 0);
+        assert!(journal.path().join("imports/.strava-zone.json").is_file());
+        assert!(
+            !journal
+                .path()
+                .join("imports/20260810_100000/manifest.json")
+                .exists()
+        );
+
+        fs::remove_dir_all(&target_seg).unwrap();
+
+        let (run2, id2) = run_bound(
+            strava_dispatch(&csv_file, "20260810_110000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0, "{}", run2.stderr);
+        assert!(run2.stdout.contains("entries_written=1"));
+        let manifest_path = journal
+            .path()
+            .join(format!("imports/{}/manifest.json", id2.unwrap()));
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        assert_eq!(manifest["entry_count"], 1);
+    }
+
+    #[test]
+    fn strava_stop_before_finish_and_stream_republish() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[
+            ("101", "Aug 10, 2026, 07:00:00 AM", "Run 1", 300, 5000.0),
+            ("102", "Aug 10, 2026, 08:00:00 AM", "Run 2", 300, 5000.0),
+        ]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let hook1 = StravaRunHook {
+            fault: None,
+            after_lock: None,
+            before_apply: None,
+            lock_timeout: None,
+            stop_before_finish: true,
+        };
+        let mut selected = None;
+        let dispatch1 = strava_dispatch(&csv_file, "20260810_100000");
+        let run1 = run_strava_hooked(dispatch1, journal.path(), &mut selected, Some(&hook1));
+        assert_eq!(run1.exit_code, 0);
+
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_110000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+        assert!(run2.stdout.contains("republished="));
+
+        let stream_file = journal
+            .path()
+            .join("chronicle/20260810/import.strava/080000_300/stream.json");
+        fs::remove_file(&stream_file).unwrap();
+        let (run3, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_120000"),
+            journal.path(),
+        );
+        assert_eq!(run3.exit_code, 0);
+        assert!(stream_file.is_file());
+
+        let mid_marker = journal
+            .path()
+            .join("chronicle/20260810/import.strava/070000_300/stream.json");
+        fs::remove_file(&mid_marker).unwrap();
+        let (run4, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_130000"),
+            journal.path(),
+        );
+        assert_eq!(run4.exit_code, 0);
+        assert!(run4.stdout.contains("marker_missing_in_chain=1"));
+    }
+
+    #[test]
+    fn strava_dry_run_preview_tokens() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0)]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let mut dispatch_dry = strava_dispatch(&csv_file, "20260810_100000");
+        dispatch_dry.dry_run = true;
+        let (run_dry, id_dry) = run_bound(dispatch_dry, journal.path());
+        assert_eq!(run_dry.exit_code, 0);
+        assert!(id_dry.is_none());
+        assert!(run_dry.stdout.contains("new=1 tiles_to_create=1"));
+        assert!(!journal.path().join("chronicle").exists());
+        assert!(!journal.path().join("imports").exists());
+
+        let (run_real, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run_real.exit_code, 0);
+        assert!(run_real.stdout.contains("new=1 tiles_to_create=1"));
+    }
+
+    #[test]
+    fn strava_post_lock_faults_and_lock_unavailable() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0)]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let (init, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_090000"),
+            journal.path(),
+        );
+        assert_eq!(init.exit_code, 0);
+
+        for (idx, (fault_kind, expected_code)) in [
+            (strava::FaultKind::WorkoutFile, "strava_tile_unreadable"),
+            (strava::FaultKind::DayList, "strava_day_unreadable"),
+            (strava::FaultKind::OwnerDeleted, "strava_probe_unreadable"),
+            (strava::FaultKind::StreamMarker, "strava_marker_unreadable"),
+            (
+                strava::FaultKind::StreamRecord,
+                "strava_stream_record_unreadable",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let fault = strava::ReadFault {
+                kind: fault_kind,
+                fail_on: 2,
+                seen: std::cell::Cell::new(0),
+            };
+            let hook = StravaRunHook {
+                fault: Some(&fault),
+                after_lock: None,
+                before_apply: None,
+                lock_timeout: None,
+                stop_before_finish: false,
+            };
+            let mut selected = None;
+            let ts = format!("20260810_10000{}", idx);
+            let dispatch = strava_dispatch(&csv_file, &ts);
+            let run = run_strava_hooked(dispatch, journal.path(), &mut selected, Some(&hook));
+            assert_ne!(run.exit_code, 0);
+            assert!(
+                run.stderr.contains(expected_code),
+                "expected {} in {}",
+                expected_code,
+                run.stderr
+            );
+            if fault_kind == strava::FaultKind::DayList {
+                assert!(
+                    run.stderr.contains("20260810"),
+                    "expected day in stderr: {}",
+                    run.stderr
+                );
+            }
+            assert!(!journal.path().join("imports").join(&ts).exists());
+        }
+
+        let plant_unparseable_marker = |p: &Path| {
+            let m = p.join("chronicle/20260810/import.strava/070000_300/stream.json");
+            fs::write(m, b"not valid json").unwrap();
+        };
+        let hook_marker = StravaRunHook {
+            fault: None,
+            after_lock: Some(&plant_unparseable_marker),
+            before_apply: None,
+            lock_timeout: None,
+            stop_before_finish: false,
+        };
+        let mut selected = None;
+        let run_marker = run_strava_hooked(
+            strava_dispatch(&csv_file, "20260810_110000"),
+            journal.path(),
+            &mut selected,
+            Some(&hook_marker),
+        );
+        assert_ne!(run_marker.exit_code, 0);
+        assert!(
+            run_marker.stderr.contains("strava_marker_unparseable"),
+            "{}",
+            run_marker.stderr
+        );
+
+        // Lock unavailable on separate journal
+        let journal_lock = tempfile::tempdir().unwrap();
+        write_utc_zone(journal_lock.path());
+        let csv_file_lock = journal_lock.path().join("activities.csv");
+        fs::write(&csv_file_lock, content.as_bytes()).unwrap();
+
+        let hook_lock = StravaRunHook {
+            fault: None,
+            after_lock: None,
+            before_apply: None,
+            lock_timeout: Some(std::time::Duration::from_millis(0)),
+            stop_before_finish: false,
+        };
+        let _held_lock = solstone_core_journal_io::locking::hold_lock(
+            journal_lock.path().join("imports/.strava"),
+            solstone_core_journal_io::locking::LockOptions::default(),
+        )
+        .unwrap();
+        let mut selected = None;
+        let run_lock = run_strava_hooked(
+            strava_dispatch(&csv_file_lock, "20260810_120000"),
+            journal_lock.path(),
+            &mut selected,
+            Some(&hook_lock),
+        );
+        assert_ne!(run_lock.exit_code, 0);
+        assert!(
+            run_lock.stderr.contains("strava_lock_unavailable"),
+            "{}",
+            run_lock.stderr
+        );
+    }
+
+    #[test]
+    fn strava_midnight_spanning_workout_completed() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+
+        let content = make_en_csv_103(&[(
+            "101",
+            "Aug 10, 2026, 11:58:00 PM",
+            "Midnight Run",
+            600,
+            5000.0,
+        )]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let blocker = |p: &Path| {
+            let seg = p.join("chronicle/20260811/import.strava/000300_300");
+            fs::create_dir_all(seg.join("workout.json")).unwrap();
+        };
+        let hook1 = StravaRunHook {
+            fault: None,
+            after_lock: None,
+            before_apply: Some(&blocker),
+            lock_timeout: None,
+            stop_before_finish: false,
+        };
+        let mut selected = None;
+        let run1 = run_strava_hooked(
+            strava_dispatch(&csv_file, "20260811_010000"),
+            journal.path(),
+            &mut selected,
+            Some(&hook1),
+        );
+        assert_ne!(run1.exit_code, 0);
+
+        let seg_dplus1 = journal
+            .path()
+            .join("chronicle/20260811/import.strava/000300_300");
+        fs::remove_dir_all(&seg_dplus1).unwrap();
+
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file, "20260811_020000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+        assert!(run2.stdout.contains("complete=1"));
+    }
+
+    #[test]
+    fn strava_zone_persisted_and_locked_on_first_import() {
+        let journal = tempfile::tempdir().unwrap();
+        write_custom_zone(journal.path(), "America/Denver");
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[(
+            "701",
+            "Aug 10, 2026, 06:30:00 AM",
+            "Denver Run",
+            300,
+            5000.0,
+        )]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let (run1, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0);
+
+        let zone_record_path = journal.path().join("imports/.strava-zone.json");
+        let zone_record_str = fs::read_to_string(&zone_record_path).unwrap();
+        assert!(zone_record_str.contains("America/Denver"));
+
+        // Change journal identity timezone to America/New_York
+        write_custom_zone(journal.path(), "America/New_York");
+
+        let content2 = make_en_csv_103(&[(
+            "702",
+            "Aug 11, 2026, 06:30:00 AM",
+            "Second Run",
+            300,
+            5000.0,
+        )]);
+        let csv_file2 = journal.path().join("activities2.csv");
+        fs::write(&csv_file2, content2.as_bytes()).unwrap();
+
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file2, "20260811_100000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+
+        // Zone record remains America/Denver
+        let zone_record_str2 = fs::read_to_string(&zone_record_path).unwrap();
+        assert_eq!(zone_record_str, zone_record_str2);
+    }
+
+    #[test]
+    fn strava_scale_500_workouts() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities_scale.csv");
+
+        let base_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let mut row_data = Vec::with_capacity(500);
+        let mut id_strings = Vec::with_capacity(500);
+        let mut date_strings = Vec::with_capacity(500);
+        let mut name_strings = Vec::with_capacity(500);
+
+        for i in 1..=500 {
+            let cur_date = base_date + chrono::Duration::days((i % 100) as i64);
+            let date_str = cur_date.format("%d %b %Y, 07:00:00").to_string();
+            let id_str = format!("{}", 1000 + i);
+            let name_str = format!("Workout {i}");
+            id_strings.push(id_str);
+            date_strings.push(date_str);
+            name_strings.push(name_str);
+        }
+
+        for i in 0..500 {
+            row_data.push((
+                id_strings[i].as_str(),
+                date_strings[i].as_str(),
+                name_strings[i].as_str(),
+                300,
+                5000.0,
+            ));
+        }
+
+        let content = make_en_csv_103(&row_data);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let (run, id) = run_bound(
+            strava_dispatch(&csv_file, "20260501_120000"),
+            journal.path(),
+        );
+
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(id.is_some());
+        assert!(run.stdout.contains("entries_written=500"));
+    }
+
+    #[test]
+    fn strava_deleted_head_publication() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file1 = journal.path().join("activities1.csv");
+        let content1 = make_en_csv_103(&[
+            ("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0),
+            ("102", "Aug 10, 2026, 08:00:00 AM", "Run", 300, 5000.0),
+        ]);
+        fs::write(&csv_file1, content1.as_bytes()).unwrap();
+
+        let (run1, _) = run_bound(
+            strava_dispatch(&csv_file1, "20260810_090000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0);
+
+        let stream_head =
+            solstone_core_segment::read_stream_record(journal.path(), "import.strava")
+                .unwrap()
+                .unwrap();
+        assert_eq!(stream_head["last_segment"], "080000_300");
+        assert_eq!(stream_head["seq"], 2);
+
+        let targets = vec![
+            solstone_core_retention::receipt::Target {
+                day: "20260810".into(),
+                stream: "import.strava".into(),
+                dir: "070000_300".into(),
+            },
+            solstone_core_retention::receipt::Target {
+                day: "20260810".into(),
+                stream: "import.strava".into(),
+                dir: "080000_300".into(),
+            },
+        ];
+        let outcome = solstone_core_retention::door::remove_segments(
+            journal.path(),
+            &targets,
+            "2026-08-10T12:00:00Z",
+            solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
+            "sha256:abc",
+        );
+        assert!(outcome.halted.is_none());
+
+        let csv_file2 = journal.path().join("activities2.csv");
+        let content2 = make_en_csv_103(&[
+            ("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0),
+            ("102", "Aug 10, 2026, 08:00:00 AM", "Run", 300, 5000.0),
+            ("103", "Aug 10, 2026, 09:00:00 AM", "Run", 300, 5000.0),
+        ]);
+        fs::write(&csv_file2, content2.as_bytes()).unwrap();
+
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file2, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+
+        let marker_103_path = journal
+            .path()
+            .join("chronicle/20260810/import.strava/090000_300/stream.json");
+        let marker_103: serde_json::Value =
+            serde_json::from_slice(&fs::read(&marker_103_path).unwrap()).unwrap();
+        assert_eq!(marker_103["seq"], 3);
+        assert_eq!(marker_103["prev_segment"], "080000_300");
+        assert_eq!(marker_103["prev_day"], "20260810");
+
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260810/import.strava/070000_300/stream.json")
+                .exists()
+        );
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260810/import.strava/080000_300/stream.json")
+                .exists()
+        );
+
+        assert!(!journal.path().join("awareness").exists());
+        record_finished_import(journal.path(), "20260810_100000", 0);
+        assert!(!journal.path().join("awareness").exists());
+
+        let pub_record = solstone_core_import::publish::read_publication_record(
+            &journal.path().join("imports/20260810_100000"),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(pub_record.day_markers.is_empty());
     }
 }
