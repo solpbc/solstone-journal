@@ -350,7 +350,7 @@
     },
     "/app/devices/ingest/manifest/{day}": {
       "get": {
-        "description": "Deprecated. Return file names, sizes, sha256 hashes, and custody status for every segment on one day, the same listing `segments/{day}` returns. This operation keeps answering until devices in the field no longer call it.",
+        "description": "Deprecated. Return file names, sizes, sha256 hashes, and custody status for every segment on one day, the same listing `segments/{day}` returns. The physical locator is the day, stream directory, and exact segment-directory basename. `key` is that basename unless this response repeats the basename; repeated basenames use `{basename}~{stream}`, then `~2`, `~3`, and so on, and those items also carry `segment` (the directory basename) and `stream`. `original_key` records only an upload remap of the requested key and does not identify a stream. A within-segment effective-name clash remains `ambiguous_segment_file_name`. This operation keeps answering until devices in the field no longer call it.",
         "deprecated": true,
         "operationId": "client.ingestManifestDay",
         "parameters": [
@@ -440,7 +440,7 @@
                 }
               }
             },
-            "description": "Day transfer manifest."
+            "description": "Day transfer manifest. Segment-map keys use the same physical basename or repeated-basename alias as `segments/{day}`; the physical locator is the day, stream directory, and exact segment-directory basename. `original_key` is only an upload remap of the requested key and is not a stream discriminator. A within-segment effective-name clash remains `ambiguous_segment_file_name`."
           },
           "400": {
             "content": {
@@ -493,7 +493,7 @@
     },
     "/app/devices/ingest/segments/{day}": {
       "get": {
-        "description": "Return segment upload history for one day as a protocol-version-3 collection envelope. Per-file `status` is `present`, `processed`, or `missing`. `submitted_name` appears only when the stored filename differs from the submitted one; segment-level `original_key` carries the client's originally requested segment key when a collision remapped it.",
+        "description": "Return segment upload history for one day as a protocol-version-3 collection envelope. The physical locator is the day, stream directory, and exact segment-directory basename. `key` is that basename unless this response repeats the basename; repeated basenames use `{basename}~{stream}`, then `~2`, `~3`, and so on, and those items also carry `segment` (the directory basename) and `stream`. `original_key` records only an upload remap of the requested key and does not identify a stream. A within-segment effective-name clash remains `ambiguous_segment_file_name`. Per-file `status` is `present`, `processed`, or `missing`. `submitted_name` appears only when the stored filename differs from the submitted one.",
         "operationId": "client.ingestSegments",
         "parameters": [
           {
@@ -838,6 +838,12 @@
             "type": "boolean"
           },
           "original_key": {
+            "type": "string"
+          },
+          "segment": {
+            "type": "string"
+          },
+          "stream": {
             "type": "string"
           }
         },

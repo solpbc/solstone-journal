@@ -66,7 +66,9 @@ mod tests {
 
     use serde_json::{Value, json};
     use solstone_core_sol_link::device_migration::{Choice, DecisionRequest};
-    use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
+    use solstone_core_sol_link::ledger::{
+        AuthorizationLedger, AuthorizedClientsRead, ClientEntry, ClientRole,
+    };
 
     use super::decide_and_resume;
 
@@ -147,6 +149,43 @@ mod tests {
         let resumed = decide_and_resume(journal.path(), ADOPTED, &body).unwrap();
         assert_eq!(resumed.state.as_wire(), "same_device");
         let decision: Value = serde_json::from_slice(&fs::read(&decision_path).unwrap()).unwrap();
+        assert_eq!(decision["checkpoint"], "complete");
+    }
+
+    #[test]
+    fn same_device_resume_retires_only_the_stored_previous_cid() {
+        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let body = prepare(journal.path());
+        let push_path = journal.path().join("config/push-registry.json");
+        fs::create_dir_all(push_path.parent().unwrap()).unwrap();
+        fs::write(&push_path, br#"{"version":2,"devices":[]}"#).unwrap();
+
+        let resumed = decide_and_resume(journal.path(), ADOPTED, &body).unwrap();
+
+        assert_eq!(resumed.state.as_wire(), "same_device");
+        let entries = match AuthorizationLedger::new(journal.path()).read_state() {
+            AuthorizedClientsRead::Present(entries) => entries,
+            other => panic!("authorization ledger is not present: {other:?}"),
+        };
+        let operation_path = journal.path().join(format!(
+            "link/device-migrations/operations/{OPERATION}.json"
+        ));
+        let operation: Value = serde_json::from_slice(&fs::read(operation_path).unwrap()).unwrap();
+        let previous_cid = operation["previous_cid"]
+            .as_str()
+            .expect("stored previous CID");
+        assert_eq!(previous_cid, OLD);
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| entry.fingerprint == previous_cid)
+        );
+        assert!(entries.iter().any(|entry| entry.fingerprint == ADOPTED));
+        let decision_path = journal
+            .path()
+            .join(format!("link/device-migrations/decisions/{DECISION}.json"));
+        let decision: Value = serde_json::from_slice(&fs::read(decision_path).unwrap()).unwrap();
+        assert_eq!(decision["replaced_cid"], previous_cid);
         assert_eq!(decision["checkpoint"], "complete");
     }
 }

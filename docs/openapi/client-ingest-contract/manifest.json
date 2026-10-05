@@ -40,15 +40,15 @@
     },
     {
       "path": "fixtures/wire-behavior.json",
-      "sha256": "c5c73a2e666de17dc21701ad801f85bc829a3c0014ac6ea75255896381870c0e"
+      "sha256": "035e59297af21da998984910b4aa6a850d7e2e1225c79019045381bf3e17e708"
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "c9c919ca18ee11681673f1c08977302e805e0dd839ee62818916cd28364bea3d"
+      "sha256": "36ab07f480f793b68f75e4eed08cb17d7b2f98e4eba219b6ca8fd83fe97c452e"
     },
     {
       "path": "vectors.json",
-      "sha256": "e88ddbb7e4d9a40ec392a5e523966b5bc8bc05a35afaf8f25868c05d3af7e974"
+      "sha256": "7c61c1238184e1440110801478daf714aba05b2472338bd98c12cd508b303d0f"
     }
   ],
   "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
@@ -57,7 +57,7 @@
       "id": "openapi.client_ingest_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json",
       "role": "openapi_source",
-      "sha256": "91992b9e04a45310483441d5b21e867383eef7a48b5f73080afc6c192ee158e0"
+      "sha256": "428f2bb6800f7bdff994b30d9906ad1951ec711f617f521d5c59f99afb23a3e3"
     }
   ],
   "openapi_document_version": "1.0.0",

@@ -3,10 +3,11 @@
 
 //! Read-only, replay-safe device-ingest listing assembly.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use serde_json::{Map, Value};
 use solstone_core_callosum::{DeviceIngestEvent, read_device_ingest_events};
 use solstone_core_ingest_resolve::SegmentTerminalProof;
 use solstone_core_segment::{
@@ -42,7 +43,14 @@ pub(crate) struct ListingFile {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ListingSegment {
+    /// Key used by both day-listing wire projections.
     pub(crate) key: String,
+    /// Physical segment-directory basename.
+    pub(crate) segment: String,
+    /// Physical stream-directory name.
+    pub(crate) stream: String,
+    /// Whether this basename was repeated in the emitted response.
+    pub(crate) collided: bool,
     pub(crate) observed: bool,
     pub(crate) original_key: Option<String>,
     pub(crate) files: Vec<ListingFile>,
@@ -128,29 +136,118 @@ pub(crate) fn merge_day_listing(
     day: &str,
     events: Vec<DeviceIngestEvent>,
 ) -> Result<DayListing, ListingError> {
-    let mut by_segment: BTreeMap<String, SegmentAccumulator> = BTreeMap::new();
+    let mut by_segment: BTreeMap<(String, String), SegmentAccumulator> = BTreeMap::new();
     for event in events {
-        let accumulator = by_segment.entry(event.segment.clone()).or_default();
+        let accumulator = by_segment
+            .entry((event.segment.clone(), event.stream.clone()))
+            .or_default();
         for file in event.files {
             let entry = project_event_file(journal_root, day, &event.stream, &event.segment, file)?;
             accumulator.insert(entry);
         }
         // DeviceIngestEvent carries no segment_original equivalent; do not infer one.
     }
-    let mut segments = Vec::new();
-    for (key, accumulator) in by_segment {
+    let mut physical_segments = Vec::new();
+    for ((segment, stream), accumulator) in by_segment {
         let original_key = accumulator.original_key.clone();
         let files = accumulator.reduce_effective_names()?;
         if !files.is_empty() {
-            segments.push(ListingSegment {
-                key,
+            physical_segments.push(ListingSegment {
+                key: segment.clone(),
+                segment,
+                stream,
+                collided: false,
                 observed: false,
                 original_key,
                 files,
             });
         }
     }
-    Ok(DayListing { segments })
+
+    // `physical_segments` is already ordered by `(basename, stream)` because
+    // the accumulator map uses that pair. Count only segments that survived
+    // reduction and will actually be emitted.
+    let mut basename_counts = BTreeMap::<String, usize>::new();
+    let mut occupied = BTreeSet::new();
+    for segment in &physical_segments {
+        *basename_counts.entry(segment.segment.clone()).or_default() += 1;
+        occupied.insert(segment.segment.clone());
+    }
+
+    let mut assigned = BTreeSet::new();
+    for segment in &mut physical_segments {
+        if basename_counts[&segment.segment] < 2 {
+            continue;
+        }
+        segment.collided = true;
+        let preferred = format!("{}~{}", segment.segment, segment.stream);
+        let mut candidate = preferred.clone();
+        let mut suffix = 2_u64;
+        while occupied.contains(&candidate) || assigned.contains(&candidate) {
+            candidate = format!("{preferred}~{suffix}");
+            suffix += 1;
+        }
+        segment.key = candidate.clone();
+        assigned.insert(candidate);
+    }
+
+    let mut wire_keys = BTreeSet::new();
+    if physical_segments
+        .iter()
+        .any(|segment| !wire_keys.insert(segment.key.clone()))
+    {
+        return Err(ListingError::JournalRead);
+    }
+
+    Ok(DayListing {
+        segments: physical_segments,
+    })
+}
+
+/// Project one assembled segment to the protocol-3 item shape.
+pub(crate) fn segment_item_json(segment: &ListingSegment) -> Value {
+    let mut item = Map::new();
+    item.insert("key".to_owned(), Value::String(segment.key.clone()));
+    item.insert("observed".to_owned(), Value::Bool(segment.observed));
+    item.insert("files".to_owned(), listing_files_json(&segment.files));
+    if let Some(original_key) = &segment.original_key {
+        item.insert(
+            "original_key".to_owned(),
+            Value::String(original_key.clone()),
+        );
+    }
+    if segment.collided {
+        item.insert("segment".to_owned(), Value::String(segment.segment.clone()));
+        item.insert("stream".to_owned(), Value::String(segment.stream.clone()));
+    }
+    Value::Object(item)
+}
+
+pub(crate) fn listing_files_json(files: &[ListingFile]) -> Value {
+    Value::Array(
+        files
+            .iter()
+            .map(|file| {
+                let mut value = Map::new();
+                value.insert("name".to_owned(), Value::String(file.name.clone()));
+                value.insert("size".to_owned(), Value::from(file.size));
+                value.insert("sha256".to_owned(), Value::String(file.sha256.clone()));
+                value.insert(
+                    "status".to_owned(),
+                    Value::String(file.status.as_str().to_owned()),
+                );
+                if let Some(submitted_name) = &file.submitted_name
+                    && submitted_name != &file.name
+                {
+                    value.insert(
+                        "submitted_name".to_owned(),
+                        Value::String(submitted_name.clone()),
+                    );
+                }
+                Value::Object(value)
+            })
+            .collect(),
+    )
 }
 
 fn project_event_file(
@@ -272,9 +369,45 @@ mod tests {
     };
 
     use super::{
-        FileStatus, ListingError, ListingFile, SegmentAccumulator, native_events,
-        resolve_file_status, segment_events,
+        FileStatus, ListingError, ListingFile, SegmentAccumulator, listing_files_json,
+        merge_day_listing, native_events, resolve_file_status, segment_events, segment_item_json,
     };
+
+    const DAY: &str = "20261004";
+    const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn descriptor(submitted: &str, written: &str, size: u64, sha256: &str) -> FileDescriptor {
+        FileDescriptor {
+            submitted: submitted.to_owned(),
+            written: written.to_owned(),
+            size,
+            sha256: sha256.to_owned(),
+            extra: Map::new(),
+        }
+    }
+
+    fn event(stream: &str, segment: &str, files: Vec<FileDescriptor>) -> DeviceIngestEvent {
+        DeviceIngestEvent {
+            record_type: "device_ingest".to_owned(),
+            record_version: 1,
+            outcome: "accepted".to_owned(),
+            protocol_version: 3,
+            cid: CID_A.to_owned(),
+            source: "browser".to_owned(),
+            stream: stream.to_owned(),
+            day: DAY.to_owned(),
+            segment: segment.to_owned(),
+            files,
+            meta: Map::new(),
+            extra: Map::new(),
+        }
+    }
+
+    fn plant_file(root: &std::path::Path, stream: &str, segment: &str, name: &str, bytes: &[u8]) {
+        let path = root.join("chronicle").join(DAY).join(stream).join(segment);
+        fs::create_dir_all(&path).expect("segment directory");
+        fs::write(path.join(name), bytes).expect("segment file");
+    }
 
     fn entry(
         name: &str,
@@ -337,6 +470,204 @@ mod tests {
         let files = held.reduce_effective_names().expect("one held twin");
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].status, FileStatus::Present);
+    }
+
+    #[test]
+    fn merge_day_listing_preserves_non_collision_physical_names() {
+        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let root = dir.path();
+        let basename = "120000_10~browser_b";
+        append_event(root, CID_A, Some("browser_b"), basename);
+        let events = native_events(root, DAY, Some("browser_b"), CID_A, "audio")
+            .expect("tilde directory has a readable native receipt");
+        let listing = merge_day_listing(root, DAY, events).expect("listing");
+
+        let segment = listing.segments.first().expect("one segment");
+        assert_eq!(segment.key, basename);
+        assert_eq!(segment.segment, basename);
+        assert!(!segment.collided);
+        let json = segment_item_json(segment);
+        let mut keys = json
+            .as_object()
+            .expect("segment item object")
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        keys.sort_unstable();
+        assert_eq!(keys, ["files", "key", "observed"]);
+        assert!(json["files"][0].get("submitted_name").is_none());
+        assert_eq!(json["files"][0]["name"], "capture.json");
+        assert_eq!(listing_files_json(&segment.files)[0]["status"], "missing");
+    }
+
+    #[test]
+    fn merge_day_listing_keeps_equal_byte_cross_stream_twins() {
+        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let root = dir.path();
+        let file = descriptor(
+            "browser_pages.jsonl",
+            "browser_pages.jsonl",
+            4,
+            &"a".repeat(64),
+        );
+        plant_file(
+            root,
+            "browser_a",
+            "120000_10",
+            "browser_pages.jsonl",
+            b"same",
+        );
+        plant_file(
+            root,
+            "browser_b",
+            "120000_10",
+            "browser_pages.jsonl",
+            b"same",
+        );
+
+        let listing = merge_day_listing(
+            root,
+            DAY,
+            vec![
+                event("browser_a", "120000_10", vec![file.clone()]),
+                event("browser_b", "120000_10", vec![file]),
+            ],
+        )
+        .expect("listing");
+
+        assert_eq!(listing.segments.len(), 2);
+        assert_eq!(listing.segments[0].key, "120000_10~browser_a");
+        assert_eq!(listing.segments[1].key, "120000_10~browser_b");
+        assert!(listing.segments.iter().all(|item| item.collided));
+        assert_eq!(
+            segment_item_json(&listing.segments[0])["files"][0]["status"],
+            "present"
+        );
+        assert_eq!(
+            segment_item_json(&listing.segments[1])["files"][0]["status"],
+            "present"
+        );
+    }
+
+    #[test]
+    fn merge_day_listing_keeps_heal_reduction_segment_local() {
+        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let root = dir.path();
+        plant_file(root, "browser_a", "120000_10", "new.bin", b"new");
+        plant_file(root, "browser_b", "120000_10", "other.bin", b"other");
+        let shared = "browser_pages.jsonl";
+        let listing = merge_day_listing(
+            root,
+            DAY,
+            vec![
+                event(
+                    "browser_a",
+                    "120000_10",
+                    vec![
+                        descriptor(shared, "old.bin", 3, &"a".repeat(64)),
+                        descriptor(shared, "new.bin", 3, &"b".repeat(64)),
+                    ],
+                ),
+                event(
+                    "browser_b",
+                    "120000_10",
+                    vec![descriptor(shared, "other.bin", 5, &"c".repeat(64))],
+                ),
+            ],
+        )
+        .expect("separate segment reductions");
+
+        assert_eq!(listing.segments.len(), 2);
+        assert_eq!(listing.segments[0].files.len(), 1);
+        assert_eq!(listing.segments[0].files[0].name, "new.bin");
+        assert_eq!(listing.segments[0].files[0].status, FileStatus::Present);
+        assert_eq!(listing.segments[1].files.len(), 1);
+        assert_eq!(listing.segments[1].files[0].name, "other.bin");
+    }
+
+    #[test]
+    fn merge_day_listing_skips_occupied_alias_candidate() {
+        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let root = dir.path();
+        let files = [
+            ("browser_a", "120000_10"),
+            ("browser_b", "120000_10"),
+            ("browser_a", "120000_10~browser_b"),
+            ("browser_c", "120000_100"),
+        ];
+        let mut events = Vec::new();
+        for (index, (stream, basename)) in files.into_iter().enumerate() {
+            let file_name = format!("page-{index}.jsonl");
+            plant_file(root, stream, basename, &file_name, b"page");
+            events.push(event(
+                stream,
+                basename,
+                vec![descriptor(
+                    &file_name,
+                    &file_name,
+                    4,
+                    &format!("{index:x}").repeat(64),
+                )],
+            ));
+        }
+
+        let listing = merge_day_listing(root, DAY, events).expect("listing");
+        let keys = listing
+            .segments
+            .iter()
+            .map(|segment| {
+                (
+                    segment.stream.as_str(),
+                    segment.segment.as_str(),
+                    segment.key.as_str(),
+                    segment.collided,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            keys,
+            [
+                ("browser_a", "120000_10", "120000_10~browser_a", true),
+                ("browser_b", "120000_10", "120000_10~browser_b~2", true),
+                ("browser_c", "120000_100", "120000_100", false),
+                (
+                    "browser_a",
+                    "120000_10~browser_b",
+                    "120000_10~browser_b",
+                    false
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn native_events_refuse_segment_mismatch() {
+        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let root = dir.path();
+        let stream = append_event(root, CID_A, None, "120000_1");
+        let segment = list_stream_segments(root, DAY, &stream)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(
+            segment_events(
+                root,
+                segment.path(),
+                DAY,
+                &stream,
+                "120000_2",
+                CID_A,
+                "audio",
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn listing_status_order_remains_missing_processed_present() {
+        assert!(FileStatus::Missing < FileStatus::Processed);
+        assert!(FileStatus::Processed < FileStatus::Present);
     }
 
     #[test]
