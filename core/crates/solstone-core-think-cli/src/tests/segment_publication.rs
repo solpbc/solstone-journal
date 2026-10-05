@@ -1,35 +1,43 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[cfg(feature = "full-tests")]
 use std::fs;
-#[cfg(feature = "full-tests")]
 use std::path::Path;
-#[cfg(feature = "full-tests")]
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "full-tests")]
-use solstone_core_indexer_store::classification::stored_chunk_facet_ids;
-#[cfg(feature = "full-tests")]
 use solstone_core_indexer_store::db::open_index;
-#[cfg(feature = "full-tests")]
 use solstone_core_indexer_store::scan::RescanFileStatus;
 
-#[cfg(feature = "full-tests")]
 use super::*;
-#[cfg(feature = "full-tests")]
 use crate::context::{IndexBoundary, ThinkContext};
-#[cfg(feature = "full-tests")]
 use crate::run_log::RunLogWriter;
-#[cfg(feature = "full-tests")]
 use crate::segment::write_sense_and_change;
 
-#[cfg(feature = "full-tests")]
+fn stored_chunk_facet_ids(
+    journal: &Path,
+    path: &str,
+) -> Result<Option<Vec<String>>, solstone_core_indexer_store::StoreError> {
+    let conn = open_index(journal)?;
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM chunk_classification WHERE path=?)",
+        [path],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Ok(None);
+    }
+    let mut stmt = conn.prepare(
+        "SELECT facet_id FROM chunk_classification_facets WHERE path=? ORDER BY facet_id",
+    )?;
+    let ids = stmt
+        .query_map([path], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(ids))
+}
+
 const DAY: &str = "20260813";
-#[cfg(feature = "full-tests")]
 const NOW: i64 = 1_786_615_200_000;
 
-#[cfg(feature = "full-tests")]
 fn fixture_journal() -> (tempfile::TempDir, ThinkContext) {
     let journal = tempfile::tempdir().unwrap();
     let config_path = journal.path().join("config/journal.json");
@@ -45,7 +53,6 @@ fn fixture_journal() -> (tempfile::TempDir, ThinkContext) {
     (journal, context)
 }
 
-#[cfg(feature = "full-tests")]
 fn chunk_text_contains(journal: &Path, rel_path: &str, substring: &str) -> bool {
     let conn = open_index(journal).expect("open index db");
     let text: Option<String> = conn
@@ -58,7 +65,6 @@ fn chunk_text_contains(journal: &Path, rel_path: &str, substring: &str) -> bool 
     text.is_some_and(|t| t.contains(substring))
 }
 
-#[cfg(feature = "full-tests")]
 #[test]
 fn actual_results_with_entities_indexes_activity_and_sense_md_and_excludes_sense_json() {
     let (_journal, context) = fixture_journal();
@@ -164,7 +170,6 @@ fn actual_results_with_entities_indexes_activity_and_sense_md_and_excludes_sense
     assert_eq!(post_sense_md, original_sense_md);
 }
 
-#[cfg(feature = "full-tests")]
 #[test]
 fn no_input_and_retained_retry_paths_reach_write_sense_and_change() {
     // Confirmed call sites reaching write_sense_and_change: segment.rs:225 (retained routing retry) and segment.rs:240 (no-input).
@@ -203,7 +208,6 @@ fn no_input_and_retained_retry_paths_reach_write_sense_and_change() {
     assert!(segment_dir.join("talents/density.json").exists());
 }
 
-#[cfg(feature = "full-tests")]
 #[test]
 fn later_error_on_routing_rejected_stops_before_facets_json() {
     struct FailingSink {
@@ -212,13 +216,10 @@ fn later_error_on_routing_rejected_stops_before_facets_json() {
 
     impl std::io::Write for FailingSink {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            if let Ok(text) = std::str::from_utf8(buf) {
-                if text.contains("facet.routing_rejected") {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "routing rejected sink write error",
-                    ));
-                }
+            if let Ok(text) = std::str::from_utf8(buf)
+                && text.contains("facet.routing_rejected")
+            {
+                return Err(std::io::Error::other("routing rejected sink write error"));
             }
             self.buffer.lock().unwrap().extend_from_slice(buf);
             Ok(buf.len())
@@ -282,7 +283,6 @@ fn later_error_on_routing_rejected_stops_before_facets_json() {
     );
 }
 
-#[cfg(feature = "full-tests")]
 #[test]
 fn segment_reassignment_refreshes_sibling_text_and_classification() {
     let (_journal, context) = fixture_journal();
@@ -319,13 +319,18 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
         .journal
         .join("chronicle")
         .join(DAY)
-        .join("default")
+        .join("import.document")
         .join("120000_60");
     let seg1_talents = seg1_dir.join("talents");
     fs::create_dir_all(&seg1_talents).unwrap();
 
     let notes_path = seg1_talents.join("notes.md");
     fs::write(&notes_path, "Untouched sibling notes text").unwrap();
+    let imported_path = seg1_dir.join("imported.md");
+    let transcript_path = seg1_dir.join("record_transcript.md");
+    fs::write(&imported_path, "Untouched imported document").unwrap();
+    fs::write(&transcript_path, "Untouched imported transcript").unwrap();
+    fs::write(seg1_dir.join("audio.jsonl"), "raw transcript input").unwrap();
 
     let nested_dir = seg1_talents.join("work");
     fs::create_dir_all(&nested_dir).unwrap();
@@ -336,7 +341,7 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
         .journal
         .join("chronicle")
         .join(DAY)
-        .join("default")
+        .join("import.document")
         .join("130000_60");
     let seg2_talents = seg2_dir.join("talents");
     fs::create_dir_all(&seg2_talents).unwrap();
@@ -356,7 +361,7 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
         &context,
         &mut log1,
         "120000_60",
-        Some("default"),
+        Some("import.document"),
         &seg1_dir,
         sense_a.as_object().unwrap(),
     )
@@ -369,7 +374,7 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
         &context,
         &mut log_seg2,
         "130000_60",
-        Some("default"),
+        Some("import.document"),
         &seg2_dir,
         sense_a.as_object().unwrap(),
     )
@@ -377,7 +382,7 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
     log_seg2.finish().unwrap();
 
     // Verify notes.md has Facet A
-    let rel_notes = "20260813/default/120000_60/talents/notes.md";
+    let rel_notes = "20260813/import.document/120000_60/talents/notes.md";
     let ids_after_a = stored_chunk_facet_ids(&context.journal, rel_notes)
         .unwrap()
         .expect("notes indexed");
@@ -402,7 +407,7 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
         &context,
         &mut log2,
         "120000_60",
-        Some("default"),
+        Some("import.document"),
         &seg1_dir,
         sense_b.as_object().unwrap(),
     )
@@ -416,14 +421,14 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
     assert_eq!(ids_after_b, vec![id_b.clone()]);
 
     // Verify activity.md has Facet B
-    let rel_activity = "20260813/default/120000_60/talents/activity.md";
+    let rel_activity = "20260813/import.document/120000_60/talents/activity.md";
     let ids_activity = stored_chunk_facet_ids(&context.journal, rel_activity)
         .unwrap()
         .expect("activity indexed");
     assert_eq!(ids_activity, vec![id_b.clone()]);
 
     // Verify seg2 other.md remains on Facet A
-    let rel_seg2_other = "20260813/default/130000_60/talents/other.md";
+    let rel_seg2_other = "20260813/import.document/130000_60/talents/other.md";
     let ids_seg2 = stored_chunk_facet_ids(&context.journal, rel_seg2_other)
         .unwrap()
         .expect("other indexed");
@@ -431,6 +436,44 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
 
     // Verify oplog index attempts for reassign run:
     let reassign_records = oplog_records(&context.journal, DAY, "reassign");
+    let attempted_paths = reassign_records
+        .iter()
+        .filter(|r| r["event"] == "index.attempt")
+        .map(|r| r["path"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    let unique_paths = attempted_paths
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        attempted_paths.len(),
+        unique_paths.len(),
+        "each path is attempted once"
+    );
+    assert_eq!(
+        attempted_paths
+            .iter()
+            .filter(|p| p.ends_with("activity.md"))
+            .count(),
+        1
+    );
+    assert!(!attempted_paths.iter().any(|p| p.ends_with("audio.jsonl")));
+    assert!(chunk_text_contains(
+        &context.journal,
+        rel_activity,
+        "Second assignment"
+    ));
+    for path in ["imported.md", "record_transcript.md"] {
+        let rel = format!("{DAY}/import.document/120000_60/{path}");
+        assert_eq!(
+            stored_chunk_facet_ids(&context.journal, &rel)
+                .unwrap()
+                .unwrap(),
+            vec![id_b.clone()]
+        );
+        assert_eq!(attempted_paths.iter().filter(|p| **p == rel).count(), 1);
+    }
+
     let sense_md_attempts: Vec<_> = reassign_records
         .iter()
         .filter(|r| {
@@ -456,9 +499,71 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
         0,
         "nested file must not be in attempts"
     );
+    let mut unchanged_log = RunLogWriter::open(&context.journal, DAY, "unchanged");
+    write_sense_and_change(
+        &context,
+        &mut unchanged_log,
+        "120000_60",
+        Some("import.document"),
+        &seg1_dir,
+        sense_b.as_object().unwrap(),
+    )
+    .unwrap();
+    unchanged_log.finish().unwrap();
+    let unchanged_records = oplog_records(&context.journal, DAY, "unchanged");
+    assert!(
+        !unchanged_records
+            .iter()
+            .any(|r| r["event"] == "index.attempt"
+                && r["path"].as_str().is_some_and(|p| p.ends_with("notes.md")
+                    || p.ends_with("imported.md")
+                    || p.ends_with("record_transcript.md")))
+    );
 }
 
-#[cfg(feature = "full-tests")]
+#[test]
+fn a_later_projection_write_failure_still_indexes_earlier_saved_activity() {
+    let (_journal, context) = fixture_journal();
+    solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None).unwrap();
+    let segment = context
+        .journal
+        .join(format!("chronicle/{DAY}/default/120000_60"));
+    fs::create_dir_all(segment.join("talents/density.json")).unwrap();
+    let sense = serde_json::json!({
+        "density": "active",
+        "activity_summary": "Activity saved before the density write fails",
+        "facets": [{"facet": "work", "level": "high"}],
+        "entities": []
+    });
+    let mut log = RunLogWriter::open(&context.journal, DAY, "partial-projection");
+    let result = write_sense_and_change(
+        &context,
+        &mut log,
+        "120000_60",
+        Some("default"),
+        &segment,
+        sense.as_object().unwrap(),
+    );
+    assert!(
+        result.is_err(),
+        "the original source-publication error must remain an error"
+    );
+    log.finish().unwrap();
+    let path = "20260813/default/120000_60/talents/activity.md";
+    assert!(chunk_text_contains(
+        &context.journal,
+        path,
+        "before the density write fails"
+    ));
+    let records = oplog_records(&context.journal, DAY, "partial-projection");
+    let attempts = records
+        .iter()
+        .filter(|r| r["event"] == "index.attempt" && r["path"] == path)
+        .collect::<Vec<_>>();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0]["outcome"], "indexed");
+}
+
 #[test]
 fn multi_path_index_failure_records_oplog_and_preserves_successful_indexes() {
     struct PartialFailingIndexBoundary {

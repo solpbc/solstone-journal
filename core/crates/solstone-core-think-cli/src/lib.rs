@@ -88,7 +88,6 @@ pub mod test_support {
             name: name.to_owned(),
             facet: None,
             use_id: use_id.to_owned(),
-            output_path: None,
         };
         crate::daily::log_daily_terminal(
             &mut log,
@@ -755,6 +754,7 @@ fn validate(
 mod tests {
     mod activity_lifecycle;
     mod activity_recovery;
+    #[cfg(all(test, feature = "full-tests"))]
     mod segment_publication;
     use std::cell::Cell;
     use std::collections::BTreeSet;

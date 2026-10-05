@@ -3758,7 +3758,7 @@ mod tests {
                     &context.journal,
                     solstone_core_indexer_query::OwnerBoundary,
                     &solstone_core_indexer_query::SearchRequest::new(
-                        &format!("second iteration text {iter}"),
+                        format!("second iteration text {iter}"),
                         Default::default(),
                     ),
                     ref_date,

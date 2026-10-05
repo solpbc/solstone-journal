@@ -19,8 +19,6 @@ use solstone_core_entity::{ReviewOwnerConflictKind, ReviewOwnerError};
 pub struct PreparedDailyPublication {
     pub actions: Vec<PreparedDailyAction>,
     pub no_output: bool,
-    #[serde(default)]
-    pub configured_output: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -220,7 +218,6 @@ pub fn prepare_daily_output(
         return Ok(PreparedDailyPublication {
             actions: Vec::new(),
             no_output: true,
-            configured_output: true,
         });
     };
     let action = prepare_frozen_output_action(
@@ -233,7 +230,6 @@ pub fn prepare_daily_output(
     Ok(PreparedDailyPublication {
         actions: vec![action],
         no_output: false,
-        configured_output: true,
     })
 }
 
@@ -496,7 +492,6 @@ pub fn prepare_daily_publication(
     Ok(PreparedDailyPublication {
         no_output: actions.is_empty(),
         actions,
-        configured_output: false,
     })
 }
 
@@ -547,7 +542,8 @@ pub fn publish_daily_publication(
     token: &str,
     publication: &PreparedDailyPublication,
     context: &ExecutionContext,
-) -> Result<(CommitDisposition, Vec<String>), StageError> {
+    changed_paths: &mut Vec<String>,
+) -> Result<CommitDisposition, StageError> {
     let record = authority
         .record()
         .cloned()
@@ -582,7 +578,6 @@ pub fn publish_daily_publication(
     authority
         .checkpoint()
         .map_err(|e| make_error(e.to_string()))?;
-    let mut changed_paths = Vec::new();
     for (index, action) in publication.actions.iter().enumerate() {
         authority
             .require_token(token)
@@ -760,7 +755,7 @@ pub fn publish_daily_publication(
                 after,
                 ..
             } => {
-                let written = publish_output(
+                publish_output(
                     &context.journal,
                     path,
                     before,
@@ -768,11 +763,9 @@ pub fn publish_daily_publication(
                     allow_before,
                     start,
                     receipt,
+                    || changed_paths.push(path.clone()),
                 )
                 .map_err(make_review)?;
-                if written {
-                    changed_paths.push(path.clone());
-                }
             }
         }
     }
@@ -781,9 +774,10 @@ pub fn publish_daily_publication(
     } else {
         CommitDisposition::Written
     };
-    Ok((disposition, changed_paths))
+    Ok(disposition)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn publish_output(
     root: &Path,
     relative: &str,
@@ -792,13 +786,13 @@ fn publish_output(
     allow_before: bool,
     start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
-) -> Result<bool, ReviewOwnerError> {
+    published: impl FnOnce(),
+) -> Result<(), ReviewOwnerError> {
     let path = root.join(relative);
     relative_output(root, &path)?;
     let _lock = hold_lock(&path, LockOptions::default())
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let current = read_optional(&path).map_err(ReviewOwnerError::failed)?;
-    let mut written = false;
     if current.as_deref() != Some(after) {
         if !allow_before || &current != before {
             return Err(ReviewOwnerError::conflict(
@@ -809,16 +803,45 @@ fn publish_output(
         start().map_err(ReviewOwnerError::failed)?;
         atomic_replace(&path, after, AtomicWriteOptions { mode: Some(0o600) })
             .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
-        written = true;
+        // Record the save before a fallible receipt. The caller attempts indexing
+        // after this owner lock has been released, including on receipt failure.
+        published();
     }
-    receipt().map_err(ReviewOwnerError::failed)?;
-    Ok(written)
+    receipt().map_err(ReviewOwnerError::failed)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use solstone_core_journal_io::{DailyUnitIdentity, DailyUnitRecord, with_daily_unit_authority};
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn saved_output_is_reported_even_when_receipt_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let mut saved = Vec::new();
+        let result = publish_output(
+            root.path(),
+            "saved.md",
+            &None,
+            b"saved before receipt failed",
+            true,
+            || Ok(()),
+            || Err("receipt write failed".into()),
+            || saved.push("saved.md"),
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("receipt write failed")
+        );
+        assert_eq!(saved, ["saved.md"]);
+        assert_eq!(
+            std::fs::read(root.path().join("saved.md")).unwrap(),
+            b"saved before receipt failed"
+        );
+    }
 
     fn fixture() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
@@ -957,7 +980,6 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![PreparedDailyAction::Observation { batch }],
             no_output: false,
-            configured_output: false,
         };
         let identity =
             DailyUnitIdentity::new("20260910", "entities:entity_observer", Some("work".into()));
@@ -971,7 +993,8 @@ mod tests {
             record.action_plan = Some(serde_json::to_value(&plan).unwrap());
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
-            publish_daily_publication(authority, "attempt", &plan, &context).unwrap();
+            publish_daily_publication(authority, "attempt", &plan, &context, &mut Vec::new())
+                .unwrap();
             Ok(())
         })
         .unwrap();
@@ -994,8 +1017,12 @@ mod tests {
             // and the historical receipts of its completed owner actions.
             authority.record_mut().as_mut().unwrap().lock_token = Some("replacement".into());
             authority.checkpoint()?;
-            assert!(publish_daily_publication(authority, "attempt", &plan, &context).is_err());
-            publish_daily_publication(authority, "replacement", &plan, &context).unwrap();
+            assert!(
+                publish_daily_publication(authority, "attempt", &plan, &context, &mut Vec::new())
+                    .is_err()
+            );
+            publish_daily_publication(authority, "replacement", &plan, &context, &mut Vec::new())
+                .unwrap();
             Ok(())
         })
         .unwrap();
@@ -1026,7 +1053,6 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![action],
             no_output: false,
-            configured_output: false,
         };
         let identity =
             DailyUnitIdentity::new("20260910", "entities:entity_observer", Some("work".into()));
@@ -1043,8 +1069,14 @@ mod tests {
             authority.checkpoint()
         }).unwrap();
         with_daily_unit_authority(root.path(), &identity, |authority| {
-            let error =
-                publish_daily_publication(authority, "replacement", &plan, &context).unwrap_err();
+            let error = publish_daily_publication(
+                authority,
+                "replacement",
+                &plan,
+                &context,
+                &mut Vec::new(),
+            )
+            .unwrap_err();
             assert_eq!(error.phase, "conflict");
             Ok(())
         })
@@ -1146,7 +1178,6 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![action_0, action_1, action_2, action_3],
             no_output: false,
-            configured_output: false,
         };
 
         with_daily_unit_authority(journal, &identity, |authority| {
@@ -1158,7 +1189,8 @@ mod tests {
             authority.checkpoint()?;
 
             let err =
-                publish_daily_publication(authority, "attempt-1", &plan, &context).unwrap_err();
+                publish_daily_publication(authority, "attempt-1", &plan, &context, &mut Vec::new())
+                    .unwrap_err();
             assert_eq!(err.talent, "entities:entities_review");
             assert_eq!(err.day(), "20260910");
             assert_eq!(err.facet(), Some("work"));
@@ -1218,7 +1250,6 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![action],
             no_output: false,
-            configured_output: false,
         };
 
         // Simulate a crash right after start() was called for an action:
@@ -1239,8 +1270,14 @@ mod tests {
             let binding = authority.record();
             let record = binding.as_ref().unwrap();
             assert!(record.has_uncommitted_started_receipt());
-            let err = publish_daily_publication(authority, "interrupted-token", &plan, &context)
-                .unwrap_err();
+            let err = publish_daily_publication(
+                authority,
+                "interrupted-token",
+                &plan,
+                &context,
+                &mut Vec::new(),
+            )
+            .unwrap_err();
             assert_eq!(err.phase, "conflict");
             assert_eq!(err.talent, "entities:entities_review");
             Ok(())
@@ -1948,7 +1985,6 @@ mod tests {
             let publication = PreparedDailyPublication {
                 actions: vec![action],
                 no_output: false,
-                configured_output: false,
             };
             let identity =
                 DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
@@ -1984,6 +2020,7 @@ mod tests {
                     &ExecutionContext {
                         journal: root.path().into(),
                     },
+                    &mut Vec::new(),
                 )
                 .unwrap_err();
                 assert_eq!(error.phase, "conflict", "{kind}: {error:?}");
@@ -2340,7 +2377,6 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![action],
             no_output: false,
-            configured_output: false,
         };
         solstone_core_entity::save_entity_identity(
             journal,
@@ -2357,7 +2393,8 @@ mod tests {
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
             let err =
-                publish_daily_publication(authority, "attempt-1", &plan, &context).unwrap_err();
+                publish_daily_publication(authority, "attempt-1", &plan, &context, &mut Vec::new())
+                    .unwrap_err();
             assert_eq!(err.phase, "conflict");
             assert_eq!(err.talent, "entities:entities_review");
             assert_eq!(err.day(), "20260910");
@@ -2410,7 +2447,6 @@ mod tests {
                 after: b"{\"ok\":true}\n".to_vec(),
             }],
             no_output: false,
-            configured_output: false,
         };
         with_daily_unit_authority(journal, &identity, |authority| {
             let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
@@ -2419,7 +2455,7 @@ mod tests {
             record.action_plan = Some(serde_json::to_value(&plan).unwrap());
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
-            publish_daily_publication(authority, "noop", &plan, &context).unwrap();
+            publish_daily_publication(authority, "noop", &plan, &context, &mut Vec::new()).unwrap();
             let binding = authority.record();
             let current = binding.as_ref().unwrap();
             assert!(!current.has_uncommitted_started_receipt());
@@ -2543,7 +2579,6 @@ mod tests {
                 },
             }],
             no_output: false,
-            configured_output: false,
         };
         // A journal keeps one enabled facet; the sibling lets "work" go.
         let _ = solstone_core_facets::create_facet(
@@ -2567,7 +2602,9 @@ mod tests {
             record.action_plan = Some(serde_json::to_value(&plan).unwrap());
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
-            let error = publish_daily_publication(authority, "guard", &plan, &context).unwrap_err();
+            let error =
+                publish_daily_publication(authority, "guard", &plan, &context, &mut Vec::new())
+                    .unwrap_err();
             assert_eq!(error.owner_conflict_kind(), Some("owning_facet_changed"));
             assert!(
                 !authority
@@ -2628,7 +2665,6 @@ mod tests {
                 },
             }],
             no_output: false,
-            configured_output: false,
         };
         std::fs::write(&path, b"{").unwrap();
         with_daily_unit_authority(journal, &identity, |authority| {
@@ -2639,7 +2675,8 @@ mod tests {
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
             let error =
-                publish_daily_publication(authority, "malformed", &plan, &context).unwrap_err();
+                publish_daily_publication(authority, "malformed", &plan, &context, &mut Vec::new())
+                    .unwrap_err();
             assert_eq!(error.phase, "publication");
             assert_eq!(error.reason_code(), "talent_stage_failed");
             assert_eq!(error.owner_conflict_kind(), None);

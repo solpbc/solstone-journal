@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -2486,313 +2486,245 @@ pub(crate) fn write_sense_and_change<W: std::io::Write>(
     let talents = segment.join("talents");
     std::fs::create_dir_all(&talents).map_err(|error| error.to_string())?;
 
-    let activity_path = talents.join("activity.md");
-    replace_text(
-        &activity_path,
-        sense
-            .get("activity_summary")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    )?;
-    let attempt = solstone_core_indexer_store::attempt_saved_publication(
-        &context.journal,
-        &activity_path,
-        |j, p| context.index.rescan_file(j, p),
-    );
-    log_index_attempt(log, context, segment_name, stream, &attempt);
-
-    let sense_json_path = talents.join("sense.json");
-    replace_json(&sense_json_path, &Value::Object(sense.clone()))?;
-    let attempt = solstone_core_indexer_store::attempt_saved_publication(
-        &context.journal,
-        &sense_json_path,
-        |j, p| context.index.rescan_file(j, p),
-    );
-    log_index_attempt(log, context, segment_name, stream, &attempt);
-
-    let inventory =
-        observe_declared_facet_inventory(&context.journal).map_err(|error| error.to_string())?;
-    let filtered_facets = filter_declared_facets(
-        sense.get("facets"),
-        &inventory,
-        context,
-        log,
-        segment_name,
-        stream,
-        true,
-    )?;
-    let facets_json_path = talents.join("facets.json");
-    replace_json(&facets_json_path, &filtered_facets.0)?;
-    let attempt = solstone_core_indexer_store::attempt_saved_publication(
-        &context.journal,
-        &facets_json_path,
-        |j, p| context.index.rescan_file(j, p),
-    );
-    log_index_attempt(log, context, segment_name, stream, &attempt);
-
-    let will_write_sense_md =
-        sense
-            .get("entities")
-            .and_then(Value::as_array)
-            .is_some_and(|entities| {
-                !entities.is_empty()
-                    && entities.iter().filter_map(Value::as_object).any(|e| {
-                        !e.get("type")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .is_empty()
-                            || !e
-                                .get("name")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .is_empty()
-                            || !e
-                                .get("role")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .is_empty()
-                            || !e
-                                .get("source")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .is_empty()
-                            || !e
-                                .get("context")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .is_empty()
-                    })
-            });
-
-    refresh_segment_sibling_assignments(
-        context,
-        log,
-        segment_name,
-        stream,
-        &talents,
-        will_write_sense_md,
-    );
-
-    let sense_json_path = talents.join("sense.json");
-    replace_json(&sense_json_path, &Value::Object(sense.clone()))?;
-    let attempt = solstone_core_indexer_store::attempt_saved_publication(
-        &context.journal,
-        &sense_json_path,
-        |j, p| context.index.rescan_file(j, p),
-    );
-    log_index_attempt(log, context, segment_name, stream, &attempt);
-
-    let density_json_path = talents.join("density.json");
-    replace_json(
-        &density_json_path,
-        &serde_json::json!({"classification":sense["density"],"timestamp":Utc::now().to_rfc3339()}),
-    )?;
-    let attempt = solstone_core_indexer_store::attempt_saved_publication(
-        &context.journal,
-        &density_json_path,
-        |j, p| context.index.rescan_file(j, p),
-    );
-    log_index_attempt(log, context, segment_name, stream, &attempt);
-
-    if sense
-        .get("entities")
-        .and_then(Value::as_array)
-        .is_some_and(|entities| !entities.is_empty())
-    {
-        let lines = sense
-            .get("entities")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_object)
-            .map(|entity| {
-                format!(
-                    "- {} — {} (role={}, source={}) — {}",
-                    entity
-                        .get("type")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                    entity
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                    entity
-                        .get("role")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                    entity
-                        .get("source")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                    entity
-                        .get("context")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                )
-            })
-            .collect::<Vec<_>>();
-        if !lines.is_empty() {
-            let sense_md_path = talents.join("sense.md");
-            replace_text(
-                &sense_md_path,
-                &format!("# Sense Entities\n\n{}", lines.join("\n")),
-            )?;
-            let attempt = solstone_core_indexer_store::attempt_saved_publication(
-                &context.journal,
-                &sense_md_path,
-                |j, p| context.index.rescan_file(j, p),
-            );
-            log_index_attempt(log, context, segment_name, stream, &attempt);
-        }
-    }
-    if sense.get("meeting_detected").is_some_and(python_truthy) {
-        let speakers_json_path = talents.join("speakers.json");
-        replace_json(
-            &speakers_json_path,
-            &sense
-                .get("speakers")
-                .cloned()
-                .unwrap_or(Value::Array(Vec::new())),
+    let mut published = BTreeSet::new();
+    let mut assignment_published = false;
+    let result: Result<Value, String> = (|| {
+        let activity_path = talents.join("activity.md");
+        replace_text(
+            &activity_path,
+            sense
+                .get("activity_summary")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
         )?;
+        published.insert(activity_path.clone());
+
+        let sense_json_path = talents.join("sense.json");
+        replace_json(&sense_json_path, &Value::Object(sense.clone()))?;
+        published.insert(sense_json_path.clone());
+
+        let inventory = observe_declared_facet_inventory(&context.journal)
+            .map_err(|error| error.to_string())?;
+        let filtered_facets = filter_declared_facets(
+            sense.get("facets"),
+            &inventory,
+            context,
+            log,
+            segment_name,
+            stream,
+            true,
+        )?;
+        let facets_json_path = talents.join("facets.json");
+        // If a prior assignment cannot be observed, conservatively refresh the
+        // bounded dependency set after the new assignment has been saved.
+        let previous_facets = std::fs::read(&facets_json_path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+        let assignment_changed = previous_facets.as_ref() != Some(&filtered_facets.0);
+        replace_json(&facets_json_path, &filtered_facets.0)?;
+        published.insert(facets_json_path.clone());
+        assignment_published = assignment_changed;
+
+        let sense_json_path = talents.join("sense.json");
+        replace_json(&sense_json_path, &Value::Object(sense.clone()))?;
+        published.insert(sense_json_path.clone());
+
+        let density_json_path = talents.join("density.json");
+        replace_json(
+            &density_json_path,
+            &serde_json::json!({"classification":sense["density"],"timestamp":Utc::now().to_rfc3339()}),
+        )?;
+        published.insert(density_json_path.clone());
+
+        if sense
+            .get("entities")
+            .and_then(Value::as_array)
+            .is_some_and(|entities| !entities.is_empty())
+        {
+            let lines = sense
+                .get("entities")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_object)
+                .map(|entity| {
+                    format!(
+                        "- {} — {} (role={}, source={}) — {}",
+                        entity
+                            .get("type")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                        entity
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                        entity
+                            .get("role")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                        entity
+                            .get("source")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                        entity
+                            .get("context")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            if !lines.is_empty() {
+                let sense_md_path = talents.join("sense.md");
+                replace_text(
+                    &sense_md_path,
+                    &format!("# Sense Entities\n\n{}", lines.join("\n")),
+                )?;
+                published.insert(sense_md_path.clone());
+            }
+        }
+        if sense.get("meeting_detected").is_some_and(python_truthy) {
+            let speakers_json_path = talents.join("speakers.json");
+            replace_json(
+                &speakers_json_path,
+                &sense
+                    .get("speakers")
+                    .cloned()
+                    .unwrap_or(Value::Array(Vec::new())),
+            )?;
+            published.insert(speakers_json_path.clone());
+        }
+        let stream_resolved = Some(stream.unwrap_or(DEFAULT_STREAM));
+        let predecessor = resolve_predecessor(
+            &context.journal,
+            &context.day,
+            stream_resolved,
+            segment_name,
+        );
+        let change = detect_segment_change(
+            &context.journal,
+            &context.day,
+            stream_resolved,
+            segment_name,
+            segment,
+            predecessor,
+            &Utc::now().to_rfc3339(),
+        );
+        let change_json_path = segment.join("talents/change.json");
+        replace_json(&change_json_path, &change)?;
+        published.insert(change_json_path.clone());
+        Ok(change)
+    })();
+    if assignment_published {
+        collect_segment_assigned_text(context, log, segment_name, stream, segment, &mut published);
+    }
+    // Attempt each saved/dependent path once, including saves preceding an
+    // ordinary publication error. Indexing never replaces that original error.
+    for path in published {
         let attempt = solstone_core_indexer_store::attempt_saved_publication(
             &context.journal,
-            &speakers_json_path,
+            &path,
             |j, p| context.index.rescan_file(j, p),
         );
         log_index_attempt(log, context, segment_name, stream, &attempt);
     }
-    let stream_resolved = Some(stream.unwrap_or(DEFAULT_STREAM));
-    let predecessor = resolve_predecessor(
-        &context.journal,
-        &context.day,
-        stream_resolved,
-        segment_name,
-    );
-    let change = detect_segment_change(
-        &context.journal,
-        &context.day,
-        stream_resolved,
-        segment_name,
-        segment,
-        predecessor,
-        &Utc::now().to_rfc3339(),
-    );
-    let change_json_path = segment.join("talents/change.json");
-    replace_json(&change_json_path, &change)?;
-    let attempt = solstone_core_indexer_store::attempt_saved_publication(
-        &context.journal,
-        &change_json_path,
-        |j, p| context.index.rescan_file(j, p),
-    );
-    log_index_attempt(log, context, segment_name, stream, &attempt);
-    Ok(change)
+    result
 }
 
-fn refresh_segment_sibling_assignments<W: std::io::Write>(
+fn collect_segment_assigned_text<W: std::io::Write>(
     context: &ThinkContext,
     log: &mut RunLogWriter<W>,
     segment_name: &str,
     stream: Option<&str>,
-    talents_dir: &std::path::Path,
-    will_write_sense_md: bool,
+    segment: &std::path::Path,
+    paths: &mut BTreeSet<std::path::PathBuf>,
 ) {
-    let Ok(entries) = std::fs::read_dir(talents_dir) else {
-        return;
-    };
-    let declarations =
-        solstone_core_indexer_store::classification::FacetDeclarationSet::from_journal(
-            &context.journal,
-        )
-        .unwrap_or_default();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("md") {
-            continue;
-        }
-        if will_write_sense_md
-            && path.file_name().and_then(|name| name.to_str()) == Some("sense.md")
-        {
-            continue;
-        }
-        let canonical = match path.canonicalize() {
-            Ok(c) => c,
-            Err(e) => {
-                let attempt = solstone_core_indexer_store::SavedPublicationAttempt {
-                    path: path.display().to_string(),
-                    outcome: solstone_core_indexer_store::SavedPublicationOutcome::Failed,
-                    warnings: Vec::new(),
-                    cause: Some(e.to_string()),
-                };
-                log_index_attempt(log, context, segment_name, stream, &attempt);
+    // Only immediate segment and talent files can have SegmentAssigned scope.
+    // Nested facet-owned outputs retain their independent classification.
+    for directory in [segment.to_path_buf(), segment.join("talents")] {
+        let entries = match std::fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) => {
+                log_dependency_discovery_failure(
+                    context,
+                    log,
+                    segment_name,
+                    stream,
+                    &directory,
+                    &error,
+                );
                 continue;
             }
         };
-        let Some(rel_str) =
-            solstone_core_format::paths::relative_to_journal(&context.journal, &canonical)
-        else {
-            let attempt = solstone_core_indexer_store::SavedPublicationAttempt {
-                path: canonical.display().to_string(),
-                outcome: solstone_core_indexer_store::SavedPublicationOutcome::Failed,
-                warnings: Vec::new(),
-                cause: Some(format!(
-                    "path {} is outside journal {}",
-                    canonical.display(),
-                    context.journal.display()
-                )),
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    log_dependency_discovery_failure(
+                        context,
+                        log,
+                        segment_name,
+                        stream,
+                        &directory,
+                        &error,
+                    );
+                    continue;
+                }
             };
-            log_index_attempt(log, context, segment_name, stream, &attempt);
-            continue;
-        };
-        let Some(spec) = solstone_core_format::content::resolve_spec(&rel_str) else {
-            continue;
-        };
-        let solstone_core_format::content::IndexDisposition::Admitted {
-            basis: solstone_core_format::content::ScopeBasis::SegmentAssigned,
-            ..
-        } = spec.disposition
-        else {
-            continue;
-        };
-        let classification = solstone_core_indexer_store::classification::classify_source(
-            &context.journal,
-            &rel_str,
-            None,
-            &declarations,
-        );
-        if !classification.eligible {
-            continue;
-        }
-        let mut expected_facet_ids = classification.facet_ids;
-        expected_facet_ids.sort();
-        let needs_rescan = match solstone_core_indexer_store::classification::stored_chunk_facet_ids(
-            &context.journal,
-            &rel_str,
-        ) {
-            Ok(Some(mut stored)) => {
-                stored.sort();
-                stored != expected_facet_ids
-            }
-            Ok(None) => true,
-            Err(err) => {
-                let attempt = solstone_core_indexer_store::SavedPublicationAttempt {
-                    path: rel_str.clone(),
-                    outcome: solstone_core_indexer_store::SavedPublicationOutcome::Failed,
-                    warnings: Vec::new(),
-                    cause: Some(err.to_string()),
-                };
-                log_index_attempt(log, context, segment_name, stream, &attempt);
+            let path = entry.path();
+            let Some(rel) =
+                solstone_core_format::paths::relative_to_journal(&context.journal, &path)
+            else {
                 continue;
+            };
+            if solstone_core_format::content::resolve_spec(&rel).is_some_and(|spec| {
+                matches!(
+                    spec.disposition,
+                    solstone_core_format::content::IndexDisposition::Admitted {
+                        basis: solstone_core_format::content::ScopeBasis::SegmentAssigned,
+                        ..
+                    }
+                )
+            }) {
+                match path.metadata() {
+                    Ok(metadata) if metadata.is_file() => {
+                        paths.insert(path);
+                    }
+                    Ok(_) => {}
+                    Err(error) => log_dependency_discovery_failure(
+                        context,
+                        log,
+                        segment_name,
+                        stream,
+                        &path,
+                        &error,
+                    ),
+                }
             }
-        };
-        if needs_rescan {
-            let attempt = solstone_core_indexer_store::attempt_saved_publication(
-                &context.journal,
-                &path,
-                |j, p| context.index.rescan_file(j, p),
-            );
-            log_index_attempt(log, context, segment_name, stream, &attempt);
         }
     }
+}
+
+fn log_dependency_discovery_failure<W: std::io::Write>(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<W>,
+    segment_name: &str,
+    stream: Option<&str>,
+    path: &std::path::Path,
+    error: &std::io::Error,
+) {
+    log.log(
+        "index.dependencies_failed",
+        context.event_now_ms(),
+        segment_event(
+            context,
+            segment_name,
+            stream,
+            Map::from_iter([
+                ("path".to_owned(), Value::String(path.display().to_string())),
+                ("cause".to_owned(), Value::String(error.to_string())),
+            ]),
+        ),
+    );
 }
 
 fn log_index_attempt<W: std::io::Write>(
