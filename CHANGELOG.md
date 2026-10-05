@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- workouts from a Strava download now show at their real start time. before, they could land hours off, and an evening workout could land on the wrong day. import your download again and your earlier workouts move to the right time; a workout you deleted stays deleted.
+
 ## [2.0.33] - 2026-10-05
 
 ### Added

@@ -894,6 +894,54 @@ fn failure(stderr: String) -> CliRun {
 
 const STRAVA_RAW_RETENTION: &str = "discard";
 
+/// Releases the pieces an earlier version placed at the wrong time, as deleting
+/// their import would: each key keeps a release tombstone and the workout's pieces
+/// are written again at the right time. Fails unless every piece is gone.
+fn release_misplaced_strava_pieces(
+    journal: &Path,
+    pieces: &[strava::PlannedTilePublication],
+    import_id: &str,
+) -> Result<(), String> {
+    use solstone_core_retention::tombstone::{RemovalReason, TOMBSTONE_NAME};
+    use solstone_core_retention::{Target, door};
+
+    let stream_dir = |day: &str| journal.join("chronicle").join(day).join("import.strava");
+    let gone = |piece: &strava::PlannedTilePublication| {
+        std::fs::read_dir(stream_dir(&piece.day).join(&piece.segment))
+            .map(|entries| {
+                let names: Vec<_> = entries
+                    .filter_map(|entry| entry.ok().map(|e| e.file_name()))
+                    .collect();
+                names.len() == 1 && names[0] == TOMBSTONE_NAME
+            })
+            .unwrap_or(false)
+    };
+    let targets: Vec<Target> = pieces
+        .iter()
+        .map(|piece| Target {
+            day: piece.day.clone(),
+            stream: "import.strava".to_owned(),
+            dir: piece.segment.clone(),
+        })
+        .collect();
+    let outcome = door::remove_segments(
+        journal,
+        &targets,
+        &chrono::Utc::now().to_rfc3339(),
+        RemovalReason::ImportRunRelease,
+        &format!("strava-repair:{import_id}"),
+    );
+    // A failed search update does not undo the removal; the chronicle is authoritative.
+    let _ = door::notify_index(
+        &solstone_core_indexer_store::RetentionIndex::new(journal),
+        &outcome,
+    );
+    if outcome.halted.is_some() || !pieces.iter().all(gone) {
+        return Err("workouts placed at the wrong time could not be released".to_owned());
+    }
+    Ok(())
+}
+
 pub(crate) fn run_strava(
     dispatch: RegistryDispatch,
     journal: &Path,
@@ -1064,6 +1112,14 @@ fn run_strava_internal(
     {
         let _ = finish(ImportTerminalInput::Failed(&[]));
         return failure(format!("{name} import failed: {error}\n"));
+    }
+
+    // 9b. Release workouts an earlier version placed at the wrong time
+    if !placement.release.is_empty()
+        && let Err(detail) = release_misplaced_strava_pieces(journal, &placement.release, import_id)
+    {
+        let _ = finish(ImportTerminalInput::Failed(&[]));
+        return failure(format!("{name} import failed: {detail}\n"));
     }
 
     // 10. before_apply callback
@@ -3731,6 +3787,161 @@ mod tests {
     }
 
     #[test]
+    fn strava_places_a_real_export_row_at_its_utc_instant() {
+        // A row from a public Strava export. Its Activity Date is UTC: the weather
+        // observation epoch beside it (1754640000, 2025-08-08 08:00:00 UTC) is within
+        // the hour of the start, wherever the athlete was.
+        let journal = tempfile::tempdir().unwrap();
+        write_custom_zone(journal.path(), "America/Denver");
+        let csv_file = journal.path().join("activities.csv");
+        let row: &[(&str, usize, &str)] = &[
+            ("Activity ID", 1, "701"),
+            ("Activity Date", 1, "\"Aug 8, 2025, 8:57:33 AM\""),
+            ("Activity Name", 1, "Morning Run"),
+            ("Activity Type", 1, "Run"),
+            ("Elapsed Time", 2, "300"),
+            ("Moving Time", 1, "300"),
+            ("Distance", 2, "1000"),
+            ("Weather Observation Time", 1, "1754640000.0"),
+        ];
+        fs::write(&csv_file, build_csv(HEADER_ENGLISH_103, &[row]).as_bytes()).unwrap();
+
+        let (run, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run.exit_code, 0, "{}", run.stdout);
+        // 08:57:33 UTC is 02:57:33 in Denver (UTC-6 in August).
+        let tile = journal
+            .path()
+            .join("chronicle/20250808/import.strava/025733_300/workout.json");
+        let json: serde_json::Value = serde_json::from_slice(&fs::read(tile).unwrap()).unwrap();
+        assert_eq!(json["workout"]["start"], "2025-08-08T02:57:33-06:00");
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20250808/import.strava/085733_300")
+                .exists()
+        );
+    }
+
+    fn write_misplaced_strava_tile(day: &Path, key: &str, id: u64, wall: &str, end: &str) {
+        fs::create_dir_all(day.join(key)).unwrap();
+        let tile = serde_json::json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "import_id": "20261004_120000",
+            "activity_id": id,
+            "zone": "America/Denver",
+            "tile": { "index": 0, "count": 1, "start": wall, "end": end, "seconds": 300 },
+            "workout": { "name": "Run", "type": "Run", "start": wall, "elapsed_seconds": 300, "moving_seconds": 300, "distance_m": 1000.0, "elevation_gain_m": 100.0, "heart_rate_avg_bpm": 140.0, "heart_rate_max_bpm": 160.0, "power_avg_w": 200.0, "power_weighted_w": 210.0, "calories_kcal": 350.0, "commute": true, "entered_by_hand": false }
+        });
+        fs::write(day.join(key).join("workout.json"), tile.to_string()).unwrap();
+    }
+
+    #[test]
+    fn strava_replaces_workouts_an_earlier_version_placed_at_the_wrong_time() {
+        let journal = tempfile::tempdir().unwrap();
+        write_custom_zone(journal.path(), "America/Denver");
+        fs::create_dir_all(journal.path().join("imports")).unwrap();
+        fs::write(
+            journal.path().join("imports/.strava-zone.json"),
+            b"{\"zone\":\"America/Denver\"}\n",
+        )
+        .unwrap();
+        // The earlier version read each UTC date as Denver wall time.
+        let day = journal.path().join("chronicle/20261004/import.strava");
+        write_misplaced_strava_tile(
+            &day,
+            "130200_300",
+            701,
+            "2026-10-04T13:02:00-06:00",
+            "2026-10-04T13:07:00-06:00",
+        );
+        write_misplaced_strava_tile(
+            &day,
+            "230000_300",
+            702,
+            "2026-10-04T23:00:00-06:00",
+            "2026-10-04T23:05:00-06:00",
+        );
+        // 703 was deleted by the owner at the key it was misplaced to.
+        let day5 = journal.path().join("chronicle/20261005/import.strava");
+        fs::create_dir_all(day5.join("020000_300")).unwrap();
+        fs::write(
+            day5.join("020000_300/tombstone.json"),
+            br#"{"reason":"owner_segment_delete","cid":"x"}"#,
+        )
+        .unwrap();
+
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[
+            ("701", "Oct 4, 2026, 1:02:00 PM", "Run", 300, 1000.0),
+            ("702", "Oct 4, 2026, 11:00:00 PM", "Run", 300, 1000.0),
+            ("703", "Oct 5, 2026, 2:00:00 AM", "Run", 300, 1000.0),
+        ]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+
+        let (run1, _) = run_bound(
+            strava_dispatch(&csv_file, "20261005_100000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0, "{}", run1.stdout);
+        assert!(run1.stdout.contains(" replaced=2"), "{}", run1.stdout);
+        assert!(run1.stdout.contains("new=0 "), "{}", run1.stdout);
+        // Right times: 13:02 UTC is 07:02 in Denver, 23:00 UTC is 17:00.
+        let day_dir = journal.path().join("chronicle/20261004/import.strava");
+        let moved: serde_json::Value =
+            serde_json::from_slice(&fs::read(day_dir.join("070200_300/workout.json")).unwrap())
+                .unwrap();
+        assert_eq!(moved["workout"]["start"], "2026-10-04T07:02:00-06:00");
+        assert!(day_dir.join("170000_300/workout.json").is_file());
+        // The misplaced keys are released, never written into again.
+        for key in ["130200_300", "230000_300"] {
+            let names: Vec<_> = fs::read_dir(day_dir.join(key))
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect();
+            assert_eq!(names, ["tombstone.json"], "{key}");
+            let stone: serde_json::Value = serde_json::from_slice(
+                &fs::read(day_dir.join(key).join("tombstone.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(stone["reason"], "import_run_release");
+        }
+        // 703 stays deleted: nothing at its right key (20:00 on the 4th).
+        assert!(!day_dir.join("200000_300").exists());
+        assert!(!day_dir.join("200000_301").exists());
+        assert!(run1.stdout.contains(" deleted=1 "), "{}", run1.stdout);
+
+        // The same download again changes nothing.
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file, "20261005_110000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0, "{}", run2.stdout);
+        assert!(!run2.stdout.contains("replaced="), "{}", run2.stdout);
+        assert!(
+            run2.stdout.contains("present_unchanged=2"),
+            "{}",
+            run2.stdout
+        );
+        assert!(!day_dir.join("070200_301").exists());
+        assert!(!day_dir.join("200000_300").exists());
+
+        // And a workout the owner deletes afterwards stays deleted too.
+        release_tile(
+            &day_dir.join("070200_300"),
+            br#"{"reason":"owner_segment_delete","cid":"x"}"#,
+        );
+        let (run3, _) = run_bound(
+            strava_dispatch(&csv_file, "20261005_120000"),
+            journal.path(),
+        );
+        assert_eq!(run3.exit_code, 0, "{}", run3.stdout);
+        assert!(!day_dir.join("070200_301").exists());
+    }
+
+    #[test]
     fn strava_never_keeps_an_uploaded_download() {
         let journal = tempfile::tempdir().unwrap();
         write_utc_zone(journal.path());
@@ -3877,7 +4088,8 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         write_custom_zone(journal.path(), "Asia/Tokyo");
         let csv_file = journal.path().join("activities.csv");
-        let content = make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 600, 5000.0)]);
+        // 22:00 UTC is 07:00 the next morning in Tokyo.
+        let content = make_en_csv_103(&[("101", "Aug 9, 2026, 10:00:00 PM", "Run", 600, 5000.0)]);
         fs::write(&csv_file, content.as_bytes()).unwrap();
 
         // Run 1: seeds zone record Asia/Tokyo
@@ -4027,7 +4239,7 @@ mod tests {
         .unwrap();
         let csv_seed = journal_seed.path().join("activities.csv");
         let content_seed =
-            make_en_csv_103(&[("301", "Aug 10, 2026, 09:00:00 AM", "Run", 300, 1000.0)]);
+            make_en_csv_103(&[("301", "Aug 10, 2026, 03:00:00 PM", "Run", 300, 1000.0)]);
         fs::write(&csv_seed, content_seed.as_bytes()).unwrap();
         let (run_seed, _) = run_bound(
             strava_dispatch(&csv_seed, "20260810_160000"),
