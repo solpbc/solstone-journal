@@ -47,6 +47,7 @@ pub enum RegistrySource {
     JournalArchive,
     AppleHealth,
     Oura,
+    Strava,
 }
 
 impl RegistrySource {
@@ -80,6 +81,7 @@ impl RegistrySource {
             Self::JournalArchive => "journal_archive",
             Self::AppleHealth => "apple_health",
             Self::Oura => "oura",
+            Self::Strava => "strava",
         }
     }
 }

@@ -51,6 +51,8 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-segment.workspace = true
 tempfile = "3.24.0"
+# License: Unlicense OR MIT. MIT is already allow-listed. Pure Rust with no build script (MSRV 1.65).
+csv = "=1.3.1"
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
