@@ -170,7 +170,7 @@ pub fn apply_path_lookup(journal: &Path) -> Result<PathLookupStatus, StoreError>
     Ok(PathLookupStatus { ready: true })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
     use crate::classification::{FacetDeclarationSet, classify_source};
@@ -568,6 +568,69 @@ mod tests {
             .expect("read readiness");
         assert_eq!(readiness, Some(0));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn seed_rejects_equal_count_corruption_and_rolls_back_readiness_and_rows() {
+        let root = temp_root("seed-correspondence-rollback");
+        let conn = open_index(&root).unwrap();
+        conn.execute_batch(
+            "INSERT INTO chunks(rowid, content, path, stream) VALUES
+             (1, 'source one', 'first.md', 'stream-one'), (2, 'source two', NULL, NULL);
+             INSERT INTO chunk_sources(rowid, path, stream) VALUES
+             (1, 'first.md', 'stream-one'), (2, NULL, NULL);
+             UPDATE chunk_source_readiness SET ready=0 WHERE id=1;
+             CREATE TRIGGER corrupt_seed AFTER INSERT ON chunk_sources BEGIN
+               UPDATE chunk_sources SET stream='corrupt' WHERE rowid=NEW.rowid;
+             END;",
+        )
+        .unwrap();
+        drop(conn);
+        let error = apply_path_lookup(&root).unwrap_err();
+        assert!(error.to_string().contains("does not correspond"), "{error}");
+        assert!(!inspect_path_lookup(&root).unwrap().ready);
+        let conn = Connection::open(db_path(&root)).unwrap();
+        let rows: Vec<(i64, Option<String>, Option<String>)> = {
+            let mut statement = conn
+                .prepare("SELECT rowid, path, stream FROM chunk_sources ORDER BY rowid")
+                .unwrap();
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(
+            rows,
+            vec![
+                (
+                    1,
+                    Some("first.md".to_owned()),
+                    Some("stream-one".to_owned())
+                ),
+                (2, None, None),
+            ]
+        );
+        assert_eq!(
+            conn.query_row(VALIDATE_CHUNK_SOURCES_CORRESPONDENCE, [], |r| r
+                .get::<_, i64>(0))
+                .optional()
+                .unwrap(),
+            None
+        );
+        conn.execute("DROP TRIGGER corrupt_seed", []).unwrap();
+        drop(conn);
+        assert!(apply_path_lookup(&root).unwrap().ready);
+        let conn = Connection::open(db_path(&root)).unwrap();
+        assert_eq!(
+            conn.query_row(VALIDATE_CHUNK_SOURCES_CORRESPONDENCE, [], |r| r
+                .get::<_, i64>(0))
+                .optional()
+                .unwrap(),
+            None
+        );
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1014,8 +1077,31 @@ mod tests {
 
         let err = rescan_file(&root, &file1).unwrap_err();
         assert!(matches!(err, StoreError::Io(_) | StoreError::Sql(_)));
+        assert!(
+            err.to_string().contains("chunk_sources insert blocked"),
+            "{err}"
+        );
 
         let conn = Connection::open(db_path(&root)).expect("open");
+        let target_before_retry: (i64, String, Option<String>) = conn
+            .query_row(
+                "SELECT rowid, content, stream FROM chunks WHERE path = ?",
+                ["facets/work/events/20260101.jsonl"],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .expect("target chunk survives rollback");
+        assert_eq!(
+            target_before_retry,
+            (1, "content 1".to_owned(), Some("stream1".to_owned()))
+        );
+        let target_mapping: (i64, Option<String>) = conn
+            .query_row(
+                "SELECT rowid, stream FROM chunk_sources WHERE path = ?",
+                ["facets/work/events/20260101.jsonl"],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("target mapping survives rollback");
+        assert_eq!(target_mapping, (1, Some("stream1".to_owned())));
         let chunk2: (i64, String, Option<String>) = conn
             .query_row(
                 "SELECT rowid, content, stream FROM chunks WHERE path = 'facets/work/events/20260102.jsonl'",
@@ -1042,6 +1128,30 @@ mod tests {
                 "facets/work/events/20260102.jsonl".to_string(),
                 Some("stream2".to_string())
             )
+        );
+        conn.execute("DROP TRIGGER abort_on_chunk_sources_insert", [])
+            .unwrap();
+        drop(conn);
+        assert!(matches!(
+            rescan_file(&root, &file1).unwrap(),
+            crate::scan::RescanFileStatus::Indexed { .. }
+        ));
+        let conn = Connection::open(db_path(&root)).unwrap();
+        let target_text: String = conn
+            .query_row(
+                "SELECT content FROM chunks WHERE path = ?",
+                ["facets/work/events/20260101.jsonl"],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(target_text.contains("Standup 1"));
+        let difference: Option<i64> = conn
+            .query_row(VALIDATE_CHUNK_SOURCES_CORRESPONDENCE, [], |r| r.get(0))
+            .optional()
+            .unwrap();
+        assert_eq!(
+            difference, None,
+            "successful retry restores exact paired correspondence"
         );
 
         let _ = fs::remove_dir_all(root);

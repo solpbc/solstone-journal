@@ -3471,6 +3471,7 @@ dependencies = [
  "solstone-core-ingest-contract",
  "solstone-core-installation-identity",
  "solstone-core-journal",
+ "solstone-core-journal-cli",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
