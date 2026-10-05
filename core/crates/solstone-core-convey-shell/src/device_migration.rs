@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn migration_push_removal_failure_stays_awaiting_push() {
-        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let journal = tempfile::TempDir::new().unwrap();
         let body = prepare(journal.path());
         fs::create_dir_all(journal.path().join("config")).unwrap();
         let push_path = journal.path().join("config/push-registry.json");
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn same_device_resume_retires_only_the_stored_previous_cid() {
-        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let journal = tempfile::TempDir::new().unwrap();
         let body = prepare(journal.path());
         let push_path = journal.path().join("config/push-registry.json");
         fs::create_dir_all(push_path.parent().unwrap()).unwrap();

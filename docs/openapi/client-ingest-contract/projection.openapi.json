@@ -633,7 +633,7 @@
     "/app/devices/ingest/manifest/{day}": {
       "get": {
         "deprecated": true,
-        "description": "Deprecated. Return file names, sizes, sha256 hashes, and custody status for every segment on one day, the same listing `segments/{day}` returns. The physical locator is the day, stream directory, and exact segment-directory basename. `key` is that basename unless this response repeats the basename; repeated basenames use `{basename}~{stream}`, then `~2`, `~3`, and so on, and those items also carry `segment` (the directory basename) and `stream`. `original_key` records only an upload remap of the requested key and does not identify a stream. A within-segment effective-name clash remains `ambiguous_segment_file_name`. This operation keeps answering until devices in the field no longer call it.",
+        "description": "Deprecated. Return file names, sizes, sha256 hashes, and custody status for every physical segment on one day. Segment-map keys equal the corresponding `segments/{day}` collection item keys; each map value contains only `files`. A basename that appears once remains its key. Repeated basenames use collection aliases `{basename}~{stream}`, then `~2`, `~3`, and so on, skipping occupied names. An alias is a listing identifier, not a directory basename. The collection item carries `segment` and `stream` to correlate a collided physical segment. A within-segment effective-name clash remains `ambiguous_segment_file_name`. This operation keeps answering until devices in the field no longer call it.",
         "operationId": "client.ingestManifestDay",
         "parameters": [
           {
@@ -722,7 +722,7 @@
                 }
               }
             },
-            "description": "Day transfer manifest. Segment-map keys use the same physical basename or repeated-basename alias as `segments/{day}`; the physical locator is the day, stream directory, and exact segment-directory basename. `original_key` is only an upload remap of the requested key and is not a stream discriminator. A within-segment effective-name clash remains `ambiguous_segment_file_name`."
+            "description": "Day transfer manifest. Segment-map keys equal the corresponding `segments/{day}` collection keys and values contain only `files`. Aliases are listing identifiers; the collection carries the exact physical `segment` and `stream` for collided basenames. A within-segment effective-name clash remains `ambiguous_segment_file_name`."
           },
           "400": {
             "content": {

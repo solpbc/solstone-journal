@@ -474,7 +474,7 @@ mod tests {
 
     #[test]
     fn merge_day_listing_preserves_non_collision_physical_names() {
-        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         let basename = "120000_10~browser_b";
         append_event(root, CID_A, Some("browser_b"), basename);
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn merge_day_listing_keeps_equal_byte_cross_stream_twins() {
-        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         let file = descriptor(
             "browser_pages.jsonl",
@@ -551,7 +551,7 @@ mod tests {
 
     #[test]
     fn merge_day_listing_keeps_heal_reduction_segment_local() {
-        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         plant_file(root, "browser_a", "120000_10", "new.bin", b"new");
         plant_file(root, "browser_b", "120000_10", "other.bin", b"other");
@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn merge_day_listing_skips_occupied_alias_candidate() {
-        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         let files = [
             ("browser_a", "120000_10"),
@@ -642,7 +642,7 @@ mod tests {
 
     #[test]
     fn native_events_refuse_segment_mismatch() {
-        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         let stream = append_event(root, CID_A, None, "120000_1");
         let segment = list_stream_segments(root, DAY, &stream)
@@ -704,7 +704,7 @@ mod tests {
 
     #[test]
     fn continuity_a_to_b_to_c_reads_ancestor_receipts_and_rejects_unrelated() {
-        let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         let stream = append_event(
             root,

@@ -27,7 +27,7 @@ const CID_D: &str = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddd
 const CID_E: &str = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
 fn journal() -> tempfile::TempDir {
-    let directory = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+    let directory = tempfile::TempDir::new().expect("journal root");
     seed_authorized_client(directory.path(), CID_A);
     seed_authorized_client(directory.path(), CID_B);
     directory

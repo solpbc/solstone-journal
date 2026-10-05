@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn device_day_listing_ignores_cross_stream_shared_basename() {
-        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let journal = tempfile::TempDir::new().unwrap();
         for (cid, stream) in [(CID_A, "browser_a"), (CID_B, "browser_b")] {
             let path = journal
                 .path()
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn device_day_listing_reports_within_stream_ambiguity() {
-        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let journal = tempfile::TempDir::new().unwrap();
         let segment = journal
             .path()
             .join("chronicle")
