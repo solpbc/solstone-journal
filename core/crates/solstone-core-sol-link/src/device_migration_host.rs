@@ -14,7 +14,6 @@ use serde_json::Value;
 use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use x509_parser::certification_request::X509CertificationRequest;
-use x509_parser::oid_registry::OID_EC_P256;
 use x509_parser::pem::parse_x509_pem;
 use x509_parser::prelude::FromDer;
 use x509_parser::x509::SubjectPublicKeyInfo;
@@ -341,21 +340,12 @@ fn validate_csr_spki(csr_pem: &str, leaf_spki: &[u8]) -> Result<(), MigrationErr
         .map_err(|_| MigrationError::new(Code::MigrationCsrInvalid))?;
     let (_, pem) = parse_x509_pem(csr_pem.as_bytes())
         .map_err(|_| MigrationError::new(Code::MigrationCsrInvalid))?;
-    let (_, csr) = X509CertificationRequest::from_der(&pem.contents)
+    let (remaining, csr) = X509CertificationRequest::from_der(&pem.contents)
         .map_err(|_| MigrationError::new(Code::MigrationCsrInvalid))?;
-    if let Some(parameters) = csr
-        .certification_request_info
-        .subject_pki
-        .algorithm
-        .parameters
-        .as_ref()
+    if !remaining.is_empty()
+        || !spl_core::ca::is_ec_p256_spki(csr.certification_request_info.subject_pki.raw)
     {
-        let curve = parameters
-            .as_oid()
-            .map_err(|_| MigrationError::new(Code::MigrationCsrInvalid))?;
-        if curve != OID_EC_P256 {
-            return Err(MigrationError::new(Code::MigrationCsrInvalid));
-        }
+        return Err(MigrationError::new(Code::MigrationCsrInvalid));
     }
     let csr_public_key = &csr
         .certification_request_info
@@ -1450,7 +1440,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_csr_freshness_compares_full_spki_der() {
+    fn migration_csr_freshness_compares_validated_p256_points() {
         let journal = Journal::new();
         let (ca, _instance_id) = identity(journal.path());
         let (old_key, same_key_csr) = csr();
@@ -1485,7 +1475,7 @@ mod tests {
             validate_csr_spki(&altered_algorithm, &spki)
                 .unwrap_err()
                 .reason,
-            Code::MigrationKeyNotFresh
+            Code::MigrationCsrInvalid
         );
         let unsupported_curve = csr_with_replaced_oid_and_valid_signature(
             &same_key_csr,
@@ -1513,7 +1503,7 @@ mod tests {
                 "123e4567-e89b-42d3-a456-426614174091",
                 altered_algorithm,
                 spki.clone(),
-                Code::MigrationKeyNotFresh,
+                Code::MigrationCsrInvalid,
             ),
             (
                 "123e4567-e89b-42d3-a456-426614174092",
@@ -1586,6 +1576,55 @@ mod tests {
     }
 
     #[test]
+    fn migration_rekey_refuses_unsupported_algorithm_on_a_fresh_key_without_writing() {
+        let journal = Journal::new();
+        let (ca, _instance_id) = identity(journal.path());
+        let (old_key, old_csr) = csr();
+        let old_certificate = sign_csr(&ca, &old_csr, "Old").unwrap();
+        let old_cid = old_certificate.cid().to_owned();
+        let spki = leaf_spki(old_certificate.pem());
+        add_client(journal.path(), &old_cid, "Old", ClientRole::Roleless, None);
+        let (fresh_key, fresh_csr) = csr();
+        assert_ne!(old_key.public_key_der(), fresh_key.public_key_der());
+        let unsupported_csr = csr_with_replaced_oid_and_valid_signature(
+            &fresh_csr,
+            &fresh_key,
+            &[0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01],
+            &[0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x02],
+        );
+        CertificateSigningRequestParams::from_pem(&unsupported_csr)
+            .expect("correctly signed adversarial CSR passes the generic parser");
+        let raw = serde_json::to_vec(&RekeyRequest {
+            protocol_version: 1,
+            operation_id: "123e4567-e89b-42d3-a456-426614174094".to_owned(),
+            csr: unsupported_csr,
+            device_label: "New".to_owned(),
+            client_label: "Migration client".to_owned(),
+            platform: "ios".to_owned(),
+        })
+        .unwrap();
+        assert_eq!(
+            rekey(
+                journal.path(),
+                &old_cid,
+                &spki,
+                &raw,
+                &MigrationIssuanceContext::default(),
+            )
+            .unwrap_err()
+            .reason,
+            Code::MigrationCsrInvalid
+        );
+        assert!(
+            read_migration_records(journal.path())
+                .unwrap()
+                .operations
+                .is_empty()
+        );
+        assert_eq!(entries(journal.path()).len(), 1);
+    }
+
+    #[test]
     fn migration_operation_replay_returns_stored_pairing_without_signing() {
         let journal = Journal::new();
         let (ca, instance_id) = identity(journal.path());
@@ -1618,8 +1657,8 @@ mod tests {
         let issuance = MigrationIssuanceContext {
             local_endpoints: Some(json!([{"ip": "192.0.2.1", "port": 7657, "scope": "lan"}])),
             relay_access: Some(crate::pairing::RelayAccessSnapshot {
-                protocol_version: 1,
-                status: "active".to_owned(),
+                protocol_version: 2,
+                status: "ready".to_owned(),
                 relay_origin: "https://relay.example.invalid".to_owned(),
                 instance_id: "fixture-instance".to_owned(),
                 device_token: "first-token".to_owned(),

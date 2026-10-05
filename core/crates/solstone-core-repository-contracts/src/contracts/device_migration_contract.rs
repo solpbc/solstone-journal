@@ -33,8 +33,8 @@ fn vectors_json() -> Value {
     let present_pairing = contract_pairing_value(
         Some(json!([{"ip": "192.0.2.10", "port": 7657, "scope": "lan"}])),
         Some(RelayAccessSnapshot {
-            protocol_version: 1,
-            status: "active".to_owned(),
+            protocol_version: 2,
+            status: "ready".to_owned(),
             relay_origin: "https://relay.example.invalid".to_owned(),
             instance_id: "fixture-instance".to_owned(),
             device_token: "fixture-token".to_owned(),
