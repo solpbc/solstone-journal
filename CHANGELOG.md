@@ -6,6 +6,15 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- in the body app, each Strava workout now lists everything else Strava exported for it, like your description, private notes, gear and weather, under "more from Strava".
+
+### Changed
+
+- your Strava workouts now turn up in search and when your agents read your journal, including the description and private notes Strava exported for each. your journal's own thinking now includes workouts from the past seven days, and a large import doesn't start thinking over years of past days.
+- the body app now shows only what your journal holds: the values your sources recorded, with where each came from, and counts, ranges and dates. it no longer works out its own averages, 90-day medians or a "strongest" contributor, and each section is named for the data it holds. the trends page is now called "daily values" and shows each day's own value instead of weekly medians. what your agents read from the body app follows the same rule.
+
 ### Fixed
 
 - workouts from a Strava download now show at their real start time. before, they could land hours off, and an evening workout could land on the wrong day. import your download again and your earlier workouts move to the right time; a workout you deleted stays deleted.

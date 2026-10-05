@@ -19,6 +19,7 @@ mod screen;
 mod sense;
 mod shape;
 mod talent_projections;
+mod workout;
 
 use serde_json::{Map, Value};
 
@@ -50,6 +51,8 @@ pub enum Family {
     MorningBriefing,
     /// A validated private memory original. This family is path-selected only.
     AgentMemory,
+    /// One piece of a Strava workout. This family is path-selected only.
+    Workout,
 }
 
 /// Content that can be rendered for direct consumption but is deliberately
@@ -61,7 +64,7 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 15] = [
+const ALL_FAMILIES: [Family; 16] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
@@ -77,6 +80,7 @@ const ALL_FAMILIES: [Family; 15] = [
     Family::Sense,
     Family::MorningBriefing,
     Family::AgentMemory,
+    Family::Workout,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +253,15 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
     FamilyPattern {
         pattern: "*/import.*/*/imported.md",
         family: Family::Markdown,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+    },
+    FamilyPattern {
+        pattern: "*/import.strava/*/workout.json",
+        family: Family::Workout,
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Admitted {
             category: AdmittedCategory::Transcripts,
@@ -535,6 +548,7 @@ pub fn produce_chunks_by_shape(
         Family::Screen => screen::render(records),
         Family::Sense => sense::render(records),
         Family::MorningBriefing => morning_briefing::render(records),
+        Family::Workout => workout::render(records),
         Family::AgentMemory => ProducedChunks {
             chunks: Vec::new(),
             agent_override: Some("memory".to_string()),
@@ -663,9 +677,11 @@ fn parse_json_object(text: &str) -> Vec<JsonObject> {
 
 fn parse_records_for_family(family: Family, text: &str) -> Vec<JsonObject> {
     match family {
-        Family::Documents | Family::Screen | Family::Sense | Family::MorningBriefing => {
-            parse_json_object(text)
-        }
+        Family::Documents
+        | Family::Screen
+        | Family::Sense
+        | Family::MorningBriefing
+        | Family::Workout => parse_json_object(text),
         Family::AgentMemory => Vec::new(),
         _ => parse_jsonl_objects(text),
     }

@@ -696,6 +696,46 @@ fn process_segment(
                 }
             }
         }
+        // A Strava workout piece: only the workout's first piece renders, so a
+        // workout reads once, on the day it started.
+        for path in files
+            .iter()
+            .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("workout.json"))
+        {
+            let rel = format!(
+                "{day}/{}/{}/workout.json",
+                stream.as_deref().unwrap_or_default(),
+                segment.key
+            );
+            match fs::read_to_string(path) {
+                Ok(text) => {
+                    let content = solstone_core_format::content::produce_chunks(
+                        solstone_core_format::content::Family::Workout,
+                        &rel,
+                        &text,
+                    )
+                    .chunks
+                    .into_iter()
+                    .map(|chunk| chunk.content)
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                    if !content.is_empty() {
+                        entries.push(entry(
+                            start,
+                            end,
+                            segment,
+                            "transcript",
+                            content,
+                            stream.clone(),
+                            None,
+                        ));
+                    }
+                }
+                Err(error) => {
+                    log::warn!("unable to read workout input {}: {error}", path.display());
+                }
+            }
+        }
         for path in &files {
             if first_kind(path).as_deref() == Some("image")
                 && let Some(content) = raw_content(
@@ -1298,6 +1338,39 @@ mod tests {
 
     fn only(stems: &[&str]) -> TalentSource {
         TalentSource::Only(stems.iter().map(|stem| (*stem).to_owned()).collect())
+    }
+
+    #[test]
+    fn a_strava_workout_reaches_the_transcript_once_on_its_first_piece() {
+        let root = TempDir::new().unwrap();
+        for (key, index) in [("070200_300", 0), ("070700_300", 1)] {
+            let path = root
+                .path()
+                .join("chronicle")
+                .join(DAY)
+                .join("import.strava")
+                .join(key);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(
+                path.join("workout.json"),
+                json!({
+                    "schema": "solstone.import.strava.tile.v1",
+                    "activity_id": 9,
+                    "tile": {"index": index, "count": 2},
+                    "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
+        let (markdown, counts) =
+            cluster(root.path(), DAY, &sources(true, false, TalentSource::All));
+        assert_eq!(
+            markdown.matches("## Strava workout: Morning Run").count(),
+            1
+        );
+        assert!(markdown.contains("10.2 km"));
+        assert_eq!(counts.transcripts, 1);
     }
 
     #[test]

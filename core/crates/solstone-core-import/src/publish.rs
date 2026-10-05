@@ -25,6 +25,30 @@ use crate::events::{
 
 pub(crate) const PUBLICATION_SCHEMA: &str = "solstone.import.publication.v1";
 
+/// How many days back from the owner's today a body import makes the journal
+/// think. A body history often reaches back a decade, and every day it touches
+/// would otherwise queue a whole day of thinking. Older body days are still
+/// published and indexed, so search and agents read them; the journal thinks
+/// about them when the owner asks for that day, or when a day it already keeps
+/// current is re-derived because what it holds changed.
+pub const BODY_IMPORT_THINK_WINDOW_DAYS: i64 = 7;
+
+/// Whether publishing this segment starts the journal's own thinking.
+fn starts_thinking(segment: &CreatedSegment, oldest_body_day: &str) -> bool {
+    !solstone_core_format::body::is_body_stream(&segment.stream)
+        || segment.day.as_str() >= oldest_body_day
+}
+
+fn oldest_body_day(today: &str) -> String {
+    chrono::NaiveDate::parse_from_str(today, "%Y%m%d")
+        .map(|today| {
+            (today - chrono::Duration::days(BODY_IMPORT_THINK_WINDOW_DAYS))
+                .format("%Y%m%d")
+                .to_string()
+        })
+        .unwrap_or_else(|_| today.to_owned())
+}
+
 #[derive(Clone, Debug)]
 pub struct CreatedSegment {
     pub day: String,
@@ -189,6 +213,13 @@ pub trait PublicationOperations {
         entries_written: u64,
     );
     fn emit_drain(&self, journal: &Path, revision: Option<&str>, day: &str);
+    /// The owner's local day, which bounds how far back a body import thinks.
+    fn today(&self, journal: &Path) -> String {
+        chrono::Utc::now()
+            .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+            .format("%Y%m%d")
+            .to_string()
+    }
 }
 
 pub struct NativePublicationOperations;
@@ -269,6 +300,7 @@ pub fn publish_with_operations(
     input: PublicationInput<'_>,
     operations: &dyn PublicationOperations,
 ) -> Result<PublicationRecord, PublishError> {
+    let oldest_body_day = oldest_body_day(&operations.today(input.journal));
     let mut segments = Vec::with_capacity(input.segments.len());
     let mut failed_streams = BTreeSet::new();
     for segment in input.segments {
@@ -279,7 +311,7 @@ pub fn publish_with_operations(
         } else {
             match operations.advance_stream(input.journal, segment) {
                 Ok(advance) => {
-                    if !solstone_core_format::body::is_body_stream(&segment.stream) {
+                    if starts_thinking(segment, &oldest_body_day) {
                         operations.emit_observed(
                             input.journal,
                             input.revision,
@@ -348,7 +380,7 @@ pub fn publish_with_operations(
         .iter()
         .zip(&segments)
         .filter(|(s_in, s_out)| {
-            !solstone_core_format::body::is_body_stream(&s_in.stream)
+            starts_thinking(s_in, &oldest_body_day)
                 && !matches!(s_out.outcome, SegmentBindingOutcome::OwnerDeleted)
         })
         .map(|(s_in, _)| s_in.day.clone())
@@ -369,25 +401,25 @@ pub fn publish_with_operations(
             outcome,
         });
     }
-    let non_body_non_deleted_file_count = input
+    let thinking_file_count = input
         .files_created
         .iter()
         .filter(|path| {
             !input.segments.iter().zip(&segments).any(|(s_in, s_out)| {
-                (solstone_core_format::body::is_body_stream(&s_in.stream)
+                (!starts_thinking(s_in, &oldest_body_day)
                     || matches!(s_out.outcome, SegmentBindingOutcome::OwnerDeleted))
                     && is_path_under_segment(path, &s_in.day, &s_in.stream, &s_in.segment)
             })
         })
         .count();
-    if non_body_non_deleted_file_count > 0 && !days.is_empty() {
+    if thinking_file_count > 0 && !days.is_empty() {
         operations.emit_enrichment_ready(
             input.journal,
             input.revision,
             input.import_id,
             input.importer,
             &days,
-            u64::try_from(non_body_non_deleted_file_count).expect("file count fits u64"),
+            u64::try_from(thinking_file_count).expect("file count fits u64"),
         );
     }
 
@@ -520,6 +552,10 @@ mod tests {
 
         fn emit_drain(&self, _: &Path, _: Option<&str>, day: &str) {
             self.drains.borrow_mut().push(day.to_owned());
+        }
+
+        fn today(&self, _: &Path) -> String {
+            "20260805".to_owned()
         }
     }
 
@@ -816,29 +852,81 @@ mod tests {
     }
 
     #[test]
-    fn body_stream_skips_observation_markers_drains_and_enrichment() {
+    fn a_recent_body_day_starts_thinking_like_any_other_import() {
         let temporary = tempfile::TempDir::new().unwrap();
         for stream in ["import.apple_health", "import.oura", "import.strava"] {
-            let mut s = segment("20260801", "120000_60");
+            let mut s = segment("20260729", "120000_60");
             s.stream = stream.to_string();
-            let fake = FakeOperations::with_advances(vec![advance(1)]);
-            let record =
-                publish_with_operations(input(temporary.path(), None, &[s], &[]), &fake).unwrap();
-            assert_eq!(record.status, PublicationStatus::Success);
-            assert!(matches!(
-                record.segments[0].outcome,
-                SegmentBindingOutcome::Bound { .. }
+            let file = temporary.path().join(format!(
+                "chronicle/20260729/{stream}/120000_60/workout.json"
             ));
-            assert!(fake.observed.borrow().is_empty());
-            assert!(record.day_markers.is_empty());
-            assert!(fake.markers.borrow().is_empty());
-            assert!(fake.drains.borrow().is_empty());
-            assert!(fake.enrichment.borrow().is_empty());
+            let fake = FakeOperations {
+                advances: RefCell::new(vec![advance(1)]),
+                rescans: RefCell::new(vec![Ok(RescanFileStatus::Indexed { warnings: vec![] })]),
+                ..FakeOperations::default()
+            };
+            let record = publish_with_operations(
+                input(temporary.path(), None, &[s], std::slice::from_ref(&file)),
+                &fake,
+            )
+            .unwrap();
+            assert_eq!(record.status, PublicationStatus::Success);
+            assert_eq!(fake.observed.borrow().len(), 1);
+            assert_eq!(*fake.markers.borrow(), vec!["20260729".to_owned()]);
+            assert_eq!(*fake.drains.borrow(), vec!["20260729".to_owned()]);
+            assert_eq!(
+                *fake.enrichment.borrow(),
+                vec![(vec!["20260729".to_owned()], 1)]
+            );
         }
     }
 
     #[test]
-    fn real_publish_with_body_stream_declines_file_and_emits_no_stream_side_effects() {
+    fn an_older_body_day_is_published_and_indexed_without_starting_thinking() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let mut old = segment("20260728", "120000_60");
+        old.stream = "import.strava".to_string();
+        let file = temporary
+            .path()
+            .join("chronicle/20260728/import.strava/120000_60/workout.json");
+        let fake = FakeOperations {
+            advances: RefCell::new(vec![advance(1)]),
+            rescans: RefCell::new(vec![Ok(RescanFileStatus::Indexed { warnings: vec![] })]),
+            ..FakeOperations::default()
+        };
+        let record = publish_with_operations(
+            input(temporary.path(), None, &[old], std::slice::from_ref(&file)),
+            &fake,
+        )
+        .unwrap();
+        assert_eq!(record.status, PublicationStatus::Success);
+        assert!(matches!(
+            record.segments[0].outcome,
+            SegmentBindingOutcome::Bound { .. }
+        ));
+        assert_eq!(*fake.rescans_seen.borrow(), vec![file]);
+        assert!(fake.observed.borrow().is_empty());
+        assert!(record.day_markers.is_empty());
+        assert!(fake.drains.borrow().is_empty());
+        assert!(fake.enrichment.borrow().is_empty());
+
+        // The bound is for body imports only: other imports think on every day.
+        let fake = FakeOperations::with_advances(vec![advance(1)]);
+        publish_with_operations(
+            input(
+                temporary.path(),
+                None,
+                &[segment("20200101", "120000_60")],
+                &[],
+            ),
+            &fake,
+        )
+        .unwrap();
+        assert_eq!(*fake.drains.borrow(), vec!["20200101".to_owned()]);
+    }
+
+    #[test]
+    fn real_publish_of_an_old_body_day_declines_an_unread_file_and_starts_no_thinking() {
         let temporary = tempfile::TempDir::new().unwrap();
         let file_path = temporary
             .path()

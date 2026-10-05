@@ -53,8 +53,10 @@ enum WrittenLookup {
 /// path-derived [`classify`]. Anything that exists must yield a usable written
 /// value or the file is [`ContentResolution::Unrecognized`].
 pub fn resolve_content_shape(content_path: &Path, rel: &str) -> ContentResolution {
-    if super::resolve_spec(rel).is_some_and(|spec| spec.family == Family::AgentMemory) {
-        return ContentResolution::Indexed(Family::AgentMemory);
+    if let Some(spec) = super::resolve_spec(rel)
+        && matches!(spec.family, Family::AgentMemory | Family::Workout)
+    {
+        return ContentResolution::Indexed(spec.family);
     }
     match lookup_written_shape(content_path) {
         WrittenLookup::Absent | WrittenLookup::Omitted => classify(rel),

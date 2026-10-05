@@ -149,6 +149,8 @@ The observable emotional tone of the segment based on conversation tone, speech 
 - **strained**: Fatigue, overload, pushing through difficulty
 - **neutral**: No clear emotional register observable — use this as the default when the segment doesn't carry detectable emotional tone
 
+A segment that holds only body data, such as a workout or a set of readings, is **neutral**: its numbers are not an emotional signal.
+
 ## Rules
 
 1. Every field is required. Never omit a field.
