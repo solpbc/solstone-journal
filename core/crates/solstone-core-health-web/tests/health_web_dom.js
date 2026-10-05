@@ -344,14 +344,23 @@ test('unfinished activities renders multiple activities across multiple days', a
 
 test('search index line renders when present and hides when absent', async () => {
   const { doc, context } = createEnvironment();
-  const searchIndex = { state: "fresh", text: "search last caught up 2 hours ago." };
+  const searchIndex = {
+    state: 'degraded',
+    text: "some journal updates couldn't be added to search.",
+  };
   context.payload = { verdict: "your journal's caught up." };
   context.searchIndex = searchIndex;
   vm.runInContext('renderBacklogState(payload, searchIndex);', context);
 
   const searchLine = doc.querySelector('#backlogVerdict .backlog-search-line');
   assert.strictEqual(searchLine.hidden, false);
-  assert.strictEqual(searchLine.textContent, "search last caught up 2 hours ago.");
+  assert.strictEqual(
+    searchLine.textContent,
+    "some journal updates couldn't be added to search.",
+  );
+
+  vm.runInContext('renderBacklogState(payload, { state: "unknown", text: "" });', context);
+  assert.strictEqual(searchLine.hidden, true);
 
   vm.runInContext('renderBacklogState(payload, null);', context);
   assert.strictEqual(searchLine.hidden, true);

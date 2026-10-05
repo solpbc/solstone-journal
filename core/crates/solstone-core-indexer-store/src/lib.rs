@@ -16,6 +16,7 @@ pub use classification_batch::{
     ClassificationInitialization, ClassificationStatus, apply_classification_batch,
     drain_classifications, inspect_classifications,
 };
+pub use db::open_index_reader;
 pub use retention::RetentionIndex;
 pub use scan::{SavedPublicationAttempt, SavedPublicationOutcome, attempt_saved_publication};
 

@@ -146,7 +146,43 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                                 "verdict".into(),
                                 json!(solstone_core_system_health::NOT_YET_ENGINE),
                             );
-                            wanted["search_index"]["text"] = json!("");
+                            if wanted["search_index"]["text"]
+                                == crate::search_index::SEARCH_TEXT_UNCLEAR
+                                && wanted["search_index"]["observed_failure"] == false
+                            {
+                                wanted["search_index"]["text"] = json!("");
+                            }
+                        }
+                        if let Some(diag) = actual
+                            .get_mut("search_index")
+                            .and_then(|s| s.get_mut("diagnostics"))
+                        {
+                            diag["window_start_ms"] = json!(0);
+                            diag["window_end_ms"] = json!(0);
+                        }
+                        if let Some(diag) = wanted
+                            .get_mut("search_index")
+                            .and_then(|s| s.get_mut("diagnostics"))
+                        {
+                            diag["window_start_ms"] = json!(0);
+                            diag["window_end_ms"] = json!(0);
+                        }
+                        if phase_name == "stats_unparseable"
+                            && let Some(lines) = actual
+                                .get_mut("search_index")
+                                .and_then(|s| s.get_mut("diagnostics"))
+                                .and_then(|diag| diag.get_mut("lines"))
+                                .and_then(|lines| lines.as_array_mut())
+                        {
+                            for line in lines {
+                                if line
+                                    .as_str()
+                                    .is_some_and(|s| s.starts_with("unreadable talent log"))
+                                {
+                                    // Only the temporary path and OS error text vary.
+                                    *line = json!("unreadable talent log");
+                                }
+                            }
                         }
                     }
                     // The info route names this machine; the corpus was captured on another.

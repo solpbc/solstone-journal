@@ -13,6 +13,7 @@ publish = false
 workspace = true
 
 [features]
+full-tests = []
 test-hooks = []
 
 [dependencies]
@@ -38,6 +39,7 @@ uuid = { version = "1", features = ["v4"] }
 nix = { workspace = true, features = ["process", "signal"] }
 
 [dev-dependencies]
+solstone-core-system-health.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

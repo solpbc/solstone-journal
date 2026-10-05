@@ -259,8 +259,8 @@ fn render_summary(report: &Value) -> Vec<String> {
         dash(&synthesis["talent_degraded_outputs_24h"])
     ));
     lines.push(format!(
-        "  indexer_last_rebuild_at: {}",
-        dash(&synthesis["indexer_last_rebuild_at"])
+        "  index_activity_at: {}",
+        dash(&synthesis["index_activity_at"])
     ));
     render_backlog(&mut lines, &report["segment_backlog"]);
     lines.push("Consumer Signals".to_string());

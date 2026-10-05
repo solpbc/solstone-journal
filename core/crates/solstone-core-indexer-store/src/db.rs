@@ -181,6 +181,16 @@ pub fn is_index_readable(journal: &Path) -> bool {
     path.is_file() && Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).is_ok()
 }
 
+pub fn open_index_reader(journal: &Path) -> Result<Connection, StoreError> {
+    let path = db_path(journal);
+    if !path.is_file() {
+        return Err(StoreError::MissingFile(path));
+    }
+    let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000;")?;
+    Ok(conn)
+}
+
 pub fn open_index(journal: &Path) -> Result<Connection, StoreError> {
     let index_dir = journal.join(INDEX_DIR);
     fs::create_dir_all(&index_dir)?;
@@ -1838,5 +1848,38 @@ CREATE TABLE edge_files(path TEXT PRIMARY KEY, mtime INTEGER);
         let conn = open_index(&journal).unwrap();
         assert_eq!(count_path(&conn, "files", "20260805/talents/flow.md"), 1);
         fs::remove_dir_all(&journal).unwrap();
+    }
+
+    #[test]
+    fn open_index_reader_missing_and_read_only() {
+        let missing = temp_root("open-index-reader-missing");
+        let result = open_index_reader(&missing);
+        assert!(matches!(result, Err(StoreError::MissingFile(_))));
+        assert!(!missing.join(INDEX_DIR).exists());
+        assert!(!db_path(&missing).exists());
+        fs::remove_dir_all(&missing).ok();
+
+        let existing = temp_root("open-index-reader-existing");
+        let writer = open_index(&existing).unwrap();
+        let schema_before: Vec<String> = writer
+            .prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        drop(writer);
+
+        let reader = open_index_reader(&existing).unwrap();
+        let schema_after: Vec<String> = reader
+            .prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(schema_before, schema_after);
+        drop(reader);
+        fs::remove_dir_all(&existing).unwrap();
     }
 }

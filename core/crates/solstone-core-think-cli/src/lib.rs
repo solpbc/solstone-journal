@@ -755,6 +755,8 @@ mod tests {
     mod activity_lifecycle;
     mod activity_recovery;
     #[cfg(all(test, feature = "full-tests"))]
+    mod search_indexing_observations;
+    #[cfg(all(test, feature = "full-tests"))]
     mod segment_publication;
     use std::cell::Cell;
     use std::collections::BTreeSet;

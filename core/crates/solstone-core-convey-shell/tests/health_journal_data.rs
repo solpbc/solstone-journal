@@ -398,7 +398,7 @@ async fn rich_fixture_matches_the_complete_report_contract() {
                 "activities_count":2,"activities_with_participation":1,"activities_with_story":1,
                 "activities_user_edited":1,"activities_anticipated_unfilled":1,
                 "talent_run_failures_24h":0,"talent_degraded_outputs_24h":0,
-                "indexer_last_rebuild_at":null
+                "index_activity_at":null
             },
             "consumer_signal":{"profile_entities_total":2},
             "segment_backlog":{
