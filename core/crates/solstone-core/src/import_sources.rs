@@ -4258,6 +4258,9 @@ mod tests {
         assert_eq!(zone_record_str, zone_record_str2);
     }
 
+    // A 500-workout run takes most of a minute unoptimized, so it runs with the
+    // full suite rather than the routine one.
+    #[cfg(feature = "full-tests")]
     #[test]
     fn strava_scale_500_workouts() {
         let journal = tempfile::tempdir().unwrap();

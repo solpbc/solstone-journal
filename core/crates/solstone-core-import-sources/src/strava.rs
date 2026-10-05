@@ -3378,6 +3378,9 @@ mod tests {
         ));
     }
 
+    // A 500-workout run takes most of a minute unoptimized, so it runs with the
+    // full suite rather than the routine one.
+    #[cfg(feature = "full-tests")]
     #[test]
     fn test_scale_500_workouts_library() {
         let temp = TempDir::new().unwrap();
