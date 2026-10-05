@@ -271,8 +271,9 @@ pub struct PlacementCounts {
     pub present_updated: usize,
     pub present_completed: usize,
     pub present_timing_changed: usize,
-    /// Number of workouts whose every tile stopped at a deletion.
-    /// This change does not probe activities absent from the file, so this count stays 0.
+    /// Workouts absent before whose placement created no tile because a probe stopped at
+    /// a deletion. A tombstone carries no workout identity, so the deletion may be another
+    /// workout's; this counts what was not brought in, not what the owner deleted.
     pub deleted: usize,
     pub zone_conflict: usize,
     pub complete_workouts: usize,
@@ -1000,6 +1001,49 @@ fn parse_numeric_key(day: &str, key: &str) -> Option<(u64, u64, u64)> {
     Some((day_num, time_num, len_num))
 }
 
+/// The tombstone reason a piece carries when its whole import run was deleted.
+pub const RELEASE_REASON: &str = "import_run_release";
+
+/// Whether a deleted key holds a piece that was released with its import run.
+///
+/// Deleting a whole import run releases its pieces: importing its download again
+/// brings them back, one key past where they were. Only a readable tombstone whose
+/// reason is exactly [`RELEASE_REASON`] counts, and only with no removal still under
+/// way at that key. Any other tombstone, including one that doesn't parse or names
+/// another reason, keeps the probe stopped there, so a piece the owner deleted on its
+/// own stays deleted. A tombstone that can't be read is an error, never a release.
+/// Nothing ever writes into or removes a released key.
+fn released_with_import(segment_dir: &Path) -> Result<bool, String> {
+    let (Some(parent), Some(name)) = (segment_dir.parent(), segment_dir.file_name()) else {
+        return Ok(false);
+    };
+    let mut staged = std::ffi::OsString::from(".removing_");
+    staged.push(name);
+    match fs::symlink_metadata(parent.join(staged)) {
+        Ok(_) => return Ok(false),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(format!(
+                "reading the removal beside this deleted piece: {e}"
+            ));
+        }
+    }
+    let bytes = match fs::read(segment_dir.join("tombstone.json")) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(format!("reading this deleted piece's tombstone: {e}")),
+    };
+    let reason = serde_json::from_slice::<serde_json::Value>(&bytes)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .map(str::to_owned)
+        });
+    Ok(reason.as_deref() == Some(RELEASE_REASON))
+}
+
 pub fn place(
     journal: &Path,
     workouts: &[StravaWorkout],
@@ -1455,6 +1499,7 @@ pub fn place(
 
         let had_canonical_before = !canonical_tiles.is_empty();
         let mut had_created_in_workout = false;
+        let mut had_stayed_deleted_in_workout = false;
         let mut had_updated_in_workout = false;
         let mut all_indices_live = true;
 
@@ -1618,6 +1663,17 @@ pub fn place(
 
                     match owner_deleted(&cand_dir) {
                         Ok(true) => {
+                            match released_with_import(&cand_dir) {
+                                Ok(true) => continue,
+                                Ok(false) => {}
+                                Err(detail) => {
+                                    return Err(StravaError::ProbeUnreadable {
+                                        day: slice.natural_day.clone(),
+                                        key: cand,
+                                        detail,
+                                    });
+                                }
+                            }
                             placed_candidate = Some(TileAction::StayedDeleted {
                                 day: slice.natural_day.clone(),
                                 segment: cand,
@@ -1713,6 +1769,7 @@ pub fn place(
                         slice,
                     }) => {
                         counts.stayed_deleted_tiles += 1;
+                        had_stayed_deleted_in_workout = true;
                         all_indices_live = false;
                         tile_actions.push(TileAction::StayedDeleted {
                             day,
@@ -1761,6 +1818,9 @@ pub fn place(
                     dispositions.insert(workout.activity_id, WorkoutDisposition::PresentUnchanged);
                 }
             } else {
+                if !had_created_in_workout && had_stayed_deleted_in_workout {
+                    counts.deleted += 1;
+                }
                 dispositions.insert(workout.activity_id, WorkoutDisposition::New);
             }
         }
@@ -2043,6 +2103,11 @@ pub fn reconcile_written(
                 } else {
                     counts.present_unchanged += 1;
                 }
+            } else if !had_created
+                && states.iter().any(|(_, st)| *st == "stayed_deleted")
+                && !states.iter().any(|(_, st)| *st == "unwritten")
+            {
+                counts.deleted += 1;
             }
         }
     }

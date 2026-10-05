@@ -3688,7 +3688,128 @@ mod tests {
         );
         assert_eq!(run2.exit_code, 0);
         assert!(run2.stdout.contains("stayed_deleted=2"));
+        assert!(run2.stdout.contains(" deleted=1 "), "{}", run2.stdout);
         assert!(run2.stdout.contains("entries_written=0"));
+    }
+
+    /// What deleting a whole import run leaves at a piece's key: only its tombstone.
+    fn release_tile(tile: &std::path::Path, reason: &[u8]) {
+        for entry in fs::read_dir(tile).unwrap() {
+            fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        fs::write(tile.join("tombstone.json"), reason).unwrap();
+    }
+
+    #[test]
+    fn strava_steps_past_a_released_piece_and_stops_at_every_other_deletion() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[
+            ("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0),
+            ("102", "Aug 10, 2026, 09:00:00 AM", "Run", 300, 4000.0),
+        ]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+        let (run1, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0);
+        let day = journal.path().join("chronicle/20260810/import.strava");
+        // 101 released with its import; 102 deleted by the owner.
+        release_tile(
+            &day.join("070000_300"),
+            br#"{"reason":"import_run_release","cid":"x"}"#,
+        );
+        release_tile(
+            &day.join("090000_300"),
+            br#"{"reason":"owner_segment_delete","cid":"x"}"#,
+        );
+        let released_before = fs::read(day.join("070000_300/tombstone.json")).unwrap();
+
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_110000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0, "{}", run2.stdout);
+        // The released workout comes back one key over; the owner's delete holds.
+        assert!(day.join("070000_301/workout.json").is_file());
+        assert!(!day.join("090000_301").exists());
+        assert_eq!(
+            fs::read(day.join("070000_300/tombstone.json")).unwrap(),
+            released_before
+        );
+        assert_eq!(
+            fs::read_dir(day.join("070000_300")).unwrap().count(),
+            1,
+            "nothing is written into a released key"
+        );
+        assert!(run2.stdout.contains(" deleted=1 "), "{}", run2.stdout);
+        assert!(run2.stdout.contains("entries_written=1"), "{}", run2.stdout);
+    }
+
+    #[test]
+    fn strava_stops_at_a_release_look_alike_and_fails_on_an_unreadable_tombstone() {
+        for reason in [
+            &br#"{"reason":"import_run_release "}"#[..],
+            br#"{"reason":5}"#,
+            br#"{"cid":"x"}"#,
+            b"not json",
+        ] {
+            let journal = tempfile::tempdir().unwrap();
+            write_utc_zone(journal.path());
+            let csv_file = journal.path().join("activities.csv");
+            let content =
+                make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0)]);
+            fs::write(&csv_file, content.as_bytes()).unwrap();
+            let (run1, _) = run_bound(
+                strava_dispatch(&csv_file, "20260810_100000"),
+                journal.path(),
+            );
+            assert_eq!(run1.exit_code, 0);
+            let day = journal.path().join("chronicle/20260810/import.strava");
+            release_tile(&day.join("070000_300"), reason);
+            let (run2, _) = run_bound(
+                strava_dispatch(&csv_file, "20260810_110000"),
+                journal.path(),
+            );
+            assert_eq!(run2.exit_code, 0);
+            assert!(
+                !day.join("070000_301").exists(),
+                "stopped at {:?}",
+                String::from_utf8_lossy(reason)
+            );
+        }
+
+        // A tombstone that exists but can't be read fails the run, writing nothing.
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let csv_file = journal.path().join("activities.csv");
+        let content = make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0)]);
+        fs::write(&csv_file, content.as_bytes()).unwrap();
+        let (run1, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_100000"),
+            journal.path(),
+        );
+        assert_eq!(run1.exit_code, 0);
+        let tile = journal
+            .path()
+            .join("chronicle/20260810/import.strava/070000_300");
+        for entry in fs::read_dir(&tile).unwrap() {
+            fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        fs::create_dir(tile.join("tombstone.json")).unwrap();
+        let (run2, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_110000"),
+            journal.path(),
+        );
+        assert_ne!(run2.exit_code, 0);
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260810/import.strava/070000_301")
+                .exists()
+        );
     }
 
     #[test]
