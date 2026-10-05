@@ -260,7 +260,7 @@ fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
         .collect();
     assert_eq!(
         app_names,
-        solstone_core_convey_shell::registry::served_apps(true)
+        solstone_core_convey_shell::registry::served_apps(cfg!(feature = "journal-mcp-endpoint"))
             .map(|app| app.name)
             .collect::<Vec<_>>()
     );
