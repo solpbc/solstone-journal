@@ -77,6 +77,7 @@ pub enum ToolName {
     ListEntities,
     GetEntity,
     SaveMemory,
+    RecallMemory,
 }
 
 impl ToolName {
@@ -92,6 +93,7 @@ impl ToolName {
             Self::ListEntities => "list_entities",
             Self::GetEntity => "get_entity",
             Self::SaveMemory => "save_memory",
+            Self::RecallMemory => "recall_memory",
         }
     }
 
@@ -108,6 +110,7 @@ impl ToolName {
             Self::ListEntities,
             Self::GetEntity,
             Self::SaveMemory,
+            Self::RecallMemory,
         ]
         .into_iter()
         .find(|tool| tool.token() == value)
@@ -234,6 +237,19 @@ pub struct ResultShape {
     /// Exact UTF-8 byte count for a private memory record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub byte_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<MemoryResultFacts>,
+}
+
+/// Body-free facts about the final prepared memory result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryResultFacts {
+    pub complete: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub own_recall_ready: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordinary_readable: Option<bool>,
 }
 
 /// One MCP tool outcome, published after the prepared response is approved.
@@ -530,6 +546,7 @@ pub fn result_shape(count: usize, targets: Vec<String>, digest: String) -> Resul
         origin: None,
         created_at: None,
         byte_count: None,
+        memory: None,
     }
 }
 
@@ -578,12 +595,17 @@ mod tests {
     }
 
     #[test]
-    fn save_memory_vocabulary_and_legacy_result_shapes_round_trip() {
+    fn memory_vocabulary_and_legacy_result_shapes_round_trip() {
         assert_eq!(
             ToolName::from_token("save_memory"),
             Some(ToolName::SaveMemory)
         );
         assert_eq!(ToolName::SaveMemory.token(), "save_memory");
+        assert_eq!(
+            ToolName::from_token("recall_memory"),
+            Some(ToolName::RecallMemory)
+        );
+        assert_eq!(ToolName::RecallMemory.token(), "recall_memory");
         for (outcome, token) in [
             (Outcome::Stored, "stored"),
             (Outcome::Replayed, "replayed"),
@@ -604,6 +626,17 @@ mod tests {
         assert!(legacy.origin.is_none());
         assert!(legacy.created_at.is_none());
         assert!(legacy.byte_count.is_none());
+        assert!(legacy.memory.is_none());
+        let facts = super::MemoryResultFacts {
+            complete: false,
+            own_recall_ready: None,
+            ordinary_readable: None,
+        };
+        let encoded = serde_json::to_value(&facts).unwrap();
+        assert_eq!(
+            serde_json::from_value::<super::MemoryResultFacts>(encoded).unwrap(),
+            facts
+        );
     }
 
     #[test]

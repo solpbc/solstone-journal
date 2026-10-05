@@ -139,6 +139,9 @@ pub fn run_mcp_probe(
     arguments: &Value,
 ) -> Result<Value, McpProbeError> {
     let entry = crate::registry::tool_by_wire_name(tool).ok_or(McpProbeError::InvalidTool)?;
+    if entry.tool_name.is_memory() {
+        return Err(McpProbeError::InvalidTool);
+    }
     dispatch_authenticated_tool_call(
         journal_root,
         DispatchPrincipal {
@@ -486,6 +489,9 @@ fn validate(entry: &ToolEntry, arguments: Option<&Value>) -> Result<ValidatedToo
         }
         crate::jsonrpc::ToolName::GetEntity => {
             crate::tools::entities::validate_get(arguments).map(ValidatedTool::GetEntity)
+        }
+        crate::jsonrpc::ToolName::SaveMemory | crate::jsonrpc::ToolName::RecallMemory => {
+            return Err(DispatchError::InvalidInput);
         }
     };
     validated.map_err(|error| match error {
@@ -952,7 +958,7 @@ fn public_memory_origin(origin: &Origin) -> Value {
     json!({"kind": origin.kind, "creation_label": origin.creation_label, "created_at": origin.created_at})
 }
 
-fn memory_row_matches_live(
+pub(crate) fn memory_row_matches_live(
     row: &MemoryOriginalRow,
     source_key: &SourceKey,
     coordinate: &Coordinate,

@@ -55,6 +55,7 @@ pub(crate) enum AppendResult {
 /// Durable, body-free details returned for a completed append.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AppendReceipt {
+    pub coordinate: Coordinate,
     pub origin: Origin,
     pub created_at: DateTime<Utc>,
     pub digest: String,
@@ -68,6 +69,35 @@ pub(crate) struct AuthenticatedMemorySource<'a> {
     pub creation_label: &'a str,
 }
 
+/// Storage preparation for the wire. Its success is provisional until the
+/// caller publishes the final receipt's terminal audit record.
+pub(crate) struct PreparedAppend {
+    pub result: AppendResult,
+    pub audit: Option<AuditCoordinates>,
+    pub outcome: Option<Outcome>,
+}
+
+pub(crate) fn prepare_connection_memory(
+    journal: &Path,
+    source: AuthenticatedMemorySource<'_>,
+    text: &str,
+    operation_id: &str,
+    now: DateTime<Utc>,
+) -> Result<PreparedAppend, AppendError> {
+    let mut store = JournalStore::new(journal);
+    store.defer_success = true;
+    let result = append_with_source(&mut store, source, text, operation_id, now)?;
+    let prepared = PreparedAppend {
+        result,
+        audit: store.admission.take(),
+        outcome: store.pending_outcome.take(),
+    };
+    // All storage guards drop before the wire examines the index or asks
+    // ordinary read authorities to prepare the receipt.
+    drop(store);
+    Ok(prepared)
+}
+
 /// A validation or pre-publication failure.
 #[derive(Debug)]
 pub(crate) struct AppendError(&'static str);
@@ -79,6 +109,16 @@ impl fmt::Display for AppendError {
 }
 
 impl Error for AppendError {}
+
+impl AppendError {
+    pub(crate) fn wire_reason(&self) -> &'static str {
+        if self.0 == "operation identifier is bound to different bytes" {
+            "memory_operation_conflict"
+        } else {
+            "memory_save_unavailable"
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Publication {
@@ -216,7 +256,7 @@ enum AdmissionFailure {
 /// Production wrapper for the shared append state machine.
 #[allow(
     dead_code,
-    reason = "private connection-memory capability is intentionally unwired"
+    reason = "storage-only adapter retained for native publication and recovery proofs"
 )]
 pub(crate) fn append_connection_memory(
     journal: &Path,
@@ -639,6 +679,7 @@ fn origin_for(record: &OperationRecord, source: &SourceKey) -> Origin {
 
 fn receipt(record: &OperationRecord, source: &SourceKey) -> AppendReceipt {
     AppendReceipt {
+        coordinate: record.coordinate.clone(),
         origin: origin_for(record, source),
         created_at: record.created_at,
         digest: record.digest.clone(),
@@ -695,6 +736,9 @@ struct JournalStore<'a> {
     journal: &'a Path,
     source_lock: Option<solstone_core_journal_io::BoundParentLock>,
     live_name_lock: Option<solstone_core_journal_io::FileLock>,
+    defer_success: bool,
+    admission: Option<AuditCoordinates>,
+    pending_outcome: Option<Outcome>,
 }
 
 impl<'a> JournalStore<'a> {
@@ -703,6 +747,9 @@ impl<'a> JournalStore<'a> {
             journal,
             source_lock: None,
             live_name_lock: None,
+            defer_success: false,
+            admission: None,
+            pending_outcome: None,
         }
     }
 
@@ -884,6 +931,7 @@ impl AppendStore for JournalStore<'_> {
         );
         arguments.insert("digest".into(), Value::String(note_digest.to_owned()));
         arguments.insert("byte_count".into(), Value::from(byte_count));
+        arguments.insert("authority".into(), Value::String("own_memory".into()));
         let admission = Admission {
             connection: verified_id,
             agent_identity: source.as_str(),
@@ -891,12 +939,16 @@ impl AppendStore for JournalStore<'_> {
             arguments,
             permission: None,
         };
-        match write_interaction_record(self.journal, now, &admission) {
-            Ok(coordinates) => Ok(AuditLocation {
-                day: coordinates.day.format("%Y%m%d").to_string(),
-                stream: coordinates.stream,
-                segment: coordinates.segment,
-            }),
+        let zone = solstone_core_journal_config::owner_zone(self.journal);
+        match write_interaction_record(self.journal, now.with_timezone(&zone), &admission) {
+            Ok(coordinates) => {
+                self.admission = Some(coordinates.clone());
+                Ok(AuditLocation {
+                    day: coordinates.day.format("%Y%m%d").to_string(),
+                    stream: coordinates.stream,
+                    segment: coordinates.segment,
+                })
+            }
             Err(AuditWriteError::PublishedUnconfirmed { .. }) => {
                 Err(AdmissionFailure::PublishedUnconfirmed)
             }
@@ -916,8 +968,10 @@ impl AppendStore for JournalStore<'_> {
         stream: &str,
         now: DateTime<Utc>,
     ) -> Result<Coordinate, StoreFailure> {
-        let day = now.format("%Y%m%d").to_string();
-        let candidate = format!("{}_1", now.format("%H%M%S"));
+        let zone = solstone_core_journal_config::owner_zone(self.journal);
+        let owner_now = now.with_timezone(&zone);
+        let day = owner_now.format("%Y%m%d").to_string();
+        let candidate = format!("{}_1", owner_now.format("%H%M%S"));
         let parent = self.journal.join("chronicle").join(&day).join(stream);
         let occupied = self.occupied_coordinates(stream, &day)?;
         let segment = find_available_segment_with_occupied(
@@ -1143,6 +1197,15 @@ impl AppendStore for JournalStore<'_> {
         result: Option<ResultShape>,
         now: DateTime<Utc>,
     ) -> Publication {
+        if self.defer_success
+            && matches!(
+                outcome,
+                Outcome::Stored | Outcome::Replayed | Outcome::Deleted
+            )
+        {
+            self.pending_outcome = Some(outcome);
+            return Publication::Confirmed;
+        }
         let Ok(day) = NaiveDate::parse_from_str(&location.day, "%Y%m%d") else {
             return Publication::NotPublished;
         };

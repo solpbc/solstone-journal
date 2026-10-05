@@ -35,8 +35,8 @@ mod jsonrpc;
 pub mod lan_door;
 pub mod local_door;
 mod memory;
-#[allow(dead_code)]
 mod memory_recall;
+mod memory_tools;
 mod oauth;
 mod owner_state;
 mod owner_web;

@@ -13,7 +13,8 @@ use tokio::time::timeout;
 const MAX_REQUEST_LINE: usize = 8 * 1024;
 const MAX_HEADER_BLOCK: usize = 32 * 1024;
 const MAX_HEADER_FIELD: usize = 8 * 1024;
-const MAX_BODY: usize = 64 * 1024;
+// Six bytes per maximally escaped note byte, plus a bounded tool envelope.
+const MAX_BODY: usize = 200 * 1024;
 const MAX_CHUNK_LINE: usize = 8 * 1024;
 const HEADER_DEADLINE: Duration = Duration::from_secs(5);
 const BODY_DEADLINE: Duration = Duration::from_secs(5);
@@ -596,7 +597,10 @@ mod tests {
     async fn fixed_body_bounds_and_no_body_framing_are_enforced() {
         let (mut writer, reader) = tokio::io::duplex(70_000);
         writer
-            .write_all(&request("Content-Length: 65537\r\n", b"unread"))
+            .write_all(&request(
+                &format!("Content-Length: {}\r\n", super::MAX_BODY + 1),
+                b"unread",
+            ))
             .await
             .unwrap();
         let mut connection = Http1Connection::new(reader);
@@ -625,8 +629,8 @@ mod tests {
 
     #[tokio::test]
     async fn chunked_body_streaming_cutoff_accepts_exact_limit_only() {
-        for (length, expected) in [(65_536, true), (65_537, false)] {
-            let (mut writer, reader) = tokio::io::duplex(70_000);
+        for (length, expected) in [(super::MAX_BODY, true), (super::MAX_BODY + 1, false)] {
+            let (mut writer, reader) = tokio::io::duplex(super::MAX_BODY + 4096);
             let mut body = format!("{:X}\r\n", length).into_bytes();
             body.extend(std::iter::repeat_n(b'x', length));
             body.extend_from_slice(b"\r\n0\r\n\r\n");

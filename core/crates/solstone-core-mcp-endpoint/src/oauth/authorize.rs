@@ -715,7 +715,7 @@ fn consent_page_named(
                 ""
             };
             format!(
-                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can read within what you choose, and can't add, change or delete anything.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2>{choose}{choices}<h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
+                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can save and recall its own agent memories. other journal reads stay within what you choose.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2>{choose}{choices}<h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
                 host = html_escape(return_host),
             )
         }
@@ -726,7 +726,7 @@ fn consent_page_named(
                 ""
             };
             format!(
-                r#"<h1>choose what {client} may see.</h1><p>your code matched. {client} can read only within what you choose, and can't add, change or delete anything.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{notice}{choices}<button type="submit">connect {client}</button><p class="muted">changed your mind? close this tab. nothing is connected, and this code won't work again.</p></form>"#,
+                r#"<h1>choose what {client} may see.</h1><p>your code matched. {client} can save and recall its own agent memories. other journal reads stay within what you choose.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{notice}{choices}<button type="submit">connect {client}</button><p class="muted">changed your mind? close this tab. nothing is connected, and this code won't work again.</p></form>"#,
             )
         }
     };

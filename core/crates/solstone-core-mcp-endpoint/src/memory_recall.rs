@@ -29,7 +29,7 @@ use crate::references::{
     MemoryRecallCursor, ReferenceCodec, ReferenceError, ReferenceKind, ReferenceTarget,
 };
 
-const RECALL_DEADLINE: Duration = Duration::from_secs(5);
+pub(crate) const RECALL_DEADLINE: Duration = Duration::from_secs(5);
 const DEFAULT_LIMIT: usize = 5;
 const MAX_LIMIT: usize = 20;
 const MAX_PAGE_BYTES: usize = 65_536;
@@ -107,6 +107,7 @@ impl Drop for Watchdog {
 /// Private endpoint engine, bound to verified identity and credential lineage.
 /// Own cursors use this process-local signing generation independently of the
 /// ordinary read-grant ledger. This does not register an MCP tool.
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn recall(
     journal: &Path,
     codec: &ReferenceCodec,
@@ -114,9 +115,34 @@ pub(crate) fn recall(
     verified_identity: &str,
     credential_lineage: &str,
     args: RecallArgs,
-    mut reference_date: NaiveDate,
+    reference_date: NaiveDate,
 ) -> RecallPage {
-    let deadline = Instant::now() + RECALL_DEADLINE;
+    recall_until(
+        journal,
+        codec,
+        connection_identity,
+        verified_identity,
+        credential_lineage,
+        args,
+        reference_date,
+        Instant::now() + RECALL_DEADLINE,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "transport supplies one deadline for selection and final live validation"
+)]
+pub(crate) fn recall_until(
+    journal: &Path,
+    codec: &ReferenceCodec,
+    connection_identity: &str,
+    verified_identity: &str,
+    credential_lineage: &str,
+    args: RecallArgs,
+    mut reference_date: NaiveDate,
+    deadline: Instant,
+) -> RecallPage {
     let source_key = SourceKey::from_verified_id(verified_identity);
     let boundary = QueryBoundary::OwnMemory {
         source_key: source_key.as_str().to_owned(),
@@ -327,7 +353,11 @@ pub(crate) fn recall(
                 page_bytes += note.bytes.len();
                 notes.push(*note);
             }
-            Candidate::DeletedOrUnready => {}
+            Candidate::Deleted => {}
+            Candidate::Pending => {
+                reason = Some("memory_index_pending");
+                break;
+            }
             Candidate::Incomplete => {
                 reason = Some("memory_source_unavailable");
                 break;
@@ -454,7 +484,8 @@ fn page_is_complete(
 
 enum Candidate {
     Ready(Box<RecallNote>),
-    DeletedOrUnready,
+    Deleted,
+    Pending,
     Incomplete,
     Budget,
 }
@@ -478,10 +509,8 @@ fn validate_candidate(
         return Candidate::Budget;
     }
     match outcome {
-        OriginalRead::Absent
-        | OriginalRead::Unready
-        | OriginalRead::Deleted
-        | OriginalRead::Staged => Candidate::DeletedOrUnready,
+        OriginalRead::Absent | OriginalRead::Deleted => Candidate::Deleted,
+        OriginalRead::Unready | OriginalRead::Staged => Candidate::Pending,
         OriginalRead::Corrupt | OriginalRead::Unavailable { .. } => Candidate::Incomplete,
         OriginalRead::Ready {
             bytes,
@@ -807,10 +836,8 @@ fn coverage_in_view(
             OriginalRead::Corrupt | OriginalRead::Unavailable { .. } => {
                 return Coverage::SourceUnavailable;
             }
-            OriginalRead::Absent
-            | OriginalRead::Unready
-            | OriginalRead::Deleted
-            | OriginalRead::Staged => {}
+            OriginalRead::Absent | OriginalRead::Deleted => {}
+            OriginalRead::Unready | OriginalRead::Staged => return Coverage::Pending,
         }
         if deadline_passed(deadline) {
             return Coverage::Budget;
@@ -1416,7 +1443,8 @@ mod tests {
         fs::remove_file(segment.join("ready.json")).unwrap();
         scan_journal(&journal, false).unwrap();
         let unready = recall_now();
-        assert!(unready.complete, "{:?}", unready.reason);
+        assert!(!unready.complete, "{:?}", unready.reason);
+        assert_eq!(unready.reason, Some("memory_index_pending"));
         assert!(unready.notes.is_empty());
         let connection =
             Connection::open(solstone_core_indexer_store::db::db_path(&journal)).unwrap();
@@ -1516,7 +1544,8 @@ mod tests {
                 fs::remove_dir_all(
                     journal
                         .path()
-                        .join("chronicle/20260901")
+                        .join("chronicle")
+                        .join(&receipt.coordinate.day)
                         .join(receipt.origin.stream)
                         .join(receipt.origin.segment),
                 )
@@ -1593,10 +1622,6 @@ mod tests {
                 |note| note.origin.source_key == source && note.bytes == b"needle exact memory"
             ));
             assert!(started.elapsed() < RECALL_DEADLINE);
-            eprintln!(
-                "actual recall query={query:?} elapsed_ms={}",
-                started.elapsed().as_millis()
-            );
         }
         let connection =
             Connection::open(solstone_core_indexer_store::db::db_path(journal.path())).unwrap();

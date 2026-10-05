@@ -12,11 +12,8 @@ use crate::tools::{MAX_DAY_BYTES, MAX_OPAQUE_REFERENCE_BYTES};
 
 /// What one tool needs before a connection may see or call it.
 ///
-/// ✅ `read` is a **named half**, not the whole requirement: a `write` half is
-/// an addition beside it, and no existing reader has to be taught that what it
-/// treated as the requirement was only part of one. ⛔ There is no write
-/// variant, stub or dead branch here — the shape is the whole deliverable, the
-/// same discipline increment A applied to `ConnectionPermission::read`.
+/// Ordinary reads require their existing categories. The paired memory tools
+/// have fixed own-source authority supplied separately by verified transport.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ToolRequirement {
     pub(crate) read: &'static [AdmittedCategory],
@@ -55,6 +52,22 @@ const ENTITIES: ToolRequirement = ToolRequirement {
 
 /// The single registry used for advertisement, dispatch, validation, and auditing.
 pub(crate) const TOOLS: &[ToolEntry] = &[
+    ToolEntry {
+        tool_name: crate::jsonrpc::ToolName::SaveMemory,
+        wire_name: "save_memory",
+        description: "save a note as this connection's agent memory. content is exact UTF-8, up to 32,768 bytes. retry with the same operation_id and content if the outcome is uncertain.",
+        input_schema: save_memory_input_schema,
+        requires: NOTHING,
+        audit_name: solstone_core_mcp_audit::ToolName::SaveMemory,
+    },
+    ToolEntry {
+        tool_name: crate::jsonrpc::ToolName::RecallMemory,
+        wire_name: "recall_memory",
+        description: "recall this connection's original agent memories from the index. omit query to browse; pages contain whole notes, up to 20 notes and 65,536 content bytes. an incomplete result does not prove there are no memories.",
+        input_schema: recall_memory_input_schema,
+        requires: NOTHING,
+        audit_name: solstone_core_mcp_audit::ToolName::RecallMemory,
+    },
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::ListFacets,
         wire_name: "list_facets",
@@ -145,10 +158,13 @@ pub(crate) fn snapshot_allows(snapshot: &ConnectionReadSnapshot, entry: &ToolEnt
 /// the `facet` argument rather than guessing at one: the agent is told less,
 /// and call-time authorization is unchanged either way.
 pub(crate) fn advertised_tools_list(journal_root: &Path, permission: &PermissionDecision) -> Value {
-    let PermissionDecision::Snapshot(snapshot) = permission else {
-        return json!({ "tools": [] });
+    let snapshot = match permission {
+        PermissionDecision::Snapshot(snapshot) => Some(snapshot),
+        PermissionDecision::Denied { .. } => None,
     };
-    let facet_ids = crate::dispatch::available_facets(journal_root, snapshot)
+    let empty_categories = BTreeSet::new();
+    let facet_ids = snapshot
+        .and_then(|snapshot| crate::dispatch::available_facets(journal_root, snapshot).ok())
         .map(|facets| {
             facets
                 .into_iter()
@@ -157,23 +173,49 @@ pub(crate) fn advertised_tools_list(journal_root: &Path, permission: &Permission
         })
         .unwrap_or_default();
     let context = SchemaContext {
-        categories: &snapshot.categories,
+        categories: snapshot
+            .map(|snapshot| &snapshot.categories)
+            .unwrap_or(&empty_categories),
         facet_ids: &facet_ids,
     };
     let tools = TOOLS
         .iter()
-        .filter(|entry| snapshot_allows(snapshot, entry))
+        .filter(|entry| entry.tool_name.is_memory() || snapshot.is_some_and(|snapshot| snapshot_allows(snapshot, entry)))
         .map(|entry| {
             json!({
                 "name": entry.wire_name,
                 "description": entry.description,
                 "inputSchema": (entry.input_schema)(&context),
-                // Every tool in the closed registry reads and none writes.
-                "annotations": { "readOnlyHint": true },
+                "annotations": { "readOnlyHint": entry.tool_name != crate::jsonrpc::ToolName::SaveMemory },
             })
         })
         .collect::<Vec<_>>();
     json!({ "tools": tools })
+}
+
+fn save_memory_input_schema(_context: &SchemaContext<'_>) -> Value {
+    json!({
+        "type": "object", "additionalProperties": false,
+        "required": ["content", "operation_id"],
+        "properties": {
+            "content": {"type": "string", "minLength": 1, "maxLength": 32768, "description": "exact UTF-8 content, limited to 32,768 decoded bytes"},
+            "operation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$"}
+        }
+    })
+}
+
+fn recall_memory_input_schema(_context: &SchemaContext<'_>) -> Value {
+    json!({
+        "type": "object", "additionalProperties": false,
+        "properties": {
+            "query": {"type": "string", "maxLength": MAX_QUERY_BYTES},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+            "day": {"type": "string", "maxLength": MAX_DAY_BYTES},
+            "day_from": {"type": "string", "maxLength": MAX_DAY_BYTES},
+            "day_to": {"type": "string", "maxLength": MAX_DAY_BYTES},
+            "continuation": {"type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES}
+        }
+    })
 }
 
 pub(crate) fn category_token(category: &AdmittedCategory) -> &'static str {
@@ -344,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_snapshot_only_advertises_facet_listing() {
+    fn empty_snapshot_advertises_memory_pair_and_facet_listing() {
         let journal = journal_with_two_facets();
         let snapshot = ConnectionReadSnapshot {
             categories: BTreeSet::new(),
@@ -353,8 +395,10 @@ mod tests {
         };
 
         let tools = advertised_tools_list(journal.path(), &PermissionDecision::Snapshot(snapshot));
-        assert_eq!(tools["tools"].as_array().unwrap().len(), 1);
-        assert_eq!(tools["tools"][0]["name"], "list_facets");
+        assert_eq!(tools["tools"].as_array().unwrap().len(), 3);
+        assert_eq!(tools["tools"][0]["name"], "save_memory");
+        assert_eq!(tools["tools"][1]["name"], "recall_memory");
+        assert_eq!(tools["tools"][2]["name"], "list_facets");
     }
 
     #[test]
@@ -481,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn every_advertised_tool_is_marked_read_only() {
+    fn advertised_effects_distinguish_append_from_reads() {
         // Dropped once in a rewrite without anyone noticing; clients use the
         // hint to run a tool without asking the owner each time.
         let journal = journal_with_two_facets();
@@ -495,7 +539,8 @@ mod tests {
         assert_eq!(tools.len(), TOOLS.len());
         for tool in tools {
             assert_eq!(
-                tool["annotations"]["readOnlyHint"], true,
+                tool["annotations"]["readOnlyHint"],
+                tool["name"] != "save_memory",
                 "{} is not marked read-only",
                 tool["name"]
             );

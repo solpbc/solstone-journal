@@ -929,7 +929,12 @@ mod full_tests {
             let read_only = tool.get("readOnlyHint") == Some(&Value::Bool(true))
                 || tool.get("annotations").and_then(|a| a.get("readOnlyHint"))
                     == Some(&Value::Bool(true));
-            assert!(read_only, "tool {} must declare readOnlyHint", tool["name"]);
+            assert_eq!(
+                read_only,
+                tool["name"] != "save_memory",
+                "tool {} must declare its actual mutation behavior",
+                tool["name"]
+            );
         }
 
         // 11. POST /mcp tools/call search -> verify outcome & admission audit
