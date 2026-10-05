@@ -18,6 +18,7 @@ pub(crate) enum RedirectHost {
     Claude,
     ChatGpt,
     Gemini,
+    Grok,
 }
 
 /// A redirect URI that passed the closed allowlist parser.
@@ -78,6 +79,15 @@ pub(crate) fn parse_redirect_uri(raw: &str) -> Result<ParsedRedirectUri, Redirec
                 return Err(RedirectError);
             }
         }
+        RedirectHost::Grok => {
+            if scheme != RedirectScheme::Https
+                || port.is_some()
+                || path != "/connectors-oauth-exchange-code/"
+                || query.is_some()
+            {
+                return Err(RedirectError);
+            }
+        }
         RedirectHost::Localhost | RedirectHost::V4Loopback => {}
     }
     Ok(ParsedRedirectUri {
@@ -110,9 +120,10 @@ fn redirect_uris_match(presented: &ParsedRedirectUri, registered: &ParsedRedirec
     }
     match presented.host {
         RedirectHost::Localhost | RedirectHost::V4Loopback => true,
-        RedirectHost::Claude | RedirectHost::ChatGpt | RedirectHost::Gemini => {
-            presented.port == registered.port
-        }
+        RedirectHost::Claude
+        | RedirectHost::ChatGpt
+        | RedirectHost::Gemini
+        | RedirectHost::Grok => presented.port == registered.port,
     }
 }
 
@@ -169,6 +180,8 @@ fn parse_host(host: &str) -> Option<RedirectHost> {
         Some(RedirectHost::ChatGpt)
     } else if host == "oauth-redirect.googleusercontent.com" {
         Some(RedirectHost::Gemini)
+    } else if host == "grok.com" {
+        Some(RedirectHost::Grok)
     } else {
         None
     }
@@ -307,6 +320,46 @@ mod tests {
             "https://user@chatgpt.com/connector_platform_oauth_redirect",
             "https://chatgpt.com/%63onnector_platform_oauth_redirect",
             "https://chatgpt.com/connector_platform_oauth_redirect#fragment",
+        ] {
+            assert!(
+                parse_redirect_uri(raw).is_err(),
+                "expected reject for {raw:?}"
+            );
+            assert!(!redirect_uri_is_allowed(raw, &registered));
+        }
+    }
+
+    #[test]
+    fn grok_stable_callback_is_exact() {
+        let callback = "https://grok.com/connectors-oauth-exchange-code/";
+        let registered = [callback.to_owned()];
+        let parsed = parse_redirect_uri(callback).unwrap();
+        assert_eq!(parsed.scheme, RedirectScheme::Https);
+        assert_eq!(parsed.host, RedirectHost::Grok);
+        assert_eq!(parsed.port, None);
+        assert_eq!(parsed.query, None);
+        assert!(redirect_uri_is_allowed(callback, &registered));
+        assert!(!redirect_uri_is_allowed(callback, &[]));
+        assert!(!redirect_uri_is_allowed(
+            callback,
+            &["https://claude.ai/api/mcp/auth_callback".to_owned()]
+        ));
+        for raw in [
+            "http://grok.com/connectors-oauth-exchange-code/",
+            "https://grok.com:443/connectors-oauth-exchange-code/",
+            "https://grok.com/connectors-oauth-exchange-code",
+            "https://grok.com/connectors-oauth-exchange-code/extra",
+            "https://grok.com/connectors-oauth-exchange-code/?x=1",
+            "https://grok.com/connectors-oauth-exchange-code/?",
+            "https://grok.com/connectors-oauth-exchange-code/#fragment",
+            "https://grok.com/%63onnectors-oauth-exchange-code/",
+            "https://grok.com/other",
+            "https://www.grok.com/connectors-oauth-exchange-code/",
+            "https://grok.com.evil/connectors-oauth-exchange-code/",
+            "https://evil-grok.com/connectors-oauth-exchange-code/",
+            "https://user@grok.com/connectors-oauth-exchange-code/",
+            "https://grok.com/../connectors-oauth-exchange-code/",
+            "https://grok.com\\evil/connectors-oauth-exchange-code/",
         ] {
             assert!(
                 parse_redirect_uri(raw).is_err(),

@@ -1316,6 +1316,29 @@ mod hosted_callback_tests {
 
     #[tokio::test(start_paused = true)]
     async fn gemini_registration_pairing_consent_and_redemption_keep_exact_callback_binding() {
+        assert_hosted_callback_flow(
+            CALLBACK,
+            OTHER_CALLBACK,
+            "https://oauth-redirect.googleusercontent.com",
+        )
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn grok_registration_pairing_consent_and_redemption_keep_exact_callback_binding() {
+        assert_hosted_callback_flow(
+            "https://grok.com/connectors-oauth-exchange-code/",
+            "https://claude.ai/api/mcp/auth_callback",
+            "https://grok.com",
+        )
+        .await;
+    }
+
+    async fn assert_hosted_callback_flow(
+        callback: &str,
+        other_callback: &str,
+        callback_origin: &str,
+    ) {
         // The observed hosted request used 1112 bytes of state. Exercise that
         // size and the exact 2 KiB decoded UTF-8 boundary through real framing.
         let states = ["g".repeat(1112), "é".repeat(1024)];
@@ -1323,21 +1346,21 @@ mod hosted_callback_tests {
             // A binding mismatch consumes its code. Each scenario needs its own
             // owner pairing and consent; successful issuance is a separate flow.
             for (redemption_callback, redemption_verifier, expected_status) in [
-                (OTHER_CALLBACK, VERIFIER, 400),
+                (other_callback, VERIFIER, 400),
                 (
-                    CALLBACK,
+                    callback,
                     "wrong_pkce_verifier_000000000000000000000000000",
                     400,
                 ),
-                (CALLBACK, VERIFIER, 200),
+                (callback, VERIFIER, 200),
             ] {
                 let journal = tempfile::Builder::new()
-                    .prefix("solstone-gemini-callback-")
+                    .prefix("solstone-hosted-callback-")
                     .tempdir_in(crate::test_scratch())
                     .unwrap();
                 let oauth = OAuthRuntime::new(journal.path(), ORIGIN.to_owned());
                 let registration_request = request("POST", "/register", &format!(
-            r#"{{"redirect_uris":["{CALLBACK}"],"token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"]}}"#
+            r#"{{"redirect_uris":["{callback}"],"token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"]}}"#
         )).await;
                 let (_tx, mut shutdown) = watch::channel(false);
 
@@ -1362,16 +1385,16 @@ mod hosted_callback_tests {
                     super::register(&registration_request, SOURCE, &oauth, &mut shutdown).await;
                 assert_eq!(registered.status, 201);
                 let metadata: serde_json::Value = serde_json::from_slice(&registered.body).unwrap();
-                assert_eq!(metadata["redirect_uris"], serde_json::json!([CALLBACK]));
+                assert_eq!(metadata["redirect_uris"], serde_json::json!([callback]));
                 assert_eq!(metadata["token_endpoint_auth_method"], "none");
                 assert!(metadata.get("client_secret").is_none());
                 let client = metadata["client_id"].as_str().unwrap();
 
                 let mismatched =
-                    authorize(&oauth, client, OTHER_CALLBACK, "S256", "fixture-state").await;
+                    authorize(&oauth, client, other_callback, "S256", "fixture-state").await;
                 assert_eq!(mismatched.status, 400);
                 assert!(header(&mismatched, "Location").is_none());
-                let plain = authorize(&oauth, client, CALLBACK, "plain", "fixture-state").await;
+                let plain = authorize(&oauth, client, callback, "plain", "fixture-state").await;
                 assert_eq!(plain.status, 302);
                 assert!(
                     header(&plain, "Location")
@@ -1380,20 +1403,24 @@ mod hosted_callback_tests {
                 );
 
                 for oversized in ["g".repeat(2049), "é".repeat(1025)] {
-                    let refused = authorize(&oauth, client, CALLBACK, "S256", &oversized).await;
+                    let refused = authorize(&oauth, client, callback, "S256", &oversized).await;
                     assert_eq!(refused.status, 400);
                     assert!(header(&refused, "Location").is_none());
                 }
-                let consent = authorize(&oauth, client, CALLBACK, "S256", state).await;
+                let consent = authorize(&oauth, client, callback, "S256", state).await;
                 assert_eq!(consent.status, 200);
                 let csp = header(&consent, "Content-Security-Policy").unwrap();
-                assert!(
-                    csp.contains(
-                        "form-action 'self' https://oauth-redirect.googleusercontent.com;"
-                    )
-                );
-                assert!(!csp.contains("https://chatgpt.com"));
-                assert!(!csp.contains("https://claude.ai"));
+                assert!(csp.contains(&format!("form-action 'self' {callback_origin};")));
+                for other_origin in [
+                    "https://oauth-redirect.googleusercontent.com",
+                    "https://chatgpt.com",
+                    "https://claude.ai",
+                    "https://grok.com",
+                ] {
+                    if other_origin != callback_origin {
+                        assert!(!csp.contains(other_origin));
+                    }
+                }
                 let body = String::from_utf8(consent.body).unwrap();
                 let marker = "name=\"transaction_id\" value=\"";
                 let remainder = body.split_once(marker).unwrap().1;
@@ -1416,7 +1443,7 @@ mod hosted_callback_tests {
                 assert_eq!(completed.status, 302);
                 let location = header(&completed, "Location").unwrap();
                 let (redirect, query) = location.split_once('?').unwrap();
-                assert_eq!(redirect, CALLBACK);
+                assert_eq!(redirect, callback);
                 let pairs = parse_urlencoded_pairs(query).unwrap();
                 let field = |name: &str| {
                     pairs
@@ -1452,7 +1479,7 @@ mod hosted_callback_tests {
                     assert_eq!(tokens["error"], "invalid_grant");
                 }
                 assert_eq!(
-                    redeem(&oauth, code, client, CALLBACK, VERIFIER)
+                    redeem(&oauth, code, client, callback, VERIFIER)
                         .await
                         .status,
                     400,

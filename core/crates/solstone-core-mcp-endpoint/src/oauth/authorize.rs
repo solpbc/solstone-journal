@@ -771,6 +771,7 @@ fn redirect_host_label(parsed: &super::redirect::ParsedRedirectUri) -> String {
         RedirectHost::Claude => "claude.ai",
         RedirectHost::ChatGpt => "chatgpt.com",
         RedirectHost::Gemini => "oauth-redirect.googleusercontent.com",
+        RedirectHost::Grok => "grok.com",
     };
     match parsed.port {
         Some(port) => format!("{host}:{port}"),
