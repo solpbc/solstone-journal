@@ -1753,6 +1753,7 @@ a.body-day-cell:focus-visible {
       }
       return;
     }
+    bodyToast({ icon: "clock", title: "this delete hasn't finished yet", message: "reload to see how it ended.", autoDismiss: 8000 });
   }
   if (!window.__bodyStravaDeleteBound) {
   window.__bodyStravaDeleteBound = true;
@@ -1765,7 +1766,7 @@ a.body-day-cell:focus-visible {
       const note = document.createElement("span");
       note.className = "body-workout-details";
       note.setAttribute("data-strava-note", "");
-      note.textContent = "this deletes the whole workout from your journal, on every day it covers. importing a Strava download again won't bring it back, unless its start time or length has changed on Strava. the start time and length of each of its pieces stay, marked as a Strava workout you deleted and when, so a later import skips this workout. a delete doesn't reach copies made before it, in encrypted backup or wherever your journal folder was copied.";
+      note.innerHTML = "this deletes the whole workout from your journal, on every day it covers. importing a Strava download again won't bring it back, unless its start time or length has changed on Strava. <details><summary>what stays</summary>the start time and length of each of its pieces stay, marked as a Strava workout you deleted and when, so a later import skips this workout. a delete doesn't reach copies made before it, in encrypted backup or wherever your journal folder was copied.</details>";
       button.insertAdjacentElement("afterend", note);
       return;
     }

@@ -851,8 +851,8 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         return failure(
             StatusCode::UNPROCESSABLE_ENTITY,
             "strava_download",
-            "this looks like a Strava download. use the Strava card so only your workouts are read, and the download isn't kept.",
-            "this looks like a Strava download. use the Strava card so only your workouts are read, and the download isn't kept.",
+            "this looks like a Strava download, so it wasn't kept. use the Strava card so only your workouts are read.",
+            "this looks like a Strava download, so it wasn't kept. use the Strava card so only your workouts are read.",
         );
     }
     let source_path = match &incoming {
@@ -988,8 +988,8 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         return failure(
             StatusCode::UNPROCESSABLE_ENTITY,
             "strava_download",
-            "this looks like a Strava download. use the Strava card so only your workouts are read, and the download isn't kept.",
-            "this looks like a Strava download. use the Strava card so only your workouts are read, and the download isn't kept.",
+            "this looks like a Strava download, so it wasn't kept. use the Strava card so only your workouts are read.",
+            "this looks like a Strava download, so it wasn't kept. use the Strava card so only your workouts are read.",
         );
     }
     let source_hash = match hash_source(local) {

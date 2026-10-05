@@ -414,21 +414,44 @@ fn run(
         } else {
             DeleteState::NotDeleted
         };
-        let reason = format!(
-            "{left} of {} pieces couldn't be deleted",
-            target.pieces.len()
-        );
+        let reason = match target.kind {
+            Kind::Workout => format!(
+                "{left} of its {} pieces couldn't be deleted. try again.",
+                target.pieces.len()
+            ),
+            Kind::Import => {
+                let workouts = target
+                    .pieces
+                    .iter()
+                    .filter(|piece| !removed(&stream_dir(&piece.day).join(&piece.key)))
+                    .filter_map(|piece| {
+                        std::fs::read(stream_dir(&piece.day).join(&piece.key).join("workout.json"))
+                            .ok()
+                            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                            .and_then(|v| v.get("activity_id").and_then(Value::as_u64))
+                    })
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    .max(1);
+                format!(
+                    "{workouts} {} couldn't be fully deleted. try again.",
+                    if workouts == 1 { "workout" } else { "workouts" }
+                )
+            }
+        };
         return Some((state, Some(reason), detail));
     }
     if target.kind == Kind::Import
         && let Err(error) = solstone_core_import::remove_import_records(journal, &target.id)
     {
         detail["records_kept"] = json!(true);
+        detail["records_error"] = json!(format!("{error:?}"));
         return Some((
             DeleteState::Incomplete,
-            Some(format!(
-                "the import's own records couldn't be removed: {error:?}"
-            )),
+            Some(
+                "its workouts were deleted, but this import's page couldn't be removed. try again."
+                    .to_owned(),
+            ),
             detail,
         ));
     }
