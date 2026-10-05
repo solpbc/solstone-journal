@@ -94,8 +94,11 @@ impl ClassificationStatus {
                 )
             }
             ClassificationInitialization::Incomplete => format!(
-                "classifications: incomplete sidecar at cursor '{}' (run 'solstone-core indexer classifications --apply')\n",
-                self.cursor
+                "classifications: incomplete sidecar at cursor '{}' (run '{}')\n",
+                self.cursor,
+                self.repair
+                    .as_deref()
+                    .unwrap_or("solstone-core indexer classifications --apply")
             ),
             ClassificationInitialization::Ready => {
                 if self.stalled {
@@ -314,6 +317,7 @@ pub fn inspect_classifications(journal: &Path) -> Result<ClassificationStatus, S
     let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
 
     let has_classification_table = sqlite_table_exists(&conn, "chunk_classification")?;
+    let memberships_missing = crate::db::classification_facets_missing(&conn)?;
     let has_backfill_table = sqlite_table_exists(&conn, "chunk_classification_backfill")?;
     let backfill = if has_backfill_table {
         conn.query_row(
@@ -354,7 +358,7 @@ pub fn inspect_classifications(journal: &Path) -> Result<ClassificationStatus, S
         });
     }
 
-    if backfill.is_some() && !has_classification_table {
+    if memberships_missing || (backfill.is_some() && !has_classification_table) {
         let cursor = backfill
             .as_ref()
             .map(|b| b.cursor.clone())
@@ -363,9 +367,14 @@ pub fn inspect_classifications(journal: &Path) -> Result<ClassificationStatus, S
         let stalled_path = backfill.as_ref().and_then(|b| b.stalled_path.clone());
         let completed = backfill.as_ref().is_some_and(|b| b.completed);
         let remaining = count_remaining(&conn, &cursor)?;
-        let missing = count_missing_internal(&conn, false)?;
-        let unclassified = 0;
-        let coverage_mismatch = (completed || remaining == 0) && missing > 0;
+        let missing = count_missing_internal(&conn, has_classification_table)?;
+        let unclassified = if has_classification_table {
+            count_unclassified(&conn)?
+        } else {
+            0
+        };
+        let coverage_mismatch =
+            memberships_missing || ((completed || remaining == 0) && missing > 0);
         return Ok(ClassificationStatus {
             initialization: ClassificationInitialization::Incomplete,
             cursor,
@@ -377,7 +386,11 @@ pub fn inspect_classifications(journal: &Path) -> Result<ClassificationStatus, S
             missing,
             unclassified,
             coverage_mismatch,
-            repair: Some("classifications --apply".to_string()),
+            repair: Some(if memberships_missing {
+                "solstone-core indexer --reset --rescan-full".to_owned()
+            } else {
+                "solstone-core indexer classifications --apply".to_owned()
+            }),
             committed: false,
             stalled_error: None,
         });
@@ -423,6 +436,7 @@ pub(crate) fn classify_one_batch(
 ) -> Result<ClassificationStatus, StoreError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     require_chunk_path_lookup(&tx)?;
+    crate::db::require_classification_facets(&tx)?;
 
     let has_classification = sqlite_table_exists(&tx, "chunk_classification")?;
     let has_facets = sqlite_table_exists(&tx, "chunk_classification_facets")?;
@@ -809,7 +823,7 @@ mod tests {
         assert_eq!(inspect_status.cursor, saved_cursor);
         assert_eq!(
             inspect_status.repair,
-            Some("classifications --apply".to_string())
+            Some("solstone-core indexer classifications --apply".to_string())
         );
 
         // Apply recreates table and resumes from saved_cursor without resetting to ''.
@@ -819,6 +833,110 @@ mod tests {
         assert!(apply_status.cursor > saved_cursor);
         assert!(apply_status.completed);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn classification_batch_missing_facet_memberships_preserves_progress_and_refuses_recreation() {
+        for complete in [false, true] {
+            let root = temp_root("missing-facet-memberships");
+            fs::create_dir_all(root.join("facets/Public/news")).unwrap();
+            fs::write(
+                root.join("facets/Public/facet.json"),
+                r#"{"id":"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"}"#,
+            )
+            .unwrap();
+            let conn = crate::db::open_index(&root).unwrap();
+            for i in 0..40 {
+                let path = format!("facets/Public/news/20260101-{i:02}.md");
+                fs::write(root.join(&path), "# News\nsearchable fixture").unwrap();
+                conn.execute(
+                    "INSERT INTO chunks(content, path) VALUES ('fixture', ?1)",
+                    [&path],
+                )
+                .unwrap();
+            }
+            drop(conn);
+            crate::chunk_sources::apply_path_lookup(&root).unwrap();
+            let saved = if complete {
+                drain_classifications(&root).unwrap()
+            } else {
+                apply_classification_batch(&root).unwrap()
+            };
+            assert_eq!(saved.completed, complete);
+            let conn = Connection::open(db_path(&root)).unwrap();
+            let memberships: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM chunk_classification_facets",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(memberships > 0, "fixture must have real facet memberships");
+            conn.execute("DROP TABLE chunk_classification_facets", [])
+                .unwrap();
+            drop(conn);
+            let before = fs::read(db_path(&root)).unwrap();
+            let observed = inspect_classifications(&root).unwrap();
+            assert_eq!(
+                observed.initialization,
+                ClassificationInitialization::Incomplete
+            );
+            assert_eq!(observed.cursor, saved.cursor);
+            assert_eq!(observed.completed, saved.completed);
+            assert!(observed.coverage_mismatch);
+            assert_eq!(
+                observed.repair.as_deref(),
+                Some("solstone-core indexer --reset --rescan-full")
+            );
+            assert!(
+                observed
+                    .format_human()
+                    .contains("run 'solstone-core indexer --reset --rescan-full'")
+            );
+            assert_eq!(fs::read(db_path(&root)).unwrap(), before);
+            let error = apply_classification_batch(&root).unwrap_err();
+            assert!(error.to_string().contains("facet memberships are missing"));
+            let error = crate::db::open_index(&root).unwrap_err();
+            assert!(error.to_string().contains("facet memberships are missing"));
+            let conn =
+                Connection::open_with_flags(db_path(&root), OpenFlags::SQLITE_OPEN_READ_ONLY)
+                    .unwrap();
+            assert!(!sqlite_table_exists(&conn, "chunk_classification_facets").unwrap());
+            let retained: (String, bool) = conn
+                .query_row(
+                    "SELECT cursor, completed FROM chunk_classification_backfill WHERE id=1",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(retained.0, saved.cursor);
+            assert_eq!(retained.1, saved.completed);
+            let rows: i64 = conn
+                .query_row("SELECT COUNT(*) FROM chunk_classification", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(rows, memberships);
+            drop(conn);
+            crate::db::reset_index(&root).unwrap();
+            crate::scan::scan_journal(&root, true).unwrap();
+            let restored = inspect_classifications(&root).unwrap();
+            assert_eq!(restored.initialization, ClassificationInitialization::Ready);
+            assert!(!restored.coverage_mismatch);
+            let conn =
+                Connection::open_with_flags(db_path(&root), OpenFlags::SQLITE_OPEN_READ_ONLY)
+                    .unwrap();
+            let repaired: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM chunk_classification_facets",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(repaired, 40);
+            drop(conn);
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]
@@ -1054,7 +1172,7 @@ mod tests {
         fs::create_dir_all(root.join("facets/Public")).expect("create Public dir");
         fs::write(
             root.join("facets/Public/facet.json"),
-            r#"{"id":"0123456789abcdef01234567"}"#,
+            r#"{"id":"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"}"#,
         )
         .expect("write Public json");
 

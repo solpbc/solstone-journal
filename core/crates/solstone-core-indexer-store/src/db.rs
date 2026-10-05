@@ -389,6 +389,7 @@ pub fn prune_authored_chat_paths(journal: &Path) -> Result<Option<StreamPruneCou
 
 fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    require_classification_facets(&tx)?;
     let chunks_existed = sqlite_table_exists(&tx, "chunks")?;
     let rebuilt = migrate_legacy_chunks(&tx)?;
     create_schema(&tx)?;
@@ -402,6 +403,28 @@ fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {
         )?;
     }
     tx.commit()?;
+    Ok(())
+}
+
+// Existing classifications cannot recover their lost memberships by creating
+// an empty table. A normal schema open must preserve this incomplete state.
+pub(crate) fn classification_facets_missing(conn: &Connection) -> Result<bool, StoreError> {
+    if !sqlite_table_exists(conn, "chunk_classification")?
+        || sqlite_table_exists(conn, "chunk_classification_facets")?
+    {
+        return Ok(false);
+    }
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM chunk_classification)",
+        [],
+        |r| r.get(0),
+    )?)
+}
+
+pub(crate) fn require_classification_facets(conn: &Connection) -> Result<(), StoreError> {
+    if classification_facets_missing(conn)? {
+        return Err(StoreError::ClassificationFacetsMissing);
+    }
     Ok(())
 }
 

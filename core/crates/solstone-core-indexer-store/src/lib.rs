@@ -40,6 +40,7 @@ pub enum StoreError {
     MissingFile(PathBuf),
     EdgeRebuildFailed(scan::EdgeRebuildReport),
     PathLookupRequired { cause: Option<String> },
+    ClassificationFacetsMissing,
 }
 
 impl fmt::Display for StoreError {
@@ -67,6 +68,10 @@ impl fmt::Display for StoreError {
             StoreError::EdgeRebuildFailed(report) => {
                 write!(formatter, "edge rebuild failed: {report:?}")
             }
+            StoreError::ClassificationFacetsMissing => write!(
+                formatter,
+                "search classification facet memberships are missing; run 'solstone-core indexer --reset --rescan-full'"
+            ),
             StoreError::PathLookupRequired { cause: None } => {
                 write!(formatter, "indexer path-lookup --apply")
             }
