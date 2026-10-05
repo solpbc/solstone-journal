@@ -102,14 +102,16 @@ impl Drop for Watchdog {
     }
 }
 
-/// Private endpoint engine. Callers must pass the already verified identity
-/// and its current permission generation; this does not register an MCP tool.
+/// Private endpoint engine. Callers pass an already verified identity and the
+/// verified credential lineage of the credential that authenticated. Cursors
+/// bind to that lineage and this process-local signing generation, not to the
+/// permission-ledger generation. This does not register an MCP tool.
 pub(crate) fn recall(
     journal: &Path,
     codec: &ReferenceCodec,
     connection_identity: &str,
     verified_identity: &str,
-    permission_generation: u64,
+    credential_lineage: &str,
     args: RecallArgs,
     reference_date: NaiveDate,
 ) -> RecallPage {
@@ -125,11 +127,12 @@ pub(crate) fn recall(
             token,
             ReferenceKind::MemoryRecall,
             connection_identity,
-            permission_generation,
+            codec.signing_generation(),
         ) else {
             return failure("memory_recall_cursor_invalid");
         };
         if cursor.source_key != source_key.as_str()
+            || cursor.credential_lineage != credential_lineage
             || cursor.query != normalized_query
             || cursor.day != args.day
             || cursor.day_from != args.day_from
@@ -251,7 +254,7 @@ pub(crate) fn recall(
                 continuation = match mint_cursor(
                     codec,
                     connection_identity,
-                    permission_generation,
+                    credential_lineage,
                     &source_key,
                     normalized_query.clone(),
                     &args,
@@ -276,7 +279,7 @@ pub(crate) fn recall(
                     continuation = match mint_cursor(
                         codec,
                         connection_identity,
-                        permission_generation,
+                        credential_lineage,
                         &source_key,
                         normalized_query.clone(),
                         &args,
@@ -367,7 +370,7 @@ fn is_interrupt(error: &rusqlite::Error) -> bool {
 fn mint_cursor(
     codec: &ReferenceCodec,
     connection_identity: &str,
-    permission_generation: u64,
+    credential_lineage: &str,
     source_key: &SourceKey,
     query: Option<String>,
     args: &RecallArgs,
@@ -375,9 +378,10 @@ fn mint_cursor(
 ) -> Result<String, ReferenceError> {
     codec.mint(
         connection_identity,
-        permission_generation,
+        codec.signing_generation(),
         ReferenceTarget::MemoryRecall(MemoryRecallCursor {
             source_key: source_key.as_str().to_owned(),
+            credential_lineage: credential_lineage.to_owned(),
             query,
             day: args.day.clone(),
             day_from: args.day_from.clone(),
@@ -811,6 +815,145 @@ mod tests {
     }
 
     #[test]
+    fn own_recall_cursor_binds_credential_lineage_and_signing_generation() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let journal = PathBuf::from(format!(
+            "/var/tmp/solstone-own-memory-cursor-{}-{unique}",
+            std::process::id()
+        ));
+        assert!(!journal.exists());
+
+        let codec = ReferenceCodec::new().unwrap();
+        let connection_identity = "own-memory-cursor-connection";
+        let verified_identity = "own-memory-cursor-identity";
+        let source_key = SourceKey::from_verified_id(verified_identity);
+        let query = Some("private memory".to_owned());
+        let day = Some("20260914".to_owned());
+        let args = RecallArgs {
+            query: query.clone(),
+            day: day.clone(),
+            ..RecallArgs::default()
+        };
+        let mint = |codec: &ReferenceCodec, credential_lineage: &str| {
+            codec
+                .mint(
+                    connection_identity,
+                    codec.signing_generation(),
+                    ReferenceTarget::MemoryRecall(MemoryRecallCursor {
+                        source_key: source_key.as_str().to_owned(),
+                        credential_lineage: credential_lineage.to_owned(),
+                        query: query.as_deref().map(normalize_query),
+                        day: day.clone(),
+                        day_from: None,
+                        day_to: None,
+                        anchor_day: "20260914".to_owned(),
+                        anchor_path: "20260914/agent-memory-source/120000_1/note.txt".to_owned(),
+                    }),
+                )
+                .unwrap()
+        };
+        let token = mint(&codec, "credential-lineage-a");
+        let signing_generation = codec.signing_generation();
+        assert!(matches!(
+            codec.resolve(
+                &token,
+                ReferenceKind::MemoryRecall,
+                connection_identity,
+                signing_generation
+            ),
+            Ok(ReferenceTarget::MemoryRecall(_))
+        ));
+        assert!(!journal.exists());
+        assert_eq!(
+            codec.resolve(
+                &token,
+                ReferenceKind::MemoryRecall,
+                connection_identity,
+                signing_generation.wrapping_add(1)
+            ),
+            Err(ReferenceError::NotFound)
+        );
+        assert!(!journal.exists());
+        if signing_generation != 9 {
+            assert_eq!(
+                codec.resolve(&token, ReferenceKind::MemoryRecall, connection_identity, 9),
+                Err(ReferenceError::NotFound)
+            );
+        }
+        assert!(!journal.exists());
+        assert_eq!(
+            codec.resolve(
+                &token,
+                ReferenceKind::MemoryRecall,
+                "another-connection",
+                signing_generation
+            ),
+            Err(ReferenceError::NotFound)
+        );
+        assert!(!journal.exists());
+
+        let recall_with = |codec: &ReferenceCodec, credential_lineage: &str, token: String| {
+            recall(
+                &journal,
+                codec,
+                connection_identity,
+                verified_identity,
+                credential_lineage,
+                RecallArgs {
+                    continuation: Some(token),
+                    ..args.clone()
+                },
+                NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
+            )
+        };
+        let matching = recall_with(&codec, "credential-lineage-a", token.clone());
+        assert_eq!(matching.reason, Some("memory_index_unavailable"));
+        assert!(!journal.exists());
+        let mismatched = recall_with(&codec, "credential-lineage-b", token.clone());
+        assert_eq!(mismatched.reason, Some("memory_recall_cursor_invalid"));
+        assert!(!journal.exists());
+
+        let empty_lineage_token = mint(&codec, "");
+        let empty_lineage = recall_with(&codec, "", empty_lineage_token.clone());
+        assert_eq!(empty_lineage.reason, Some("memory_index_unavailable"));
+        assert!(!journal.exists());
+        let nonempty_lineage = recall_with(&codec, "credential-lineage-a", empty_lineage_token);
+        assert_eq!(
+            nonempty_lineage.reason,
+            Some("memory_recall_cursor_invalid")
+        );
+        assert!(!journal.exists());
+
+        let other_codec = ReferenceCodec::new().unwrap();
+        assert_eq!(
+            other_codec.resolve(
+                &token,
+                ReferenceKind::MemoryRecall,
+                connection_identity,
+                other_codec.signing_generation()
+            ),
+            Err(ReferenceError::NotFound)
+        );
+        assert!(!journal.exists());
+        let restarted = recall_with(&other_codec, "credential-lineage-a", token.clone());
+        assert_eq!(restarted.reason, Some("memory_recall_cursor_invalid"));
+        assert!(!journal.exists());
+
+        let mut tampered = token.into_bytes();
+        let last = tampered.len() - 1;
+        tampered[last] = if tampered[last] == b'A' { b'B' } else { b'A' };
+        let tampered = String::from_utf8(tampered).unwrap();
+        let tampered_result = recall_with(&codec, "credential-lineage-a", tampered);
+        assert_eq!(tampered_result.reason, Some("memory_recall_cursor_invalid"));
+        assert!(!journal.exists());
+    }
+
+    #[test]
     fn coverage_outcomes_keep_pending_source_and_deadline_distinct() {
         assert_eq!(coverage_failure_reason(Coverage::Complete), None);
         assert_eq!(
@@ -991,12 +1134,13 @@ mod tests {
     fn recall_byte_budget_continues_inclusively_after_deleted_anchor() {
         let (journal, _source, coordinates) = recall_fixture(&[32_768, 32_768, 2, 2]);
         let codec = ReferenceCodec::new().unwrap();
+        let credential_lineage = "recall-fixture-credential";
         let first = recall(
             journal.path(),
             &codec,
             "connection",
             "recall-fixture-source",
-            9,
+            credential_lineage,
             RecallArgs::default(),
             NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
         );
@@ -1025,7 +1169,7 @@ mod tests {
             &codec,
             "connection",
             "recall-fixture-source",
-            9,
+            credential_lineage,
             RecallArgs {
                 continuation: Some(continuation),
                 ..RecallArgs::default()

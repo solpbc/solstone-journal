@@ -93,6 +93,7 @@ pub(crate) struct CursorReference {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct MemoryRecallCursor {
     pub source_key: String,
+    pub credential_lineage: String,
     pub query: Option<String>,
     pub day: Option<String>,
     pub day_from: Option<String>,
@@ -136,6 +137,7 @@ pub(crate) struct ReferenceCodec {
     encryption: aead::LessSafeKey,
     mac: hmac::Key,
     random: SystemRandom,
+    signing_generation: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,6 +152,10 @@ impl ReferenceCodec {
         random
             .fill(&mut key)
             .map_err(|_| ReferenceError::NotFound)?;
+        let mut signing_generation = [0_u8; 8];
+        random
+            .fill(&mut signing_generation)
+            .map_err(|_| ReferenceError::NotFound)?;
         let encryption = aead::LessSafeKey::new(
             aead::UnboundKey::new(&aead::AES_256_GCM, &key)
                 .map_err(|_| ReferenceError::NotFound)?,
@@ -158,7 +164,12 @@ impl ReferenceCodec {
             encryption,
             mac: hmac::Key::new(hmac::HMAC_SHA256, &key),
             random,
+            signing_generation: u64::from_le_bytes(signing_generation),
         })
+    }
+
+    pub(crate) fn signing_generation(&self) -> u64 {
+        self.signing_generation
     }
 
     pub(crate) fn mint(
