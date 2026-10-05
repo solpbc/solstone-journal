@@ -40,7 +40,7 @@ pub(crate) const MAX_CLIENT_ID_BYTES: usize = 2048;
 pub(crate) const MAX_REDIRECT_URI_BYTES: usize = 2048;
 pub(crate) const MAX_CLIENT_NAME_BYTES: usize = 256;
 pub(crate) const MAX_REDIRECT_URIS_PER_CLIENT: usize = 16;
-pub(crate) const MAX_STATE_BYTES: usize = 1024;
+pub(crate) const MAX_STATE_BYTES: usize = 2 * 1024;
 pub(crate) const MAX_CODE_BYTES: usize = 512;
 const MAX_URLENCODED_PAIRS: usize = 32;
 
