@@ -32,18 +32,18 @@ use solstone_core_cli::{
     GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
     IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions,
-    IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
-    IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, MCP_HELP, MCP_USAGE, McpCommand, McpOauthCommand,
-    McpPairingCommand, McpPermissionCommand, McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
-    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
-    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
-    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
-    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_CHATGPT_HELP,
-    THINKING_CHATGPT_MODELS_HELP, THINKING_CHATGPT_MODELS_USAGE, THINKING_CHATGPT_SIGN_IN_HELP,
-    THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
+    IndexerPathLookupOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions,
+    IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
+    JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
+    MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpPermissionCommand,
+    McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
+    SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
+    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
+    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
+    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
+    THINKING_CHATGPT_HELP, THINKING_CHATGPT_MODELS_HELP, THINKING_CHATGPT_MODELS_USAGE,
+    THINKING_CHATGPT_SIGN_IN_HELP, THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
     THINKING_CHATGPT_SIGN_OUT_USAGE, THINKING_CHATGPT_STATUS_HELP, THINKING_CHATGPT_STATUS_USAGE,
     THINKING_CHATGPT_USAGE, THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE,
     THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, ThinkingCommand,
@@ -113,6 +113,7 @@ use solstone_core_indexer_store::merge::{
 use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
+use solstone_core_indexer_store::{apply_path_lookup, inspect_path_lookup};
 use solstone_core_journal::{
     ConfigError, HomeError, Source, describe_package_roots_miss, ensure_journal_dir_with_label,
     read_config_journal, resolve_installation_root_from_executable_dir, resolve_journal_path,
@@ -6706,6 +6707,7 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::Counts(options) => run_indexer_counts(options),
         IndexerCommand::Agents(options) => run_indexer_agents(options),
         IndexerCommand::Coverage(options) => run_indexer_coverage(options),
+        IndexerCommand::PathLookup(options) => run_indexer_path_lookup(options),
         IndexerCommand::PruneStream(options) => run_indexer_prune_stream(options),
         IndexerCommand::PrunePaths(options) => run_indexer_prune_paths(options),
         IndexerCommand::FoldEntityEdges(options) => run_indexer_fold_entity_edges(options),
@@ -6713,6 +6715,31 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::RebuildEdgesFingerprint(options) => {
             run_indexer_rebuild_edges_fingerprint(options)
         }
+    }
+}
+
+fn run_indexer_path_lookup(options: IndexerPathLookupOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let result = if options.apply {
+        apply_path_lookup(&journal)
+    } else {
+        inspect_path_lookup(&journal)
+    };
+    match result {
+        Ok(status) => {
+            if options.json {
+                print_json(&json!({"ready": status.ready}));
+            } else if status.ready {
+                println!("path lookup: ready");
+            } else {
+                println!("path lookup: unready");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_indexer_mutation_error("path-lookup", error),
     }
 }
 
@@ -7777,6 +7804,9 @@ mod tests {
         let _ = fs::remove_dir_all(dir_path);
         let _ = fs::remove_dir_all(fresh_dir);
     }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    include!("tests/indexer_path_lookup.rs");
 }
 
 #[cfg(all(test, unix, feature = "journal-mcp-endpoint"))]

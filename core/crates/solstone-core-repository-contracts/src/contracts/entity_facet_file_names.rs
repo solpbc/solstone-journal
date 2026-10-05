@@ -139,8 +139,8 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "core/crates/solstone-core-indexer-store/src/scan.rs",
         "index_entity_search_build",
         "entity.json",
-        3,
-        "derived: SQL purging legacy index rows keyed by an old source path",
+        4,
+        "derived: SQL purging legacy index rows and their path metadata keyed by an old source path",
     ),
     (
         "core/crates/solstone-core-journal-archive/src/inventory.rs",

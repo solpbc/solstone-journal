@@ -31,6 +31,10 @@ use solstone_core_indexer::stream::extract_stream;
 use solstone_core_memory_original::{OriginalRead, read_original};
 
 use crate::StoreError;
+use crate::chunk_sources::{
+    CHUNK_SOURCES_LOOKUP_ROWIDS, CHUNK_SOURCES_LOOKUP_STREAM, chunk_path_lookup_ready,
+    delete_chunk_source_rowids, record_chunk_source, require_chunk_path_lookup,
+};
 use crate::classification::{FacetDeclarationSet, classify_source};
 use crate::db::{
     ChunkClassificationBackfill, EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION,
@@ -235,12 +239,13 @@ impl PendingChunkRows {
     /// between validating the snapshot and using the row IDs. Each path is
     /// taken once; our own writes only affect paths already removed here.
     fn take(&mut self, tx: &Transaction<'_>, path: &str) -> Result<Vec<i64>, StoreError> {
+        require_chunk_path_lookup(tx)?;
         let version = tx.query_row("PRAGMA data_version", [], |row| row.get(0))?;
         if self.data_version != Some(version) {
             for rows in self.paths.values_mut() {
                 rows.clear();
             }
-            let mut statement = tx.prepare("SELECT rowid, path FROM chunks")?;
+            let mut statement = tx.prepare("SELECT rowid, path FROM chunk_sources")?;
             let mut rows = statement.query([])?;
             while let Some(row) = rows.next()? {
                 let path: Option<String> = row.get(1)?;
@@ -267,8 +272,18 @@ fn delete_file_chunks(
         for id in rows {
             statement.execute(params![id, path])?;
         }
+        delete_chunk_source_rowids(conn, rows)?;
     } else {
-        conn.execute("DELETE FROM chunks WHERE path=?", [path])?;
+        require_chunk_path_lookup(conn)?;
+        let mut select_stmt = conn.prepare(CHUNK_SOURCES_LOOKUP_ROWIDS)?;
+        let rowids = select_stmt
+            .query_map([path], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut delete_stmt = conn.prepare_cached("DELETE FROM chunks WHERE rowid=? AND path=?")?;
+        for id in &rowids {
+            delete_stmt.execute(params![id, path])?;
+        }
+        delete_chunk_source_rowids(conn, &rowids)?;
     }
     delete_chunk_classification(conn, path)?;
     conn.execute("DELETE FROM memory_originals WHERE path=?", [path])?;
@@ -355,6 +370,9 @@ fn memory_original_exists(conn: &Connection, path: &str) -> Result<bool, StoreEr
 pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
     crate::db::prune_authored_chat_paths(journal)?;
     let mut conn = open_index(journal)?;
+    if !chunk_path_lookup_ready(&conn)? {
+        return Err(StoreError::PathLookupRequired { cause: None });
+    }
     let mut report = ScanReport::default();
     let files = discover_indexable_files(journal)?;
 
@@ -585,12 +603,11 @@ fn migrate_chunk_classifications(
             break;
         }
         for path in paths {
+            require_chunk_path_lookup(conn)?;
             let stream = conn
-                .query_row(
-                    "SELECT stream FROM chunks WHERE path=? LIMIT 1",
-                    [&path],
-                    |row| row.get::<_, Option<String>>(0),
-                )
+                .query_row(CHUNK_SOURCES_LOOKUP_STREAM, [&path], |row| {
+                    row.get::<_, Option<String>>(0)
+                })
                 .optional()?;
             let classification =
                 classify_source(journal, &path, stream.flatten().as_deref(), &declarations);
@@ -664,11 +681,12 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     if !path.is_file() {
         return Err(StoreError::MissingFile(path));
     }
+    let mut conn = open_index(journal)?;
+    require_chunk_path_lookup(&conn)?;
     let memory_original = if family == Some(Family::AgentMemory) {
         match read_memory_original(journal, &rel) {
             Ok(original) => Some(original),
             Err(_) => {
-                let mut conn = open_index(journal)?;
                 let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 delete_file_chunks(&tx, &rel, None)?;
                 tx.execute("DELETE FROM files WHERE path=?", [&rel])?;
@@ -688,7 +706,6 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     } else {
         file_mtime_secs(&path)?
     };
-    let mut conn = open_index(journal)?;
     // Immediate, not deferred: this reads current state (ensure_file_current's
     // mtime comparison) before writing. A deferred transaction's read snapshot
     // can be invalidated by a concurrent committer between that read and this
@@ -1166,6 +1183,14 @@ fn migrate_segment_aggregate(
             )));
         }
     }
+    let segment_rowids = {
+        let mut statement =
+            tx.prepare("SELECT rowid FROM chunks WHERE path=? AND agent='segment'")?;
+        statement
+            .query_map([rel_segment], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    delete_chunk_source_rowids(&tx, &segment_rowids)?;
     tx.execute(
         "DELETE FROM chunks WHERE path=? AND agent='segment'",
         [rel_segment],
@@ -1234,6 +1259,7 @@ fn index_entity_search_build(
                 for id in ids {
                     delete.execute(params![id, path])?;
                 }
+                delete_chunk_source_rowids(conn, ids)?;
             }
             delete_chunk_classification(conn, &path)?;
             if let Some(rows) = built {
@@ -1244,6 +1270,14 @@ fn index_entity_search_build(
                 )?;
             }
         }
+        let legacy_entity_rowids = {
+            let mut statement =
+                conn.prepare("SELECT rowid FROM chunks WHERE path LIKE 'entities/%/entity.json'")?;
+            statement
+                .query_map([], |row| row.get::<_, i64>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        delete_chunk_source_rowids(conn, &legacy_entity_rowids)?;
         conn.execute(
             "DELETE FROM chunks WHERE path LIKE 'entities/%/entity.json'",
             [],
@@ -1345,6 +1379,12 @@ fn insert_entity_search_rows(
                 row.idx,
                 row.time_bucket,
             ],
+        )?;
+        record_chunk_source(
+            conn,
+            None,
+            Some(row.path.as_str()),
+            Some(row.stream.as_str()),
         )?;
     }
     Ok(())
@@ -1478,6 +1518,8 @@ fn index_file(
             ],
         )
         .map_err(|error| format!("chunk insert failed for {rel}: {error}"))?;
+        record_chunk_source(conn, None, Some(rel), stream.as_deref())
+            .map_err(|error| format!("chunk source mapping failed for {rel}: {error}"))?;
     }
     replace_chunk_classification(conn, &classification)
         .map_err(|error| format!("classification insert failed for {rel}: {error}"))?;
@@ -1704,6 +1746,7 @@ mod tests {
             )
             .expect("seed legacy chunk");
         }
+        crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
         // AC20: two 32-path pages make bounded progress and leave an
         // assertable running cursor; the resumed invocation alone increments.
         assert!(
@@ -1748,6 +1791,7 @@ mod tests {
                 [],
             )
             .expect("seed stalled chunk");
+        crate::chunk_sources::apply_path_lookup(&stalled_root).expect("apply path lookup");
         fs::write(stalled_root.join("facets"), "not a directory").expect("block facets scan");
         assert!(
             !migrate_chunk_classifications(&mut stalled_conn, &stalled_root)
@@ -1775,6 +1819,7 @@ mod tests {
             [],
         )
         .expect("seed");
+        crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
         let other = open_index(&root).expect("other writer");
         other
             .busy_timeout(std::time::Duration::ZERO)
@@ -1799,11 +1844,17 @@ mod tests {
             [],
         )
         .expect("own replacement");
+        crate::chunk_sources::record_chunk_source(&tx, None, Some("a"), None)
+            .expect("record chunk source");
         tx.commit().expect("commit a");
         other
             .execute("DELETE FROM chunks WHERE rowid=2", [])
             .expect("other delete");
+        other
+            .execute("DELETE FROM chunk_sources WHERE rowid=2", [])
+            .expect("other delete mapping");
         other.execute("INSERT INTO chunks(rowid, content, path) VALUES (2, 'unrelated', 'elsewhere'), (4, 'new', 'b'), (5, 'newly arrived', 'c')", []).expect("other replacement");
+        other.execute("INSERT INTO chunk_sources(rowid, path) VALUES (2, 'elsewhere'), (4, 'b'), (5, 'c')", []).expect("other replacement mapping");
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .expect("begin b");
@@ -1843,6 +1894,7 @@ mod tests {
         let root = temp_root("pending-chunks-exact");
         let mut conn = open_index(&root).expect("open");
         conn.execute("INSERT INTO chunks(content, path) VALUES ('one', 'a_%'), ('two', 'a_%'), ('other', 'abc'), ('no path', NULL)", []).expect("seed");
+        crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
         let mut pending = PendingChunkRows::new(["a_%", "missing"].into_iter().map(str::to_string));
         for path in ["a_%", "missing"] {
             let tx = conn

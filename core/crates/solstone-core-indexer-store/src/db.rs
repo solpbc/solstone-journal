@@ -9,6 +9,10 @@ use rusqlite::{
 };
 
 use crate::StoreError;
+use crate::chunk_sources::{
+    CHUNK_SOURCES_LOOKUP_PATHS, CREATE_CHUNK_SOURCE_READINESS, CREATE_CHUNK_SOURCES,
+    CREATE_CHUNK_SOURCES_PATH_INDEX, delete_chunk_source_rowids, require_chunk_path_lookup,
+};
 
 pub const INDEX_DIR: &str = "indexer";
 pub const DB_NAME: &str = "journal.sqlite";
@@ -37,8 +41,6 @@ stream UNINDEXED,
 idx UNINDEXED,
 time_bucket UNINDEXED
 )";
-// Rust is the production schema authority. The Python constants remain only as
-// a differential reference while the rest of the Python tree is converted.
 pub(crate) const EDGES_SCHEMA_PATH: &str = "edges:__schema__";
 pub(crate) const EDGES_SCHEMA_VERSION: i64 = 1;
 pub(crate) const INDEX_BUILD_STATE_SCHEMA_VERSION: i64 = 1;
@@ -212,6 +214,8 @@ pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
             tx.execute(&format!("DROP TABLE IF EXISTS {table}"), [])?;
         }
     }
+    tx.execute("DROP TABLE IF EXISTS chunk_sources", [])?;
+    tx.execute("DROP TABLE IF EXISTS chunk_source_readiness", [])?;
     tx.execute("DROP INDEX IF EXISTS edges_path", [])?;
     tx.execute("DROP INDEX IF EXISTS idx_edges_src", [])?;
     tx.execute("DROP INDEX IF EXISTS idx_edges_dst", [])?;
@@ -228,6 +232,10 @@ pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
     tx.execute(
         "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, ?, 'building', 0, 0)",
         [INDEX_BUILD_STATE_SCHEMA_VERSION],
+    )?;
+    tx.execute(
+        "REPLACE INTO chunk_source_readiness(id, ready) VALUES (1, 1)",
+        [],
     )?;
     tx.commit()?;
     Ok(())
@@ -248,6 +256,13 @@ pub fn prune_chunks_by_stream(
             .query_map(params![stream, stream], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?
     };
+    let chunk_rowids = {
+        let mut statement = tx.prepare("SELECT rowid FROM chunks WHERE stream=?")?;
+        statement
+            .query_map([stream], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    delete_chunk_source_rowids(&tx, &chunk_rowids)?;
     let chunks = tx.execute("DELETE FROM chunks WHERE stream=?", [stream])? as u64;
     tx.execute("DELETE FROM memory_originals WHERE stream=?", [stream])?;
     let mut files = 0;
@@ -298,6 +313,8 @@ pub fn prune_by_paths(
             continue;
         };
         delete_chunk_classifications_by_predicate(&tx, &pred)?;
+        let chunk_rowids = select_prune_predicate_rowids(&tx, "chunks", &pred)?;
+        delete_chunk_source_rowids(&tx, &chunk_rowids)?;
         counts.chunks += execute_prune_predicate(&tx, "chunks", &pred)?;
         execute_prune_predicate(&tx, "memory_originals", &pred)?;
         counts.files += execute_prune_predicate(&tx, "files", &pred)?;
@@ -323,47 +340,64 @@ pub fn prune_authored_chat_paths(journal: &Path) -> Result<Option<StreamPruneCou
     let mut conn = Connection::open(&path)?;
     conn.execute_batch("PRAGMA busy_timeout=5000;")?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let chunk_rowids = {
+        let mut statement = tx.prepare(&format!(
+            "SELECT rowid FROM chunks WHERE {AUTHORED_CHAT_PATH_PREDICATE}"
+        ))?;
+        statement
+            .query_map([], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    delete_chunk_source_rowids(&tx, &chunk_rowids)?;
     let chunks = tx.execute(
         &format!("DELETE FROM chunks WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
         [],
     )? as u64;
-    tx.execute(
-        &format!(
-            "DELETE FROM chunk_classification_facets WHERE path IN (SELECT path FROM chunk_classification WHERE {AUTHORED_CHAT_PATH_PREDICATE})"
-        ),
-        [],
-    )?;
-    tx.execute(
-        &format!("DELETE FROM chunk_classification WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
-        [],
-    )?;
-    let files = tx.execute(
-        &format!("DELETE FROM files WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
-        [],
-    )? as u64;
+    if chunk_classification_tables_exist(&tx)? {
+        tx.execute(
+            &format!(
+                "DELETE FROM chunk_classification_facets WHERE path IN (SELECT path FROM chunk_classification WHERE {AUTHORED_CHAT_PATH_PREDICATE})"
+            ),
+            [],
+        )?;
+        tx.execute(
+            &format!("DELETE FROM chunk_classification WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
+            [],
+        )?;
+    }
+    let files = if sqlite_table_exists(&tx, "files")? {
+        tx.execute(
+            &format!("DELETE FROM files WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
+            [],
+        )? as u64
+    } else {
+        0
+    };
     tx.commit()?;
     Ok(Some(StreamPruneCounts { chunks, files }))
 }
 
 fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {
-    // Immediate, not deferred: create_schema's final statement is a real
-    // write (REPLACE INTO edge_files), and this runs on every open_index
-    // call -- the busiest admission path in the crate. A deferred
-    // transaction here establishes its read snapshot during the earlier
-    // schema-check statements, then can be told SQLITE_BUSY_SNAPSHOT at that
-    // final write if a concurrent writer committed in between, and
-    // busy_timeout cannot retry a stale snapshot into a fresh one. Same
-    // reasoning as rescan_file's admission fix.
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    migrate_legacy_chunks(&tx)?;
+    let chunks_existed = sqlite_table_exists(&tx, "chunks")?;
+    let rebuilt = migrate_legacy_chunks(&tx)?;
     create_schema(&tx)?;
+    if rebuilt {
+        tx.execute("DELETE FROM chunk_sources", [])?;
+        tx.execute("DELETE FROM chunk_source_readiness", [])?;
+    } else if !chunks_existed {
+        tx.execute(
+            "REPLACE INTO chunk_source_readiness(id, ready) VALUES (1, 1)",
+            [],
+        )?;
+    }
     tx.commit()?;
     Ok(())
 }
 
-fn migrate_legacy_chunks(conn: &Connection) -> Result<(), StoreError> {
+pub(crate) fn migrate_legacy_chunks(conn: &Connection) -> Result<bool, StoreError> {
     if !sqlite_table_exists(conn, "chunks")? {
-        return Ok(());
+        return Ok(false);
     }
     let columns = {
         let mut statement = conn.prepare("PRAGMA table_info(chunks)")?;
@@ -372,7 +406,7 @@ fn migrate_legacy_chunks(conn: &Connection) -> Result<(), StoreError> {
             .collect::<Result<Vec<_>, _>>()?
     };
     if columns.iter().any(|column| column == "time_bucket") {
-        return Ok(());
+        return Ok(false);
     }
 
     conn.execute("DROP TABLE IF EXISTS chunks_native_migration", [])?;
@@ -403,12 +437,15 @@ fn migrate_legacy_chunks(conn: &Connection) -> Result<(), StoreError> {
     )?;
     conn.execute("DROP TABLE chunks", [])?;
     conn.execute("ALTER TABLE chunks_native_migration RENAME TO chunks", [])?;
-    Ok(())
+    Ok(true)
 }
 
 fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_FILES, [])?;
     conn.execute(CREATE_CHUNKS, [])?;
+    conn.execute(CREATE_CHUNK_SOURCES, [])?;
+    conn.execute(CREATE_CHUNK_SOURCES_PATH_INDEX, [])?;
+    conn.execute(CREATE_CHUNK_SOURCE_READINESS, [])?;
     conn.execute(CREATE_MEMORY_ORIGINALS, [])?;
     conn.execute(CREATE_MEMORY_ORIGINALS_SOURCE_DAY_PATH, [])?;
     conn.execute(CREATE_EDGE_FILES, [])?;
@@ -512,6 +549,45 @@ fn prune_path_predicate(rel: &str) -> Option<PrunePathPredicate> {
     })
 }
 
+fn select_prune_predicate_rowids(
+    conn: &Connection,
+    table: &str,
+    pred: &PrunePathPredicate,
+) -> Result<Vec<i64>, StoreError> {
+    let rowids = match &pred.shape2 {
+        Some((shape2_exact, shape2_prefix)) => {
+            let sql = format!(
+                "SELECT rowid FROM {table} WHERE path = ?1 OR path LIKE ?2 ESCAPE ?5 OR path = ?3 OR path LIKE ?4 ESCAPE ?5"
+            );
+            let mut statement = conn.prepare(&sql)?;
+            statement
+                .query_map(
+                    params![
+                        &pred.shape1_exact,
+                        &pred.shape1_prefix,
+                        shape2_exact,
+                        shape2_prefix,
+                        "\\",
+                    ],
+                    |row| row.get::<_, i64>(0),
+                )?
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        None => {
+            let sql =
+                format!("SELECT rowid FROM {table} WHERE path = ?1 OR path LIKE ?2 ESCAPE ?3");
+            let mut statement = conn.prepare(&sql)?;
+            statement
+                .query_map(
+                    params![&pred.shape1_exact, &pred.shape1_prefix, "\\"],
+                    |row| row.get::<_, i64>(0),
+                )?
+                .collect::<Result<Vec<_>, _>>()?
+        }
+    };
+    Ok(rowids)
+}
+
 fn execute_prune_predicate(
     conn: &Connection,
     table: &str,
@@ -601,8 +677,8 @@ pub fn next_unclassified_chunk_paths(
     cursor: &str,
     limit: i64,
 ) -> Result<Vec<String>, StoreError> {
-    let mut statement =
-        conn.prepare("SELECT DISTINCT path FROM chunks WHERE path > ? ORDER BY path ASC LIMIT ?")?;
+    require_chunk_path_lookup(conn)?;
+    let mut statement = conn.prepare(CHUNK_SOURCES_LOOKUP_PATHS)?;
     Ok(statement
         .query_map(params![cursor, limit], |row| row.get(0))?
         .collect::<Result<Vec<_>, _>>()?)
@@ -732,7 +808,7 @@ pub(crate) fn mark_index_build_complete(
     Ok(())
 }
 
-fn sqlite_table_exists(conn: &Connection, table: &str) -> Result<bool, StoreError> {
+pub(crate) fn sqlite_table_exists(conn: &Connection, table: &str) -> Result<bool, StoreError> {
     let count: i64 = conn.query_row(
         "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",
         [table],
