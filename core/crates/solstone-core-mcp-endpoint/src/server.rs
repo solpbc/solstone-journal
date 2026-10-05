@@ -1304,6 +1304,10 @@ mod tests {
             .write_all(&body)
             .await
             .expect("client writes request body");
+        client
+            .flush()
+            .await
+            .expect("client flushes complete request");
         let mut head = Vec::new();
         loop {
             let mut byte = [0_u8; 1];
@@ -1350,6 +1354,10 @@ mod tests {
             .write_all(request.as_bytes())
             .await
             .expect("client writes request");
+        client
+            .flush()
+            .await
+            .expect("client flushes complete request");
         let mut head = Vec::new();
         loop {
             let mut byte = [0_u8; 1];
@@ -2759,7 +2767,12 @@ mod tests {
             } else {
                 post_json_response_with_headers(&mut client, &token.token, request, &[]).await
             };
-            assert_eq!(status, 200);
+            assert_eq!(
+                status,
+                200,
+                "operation={operation} chunked={chunked} response={}",
+                String::from_utf8_lossy(&bytes)
+            );
             assert_eq!(
                 memory_result(&serde_json::from_slice::<Value>(&bytes).unwrap())["byte_count"],
                 32768
