@@ -899,7 +899,28 @@ pub(crate) fn run_strava(
     journal: &Path,
     selected: &mut Option<String>,
 ) -> CliRun {
-    run_strava_internal(dispatch, journal, selected, None)
+    let media = dispatch.media.clone();
+    let dry_run = dispatch.dry_run;
+    let run = run_strava_internal(dispatch, journal, selected, None);
+    if !dry_run {
+        discard_uploaded_download(journal, Path::new(&media));
+    }
+    run
+}
+
+/// A Strava download uploaded through the import page is staged under the
+/// journal's `imports/`. Only its workout list is ever read, and the download
+/// itself is never kept: once the run ends, successfully or not, the staged copy
+/// is removed. A file the owner pointed the command at anywhere else is left
+/// alone.
+fn discard_uploaded_download(journal: &Path, media: &Path) {
+    let (Ok(imports), Ok(media)) = (journal.join("imports").canonicalize(), media.canonicalize())
+    else {
+        return;
+    };
+    if media.starts_with(&imports) && media.is_file() {
+        let _ = std::fs::remove_file(&media);
+    }
 }
 
 #[cfg(test)]
@@ -3212,38 +3233,30 @@ mod tests {
             other => panic!("expected CliOutcome::Registry with Ics, got {:?}", other),
         }
 
-        assert!(RegistrySource::from_name("strava").is_none());
+        assert_eq!(
+            RegistrySource::from_name("strava"),
+            Some(RegistrySource::Strava)
+        );
         assert_eq!(RegistrySource::Strava.name(), "strava");
         assert!(solstone_core_format::body::is_body_stream("import.strava"));
         assert!(
             !solstone_core_import_sources::registry::claims(RegistrySource::Strava, &csv_file)
                 .unwrap()
         );
+        let real = journal.path().join("real-activities.csv");
+        fs::write(
+            &real,
+            make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0)]).as_bytes(),
+        )
+        .unwrap();
+        assert!(
+            solstone_core_import_sources::registry::claims(RegistrySource::Strava, &real).unwrap()
+        );
         assert_eq!(RegistrySource::from_name("ics"), Some(RegistrySource::Ics));
     }
 
-    fn assert_no_sentinels_in_dir(dir: &Path) {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.is_dir() {
-                    assert_no_sentinels_in_dir(&path);
-                } else if path.is_file() {
-                    let text = fs::read_to_string(&path).unwrap_or_default();
-                    assert!(!text.contains("SENTINEL_DESC"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_NOTE"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_GEAR"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_MEDIA"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_WEATHER"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_DIST"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_EFFORT"), "found in {:?}", path);
-                }
-            }
-        }
-    }
-
     #[test]
-    fn strava_sentinels_not_written_to_journal() {
+    fn strava_keeps_every_field_of_the_owners_workout() {
         let journal = tempfile::tempdir().unwrap();
         write_utc_zone(journal.path());
         let csv_file = journal.path().join("activities.csv");
@@ -3274,7 +3287,24 @@ mod tests {
         assert_eq!(run.exit_code, 0, "{}", run.stderr);
         let import_id = id.unwrap();
 
-        assert_no_sentinels_in_dir(&journal.path().join("chronicle"));
+        // Every column of the owner's own row is kept, attributed to Strava.
+        let tile = fs::read_to_string(
+            journal
+                .path()
+                .join("chronicle/20260810/import.strava/063000_300/workout.json"),
+        )
+        .unwrap();
+        for kept in [
+            "SENTINEL_DESC",
+            "SENTINEL_NOTE",
+            "SENTINEL_GEAR",
+            "SENTINEL_MEDIA",
+            "SENTINEL_WEATHER",
+            "SENTINEL_DIST",
+            "SENTINEL_EFFORT",
+        ] {
+            assert!(tile.contains(kept), "{kept} missing from {tile}");
+        }
 
         assert!(
             !journal
@@ -3698,6 +3728,36 @@ mod tests {
             fs::remove_file(entry.unwrap().path()).unwrap();
         }
         fs::write(tile.join("tombstone.json"), reason).unwrap();
+    }
+
+    #[test]
+    fn strava_never_keeps_an_uploaded_download() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let content = make_en_csv_103(&[("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0)]);
+        let staged_dir = journal.path().join("imports/20260810_100000");
+        fs::create_dir_all(&staged_dir).unwrap();
+        let staged = staged_dir.join("activities.csv");
+        fs::write(&staged, content.as_bytes()).unwrap();
+        let (run1, _) = run_bound(strava_dispatch(&staged, "20260810_100000"), journal.path());
+        assert_eq!(run1.exit_code, 0, "{}", run1.stdout);
+        assert!(!staged.exists(), "the uploaded download is not kept");
+        assert!(
+            journal
+                .path()
+                .join("chronicle/20260810/import.strava/070000_300/workout.json")
+                .is_file()
+        );
+
+        // A file the owner pointed the command at outside the journal's imports stays.
+        let elsewhere = journal.path().join("activities.csv");
+        fs::write(&elsewhere, content.as_bytes()).unwrap();
+        let (run2, _) = run_bound(
+            strava_dispatch(&elsewhere, "20260810_110000"),
+            journal.path(),
+        );
+        assert_eq!(run2.exit_code, 0);
+        assert!(elsewhere.is_file());
     }
 
     #[test]
@@ -4508,9 +4568,7 @@ mod tests {
                 .exists()
         );
 
-        assert!(!journal.path().join("awareness").exists());
         record_finished_import(journal.path(), "20260810_100000", 0);
-        assert!(!journal.path().join("awareness").exists());
 
         let pub_record = solstone_core_import::publish::read_publication_record(
             &journal.path().join("imports/20260810_100000"),

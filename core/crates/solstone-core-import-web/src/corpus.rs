@@ -247,7 +247,7 @@ pub(crate) mod tests {
         let root = populated_root();
         let (status, body) = json_request(root.path(), "GET", "/app/import/api/sources").await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["total"], 10);
+        assert_eq!(body["total"], 11);
         let expected = [
             "ics",
             "chatgpt",
@@ -258,6 +258,7 @@ pub(crate) mod tests {
             "recording",
             "document",
             "image",
+            "strava",
             "quick",
         ];
         let rows = body["items"].as_array().expect("items array");

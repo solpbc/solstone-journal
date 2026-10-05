@@ -453,7 +453,7 @@ fn collect_segment_keys(directory: &std::path::Path, keys: &mut Vec<String>) {
             .is_some_and(|(_, duration)| duration.parse::<u64>().is_ok())
         {
             keys.push(name.to_owned());
-        } else if !solstone_core_format::body::is_body_stream(name) {
+        } else {
             collect_segment_keys(&path, keys);
         }
     }
@@ -931,19 +931,5 @@ mod tests {
             failure_cause(journal.path(), "use-transient", "timeout"),
             "timeout"
         );
-    }
-
-    #[test]
-    fn collect_segment_keys_omits_body_streams_and_includes_control() {
-        let day = tempfile::tempdir_in("/var/tmp").expect("day directory");
-        fs::create_dir_all(day.path().join("screen/090000_300")).unwrap();
-        fs::create_dir_all(day.path().join("import.apple_health/100000_300")).unwrap();
-        fs::create_dir_all(day.path().join("import.oura/110000_300")).unwrap();
-        fs::create_dir_all(day.path().join("import.ics/120000_300")).unwrap();
-
-        let mut keys = Vec::new();
-        super::collect_segment_keys(day.path(), &mut keys);
-        keys.sort();
-        assert_eq!(keys, vec!["090000_300", "120000_300"]);
     }
 }

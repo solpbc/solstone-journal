@@ -24,6 +24,7 @@ pub const ORDERED_FILE_IMPORTER_NAMES: &[&str] = &[
     "journal_archive",
     "apple_health",
     "oura",
+    "strava",
 ];
 
 pub const OURA_SYNC_REMEDY: &str =
@@ -64,6 +65,7 @@ impl RegistrySource {
             "journal_archive" => Self::JournalArchive,
             "apple_health" => Self::AppleHealth,
             "oura" => Self::Oura,
+            "strava" => Self::Strava,
             _ => return None,
         })
     }

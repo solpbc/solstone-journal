@@ -546,10 +546,7 @@ pub(crate) struct QueryConnection {
 }
 
 fn visible_rows(clause: &str) -> String {
-    format!(
-        "{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE}) AND NOT ({})",
-        solstone_core_format::body::body_source_predicate()
-    )
+    format!("{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE})")
 }
 
 fn open_index_reader(
@@ -1228,113 +1225,4 @@ pub(crate) fn agents_with_connection_for_test(
             agents_calls: connection.agents_calls,
         },
     ))
-}
-
-#[cfg(test)]
-mod predicate_parity_tests {
-    use super::visible_rows;
-    use rusqlite::params;
-    use solstone_core_format::body::is_body_source_path;
-    use solstone_core_indexer_store::db::{
-        ChunkClassification, open_index, prune_body_source_paths, replace_chunk_classification,
-    };
-    use std::fs;
-    use std::path::PathBuf;
-
-    const PATH_TABLE: &[&str] = &[
-        // Positives
-        "20260101/import.apple_health/000000_86400/day_summary_transcript.md",
-        "chronicle/20260101/import.apple_health/000000_86400/day_summary_transcript.md",
-        "20260101\\import.apple_health\\000000_86400\\day_summary_transcript.md",
-        "20260101/import.oura/090000_300/talents/brief.md",
-        "20260101/import.oura/imported.jsonl",
-        "imports/body-01JZ8Y3Q4M5N6P7R8S9T0V1W2X/summary.md",
-        "20260102/IMPORT.APPLE_HEALTH/090000_300/x.md",
-        // Negatives
-        "20260101/import.ics/110000_60/event_transcript.md",
-        "20260101/090000_300/day_summary_transcript.md",
-        "facets/import.apple_health/news/x.md",
-        "imports/20260101_120000/summary.md",
-        "20260101/import.appleXhealth/090000_300/imported.md",
-        "20260101/import.apple_health",
-        "entities/import.oura/090000_300/x.md",
-    ];
-
-    #[test]
-    fn predicate_parity_with_is_body_source_path_and_prune() {
-        let root = PathBuf::from("/var/tmp").join(format!(
-            "parity-test-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = fs::remove_dir_all(&root);
-        let conn = open_index(&root).expect("create test index");
-
-        for (idx, path) in PATH_TABLE.iter().enumerate() {
-            conn.execute(
-                "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('text', ?1, '20260101', '', '', '', ?2, '')",
-                params![path, idx as i64],
-            )
-            .expect("insert chunk");
-            conn.execute(
-                "INSERT INTO files(path, mtime) VALUES (?1, 1000)",
-                params![path],
-            )
-            .expect("insert file");
-            replace_chunk_classification(
-                &conn,
-                &ChunkClassification {
-                    path: path.to_string(),
-                    category: Some("transcripts"),
-                    basis: Some("segment_assigned"),
-                    eligible: true,
-                    unclassified: false,
-                    facet_ids: Vec::new(),
-                },
-            )
-            .expect("insert classification");
-        }
-
-        let query_visible = |conn: &rusqlite::Connection| -> Vec<String> {
-            let sql = format!("SELECT path FROM chunks WHERE {}", visible_rows("1=1"));
-            let mut stmt = conn.prepare(&sql).unwrap();
-            let rows = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
-            let mut result: Vec<String> = rows.map(Result::unwrap).collect();
-            result.sort();
-            result
-        };
-
-        let expected_surviving: Vec<String> = PATH_TABLE
-            .iter()
-            .copied()
-            .filter(|path| !is_body_source_path(path))
-            .map(str::to_owned)
-            .collect();
-        let mut sorted_expected = expected_surviving.clone();
-        sorted_expected.sort();
-
-        // 1. visible_rows before prune matches surviving set
-        assert_eq!(query_visible(&conn), sorted_expected);
-
-        // 2. Prune body source paths
-        prune_body_source_paths(&root).expect("prune body source paths");
-
-        // 3. Surviving rows in chunks table directly match expected
-        let mut actual_chunks: Vec<String> = conn
-            .prepare("SELECT path FROM chunks")
-            .unwrap()
-            .query_map([], |row| row.get::<_, String>(0))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect();
-        actual_chunks.sort();
-        assert_eq!(actual_chunks, sorted_expected);
-
-        // 4. visible_rows after prune keeps the same set
-        assert_eq!(query_visible(&conn), sorted_expected);
-
-        let _ = fs::remove_dir_all(&root);
-    }
 }

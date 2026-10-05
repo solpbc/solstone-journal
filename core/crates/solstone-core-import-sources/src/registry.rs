@@ -30,6 +30,7 @@ pub fn claims(source: RegistrySource, path: &Path) -> Result<bool, SourceError> 
         RegistrySource::Claude => crate::claude::detect(path),
         RegistrySource::Chatgpt => crate::chatgpt::detect(path),
         RegistrySource::Gemini => crate::gemini::detect(path),
+        RegistrySource::Strava => Ok(crate::strava::claims_path(path)),
         _ => Ok(false),
     }
 }

@@ -1,9 +1,19 @@
 # body imports
 
-This document is the current engineering boundary for Apple Health and Oura
+This document is the current engineering boundary for Apple Health, Oura and Strava
 body data entering the journal. The filename is retained for links; `health` in
 owner-facing language means the journal system's health, while physiological
 records are body data.
+
+## Strava workouts
+
+Strava is the first body source an owner brings in from the import page (the **Strava** card), or with `solstone journal importer --source strava <download.zip | activities.csv>`.
+
+- **What is read:** only `activities.csv` at the root of the download. Photos, messages, the people the owner follows and every other file in the download are never opened. Every filled-in column of each workout's row is kept: its type, name, start, elapsed and moving time, distance, elevation gain, heart rate, power, calories, the commute flag, and every other field Strava exported for it (description, private note, gear, weather, Strava's own scores and the rest), attributed to Strava. The name of the workout's GPS file is kept only as the entered-by-hand flag. English and German downloads are read; any other language is refused.
+- **Where it lands:** each workout becomes pieces of up to five minutes under `chronicle/<day>/import.strava/`, from its start to its end, continuing past midnight. Each piece holds one `workout.json` with the workout's values.
+- **Time zone:** the download has no zone, so workouts are placed in the journal's zone at the first Strava import (kept in `imports/.strava-zone.json`), even if the journal's zone changes later.
+- **The download is not kept:** an upload is removed when its import ends; one never started is removed once it is an hour old, the next time the journal starts.
+- **Deleting:** the body app deletes one workout (every piece, on every day it covers); a Strava import's own page deletes the whole import. A workout deleted on its own stays deleted when a download is imported again, unless its start time or length changed on Strava. A deleted import is released: importing the same download again brings its workouts back. Deletes don't reach copies made before them (encrypted backup, or wherever the journal folder was copied).
 
 ## current ownership
 

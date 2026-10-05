@@ -2916,10 +2916,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "fe66fc8e0f081f33beb7e9382cbde8c166b4c4d2b9a6d0311a659e214607cf51",
+          "body_sha256": "d5a1225d82689af1d17b2504c1f23a7262ab999c4296e2f9a2253e6e368afbb7",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser \u00b7 example.test\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:00:00 - 13:01:00\n\n### audio summary\n# Preserved audio projection\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:30:00 - 13:31:00\n\n### Transcript\nStart: 2026-07-31 01:30pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:40:00 - 13:41:00\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:50:00 - 13:51:00\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n\n### Transcript\n# Dual two\n\n## 2026-07-31 14:10:00 - 14:11:00\n\n### Transcript\nStart: 2026-07-31 02:10pm\n[00:00:01] First.\n[00:00:03] Second.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser \u00b7 example.test\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:00:00 - 13:01:00\n\n### audio summary\n# Preserved audio projection\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n\n## 2026-07-31 13:30:00 - 13:31:00\n\n### Transcript\nStart: 2026-07-31 01:30pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:40:00 - 13:41:00\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:50:00 - 13:51:00\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n\n### Transcript\n# Dual two\n\n## 2026-07-31 14:10:00 - 14:11:00\n\n### Transcript\nStart: 2026-07-31 02:10pm\n[00:00:01] First.\n[00:00:03] Second.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -2927,7 +2927,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "1520",
+            "Content-Length": "1614",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2954,10 +2954,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "5a05f07c69462744e00c09d5e1813afe57af26f09f21876a6223499bf05368a0",
+          "body_sha256": "1ce60b49177736b81dd3dfbc2b1ec07b845edaf6b0723d7f65d035286c62c274",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser \u00b7 example.test\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:30:00 - 13:31:00\n\n### Transcript\nStart: 2026-07-31 01:30pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:40:00 - 13:41:00\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:50:00 - 13:51:00\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n\n### Transcript\n# Dual two\n\n## 2026-07-31 14:10:00 - 14:11:00\n\n### Transcript\nStart: 2026-07-31 02:10pm\n[00:00:01] First.\n[00:00:03] Second.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser \u00b7 example.test\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n\n## 2026-07-31 13:30:00 - 13:31:00\n\n### Transcript\nStart: 2026-07-31 01:30pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:40:00 - 13:41:00\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:50:00 - 13:51:00\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n\n### Transcript\n# Dual two\n\n## 2026-07-31 14:10:00 - 14:11:00\n\n### Transcript\nStart: 2026-07-31 02:10pm\n[00:00:01] First.\n[00:00:03] Second.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -2965,7 +2965,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "1329",
+            "Content-Length": "1423",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2973,10 +2973,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "628a9bae010341aba5ccd14546901dc02bf639bc7153c031b078a190622de088",
+          "body_sha256": "8c9ea02df78d314442187b364795075ecbdbe89cc45ce206bfc8914a071c1d81",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:00:00 - 13:01:00\n\n### audio summary\n# Preserved audio projection\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:30:00 - 13:31:00\n\n### Transcript\nStart: 2026-07-31 01:30pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:40:00 - 13:41:00\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:50:00 - 13:51:00\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n\n### Transcript\n# Dual two\n\n## 2026-07-31 14:10:00 - 14:11:00\n\n### Transcript\nStart: 2026-07-31 02:10pm\n[00:00:01] First.\n[00:00:03] Second.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:00:00 - 13:01:00\n\n### audio summary\n# Preserved audio projection\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n\n## 2026-07-31 13:30:00 - 13:31:00\n\n### Transcript\nStart: 2026-07-31 01:30pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:40:00 - 13:41:00\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:50:00 - 13:51:00\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n\n### Transcript\n# Dual two\n\n## 2026-07-31 14:10:00 - 14:11:00\n\n### Transcript\nStart: 2026-07-31 02:10pm\n[00:00:01] First.\n[00:00:03] Second.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -2984,7 +2984,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "1330",
+            "Content-Length": "1424",
             "Content-Type": "application/json"
           },
           "status": 200,

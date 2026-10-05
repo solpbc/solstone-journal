@@ -311,30 +311,6 @@ pub fn prune_by_paths(
 pub const AUTHORED_CHAT_PATH_PREDICATE: &str =
     "path LIKE '________/chat/%/chat.jsonl' OR path LIKE 'chronicle/________/chat/%/chat.jsonl'";
 
-/// Drop rows from the four path-keyed index tables matching a SQL WHERE predicate.
-pub(crate) fn delete_by_path_predicate(
-    tx: &Transaction<'_>,
-    predicate: &str,
-) -> Result<StreamPruneCounts, StoreError> {
-    let chunks = tx.execute(&format!("DELETE FROM chunks WHERE {predicate}"), [])? as u64;
-    tx.execute(
-        &format!("DELETE FROM memory_originals WHERE {predicate}"),
-        [],
-    )?;
-    tx.execute(
-        &format!(
-            "DELETE FROM chunk_classification_facets WHERE path IN (SELECT path FROM chunk_classification WHERE {predicate})"
-        ),
-        [],
-    )?;
-    tx.execute(
-        &format!("DELETE FROM chunk_classification WHERE {predicate}"),
-        [],
-    )?;
-    let files = tx.execute(&format!("DELETE FROM files WHERE {predicate}"), [])? as u64;
-    Ok(StreamPruneCounts { chunks, files })
-}
-
 /// Drop index rows for journal-authored `YYYYMMDD/chat/<segment>/chat.jsonl` paths.
 ///
 /// Also matches the optional `chronicle/` prefix. Returns `None` when the journal
@@ -344,27 +320,29 @@ pub fn prune_authored_chat_paths(journal: &Path) -> Result<Option<StreamPruneCou
     if !path.is_file() {
         return Ok(None);
     }
-    let mut conn = open_index(journal)?;
+    let mut conn = Connection::open(&path)?;
+    conn.execute_batch("PRAGMA busy_timeout=5000;")?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let counts = delete_by_path_predicate(&tx, AUTHORED_CHAT_PATH_PREDICATE)?;
+    let chunks = tx.execute(
+        &format!("DELETE FROM chunks WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
+        [],
+    )? as u64;
+    tx.execute(
+        &format!(
+            "DELETE FROM chunk_classification_facets WHERE path IN (SELECT path FROM chunk_classification WHERE {AUTHORED_CHAT_PATH_PREDICATE})"
+        ),
+        [],
+    )?;
+    tx.execute(
+        &format!("DELETE FROM chunk_classification WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
+        [],
+    )?;
+    let files = tx.execute(
+        &format!("DELETE FROM files WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
+        [],
+    )? as u64;
     tx.commit()?;
-    Ok(Some(counts))
-}
-
-/// Drop index rows for body source card and bundle paths.
-///
-/// Returns `None` when the journal has no index and does not create one.
-pub fn prune_body_source_paths(journal: &Path) -> Result<Option<StreamPruneCounts>, StoreError> {
-    let path = db_path(journal);
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let mut conn = open_index(journal)?;
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let predicate = solstone_core_format::body::body_source_predicate();
-    let counts = delete_by_path_predicate(&tx, &predicate)?;
-    tx.commit()?;
-    Ok(Some(counts))
+    Ok(Some(StreamPruneCounts { chunks, files }))
 }
 
 fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {

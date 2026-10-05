@@ -77,17 +77,6 @@ pub fn read_segment_transcript_page(
     segment: &Segment,
     cursor: Option<&SegmentTranscriptCursor>,
 ) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
-    if let solstone_core_journal_io::paths::StreamLocation::Named(name) = segment.stream()
-        && name
-            .to_str()
-            .is_some_and(solstone_core_format::body::is_body_stream)
-    {
-        return Ok(SegmentTranscriptPage {
-            entries: Vec::new(),
-            next: None,
-            version: SegmentTranscriptVersion(0),
-        });
-    }
     let files = transcript_files(segment.path())?;
     let version = source_version(&files)?;
     let (mut source_index, mut byte_offset) = match cursor {
@@ -369,38 +358,5 @@ mod tests {
             ["line 101", "line 102", "line 103", "line 104", "line 105"]
         );
         assert!(second.next.is_none());
-    }
-
-    #[test]
-    fn read_segment_transcript_page_refuses_body_source_streams() {
-        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
-        let body_segment_path = root
-            .path()
-            .join("chronicle/20260914/import.apple_health/090000_300");
-        let control_segment_path = root.path().join("chronicle/20260914/default/100000_300");
-        fs::create_dir_all(&body_segment_path).unwrap();
-        fs::create_dir_all(&control_segment_path).unwrap();
-        fs::write(
-            body_segment_path.join("day_summary_transcript.md"),
-            "body data line\n",
-        )
-        .unwrap();
-        fs::write(
-            control_segment_path.join("meeting_transcript.md"),
-            "approved line\n",
-        )
-        .unwrap();
-
-        let segments = iter_segments(root.path(), PathOrDay::Day("20260914")).unwrap();
-        let body_seg = segments.iter().find(|s| s.key() == "090000_300").unwrap();
-        let control_seg = segments.iter().find(|s| s.key() == "100000_300").unwrap();
-
-        let body_page = read_segment_transcript_page(body_seg, None).unwrap();
-        assert_eq!(body_page.entries.len(), 0);
-        assert!(body_page.next.is_none());
-
-        let control_page = read_segment_transcript_page(control_seg, None).unwrap();
-        assert_eq!(control_page.entries.len(), 1);
-        assert_eq!(control_page.entries[0].text, "approved line");
     }
 }

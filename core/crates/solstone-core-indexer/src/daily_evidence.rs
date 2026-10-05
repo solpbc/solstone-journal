@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::content::{self, ContentResolution, Family};
-use solstone_core_journal_io::paths::{PathOrDay, StreamLocation, iter_segments};
+use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
 use std::{
     collections::BTreeMap,
     fs, io,
@@ -210,7 +210,7 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
     let mut chunks = Vec::new();
     let mut sources = Vec::new();
     for (rel, path) in files {
-        if output_path(&rel) || solstone_core_format::body::is_body_source_path(&rel) {
+        if output_path(&rel) {
             continue;
         }
         let normalized = normalized_rel(&rel);
@@ -696,12 +696,6 @@ pub fn compute_daily_evidence_cached(
             let keys = iter_segments(journal, PathOrDay::Day(&d))
                 .map_err(|e| e.to_string())?
                 .into_iter()
-                .filter(|s| match s.stream() {
-                    StreamLocation::Named(name) => !solstone_core_format::body::is_body_stream(
-                        name.to_str().unwrap_or_default(),
-                    ),
-                    StreamLocation::Direct => true,
-                })
                 .map(|s| s.key().to_owned())
                 .collect::<Vec<_>>();
             windows.insert(d, keys);
@@ -1516,115 +1510,5 @@ mod tests {
         }
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(other).unwrap();
-    }
-
-    #[test]
-    fn body_sources_are_excluded_from_daily_projection_and_post_hook_evidence() {
-        let root = root("body-daily-projection-exclusion");
-        let day = "20260910";
-        write(
-            &root,
-            &format!("chronicle/{day}/import.ics/110000_60/event_transcript.md"),
-            "# Event transcript\n\nMeeting with Bob.",
-        );
-
-        let rev_control_only = revision(&root, "schedule", None);
-
-        // Segment A: card plus malformed shape.json
-        write(
-            &root,
-            &format!("chronicle/{day}/import.apple_health/120000_60/imported.md"),
-            "# Card A\n\nSteps: 5000",
-        );
-        write(
-            &root,
-            &format!("chronicle/{day}/import.apple_health/120000_60/shape.json"),
-            r#"{"trunc"#,
-        );
-
-        // Segment B: valid shape.json naming activity.json as Markdown
-        write(
-            &root,
-            &format!("chronicle/{day}/import.apple_health/130000_60/imported.md"),
-            "# Card B",
-        );
-        write(
-            &root,
-            &format!("chronicle/{day}/import.apple_health/130000_60/activity.json"),
-            "{}",
-        );
-        write(
-            &root,
-            &format!("chronicle/{day}/import.apple_health/130000_60/shape.json"),
-            r#"{"activity.json":"Markdown"}"#,
-        );
-
-        let projection = capture_day_projection(&root, day).expect("capture projection succeeds");
-        assert_eq!(projection.chunks.len(), 1);
-        assert_eq!(
-            projection.chunks[0].path,
-            format!("{day}/import.ics/110000_60/event_transcript.md")
-        );
-
-        let rev_with_body = revision(&root, "schedule", None);
-        assert_eq!(rev_control_only, rev_with_body);
-
-        // Changing control text changes the revision
-        write(
-            &root,
-            &format!("chronicle/{day}/import.ics/110000_60/event_transcript.md"),
-            "# Event transcript\n\nUpdated text.",
-        );
-        let rev_changed_control = revision(&root, "schedule", None);
-        assert_ne!(rev_with_body, rev_changed_control);
-
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn daily_schedule_window_evidence_excludes_body_stream_segments() {
-        let root = root("body-daily-schedule-window-exclusion");
-        write(
-            &root,
-            "config/journal.json",
-            r#"{"identity":{"timezone":"UTC"}}"#,
-        );
-        let today = journal_today(&root);
-        let day0 = today.format("%Y%m%d").to_string();
-        let day1 = (today - Duration::days(1)).format("%Y%m%d").to_string();
-
-        write(
-            &root,
-            &format!("chronicle/{day0}/default/100000_60/audio.jsonl"),
-            "{}",
-        );
-        write(
-            &root,
-            &format!("chronicle/{day1}/default/110000_60/audio.jsonl"),
-            "{}",
-        );
-
-        let rev_baseline = revision(&root, "daily_schedule", None);
-
-        // Add a body segment inside lookback
-        write(
-            &root,
-            &format!("chronicle/{day0}/import.apple_health/120000_60/imported.md"),
-            "{}",
-        );
-
-        let rev_with_body = revision(&root, "daily_schedule", None);
-        assert_eq!(rev_baseline, rev_with_body);
-
-        // Add a control segment inside lookback
-        write(
-            &root,
-            &format!("chronicle/{day1}/default/140000_60/audio.jsonl"),
-            "{}",
-        );
-        let rev_with_ctrl = revision(&root, "daily_schedule", None);
-        assert_ne!(rev_with_body, rev_with_ctrl);
-
-        fs::remove_dir_all(root).unwrap();
     }
 }
