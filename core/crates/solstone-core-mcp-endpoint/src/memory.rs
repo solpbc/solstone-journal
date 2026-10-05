@@ -1870,16 +1870,18 @@ mod full_tests {
     #[test]
     fn journal_root_namespace_preserves_append_chain_and_operation_replay() {
         let outer = fixture();
-        let canonical = outer.path().join("real/journal");
+        let canonical = outer.path().join("real").join("journal");
         fs::create_dir_all(&canonical).unwrap();
         #[cfg(unix)]
         let alias = {
             std::os::unix::fs::symlink(outer.path().join("real"), outer.path().join("alias"))
                 .unwrap();
-            outer.path().join("alias/journal")
+            outer.path().join("alias").join("journal")
         };
         #[cfg(windows)]
         let alias = canonical.clone();
+        solstone_core_journal_io::JournalRoot::open(&alias)
+            .expect("fixture root uses an admitted native path spelling");
         assert_ne!(alias, fs::canonicalize(&alias).unwrap());
         let AppendResult::Stored(first) = append_connection_memory(
             &alias,
