@@ -728,8 +728,9 @@ impl<'a> JournalStore<'a> {
         // exact lookup still refuses every linked descendant below the root.
         let root = solstone_core_journal_io::journal_root::JournalRoot::open(self.journal)
             .map_err(|_| StoreFailure("memory journal could not be admitted"))?;
+        let namespace = segment_namespace_root(&root)?;
         let exact = solstone_core_journal_io::resolve_segment_exact(
-            root.canonical_path(),
+            &namespace,
             &coordinate.day,
             &coordinate.stream,
             &coordinate.segment,
@@ -965,7 +966,8 @@ impl AppendStore for JournalStore<'_> {
     ) -> Result<SegmentObservation, StoreFailure> {
         let root = solstone_core_journal_io::journal_root::JournalRoot::open(self.journal)
             .map_err(|_| StoreFailure("memory journal could not be admitted"))?;
-        let journal = root.canonical_path();
+        let namespace = segment_namespace_root(&root)?;
+        let journal = namespace.as_path();
         let relative = segment_rel(&coordinate.day, &coordinate.stream, &coordinate.segment);
         let parent_rel = relative
             .rsplit_once('/')
@@ -1162,6 +1164,28 @@ impl AppendStore for JournalStore<'_> {
     ) -> Result<Option<StreamAdvance>, StoreFailure> {
         read_agent_memory_chain(&self.segment_dir(coordinate)?)
             .map_err(|_| StoreFailure("memory chain could not be read"))
+    }
+}
+
+fn segment_namespace_root(
+    root: &solstone_core_journal_io::journal_root::JournalRoot,
+) -> Result<PathBuf, StoreFailure> {
+    #[cfg(windows)]
+    {
+        // Windows admission deliberately retains a plain drive path, while
+        // SegmentDir uses Rust's verbatim canonical spelling. Normalize only
+        // the admitted root, then revalidate its binding; descendant lookup
+        // still goes through the strict no-follow resolver. SegmentDir keeps
+        // the admitted plain root for its later retained-root reads.
+        let namespace = fs::canonicalize(root.canonical_path())
+            .map_err(|_| StoreFailure("memory root namespace could not be resolved"))?;
+        root.revalidate_canonical_binding()
+            .map_err(|_| StoreFailure("memory root namespace binding changed"))?;
+        Ok(namespace)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(root.canonical_path().to_path_buf())
     }
 }
 
@@ -1842,14 +1866,20 @@ mod full_tests {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
-    fn journal_root_alias_preserves_append_chain_and_operation_replay() {
+    fn journal_root_namespace_preserves_append_chain_and_operation_replay() {
         let outer = fixture();
         let canonical = outer.path().join("real/journal");
         fs::create_dir_all(&canonical).unwrap();
-        std::os::unix::fs::symlink(outer.path().join("real"), outer.path().join("alias")).unwrap();
-        let alias = outer.path().join("alias/journal");
+        #[cfg(unix)]
+        let alias = {
+            std::os::unix::fs::symlink(outer.path().join("real"), outer.path().join("alias"))
+                .unwrap();
+            outer.path().join("alias/journal")
+        };
+        #[cfg(windows)]
+        let alias = canonical.clone();
         assert_ne!(alias, fs::canonicalize(&alias).unwrap());
         let AppendResult::Stored(first) = append_connection_memory(
             &alias,
