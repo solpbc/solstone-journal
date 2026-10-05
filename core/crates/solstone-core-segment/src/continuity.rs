@@ -363,18 +363,46 @@ pub fn visible_stream_names(
     cid: &str,
     source: &str,
 ) -> Result<Vec<String>, SegmentError> {
+    let document = read_continuity(journal)?;
+    let readers = read_lineage_cids(&document, cid, source);
     let mut names = list_stream_bindings(journal)?
         .into_iter()
-        .filter(|binding| binding.cid == cid && binding.source == source)
+        .filter(|binding| readers.contains(&binding.cid) && binding.source == source)
         .map(|binding| binding.name)
         .collect::<BTreeSet<_>>();
-    let document = read_continuity(journal)?;
     for (stream, record) in document.streams {
-        if record.source == source && record.writers.iter().any(|writer| writer == cid) {
+        if record.source == source && record.writers.iter().any(|writer| readers.contains(writer)) {
             names.insert(stream);
         }
     }
     Ok(names.into_iter().collect())
+}
+
+/// Resolve only backward receipt provenance for this source. An ancestor can
+/// have its own pre-choice streams and other inherited streams; a later
+/// takeover keeps that complete read view without gaining later writers.
+/// These CIDs are never used to authenticate a request or select an upload tail.
+fn read_lineage_cids(document: &ContinuityDocument, cid: &str, source: &str) -> BTreeSet<String> {
+    let mut readers = BTreeSet::from([cid.to_owned()]);
+    loop {
+        let before = readers.len();
+        for record in document
+            .streams
+            .values()
+            .filter(|record| record.source == source)
+        {
+            if let Some(position) = record
+                .writers
+                .iter()
+                .rposition(|writer| readers.contains(writer))
+            {
+                readers.extend(record.writers[..=position].iter().cloned());
+            }
+        }
+        if readers.len() == before {
+            return readers;
+        }
+    }
 }
 
 /// Receipt CIDs allowed for one stream/source as viewed by an authenticated
@@ -387,23 +415,27 @@ pub fn receipt_cids_for_stream(
     source: &str,
 ) -> Result<BTreeSet<String>, SegmentError> {
     let document = read_continuity(journal)?;
+    let readers = read_lineage_cids(&document, cid, source);
     if let Some(record) = document.streams.get(stream) {
         if record.source != source {
             return Ok(BTreeSet::new());
         }
-        let Some(position) = record.writers.iter().position(|writer| writer == cid) else {
+        let Some(position) = record
+            .writers
+            .iter()
+            .rposition(|writer| readers.contains(writer))
+        else {
             return Ok(BTreeSet::new());
         };
         return Ok(record.writers[..=position].iter().cloned().collect());
     }
-    let direct = list_stream_bindings(journal)?
+    Ok(list_stream_bindings(journal)?
         .into_iter()
-        .any(|binding| binding.name == stream && binding.cid == cid && binding.source == source);
-    Ok(if direct {
-        BTreeSet::from([cid.to_owned()])
-    } else {
-        BTreeSet::new()
-    })
+        .filter(|binding| {
+            binding.name == stream && readers.contains(&binding.cid) && binding.source == source
+        })
+        .map(|binding| binding.cid)
+        .collect())
 }
 
 /// Acquire the source locks first, then the registry lock, and invoke `f` only
@@ -528,7 +560,7 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("clock")
                 .as_nanos();
-            let path = PathBuf::from("/var/tmp").join(format!(
+            let path = std::env::temp_dir().join(format!(
                 "solstone-stream-continuity-{}-{nanos}-{id}",
                 std::process::id()
             ));
@@ -676,6 +708,46 @@ mod tests {
     }
 
     #[test]
+    fn transitive_reader_keeps_ancestor_prechoice_streams_without_future_or_unrelated_receipts() {
+        let journal = Journal::new();
+        let origin = bind(journal.path(), A, "audio");
+        let prechoice = bind(journal.path(), B, "audio");
+        let unrelated = bind(journal.path(), D, "audio");
+        let other_source = bind(journal.path(), B, "location");
+        publish_takeover(journal.path(), B, A);
+        publish_takeover(journal.path(), C, B);
+
+        assert_eq!(
+            visible_stream_names(journal.path(), C, "audio").unwrap(),
+            BTreeSet::from([origin.clone(), prechoice.clone()])
+                .into_iter()
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            receipt_cids_for_stream(journal.path(), &prechoice, C, "audio").unwrap(),
+            BTreeSet::from([B.to_owned()])
+        );
+        assert_eq!(
+            receipt_cids_for_stream(journal.path(), &origin, B, "audio").unwrap(),
+            BTreeSet::from([A.to_owned(), B.to_owned()])
+        );
+        assert!(
+            receipt_cids_for_stream(journal.path(), &unrelated, C, "audio")
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            receipt_cids_for_stream(journal.path(), &other_source, C, "audio")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            continuation_binding(journal.path(), C, "audio").unwrap(),
+            ContinuationBinding::Tail(origin)
+        );
+    }
+
+    #[test]
     fn bind_named_stream_prefers_later_sorted_continuation_tail() {
         let journal = Journal::new();
         let adopted_stream = bind_named_stream(
@@ -788,6 +860,22 @@ mod tests {
         assert_eq!(old_receipts, BTreeSet::from([A.to_owned(), B.to_owned()]));
         assert!(!old_receipts.contains(C));
         assert!(!old_receipts.contains(D));
+
+        // D inherits B's complete read view, including the separately selected
+        // C stream, while each physical stream keeps its own receipt prefix.
+        publish_takeover(journal.path(), D, B);
+        assert_eq!(
+            visible_stream_names(journal.path(), D, "audio").unwrap(),
+            visible
+        );
+        assert_eq!(
+            receipt_cids_for_stream(journal.path(), &selected_stream, D, "audio").unwrap(),
+            BTreeSet::from([B.to_owned(), C.to_owned()])
+        );
+        assert_eq!(
+            receipt_cids_for_stream(journal.path(), &old_stream, B, "audio").unwrap(),
+            old_receipts
+        );
     }
 
     #[test]

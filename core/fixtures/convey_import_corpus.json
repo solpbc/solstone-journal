@@ -448,7 +448,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "6bff8a9baf2ab9b3400bfaee57f0368acd5f108cc65f507f061d25033107b127",
+        "body_sha256": "50e0dd9d026c465267d9352dc50fba59ba846e4e050026ad4724f0f329e90858",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -553,6 +553,17 @@
               "upload_prompt": "upload an image (PNG, JPEG, WebP, GIF)"
             },
             {
+              "accept": ".zip,.csv",
+              "description": "import your workouts from a Strava download",
+              "display_name": "Strava",
+              "has_guide": true,
+              "icon": "activity",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\" /> </svg>",
+              "input_type": "file",
+              "name": "strava",
+              "upload_prompt": "upload your Strava download .zip, or just activities.csv from inside it"
+            },
+            {
               "accept": "",
               "description": "paste text or drop any file for quick import",
               "display_name": "quick import",
@@ -564,7 +575,7 @@
               "upload_prompt": "paste text or drag and drop a file"
             }
           ],
-          "total": 10
+          "total": 11
         },
         "method": "GET",
         "normalized_fields": [],
@@ -867,7 +878,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "6bff8a9baf2ab9b3400bfaee57f0368acd5f108cc65f507f061d25033107b127",
+        "body_sha256": "50e0dd9d026c465267d9352dc50fba59ba846e4e050026ad4724f0f329e90858",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -972,6 +983,17 @@
               "upload_prompt": "upload an image (PNG, JPEG, WebP, GIF)"
             },
             {
+              "accept": ".zip,.csv",
+              "description": "import your workouts from a Strava download",
+              "display_name": "Strava",
+              "has_guide": true,
+              "icon": "activity",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\" /> </svg>",
+              "input_type": "file",
+              "name": "strava",
+              "upload_prompt": "upload your Strava download .zip, or just activities.csv from inside it"
+            },
+            {
               "accept": "",
               "description": "paste text or drop any file for quick import",
               "display_name": "quick import",
@@ -983,7 +1005,7 @@
               "upload_prompt": "paste text or drag and drop a file"
             }
           ],
-          "total": 10
+          "total": 11
         },
         "method": "GET",
         "normalized_fields": [],

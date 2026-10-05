@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- you can bring in your workouts from a Strava download on the import page. only the list of your workouts is read, and the download itself isn't kept after the import. each workout shows on the days it covers in the body app, where you can delete it, and you can delete a whole Strava import from its page.
+
 ### Changed
 
 - when you unpair a device on the network page, your journal now tells you that anything still waiting on it goes to the journal you pair it with next.
@@ -21,7 +25,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - your morning briefing includes what you owe and what you're waiting on, with the age of older open items. activities you've hidden stay out of pulse summaries.
 - deleting the newest segments an import added no longer stops later imports of that source from finishing.
 - a Strava download dropped on the import page was kept in your journal even though the page couldn't bring it in. it's now turned away and not kept.
-- day summaries from Apple Health or Oura imports made with earlier versions could turn up in journal search, in what your journal sent your thinking provider for your upcoming schedule, and in what an agent connected to your journal could find. they no longer do, including any already in search.
 - on windows, material that arrived late for an earlier day, like what a device was still holding when you paired it again, could be left out of that day's daily results. your journal on windows now brings a day's daily results up to date when something new arrives for it, whatever day it's from, as it does on mac and linux.
 - when you merged another journal's archive into yours, material from one of your sources could be left out if your journal already had different material from that source at the same moment, and the merge was marked incomplete. your journal now keeps it alongside what's there when it can find a free place for it, the way it does when a device sends material for a moment it already holds.
 - Apple Health workouts showed no distance or energy in the body app; now they do, including for imports already in your journal.

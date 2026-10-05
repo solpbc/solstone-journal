@@ -53,7 +53,7 @@ const LOCK_WAIT: Duration = Duration::from_secs(10);
 #[cfg(test)]
 const LOCK_WAIT: Duration = Duration::from_millis(50);
 const BUSY_REASON: &str =
-    "a Strava import was running, so nothing was deleted. try again when it finishes";
+    "a Strava import was running, so nothing was deleted. try again when it finishes.";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -168,7 +168,7 @@ pub(crate) async fn delete_workout(
     RoutePath(activity_id): RoutePath<String>,
 ) -> Response {
     if !valid_workout_id(&activity_id) {
-        return bad_request("that isn't a workout this journal knows.");
+        return bad_request("that isn't a workout in your journal.");
     }
     request(&state, Kind::Workout, activity_id).await
 }
@@ -178,7 +178,7 @@ pub(crate) async fn delete_import(
     RoutePath(import_id): RoutePath<String>,
 ) -> Response {
     if !valid_import_id(&import_id) {
-        return bad_request("that isn't an import this journal knows.");
+        return bad_request("that isn't an import in your journal.");
     }
     request(&state, Kind::Import, import_id).await
 }
@@ -414,21 +414,41 @@ fn run(
         } else {
             DeleteState::NotDeleted
         };
-        let reason = format!(
-            "{left} of {} pieces couldn't be deleted",
-            target.pieces.len()
-        );
+        let reason = match target.kind {
+            Kind::Workout => "part of it couldn't be deleted. try again.".to_owned(),
+            Kind::Import => {
+                let workouts = target
+                    .pieces
+                    .iter()
+                    .filter(|piece| !removed(&stream_dir(&piece.day).join(&piece.key)))
+                    .filter_map(|piece| {
+                        std::fs::read(stream_dir(&piece.day).join(&piece.key).join("workout.json"))
+                            .ok()
+                            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                            .and_then(|v| v.get("activity_id").and_then(Value::as_u64))
+                    })
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len();
+                match workouts {
+                    0 => "some workouts couldn't be fully deleted. try again.".to_owned(),
+                    1 => "1 workout couldn't be fully deleted. try again.".to_owned(),
+                    n => format!("{n} workouts couldn't be fully deleted. try again."),
+                }
+            }
+        };
         return Some((state, Some(reason), detail));
     }
     if target.kind == Kind::Import
         && let Err(error) = solstone_core_import::remove_import_records(journal, &target.id)
     {
         detail["records_kept"] = json!(true);
+        detail["records_error"] = json!(format!("{error:?}"));
         return Some((
             DeleteState::Incomplete,
-            Some(format!(
-                "the import's own records couldn't be removed: {error:?}"
-            )),
+            Some(
+                "its workouts were deleted, but this import's page couldn't be removed. try again."
+                    .to_owned(),
+            ),
             detail,
         ));
     }
@@ -440,7 +460,7 @@ pub(crate) async fn preview_workout(
     RoutePath(activity_id): RoutePath<String>,
 ) -> Response {
     if !valid_workout_id(&activity_id) {
-        return bad_request("that isn't a workout this journal knows.");
+        return bad_request("that isn't a workout in your journal.");
     }
     preview(&state, Kind::Workout, activity_id).await
 }
@@ -450,7 +470,7 @@ pub(crate) async fn preview_import(
     RoutePath(import_id): RoutePath<String>,
 ) -> Response {
     if !valid_import_id(&import_id) {
-        return bad_request("that isn't an import this journal knows.");
+        return bad_request("that isn't an import in your journal.");
     }
     preview(&state, Kind::Import, import_id).await
 }

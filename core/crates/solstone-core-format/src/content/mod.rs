@@ -460,9 +460,6 @@ static UNINDEXED_RESOLVER: Resolver<UnindexedReason, KnownUnindexedPattern> =
     Resolver::new(KNOWN_UNINDEXED_PATTERNS);
 
 pub fn classify(rel: &str) -> ContentResolution {
-    if crate::body::is_body_source_path(rel) {
-        return ContentResolution::Unrecognized;
-    }
     if let Some(family) = CONTENT_RESOLVER.resolve(rel) {
         return ContentResolution::Indexed(family);
     }
@@ -478,9 +475,6 @@ pub fn classify(rel: &str) -> ContentResolution {
 /// This deliberately ignores a sibling `shape.json`: sidecars select chunking,
 /// not who may see an already-indexed source.
 pub fn resolve_spec(rel: &str) -> Option<&'static FamilyPattern> {
-    if crate::body::is_body_source_path(rel) {
-        return None;
-    }
     CONTENT_RESOLVER.resolve_spec(rel)
 }
 
