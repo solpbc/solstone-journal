@@ -2078,12 +2078,16 @@ mod tests {
             cmd.args(["-c", &script]);
             let mut tree = spawn_process_tree(&mut cmd).unwrap();
 
-            // Wait for pid file
+            // The shell creates the pid file before it writes the pid, so wait
+            // for a complete line rather than for the file.
             let start = Instant::now();
-            while !pid_file.exists() && start.elapsed() < Duration::from_secs(5) {
+            let pid_str = loop {
+                let text = std::fs::read_to_string(&pid_file).unwrap_or_default();
+                if text.ends_with('\n') || start.elapsed() >= Duration::from_secs(5) {
+                    break text;
+                }
                 std::thread::sleep(Duration::from_millis(50));
-            }
-            let pid_str = std::fs::read_to_string(&pid_file).unwrap();
+            };
             let grandchild_pid: i32 = pid_str.trim().parse().unwrap();
 
             let res = wait_bounded(
