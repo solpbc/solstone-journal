@@ -6,9 +6,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.33] - 2026-10-05
+
 ### Added
 
-- you can bring in your workouts from a Strava download on the import page. only the list of your workouts is read, and the download itself isn't kept after the import. each workout shows on the days it covers in the body app, where you can delete it, and you can delete a whole Strava import from its page.
+- on windows, open journal from Start to set up your journal, see its mark, start or stop it, and manage updates and paired devices.
+- your agents can now save notes in your journal and recall the notes saved through their own connection, even when you haven't given that connection permission to read anything else. other journal tools keep the permissions you chose in agents.
+- you can bring in your workouts from a Strava download on the import page. only the list of your workouts is read, and the download itself isn't kept after the import. each workout shows in the body app, where you can delete it, and you can delete a whole Strava import from its page.
 
 ### Changed
 
@@ -24,7 +28,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - deferred follow-ups stay open, dropped follow-ups are marked dropped, and an earlier completion no longer closes later work.
 - your morning briefing includes what you owe and what you're waiting on, with the age of older open items. activities you've hidden stay out of pulse summaries.
 - deleting the newest segments an import added no longer stops later imports of that source from finishing.
-- a Strava download dropped on the import page was kept in your journal even though the page couldn't bring it in. it's now turned away and not kept.
 - on windows, material that arrived late for an earlier day, like what a device was still holding when you paired it again, could be left out of that day's daily results. your journal on windows now brings a day's daily results up to date when something new arrives for it, whatever day it's from, as it does on mac and linux.
 - when you merged another journal's archive into yours, material from one of your sources could be left out if your journal already had different material from that source at the same moment, and the merge was marked incomplete. your journal now keeps it alongside what's there when it can find a free place for it, the way it does when a device sends material for a moment it already holds.
 - Apple Health workouts showed no distance or energy in the body app; now they do, including for imports already in your journal.

@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "6512e6aa435775c228f4f67a42305cea6b16e72a68251239f6f20cd48752a891",
+  "cargo_lock_sha256": "1ffd8dfd4f7debd9189561e2b6bb19184affa3349b5eb14040bdf38bf0594423",
   "filter_platform": "x86_64-unknown-linux-gnu",
   "notice_texts": [
     {
@@ -3486,6 +3486,58 @@
             "kind": "cargo-registry-archive",
             "member": "LICENSE-MIT",
             "source_url": "https://static.crates.io/crates/crypto-common/crypto-common-0.1.7.crate"
+          }
+        }
+      ]
+    },
+    {
+      "identity": "csv-core@0.1.13 (registry+https://github.com/rust-lang/crates.io-index)",
+      "license_expression": "Unlicense/MIT",
+      "notice_references": [
+        {
+          "bytes": 126,
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "source": {
+            "archive_sha256": "704a3c26996a80471189265814dbc2c257598b96b8a7feae2d31ace646bb9782",
+            "kind": "cargo-registry-archive",
+            "member": "COPYING",
+            "source_url": "https://static.crates.io/crates/csv-core/csv-core-0.1.13.crate"
+          }
+        },
+        {
+          "bytes": 1081,
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "source": {
+            "archive_sha256": "704a3c26996a80471189265814dbc2c257598b96b8a7feae2d31ace646bb9782",
+            "kind": "cargo-registry-archive",
+            "member": "LICENSE-MIT",
+            "source_url": "https://static.crates.io/crates/csv-core/csv-core-0.1.13.crate"
+          }
+        }
+      ]
+    },
+    {
+      "identity": "csv@1.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+      "license_expression": "Unlicense/MIT",
+      "notice_references": [
+        {
+          "bytes": 126,
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "source": {
+            "archive_sha256": "acdc4883a9c96732e4733212c01447ebd805833b7275a73ca3ee080fd77afdaf",
+            "kind": "cargo-registry-archive",
+            "member": "COPYING",
+            "source_url": "https://static.crates.io/crates/csv/csv-1.3.1.crate"
+          }
+        },
+        {
+          "bytes": 1081,
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "source": {
+            "archive_sha256": "acdc4883a9c96732e4733212c01447ebd805833b7275a73ca3ee080fd77afdaf",
+            "kind": "cargo-registry-archive",
+            "member": "LICENSE-MIT",
+            "source_url": "https://static.crates.io/crates/csv/csv-1.3.1.crate"
           }
         }
       ]
