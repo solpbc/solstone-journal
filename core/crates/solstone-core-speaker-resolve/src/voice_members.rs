@@ -6,25 +6,33 @@
 //! These are the sentences the transcript view shows as that voice (the same
 //! lowest-voice-id claim rule as `voice_tags`, applied to a locked, strict read
 //! of the pool) that nobody has named yet, on the one audio source a segment's
-//! speaker labels describe, and not close to the owner's own voice. Naming the
-//! voice writes a label for each of them.
+//! speaker labels describe, not close to the owner's own voice, and in a
+//! recording that sounds like the voice ([`NAME_EVERYWHERE_MIN_SIMILARITY`]).
+//! Naming the voice writes a label for each of them.
 
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::Path;
 
 use serde_json::{Value, json};
-use solstone_core_entity::{is_admissible_person, load_all_journal_entities};
+use solstone_core_entity::{is_admissible_person, load_all_journal_entities, normalize_embedding};
 use solstone_core_journal_io::{DEFAULT_STREAM, SegmentLayout};
 use thiserror::Error;
 
 use crate::candidate_tracker::{CandidateTracker, CandidateTrackerError};
 use crate::direct_voiceprints::{
-    DirectVoiceprintsError, current_owner_centroid, load_member_embedding,
+    DirectVoiceprintsError, current_owner_centroid, load_member_embedding, recording_similarity,
 };
 use crate::identify_forward_phases::load_labels;
 use crate::identify_operations::MemberProvenance;
 use crate::voice_tags::build_index;
+
+/// The least a recording's voice must match the pool voice's centroid for
+/// "everywhere this voice appears" to write the name into it. The founder's
+/// blinded listening test (2026-10-05, 88 pairs) judged pool recordings at or
+/// above .80 the same person 11 of 12 times, and cross-day ones between .72
+/// and .80 only 2 of 4. Below it, a recording keeps its voice tag unnamed.
+pub const NAME_EVERYWHERE_MIN_SIMILARITY: f32 = 0.80;
 
 /// Failure computing a voice's members.
 #[derive(Debug, Error)]
@@ -143,6 +151,10 @@ pub fn voice_members(
         Err(error) => return Err(error.into()),
     };
 
+    let Some(centroid) = normalize_embedding(&voice.centroid) else {
+        return Ok(VoiceLookup::Missing);
+    };
+
     let entities = load_all_journal_entities(journal)?;
     let admissible = entities
         .iter()
@@ -173,6 +185,25 @@ pub fn voice_members(
             continue;
         };
         if labels_source(&segment).as_deref() != Some(source_name) {
+            continue;
+        }
+        let ids = sentence_ids
+            .iter()
+            .filter_map(Value::as_i64)
+            .collect::<BTreeSet<_>>();
+        // The tapped recording is the owner's own call; every other one must
+        // sound like the voice.
+        let tapped = anchor.is_some_and(|anchor| {
+            anchor.day == day
+                && anchor.stream == stream
+                && anchor.segment_key == segment_key
+                && anchor.source == source_name
+                && ids.contains(&anchor.sentence_id)
+        });
+        if !tapped
+            && recording_similarity(&segment, source_name, &ids, &centroid)
+                .is_none_or(|similarity| similarity < NAME_EVERYWHERE_MIN_SIMILARITY)
+        {
             continue;
         }
         let labels = load_labels(&segment);
