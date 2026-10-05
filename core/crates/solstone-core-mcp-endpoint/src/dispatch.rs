@@ -714,17 +714,17 @@ fn search(
                 live_dropped = true;
                 continue;
             }
-            if hit.metadata.stream.starts_with("agent-memory-")
-                && !memory_hit_matches_caller(
-                    journal_root,
-                    principal,
-                    &hit.metadata.path,
-                    &hit.metadata.stream,
-                )
-            {
-                live_dropped = true;
-                continue;
-            }
+            let memory_origin = if hit.metadata.stream.starts_with("agent-memory-") {
+                let Some(origin) =
+                    memory_hit_origin(journal_root, &hit.metadata.path, &hit.metadata.stream)
+                else {
+                    live_dropped = true;
+                    continue;
+                };
+                Some(origin)
+            } else {
+                None
+            };
             targets.push(format!("{}#{}", hit.metadata.path, hit.metadata.idx));
             let reference = codec()
                 .mint(
@@ -739,12 +739,16 @@ fn search(
                     }),
                 )
                 .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
-            results.push(json!({
+            let mut value = json!({
                 "title": format!("Indexed journal entry — {}", hit.metadata.day),
                 "date": hit.metadata.day,
                 "snippet": snippet(&hit.text),
                 "reference": reference,
-            }));
+            });
+            if let Some(origin) = memory_origin {
+                value["origin"] = public_memory_origin(&origin);
+            }
+            results.push(value);
             if results.len() == request.limit {
                 break;
             }
@@ -894,39 +898,31 @@ fn fetch(
     else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
-    if entry.stream.starts_with("agent-memory-")
-        && !memory_hit_matches_caller(journal_root, principal, &entry.path, &entry.stream)
-    {
-        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    let mut value = json!({"title": format!("Indexed journal entry — {}", entry.day), "date": entry.day, "text": text});
+    if entry.stream.starts_with("agent-memory-") {
+        let origin = memory_hit_origin(journal_root, &entry.path, &entry.stream)
+            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        value["origin"] = public_memory_origin(&origin);
     }
     let target = format!("{}#{}", entry.path, entry.idx);
-    Ok(Prepared::new(
-        json!({"title": format!("Indexed journal entry — {}", entry.day), "date": entry.day, "text": text}),
-        1,
-        vec![target],
-    ))
+    Ok(Prepared::new(value, 1, vec![target]))
 }
 
-fn memory_hit_matches_caller(
-    journal_root: &Path,
-    principal: DispatchPrincipal<'_>,
-    path: &str,
-    stream: &str,
-) -> bool {
-    let source_key = SourceKey::from_verified_id(principal.agent_identity);
-    if stream != format!("agent-memory-{}", source_key.component()) {
-        return false;
-    }
+fn memory_hit_origin(journal_root: &Path, path: &str, stream: &str) -> Option<Origin> {
+    let component = stream.strip_prefix("agent-memory-")?;
+    let Ok(source_key) = SourceKey::parse(format!("sha256:{component}")) else {
+        return None;
+    };
     let parts = path
         .strip_prefix("chronicle/")
         .unwrap_or(path)
         .split('/')
         .collect::<Vec<_>>();
     let [day, path_stream, segment, note] = parts.as_slice() else {
-        return false;
+        return None;
     };
     if *note != "note.txt" || *path_stream != stream {
-        return false;
+        return None;
     }
     let coordinate = Coordinate {
         day: (*day).to_owned(),
@@ -939,19 +935,21 @@ fn memory_hit_matches_caller(
             origin,
             ready,
         } => (bytes, origin, ready),
-        _ => return false,
+        _ => return None,
     };
     let connection = match open_own_memory_index(journal_root, std::time::Duration::from_secs(5)) {
         Ok(connection) => connection,
-        Err(OwnMemoryOpenError::Pending | OwnMemoryOpenError::Unavailable) => return false,
+        Err(OwnMemoryOpenError::Pending | OwnMemoryOpenError::Unavailable) => return None,
     };
-    let Some(row) = read_own_memory_row(&connection, source_key.as_str(), path)
+    let row = read_own_memory_row(&connection, source_key.as_str(), path)
         .ok()
-        .flatten()
-    else {
-        return false;
-    };
+        .flatten()?;
     memory_row_matches_live(&row, &source_key, &coordinate, &live.0, &live.1, &live.2)
+        .then_some(live.1)
+}
+
+fn public_memory_origin(origin: &Origin) -> Value {
+    json!({"kind": origin.kind, "creation_label": origin.creation_label, "created_at": origin.created_at})
 }
 
 fn memory_row_matches_live(

@@ -1044,7 +1044,7 @@ fn remember_memory_source(
     }
 }
 
-const INCOMPLETE_MEMORY_NOTICE: &str = "Private memory context is incomplete.";
+const INCOMPLETE_MEMORY_NOTICE: &str = "agent memory context is incomplete.";
 
 fn disclose_memory_incomplete(
     mut transcript: ScreenTranscript,
@@ -1092,7 +1092,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
                     transcript_header(entry.stream.as_deref())
                 )),
                 "memory_original" => {
-                    lines.push("### Private memory original".into());
+                    lines.push("### agent memory original".into());
                     let origin = entry
                         .memory_origin
                         .as_ref()

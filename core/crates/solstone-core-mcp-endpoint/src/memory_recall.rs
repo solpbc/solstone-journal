@@ -368,7 +368,7 @@ pub(crate) fn recall(
         query_reason: query.reason,
         complete,
         self_resolution: (reason.is_some() || continuation_mint_failed)
-            .then_some("Retry recall or start a fresh query."),
+            .then_some("retry recall or start a fresh query."),
     }
 }
 
@@ -379,7 +379,7 @@ fn failure(reason: &'static str) -> RecallPage {
         reason: Some(reason),
         query_reason: None,
         complete: false,
-        self_resolution: Some("Retry recall or start a fresh query."),
+        self_resolution: Some("retry recall or start a fresh query."),
     }
 }
 
