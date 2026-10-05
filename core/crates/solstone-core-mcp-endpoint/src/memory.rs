@@ -723,8 +723,14 @@ impl<'a> JournalStore<'a> {
     }
 
     fn segment_dir(&self, coordinate: &Coordinate) -> Result<SegmentDir, StoreFailure> {
+        // Root aliases are admitted by JournalRoot (for example /var on
+        // macOS). Compare both segment owners using its verified spelling;
+        // exact lookup still refuses every linked descendant below the root.
+        let root = solstone_core_journal_io::journal_root::JournalRoot::open(self.journal)
+            .map_err(|_| StoreFailure("memory journal could not be admitted"))?;
+        let namespace = segment_namespace_root(&root)?;
         let exact = solstone_core_journal_io::resolve_segment_exact(
-            self.journal,
+            &namespace,
             &coordinate.day,
             &coordinate.stream,
             &coordinate.segment,
@@ -732,7 +738,7 @@ impl<'a> JournalStore<'a> {
         .map_err(|_| StoreFailure("memory segment lookup failed"))?
         .ok_or(StoreFailure("memory segment is absent"))?;
         let segment = SegmentDir::resolve(
-            self.journal,
+            root.canonical_path(),
             &coordinate.day,
             &coordinate.segment,
             &coordinate.stream,
@@ -958,17 +964,21 @@ impl AppendStore for JournalStore<'_> {
         &mut self,
         coordinate: &Coordinate,
     ) -> Result<SegmentObservation, StoreFailure> {
+        let root = solstone_core_journal_io::journal_root::JournalRoot::open(self.journal)
+            .map_err(|_| StoreFailure("memory journal could not be admitted"))?;
+        let namespace = segment_namespace_root(&root)?;
+        let journal = namespace.as_path();
         let relative = segment_rel(&coordinate.day, &coordinate.stream, &coordinate.segment);
         let parent_rel = relative
             .rsplit_once('/')
             .map(|(parent, _)| parent)
             .ok_or(StoreFailure("memory segment parent is invalid"))?;
-        let parent = self.journal.join(parent_rel);
+        let parent = journal.join(parent_rel);
         // Exact lookup refuses linked ancestry even when its target remains
         // inside this journal. A containment-only check could adopt another
         // stream's tombstone or create a lock in that other stream.
         if solstone_core_journal_io::resolve_stream_exact(
-            self.journal,
+            journal,
             &coordinate.day,
             &coordinate.stream,
         )
@@ -976,14 +986,16 @@ impl AppendStore for JournalStore<'_> {
         .is_none()
         {
             solstone_core_journal_io::create_segment_parent_strict(
-                self.journal,
+                journal,
                 &coordinate.day,
                 &coordinate.stream,
                 &coordinate.segment,
             )
             .map_err(|_| StoreFailure("memory segment parent create failed"))?;
         }
-        let live = self.journal.join(&relative);
+        // This is also the spelling used by SegmentDir, so the stream owner
+        // can verify the exact live-name guard even through a root alias.
+        let live = journal.join(&relative);
         let live_name_lock = solstone_core_journal_io::hold_lock(
             &live,
             solstone_core_journal_io::LockOptions::default(),
@@ -1049,12 +1061,15 @@ impl AppendStore for JournalStore<'_> {
         coordinate: &Coordinate,
         name: &str,
     ) -> Result<Option<Vec<u8>>, StoreFailure> {
-        let segment = self.segment_dir(coordinate)?;
-        let relative = segment
-            .path()
-            .strip_prefix(self.journal)
-            .map_err(|_| StoreFailure("memory file escaped the journal"))?
-            .join(name);
+        self.segment_dir(coordinate)?;
+        // Keep the retained-root read relative to the validated coordinate;
+        // a canonical segment path cannot be stripped against a root alias.
+        let relative = PathBuf::from(segment_rel(
+            &coordinate.day,
+            &coordinate.stream,
+            &coordinate.segment,
+        ))
+        .join(name);
         self.read_bounded(
             &relative,
             if name == NOTE_FILE {
@@ -1149,6 +1164,28 @@ impl AppendStore for JournalStore<'_> {
     ) -> Result<Option<StreamAdvance>, StoreFailure> {
         read_agent_memory_chain(&self.segment_dir(coordinate)?)
             .map_err(|_| StoreFailure("memory chain could not be read"))
+    }
+}
+
+fn segment_namespace_root(
+    root: &solstone_core_journal_io::journal_root::JournalRoot,
+) -> Result<PathBuf, StoreFailure> {
+    #[cfg(windows)]
+    {
+        // Windows admission deliberately retains a plain drive path, while
+        // SegmentDir uses Rust's verbatim canonical spelling. Normalize only
+        // the admitted root, then revalidate its binding; descendant lookup
+        // still goes through the strict no-follow resolver. SegmentDir keeps
+        // the admitted plain root for its later retained-root reads.
+        let namespace = fs::canonicalize(root.canonical_path())
+            .map_err(|_| StoreFailure("memory root namespace could not be resolved"))?;
+        root.revalidate_canonical_binding()
+            .map_err(|_| StoreFailure("memory root namespace binding changed"))?;
+        Ok(namespace)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(root.canonical_path().to_path_buf())
     }
 }
 
@@ -1827,6 +1864,67 @@ mod full_tests {
             verified_id,
             creation_label: "authenticated connection",
         }
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn journal_root_namespace_preserves_append_chain_and_operation_replay() {
+        let outer = fixture();
+        let canonical = outer.path().join("real").join("journal");
+        fs::create_dir_all(&canonical).unwrap();
+        #[cfg(unix)]
+        let alias = {
+            std::os::unix::fs::symlink(outer.path().join("real"), outer.path().join("alias"))
+                .unwrap();
+            outer.path().join("alias").join("journal")
+        };
+        #[cfg(windows)]
+        let alias = canonical.clone();
+        solstone_core_journal_io::JournalRoot::open(&alias)
+            .expect("fixture root uses an admitted native path spelling");
+        assert_ne!(alias, fs::canonicalize(&alias).unwrap());
+        let AppendResult::Stored(first) = append_connection_memory(
+            &alias,
+            authenticated("bearer:root-alias"),
+            "first",
+            "A",
+            now(),
+        )
+        .unwrap() else {
+            panic!("append through an admitted root alias should complete");
+        };
+        let AppendResult::Stored(second) = append_connection_memory(
+            &canonical,
+            authenticated("bearer:root-alias"),
+            "second",
+            "B",
+            now() + chrono::Duration::seconds(1),
+        )
+        .unwrap() else {
+            panic!("later append through the same root should complete");
+        };
+        assert_ne!(first.origin.segment, second.origin.segment);
+        assert_eq!(
+            append_connection_memory(
+                &alias,
+                authenticated("bearer:root-alias"),
+                "first",
+                "A",
+                now() + chrono::Duration::minutes(1),
+            )
+            .unwrap(),
+            AppendResult::Replayed(first.clone())
+        );
+        let second_marker = canonical
+            .join("chronicle/20260102")
+            .join(&second.origin.stream)
+            .join(&second.origin.segment)
+            .join("stream.json");
+        let marker: serde_json::Value =
+            serde_json::from_slice(&fs::read(second_marker).unwrap()).unwrap();
+        assert_eq!(marker["prev_segment"], first.origin.segment);
+        assert_eq!(marker["prev_day"], "20260102");
+        assert_eq!(marker["seq"], 2);
     }
 
     #[cfg(unix)]
