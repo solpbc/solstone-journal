@@ -1189,4 +1189,264 @@ mod tests {
             Err(response) if response.status == 400
         ));
     }
+
+    #[test]
+    fn gemini_classic_metadata_retains_public_auth_and_exact_callback() {
+        let callback = "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-100000000000000000001-test_solstone_me";
+        let request = json_request(&format!(
+            r#"{{"redirect_uris":["{callback}"],"token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"]}}"#
+        ));
+        let Ok(super::ParsedRegistration::Classic { redirect_uris, .. }) =
+            super::parse_registration(&request)
+        else {
+            panic!("expected classic registration");
+        };
+        assert_eq!(
+            super::filter_redirect_uris(redirect_uris).unwrap(),
+            [callback]
+        );
+        for method in ["client_secret_basic", "client_secret_post"] {
+            let request = json_request(&format!(
+                r#"{{"redirect_uris":["{callback}"],"token_endpoint_auth_method":"{method}"}}"#
+            ));
+            assert!(matches!(
+                super::parse_registration(&request),
+                Err(response) if response.status == 400
+            ));
+        }
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod hosted_callback_tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sha2::{Digest, Sha256};
+    use tokio::io::AsyncWriteExt;
+    use tokio::sync::watch;
+
+    use crate::http1::{Http1Connection, HttpRequest, HttpResponse};
+    use crate::oauth::urlparse::query_value_encode;
+    use crate::oauth::{OAuthRuntime, parse_urlencoded_pairs};
+
+    const SOURCE: IpAddr = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10));
+    const ORIGIN: &str = "https://mcp.test";
+    const RESOURCE: &str = "https://mcp.test/mcp";
+    const CALLBACK: &str = "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-100000000000000000001-test_solstone_me";
+    const OTHER_CALLBACK: &str = "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-100000000000000000002-test_solstone_me";
+    const VERIFIER: &str = "fixture_pkce_verifier_000000000000000000000000";
+
+    async fn request(method: &str, target: &str, body: &str) -> HttpRequest {
+        let framed = format!(
+            "{method} {target} HTTP/1.1\r\nHost: mcp.test\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let (client, mut server) = tokio::io::duplex(4096);
+        server.write_all(framed.as_bytes()).await.unwrap();
+        Http1Connection::new(client)
+            .read_request(false)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    async fn redeem(
+        oauth: &OAuthRuntime,
+        code: &str,
+        client: &str,
+        callback: &str,
+        verifier: &str,
+    ) -> HttpResponse {
+        let body = encoded(&[
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("client_id", client),
+            ("redirect_uri", callback),
+            ("resource", RESOURCE),
+            ("code_verifier", verifier),
+        ]);
+        crate::oauth::token::token(&request("POST", "/token", &body).await, oauth)
+    }
+
+    fn encoded(pairs: &[(&str, &str)]) -> String {
+        pairs
+            .iter()
+            .map(|(name, value)| {
+                format!("{}={}", query_value_encode(name), query_value_encode(value))
+            })
+            .collect::<Vec<_>>()
+            .join("&")
+    }
+
+    fn header<'a>(response: &'a HttpResponse, name: &str) -> Option<&'a str> {
+        response
+            .extra_headers
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+
+    async fn authorize(
+        oauth: &OAuthRuntime,
+        client: &str,
+        callback: &str,
+        method: &str,
+    ) -> HttpResponse {
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(VERIFIER.as_bytes()));
+        let query = encoded(&[
+            ("client_id", client),
+            ("redirect_uri", callback),
+            ("response_type", "code"),
+            ("code_challenge", &challenge),
+            ("code_challenge_method", method),
+            ("resource", RESOURCE),
+            ("state", "fixture-state"),
+        ]);
+        let request = request("GET", &format!("/authorize?{query}"), "").await;
+        let (_tx, mut shutdown) = watch::channel(false);
+        crate::oauth::authorize::get_authorize(&request, SOURCE, oauth, &mut shutdown).await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn gemini_registration_pairing_consent_and_redemption_keep_exact_callback_binding() {
+        // A binding mismatch consumes its code. Each scenario needs its own
+        // owner pairing and consent; successful issuance is a separate flow.
+        for (redemption_callback, redemption_verifier, expected_status) in [
+            (OTHER_CALLBACK, VERIFIER, 400),
+            (
+                CALLBACK,
+                "wrong_pkce_verifier_000000000000000000000000000",
+                400,
+            ),
+            (CALLBACK, VERIFIER, 200),
+        ] {
+            let journal = tempfile::Builder::new()
+                .prefix("solstone-gemini-callback-")
+                .tempdir_in(crate::test_scratch())
+                .unwrap();
+            let oauth = OAuthRuntime::new(journal.path(), ORIGIN.to_owned());
+            let registration_request = request("POST", "/register", &format!(
+            r#"{{"redirect_uris":["{CALLBACK}"],"token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"]}}"#
+        )).await;
+            let (_tx, mut shutdown) = watch::channel(false);
+
+            let closed =
+                super::register(&registration_request, SOURCE, &oauth, &mut shutdown).await;
+            assert_eq!(closed.status, 403);
+            assert!(!journal.path().join("mcp-endpoint/oauth.json").exists());
+            oauth
+                .store
+                .generate_pairing_code_with_door("local")
+                .unwrap();
+            let wrong_door =
+                super::register(&registration_request, SOURCE, &oauth, &mut shutdown).await;
+            assert_eq!(wrong_door.status, 403);
+            assert!(oauth.store.list_clients().unwrap().is_empty());
+
+            let pairing = oauth
+                .store
+                .generate_pairing_code_with_door("relay")
+                .unwrap();
+            let registered =
+                super::register(&registration_request, SOURCE, &oauth, &mut shutdown).await;
+            assert_eq!(registered.status, 201);
+            let metadata: serde_json::Value = serde_json::from_slice(&registered.body).unwrap();
+            assert_eq!(metadata["redirect_uris"], serde_json::json!([CALLBACK]));
+            assert_eq!(metadata["token_endpoint_auth_method"], "none");
+            assert!(metadata.get("client_secret").is_none());
+            let client = metadata["client_id"].as_str().unwrap();
+
+            let mismatched = authorize(&oauth, client, OTHER_CALLBACK, "S256").await;
+            assert_eq!(mismatched.status, 400);
+            assert!(header(&mismatched, "Location").is_none());
+            let plain = authorize(&oauth, client, CALLBACK, "plain").await;
+            assert_eq!(plain.status, 302);
+            assert!(
+                header(&plain, "Location")
+                    .unwrap()
+                    .contains("error=invalid_request")
+            );
+
+            let consent = authorize(&oauth, client, CALLBACK, "S256").await;
+            assert_eq!(consent.status, 200);
+            let csp = header(&consent, "Content-Security-Policy").unwrap();
+            assert!(
+                csp.contains("form-action 'self' https://oauth-redirect.googleusercontent.com;")
+            );
+            assert!(!csp.contains("https://chatgpt.com"));
+            assert!(!csp.contains("https://claude.ai"));
+            let body = String::from_utf8(consent.body).unwrap();
+            let marker = "name=\"transaction_id\" value=\"";
+            let remainder = body.split_once(marker).unwrap().1;
+            let transaction = remainder.split_once('"').unwrap().0;
+            let completed = crate::oauth::authorize::post_authorize(
+                &request(
+                    "POST",
+                    "/authorize",
+                    &encoded(&[
+                        ("transaction_id", transaction),
+                        ("pairing_code", &pairing.code),
+                        ("scope", "whole_journal"),
+                        ("category", "transcripts"),
+                    ]),
+                )
+                .await,
+                SOURCE,
+                &oauth,
+            );
+            assert_eq!(completed.status, 302);
+            let location = header(&completed, "Location").unwrap();
+            let (redirect, query) = location.split_once('?').unwrap();
+            assert_eq!(redirect, CALLBACK);
+            let pairs = parse_urlencoded_pairs(query).unwrap();
+            let field = |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(key, _)| key == name)
+                    .unwrap()
+                    .1
+                    .as_str()
+            };
+            assert_eq!(field("state"), "fixture-state");
+            assert_eq!(field("iss"), ORIGIN);
+            assert!(
+                !pairs
+                    .iter()
+                    .any(|(key, _)| matches!(key.as_str(), "access_token" | "refresh_token"))
+            );
+            let code = field("code");
+
+            let response = redeem(
+                &oauth,
+                code,
+                client,
+                redemption_callback,
+                redemption_verifier,
+            )
+            .await;
+            assert_eq!(response.status, expected_status);
+            let tokens: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            if expected_status == 200 {
+                assert!(!tokens["access_token"].as_str().unwrap().is_empty());
+                assert!(!tokens["refresh_token"].as_str().unwrap().is_empty());
+            } else {
+                assert_eq!(tokens["error"], "invalid_grant");
+            }
+            assert_eq!(
+                redeem(&oauth, code, client, CALLBACK, VERIFIER)
+                    .await
+                    .status,
+                400,
+                "authorization code is single-use"
+            );
+            assert_eq!(
+                super::register(&registration_request, SOURCE, &oauth, &mut shutdown)
+                    .await
+                    .status,
+                403,
+                "consumed pairing window is closed"
+            );
+        }
+    }
 }

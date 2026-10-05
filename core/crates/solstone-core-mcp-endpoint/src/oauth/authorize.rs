@@ -770,6 +770,7 @@ fn redirect_host_label(parsed: &super::redirect::ParsedRedirectUri) -> String {
         RedirectHost::V4Loopback => "127.0.0.1",
         RedirectHost::Claude => "claude.ai",
         RedirectHost::ChatGpt => "chatgpt.com",
+        RedirectHost::Gemini => "oauth-redirect.googleusercontent.com",
     };
     match parsed.port {
         Some(port) => format!("{host}:{port}"),
@@ -1164,6 +1165,20 @@ mod tests {
             "{csp}"
         );
         assert_eq!(csp.matches("form-action").count(), 1);
+        let gemini_origin = origin(
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-100000000000000000001-test_solstone_me",
+        );
+        assert_eq!(
+            gemini_origin,
+            "https://oauth-redirect.googleusercontent.com"
+        );
+        let gemini_csp = consent_csp(Some(&gemini_origin));
+        assert!(
+            gemini_csp.contains("form-action 'self' https://oauth-redirect.googleusercontent.com;")
+        );
+        assert_eq!(gemini_csp.matches("form-action").count(), 1);
+        assert!(!gemini_csp.contains("https://chatgpt.com"));
+        assert!(!gemini_csp.contains("https://claude.ai"));
         assert_eq!(consent_csp(None), AUTHORIZE_CSP);
         let error = local_error("authorization request could not be started");
         assert_eq!(

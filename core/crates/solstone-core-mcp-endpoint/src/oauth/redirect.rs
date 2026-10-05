@@ -17,6 +17,7 @@ pub(crate) enum RedirectHost {
     V4Loopback,
     Claude,
     ChatGpt,
+    Gemini,
 }
 
 /// A redirect URI that passed the closed allowlist parser.
@@ -68,6 +69,15 @@ pub(crate) fn parse_redirect_uri(raw: &str) -> Result<ParsedRedirectUri, Redirec
                 return Err(RedirectError);
             }
         }
+        RedirectHost::Gemini => {
+            if scheme != RedirectScheme::Https
+                || port.is_some()
+                || !gemini_callback_path_is_allowed(&path)
+                || query.is_some()
+            {
+                return Err(RedirectError);
+            }
+        }
         RedirectHost::Localhost | RedirectHost::V4Loopback => {}
     }
     Ok(ParsedRedirectUri {
@@ -100,8 +110,21 @@ fn redirect_uris_match(presented: &ParsedRedirectUri, registered: &ParsedRedirec
     }
     match presented.host {
         RedirectHost::Localhost | RedirectHost::V4Loopback => true,
-        RedirectHost::Claude | RedirectHost::ChatGpt => presented.port == registered.port,
+        RedirectHost::Claude | RedirectHost::ChatGpt | RedirectHost::Gemini => {
+            presented.port == registered.port
+        }
     }
+}
+
+fn gemini_callback_path_is_allowed(path: &str) -> bool {
+    let Some(identifier) = path.strip_prefix("/r/user_bound_custom-mcp-") else {
+        return false;
+    };
+    !identifier.is_empty()
+        && identifier.len() <= 160
+        && identifier
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
 fn is_allowed_redirect_byte(byte: u8) -> bool {
@@ -144,6 +167,8 @@ fn parse_host(host: &str) -> Option<RedirectHost> {
         Some(RedirectHost::Claude)
     } else if host == "chatgpt.com" {
         Some(RedirectHost::ChatGpt)
+    } else if host == "oauth-redirect.googleusercontent.com" {
+        Some(RedirectHost::Gemini)
     } else {
         None
     }
@@ -288,6 +313,61 @@ mod tests {
                 "expected reject for {raw:?}"
             );
             assert!(!redirect_uri_is_allowed(raw, &registered));
+        }
+    }
+
+    #[test]
+    fn gemini_callback_is_one_bounded_segment_and_matches_the_registered_account_and_server() {
+        let callback = "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-100000000000000000001-test_solstone_me";
+        let registered = [callback.to_owned()];
+        let parsed = parse_redirect_uri(callback).unwrap();
+        assert_eq!(parsed.scheme, RedirectScheme::Https);
+        assert_eq!(parsed.host, RedirectHost::Gemini);
+        assert_eq!(parsed.port, None);
+        assert_eq!(parsed.query, None);
+        assert!(redirect_uri_is_allowed(callback, &registered));
+        for other in [
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-100000000000000000002-test_solstone_me",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-100000000000000000001-other_solstone_me",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-100000000000000000001-Test_solstone_me",
+        ] {
+            assert!(parse_redirect_uri(other).is_ok());
+            assert!(!redirect_uri_is_allowed(other, &registered));
+        }
+        let prefix = "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-";
+        let bounded = format!("{prefix}{}", "a".repeat(160));
+        assert!(parse_redirect_uri(&bounded).is_ok());
+        assert!(parse_redirect_uri(&format!("{bounded}a")).is_err());
+    }
+
+    #[test]
+    fn gemini_callback_rejects_other_google_routes_and_url_confusion() {
+        for raw in [
+            "http://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test",
+            "https://oauth-redirect.googleusercontent.com:443/r/user_bound_custom-mcp-1-test",
+            "https://oauth-redirect.googleusercontent.com.evil/r/user_bound_custom-mcp-1-test",
+            "https://evil-oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test",
+            "https://oauth-redirect-sandbox.googleusercontent.com/r/user_bound_custom-mcp-1-test",
+            "https://user@oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test",
+            "https://oauth-redirect.googleusercontent.com/r/another-app",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test/",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test/other",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test?x=1",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test?",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test#fragment",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test%2Fother",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test..",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test;other",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-tést",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test other",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test\nother",
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-1-test\\other",
+        ] {
+            assert!(
+                parse_redirect_uri(raw).is_err(),
+                "expected reject for {raw:?}"
+            );
         }
     }
 }
