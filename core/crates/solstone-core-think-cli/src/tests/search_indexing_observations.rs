@@ -2,8 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use chrono::{Duration, Utc};
 use serde_json::Value;
@@ -17,13 +16,6 @@ use solstone_core_system_health::{
 use tempfile::tempdir;
 
 use crate::run_log::RunLogWriter;
-
-struct PermGuard(PathBuf);
-impl Drop for PermGuard {
-    fn drop(&mut self) {
-        let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o644));
-    }
-}
 
 fn setup_utc_journal(journal: &Path) {
     let config_dir = journal.join("config");
@@ -92,12 +84,10 @@ fn test_search_indexing_observations_with_real_publication_attempts() {
     );
     writer_31.finish().unwrap();
 
-    // Sibling oplog with mode 0o000 beside the log
+    // A directory in place of a sibling log forces a read error on every platform.
     let health_dir_31 = journal.join("chronicle/20260131/health");
     let sibling_file = health_dir_31.join("sibling.jsonl");
-    fs::write(&sibling_file, b"").unwrap();
-    fs::set_permissions(&sibling_file, fs::Permissions::from_mode(0o000)).unwrap();
-    let _guard = PermGuard(sibling_file);
+    fs::create_dir(&sibling_file).unwrap();
 
     // On 20260101, write another real attempt_saved_publication failure
     let missing_path_01 = journal.join("chronicle/20260101/missing.md");

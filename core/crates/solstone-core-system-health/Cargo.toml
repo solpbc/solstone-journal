@@ -10,6 +10,9 @@ license.workspace = true
 publish = false
 autotests = false
 
+[features]
+full-tests = []
+
 [dependencies]
 chrono.workspace = true
 log.workspace = true

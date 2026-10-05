@@ -1376,12 +1376,13 @@
                   ],
                   "window_start_ms": 0,
                   "window_end_ms": 0,
-                  "partial": false,
+                  "partial": true,
                   "lines": [
                     "unobserved_history_outside_selected_think_days",
                     "unfinished_uses_have_no_day_index_row",
                     "failures_not_retained_past_inspected_history",
-                    "publication_notification_not_crash_atomic"
+                    "publication_notification_not_crash_atomic",
+                    "unreadable talent log"
                   ]
                 }
               },

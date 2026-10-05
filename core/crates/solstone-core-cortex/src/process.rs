@@ -681,7 +681,7 @@ mod tests {
                 use_id: "1760000000000".into(),
                 talent_name: "daily".into(),
                 active: active.clone(),
-                identity: identity.clone(),
+                identity,
                 request: request.clone(),
             };
 
@@ -768,7 +768,7 @@ mod tests {
                 use_id: "1000".into(),
                 talent_name: "daily".into(),
                 active: old_active,
-                identity: old_identity.clone(),
+                identity: old_identity,
                 request: old_request.clone(),
             };
             let old_attempt_ts = (now - chrono::Duration::seconds(5)).timestamp_millis();

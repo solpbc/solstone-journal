@@ -167,20 +167,20 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                             diag["window_start_ms"] = json!(0);
                             diag["window_end_ms"] = json!(0);
                         }
-                        if phase_name == "stats_unparseable" {
-                            if let Some(diag) = actual
+                        if phase_name == "stats_unparseable"
+                            && let Some(lines) = actual
                                 .get_mut("search_index")
                                 .and_then(|s| s.get_mut("diagnostics"))
-                            {
-                                diag["partial"] = json!(false);
-                                if let Some(lines) =
-                                    diag.get_mut("lines").and_then(|l| l.as_array_mut())
+                                .and_then(|diag| diag.get_mut("lines"))
+                                .and_then(|lines| lines.as_array_mut())
+                        {
+                            for line in lines {
+                                if line
+                                    .as_str()
+                                    .is_some_and(|s| s.starts_with("unreadable talent log"))
                                 {
-                                    lines.retain(|l| {
-                                        !l.as_str()
-                                            .unwrap_or("")
-                                            .starts_with("unreadable talent log")
-                                    });
+                                    // Only the temporary path and OS error text vary.
+                                    *line = json!("unreadable talent log");
                                 }
                             }
                         }

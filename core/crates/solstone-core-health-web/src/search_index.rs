@@ -17,10 +17,10 @@ use solstone_core_system_health::{
 };
 
 pub const SEARCH_TEXT_BEHIND_ATTEMPT_FAILED: &str =
-    "search couldn't update on its last try, so recent moments may not turn up in search yet.";
+    "some journal updates couldn't be added to search.";
 pub const SEARCH_TEXT_UNCLEAR: &str = "it's unclear when search last caught up.";
 pub const SEARCH_NOTE_ATTEMPT_FAILED: &str =
-    "the latest indexer attempt failed; search-backed consumers may be stale.";
+    "some search updates could not finish; search-backed consumers may be stale.";
 
 /// Fills a search template's `{age}` with the time since the index's last write.
 pub fn render_search_text(template: &str, age: Duration) -> String {
@@ -78,20 +78,11 @@ pub fn evaluate_search_index(
 
     let sqlite_mtime = metadata_source.modified(&sqlite_path).ok();
     let index_activity_at_ms = if let Some(sqlite_mt) = sqlite_mtime {
-        let wal_result = metadata_source.modified(&wal_path);
-        let wal_mtime = match wal_result {
-            Ok(mtime) => Some(mtime),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-            Err(_) => {
-                // WAL error other than NotFound -> unreadable activity
-                None
-            }
+        let (wal_mtime, wal_had_non_notfound_error) = match metadata_source.modified(&wal_path) {
+            Ok(mtime) => (Some(mtime), false),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => (None, false),
+            Err(_) => (None, true),
         };
-
-        let wal_had_non_notfound_error = matches!(
-            metadata_source.modified(&wal_path),
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound
-        );
 
         if wal_had_non_notfound_error {
             None
@@ -289,7 +280,7 @@ mod full_tests {
         drop(conn_check);
 
         // 3. open_index again to recreate schema
-        let mut conn = open_index(dir.path()).unwrap();
+        let conn = open_index(dir.path()).unwrap();
         let mtime_secs = (now - Duration::seconds(5)).timestamp();
         let mtime_ms = mtime_secs * 1000;
         let db_path = dir.path().join("indexer/journal.sqlite");
@@ -309,7 +300,7 @@ mod full_tests {
         // Stalled (stalled: true, completed: false): state incomplete, coverage unknown,
         // index_activity_at_ms equals that mtime, observed_failure false, stalled_path preserved
         write_chunk_classification_backfill(
-            &mut conn,
+            &conn,
             &ChunkClassificationBackfill {
                 cursor: "10".to_owned(),
                 completed: false,
@@ -325,7 +316,7 @@ mod full_tests {
         let health_stalled = evaluate_search_index(dir.path(), &FsIndexMetadata, now);
         assert_eq!(health_stalled.coverage, "unknown");
         assert_eq!(health_stalled.state, "incomplete");
-        assert_eq!(health_stalled.observed_failure, false);
+        assert!(!health_stalled.observed_failure);
         assert_eq!(health_stalled.classification.backfill, "stalled");
         assert_eq!(
             health_stalled.classification.stalled_path.as_deref(),
@@ -334,9 +325,9 @@ mod full_tests {
         assert_eq!(health_stalled.index_activity_at_ms, Some(mtime_ms));
 
         // Separately stalled: false, completed: false: backfill incomplete, state incomplete, activity mtime still set
-        let mut conn = open_index(dir.path()).unwrap();
+        let conn = open_index(dir.path()).unwrap();
         write_chunk_classification_backfill(
-            &mut conn,
+            &conn,
             &ChunkClassificationBackfill {
                 cursor: "50".to_owned(),
                 completed: false,
@@ -357,9 +348,9 @@ mod full_tests {
 
         // completed: true, stalled: false, plus index_build complete and segment_aggregate completed:
         // coverage unknown, state is not incomplete and not degraded, backfill exhausted
-        let mut conn2 = open_index(dir.path()).unwrap();
+        let conn2 = open_index(dir.path()).unwrap();
         write_chunk_classification_backfill(
-            &mut conn2,
+            &conn2,
             &ChunkClassificationBackfill {
                 cursor: "100".to_owned(),
                 completed: true,
@@ -374,7 +365,7 @@ mod full_tests {
             [],
         )
         .unwrap();
-        write_segment_aggregate_migration(&mut conn2, "100", true).unwrap();
+        write_segment_aggregate_migration(&conn2, "100", true).unwrap();
         drop(conn2);
         set_mtimes();
 
@@ -383,7 +374,7 @@ mod full_tests {
         assert_ne!(health_complete.state, "incomplete");
         assert_ne!(health_complete.state, "degraded");
         assert_eq!(health_complete.state, "unknown");
-        assert_eq!(health_complete.observed_failure, false);
+        assert!(!health_complete.observed_failure);
         assert_eq!(health_complete.classification.backfill, "exhausted");
         assert_eq!(health_complete.classification.index_build, "complete");
         assert_eq!(health_complete.classification.segment_aggregate, "complete");
@@ -409,7 +400,7 @@ mod full_tests {
         set_mtimes();
         let health_degraded = evaluate_search_index(dir.path(), &FsIndexMetadata, now);
         assert_eq!(health_degraded.state, "degraded");
-        assert_eq!(health_degraded.observed_failure, true);
+        assert!(health_degraded.observed_failure);
         assert_eq!(health_degraded.index_activity_at_ms, Some(mtime_ms));
     }
 }

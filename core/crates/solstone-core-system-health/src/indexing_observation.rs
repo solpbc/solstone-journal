@@ -178,11 +178,18 @@ pub fn read_indexing_observations(journal: &Path, now: DateTime<Utc>) -> Indexin
         let entries = match fs::read_dir(&health_dir) {
             Ok(read_dir) => {
                 let mut paths = Vec::new();
-                for entry in read_dir.flatten() {
+                for entry in read_dir {
+                    let entry = match entry {
+                        Ok(entry) => entry,
+                        Err(error) => {
+                            partial = true;
+                            detail_lines
+                                .push(format!("unreadable health directory entry: {error}"));
+                            continue;
+                        }
+                    };
                     let path = entry.path();
-                    if path.is_file()
-                        && path.extension().and_then(|ext| ext.to_str()) == Some("jsonl")
-                    {
+                    if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
                         paths.push(path);
                     }
                 }
@@ -278,7 +285,15 @@ pub fn read_indexing_observations(journal: &Path, now: DateTime<Utc>) -> Indexin
     match fs::read_dir(&talents_dir) {
         Ok(read_dir) => {
             let mut paths = Vec::new();
-            for entry in read_dir.flatten() {
+            for entry in read_dir {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(error) => {
+                        partial = true;
+                        detail_lines.push(format!("unreadable talent directory entry: {error}"));
+                        continue;
+                    }
+                };
                 let path = entry.path();
                 if path.extension().and_then(|x| x.to_str()) == Some("jsonl")
                     && path
@@ -587,7 +602,7 @@ pub fn read_indexing_observations(journal: &Path, now: DateTime<Utc>) -> Indexin
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
     use tempfile::tempdir;
@@ -842,9 +857,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
     fn unreadable_sibling_health_log_keeps_failure_and_sets_partial() {
-        use std::os::unix::fs::PermissionsExt;
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
         let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
@@ -866,11 +879,15 @@ mod tests {
         .unwrap();
 
         let unreadable = health_dir.join("think.b.jsonl");
-        fs::write(&unreadable, "unreadable").unwrap();
-        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+        fs::create_dir(&unreadable).unwrap();
 
         let obs = read_indexing_observations(dir.path(), now);
-        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(
+            obs.diagnostics
+                .lines
+                .iter()
+                .any(|line| line.starts_with("unreadable health log"))
+        );
 
         assert!(obs.diagnostics.partial);
         let note = obs

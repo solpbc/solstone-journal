@@ -346,7 +346,7 @@ test('search index line renders when present and hides when absent', async () =>
   const { doc, context } = createEnvironment();
   const searchIndex = {
     state: 'degraded',
-    text: "search couldn't update on its last try, so recent moments may not turn up in search yet.",
+    text: "some journal updates couldn't be added to search.",
   };
   context.payload = { verdict: "your journal's caught up." };
   context.searchIndex = searchIndex;
@@ -356,7 +356,7 @@ test('search index line renders when present and hides when absent', async () =>
   assert.strictEqual(searchLine.hidden, false);
   assert.strictEqual(
     searchLine.textContent,
-    "search couldn't update on its last try, so recent moments may not turn up in search yet.",
+    "some journal updates couldn't be added to search.",
   );
 
   vm.runInContext('renderBacklogState(payload, { state: "unknown", text: "" });', context);
