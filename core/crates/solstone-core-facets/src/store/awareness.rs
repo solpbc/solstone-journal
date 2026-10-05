@@ -451,9 +451,3 @@ mod tests {
         fs::remove_dir_all(journal).unwrap();
     }
 }
-
-#[cfg(test)]
-mod unit_tests {
-    use super::*;
-    use tempfile::TempDir;
-}
