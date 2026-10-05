@@ -38,7 +38,7 @@ pub struct MemoryOriginalRow {
     pub chain_json: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum OwnMemoryQueryMode {
     Browse,
     Terms(String),
@@ -247,6 +247,32 @@ pub fn read_own_memory_row(
 }
 
 fn memory_row_from_sql(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryOriginalRow> {
+    // Inspect borrowed SQLite values before allocating cached originals.
+    for column in 0..12 {
+        let value = row.get_ref(column)?;
+        let maximum = match column {
+            5 => solstone_core_format::agent_memory::MAX_NOTE_BYTES,
+            6 | 11 => solstone_core_format::agent_memory::MAX_METADATA_BYTES,
+            _ => 1024,
+        };
+        let length = match value {
+            rusqlite::types::ValueRef::Text(bytes) | rusqlite::types::ValueRef::Blob(bytes) => {
+                bytes.len()
+            }
+            _ => 0,
+        };
+        if length > maximum {
+            return Err(rusqlite::Error::FromSqlConversionFailure(
+                column,
+                value.data_type(),
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "memory cache value exceeds its bound",
+                )
+                .into(),
+            ));
+        }
+    }
     let byte_count: i64 = row.get(8)?;
     Ok(MemoryOriginalRow {
         path: row.get(0)?,

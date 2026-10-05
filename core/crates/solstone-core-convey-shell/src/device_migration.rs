@@ -8,7 +8,7 @@ use std::path::Path;
 use serde_json::Value;
 use solstone_core_segment::{TakeoverPlan, with_takeover_stream_boundary};
 use solstone_core_sol_link::device_migration::{
-    DecisionApply, DecisionRequest, MigrationError, MigrationReasonCode, MigrationView, decide,
+    DecisionApply, DecisionRequest, DecisionResponse, MigrationError, MigrationReasonCode, decide,
     pending_push_cid, record_push_result,
 };
 
@@ -16,7 +16,7 @@ pub(crate) fn decide_and_resume(
     journal: &Path,
     caller_cid: &str,
     raw_body: &[u8],
-) -> Result<MigrationView, MigrationError> {
+) -> Result<DecisionResponse, MigrationError> {
     let mut boundary = |adopted: &str,
                         retired: &str,
                         stored_plan: Option<&Value>,
@@ -40,13 +40,13 @@ pub(crate) fn decide_and_resume(
 
     let view = decide(journal, caller_cid, raw_body, &mut boundary)?;
     let request: DecisionRequest = serde_json::from_slice(raw_body).map_err(|_| unavailable())?;
-    let Some(retired_cid) = pending_push_cid(journal, caller_cid, &request.decision_id)? else {
+    let Some(retired_cid) = pending_push_cid(journal, caller_cid, &request.operation_id)? else {
         return Ok(view);
     };
     if solstone_core_push::remove_cid_registrations(journal, &retired_cid).is_err() {
-        return record_push_result(journal, caller_cid, &request.decision_id, false);
+        return record_push_result(journal, caller_cid, &request.operation_id, false);
     }
-    record_push_result(journal, caller_cid, &request.decision_id, true)
+    record_push_result(journal, caller_cid, &request.operation_id, true)
 }
 
 fn unavailable() -> MigrationError {
@@ -66,7 +66,9 @@ mod tests {
 
     use serde_json::{Value, json};
     use solstone_core_sol_link::device_migration::{Choice, DecisionRequest};
-    use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
+    use solstone_core_sol_link::ledger::{
+        AuthorizationLedger, AuthorizedClientsRead, ClientEntry, ClientRole,
+    };
 
     use super::decide_and_resume;
 
@@ -115,8 +117,8 @@ mod tests {
         )
         .unwrap();
         serde_json::to_vec(&DecisionRequest {
-            protocol: 1,
-            decision_id: DECISION.to_owned(),
+            protocol_version: 1,
+            operation_id: DECISION.to_owned(),
             choice: Choice::SameDevice,
             replaces_cid: solstone_core_sol_link::device_migration::ReplacesCid::Missing,
         })
@@ -125,7 +127,7 @@ mod tests {
 
     #[test]
     fn migration_push_removal_failure_stays_awaiting_push() {
-        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let journal = tempfile::TempDir::new().unwrap();
         let body = prepare(journal.path());
         fs::create_dir_all(journal.path().join("config")).unwrap();
         let push_path = journal.path().join("config/push-registry.json");
@@ -147,6 +149,43 @@ mod tests {
         let resumed = decide_and_resume(journal.path(), ADOPTED, &body).unwrap();
         assert_eq!(resumed.state.as_wire(), "same_device");
         let decision: Value = serde_json::from_slice(&fs::read(&decision_path).unwrap()).unwrap();
+        assert_eq!(decision["checkpoint"], "complete");
+    }
+
+    #[test]
+    fn same_device_resume_retires_only_the_stored_previous_cid() {
+        let journal = tempfile::TempDir::new().unwrap();
+        let body = prepare(journal.path());
+        let push_path = journal.path().join("config/push-registry.json");
+        fs::create_dir_all(push_path.parent().unwrap()).unwrap();
+        fs::write(&push_path, br#"{"version":2,"devices":[]}"#).unwrap();
+
+        let resumed = decide_and_resume(journal.path(), ADOPTED, &body).unwrap();
+
+        assert_eq!(resumed.state.as_wire(), "same_device");
+        let entries = match AuthorizationLedger::new(journal.path()).read_state() {
+            AuthorizedClientsRead::Present(entries) => entries,
+            other => panic!("authorization ledger is not present: {other:?}"),
+        };
+        let operation_path = journal.path().join(format!(
+            "link/device-migrations/operations/{OPERATION}.json"
+        ));
+        let operation: Value = serde_json::from_slice(&fs::read(operation_path).unwrap()).unwrap();
+        let previous_cid = operation["previous_cid"]
+            .as_str()
+            .expect("stored previous CID");
+        assert_eq!(previous_cid, OLD);
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| entry.fingerprint == previous_cid)
+        );
+        assert!(entries.iter().any(|entry| entry.fingerprint == ADOPTED));
+        let decision_path = journal
+            .path()
+            .join(format!("link/device-migrations/decisions/{DECISION}.json"));
+        let decision: Value = serde_json::from_slice(&fs::read(decision_path).unwrap()).unwrap();
+        assert_eq!(decision["replaced_cid"], previous_cid);
         assert_eq!(decision["checkpoint"], "complete");
     }
 }

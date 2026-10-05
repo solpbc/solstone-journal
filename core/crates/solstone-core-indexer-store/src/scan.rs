@@ -281,9 +281,9 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
         match observed_mtime {
             Ok(mtime) => {
                 let needs_index = if memory_note {
-                    let has_memory_row = memory_original_exists(&conn, rel)?;
-                    memory_scan_decision(true, has_memory_row, db_mtimes.get(rel) == Some(&mtime))
-                        == MemoryScanDecision::Index
+                    // Readiness can change while a newer sibling preserves the
+                    // composite mtime. Validate before considering a cache hit.
+                    true
                 } else {
                     db_mtimes.get(rel) != Some(&mtime)
                 };

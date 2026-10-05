@@ -716,7 +716,7 @@ pub fn acquire_existing_parent_lock(
     let inspected_parent = inspect_parent(parent)?;
     run_race_hook(AFTER_PARENT_INSPECTION);
     let parent_fd = open_bound_parent(parent, inspected_parent)?;
-    let guard = acquire_lock_in_parent(&parent_fd, &name, &path, timeout, poll_interval)?;
+    let guard = acquire_lock_in_parent(&parent_fd, &name, &path, timeout, poll_interval, true)?;
     Ok(ExistingParentLock {
         _guard: guard,
         path,
@@ -748,8 +748,37 @@ pub fn acquire_existing_parent_lock_bound(
             kind: file_kind(&status),
         });
     }
-    let guard = acquire_lock_in_parent(parent, &name, &path, timeout, poll_interval)?;
+    let guard = acquire_lock_in_parent(parent, &name, &path, timeout, poll_interval, true)?;
     Ok(BoundParentLock { _guard: guard })
+}
+
+/// Hold an existing persistent entry without creating it or its parent.
+/// Absence is an observation; replacement during acquisition is refused.
+#[cfg(unix)]
+pub fn open_existing_parent_lock_bound(
+    parent: &impl AsFd,
+    name: &OsStr,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<Option<BoundParentLock>, ExistingParentLockError> {
+    let name =
+        NormalLockName::parse(name).ok_or_else(|| ExistingParentLockError::InvalidLockPath {
+            name: name.to_os_string(),
+        })?;
+    let path = PathBuf::from(name.as_os_str());
+    let status = fstat(parent)
+        .map_err(|source| existing_io("stat bound persistent lock parent", &path, source))?;
+    if !is_kind(&status, SFlag::S_IFDIR) {
+        return Err(ExistingParentLockError::UnsafeParent {
+            parent: path,
+            kind: file_kind(&status),
+        });
+    }
+    if inspect_lock_entry(parent, &name, &path, false)?.is_none() {
+        return Ok(None);
+    }
+    let guard = acquire_lock_in_parent(parent, &name, &path, timeout, poll_interval, false)?;
+    Ok(Some(BoundParentLock { _guard: guard }))
 }
 
 #[cfg(unix)]
@@ -759,10 +788,11 @@ fn acquire_lock_in_parent(
     path: &Path,
     timeout: Duration,
     poll_interval: Duration,
+    allow_create: bool,
 ) -> Result<Flock<File>, ExistingParentLockError> {
     let deadline = Instant::now() + timeout;
     loop {
-        let existing = inspect_lock_entry(parent_fd, name, path)?;
+        let existing = inspect_lock_entry(parent_fd, name, path, allow_create)?;
         let file = match existing {
             Some(_) => match openat(parent_fd, name.as_os_str(), ENTRY_OPEN_FLAGS, Mode::empty()) {
                 Ok(fd) => File::from(fd),
@@ -775,6 +805,11 @@ fn acquire_lock_in_parent(
                     return Err(existing_io("open persistent lock entry", path, source));
                 }
             },
+            None if !allow_create => {
+                return Err(ExistingParentLockError::NamespaceChanged {
+                    path: path.to_path_buf(),
+                });
+            }
             None => match openat(
                 parent_fd,
                 name.as_os_str(),
@@ -795,7 +830,7 @@ fn acquire_lock_in_parent(
         match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
             Ok(guard) => {
                 run_race_hook(AFTER_LOCK_FLOCK);
-                verify_final_lock_entry(parent_fd, name, &guard, existing, path)?;
+                verify_final_lock_entry(parent_fd, name, &guard, existing, path, allow_create)?;
                 if timeout.is_zero() {
                     return Ok(guard);
                 }
@@ -1002,13 +1037,14 @@ fn inspect_lock_entry(
     parent: &impl AsFd,
     name: &NormalLockName,
     path: &Path,
+    require_private_mode: bool,
 ) -> Result<Option<LockEntryIdentity>, ExistingParentLockError> {
     let status = match fstatat(parent, name.as_os_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
         Ok(status) => status,
         Err(Errno::ENOENT) => return Ok(None),
         Err(source) => return Err(existing_io("stat persistent lock entry", path, source)),
     };
-    validate_lock_entry(&status, path)?;
+    validate_lock_entry(&status, path, require_private_mode)?;
     Ok(Some(identity(&status)))
 }
 
@@ -1019,10 +1055,11 @@ fn verify_final_lock_entry(
     opened: &File,
     expected_existing: Option<LockEntryIdentity>,
     path: &Path,
+    require_private_mode: bool,
 ) -> Result<LockEntryIdentity, ExistingParentLockError> {
     let opened_status = fstat(opened)
         .map_err(|source| existing_io("stat opened persistent lock entry", path, source))?;
-    validate_lock_entry(&opened_status, path)?;
+    validate_lock_entry(&opened_status, path, require_private_mode)?;
     let named_status = match fstatat(parent, name.as_os_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
         Ok(status) => status,
         Err(Errno::ENOENT) => {
@@ -1032,7 +1069,7 @@ fn verify_final_lock_entry(
         }
         Err(source) => return Err(existing_io("stat persistent lock entry", path, source)),
     };
-    validate_lock_entry(&named_status, path)?;
+    validate_lock_entry(&named_status, path, require_private_mode)?;
     let opened_identity = identity(&opened_status);
     if opened_identity != identity(&named_status)
         || expected_existing.is_some_and(|expected| expected != opened_identity)
@@ -1045,14 +1082,20 @@ fn verify_final_lock_entry(
 }
 
 #[cfg(unix)]
-fn validate_lock_entry(status: &FileStat, path: &Path) -> Result<(), ExistingParentLockError> {
+fn validate_lock_entry(
+    status: &FileStat,
+    path: &Path,
+    require_private_mode: bool,
+) -> Result<(), ExistingParentLockError> {
     if !is_kind(status, SFlag::S_IFREG) {
         return Err(ExistingParentLockError::UnsafeLockEntry {
             path: path.to_path_buf(),
             kind: file_kind(status),
         });
     }
-    if permission_mode(status) != mode_to_u32(nix::libc::mode_t::from(0o600u16)) {
+    if require_private_mode
+        && permission_mode(status) != mode_to_u32(nix::libc::mode_t::from(0o600u16))
+    {
         return Err(ExistingParentLockError::WrongMode {
             path: path.to_path_buf(),
             observed: permission_mode(status),
@@ -1184,7 +1227,7 @@ pub fn acquire_existing_parent_lock(
     let path = parent.join(name.as_os_str());
     let parent_handle = open_existing_parent_windows(parent)?;
     let guard =
-        acquire_lock_in_parent_windows(&parent_handle, &name, &path, timeout, poll_interval)?;
+        acquire_lock_in_parent_windows(&parent_handle, &name, &path, timeout, poll_interval, true)?;
     Ok(ExistingParentLock {
         _guard: guard,
         path,
@@ -1206,11 +1249,39 @@ pub fn acquire_existing_parent_lock_bound(
     validate_parent_handle_windows(parent, &path)?;
     let parent_identity = file_identity(parent.as_handle().as_raw_handle())
         .map_err(|source| existing_io("stat bound persistent lock parent", &path, source))?;
-    let guard = acquire_lock_in_parent_windows(parent, &name, &path, timeout, poll_interval)?;
+    let guard = acquire_lock_in_parent_windows(parent, &name, &path, timeout, poll_interval, true)?;
     Ok(BoundParentLock {
         _guard: guard,
         parent_identity,
     })
+}
+
+/// Hold an existing persistent entry without creating it or its parent.
+/// Absence is an observation; replacement during acquisition is refused.
+#[cfg(windows)]
+pub fn open_existing_parent_lock_bound(
+    parent: &impl AsHandle,
+    name: &OsStr,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<Option<BoundParentLock>, ExistingParentLockError> {
+    let name =
+        NormalLockName::parse(name).ok_or_else(|| ExistingParentLockError::InvalidLockPath {
+            name: name.to_os_string(),
+        })?;
+    let path = PathBuf::from(name.as_os_str());
+    validate_parent_handle_windows(parent, &path)?;
+    let parent_identity = file_identity(parent.as_handle().as_raw_handle())
+        .map_err(|source| existing_io("stat bound persistent lock parent", &path, source))?;
+    if observe_lock_entry_windows(parent, &name, &path)?.is_none() {
+        return Ok(None);
+    }
+    let guard =
+        acquire_lock_in_parent_windows(parent, &name, &path, timeout, poll_interval, false)?;
+    Ok(Some(BoundParentLock {
+        _guard: guard,
+        parent_identity,
+    }))
 }
 
 #[cfg(windows)]
@@ -1220,10 +1291,21 @@ fn acquire_lock_in_parent_windows(
     path: &Path,
     timeout: Duration,
     poll_interval: Duration,
+    allow_create: bool,
 ) -> Result<WindowsLockGuard, ExistingParentLockError> {
     let deadline = Instant::now() + timeout;
     loop {
         let observed = observe_lock_entry_windows(parent, name, path)?;
+        if observed.is_none() && !allow_create {
+            return Err(ExistingParentLockError::NamespaceChanged {
+                path: path.to_path_buf(),
+            });
+        }
+        let disposition = if allow_create {
+            FILE_OPEN_IF
+        } else {
+            FILE_OPEN
+        };
         if let Some(first) = observed
             .as_ref()
             .filter(|entry| entry.kind.unsafe_label().is_some())
@@ -1232,7 +1314,7 @@ fn acquire_lock_in_parent_windows(
                 parent.as_handle().as_raw_handle(),
                 name.as_os_str(),
                 GENERIC_READ | GENERIC_WRITE | SYNCHRONIZE,
-                FILE_OPEN_IF,
+                disposition,
                 FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
             ) {
                 Ok(opened) => {
@@ -1288,7 +1370,7 @@ fn acquire_lock_in_parent_windows(
             parent.as_handle().as_raw_handle(),
             name.as_os_str(),
             GENERIC_READ | GENERIC_WRITE | SYNCHRONIZE,
-            FILE_OPEN_IF,
+            disposition,
             FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
         )
         .map(File::from)

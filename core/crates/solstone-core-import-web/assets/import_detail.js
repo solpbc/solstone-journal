@@ -552,7 +552,75 @@
     return `<p class="drawer-provenance"${wallAttr}>${clauses.map(escapeHtml).join(' · ')}</p>`;
   }
 
+  function isStrava(data) {
+    return String(data?.source_type || '').toLowerCase() === 'strava';
+  }
+
+  // A Strava import can be deleted as a whole: every workout it added leaves the
+  // journal, and importing the same download again brings them back.
+  function renderStravaDelete(data) {
+    const id = data?.timestamp;
+    if (!isStrava(data) || !hasValue(id)) return '';
+    return `<section class="import-strava-delete" data-strava-import-section><button type="button" class="btn btn-danger" data-strava-import-delete="${escapeHtml(id)}">delete this import</button></section>`;
+  }
+
+  async function stravaImportDelete(button) {
+    const id = button.getAttribute('data-strava-import-delete');
+    const section = button.closest('[data-strava-import-section]');
+    const base = `/app/transcripts/api/strava`;
+    if (!button.hasAttribute('data-confirming')) {
+      let workouts = null;
+      try {
+        const preview = await fetch(`${base}/import/${encodeURIComponent(id)}`);
+        if (preview.ok) workouts = (await preview.json()).workouts;
+      } catch (_) { /* the count is a courtesy; the delete still asks */ }
+      button.setAttribute('data-confirming', '');
+      button.textContent = Number.isFinite(workouts) ? `delete ${workouts} ${workouts === 1 ? 'workout' : 'workouts'}` : 'delete this import';
+      const note = document.createElement('p');
+      note.className = 'import-strava-delete-note';
+      const count = Number.isFinite(workouts) ? `${workouts} ` : '';
+      note.textContent = `this deletes the ${count}workouts this import added to your journal. workouts you already deleted one at a time aren't counted. importing this Strava download again brings them back.`;
+      section.insertBefore(note, button);
+      return;
+    }
+    button.disabled = true;
+    try {
+      const response = await fetch(`${base}/import/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error((data && data.error) || "this import couldn't be deleted.");
+      section.innerHTML = `<p class="import-strava-delete-note">deleting this import… it cancels in 10s.</p><button type="button" class="btn" data-strava-import-cancel="${escapeHtml(data.pending)}">cancel</button>`;
+      const leave = setTimeout(() => { window.location.href = '/app/import/'; }, (data.ttl_seconds || 10) * 1000 + 1500);
+      section.querySelector('[data-strava-import-cancel]').addEventListener('click', async (event) => {
+        const cancel = await fetch(`${base}/cancel-delete/${encodeURIComponent(data.pending)}`, { method: 'POST' }).catch(() => null);
+        if (cancel && cancel.ok) {
+          clearTimeout(leave);
+          section.innerHTML = '<p class="import-strava-delete-note">delete cancelled. nothing was deleted.</p>';
+        } else {
+          event.target.disabled = true;
+        }
+      }, { once: true });
+    } catch (error) {
+      button.disabled = false;
+      button.removeAttribute('data-confirming');
+      button.textContent = 'delete this import';
+      section.querySelector('.import-strava-delete-note')?.remove();
+      const note = document.createElement('p');
+      note.className = 'import-strava-delete-note';
+      note.textContent = String(error.message || error);
+      section.appendChild(note);
+    }
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-strava-import-delete]');
+      if (button) stravaImportDelete(button);
+    });
+  }
+
   function rawBlock(data) {
+    // A Strava import's publication record can list tens of thousands of pieces.
+    if (isStrava(data)) return '';
     const importJson = data?.import_json ?? null;
     const importedJson = data?.imported_json ?? null;
     if (importJson === null && importedJson === null) return '';
@@ -594,7 +662,7 @@
       bodyHtml: renderDrawerBody(data)
     });
     const leads = derived.status === strings.completed ? renderLeadsCard(data) : '';
-    return leads + drawer;
+    return leads + drawer + renderStravaDelete(data);
   }
 
   window.ImportDetail = Object.freeze({

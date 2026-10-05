@@ -30,6 +30,7 @@ mod segment_media;
 mod segment_speakers;
 mod serve_file;
 mod shell;
+mod strava_delete;
 
 #[cfg(test)]
 mod corpus;
@@ -88,6 +89,7 @@ fn router_with_dependencies(
 ) -> Router {
     let deferred_deletes = solstone_core_serving::held_delete::Registry::new();
     delete::resume_pending(&journal_root, &deferred_deletes);
+    strava_delete::resume_pending(&journal_root, &deferred_deletes);
     Router::new()
         .route("/app/transcripts/", get(shell::root))
         .route("/app/transcripts/workspace", get(shell::workspace))
@@ -117,6 +119,26 @@ fn router_with_dependencies(
         .route(
             "/app/transcripts/api/delete-outcomes",
             get(delete::delete_outcomes),
+        )
+        .route(
+            "/app/transcripts/api/strava/workout/{activity_id}",
+            get(strava_delete::preview_workout).delete(strava_delete::delete_workout),
+        )
+        .route(
+            "/app/transcripts/api/strava/import/{import_id}",
+            get(strava_delete::preview_import).delete(strava_delete::delete_import),
+        )
+        .route(
+            "/app/transcripts/api/strava/cancel-delete/{pending_id}",
+            post(strava_delete::cancel),
+        )
+        .route(
+            "/app/transcripts/api/strava/delete-status/{pending_id}",
+            get(strava_delete::status),
+        )
+        .route(
+            "/app/transcripts/api/strava/delete-outcomes",
+            get(strava_delete::outcomes),
         )
         .route(
             "/app/transcripts/api/serve_file/{day}/{*rel_path}",

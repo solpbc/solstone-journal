@@ -4,8 +4,14 @@
 //! Non-healing, read-only access to validated private agent-memory originals.
 
 use std::error::Error;
+use std::ffi::OsStr;
 use std::io;
+#[cfg(unix)]
+use std::os::fd::AsFd;
+#[cfg(windows)]
+use std::os::windows::io::AsHandle;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use serde::de::DeserializeOwned;
 use solstone_core_format::agent_memory::{
@@ -15,7 +21,9 @@ use solstone_core_format::agent_memory::{
 use solstone_core_journal_io::errors::FlatDirectoryError;
 use solstone_core_journal_io::journal_root::JournalRoot;
 use solstone_core_journal_io::{
-    ExactLookupError, read_relative_file_bounded, resolve_segment_exact, resolve_stream_exact,
+    BoundParentLock, ExactLookupError, FlatDirectoryError as DirectoryError,
+    open_existing_parent_lock_bound, read_relative_file_bounded, resolve_segment_exact,
+    resolve_stream_exact,
 };
 use solstone_core_segment::{
     OwnerDeletionState, SegmentDir, owner_deletion_state, read_agent_memory_chain,
@@ -47,18 +55,59 @@ pub fn read_original(
     source_key: &SourceKey,
     coordinate: &Coordinate,
 ) -> OriginalRead {
+    read_original_until(
+        journal,
+        source_key,
+        coordinate,
+        Instant::now() + Duration::from_secs(5),
+    )
+}
+
+/// The same original read under a caller's existing absolute deadline.
+pub fn read_original_until(
+    journal: &Path,
+    source_key: &SourceKey,
+    coordinate: &Coordinate,
+    deadline: Instant,
+) -> OriginalRead {
     if source_key.validate().is_err() || validate_coordinate(coordinate, source_key).is_err() {
         return OriginalRead::Corrupt;
     }
+    if matches!(std::fs::symlink_metadata(journal), Err(error) if error.kind() == io::ErrorKind::NotFound)
+    {
+        return OriginalRead::Absent;
+    }
 
-    match resolve_stream_exact(journal, &coordinate.day, &coordinate.stream) {
+    let root = match JournalRoot::open(journal) {
+        Ok(root) => root,
+        Err(solstone_core_journal_io::JournalRootError::Io { source, .. })
+            if source.kind() == io::ErrorKind::NotFound =>
+        {
+            return OriginalRead::Absent;
+        }
+        Err(error) => return unavailable(error),
+    };
+    let namespace = match std::fs::canonicalize(root.canonical_path()) {
+        Ok(path) => path,
+        Err(error) => return unavailable(error),
+    };
+    if let Err(error) = root.revalidate_canonical_binding() {
+        return unavailable(error);
+    }
+
+    match resolve_stream_exact(&namespace, &coordinate.day, &coordinate.stream) {
         Ok(Some(_)) => {}
         Ok(None) => return OriginalRead::Absent,
         Err(error) => return lookup_unavailable_or_absent(error),
     }
 
+    let live_guard = match read_live_guard(&root, coordinate, deadline) {
+        Ok(guard) => guard,
+        Err(detail) => return OriginalRead::Unavailable { detail },
+    };
+
     let segment_path = match resolve_segment_exact(
-        journal,
+        &namespace,
         &coordinate.day,
         &coordinate.stream,
         &coordinate.segment,
@@ -112,15 +161,12 @@ pub fn read_original(
         }
         Err(error) => return unavailable(error),
     }
+    if live_guard.is_none() {
+        return OriginalRead::Unavailable {
+            detail: "original live-name lock is absent".into(),
+        };
+    }
 
-    let root = match JournalRoot::open(journal) {
-        Ok(root) => root,
-        Err(error) => {
-            return OriginalRead::Unavailable {
-                detail: error.to_string(),
-            };
-        }
-    };
     let relative_segment = PathBuf::from("chronicle")
         .join(&coordinate.day)
         .join(&coordinate.stream)
@@ -180,11 +226,121 @@ pub fn read_original(
     {
         return OriginalRead::Corrupt;
     }
+    if Instant::now() >= deadline {
+        return OriginalRead::Unavailable {
+            detail: "original read deadline exhausted".into(),
+        };
+    }
+    if let Err(error) = root.revalidate_canonical_binding() {
+        return unavailable(error);
+    }
     OriginalRead::Ready {
         bytes,
         origin,
         ready,
     }
+}
+
+#[cfg(unix)]
+type ReadDirectory = solstone_core_journal_io::FlatDirectory;
+#[cfg(windows)]
+type ReadDirectory = solstone_core_journal_io::WindowsFlatDirectory;
+
+#[cfg(unix)]
+fn open_child(
+    parent: &impl AsFd,
+    name: &str,
+    diagnostic: &Path,
+) -> Result<Option<ReadDirectory>, DirectoryError> {
+    solstone_core_journal_io::open_flat_directory_bound(parent, OsStr::new(name), diagnostic)
+}
+#[cfg(windows)]
+fn open_child(
+    parent: &impl AsHandle,
+    name: &str,
+    diagnostic: &Path,
+) -> Result<Option<ReadDirectory>, DirectoryError> {
+    solstone_core_journal_io::open_windows_flat_directory_bound(
+        parent,
+        OsStr::new(name),
+        diagnostic,
+    )
+}
+
+fn read_live_guard(
+    root: &JournalRoot,
+    coordinate: &Coordinate,
+    deadline: Instant,
+) -> Result<Option<BoundParentLock>, String> {
+    let diagnostic = root.canonical_path();
+    let Some(chronicle) =
+        open_child(root, "chronicle", diagnostic).map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let diagnostic = diagnostic.join("chronicle");
+    let Some(day) =
+        open_child(&chronicle, &coordinate.day, &diagnostic).map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let diagnostic = diagnostic.join(&coordinate.day);
+    let Some(stream) =
+        open_child(&day, &coordinate.stream, &diagnostic).map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let remaining = deadline
+        .checked_duration_since(Instant::now())
+        .ok_or("original read deadline exhausted")?;
+    open_existing_parent_lock_bound(
+        &stream,
+        OsStr::new(&format!("{}.lock", coordinate.segment)),
+        remaining,
+        Duration::from_millis(10),
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// Observe and hold this source's already-published mutation sidecar.
+/// No source directory or sidecar is created by this read path.
+pub fn read_source_guard(
+    journal: &Path,
+    source_key: &SourceKey,
+    deadline: Instant,
+) -> Result<Option<BoundParentLock>, String> {
+    source_key.validate().map_err(|error| error.to_string())?;
+    if matches!(std::fs::symlink_metadata(journal), Err(error) if error.kind() == io::ErrorKind::NotFound)
+    {
+        return Ok(None);
+    }
+    let root = match JournalRoot::open(journal) {
+        Ok(root) => root,
+        Err(solstone_core_journal_io::JournalRootError::Io { source, .. })
+            if source.kind() == io::ErrorKind::NotFound =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    let Some(streams) =
+        open_child(&root, "streams", root.canonical_path()).map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let remaining = deadline
+        .checked_duration_since(Instant::now())
+        .ok_or("original read deadline exhausted")?;
+    let guard = open_existing_parent_lock_bound(
+        &streams,
+        OsStr::new(&format!(".source-{}.mutation.lock", source_key.component())),
+        remaining,
+        Duration::from_millis(10),
+    )
+    .map_err(|error| error.to_string())?;
+    root.revalidate_canonical_binding()
+        .map_err(|error| error.to_string())?;
+    Ok(guard)
 }
 
 enum ReadFailure {

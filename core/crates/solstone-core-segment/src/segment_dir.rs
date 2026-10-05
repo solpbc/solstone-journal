@@ -84,15 +84,16 @@ impl SegmentDir {
 /// A tombstone or staged removal means deleted. An occupied marker path that
 /// is not a recognized tombstone or staged directory still occupies the key.
 ///
-/// A key that any marker of its stream names as `prev` stays deleted. Rewriting
-/// that key at the head would give it a second chain position. Links are by
-/// key, so the chain would loop. `advance_unbound_stream` already forbids
-/// giving a segment a second position. A later release may treat a tombstone as
-/// claimable only for the same `(activity_id, index)` it released. Both the
-/// writer and any later key probe go through that identity rule. A key a
-/// successor still names stays deleted, and the writer steps to the next key.
-/// This function does not implement that release. A later release has to honour
-/// this identity rule.
+/// A release tombstone is never written into and never claimed, by anyone. The
+/// Strava probe steps past it to the next candidate. It records no owner intent
+/// to keep the tile away. The probe stops at any other tombstone or staged removal.
+/// Reading the reason is fail-closed: a `tombstone.json` that cannot be read fails
+/// the run; one that does not parse, has no reason, or names any reason but the
+/// exact release string stops the probe; only an exact match steps past.
+/// Writers that place by a fixed key (chat, calendar, notes) do not probe, so a
+/// release tombstone keeps their segment deleted. A general delete that treats an
+/// import as a set needs its own rule. This contract does not claim one. This
+/// function does not implement that step-past.
 ///
 /// A caller that probes keys treats `Err` as stop, never as a free key.
 pub fn owner_deleted(segment_dir: &Path) -> Result<bool, SegmentError> {

@@ -199,6 +199,46 @@ pub fn relocate_import(
 }
 
 /// Resolve and validate one direct child of the journal's imports directory.
+/// Remove an import's own records (`imports/<id>/`) after the owner deleted the
+/// import. Returns `false` when there was nothing to remove.
+///
+/// The caller has already removed what the import brought into the journal; this
+/// takes away its listing, so the import page no longer shows it and the same
+/// download can be imported again. A symlinked or dot-named directory is refused.
+pub fn remove_import_records(journal_root: &Path, import_id: &str) -> Result<bool, ImportError> {
+    let import_dir = import_directory(journal_root, import_id)?;
+    if import_id.starts_with('.') {
+        return Err(ImportError::InvalidImportId {
+            import_id: import_id.to_owned(),
+        });
+    }
+    match fs::symlink_metadata(&import_dir) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(ImportError::ImportDirectoryIsSymlink { path: import_dir });
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            return Err(ImportError::RemovalFailed {
+                path: import_dir,
+                message: "not a directory".to_owned(),
+            });
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(ImportError::RemovalFailed {
+                path: import_dir,
+                message: error.to_string(),
+            });
+        }
+    }
+    solstone_core_journal_io::remove_dir_all(journal_root, &format!("imports/{import_id}"))
+        .map_err(|error| ImportError::RemovalFailed {
+            path: import_dir,
+            message: error.to_string(),
+        })?;
+    Ok(true)
+}
+
 pub fn import_directory(journal_root: &Path, import_id: &str) -> Result<PathBuf, ImportError> {
     if !matches!(
         Path::new(import_id).components().next(),

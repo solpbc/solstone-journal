@@ -623,22 +623,21 @@ fn post_json_rpc(
         Ok(request) => request,
         Err(response) => return json_rpc_response(*response),
     };
-    let mut session_id = None;
-    if matches!(json_request.method.as_str(), "tools/list" | "tools/call") {
-        session_id = match request.header("mcp-session-id") {
-            Ok(session_id) => session_id,
-            Err(_) => {
-                return json_rpc_response(session_error_response(
-                    json_request.id.as_ref(),
-                    SessionError::NotFound,
-                ));
+    let session_id = match request.header("mcp-session-id") {
+        Ok(session_id) => session_id,
+        Err(_) => return HttpResponse::error(400, "Bad Request", "MCP session ID is ambiguous"),
+    };
+    if let Some(session_id) = session_id
+        && let Err(error) = sessions.validate(session_id, &verified.id)
+    {
+        // Streamable HTTP uses 404 to tell the client to initialize again.
+        // A JSON-RPC error in a 200 response makes it retry the dead session.
+        return match error {
+            SessionError::NotFound => {
+                HttpResponse::error(404, "Not Found", "MCP session is invalid or expired")
             }
+            _ => json_rpc_response(session_error_response(json_request.id.as_ref(), error)),
         };
-        if let Some(session_id) = session_id
-            && let Err(error) = sessions.validate(session_id, &verified.id)
-        {
-            return json_rpc_response(session_error_response(json_request.id.as_ref(), error));
-        }
     }
     match classify_method(&json_request) {
         Ok(McpMethod::Initialize) => match sessions.create(&verified.id) {
@@ -3021,14 +3020,91 @@ mod tests {
 #[cfg(all(test, not(feature = "full-tests")))]
 mod unit_tests {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use serde_json::json;
     use sha2::{Digest, Sha256};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::time::{Duration, advance};
 
     use super::{PrefixedStream, RequestGuard};
     use crate::http1::{HttpMethod, HttpRequest};
     use crate::oauth::OAuthRuntime;
     use crate::session::SessionTable;
     use crate::tokens::TokenStore;
+
+    #[tokio::test(start_paused = true)]
+    async fn expired_post_sessions_return_404_and_can_initialize_again() {
+        let journal = tempfile::tempdir().unwrap();
+        let sessions = SessionTable::new();
+        let verified = crate::tokens::VerifiedToken {
+            id: "session-recovery-token".to_owned(),
+            agent_identity: "session-recovery-agent".to_owned(),
+        };
+        let request = |method: &str, session: Option<&str>| {
+            let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+            if let Some(session) = session {
+                headers.push(("mcp-session-id".to_owned(), session.to_owned()));
+            }
+            crate::http1::HttpRequest::from_test_parts(
+                crate::http1::HttpMethod::Post,
+                headers,
+                serde_json::to_vec(&json!({
+                    "jsonrpc": "2.0", "id": 1, "method": method,
+                    "params": {"name": "search", "arguments": {"query": "needle"}},
+                }))
+                .unwrap(),
+            )
+        };
+        let initialize = super::post_json_rpc(
+            &request("initialize", None),
+            &sessions,
+            &verified,
+            journal.path(),
+        );
+        assert_eq!(initialize.status, 200);
+        let session = initialize.session_id.unwrap();
+        let list = super::post_json_rpc(
+            &request("tools/list", Some(&session)),
+            &sessions,
+            &verified,
+            journal.path(),
+        );
+        assert_eq!(list.status, 200);
+
+        advance(Duration::from_secs(30 * 60)).await;
+        for method in [
+            "tools/list",
+            "tools/call",
+            "initialize",
+            "notifications/initialized",
+        ] {
+            let expired = super::post_json_rpc(
+                &request(method, Some(&session)),
+                &sessions,
+                &verified,
+                journal.path(),
+            );
+            assert_eq!(expired.status, 404, "expired session on {method}");
+            assert!(expired.session_id.is_none());
+        }
+
+        let recovered = super::post_json_rpc(
+            &request("initialize", None),
+            &sessions,
+            &verified,
+            journal.path(),
+        );
+        assert_eq!(recovered.status, 200);
+        let fresh_session = recovered.session_id.unwrap();
+        assert_ne!(fresh_session, session);
+        assert!(sessions.validate(&fresh_session, &verified.id).is_ok());
+        let fresh_list = super::post_json_rpc(
+            &request("tools/list", Some(&fresh_session)),
+            &sessions,
+            &verified,
+            journal.path(),
+        );
+        assert_eq!(fresh_list.status, 200);
+    }
 
     #[tokio::test]
     async fn prefixed_stream_replays_previously_read_bytes_before_the_socket() {

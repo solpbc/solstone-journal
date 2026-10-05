@@ -84,7 +84,7 @@ pub use publish::{
 };
 pub use staging::{
     SourceLocation, StageOutcome, StageRequest, classify_source_location, relocate_import,
-    stage_source,
+    remove_import_records, stage_source,
 };
 pub use sync_state::{
     BackendName, SYNC_BACKEND_INVENTORY, SyncState, SyncStateRead, SyncStateReadClass,

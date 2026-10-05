@@ -305,7 +305,74 @@ fn behavior_vectors() -> Value {
         "kind": "declared",
         "pointers": ["/reason_code"],
     }));
+    vectors.push(json!({
+        "decision": {
+            "accepted": true,
+            "kind": "listing_collision_identity",
+            "selected": [
+                {"key": "120000_10~browser_a", "segment": "120000_10", "stream": "browser_a"},
+                {"key": "120000_10~browser_b", "segment": "120000_10", "stream": "browser_b"}
+            ]
+        },
+        "fixture_id": "declared.client.ingestSegments.collision.same_basename_distinct_streams",
+        "id": "client.ingestSegments.collision.same_basename_distinct_streams",
+        "input": collision_listing_payload(),
+        "kind": "declared",
+        "pointers": ["/items/0/key", "/items/1/key", "/items/0/stream", "/items/1/stream"]
+    }));
+    vectors.push(json!({
+        "decision": {
+            "accepted": false,
+            "kind": "consumer_refusal",
+            "reason_code": "duplicate_listing_key",
+            "selected_keys": []
+        },
+        "fixture_id": "declared.client.ingestSegments.collision.duplicate_wire_key_refused",
+        "id": "client.ingestSegments.collision.duplicate_wire_key_refused",
+        "input": duplicate_wire_key_listing_payload(),
+        "kind": "declared",
+        "pointers": ["/items/0/key", "/items/1/key"]
+    }));
     json!({"schema": "solstone.client-ingest-contract-vectors.v2", "vectors": vectors})
+}
+
+fn collision_listing_payload() -> Value {
+    json!({
+        "protocol_version": 3,
+        "total": 2,
+        "items": [
+            {
+                "key": "120000_10~browser_a",
+                "observed": false,
+                "segment": "120000_10",
+                "stream": "browser_a",
+                "files": [{
+                    "name": "browser_pages.jsonl",
+                    "size": 17,
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "status": "present"
+                }]
+            },
+            {
+                "key": "120000_10~browser_b",
+                "observed": false,
+                "segment": "120000_10",
+                "stream": "browser_b",
+                "files": [{
+                    "name": "browser_pages.jsonl",
+                    "size": 19,
+                    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "status": "present"
+                }]
+            }
+        ]
+    })
+}
+
+fn duplicate_wire_key_listing_payload() -> Value {
+    let mut payload = collision_listing_payload();
+    payload["items"][1]["key"] = Value::String("120000_10~browser_a".to_owned());
+    payload
 }
 
 fn wire_behavior() -> Value {
@@ -365,6 +432,38 @@ fn wire_behavior() -> Value {
         "schema_validation": {
             "valid": true,
         },
+    }));
+    fixtures.push(json!({
+        "id": "declared.client.ingestSegments.collision.same_basename_distinct_streams",
+        "kind": "declared",
+        "payload": collision_listing_payload(),
+        "provenance": {
+            "http_status": 200,
+            "protocol_version": 3
+        },
+        "consumer_decision": {
+            "accepted": true,
+            "selected": [
+                {"key": "120000_10~browser_a", "segment": "120000_10", "stream": "browser_a"},
+                {"key": "120000_10~browser_b", "segment": "120000_10", "stream": "browser_b"}
+            ]
+        },
+        "schema_validation": {"valid": true}
+    }));
+    fixtures.push(json!({
+        "id": "declared.client.ingestSegments.collision.duplicate_wire_key_refused",
+        "kind": "declared",
+        "payload": duplicate_wire_key_listing_payload(),
+        "provenance": {
+            "http_status": 200,
+            "protocol_version": 3
+        },
+        "consumer_decision": {
+            "accepted": false,
+            "reason_code": "duplicate_listing_key",
+            "selected_keys": []
+        },
+        "schema_validation": {"valid": true}
     }));
     json!({"schema": "solstone.client-ingest-contract-fixtures.v2", "fixtures": fixtures})
 }

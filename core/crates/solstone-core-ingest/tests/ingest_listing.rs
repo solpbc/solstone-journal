@@ -3,24 +3,31 @@
 
 //! Route-level coverage for native durable device-ingest evidence.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use solstone_core_callosum::CallosumSocketServer;
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_ingest::api_router;
+use solstone_core_segment::with_takeover_stream_boundary;
 use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
 use tower::ServiceExt;
 
 const DAY: &str = "20260804";
+const TAKEOVER_DAY: &str = "20261004";
 const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const CID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const CID_C: &str = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+const CID_D: &str = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const CID_E: &str = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
 fn journal() -> tempfile::TempDir {
-    let directory = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+    let directory = tempfile::TempDir::new().expect("journal root");
     seed_authorized_client(directory.path(), CID_A);
     seed_authorized_client(directory.path(), CID_B);
     directory
@@ -170,6 +177,100 @@ fn item<'a>(body: &'a Value, segment: &str) -> &'a Value {
         .iter()
         .find(|item| item["key"] == segment)
         .expect("segment item")
+}
+
+fn publish_takeover(root: &Path, adopted: &str, retired: &str) {
+    with_takeover_stream_boundary(root, adopted, retired, |guard| {
+        let plan = guard.plan(adopted, retired);
+        guard.publish(&plan).unwrap();
+        Ok(())
+    })
+    .expect("takeover publishes");
+}
+
+fn stream_for_cid(root: &Path, day: &str, cid: &str) -> String {
+    for stream in fs::read_dir(root.join("chronicle").join(day)).expect("day streams") {
+        let stream = stream.expect("stream");
+        if !stream.path().is_dir() {
+            continue;
+        }
+        for segment in fs::read_dir(stream.path()).expect("stream segments") {
+            let segment = segment.expect("segment");
+            let events = segment.path().join("events.jsonl");
+            if !events.is_file() {
+                continue;
+            }
+            let contents = fs::read_to_string(events).expect("events");
+            if contents.lines().any(|line| {
+                serde_json::from_str::<Value>(line).is_ok_and(|event| {
+                    event["cid"] == cid
+                        && event["source"] == "browser"
+                        && event["segment"] == "120000_10"
+                })
+            }) {
+                return stream.file_name().to_string_lossy().into_owned();
+            }
+        }
+    }
+    panic!("stream for {cid}")
+}
+
+fn snapshot_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    fn collect(root: &Path, directory: &Path, files: &mut BTreeMap<String, Vec<u8>>) {
+        for entry in fs::read_dir(directory).expect("directory") {
+            let entry = entry.expect("entry");
+            let path = entry.path();
+            if path.is_dir() {
+                collect(root, &path, files);
+            } else if path.is_file() {
+                files.insert(
+                    path.strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
+                    fs::read(path).expect("file bytes"),
+                );
+            }
+        }
+    }
+    let mut files = BTreeMap::new();
+    if root.exists() {
+        collect(root, root, &mut files);
+    }
+    files
+}
+
+fn digest(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn segment_items(listing: &Value) -> &Vec<Value> {
+    listing["items"].as_array().expect("listing items")
+}
+
+fn stream_marker(root: &Path, day: &str, stream: &str) -> (String, Value) {
+    let mut latest: Option<(u64, String, Value)> = None;
+    for segment in
+        fs::read_dir(root.join("chronicle").join(day).join(stream)).expect("stream segments")
+    {
+        let segment = segment.expect("segment");
+        let path = segment.path().join("stream.json");
+        if !path.is_file() {
+            continue;
+        }
+        let marker: Value =
+            serde_json::from_slice(&fs::read(path).expect("stream marker")).expect("marker JSON");
+        let seq = marker["seq"].as_u64().expect("sequence");
+        if latest.as_ref().is_none_or(|(prior, _, _)| seq > *prior) {
+            latest = Some((
+                seq,
+                segment.file_name().to_string_lossy().into_owned(),
+                marker,
+            ));
+        }
+    }
+    let (_, basename, marker) = latest.expect("stream marker exists");
+    (basename, marker)
 }
 
 #[tokio::test]
@@ -612,4 +713,402 @@ async fn well_formed_unknown_durable_rows_are_ignored() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(listing["total"], 1);
+}
+
+#[tokio::test]
+async fn non_collision_listing_wire_shape_is_unchanged() {
+    let journal = journal();
+    let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
+        .await
+        .expect("Callosum server");
+    let app = api_router(journal.path());
+    upload(
+        &app,
+        CID_A,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        b"{\"t\":\"segment_start\",\"ts\":1700000000,\"blocks\":[{\"text\":\"noncollision\"}]}\n",
+    )
+    .await;
+
+    let (status, listing) = request(
+        &app,
+        "GET",
+        "/app/devices/ingest/segments/20261004?source=browser",
+        CID_A,
+        Vec::new(),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let item = &segment_items(&listing)[0];
+    let mut keys = item
+        .as_object()
+        .expect("item object")
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    assert_eq!(keys, ["files", "key", "observed"]);
+    assert_eq!(item["key"], "120000_10");
+    let mut file_keys = item["files"][0]
+        .as_object()
+        .expect("file object")
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    file_keys.sort_unstable();
+    assert_eq!(file_keys, ["name", "sha256", "size", "status"]);
+}
+
+#[tokio::test]
+async fn takeover_collision_listing_preserves_both_histories_on_both_routes() {
+    let journal = journal();
+    let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
+        .await
+        .expect("Callosum server");
+    let app = api_router(journal.path());
+    let bytes_a =
+        b"{\"t\":\"segment_start\",\"ts\":1700000000,\"blocks\":[{\"text\":\"pages from A\"}]}\n";
+    let bytes_b = b"{\"t\":\"segment_start\",\"ts\":1700000000,\"blocks\":[{\"text\":\"different pages from B\"}]}\n";
+    let upload_a = upload(
+        &app,
+        CID_A,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_a,
+    )
+    .await;
+    let upload_b = upload(
+        &app,
+        CID_B,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_b,
+    )
+    .await;
+    let stream_a = stream_for_cid(journal.path(), TAKEOVER_DAY, CID_A);
+    let stream_b = stream_for_cid(journal.path(), TAKEOVER_DAY, CID_B);
+    assert_ne!(stream_a, stream_b);
+    publish_takeover(journal.path(), CID_B, CID_A);
+    let before = snapshot_tree(&journal.path().join("chronicle").join(TAKEOVER_DAY));
+
+    for _ in 0..2 {
+        let (status, listing) = request(
+            &app,
+            "GET",
+            "/app/devices/ingest/segments/20261004?source=browser",
+            CID_B,
+            Vec::new(),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(listing["protocol_version"], 3);
+        assert_eq!(listing["total"], 2);
+        for (stream, bytes, upload_response) in [
+            (stream_a.as_str(), bytes_a.as_slice(), &upload_a),
+            (stream_b.as_str(), bytes_b.as_slice(), &upload_b),
+        ] {
+            let item = segment_items(&listing)
+                .iter()
+                .find(|item| item["stream"] == stream)
+                .expect("stream item");
+            let key = format!("120000_10~{stream}");
+            assert_eq!(item["key"], key);
+            assert_eq!(item["segment"], "120000_10");
+            let file = &item["files"][0];
+            assert_eq!(file["name"], "browser_pages.jsonl");
+            assert_eq!(file["size"], bytes.len());
+            assert_eq!(file["sha256"], digest(bytes));
+            assert_eq!(file["status"], "present");
+            assert_eq!(
+                upload_response["file_descriptors"][0]["sha256"],
+                digest(bytes)
+            );
+        }
+
+        let (status, manifest) = request(
+            &app,
+            "GET",
+            "/app/devices/ingest/manifest/20261004?source=browser",
+            CID_B,
+            Vec::new(),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        for (stream, bytes) in [
+            (stream_a.as_str(), bytes_a.as_slice()),
+            (stream_b.as_str(), bytes_b.as_slice()),
+        ] {
+            let key = format!("120000_10~{stream}");
+            let file = &manifest["segments"][key]["files"][0];
+            assert_eq!(file["name"], "browser_pages.jsonl");
+            assert_eq!(file["size"], bytes.len());
+            assert_eq!(file["sha256"], digest(bytes));
+            assert_eq!(file["status"], "present");
+        }
+    }
+
+    assert_eq!(
+        snapshot_tree(&journal.path().join("chronicle").join(TAKEOVER_DAY)),
+        before
+    );
+}
+
+#[tokio::test]
+async fn takeover_continuation_upload_advances_only_the_new_tail() {
+    let journal = journal();
+    for cid in [CID_C, CID_D, CID_E] {
+        seed_authorized_client(journal.path(), cid);
+    }
+    let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
+        .await
+        .expect("Callosum server");
+    let app = api_router(journal.path());
+
+    let bytes_a =
+        b"{\"t\":\"segment_start\",\"ts\":1700000000,\"blocks\":[{\"text\":\"A history\"}]}\n";
+    let bytes_b_pre = b"{\"t\":\"segment_start\",\"ts\":1700000001,\"blocks\":[{\"text\":\"B independent pre-choice\"}]}\n";
+    let bytes_b_tail = b"{\"t\":\"segment_start\",\"ts\":1700000002,\"blocks\":[{\"text\":\"B transferred tail\"}]}\n";
+    let bytes_c_pre = b"{\"t\":\"segment_start\",\"ts\":1700000003,\"blocks\":[{\"text\":\"C independent pre-choice\"}]}\n";
+    let bytes_c_tail = b"{\"t\":\"segment_start\",\"ts\":1700000004,\"blocks\":[{\"text\":\"C transferred tail\"}]}\n";
+    let bytes_d_pre = b"{\"t\":\"segment_start\",\"ts\":1700000005,\"blocks\":[{\"text\":\"D independent pre-choice\"}]}\n";
+    let bytes_e = b"{\"t\":\"segment_start\",\"ts\":1700000006,\"blocks\":[{\"text\":\"unrelated device\"}]}\n";
+    let bytes_other_source =
+        b"{\"t\":\"segment_start\",\"ts\":1700000007,\"blocks\":[{\"text\":\"other source\"}]}\n";
+    upload(
+        &app,
+        CID_A,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_a,
+    )
+    .await;
+    upload(
+        &app,
+        CID_B,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_b_pre,
+    )
+    .await;
+    upload(
+        &app,
+        CID_C,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_c_pre,
+    )
+    .await;
+    upload(
+        &app,
+        CID_D,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_d_pre,
+    )
+    .await;
+    upload(
+        &app,
+        CID_E,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_e,
+    )
+    .await;
+    upload(
+        &app,
+        CID_A,
+        TAKEOVER_DAY,
+        "130000_5",
+        "other",
+        "other.jsonl",
+        bytes_other_source,
+    )
+    .await;
+
+    let tail_stream = stream_for_cid(journal.path(), TAKEOVER_DAY, CID_A);
+    let b_stream = stream_for_cid(journal.path(), TAKEOVER_DAY, CID_B);
+    let c_stream = stream_for_cid(journal.path(), TAKEOVER_DAY, CID_C);
+    let d_stream = stream_for_cid(journal.path(), TAKEOVER_DAY, CID_D);
+    let e_stream = stream_for_cid(journal.path(), TAKEOVER_DAY, CID_E);
+    assert_ne!(tail_stream, b_stream);
+    assert_ne!(tail_stream, c_stream);
+    assert_ne!(tail_stream, d_stream);
+    assert_ne!(tail_stream, e_stream);
+
+    publish_takeover(journal.path(), CID_B, CID_A);
+    upload(
+        &app,
+        CID_B,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_b_tail,
+    )
+    .await;
+    publish_takeover(journal.path(), CID_C, CID_B);
+    upload(
+        &app,
+        CID_C,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_c_tail,
+    )
+    .await;
+    publish_takeover(journal.path(), CID_D, CID_C);
+
+    let before = snapshot_tree(&journal.path().join("chronicle").join(TAKEOVER_DAY));
+    let (previous_segment, before_marker) =
+        stream_marker(journal.path(), TAKEOVER_DAY, &tail_stream);
+    let seq_before = before_marker["seq"].as_u64().expect("tail sequence");
+    let unrelated_stream_snapshots = [
+        b_stream.as_str(),
+        c_stream.as_str(),
+        d_stream.as_str(),
+        e_stream.as_str(),
+    ]
+    .into_iter()
+    .map(|stream| {
+        (
+            stream.to_owned(),
+            before
+                .iter()
+                .filter(|(path, _)| path.starts_with(&format!("{stream}/")))
+                .map(|(path, bytes)| (path.clone(), bytes.clone()))
+                .collect::<BTreeMap<_, _>>(),
+        )
+    })
+    .collect::<BTreeMap<_, _>>();
+
+    let bytes_d_tail = b"{\"t\":\"segment_start\",\"ts\":1700000008,\"blocks\":[{\"text\":\"D transferred tail\"}]}\n";
+    let upload_d = upload(
+        &app,
+        CID_D,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        bytes_d_tail,
+    )
+    .await;
+    let landed = upload_d["segment"].as_str().expect("landed segment");
+    let tail_path = journal
+        .path()
+        .join("chronicle")
+        .join(TAKEOVER_DAY)
+        .join(&tail_stream)
+        .join(landed);
+    assert!(tail_path.join("stream.json").is_file());
+    let new_marker: Value =
+        serde_json::from_slice(&fs::read(tail_path.join("stream.json")).expect("new tail marker"))
+            .expect("new marker JSON");
+    assert_eq!(new_marker["seq"], seq_before + 1);
+    assert_eq!(new_marker["prev_day"], TAKEOVER_DAY);
+    assert_eq!(new_marker["prev_segment"], previous_segment);
+    for (stream, expected) in unrelated_stream_snapshots {
+        let actual = snapshot_tree(&journal.path().join("chronicle").join(TAKEOVER_DAY))
+            .into_iter()
+            .filter(|(path, _)| path.starts_with(&format!("{stream}/")))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(actual, expected, "unrelated stream {stream} changed");
+    }
+    assert!(before.contains_key(&format!("{tail_stream}/{previous_segment}/stream.json")));
+
+    let (status, listing) = request(
+        &app,
+        "GET",
+        "/app/devices/ingest/segments/20261004?source=browser",
+        CID_D,
+        Vec::new(),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let listed_streams = segment_items(&listing)
+        .iter()
+        .filter_map(|item| item["stream"].as_str().or_else(|| item["key"].as_str()))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(listed_streams.contains(tail_stream.as_str()));
+    assert!(listed_streams.contains(d_stream.as_str()));
+    assert!(!listed_streams.contains(e_stream.as_str()));
+    let listed_hashes = segment_items(&listing)
+        .iter()
+        .flat_map(|item| item["files"].as_array().into_iter().flatten())
+        .filter_map(|file| file["sha256"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    for bytes in [
+        bytes_a.as_slice(),
+        bytes_b_tail.as_slice(),
+        bytes_c_tail.as_slice(),
+        bytes_d_pre.as_slice(),
+        bytes_d_tail.as_slice(),
+    ] {
+        assert!(listed_hashes.contains(digest(bytes).as_str()));
+    }
+    assert!(!listed_hashes.contains(digest(bytes_e).as_str()));
+    assert!(!listed_hashes.contains(digest(bytes_other_source).as_str()));
+}
+
+#[tokio::test]
+async fn retired_cid_ingest_is_rejected_after_takeover() {
+    let journal = journal();
+    let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
+        .await
+        .expect("Callosum server");
+    let app = api_router(journal.path());
+    upload(
+        &app,
+        CID_A,
+        TAKEOVER_DAY,
+        "120000_10",
+        "browser",
+        "browser_pages.jsonl",
+        b"{\"t\":\"segment_start\",\"ts\":1700000000,\"blocks\":[{\"text\":\"A bytes\"}]}\n",
+    )
+    .await;
+    publish_takeover(journal.path(), CID_B, CID_A);
+
+    let (content_type, body) = multipart(
+        json!({
+            "day": TAKEOVER_DAY,
+            "segment": "120000_10",
+            "source": "browser",
+            "files": [{"submitted": "browser_pages.jsonl"}],
+        }),
+        "browser_pages.jsonl",
+        b"{\"t\":\"segment_start\",\"ts\":1700000001,\"blocks\":[{\"text\":\"retired write\"}]}\n",
+    );
+    let (status, refusal) = request(
+        &app,
+        "POST",
+        "/app/devices/ingest",
+        CID_A,
+        body,
+        Some(content_type),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(refusal["reason_code"], "foreign_stream_binding");
 }

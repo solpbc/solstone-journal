@@ -16,14 +16,14 @@ use solstone_core_format::agent_memory::{
     SourceKey, digest, validate_record_header,
 };
 use solstone_core_indexer_query::{
-    MemoryOriginalRow, OwnMemoryDateFilters, OwnMemoryOpenError, OwnMemoryQueryMode, QueryBoundary,
-    compile_own_memory_query, inspect_own_memory_index, open_own_memory_connection,
-    own_memory_candidates, read_own_memory_row,
+    MemoryOriginalRow, OwnMemoryDateFilters, OwnMemoryOpenError, OwnMemoryQuery,
+    OwnMemoryQueryMode, QueryBoundary, compile_own_memory_query, inspect_own_memory_index,
+    open_own_memory_connection, own_memory_candidates, read_own_memory_row,
 };
 use solstone_core_journal_io::journal_root::JournalRoot;
 use solstone_core_journal_io::readers::read_relative_file_bounded;
 use solstone_core_journal_io::strict_segment::resolve_stream_exact;
-use solstone_core_memory_original::{OriginalRead, read_original};
+use solstone_core_memory_original::{OriginalRead, read_original_until, read_source_guard};
 
 use crate::references::{
     MemoryRecallCursor, ReferenceCodec, ReferenceError, ReferenceKind, ReferenceTarget,
@@ -34,6 +34,8 @@ const DEFAULT_LIMIT: usize = 5;
 const MAX_LIMIT: usize = 20;
 const MAX_PAGE_BYTES: usize = 65_536;
 const BATCH_SIZE: usize = 1;
+const MAX_COVERAGE_COORDINATES: usize = 10_000;
+const MAX_EXAMINED_ROWS: usize = 1_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RecallNote {
@@ -102,16 +104,17 @@ impl Drop for Watchdog {
     }
 }
 
-/// Private endpoint engine. Callers must pass the already verified identity
-/// and its current permission generation; this does not register an MCP tool.
+/// Private endpoint engine, bound to verified identity and credential lineage.
+/// Own cursors use this process-local signing generation independently of the
+/// ordinary read-grant ledger. This does not register an MCP tool.
 pub(crate) fn recall(
     journal: &Path,
     codec: &ReferenceCodec,
     connection_identity: &str,
     verified_identity: &str,
-    permission_generation: u64,
+    credential_lineage: &str,
     args: RecallArgs,
-    reference_date: NaiveDate,
+    mut reference_date: NaiveDate,
 ) -> RecallPage {
     let deadline = Instant::now() + RECALL_DEADLINE;
     let source_key = SourceKey::from_verified_id(verified_identity);
@@ -120,23 +123,26 @@ pub(crate) fn recall(
     };
     let normalized_query = args.query.as_deref().map(normalize_query);
     let mut cursor_anchor = None;
+    let mut cursor_inclusive = true;
+    let mut cursor_predicate = None;
     if let Some(token) = args.continuation.as_deref() {
         let Ok(ReferenceTarget::MemoryRecall(cursor)) = codec.resolve(
             token,
             ReferenceKind::MemoryRecall,
             connection_identity,
-            permission_generation,
+            codec.signing_generation(),
         ) else {
             return failure("memory_recall_cursor_invalid");
         };
         if cursor.source_key != source_key.as_str()
+            || cursor.credential_lineage != credential_lineage
             || cursor.query != normalized_query
-            || cursor.day != args.day
-            || cursor.day_from != args.day_from
-            || cursor.day_to != args.day_to
         {
             return failure("memory_recall_cursor_invalid");
         }
+        reference_date = cursor.reference_date;
+        cursor_inclusive = cursor.anchor_inclusive;
+        cursor_predicate = Some((cursor.compiled_mode, cursor.effective_date));
         cursor_anchor = Some((cursor.anchor_day, cursor.anchor_path));
     }
 
@@ -149,9 +155,19 @@ pub(crate) fn recall(
         },
         reference_date,
     );
+    if cursor_predicate
+        .is_some_and(|(mode, date)| mode != query.mode || date != query.predicate.effective_date)
+    {
+        return failure("memory_recall_cursor_invalid");
+    }
     if deadline_passed(deadline) {
         return failure("memory_recall_budget_exhausted");
     }
+    let source_guard = match read_source_guard(journal, &source_key, deadline) {
+        Ok(guard) => guard,
+        Err(_) if deadline_passed(deadline) => return failure("memory_recall_budget_exhausted"),
+        Err(_) => return failure("memory_source_unavailable"),
+    };
     let busy = remaining(deadline);
     let connection = match open_own_memory_connection(journal, busy) {
         Ok(connection) => connection,
@@ -165,6 +181,15 @@ pub(crate) fn recall(
         return failure("memory_recall_budget_exhausted");
     }
     let watchdog = Watchdog::start(connection.get_interrupt_handle(), deadline);
+    // This read transaction begins before schema/coverage observations and
+    // remains the same view throughout note selection.
+    if connection.execute_batch("BEGIN").is_err() {
+        return failure(if deadline_passed(deadline) {
+            "memory_recall_budget_exhausted"
+        } else {
+            "memory_index_unavailable"
+        });
+    }
     match inspect_own_memory_index(&connection) {
         Ok(()) => {}
         Err(_) if deadline_passed(deadline) => {
@@ -173,9 +198,13 @@ pub(crate) fn recall(
         Err(OwnMemoryOpenError::Pending) => return failure("memory_index_pending"),
         Err(OwnMemoryOpenError::Unavailable) => return failure("memory_index_unavailable"),
     }
-    if let Some(reason) =
-        coverage_failure_reason(coverage(journal, &connection, &source_key, deadline))
-    {
+    if let Some(reason) = coverage_failure_reason(coverage_in_view(
+        journal,
+        &connection,
+        &source_key,
+        deadline,
+        source_guard.is_some(),
+    )) {
         return failure(reason);
     }
     if deadline_passed(deadline) {
@@ -196,14 +225,15 @@ pub(crate) fn recall(
     let mut notes = Vec::new();
     let mut page_bytes = 0usize;
     let mut anchor = cursor_anchor;
-    let mut inclusive = true;
+    let mut inclusive = cursor_inclusive;
+    let mut examined = 0;
     let mut continuation = None;
     let mut continuation_mint_failed = false;
     let mut reason = None;
     let mut exhausted = false;
 
     loop {
-        if deadline_passed(deadline) {
+        if deadline_passed(deadline) || examined >= MAX_EXAMINED_ROWS {
             reason = Some("memory_recall_budget_exhausted");
             exhausted = true;
             break;
@@ -251,11 +281,13 @@ pub(crate) fn recall(
                 continuation = match mint_cursor(
                     codec,
                     connection_identity,
-                    permission_generation,
+                    credential_lineage,
                     &source_key,
                     normalized_query.clone(),
-                    &args,
+                    &query,
+                    reference_date,
                     row_anchor,
+                    true,
                 ) {
                     Ok(token) => Some(token),
                     Err(_) => {
@@ -276,11 +308,13 @@ pub(crate) fn recall(
                     continuation = match mint_cursor(
                         codec,
                         connection_identity,
-                        permission_generation,
+                        credential_lineage,
                         &source_key,
                         normalized_query.clone(),
-                        &args,
+                        &query,
+                        reference_date,
                         row_anchor,
+                        true,
                     ) {
                         Ok(token) => Some(token),
                         Err(_) => {
@@ -304,13 +338,27 @@ pub(crate) fn recall(
                 break;
             }
         }
+        examined += 1;
         anchor = Some(row_anchor);
         inclusive = false;
     }
     drop(watchdog);
-    if exhausted && continuation.is_none() {
-        // The page has no safe first-unreturned coordinate. Retrying from the
-        // same request cannot skip a row; a fresh browse remains available.
+    if exhausted
+        && continuation.is_none()
+        && let Some(anchor) = anchor
+    {
+        continuation = mint_cursor(
+            codec,
+            connection_identity,
+            credential_lineage,
+            &source_key,
+            normalized_query,
+            &query,
+            reference_date,
+            anchor,
+            inclusive,
+        )
+        .ok();
     }
     let complete = page_is_complete(reason, continuation.as_deref(), continuation_mint_failed);
     RecallPage {
@@ -364,26 +412,34 @@ fn is_interrupt(error: &rusqlite::Error) -> bool {
     matches!(error, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::OperationInterrupted)
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one token binds identity, frozen query and continuation coordinate"
+)]
 fn mint_cursor(
     codec: &ReferenceCodec,
     connection_identity: &str,
-    permission_generation: u64,
+    credential_lineage: &str,
     source_key: &SourceKey,
     query: Option<String>,
-    args: &RecallArgs,
+    compiled: &OwnMemoryQuery,
+    reference_date: NaiveDate,
     anchor: (String, String),
+    anchor_inclusive: bool,
 ) -> Result<String, ReferenceError> {
     codec.mint(
         connection_identity,
-        permission_generation,
+        codec.signing_generation(),
         ReferenceTarget::MemoryRecall(MemoryRecallCursor {
             source_key: source_key.as_str().to_owned(),
+            credential_lineage: credential_lineage.to_owned(),
             query,
-            day: args.day.clone(),
-            day_from: args.day_from.clone(),
-            day_to: args.day_to.clone(),
+            reference_date,
+            compiled_mode: compiled.mode.clone(),
+            effective_date: compiled.predicate.effective_date.clone(),
             anchor_day: anchor.0,
             anchor_path: anchor.1,
+            anchor_inclusive,
         }),
     )
 }
@@ -417,7 +473,7 @@ fn validate_candidate(
         stream: row.stream.clone(),
         segment: row.segment.clone(),
     };
-    let outcome = read_original(journal, source_key, &coordinate);
+    let outcome = read_original_until(journal, source_key, &coordinate, deadline);
     if deadline_passed(deadline) {
         return Candidate::Budget;
     }
@@ -475,11 +531,12 @@ fn row_matches(
         && row.created_at == origin.created_at.to_rfc3339()
 }
 
-fn coverage(
+fn coverage_in_view(
     journal: &Path,
     connection: &Connection,
     source_key: &SourceKey,
     deadline: Instant,
+    source_is_coordinated: bool,
 ) -> Coverage {
     if deadline_passed(deadline) {
         return Coverage::Budget;
@@ -500,6 +557,10 @@ fn coverage(
     }
     let root = match root_result {
         Ok(root) => root,
+        Err(_) => return coverage_io_failure(deadline),
+    };
+    let namespace = match fs::canonicalize(root.canonical_path()) {
+        Ok(path) => path,
         Err(_) => return coverage_io_failure(deadline),
     };
     let mut coordinates = Vec::new();
@@ -564,6 +625,9 @@ fn coverage(
             {
                 return Coverage::SourceUnavailable;
             }
+            if coordinates.len() >= MAX_COVERAGE_COORDINATES {
+                return Coverage::Budget;
+            }
             coordinates.push(record.coordinate);
         }
         if coordinates.is_empty() {
@@ -619,7 +683,7 @@ fn coverage(
                 if !metadata.file_type().is_dir() {
                     return Coverage::SourceUnavailable;
                 }
-                let stream_result = resolve_stream_exact(journal, &day, &stream);
+                let stream_result = resolve_stream_exact(&namespace, &day, &stream);
                 if deadline_passed(deadline) {
                     return Coverage::Budget;
                 }
@@ -659,12 +723,32 @@ fn coverage(
                     if deadline_passed(deadline) {
                         return Coverage::Budget;
                     }
-                    match file_type {
-                        Ok(_) => {}
+                    let file_type = match file_type {
+                        Ok(kind) => kind,
                         Err(_) => return coverage_io_failure(deadline),
-                    }
+                    };
                     if segment.starts_with(".removing_") {
                         continue;
+                    }
+                    if let Some(live_name) = segment.strip_suffix(".lock") {
+                        let coordinate = Coordinate {
+                            day: day.clone(),
+                            stream: stream.clone(),
+                            segment: live_name.to_owned(),
+                        };
+                        if file_type.is_file()
+                            && solstone_core_format::agent_memory::validate_coordinate(
+                                &coordinate,
+                                source_key,
+                            )
+                            .is_ok()
+                        {
+                            continue;
+                        }
+                        return Coverage::SourceUnavailable;
+                    }
+                    if coordinates.len() >= MAX_COVERAGE_COORDINATES {
+                        return Coverage::Budget;
                     }
                     coordinates.push(Coordinate {
                         day: day.clone(),
@@ -679,7 +763,7 @@ fn coverage(
     if !operation_exists && !found_stream {
         return Coverage::Complete;
     }
-    if coordinates.is_empty() {
+    if !source_is_coordinated || coordinates.is_empty() {
         return Coverage::SourceUnavailable;
     }
     let mut seen = std::collections::BTreeSet::new();
@@ -690,7 +774,7 @@ fn coverage(
         if !seen.insert((coordinate.day.clone(), coordinate.segment.clone())) {
             continue;
         }
-        let original = read_original(journal, source_key, &coordinate);
+        let original = read_original_until(journal, source_key, &coordinate, deadline);
         if deadline_passed(deadline) {
             return Coverage::Budget;
         }
@@ -810,6 +894,152 @@ mod tests {
         assert_eq!(normalize_query("  Keep\tthis  "), "Keep this");
     }
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn own_recall_cursor_binds_credential_lineage_and_signing_generation() {
+        let outer = tempfile::Builder::new()
+            .prefix("own-memory-cursor-")
+            .tempdir_in(test_scratch_root())
+            .unwrap();
+        let journal = outer.path().join("unused-journal");
+        assert!(!journal.exists());
+
+        let codec = ReferenceCodec::new().unwrap();
+        let connection_identity = "own-memory-cursor-connection";
+        let verified_identity = "own-memory-cursor-identity";
+        let source_key = SourceKey::from_verified_id(verified_identity);
+        let query = Some("private memory".to_owned());
+        let day = Some("20260914".to_owned());
+        let args = RecallArgs {
+            query: query.clone(),
+            day: day.clone(),
+            ..RecallArgs::default()
+        };
+        let mint = |codec: &ReferenceCodec, credential_lineage: &str| {
+            codec
+                .mint(
+                    connection_identity,
+                    codec.signing_generation(),
+                    ReferenceTarget::MemoryRecall(MemoryRecallCursor {
+                        source_key: source_key.as_str().to_owned(),
+                        credential_lineage: credential_lineage.to_owned(),
+                        query: query.as_deref().map(normalize_query),
+                        reference_date: NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
+                        compiled_mode: compile_own_memory_query(
+                            args.query.as_deref(),
+                            OwnMemoryDateFilters {
+                                day: day.clone(),
+                                ..OwnMemoryDateFilters::default()
+                            },
+                            NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
+                        )
+                        .mode,
+                        effective_date: solstone_core_indexer_query::EffectiveDateConstraint::Exact(
+                            "20260914".into(),
+                        ),
+                        anchor_day: "20260914".to_owned(),
+                        anchor_path: "20260914/agent-memory-source/120000_1/note.txt".to_owned(),
+                        anchor_inclusive: true,
+                    }),
+                )
+                .unwrap()
+        };
+        let token = mint(&codec, "credential-lineage-a");
+        let signing_generation = codec.signing_generation();
+        assert!(matches!(
+            codec.resolve(
+                &token,
+                ReferenceKind::MemoryRecall,
+                connection_identity,
+                signing_generation
+            ),
+            Ok(ReferenceTarget::MemoryRecall(_))
+        ));
+        assert!(!journal.exists());
+        assert_eq!(
+            codec.resolve(
+                &token,
+                ReferenceKind::MemoryRecall,
+                connection_identity,
+                signing_generation.wrapping_add(1)
+            ),
+            Err(ReferenceError::NotFound)
+        );
+        assert!(!journal.exists());
+        if signing_generation != 9 {
+            assert_eq!(
+                codec.resolve(&token, ReferenceKind::MemoryRecall, connection_identity, 9),
+                Err(ReferenceError::NotFound)
+            );
+        }
+        assert!(!journal.exists());
+        assert_eq!(
+            codec.resolve(
+                &token,
+                ReferenceKind::MemoryRecall,
+                "another-connection",
+                signing_generation
+            ),
+            Err(ReferenceError::NotFound)
+        );
+        assert!(!journal.exists());
+
+        let recall_with = |codec: &ReferenceCodec, credential_lineage: &str, token: String| {
+            recall(
+                &journal,
+                codec,
+                connection_identity,
+                verified_identity,
+                credential_lineage,
+                RecallArgs {
+                    continuation: Some(token),
+                    ..args.clone()
+                },
+                NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
+            )
+        };
+        let matching = recall_with(&codec, "credential-lineage-a", token.clone());
+        assert_eq!(matching.reason, Some("memory_index_unavailable"));
+        assert!(!journal.exists());
+        let mismatched = recall_with(&codec, "credential-lineage-b", token.clone());
+        assert_eq!(mismatched.reason, Some("memory_recall_cursor_invalid"));
+        assert!(!journal.exists());
+
+        let empty_lineage_token = mint(&codec, "");
+        let empty_lineage = recall_with(&codec, "", empty_lineage_token.clone());
+        assert_eq!(empty_lineage.reason, Some("memory_index_unavailable"));
+        assert!(!journal.exists());
+        let nonempty_lineage = recall_with(&codec, "credential-lineage-a", empty_lineage_token);
+        assert_eq!(
+            nonempty_lineage.reason,
+            Some("memory_recall_cursor_invalid")
+        );
+        assert!(!journal.exists());
+
+        let other_codec = ReferenceCodec::new().unwrap();
+        assert_eq!(
+            other_codec.resolve(
+                &token,
+                ReferenceKind::MemoryRecall,
+                connection_identity,
+                other_codec.signing_generation()
+            ),
+            Err(ReferenceError::NotFound)
+        );
+        assert!(!journal.exists());
+        let restarted = recall_with(&other_codec, "credential-lineage-a", token.clone());
+        assert_eq!(restarted.reason, Some("memory_recall_cursor_invalid"));
+        assert!(!journal.exists());
+
+        let mut tampered = token.into_bytes();
+        let last = tampered.len() - 1;
+        tampered[last] = if tampered[last] == b'A' { b'B' } else { b'A' };
+        let tampered = String::from_utf8(tampered).unwrap();
+        let tampered_result = recall_with(&codec, "credential-lineage-a", tampered);
+        assert_eq!(tampered_result.reason, Some("memory_recall_cursor_invalid"));
+        assert!(!journal.exists());
+    }
+
     #[test]
     fn coverage_outcomes_keep_pending_source_and_deadline_distinct() {
         assert_eq!(coverage_failure_reason(Coverage::Complete), None);
@@ -846,6 +1076,10 @@ mod tests {
             .tempdir_in(test_scratch_root())
             .unwrap();
         let source = SourceKey::from_verified_id("recall-fixture-source");
+        drop(
+            solstone_core_segment::hold_agent_memory_mutation(journal.path(), source.component())
+                .unwrap(),
+        );
         let stream = format!("agent-memory-{}", source.component());
         let day = "20260102";
         let created_at = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
@@ -894,6 +1128,11 @@ mod tests {
                 .join(&stream)
                 .join(&coordinate.segment);
             fs::create_dir_all(&segment_path).unwrap();
+            let _live_guard = solstone_core_journal_io::hold_lock(
+                &segment_path,
+                solstone_core_journal_io::LockOptions::default(),
+            )
+            .unwrap();
             fs::write(segment_path.join("note.txt"), &bytes).unwrap();
             fs::write(
                 segment_path.join("origin.json"),
@@ -934,6 +1173,15 @@ mod tests {
                 serde_json::to_vec(&operation).unwrap(),
             )
             .unwrap();
+            drop(_live_guard);
+            match solstone_core_memory_original::read_original(journal.path(), &source, &coordinate)
+            {
+                OriginalRead::Ready { .. } => {}
+                OriginalRead::Unavailable { detail } => {
+                    panic!("fixture original unavailable: {detail}")
+                }
+                other => panic!("fixture original state: {other:?}"),
+            }
             originals.push((coordinate.clone(), bytes, origin, ready));
             coordinates.push(coordinate);
         }
@@ -976,11 +1224,12 @@ mod tests {
         let actual =
             Connection::open(solstone_core_indexer_store::db::db_path(journal.path())).unwrap();
         assert_eq!(
-            coverage(
+            coverage_in_view(
                 journal.path(),
                 &actual,
                 &source,
-                Instant::now() + Duration::from_secs(5)
+                Instant::now() + Duration::from_secs(5),
+                true,
             ),
             Coverage::Complete
         );
@@ -996,7 +1245,7 @@ mod tests {
             &codec,
             "connection",
             "recall-fixture-source",
-            9,
+            "recall-fixture-credential",
             RecallArgs::default(),
             NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
         );
@@ -1025,7 +1274,7 @@ mod tests {
             &codec,
             "connection",
             "recall-fixture-source",
-            9,
+            "recall-fixture-credential",
             RecallArgs {
                 continuation: Some(continuation),
                 ..RecallArgs::default()
@@ -1045,6 +1294,197 @@ mod tests {
 
     #[cfg(feature = "full-tests")]
     #[test]
+    fn recall_continuation_freezes_relative_date_across_midnight() {
+        let (journal, _, _) = recall_fixture(&[4, 4]);
+        let codec = ReferenceCodec::new().unwrap();
+        let first = recall(
+            journal.path(),
+            &codec,
+            "connection",
+            "recall-fixture-source",
+            "credential",
+            RecallArgs {
+                query: Some("today".into()),
+                limit: Some(1),
+                ..RecallArgs::default()
+            },
+            NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+        );
+        assert_eq!(first.notes.len(), 1);
+        let next = recall(
+            journal.path(),
+            &codec,
+            "connection",
+            "recall-fixture-source",
+            "credential",
+            RecallArgs {
+                query: Some("today".into()),
+                limit: Some(1),
+                continuation: first.continuation,
+                ..RecallArgs::default()
+            },
+            NaiveDate::from_ymd_opt(2026, 1, 3).unwrap(),
+        );
+        assert_eq!(next.notes.len(), 1);
+        assert_ne!(first.notes[0].path, next.notes[0].path);
+        assert!(next.complete);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn recall_watchdog_interrupts_executing_sqlite_statement() {
+        let connection = Connection::open_in_memory().unwrap();
+        let started = Instant::now();
+        let watchdog = Watchdog::start(
+            connection.get_interrupt_handle(),
+            started + Duration::from_millis(50),
+        );
+        let result = connection.query_row(
+            "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1000000000) SELECT sum(x) FROM n",
+            [], |row| row.get::<_, i64>(0),
+        );
+        assert!(is_interrupt(&result.unwrap_err()));
+        drop(watchdog);
+        assert!(started.elapsed() < RECALL_DEADLINE);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn writer_original_scan_rescan_and_unused_recall_use_actual_paths() {
+        use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
+        use solstone_core_indexer_store::scan::{rescan_file, scan_journal};
+        let outer = tempfile::Builder::new()
+            .prefix("memory-scan-ready-")
+            .tempdir_in(test_scratch_root())
+            .unwrap();
+        let canonical = outer.path().join("journal");
+        fs::create_dir(&canonical).unwrap();
+        #[cfg(unix)]
+        let journal = {
+            let alias = outer.path().join("alias");
+            std::os::unix::fs::symlink(&canonical, &alias).unwrap();
+            alias
+        };
+        #[cfg(not(unix))]
+        let journal = canonical.clone();
+        scan_journal(&journal, true).unwrap();
+        let codec = ReferenceCodec::new().unwrap();
+        let recall_now = || {
+            recall(
+                &journal,
+                &codec,
+                "scan-connection",
+                "scan-source",
+                "scan-credential",
+                RecallArgs::default(),
+                NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+            )
+        };
+        let unused = recall_now();
+        assert!(unused.complete, "{:?}", unused.reason);
+        assert!(unused.notes.is_empty());
+        assert!(!journal.join("streams").exists());
+        assert!(!journal.join("config/agent-memory").exists());
+        let AppendResult::Stored(receipt) = append_connection_memory(
+            &journal,
+            AuthenticatedMemorySource {
+                verified_id: "scan-source",
+                creation_label: "scan fixture",
+            },
+            "needle exact original",
+            "scan-operation",
+            Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap(),
+        )
+        .unwrap() else {
+            panic!("writer fixture must store");
+        };
+        let segment = journal
+            .join("chronicle/20260102")
+            .join(receipt.origin.stream)
+            .join(receipt.origin.segment);
+        let note = segment.join("note.txt");
+        fs::File::open(&note)
+            .unwrap()
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(2_000_000_000)),
+            )
+            .unwrap();
+        scan_journal(&journal, false).unwrap();
+        assert_eq!(recall_now().notes.len(), 1);
+        let ready = fs::read(segment.join("ready.json")).unwrap();
+        fs::remove_file(segment.join("ready.json")).unwrap();
+        scan_journal(&journal, false).unwrap();
+        let unready = recall_now();
+        assert!(unready.complete, "{:?}", unready.reason);
+        assert!(unready.notes.is_empty());
+        let connection =
+            Connection::open(solstone_core_indexer_store::db::db_path(&journal)).unwrap();
+        let cached: i64 = connection
+            .query_row("SELECT count(*) FROM memory_originals", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(cached, 0);
+        drop(connection);
+        fs::write(segment.join("ready.json"), ready).unwrap();
+        rescan_file(&journal, &note).unwrap();
+        assert_eq!(recall_now().notes[0].bytes, b"needle exact original");
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn source_and_live_guards_share_deadline_without_creating_entries() {
+        let (journal, source, coordinates) = recall_fixture(&[16]);
+        let source_guard =
+            solstone_core_segment::hold_agent_memory_mutation(journal.path(), source.component())
+                .unwrap();
+        let started = Instant::now();
+        assert!(
+            read_source_guard(journal.path(), &source, started + Duration::from_millis(50))
+                .is_err()
+        );
+        assert!(started.elapsed() < RECALL_DEADLINE);
+        drop(source_guard);
+        let coordinate = &coordinates[0];
+        let live = journal
+            .path()
+            .join("chronicle")
+            .join(&coordinate.day)
+            .join(&coordinate.stream)
+            .join(&coordinate.segment);
+        let live_guard = solstone_core_journal_io::hold_lock(
+            &live,
+            solstone_core_journal_io::LockOptions::default(),
+        )
+        .unwrap();
+        let before = fs::read(live.join("ready.json")).unwrap();
+        let started = Instant::now();
+        assert!(matches!(
+            read_original_until(
+                journal.path(),
+                &source,
+                coordinate,
+                started + Duration::from_millis(50)
+            ),
+            OriginalRead::Unavailable { .. }
+        ));
+        assert!(started.elapsed() < RECALL_DEADLINE);
+        assert_eq!(fs::read(live.join("ready.json")).unwrap(), before);
+        drop(live_guard);
+        assert!(matches!(
+            read_original_until(
+                journal.path(),
+                &source,
+                coordinate,
+                Instant::now() + RECALL_DEADLINE
+            ),
+            OriginalRead::Ready { .. }
+        ));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
     fn memory_measurement_harness_explains_real_browse_and_term_statements() {
         use rusqlite::{Connection, params_from_iter};
         use solstone_core_format::agent_memory::{OriginKind, Readiness};
@@ -1054,25 +1494,58 @@ mod tests {
             .prefix("memory-recall-measurement-")
             .tempdir_in(test_scratch_root())
             .unwrap();
-        let source = SourceKey::parse(format!("sha256:{}", "a".repeat(64))).unwrap();
+        use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
+        let source = SourceKey::from_verified_id("measurement-source");
         let stream = format!("agent-memory-{}", source.component());
+        let created_at = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
+        for ordinal in 0..128 {
+            let AppendResult::Stored(receipt) = append_connection_memory(
+                journal.path(),
+                AuthenticatedMemorySource {
+                    verified_id: "measurement-source",
+                    creation_label: "measurement label",
+                },
+                "needle exact memory",
+                &format!("saved-{ordinal}"),
+                created_at + chrono::Duration::seconds(ordinal),
+            )
+            .unwrap() else {
+                panic!("measurement writer must store");
+            };
+            if ordinal % 2 == 0 {
+                fs::remove_dir_all(
+                    journal
+                        .path()
+                        .join("chronicle/20260901")
+                        .join(receipt.origin.stream)
+                        .join(receipt.origin.segment),
+                )
+                .unwrap();
+            }
+        }
+        for ordinal in 0..8 {
+            append_connection_memory(
+                journal.path(),
+                AuthenticatedMemorySource {
+                    verified_id: "other-measurement-source",
+                    creation_label: "other source",
+                },
+                "needle other source",
+                &format!("other-{ordinal}"),
+                created_at + chrono::Duration::seconds(ordinal),
+            )
+            .unwrap();
+        }
         let ledger = journal
             .path()
             .join("config/agent-memory")
             .join(source.component());
-        fs::create_dir_all(&ledger).unwrap();
-        let created_at = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
-        for ordinal in 0..256 {
-            let operation_id = format!("operation-{ordinal}");
+        for ordinal in 0..128 {
+            let operation_id = format!("abandoned-{ordinal}");
             let coordinate = Coordinate {
-                day: "20260901".to_owned(),
+                day: "20260901".into(),
                 stream: stream.clone(),
-                segment: format!(
-                    "{:02}{:02}{:02}_1",
-                    ordinal / 3600,
-                    (ordinal / 60) % 60,
-                    ordinal % 60
-                ),
+                segment: format!("20{:02}{:02}_1", ordinal / 60, ordinal % 60),
             };
             let record = OperationRecord {
                 operation_id: operation_id.clone(),
@@ -1080,7 +1553,7 @@ mod tests {
                 byte_count: 6,
                 created_at,
                 origin_kind: OriginKind::AgentMemory,
-                creation_label: "measurement label".to_owned(),
+                creation_label: "measurement label".into(),
                 coordinate,
                 phase: Readiness::Reserved,
                 chain: None,
@@ -1091,40 +1564,48 @@ mod tests {
             )
             .unwrap();
         }
-
-        let connection = Connection::open_in_memory().unwrap();
-        connection.execute_batch(
-            "CREATE TABLE memory_originals(path TEXT PRIMARY KEY, day TEXT, stream TEXT, segment TEXT, source_key TEXT, bytes BLOB, origin_json TEXT, digest TEXT, byte_count INTEGER, created_at TEXT, creation_label TEXT, chain_json TEXT);
-             CREATE INDEX memory_originals_source_day_path ON memory_originals(source_key, day DESC, path DESC);
-             CREATE VIRTUAL TABLE chunks USING fts5(content, path UNINDEXED, stream UNINDEXED);",
-        ).unwrap();
-        for ordinal in 0..512 {
-            let path = format!(
-                "202609{:02}/agent-memory-{}/seg-{ordinal}/note.txt",
-                ordinal % 30 + 1,
-                "a".repeat(64)
+        fs::create_dir_all(journal.path().join("talents")).unwrap();
+        fs::write(
+            journal.path().join("talents/memory.md"),
+            "needle ordinary talent",
+        )
+        .unwrap();
+        solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+        let codec = ReferenceCodec::new().unwrap();
+        for query in [None, Some("needle")] {
+            let started = Instant::now();
+            let page = recall(
+                journal.path(),
+                &codec,
+                "measurement-connection",
+                "measurement-source",
+                "measurement-credential",
+                RecallArgs {
+                    query: query.map(str::to_owned),
+                    ..RecallArgs::default()
+                },
+                NaiveDate::from_ymd_opt(2026, 9, 1).unwrap(),
             );
-            let day = path[..8].to_owned();
-            let stream = format!("agent-memory-{}", "a".repeat(64));
-            connection.execute(
-                "INSERT INTO memory_originals(path,day,stream,segment,source_key,bytes,origin_json,digest,byte_count,created_at,creation_label,chain_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                rusqlite::params![path, day, stream, format!("seg-{ordinal}"), format!("sha256:{}", "a".repeat(64)), b"needle", "{}", "digest", 6, "2026-09-01T00:00:00Z", "saved", "{}"],
-            ).unwrap();
-            if ordinal % 2 == 0 {
-                connection
-                    .execute(
-                        "INSERT INTO chunks(content,path,stream) VALUES(?,?,?)",
-                        rusqlite::params!["needle", path, stream],
-                    )
-                    .unwrap();
-            }
+            assert_eq!(page.reason, None);
+            assert_eq!(page.notes.len(), DEFAULT_LIMIT);
+            assert!(page.continuation.is_some());
+            assert!(page.notes.iter().all(
+                |note| note.origin.source_key == source && note.bytes == b"needle exact memory"
+            ));
+            assert!(started.elapsed() < RECALL_DEADLINE);
+            eprintln!(
+                "actual recall query={query:?} elapsed_ms={}",
+                started.elapsed().as_millis()
+            );
         }
-        connection
-            .execute(
-                "INSERT INTO chunks(content,path,stream) VALUES(?,?,?)",
-                ["needle", "20260901/talents/memory.md", "ordinary"],
-            )
+        let connection =
+            Connection::open(solstone_core_indexer_store::db::db_path(journal.path())).unwrap();
+        let originals: i64 = connection
+            .query_row("SELECT count(*) FROM memory_originals", [], |row| {
+                row.get(0)
+            })
             .unwrap();
+        assert_eq!(originals, 72);
 
         let boundary = QueryBoundary::OwnMemory {
             source_key: source.as_str().to_owned(),

@@ -728,6 +728,34 @@ a.body-day-cell:focus-visible {
   font-weight: var(--weight-medium);
 }
 
+.body-workouts li.body-workout-strava {
+  flex-wrap: wrap;
+}
+
+.body-workout-details {
+  flex-basis: 100%;
+  color: var(--ink-soft, var(--ink));
+  font-size: 13px;
+}
+
+.body-workout-delete {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.body-workout-delete[data-confirming] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .body-table-wrap {
   background: var(--paper);
   border: 1px solid var(--hairline);
@@ -1690,6 +1718,73 @@ a.body-day-cell:focus-visible {
     ]);
   }
 
+  function renderStravaWorkout(workout) {
+    const id = escapeHtml(workout.strava_activity_id);
+    const details = asArray(workout.details);
+    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} &middot; Strava</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" aria-label="delete ${escapeHtml(workout.name)}">delete</button>${details.length ? `<span class="body-workout-details">Strava's figures: ${details.map(escapeHtml).join(" &middot; ")}</span>` : ""}</li>`;
+  }
+
+  // Deleting a Strava workout takes every piece of it, on every day it covers.
+  // The first press asks; the second deletes, with ten seconds to cancel.
+  if (!window.__bodyStravaDeleteBound) {
+  window.__bodyStravaDeleteBound = true;
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-strava-delete]");
+    if (!button) return;
+    if (!button.hasAttribute("data-confirming")) {
+      button.setAttribute("data-confirming", "");
+      button.textContent = "delete this workout?";
+      const note = document.createElement("span");
+      note.className = "body-workout-details";
+      note.setAttribute("data-strava-note", "");
+      note.textContent = "this deletes the whole workout from your journal, on every day it covers. importing a Strava download again won't bring it back, unless its start time or length has changed on Strava.";
+      button.insertAdjacentElement("afterend", note);
+      return;
+    }
+    button.parentElement?.querySelector("[data-strava-note]")?.remove();
+    const id = button.getAttribute("data-strava-delete");
+    const rows = Array.from(document.querySelectorAll(`[data-strava-row="${CSS.escape(id)}"]`));
+    try {
+      const response = await fetch(`/app/transcripts/api/strava/workout/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error((data && data.error) || "that workout couldn't be deleted.");
+      rows.forEach((row) => { row.hidden = true; });
+      const notifications = window.AppServices && window.AppServices.notifications;
+      if (!notifications) return;
+      let toast = null;
+      toast = notifications.show({
+        app: "body",
+        icon: "trash-2",
+        title: "deleting workout…",
+        message: "cancels in 10s",
+        dismissible: true,
+        autoDismiss: 10000,
+        buttons: [{
+          label: "cancel",
+          dismiss: false,
+          onClick: async () => {
+            const cancel = await fetch(`/app/transcripts/api/strava/cancel-delete/${encodeURIComponent(data.pending)}`, { method: "POST" }).catch(() => null);
+            if (cancel && cancel.ok) {
+              rows.forEach((row) => { row.hidden = false; });
+              button.removeAttribute("data-confirming");
+              button.textContent = "delete";
+              notifications.dismiss(toast);
+              notifications.show({ app: "body", icon: "rotate-ccw", title: "delete cancelled", autoDismiss: 4000 });
+            }
+          },
+        }],
+      });
+    } catch (error) {
+      button.removeAttribute("data-confirming");
+      button.textContent = "delete";
+      const notifications = window.AppServices && window.AppServices.notifications;
+      if (notifications) {
+        notifications.show({ app: "body", icon: "alert-triangle", title: "workout not deleted", message: String(error.message || error), autoDismiss: 6000 });
+      }
+    }
+  });
+  }
+
   function renderActivityCard(activity) {
     if (!activity) return "";
     const workouts = asArray(activity.workouts);
@@ -1698,7 +1793,7 @@ a.body-day-cell:focus-visible {
     return html([
       '<section class="body-card" aria-labelledby="body-activity-title">',
       '<h2 id="body-activity-title" class="body-question-title">how active was I?</h2>',
-      workouts.length ? `<ul class="body-workouts">${workouts.map((workout) => `<li><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""}${workout.source ? ` &middot; ${escapeHtml(workout.source)}` : ""}</span></li>`).join("")}</ul>` : "",
+      workouts.length ? `<ul class="body-workouts">${workouts.map((workout) => workout.strava_activity_id ? renderStravaWorkout(workout) : `<li><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""}${workout.source ? ` &middot; ${escapeHtml(workout.source)}` : ""}</span></li>`).join("")}</ul>` : "",
       running.length ? `<h3 class="body-card-label">running dynamics</h3><ul class="body-facts">${running.map((item) => `<li><span>${escapeHtml(item.label)}</span>${item.summary ? `<strong class="body-num">${escapeHtml(item.summary)}</strong>` : `<strong><span class="body-num">${escapeHtml(item.count_label)}</span> <span class="body-fact-kind">entries</span></strong>`}</li>`).join("")}</ul>` : "",
       activity.steps ? (activity.steps.mode === "total" ? `<p class="body-primary-line"><span class="body-num">${escapeHtml(activity.steps.total_label)}</span> steps &middot; ${escapeHtml(activity.steps.source)}${activity.steps.others_label ? ` &middot; ${escapeHtml(activity.steps.others_label)}` : ""}</p>` : `<p class="body-primary-line">step-count samples: <span class="body-num">${escapeHtml(activity.steps.samples_label)}</span></p>`) : "",
       counters.length ? `<ul class="body-facts">${counters.map((counter) => `<li><span>${escapeHtml(counter.label)}</span>${counter.value ? `<strong class="body-num">${escapeHtml(counter.value)}</strong>` : `<strong><span class="body-num">${escapeHtml(counter.count_label)}</span> <span class="body-fact-kind">${Number(counter.count) === 1 ? "entry" : "entries"}</span></strong>`}</li>`).join("")}</ul>` : "",

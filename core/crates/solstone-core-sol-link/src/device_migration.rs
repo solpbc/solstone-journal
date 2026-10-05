@@ -12,17 +12,19 @@ mod host;
 
 #[cfg(feature = "host")]
 pub use host::{
-    DecisionApply, DecisionBoundary, MigrationError, RekeyOutcome, decide, ingest_blocked,
-    migration_state, pending_push_cid, record_push_result, rekey,
+    DecisionApply, DecisionBoundary, MigrationError, MigrationIssuanceContext, RekeyOutcome,
+    decide, ingest_blocked, migration_state, pending_push_cid, record_push_result, rekey,
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RekeyRequest {
-    pub protocol: u32,
+    pub protocol_version: u32,
     pub operation_id: String,
     pub csr: String,
     pub device_label: String,
+    pub client_label: String,
+    pub platform: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -121,8 +123,8 @@ impl<'de> Deserialize<'de> for ReplacesCid {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DecisionRequest {
-    pub protocol: u32,
-    pub decision_id: String,
+    pub protocol_version: u32,
+    pub operation_id: String,
     pub choice: Choice,
     #[serde(default, skip_serializing_if = "ReplacesCid::is_missing")]
     pub replaces_cid: ReplacesCid,
@@ -163,23 +165,34 @@ impl MigrationState {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RekeyResponse {
-    pub protocol: u32,
+    pub protocol_version: u32,
     pub operation_id: String,
     pub state: MigrationState,
-    pub cid: String,
     pub previous_cid: String,
+    pub cid: String,
     pub pairing: Value,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct MigrationView {
-    pub protocol: u32,
-    pub state: MigrationState,
-    pub operation_id: Option<String>,
-    pub decision_id: Option<String>,
+pub struct MigrationStateResponse {
+    pub protocol_version: u32,
+    pub rekey_operation_id: Option<String>,
     pub previous_cid: Option<String>,
+    pub state: MigrationState,
     pub replaced_cid: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DecisionResponse {
+    pub protocol_version: u32,
+    pub operation_id: String,
+    pub state: MigrationState,
+    pub previous_cid: Option<String>,
+    pub cid: String,
+    pub replaced_cid: Option<String>,
+    pub display_label: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -252,13 +265,13 @@ pub fn schema_json() -> Value {
             "reason_code": {"type": "string", "enum": MigrationReasonCode::all().iter().map(|code| code.as_wire()).collect::<Vec<_>>()},
             "rekey_request": {
                 "type": "object", "additionalProperties": false,
-                "required": ["protocol", "operation_id", "csr", "device_label"],
-                "properties": {"protocol": {"const": 1}, "operation_id": {"type": "string", "format": "uuid"}, "csr": {"type": "string"}, "device_label": {"type": "string", "minLength": 1, "maxLength": 80}}
+                "required": ["protocol_version", "operation_id", "csr", "device_label", "client_label", "platform"],
+                "properties": {"protocol_version": {"const": 1}, "operation_id": {"type": "string", "format": "uuid"}, "csr": {"type": "string"}, "device_label": {"type": "string", "minLength": 1, "maxLength": 80}, "client_label": {"type": "string", "minLength": 1, "maxLength": 253}, "platform": {"type": "string", "enum": ["linux", "macos", "windows", "ios", "android"]}}
             },
             "decision_request": {
                 "type": "object", "additionalProperties": false,
-                "required": ["protocol", "decision_id", "choice"],
-                "properties": {"protocol": {"const": 1}, "decision_id": {"type": "string", "format": "uuid"}, "choice": {"$ref": "#/$defs/choice"}, "replaces_cid": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
+                "required": ["protocol_version", "operation_id", "choice"],
+                "properties": {"protocol_version": {"const": 1}, "operation_id": {"type": "string", "format": "uuid"}, "choice": {"$ref": "#/$defs/choice"}, "replaces_cid": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
                 "allOf": [
                     {"if": {"properties": {"choice": {"const": "replace_device"}}, "required": ["choice"]}, "then": {"required": ["replaces_cid"]}},
                     {"if": {"properties": {"choice": {"enum": ["new_device", "same_device"]}}, "required": ["choice"]}, "then": {"not": {"required": ["replaces_cid"]}}}
@@ -266,13 +279,18 @@ pub fn schema_json() -> Value {
             },
             "rekey_response": {
                 "type": "object", "additionalProperties": false,
-                "required": ["protocol", "operation_id", "state", "cid", "previous_cid", "pairing"],
-                "properties": {"protocol": {"const": 1}, "operation_id": {"type": "string", "format": "uuid"}, "state": {"const": "pending"}, "cid": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "previous_cid": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "pairing": {"type": "object"}}
+                "required": ["protocol_version", "operation_id", "state", "previous_cid", "cid", "pairing"],
+                "properties": {"protocol_version": {"const": 1}, "operation_id": {"type": "string", "format": "uuid"}, "state": {"const": "pending"}, "previous_cid": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "cid": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "pairing": {"type": "object"}}
             },
-            "migration_view": {
+            "migration_state": {
                 "type": "object", "additionalProperties": false,
-                "required": ["protocol", "state", "operation_id", "decision_id", "previous_cid", "replaced_cid"],
-                "properties": {"protocol": {"const": 1}, "state": {"$ref": "#/$defs/state"}, "operation_id": {"type": ["string", "null"]}, "decision_id": {"type": ["string", "null"]}, "previous_cid": {"type": ["string", "null"]}, "replaced_cid": {"type": ["string", "null"]}}
+                "required": ["protocol_version", "rekey_operation_id", "previous_cid", "state", "replaced_cid"],
+                "properties": {"protocol_version": {"const": 1}, "rekey_operation_id": {"type": ["string", "null"]}, "previous_cid": {"type": ["string", "null"]}, "state": {"$ref": "#/$defs/state"}, "replaced_cid": {"type": ["string", "null"]}}
+            },
+            "decision_response": {
+                "type": "object", "additionalProperties": false,
+                "required": ["protocol_version", "operation_id", "state", "previous_cid", "cid", "replaced_cid", "display_label"],
+                "properties": {"protocol_version": {"const": 1}, "operation_id": {"type": "string", "format": "uuid"}, "state": {"$ref": "#/$defs/state"}, "previous_cid": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}, "cid": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "replaced_cid": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}, "display_label": {"type": "string"}}
             }
         }
     })
