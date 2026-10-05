@@ -144,7 +144,7 @@ pub fn check_version(version: &str) -> Result<(), VersionError> {
 
 /// `origin_key` convention: downloadable artifacts ordinarily declare
 /// `assets/{unit}/{version}/{filename}`. CUDA is intentionally exceptional:
-/// its released objects are served under `runtimes/llama-cuda13/b10068/{filename}`.
+/// its released objects are served under `runtimes/llama-cuda13/<release>/{filename}`.
 /// These are declarations only; this crate performs no fetches.
 ///
 /// MLX snapshot rows are retained in the inventory as historical pin
@@ -210,12 +210,12 @@ static ARTIFACTS: &[Artifact] = &[
     },
     Artifact {
         unit: "llama-server-cuda",
-        version: "b10068",
-        filename: "llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz",
-        sha256: "3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea",
-        size_bytes: 550238443,
-        upstream_url: "https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz",
-        origin_key: "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz",
+        version: "b11429",
+        filename: "llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz",
+        sha256: "a9d8c0a4ece9f9dce7d8e634dd55f943ba39b93b339462dd645202db34aafbbd",
+        size_bytes: 591752886,
+        upstream_url: "https://updates.solstone.app/runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz",
+        origin_key: "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz",
         artifact_key: Some("x86_64-unknown-linux-gnu"),
         platform: Some(Platform::LinuxX64),
         backend: None,
@@ -238,12 +238,12 @@ static ARTIFACTS: &[Artifact] = &[
     // archive launches with the Vulkan backend.
     Artifact {
         unit: "llama-server-vulkan",
-        version: "b10068",
-        filename: "llama-b10068-bin-macos-arm64.tar.gz",
-        sha256: "13aa2d40c76ad1dcb8ebeec5f0d2814bf3b2f84a66935c7d4dc6f7cca8e38d68",
-        size_bytes: 10603591,
-        upstream_url: "https://github.com/ggml-org/llama.cpp/releases/download/b10068/llama-b10068-bin-macos-arm64.tar.gz",
-        origin_key: "assets/llama-server-vulkan/b10068/llama-b10068-bin-macos-arm64.tar.gz",
+        version: "b11429",
+        filename: "llama-b11429-bin-macos-arm64.tar.gz",
+        sha256: "740288ec6887be94280a5dfa25b5e23a78285cab104519e6c7e218904ee82459",
+        size_bytes: 11971406,
+        upstream_url: "https://github.com/ggml-org/llama.cpp/releases/download/b11429/llama-b11429-bin-macos-arm64.tar.gz",
+        origin_key: "assets/llama-server-vulkan/b11429/llama-b11429-bin-macos-arm64.tar.gz",
         artifact_key: Some("aarch64-apple-darwin"),
         platform: Some(Platform::MacosArm64),
         backend: None,
@@ -264,12 +264,12 @@ static ARTIFACTS: &[Artifact] = &[
     },
     Artifact {
         unit: "llama-server-vulkan",
-        version: "b10068",
-        filename: "llama-b10068-bin-ubuntu-vulkan-x64.tar.gz",
-        sha256: "713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3",
-        size_bytes: 32028597,
-        upstream_url: "https://github.com/ggml-org/llama.cpp/releases/download/b10068/llama-b10068-bin-ubuntu-vulkan-x64.tar.gz",
-        origin_key: "assets/llama-server-vulkan/b10068/llama-b10068-bin-ubuntu-vulkan-x64.tar.gz",
+        version: "b11429",
+        filename: "llama-b11429-bin-ubuntu-vulkan-x64.tar.gz",
+        sha256: "632c4e98feba2b94407a2130e3133e0c3aefb0ea1ab41337e926d8bfafdd0b74",
+        size_bytes: 31636673,
+        upstream_url: "https://github.com/ggml-org/llama.cpp/releases/download/b11429/llama-b11429-bin-ubuntu-vulkan-x64.tar.gz",
+        origin_key: "assets/llama-server-vulkan/b11429/llama-b11429-bin-ubuntu-vulkan-x64.tar.gz",
         artifact_key: Some("x86_64-unknown-linux-gnu"),
         platform: Some(Platform::LinuxX64),
         backend: None,
@@ -1413,7 +1413,7 @@ mod tests {
 
         assert!(exceptions.iter().any(|artifact| {
             artifact.origin_key
-                == "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz"
+                == "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz"
         }));
         assert!(exceptions.iter().any(|artifact| {
             artifact.origin_key

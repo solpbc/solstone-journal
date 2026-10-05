@@ -194,11 +194,9 @@ pub fn mirror_current_catalog(
     let mut outcomes = Vec::new();
     for artifact in solstone_core_assets::catalog() {
         if artifact.unit == "llama-server-cuda" {
-            // Origin-to-origin copying cannot repair these runtimes; recover them by
-            // rerunning scripts/repack_cuda_runtime.py against the pinned OCI image.
             outcomes.push(MirrorOutcome::Skipped {
                 origin_key: artifact.origin_key.to_owned(),
-                reason: "upstream URL is the origin; rerun scripts/repack_cuda_runtime.py",
+                reason: "upstream URL is the origin; CUDA artifacts are published directly and are not mirrored",
             });
         }
     }

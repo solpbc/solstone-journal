@@ -546,7 +546,12 @@ where
         brain_lane_active,
     )
     .force_cpu;
-    let choice = local_backend_choice(journal, Some(nvidia_probe.clone()));
+    let choice = match local_backend_choice(journal, Some(nvidia_probe.clone())) {
+        solstone_core_local::BackendSelection::Selected(choice) => choice,
+        solstone_core_local::BackendSelection::IntegrityBlocked => {
+            return Err("cuda runtime integrity failure".to_string());
+        }
+    };
     Ok(fit_report::build_local_fit_report(
         journal,
         "local/qwen3.5-4b",

@@ -333,7 +333,8 @@ fn metal_target_reuses_the_shared_4b_model_and_darwin_runtime_pin() {
 fn metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit() {
     let root = temp("metal-candidate-inspect");
     let cache = pins::cache_root(&root);
-    let runtime = cache.join("bin/aarch64-apple-darwin/b10068");
+    let pin = pins::vulkan_pin("aarch64-apple-darwin").unwrap();
+    let runtime = cache.join(format!("bin/aarch64-apple-darwin/{}", pin.release_tag));
     let model = cache.join("models/local__qwen3.5-4b");
     fs::create_dir_all(&runtime).unwrap();
     fs::create_dir_all(&model).unwrap();
@@ -509,19 +510,29 @@ fn preflip_origin_readiness_fixture_preserves_all_pin_identities_and_proofs() {
     let root = temp("preflip-origin-readiness");
 
     for row in fixture["llama_server_vulkan"].as_array().unwrap() {
-        let identity = pins::vulkan_identity(row["arch_key"].as_str().unwrap()).unwrap();
-        assert_eq!(identity, row["pin_identity"]);
+        let arch_key = row["arch_key"].as_str().unwrap();
+        let identity = pins::vulkan_identity(arch_key).unwrap();
+        if arch_key == "aarch64-unknown-linux-gnu" {
+            assert_eq!(identity, row["pin_identity"]);
+        } else {
+            assert_ne!(identity, row["pin_identity"]);
+        }
         assert_manifest_proves_preflip_identity(
-            &root.join(format!("vulkan-{}", row["arch_key"].as_str().unwrap())),
+            &root.join(format!("vulkan-{}", arch_key)),
             "llama-server-vulkan",
             identity,
         );
     }
     for row in fixture["llama_server_cuda"].as_array().unwrap() {
-        let identity = pins::cuda_identity(row["arch_key"].as_str().unwrap()).unwrap();
-        assert_eq!(identity, row["pin_identity"]);
+        let arch_key = row["arch_key"].as_str().unwrap();
+        let identity = pins::cuda_identity(arch_key).unwrap();
+        if arch_key == "aarch64-unknown-linux-gnu" {
+            assert_eq!(identity, row["pin_identity"]);
+        } else {
+            assert_ne!(identity, row["pin_identity"]);
+        }
         assert_manifest_proves_preflip_identity(
-            &root.join(format!("cuda-{}", row["arch_key"].as_str().unwrap())),
+            &root.join(format!("cuda-{}", arch_key)),
             "llama-server-cuda",
             identity,
         );
@@ -603,55 +614,58 @@ fn preflip_fixture_preserves_paths_and_native_pins_json_fields() {
     let journal = Path::new("/journal");
 
     for row in fixture["llama_server_vulkan"].as_array().unwrap() {
-        let expected = &row["pin_identity"];
+        let arch_key = row["arch_key"].as_str().unwrap();
         let actual = exported["llama_server_pins"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|entry| entry["artifact_key"] == expected["artifact_key"])
+            .find(|entry| entry["artifact_key"] == arch_key)
             .unwrap();
-        for field in [
-            "artifact_key",
-            "release_tag",
-            "filename",
-            "sha256",
-            "binary_name",
-        ] {
-            assert_eq!(actual[field], expected[field], "{field}");
+        if arch_key == "aarch64-unknown-linux-gnu" {
+            let expected = &row["pin_identity"];
+            for field in [
+                "artifact_key",
+                "release_tag",
+                "filename",
+                "sha256",
+                "binary_name",
+            ] {
+                assert_eq!(actual[field], expected[field], "{field}");
+            }
+        } else {
+            assert_ne!(actual, &row["pin_identity"]);
         }
-        let paths = pins::paths(
-            journal,
-            expected["artifact_key"].as_str().unwrap(),
-            Some("local/qwen3.5-4b"),
-        );
+        let paths = pins::paths(journal, arch_key, Some("local/qwen3.5-4b"));
         assert_eq!(
             path_value(&paths["binary_path"]),
             pins::cache_root(journal)
                 .join("bin")
-                .join(expected["artifact_key"].as_str().unwrap())
-                .join(expected["release_tag"].as_str().unwrap())
-                .join(expected["binary_name"].as_str().unwrap()),
+                .join(actual["artifact_key"].as_str().unwrap())
+                .join(actual["release_tag"].as_str().unwrap())
+                .join(actual["binary_name"].as_str().unwrap()),
         );
     }
     assert_eq!(
         exported["cuda_server_pin"]["artifacts"],
-        Value::Array(
-            fixture["llama_server_cuda"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| row["pin_identity"].clone())
-                .collect(),
-        )
+        Value::Array(vec![
+            pins::cuda_identity("x86_64-unknown-linux-gnu").unwrap(),
+            pins::cuda_identity("aarch64-unknown-linux-gnu").unwrap(),
+        ])
     );
     for row in fixture["llama_server_cuda"].as_array().unwrap() {
-        let identity = &row["pin_identity"];
-        let paths = pins::paths(journal, identity["artifact_key"].as_str().unwrap(), None);
+        let arch_key = row["arch_key"].as_str().unwrap();
+        let identity = pins::cuda_identity(arch_key).unwrap();
+        if arch_key == "aarch64-unknown-linux-gnu" {
+            assert_eq!(identity, row["pin_identity"]);
+        } else {
+            assert_ne!(identity, row["pin_identity"]);
+        }
+        let paths = pins::paths(journal, arch_key, None);
         assert_eq!(
             path_value(&paths["cuda_binary_path"]),
             pins::cache_root(journal)
                 .join("cuda")
-                .join(identity["artifact_key"].as_str().unwrap())
+                .join(arch_key)
                 .join(identity["sha256"].as_str().unwrap())
                 .join("llama-server"),
         );
@@ -688,13 +702,13 @@ fn origin_urls_follow_the_catalog_for_every_rust_download_unit() {
             "llama-server-vulkan",
             Some(Platform::LinuxX64),
             None,
-            "https://updates.solstone.app/assets/llama-server-vulkan/b10068/llama-b10068-bin-ubuntu-vulkan-x64.tar.gz",
+            "https://updates.solstone.app/assets/llama-server-vulkan/b11429/llama-b11429-bin-ubuntu-vulkan-x64.tar.gz",
         ),
         (
             "llama-server-cuda",
             Some(Platform::LinuxX64),
             None,
-            "https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz",
+            "https://updates.solstone.app/runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz",
         ),
         (
             "local-model",
@@ -1772,8 +1786,34 @@ fn assert_failed_publish_restores_the_existing_tree(name: &str) {
     let _ = fs::remove_dir_all(root);
 }
 
+const LLAMA_SERVER_ADMISSION_SIZE: u64 = 17888;
+const LLAMA_SERVER_ADMISSION_SHA256: &str =
+    "5a2b208943ca04915d380824f3fcf79f1708b22d8157e4db3cb18b3e52b8b8cc";
+const LIBLLAMA_SERVER_IMPL_ADMISSION_SIZE: u64 = 7321840;
+const LIBLLAMA_SERVER_IMPL_ADMISSION_SHA256: &str =
+    "13fd78deb520de1410409c44b715bb87039a489e2571d4a6960966ec936cd817";
+const LIBGGML_CUDA_ADMISSION_SIZE: u64 = 162636208;
+const LIBGGML_CUDA_ADMISSION_SHA256: &str =
+    "c3b4065cc5f46e0a109e382dad89cd95748eabd5b8c2a871e811209e4219bbae";
+
 #[test]
 fn backend_choice_selects_cuda_when_hardware_qualifies_and_a_pin_exists() {
+    assert_eq!(LLAMA_SERVER_ADMISSION_SIZE, 17888);
+    assert_eq!(
+        LLAMA_SERVER_ADMISSION_SHA256,
+        "5a2b208943ca04915d380824f3fcf79f1708b22d8157e4db3cb18b3e52b8b8cc"
+    );
+    assert_eq!(LIBLLAMA_SERVER_IMPL_ADMISSION_SIZE, 7321840);
+    assert_eq!(
+        LIBLLAMA_SERVER_IMPL_ADMISSION_SHA256,
+        "13fd78deb520de1410409c44b715bb87039a489e2571d4a6960966ec936cd817"
+    );
+    assert_eq!(LIBGGML_CUDA_ADMISSION_SIZE, 162636208);
+    assert_eq!(
+        LIBGGML_CUDA_ADMISSION_SHA256,
+        "c3b4065cc5f46e0a109e382dad89cd95748eabd5b8c2a871e811209e4219bbae"
+    );
+
     let root = temp("backend-trust");
     let key = pins::platform_key();
     let Some((_, digest, _)) = pins::cuda_pin(&key) else {
@@ -1792,39 +1832,254 @@ fn backend_choice_selects_cuda_when_hardware_qualifies_and_a_pin_exists() {
         "probe_error": null,
     }))
     .unwrap();
-    // First install: pin exists, artifact not yet downloaded. Install must
-    // still select CUDA so the published runtime is fetched.
-    let unpublished_locally = local_backend_choice(&root, Some(probe.clone()));
+
+    // 1. No llama-server at the install dir -> Selected CUDA (first download).
+    let unpublished_locally = match local_backend_choice(&root, Some(probe.clone())) {
+        crate::BackendSelection::Selected(c) => c,
+        crate::BackendSelection::IntegrityBlocked => panic!("expected selected"),
+    };
     assert_eq!(unpublished_locally.backend, crate::Backend::Cuda);
     assert_eq!(
         unpublished_locally.reason,
         "compute_cap sm_86 covered; driver CUDA 13 >= 13"
     );
-    let artifact = pins::cache_root(&root)
-        .join("cuda")
-        .join(&key)
-        .join(digest)
-        .join("llama-server");
-    fs::create_dir_all(artifact.parent().unwrap()).unwrap();
-    fs::write(&artifact, b"sm_86 sm_89 sm_120a sm_121a").unwrap();
-    let trusted = local_backend_choice(&root, Some(probe.clone()));
-    assert_eq!(trusted.backend, crate::Backend::Cuda);
-    fs::write(&artifact, b"sm_90 only").unwrap();
-    let uncovered = local_backend_choice(&root, Some(probe.clone()));
-    assert_eq!(uncovered.backend, crate::Backend::Vulkan);
-    assert!(
-        uncovered
-            .reason
-            .contains("CUDA runtime artifact does not cover this GPU"),
-        "{}",
-        uncovered.reason
+
+    let artifact_dir = pins::cache_root(&root).join("cuda").join(&key).join(digest);
+    fs::create_dir_all(&artifact_dir).unwrap();
+    let launcher_path = artifact_dir.join("llama-server");
+    let twin_path = artifact_dir.join("libggml-cuda.so");
+    let cuda_id = pins::cuda_identity(&key).unwrap();
+
+    // 2. Incumbent trusted only with a real build_manifest/write_manifest whose
+    // pin is cuda_identity and whose inventory hash matches a launcher that contains
+    // all four strings.
+    let incumbent_launcher_bytes = b"sm_86 sm_89 sm_120a sm_121a header";
+    fs::write(&launcher_path, incumbent_launcher_bytes).unwrap();
+    let inv = manifest::runtime_inventory(&artifact_dir, &[]).unwrap();
+    let incumbent_manifest = manifest::build_manifest(
+        "local",
+        "llama-server-cuda",
+        "target",
+        json!({"pin_identity": cuda_id.clone()}),
+        inv,
+        None,
+        None,
+    )
+    .unwrap();
+    let manifest_path = manifest::artifact_manifest_path(&artifact_dir);
+    manifest::write_manifest(&manifest_path, &incumbent_manifest).unwrap();
+    let incumbent_choice = match local_backend_choice(&root, Some(probe.clone())) {
+        crate::BackendSelection::Selected(c) => c,
+        crate::BackendSelection::IntegrityBlocked => panic!("expected selected for incumbent"),
+    };
+    assert_eq!(incumbent_choice.backend, crate::Backend::Cuda);
+
+    // 3. Split trusted: launcher is exactly 17888 bytes and contains none of the four strings;
+    // libggml-cuda.so contains all four; inventory hashes match; result is Selected CUDA.
+    // Gate this case on artifact key x86_64-unknown-linux-gnu.
+    if key == "x86_64-unknown-linux-gnu" {
+        let mut split_launcher = vec![0u8; 17888];
+        split_launcher[0..8].copy_from_slice(b"launcher");
+        fs::write(&launcher_path, &split_launcher).unwrap();
+        let twin_bytes = b"libggml-cuda: sm_86 sm_89 sm_120a sm_121a binary content";
+        fs::write(&twin_path, twin_bytes).unwrap();
+        let inv = manifest::runtime_inventory(&artifact_dir, &[]).unwrap();
+        let split_manifest = manifest::build_manifest(
+            "local",
+            "llama-server-cuda",
+            "target",
+            json!({"pin_identity": cuda_id.clone()}),
+            inv,
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(&manifest_path, &split_manifest).unwrap();
+        let split_choice = match local_backend_choice(&root, Some(probe.clone())) {
+            crate::BackendSelection::Selected(c) => c,
+            crate::BackendSelection::IntegrityBlocked => panic!("expected selected for split"),
+        };
+        assert_eq!(split_choice.backend, crate::Backend::Cuda);
+
+        // 4. Missing twin, corrupted twin whose markers remain but whose hash does not match inventory,
+        // uncovered carrier (sm_90 only) whose hash matches, sibling file, declared arch list,
+        // and manifest pin mismatch -> IntegrityBlocked. Assert value is not a Vulkan BackendChoice.
+        // Case 4a: Missing twin
+        fs::remove_file(&twin_path).unwrap();
+        assert_eq!(
+            local_backend_choice(&root, Some(probe.clone())),
+            crate::BackendSelection::IntegrityBlocked
+        );
+
+        // Case 4b: Corrupted twin whose markers remain but hash mismatches inventory
+        fs::write(
+            &twin_path,
+            b"libggml-cuda: sm_86 sm_89 sm_120a sm_121a corrupted",
+        )
+        .unwrap();
+        assert_eq!(
+            local_backend_choice(&root, Some(probe.clone())),
+            crate::BackendSelection::IntegrityBlocked
+        );
+
+        // Case 4c: Uncovered carrier (sm_90 only) whose hash matches inventory
+        fs::write(&twin_path, b"libggml-cuda: sm_90 only").unwrap();
+        let inv = manifest::runtime_inventory(&artifact_dir, &[]).unwrap();
+        let uncovered_manifest = manifest::build_manifest(
+            "local",
+            "llama-server-cuda",
+            "target",
+            json!({"pin_identity": cuda_id.clone()}),
+            inv,
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(&manifest_path, &uncovered_manifest).unwrap();
+        assert_eq!(
+            local_backend_choice(&root, Some(probe.clone())),
+            crate::BackendSelection::IntegrityBlocked
+        );
+
+        // Case 4d: Manifest pin mismatch
+        let mut bad_pin = cuda_id.clone();
+        bad_pin["sha256"] = json!("00".repeat(32));
+        fs::write(&twin_path, twin_bytes).unwrap();
+        let inv = manifest::runtime_inventory(&artifact_dir, &[]).unwrap();
+        let bad_pin_manifest = manifest::build_manifest(
+            "local",
+            "llama-server-cuda",
+            "target",
+            json!({"pin_identity": bad_pin}),
+            inv,
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(&manifest_path, &bad_pin_manifest).unwrap();
+        assert_eq!(
+            local_backend_choice(&root, Some(probe.clone())),
+            crate::BackendSelection::IntegrityBlocked
+        );
+
+        // A sibling file and a declared arch list are not the selected carrier.
+        fs::remove_file(&twin_path).unwrap();
+        fs::write(
+            artifact_dir.join("sibling-arches.so"),
+            b"sm_86 sm_89 sm_120a sm_121a",
+        )
+        .unwrap();
+        fs::write(
+            artifact_dir.join("arches.json"),
+            br#"["sm_86","sm_89","sm_120a","sm_121a"]"#,
+        )
+        .unwrap();
+        let inv = manifest::runtime_inventory(&artifact_dir, &[]).unwrap();
+        let sibling_manifest = manifest::build_manifest(
+            "local",
+            "llama-server-cuda",
+            "target",
+            json!({"pin_identity": cuda_id.clone()}),
+            inv,
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(&manifest_path, &sibling_manifest).unwrap();
+        assert_eq!(
+            local_backend_choice(&root, Some(probe.clone())),
+            crate::BackendSelection::IntegrityBlocked
+        );
+    }
+
+    // 5. local_backend_choice_present still selects CUDA without inspecting.
+    let present_choice = match super::local_backend_choice_present(&root, Some(probe.clone())) {
+        crate::BackendSelection::Selected(c) => c,
+        crate::BackendSelection::IntegrityBlocked => panic!("expected selected"),
+    };
+    assert_eq!(present_choice.backend, crate::Backend::Cuda);
+
+    // 6. select_local_backend checks
+    let undetected_probe = crate::NvidiaProbe::undetected("no nvidia-smi".into());
+    let sel1 = crate::select_local_backend(
+        &undetected_probe,
+        &crate::CUDA_EMBEDDED_ARCH_SET,
+        crate::CUDA_MIN_DRIVER_VERSION,
+        crate::ArtifactTrust::Integrity,
+        false,
     );
-    // Presence is a candidate; the launch path still scans the binary and
-    // rejects this uncovered architecture.
     assert_eq!(
-        super::local_backend_choice_present(&root, Some(probe)).backend,
-        crate::Backend::Cuda
+        sel1,
+        crate::BackendSelection::Selected(crate::BackendChoice {
+            backend: crate::Backend::Vulkan,
+            reason: "no NVIDIA GPU detected".into(),
+        })
     );
+
+    let mut unreadable_driver = probe.clone();
+    unreadable_driver.driver_cuda_major = None;
+    let sel2 = crate::select_local_backend(
+        &unreadable_driver,
+        &crate::CUDA_EMBEDDED_ARCH_SET,
+        crate::CUDA_MIN_DRIVER_VERSION,
+        crate::ArtifactTrust::Integrity,
+        false,
+    );
+    assert_eq!(
+        sel2,
+        crate::BackendSelection::Selected(crate::BackendChoice {
+            backend: crate::Backend::Vulkan,
+            reason: "driver CUDA version unreadable".into(),
+        })
+    );
+
+    let sel3 = crate::select_local_backend(
+        &probe,
+        &crate::CUDA_EMBEDDED_ARCH_SET,
+        crate::CUDA_MIN_DRIVER_VERSION,
+        crate::ArtifactTrust::Absent,
+        false,
+    );
+    match sel3 {
+        crate::BackendSelection::Selected(c) => {
+            assert_eq!(c.backend, crate::Backend::Vulkan);
+            assert!(
+                c.reason
+                    .contains("CUDA runtime artifact does not cover this GPU"),
+                "{}",
+                c.reason
+            );
+        }
+        _ => panic!("expected selected vulkan"),
+    }
+
+    // 7. inspect_local on qualified hardware with a broken selected CUDA tree
+    let inspected = readiness::inspect_local(
+        serde_json::from_value(json!({
+            "journal": root,
+            "model_id": "local/qwen3.5-4b",
+            "artifact_key": key,
+            "nvidia_probe": probe,
+        }))
+        .unwrap(),
+    );
+    assert_eq!(inspected["ready"], false);
+    assert_eq!(inspected["reason_code"], "cuda_runtime_integrity");
+    assert_ne!(inspected["host"]["backend"], "vulkan");
+
+    // 8. local_target Existing on that broken tree returns cuda_runtime_integrity error
+    let err = super::local_target_with_probe(
+        &root,
+        "local/qwen3.5-4b",
+        super::LocalBackend::Existing,
+        Some(probe),
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.envelope.error.as_ref().unwrap().reason_code,
+        "cuda_runtime_integrity"
+    );
+
     let _ = fs::remove_dir_all(root);
 }
 
@@ -2327,17 +2582,32 @@ fn registry_binds_existing_pins_and_the_parakeet_model_pin() {
 
 #[test]
 fn registry_preserves_prechange_identity_literals() {
+    let historical_vulkan = "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b10068-bin-ubuntu-vulkan-x64.tar.gz\",\"release_tag\":\"b10068\",\"sha256\":\"713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3\",\"unit\":\"llama-server-vulkan\"}";
+    let historical_cuda = "{\"arch\":\"amd64\",\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"llama_cpp_revision\":\"571d0d540df04f25298d0e159e520d9fc62ed121\",\"release_tag\":\"b10068\",\"repack_revision\":\"sol1\",\"sha256\":\"3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea\",\"size_bytes\":550238443,\"unit\":\"llama-server-cuda\",\"upstream_image_digest\":\"sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63\",\"url\":\"https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz\",\"wanted_files\":[\"libcublas.so.13\",\"libcublasLt.so.13\",\"libcudart.so.13\",\"libggml-base.so.0\",\"libggml-cpu-alderlake.so\",\"libggml-cpu-cannonlake.so\",\"libggml-cpu-cascadelake.so\",\"libggml-cpu-cooperlake.so\",\"libggml-cpu-haswell.so\",\"libggml-cpu-icelake.so\",\"libggml-cpu-ivybridge.so\",\"libggml-cpu-piledriver.so\",\"libggml-cpu-sandybridge.so\",\"libggml-cpu-sapphirerapids.so\",\"libggml-cpu-skylakex.so\",\"libggml-cpu-sse42.so\",\"libggml-cpu-x64.so\",\"libggml-cpu-zen4.so\",\"libggml-cuda.so\",\"libggml.so.0\",\"libllama-common.so.0\",\"libllama-server-impl.so\",\"libllama.so.0\",\"libmtmd.so.0\",\"llama-server\"]}";
+
+    let current_vulkan =
+        fingerprint::canonical(pins::vulkan_identity("x86_64-unknown-linux-gnu").unwrap()).unwrap();
+    assert_ne!(current_vulkan, historical_vulkan);
+    assert_eq!(
+        current_vulkan,
+        "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b11429-bin-ubuntu-vulkan-x64.tar.gz\",\"release_tag\":\"b11429\",\"sha256\":\"632c4e98feba2b94407a2130e3133e0c3aefb0ea1ab41337e926d8bfafdd0b74\",\"unit\":\"llama-server-vulkan\"}"
+    );
+    let current_metal =
+        fingerprint::canonical(pins::vulkan_identity("aarch64-apple-darwin").unwrap()).unwrap();
+    assert_eq!(
+        current_metal,
+        "{\"artifact_key\":\"aarch64-apple-darwin\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b11429-bin-macos-arm64.tar.gz\",\"release_tag\":\"b11429\",\"sha256\":\"740288ec6887be94280a5dfa25b5e23a78285cab104519e6c7e218904ee82459\",\"unit\":\"llama-server-vulkan\"}"
+    );
+
+    let current_cuda =
+        fingerprint::canonical(pins::cuda_identity("x86_64-unknown-linux-gnu").unwrap()).unwrap();
+    assert_ne!(current_cuda, historical_cuda);
+    assert_eq!(
+        current_cuda,
+        "{\"arch\":\"amd64\",\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"cuda_toolkit\":\"13.4.1\",\"inputs\":[{\"filename\":\"cudart-llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz\",\"role\":\"cudart\",\"sha256\":\"93d18648d815b2bd624d83d82f653e1db97afb478f02064305fe3cf570040a6d\",\"size_bytes\":440236630,\"url_prefix\":\"https://github.com/ggml-org/llama.cpp/releases/download/b11429/\"},{\"filename\":\"llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz\",\"role\":\"engine\",\"sha256\":\"8082b7eaa74a714c9fecca19128f751c8e32da763ee8096b8ad1e824da7621d3\",\"size_bytes\":152519318,\"url_prefix\":\"https://github.com/ggml-org/llama.cpp/releases/download/b11429/\"}],\"llama_cpp_revision\":\"d81235049384534c167caea52b85a694f6103d14\",\"release_tag\":\"b11429\",\"repack_revision\":\"sol1\",\"sha256\":\"a9d8c0a4ece9f9dce7d8e634dd55f943ba39b93b339462dd645202db34aafbbd\",\"size_bytes\":591752886,\"unit\":\"llama-server-cuda\",\"url\":\"https://updates.solstone.app/runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz\",\"wanted_files\":[\"libcublas.so.13\",\"libcublasLt.so.13\",\"libcudart.so.13\",\"libggml-base.so.0\",\"libggml-cpu-alderlake.so\",\"libggml-cpu-cannonlake.so\",\"libggml-cpu-cascadelake.so\",\"libggml-cpu-cooperlake.so\",\"libggml-cpu-haswell.so\",\"libggml-cpu-icelake.so\",\"libggml-cpu-ivybridge.so\",\"libggml-cpu-piledriver.so\",\"libggml-cpu-sandybridge.so\",\"libggml-cpu-sapphirerapids.so\",\"libggml-cpu-skylakex.so\",\"libggml-cpu-sse42.so\",\"libggml-cpu-x64.so\",\"libggml-cpu-zen4.so\",\"libggml-cuda.so\",\"libggml.so.0\",\"libllama-common.so.0\",\"libllama-server-impl.so\",\"libllama.so.0\",\"libmtmd.so.0\",\"llama-server\"]}"
+    );
+
     let literals = [
-        (
-            fingerprint::canonical(pins::vulkan_identity("x86_64-unknown-linux-gnu").unwrap())
-                .unwrap(),
-            "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b10068-bin-ubuntu-vulkan-x64.tar.gz\",\"release_tag\":\"b10068\",\"sha256\":\"713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3\",\"unit\":\"llama-server-vulkan\"}",
-        ),
-        (
-            fingerprint::canonical(pins::cuda_identity("x86_64-unknown-linux-gnu").unwrap())
-                .unwrap(),
-            "{\"arch\":\"amd64\",\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"llama_cpp_revision\":\"571d0d540df04f25298d0e159e520d9fc62ed121\",\"release_tag\":\"b10068\",\"repack_revision\":\"sol1\",\"sha256\":\"3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea\",\"size_bytes\":550238443,\"unit\":\"llama-server-cuda\",\"upstream_image_digest\":\"sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63\",\"url\":\"https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz\",\"wanted_files\":[\"libcublas.so.13\",\"libcublasLt.so.13\",\"libcudart.so.13\",\"libggml-base.so.0\",\"libggml-cpu-alderlake.so\",\"libggml-cpu-cannonlake.so\",\"libggml-cpu-cascadelake.so\",\"libggml-cpu-cooperlake.so\",\"libggml-cpu-haswell.so\",\"libggml-cpu-icelake.so\",\"libggml-cpu-ivybridge.so\",\"libggml-cpu-piledriver.so\",\"libggml-cpu-sandybridge.so\",\"libggml-cpu-sapphirerapids.so\",\"libggml-cpu-skylakex.so\",\"libggml-cpu-sse42.so\",\"libggml-cpu-x64.so\",\"libggml-cpu-zen4.so\",\"libggml-cuda.so\",\"libggml.so.0\",\"libllama-common.so.0\",\"libllama-server-impl.so\",\"libllama.so.0\",\"libmtmd.so.0\",\"llama-server\"]}",
-        ),
         (
             fingerprint::canonical(pins::model_identity("local/qwen3.5-4b").unwrap()).unwrap(),
             "{\"filename\":\"Qwen3.5-4B-Q4_K_M.gguf\",\"mmproj_filename\":\"mmproj-F16.gguf\",\"mmproj_sha256\":\"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864\",\"model_id\":\"local/qwen3.5-4b\",\"repo\":\"unsloth/Qwen3.5-4B-GGUF\",\"revision\":\"main\",\"sha256\":\"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4\",\"unit\":\"local-model\"}",
@@ -2364,20 +2634,37 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
     let journal = Path::new("/journal");
     let key = "x86_64-unknown-linux-gnu";
     let local_paths = pins::paths(journal, key, Some("local/qwen3.5-4b"));
+    let historical_vulkan_path = pins::cache_root(journal)
+        .join("bin")
+        .join(key)
+        .join("b10068")
+        .join("llama-server");
+    let historical_cuda_path = pins::cache_root(journal)
+        .join("cuda")
+        .join(key)
+        .join("3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea")
+        .join("llama-server");
+
+    let current_vulkan_path = path_value(&local_paths["binary_path"]);
+    let current_cuda_path = path_value(&local_paths["cuda_binary_path"]);
+
+    assert_ne!(current_vulkan_path, historical_vulkan_path);
+    assert_ne!(current_cuda_path, historical_cuda_path);
+
     assert_eq!(
-        path_value(&local_paths["binary_path"]),
+        current_vulkan_path,
         pins::cache_root(journal)
             .join("bin")
             .join(key)
-            .join("b10068")
+            .join("b11429")
             .join("llama-server")
     );
     assert_eq!(
-        path_value(&local_paths["cuda_binary_path"]),
+        current_cuda_path,
         pins::cache_root(journal)
             .join("cuda")
             .join(key)
-            .join("3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea")
+            .join("a9d8c0a4ece9f9dce7d8e634dd55f943ba39b93b339462dd645202db34aafbbd")
             .join("llama-server")
     );
     let model_dir = PathBuf::from(local_paths["model_dir"].as_str().unwrap());
@@ -2412,7 +2699,7 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
         pins::cache_root(journal)
             .join("bin")
             .join(key)
-            .join("b10068")
+            .join("b11429")
             .join("llama-server")
     );
     assert_eq!(
@@ -2458,6 +2745,329 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
             .join("bf0af9f425fa01809cadec671b3cb672709d13e9")
             .join("tdt-0.6b-v3-q8_0.gguf")
     );
+}
+
+#[test]
+fn oracle_symlink_chain_and_production_commit_verification() {
+    let root = temp("oracle-symlink-chain");
+    let staging = root.join("staging");
+    let nested = staging.join("llama-b11429");
+    let target = root.join("target");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("LICENSE"), b"MIT").unwrap();
+    fs::write(nested.join("llama-server"), b"server binary").unwrap();
+
+    let members = pins::required_members_for("b11429", "x86_64-unknown-linux-gnu").unwrap();
+    for member in members {
+        match member {
+            pins::RequiredMember::Regular(name) => {
+                if *name != "llama-server" {
+                    fs::write(nested.join(name), format!("regular {name}")).unwrap();
+                }
+            }
+            pins::RequiredMember::Link { name, target } => {
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(target, nested.join(name)).unwrap();
+                #[cfg(not(unix))]
+                let _ = (name, target);
+            }
+        }
+    }
+
+    super::flatten_binary_bundle(&staging, &nested.join("llama-server")).unwrap();
+
+    #[cfg(unix)]
+    {
+        assert!(
+            super::verify_required_oracle(&staging, "b11429", "x86_64-unknown-linux-gnu", false)
+                .is_ok()
+        );
+
+        // Symlink chain libggml.so -> libggml.so.0 -> libggml.so.0.26.0 still reads
+        let content = fs::read(staging.join("libggml.so")).unwrap();
+        assert_eq!(content, b"regular libggml.so.0.26.0");
+
+        // Deleting libggml.so.0.26.0 fails the oracle
+        fs::remove_file(staging.join("libggml.so.0.26.0")).unwrap();
+        assert!(
+            super::verify_required_oracle(&staging, "b11429", "x86_64-unknown-linux-gnu", false)
+                .is_err()
+        );
+
+        // Restore target but delete libggml.so alias
+        fs::write(
+            staging.join("libggml.so.0.26.0"),
+            b"regular libggml.so.0.26.0",
+        )
+        .unwrap();
+        fs::remove_file(staging.join("libggml.so")).unwrap();
+        assert!(
+            super::verify_required_oracle(&staging, "b11429", "x86_64-unknown-linux-gnu", false)
+                .is_err()
+        );
+
+        // Production commit on incomplete staging does not publish and does not write candidate manifest
+        let identity = pins::vulkan_identity("x86_64-unknown-linux-gnu").unwrap();
+        let commit_err = super::commit_staged_local_runtime(
+            &staging,
+            &target,
+            "b11429",
+            "x86_64-unknown-linux-gnu",
+            false,
+            &identity,
+            "target_sha",
+            None,
+            &[],
+        );
+        assert!(commit_err.is_err());
+        assert!(!manifest::artifact_manifest_path(&target).exists());
+    }
+
+    // A b10068 tree whose only file is llama-server passes verify_required_oracle for release b10068
+    let staging_b10068 = root.join("llama-b10068");
+    fs::create_dir_all(&staging_b10068).unwrap();
+    fs::write(staging_b10068.join("llama-server"), b"b10068 binary").unwrap();
+    assert!(
+        super::verify_required_oracle(&staging_b10068, "b10068", "x86_64-unknown-linux-gnu", false)
+            .is_ok()
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn oracle_missing_or_corrupt_member_fails_loudly_without_unrelated_errors() {
+    let root = temp("oracle-verification");
+    let staging = root.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    // Vulkan x86_64 b11429 has required members
+    // Case 1: Missing member
+    let err = super::verify_required_oracle(&staging, "b11429", "x86_64-unknown-linux-gnu", false)
+        .unwrap_err();
+    assert!(err.contains("required"));
+
+    // Case 2: Incomplete members
+    fs::write(staging.join("llama-server"), b"binary").unwrap();
+    let err = super::verify_required_oracle(&staging, "b11429", "x86_64-unknown-linux-gnu", false)
+        .unwrap_err();
+    assert!(err.contains("required"));
+
+    // Case 3: CUDA x86_64 wanted files
+    let cuda_err =
+        super::verify_required_oracle(&staging, "b11429", "x86_64-unknown-linux-gnu", true)
+            .unwrap_err();
+    assert!(cuda_err.contains("required cuda member"));
+
+    // Case 4: Populating all required members for Vulkan x86_64 b11429
+    let Some(members) = pins::required_members_for("b11429", "x86_64-unknown-linux-gnu") else {
+        panic!("expected members");
+    };
+    for member in members {
+        match member {
+            pins::RequiredMember::Regular(name) => {
+                fs::write(staging.join(name), b"regular file").unwrap();
+            }
+            pins::RequiredMember::Link { name, target } => {
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(target, staging.join(name)).unwrap();
+                #[cfg(not(unix))]
+                let _ = (name, target);
+            }
+        }
+    }
+    #[cfg(unix)]
+    assert!(
+        super::verify_required_oracle(&staging, "b11429", "x86_64-unknown-linux-gnu", false)
+            .is_ok()
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn upgrade_prepublish_failures_keep_an_admitted_incumbent() {
+    let root = temp("upgrade-incumbent-preservation");
+    let target = root.join("target");
+    fs::create_dir_all(&target).unwrap();
+
+    let incumbent_identity = json!({
+        "artifact_key": "x86_64-unknown-linux-gnu",
+        "binary_name": "llama-server",
+        "filename": "llama-b10068-bin-ubuntu-vulkan-x64.tar.gz",
+        "release_tag": "b10068",
+        "sha256": "713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3",
+        "unit": "llama-server-vulkan"
+    });
+
+    let incumbent_bin = target.join("llama-server");
+    fs::write(&incumbent_bin, b"incumbent b10068 binary content").unwrap();
+    let inventory = manifest::runtime_inventory(&target, &[]).unwrap();
+    let built_manifest = manifest::build_manifest(
+        "local",
+        "llama-server-vulkan",
+        "target",
+        json!({"pin_identity": incumbent_identity.clone()}),
+        inventory,
+        None,
+        None,
+    )
+    .unwrap();
+    let manifest_path = manifest::artifact_manifest_path(&target);
+    manifest::write_manifest(&manifest_path, &built_manifest).unwrap();
+
+    // prove_manifest is ready for incumbent identity
+    assert_eq!(
+        manifest::prove_manifest(&manifest_path, &incumbent_identity)["status"],
+        "ready"
+    );
+
+    // prove_manifest against current vulkan_identity is manifest_pin_mismatch
+    let current_identity = pins::vulkan_identity("x86_64-unknown-linux-gnu").unwrap();
+    assert_eq!(
+        manifest::prove_manifest(&manifest_path, &current_identity)["reason_code"],
+        "manifest_pin_mismatch"
+    );
+
+    // Snapshot incumbent bytes and manifest
+    let snapshot_bin = fs::read(&incumbent_bin).unwrap();
+    let snapshot_manifest = fs::read(&manifest_path).unwrap();
+
+    // Failure 1: download_artifact into staging with a refused-host policy
+    let staging1 = root.join("staging1");
+    fs::create_dir_all(&staging1).unwrap();
+    let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+    let disallowed_policy = archive::DownloadHostPolicy {
+        allowed_hosts: &["allowed.example.com"],
+        allow_http: true,
+        origin_base_url: "http://127.0.0.1:1@allowed.example.com",
+    };
+    let dl_err = download_artifact(
+        &artifact,
+        &staging1.join("artifact"),
+        &disallowed_policy,
+        |_received, _total| {},
+        "download_failed",
+    );
+    assert!(dl_err.is_err());
+    assert_eq!(fs::read(&incumbent_bin).unwrap(), snapshot_bin);
+    assert_eq!(fs::read(&manifest_path).unwrap(), snapshot_manifest);
+
+    // Failure 2: cancel_local_bootstrap on an in-flight local status, without writing the incumbent tree
+    let status_dir = root.join("journal_status");
+    let initial_status = status::begin(
+        &status_dir,
+        "{}".to_owned(),
+        "target_fp".to_owned(),
+        Some(json!({"pid": 12345})),
+        "downloading",
+    )
+    .unwrap();
+    let attempt_id = initial_status.attempt_id.as_deref().unwrap();
+    let cancelled =
+        super::cancel_local_bootstrap(&status_dir, "local", attempt_id, |_| Ok(())).unwrap();
+    assert_eq!(cancelled.install_state, "failed");
+    assert_eq!(fs::read(&incumbent_bin).unwrap(), snapshot_bin);
+    assert_eq!(fs::read(&manifest_path).unwrap(), snapshot_manifest);
+
+    // Failure 3: archive::verify_sha256 digest mismatch on a candidate file
+    let staging3 = root.join("staging3");
+    fs::create_dir_all(&staging3).unwrap();
+    let cand_file = staging3.join("candidate");
+    fs::write(&cand_file, b"corrupted bytes").unwrap();
+    let verify_err = archive::verify_sha256(&cand_file, "00".repeat(32).as_str());
+    assert!(verify_err.is_err());
+    assert_eq!(fs::read(&incumbent_bin).unwrap(), snapshot_bin);
+    assert_eq!(fs::read(&manifest_path).unwrap(), snapshot_manifest);
+
+    // Failure 4: extract_tar_gz of a bad archive into staging
+    let staging4 = root.join("staging4");
+    fs::create_dir_all(&staging4).unwrap();
+    let bad_tar = root.join("bad.tar.gz");
+    fs::write(&bad_tar, b"not a valid tar gz").unwrap();
+    let ext_err = archive::extract_tar_gz(&bad_tar, &staging4);
+    assert!(ext_err.is_err());
+    assert_eq!(fs::read(&incumbent_bin).unwrap(), snapshot_bin);
+    assert_eq!(fs::read(&manifest_path).unwrap(), snapshot_manifest);
+
+    // Failure 5: production commit function rejects a b11429 staging that fails the oracle.
+    // The candidate directory is beside the incumbent and must stay unpublished.
+    let candidate = root.join("candidate");
+    let candidate_manifest = manifest::artifact_manifest_path(&candidate);
+    let staging5 = root.join("staging5");
+    fs::create_dir_all(&staging5).unwrap();
+    fs::write(
+        staging5.join("llama-server"),
+        b"b11429 without required libs",
+    )
+    .unwrap();
+    let commit_err = super::commit_staged_local_runtime(
+        &staging5,
+        &candidate,
+        "b11429",
+        "x86_64-unknown-linux-gnu",
+        false,
+        &current_identity,
+        "target_sha",
+        None,
+        &[],
+    );
+    assert!(commit_err.is_err());
+    assert!(!candidate_manifest.exists());
+    assert_eq!(fs::read(&incumbent_bin).unwrap(), snapshot_bin);
+    assert_eq!(fs::read(&manifest_path).unwrap(), snapshot_manifest);
+
+    // Successful commit publishes beside the incumbent. The admitted tree stays byte-identical.
+    let staging_ok = root.join("staging_ok");
+    fs::create_dir_all(&staging_ok).unwrap();
+    let members = pins::required_members_for("b11429", "x86_64-unknown-linux-gnu").unwrap();
+    for member in members {
+        match member {
+            pins::RequiredMember::Regular(name) => {
+                fs::write(staging_ok.join(name), format!("payload for {name}")).unwrap();
+            }
+            pins::RequiredMember::Link {
+                name,
+                target: link_target,
+            } => {
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(link_target, staging_ok.join(name)).unwrap();
+                #[cfg(not(unix))]
+                let _ = (name, link_target);
+            }
+        }
+    }
+    #[cfg(unix)]
+    {
+        super::commit_staged_local_runtime(
+            &staging_ok,
+            &candidate,
+            "b11429",
+            "x86_64-unknown-linux-gnu",
+            false,
+            &current_identity,
+            "target_sha",
+            None,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            manifest::prove_manifest(&candidate_manifest, &current_identity)["status"],
+            "ready"
+        );
+        assert_eq!(fs::read(&incumbent_bin).unwrap(), snapshot_bin);
+        assert_eq!(fs::read(&manifest_path).unwrap(), snapshot_manifest);
+        assert_eq!(
+            manifest::prove_manifest(&manifest_path, &incumbent_identity)["status"],
+            "ready"
+        );
+        assert_eq!(
+            manifest::prove_manifest(&manifest_path, &current_identity)["reason_code"],
+            "manifest_pin_mismatch"
+        );
+    }
+
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

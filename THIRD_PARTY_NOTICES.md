@@ -522,24 +522,24 @@ files.
 Files: `libcudart.so.13`, `libcublas.so.13`,
 `libcublasLt.so.13`.
 
-Source: NVIDIA CUDA Toolkit 13.3 packages contained in the pinned upstream
-llama.cpp CUDA image.
+Source:
+- Linux x86_64 archive `llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz` carries CUDA Toolkit 13.4.1 components, the llama.cpp LICENSE file included in that archive, and the CUDA Toolkit 13.4.1 EULA HTML included in that archive.
+- Linux arm64 stays the CUDA Toolkit 13.3 OCI closure. `licenses/NVIDIA-CUDA-EULA-13.3.txt` is that arm64 citation only.
 
-License: NVIDIA CUDA Toolkit End User License Agreement, Release 13.3,
+License: NVIDIA CUDA Toolkit End User License Agreement, Release 13,
 including the CUDA Toolkit Supplement, Attachment A, and Attachment B.
 
 These files are proprietary NVIDIA software. They are not licensed under
 solstone's AGPL-3.0-only license or the llama.cpp MIT license. Their use and
 redistribution remain subject to the NVIDIA CUDA Toolkit EULA. A verbatim
-copy of the package-accompanying EULA, including its third-party notices,
-is reproduced in `licenses/NVIDIA-CUDA-EULA-13.3.txt` and accompanies each
-runtime artifact. NVIDIA does not sponsor or endorse solstone.
+copy of the 13.3 package-accompanying EULA, including its third-party notices,
+is reproduced in `licenses/NVIDIA-CUDA-EULA-13.3.txt`. NVIDIA does not sponsor or endorse solstone.
 
 sol pbc redistributes these CUDA components from `updates.solstone.app` only as
 Attachment-A distributable portions: unmodified except for unzipping, inside
 the solstone application with material additional functionality, and not as a
 stand-alone SDK distribution. Their redistribution is permitted only within
-those NVIDIA CUDA Toolkit EULA 13.3 bounds.
+those NVIDIA CUDA Toolkit EULA bounds.
 
 ## runtime-downloaded provider artifacts (llama.cpp Vulkan/CPU)
 
@@ -553,9 +553,9 @@ this repository.
 ### llama.cpp Vulkan/CPU runtime
 
 Files: `llama-server`, extracted from
-`llama-b10068-bin-macos-arm64.tar.gz`,
+`llama-b11429-bin-macos-arm64.tar.gz`,
 `llama-b10068-bin-ubuntu-vulkan-arm64.tar.gz`, and
-`llama-b10068-bin-ubuntu-vulkan-x64.tar.gz`.
+`llama-b11429-bin-ubuntu-vulkan-x64.tar.gz`.
 
 Source: https://github.com/ggml-org/llama.cpp
 

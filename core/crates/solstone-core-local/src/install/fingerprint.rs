@@ -39,25 +39,26 @@ pub fn local_fingerprint(mut input: Map<String, Value>) -> Result<Value, String>
         .transpose()
         .map_err(|error| error.to_string())?
         .unwrap_or(ArtifactTrust::Unavailable);
-    let backend = input
-        .remove("backend")
-        .and_then(|value| value.as_str().map(ToOwned::to_owned))
-        .map(|value| match value.as_str() {
-            "cuda" => Ok(Backend::Cuda),
-            "vulkan" => Ok(Backend::Vulkan),
-            _ => Err("invalid backend".to_owned()),
-        })
-        .transpose()?
-        .unwrap_or_else(|| {
-            select_local_backend(
-                &probe,
-                &crate::CUDA_EMBEDDED_ARCH_SET,
-                crate::CUDA_MIN_DRIVER_VERSION,
-                cuda_trust,
-                false,
-            )
-            .backend
-        });
+    let backend = match input.remove("backend") {
+        Some(Value::String(value)) => match value.as_str() {
+            "cuda" => Backend::Cuda,
+            "vulkan" => Backend::Vulkan,
+            _ => return Err("invalid backend".to_owned()),
+        },
+        Some(_) => return Err("invalid backend".to_owned()),
+        None => match select_local_backend(
+            &probe,
+            &crate::CUDA_EMBEDDED_ARCH_SET,
+            crate::CUDA_MIN_DRIVER_VERSION,
+            cuda_trust,
+            false,
+        ) {
+            crate::nvidia::BackendSelection::Selected(choice) => choice.backend,
+            crate::nvidia::BackendSelection::IntegrityBlocked => {
+                return Err("cuda runtime integrity failure".to_owned());
+            }
+        },
+    };
     if let Some(reason) = hardware_backend_rejection(
         &probe,
         &crate::CUDA_EMBEDDED_ARCH_SET,

@@ -20,6 +20,8 @@ pub enum ArtifactTrust {
     Trusted,
     Absent,
     Unavailable,
+    #[serde(rename = "integrity")]
+    Integrity,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -42,6 +44,12 @@ pub enum MemorySource {
 pub struct BackendChoice {
     pub backend: Backend,
     pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BackendSelection {
+    Selected(BackendChoice),
+    IntegrityBlocked,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -143,7 +151,7 @@ impl NvidiaProbe {
         }
     }
 
-    fn undetected(probe_error: String) -> Self {
+    pub(crate) fn undetected(probe_error: String) -> Self {
         Self {
             schema: NVIDIA_PROBE_SCHEMA.to_string(),
             detected: false,
@@ -165,9 +173,13 @@ pub fn select_local_backend(
     cuda_version: u32,
     trust: ArtifactTrust,
     persisted_installed_cuda: bool,
-) -> BackendChoice {
+) -> BackendSelection {
     if let Some(rejection) = hardware_backend_rejection(probe, arch_set, cuda_version) {
-        return rejection;
+        return BackendSelection::Selected(rejection);
+    }
+
+    if trust == ArtifactTrust::Integrity {
+        return BackendSelection::IntegrityBlocked;
     }
 
     let arch = probe
@@ -182,22 +194,22 @@ pub fn select_local_backend(
     if trust == ArtifactTrust::Trusted
         || (trust == ArtifactTrust::Unavailable && persisted_installed_cuda)
     {
-        return BackendChoice {
+        return BackendSelection::Selected(BackendChoice {
             backend: Backend::Cuda,
             reason: cuda_reason,
-        };
+        });
     }
 
     let detail = match trust {
         ArtifactTrust::Absent => "CUDA runtime artifact does not cover this GPU",
-        ArtifactTrust::Unavailable | ArtifactTrust::Trusted => {
+        ArtifactTrust::Unavailable | ArtifactTrust::Trusted | ArtifactTrust::Integrity => {
             "CUDA runtime is not installed locally"
         }
     };
-    BackendChoice {
+    BackendSelection::Selected(BackendChoice {
         backend: Backend::Vulkan,
         reason: format!("{cuda_reason}; {detail}"),
-    }
+    })
 }
 
 pub fn hardware_backend_rejection(
@@ -525,32 +537,50 @@ mod tests {
                 ArtifactTrust::Trusted,
                 false,
             ),
-            BackendChoice {
+            BackendSelection::Selected(BackendChoice {
                 backend: Backend::Cuda,
                 reason: "compute_cap sm_89 covered; driver CUDA 13 >= 13".to_string(),
+            })
+        );
+        match select_local_backend(
+            &probe,
+            &CUDA_EMBEDDED_ARCH_SET,
+            CUDA_MIN_DRIVER_VERSION,
+            ArtifactTrust::Unavailable,
+            false,
+        ) {
+            BackendSelection::Selected(choice) => {
+                assert_eq!(
+                    choice.reason,
+                    "compute_cap sm_89 covered; driver CUDA 13 >= 13; CUDA runtime is not installed locally"
+                );
             }
-        );
+            BackendSelection::IntegrityBlocked => panic!("expected selected"),
+        }
+        match select_local_backend(
+            &probe,
+            &CUDA_EMBEDDED_ARCH_SET,
+            CUDA_MIN_DRIVER_VERSION,
+            ArtifactTrust::Absent,
+            false,
+        ) {
+            BackendSelection::Selected(choice) => {
+                assert_eq!(
+                    choice.reason,
+                    "compute_cap sm_89 covered; driver CUDA 13 >= 13; CUDA runtime artifact does not cover this GPU"
+                );
+            }
+            BackendSelection::IntegrityBlocked => panic!("expected selected"),
+        }
         assert_eq!(
             select_local_backend(
                 &probe,
                 &CUDA_EMBEDDED_ARCH_SET,
                 CUDA_MIN_DRIVER_VERSION,
-                ArtifactTrust::Unavailable,
+                ArtifactTrust::Integrity,
                 false,
-            )
-            .reason,
-            "compute_cap sm_89 covered; driver CUDA 13 >= 13; CUDA runtime is not installed locally"
-        );
-        assert_eq!(
-            select_local_backend(
-                &probe,
-                &CUDA_EMBEDDED_ARCH_SET,
-                CUDA_MIN_DRIVER_VERSION,
-                ArtifactTrust::Absent,
-                false,
-            )
-            .reason,
-            "compute_cap sm_89 covered; driver CUDA 13 >= 13; CUDA runtime artifact does not cover this GPU"
+            ),
+            BackendSelection::IntegrityBlocked
         );
     }
 }

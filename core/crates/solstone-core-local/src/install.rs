@@ -731,8 +731,17 @@ fn local_target(
     model_id: &str,
     backend: LocalBackend,
 ) -> Result<Value, DispatchError> {
+    local_target_with_probe(journal, model_id, backend, None)
+}
+
+fn local_target_with_probe(
+    journal: &Path,
+    model_id: &str,
+    backend: LocalBackend,
+    nvidia_probe: Option<crate::NvidiaProbe>,
+) -> Result<Value, DispatchError> {
     let key = pins::platform_key();
-    local_target_for_key(journal, model_id, backend, &key)
+    local_target_for_key_with_probe(journal, model_id, backend, &key, nvidia_probe)
 }
 
 pub(crate) fn local_target_for_windows_package(
@@ -776,6 +785,16 @@ fn local_target_for_key(
     backend: LocalBackend,
     key: &str,
 ) -> Result<Value, DispatchError> {
+    local_target_for_key_with_probe(journal, model_id, backend, key, None)
+}
+
+fn local_target_for_key_with_probe(
+    journal: &Path,
+    model_id: &str,
+    backend: LocalBackend,
+    key: &str,
+    nvidia_probe: Option<crate::NvidiaProbe>,
+) -> Result<Value, DispatchError> {
     if backend == LocalBackend::Metal && key != "aarch64-apple-darwin" {
         return Err(failure(
             "platform",
@@ -803,7 +822,17 @@ fn local_target_for_key(
             "Darwin Metal runtime".to_owned(),
         ),
         LocalBackend::Existing => {
-            let choice = local_backend_choice(journal, None);
+            let choice = match local_backend_choice(journal, nvidia_probe) {
+                crate::nvidia::BackendSelection::Selected(choice) => choice,
+                crate::nvidia::BackendSelection::IntegrityBlocked => {
+                    return Err(failure(
+                        "verification",
+                        "cuda_runtime_integrity",
+                        "cuda runtime integrity failure",
+                        65,
+                    ));
+                }
+            };
             let (identity, name) = match choice.backend {
                 crate::Backend::Cuda => (pins::cuda_identity(key), "cuda"),
                 crate::Backend::Vulkan => (pins::vulkan_identity(key), "vulkan"),
@@ -848,10 +877,194 @@ fn live_nvidia_probe_is_transient_undetected(probe: &crate::NvidiaProbe) -> bool
         || error.starts_with("NVIDIA GPU probe exited with status")
 }
 
+pub fn assess_cuda_installation(dir: &Path, key: &str) -> crate::ArtifactTrust {
+    let launcher = dir.join("llama-server");
+    if !launcher.exists() {
+        return crate::ArtifactTrust::Unavailable;
+    }
+    let manifest_path = manifest::artifact_manifest_path(dir);
+    let Ok(manifest_bytes) = fs::read(&manifest_path) else {
+        return crate::ArtifactTrust::Integrity;
+    };
+    let Ok(manifest_json) = serde_json::from_slice::<Value>(&manifest_bytes) else {
+        return crate::ArtifactTrust::Integrity;
+    };
+    let Some(selected_identity) = pins::cuda_identity(key) else {
+        return crate::ArtifactTrust::Integrity;
+    };
+    let Some(manifest_pin) = manifest_json
+        .get("source")
+        .and_then(|s| s.get("pin_identity"))
+        .or_else(|| manifest_json.get("pin_identity"))
+    else {
+        return crate::ArtifactTrust::Integrity;
+    };
+    let Ok(canonical_manifest_pin) = fingerprint::canonical(manifest_pin.clone()) else {
+        return crate::ArtifactTrust::Integrity;
+    };
+    let Ok(canonical_selected_pin) = fingerprint::canonical(selected_identity) else {
+        return crate::ArtifactTrust::Integrity;
+    };
+    if canonical_manifest_pin != canonical_selected_pin {
+        return crate::ArtifactTrust::Integrity;
+    }
+    let Some(inventory) = manifest_json.get("inventory").and_then(Value::as_array) else {
+        return crate::ArtifactTrust::Integrity;
+    };
+    assess_cuda_bytes(dir, inventory)
+}
+
+pub fn assess_cuda_bytes(dir: &Path, inventory: &[Value]) -> crate::ArtifactTrust {
+    let launcher = dir.join("llama-server");
+    let Ok(meta) = fs::symlink_metadata(&launcher) else {
+        return crate::ArtifactTrust::Unavailable;
+    };
+    if !meta.is_file() || meta.file_type().is_symlink() {
+        return crate::ArtifactTrust::Integrity;
+    }
+    let Ok(launcher_bytes) = fs::read(&launcher) else {
+        return crate::ArtifactTrust::Integrity;
+    };
+    let declared = crate::CUDA_EMBEDDED_ARCH_SET;
+    let launcher_text = String::from_utf8_lossy(&launcher_bytes);
+    let launcher_contains_count = declared
+        .iter()
+        .filter(|arch| launcher_text.contains(*arch))
+        .count();
+
+    if launcher_contains_count == declared.len() {
+        if carrier_hash_matches(inventory, "llama-server", &launcher) {
+            return crate::ArtifactTrust::Trusted;
+        }
+        return crate::ArtifactTrust::Integrity;
+    }
+    if launcher_contains_count == 0 {
+        let twin = dir.join("libggml-cuda.so");
+        let Ok(meta) = fs::symlink_metadata(&twin) else {
+            return crate::ArtifactTrust::Integrity;
+        };
+        if !meta.is_file() || meta.file_type().is_symlink() {
+            return crate::ArtifactTrust::Integrity;
+        }
+        let Ok(twin_bytes) = fs::read(&twin) else {
+            return crate::ArtifactTrust::Integrity;
+        };
+        let twin_text = String::from_utf8_lossy(&twin_bytes);
+        if !declared.iter().all(|arch| twin_text.contains(arch)) {
+            return crate::ArtifactTrust::Integrity;
+        }
+        if carrier_hash_matches(inventory, "libggml-cuda.so", &twin) {
+            return crate::ArtifactTrust::Trusted;
+        }
+        return crate::ArtifactTrust::Integrity;
+    }
+
+    crate::ArtifactTrust::Integrity
+}
+
+fn carrier_hash_matches(inventory: &[Value], name: &str, path: &Path) -> bool {
+    let Some(expected_hash) = inventory_entry_sha256(inventory, name) else {
+        return false;
+    };
+    manifest::sha256_file(path).ok().as_deref() == Some(expected_hash.as_str())
+}
+
+fn inventory_entry_sha256(inventory: &[Value], name: &str) -> Option<String> {
+    for entry in inventory {
+        if entry.get("relative_path").and_then(Value::as_str) == Some(name) {
+            return entry
+                .get("sha256")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+        }
+    }
+    None
+}
+
+pub fn verify_required_oracle(
+    root: &Path,
+    release_tag: &str,
+    artifact_key: &str,
+    is_cuda: bool,
+) -> Result<(), String> {
+    if is_cuda {
+        let arch = pins::cuda_runtime_arch(artifact_key)
+            .ok_or_else(|| format!("unsupported cuda arch key {artifact_key}"))?;
+        let wanted =
+            pins::cuda_wanted_files(arch).ok_or_else(|| format!("unsupported cuda arch {arch}"))?;
+        for name in wanted {
+            let path = root.join(&name);
+            let meta = fs::symlink_metadata(&path)
+                .map_err(|_| format!("required cuda member missing: {name}"))?;
+            if !meta.is_file() || meta.file_type().is_symlink() {
+                return Err(format!(
+                    "required cuda member is not a regular file: {name}"
+                ));
+            }
+        }
+        return Ok(());
+    }
+
+    let Some(members) = pins::required_members_for(release_tag, artifact_key) else {
+        return Ok(());
+    };
+    for member in members {
+        match member {
+            pins::RequiredMember::Regular(name) => {
+                let path = root.join(name);
+                let meta = fs::symlink_metadata(&path)
+                    .map_err(|_| format!("required regular member missing: {name}"))?;
+                if !meta.is_file() || meta.file_type().is_symlink() {
+                    return Err(format!(
+                        "required regular member is not a regular file: {name}"
+                    ));
+                }
+            }
+            pins::RequiredMember::Link { name, target } => {
+                let path = root.join(name);
+                let meta = fs::symlink_metadata(&path)
+                    .map_err(|_| format!("required link member missing: {name}"))?;
+                if !meta.file_type().is_symlink() {
+                    return Err(format!("required link member is not a symlink: {name}"));
+                }
+                let link_target =
+                    fs::read_link(&path).map_err(|e| format!("cannot read link {name}: {e}"))?;
+                if link_target != Path::new(target) {
+                    return Err(format!(
+                        "link {name} target mismatch: expected {target}, got {}",
+                        link_target.display()
+                    ));
+                }
+                let mut current = path.clone();
+                let mut hops = 0;
+                while hops < 20 {
+                    let meta = fs::symlink_metadata(&current)
+                        .map_err(|_| format!("broken link in chain for {name}"))?;
+                    if meta.file_type().is_symlink() {
+                        let link = fs::read_link(&current)
+                            .map_err(|_| format!("cannot read link in chain for {name}"))?;
+                        let parent = current.parent().unwrap_or(root);
+                        current = parent.join(link);
+                        hops += 1;
+                    } else if meta.is_file() {
+                        break;
+                    } else {
+                        return Err(format!("link {name} does not resolve to regular file"));
+                    }
+                }
+                if hops >= 20 {
+                    return Err(format!("link cycle detected for {name}"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn local_backend_choice(
     journal: &Path,
     nvidia_probe: Option<crate::NvidiaProbe>,
-) -> crate::BackendChoice {
+) -> crate::nvidia::BackendSelection {
     local_backend_choice_with(journal, nvidia_probe, true)
 }
 
@@ -860,7 +1073,7 @@ pub fn local_backend_choice(
 pub fn local_backend_choice_present(
     journal: &Path,
     nvidia_probe: Option<crate::NvidiaProbe>,
-) -> crate::BackendChoice {
+) -> crate::nvidia::BackendSelection {
     local_backend_choice_with(journal, nvidia_probe, false)
 }
 
@@ -868,13 +1081,13 @@ fn local_backend_choice_with(
     journal: &Path,
     nvidia_probe: Option<crate::NvidiaProbe>,
     inspect_cuda_binary: bool,
-) -> crate::BackendChoice {
+) -> crate::nvidia::BackendSelection {
     let key = pins::platform_key();
     if key == "x86_64-windows" {
-        return crate::BackendChoice {
+        return crate::nvidia::BackendSelection::Selected(crate::BackendChoice {
             backend: crate::Backend::Vulkan,
             reason: "Windows packaged Vulkan runtime".to_owned(),
-        };
+        });
     }
     let probe = nvidia_probe.unwrap_or_else(|| {
         let first = crate::probe_nvidia_gpu();
@@ -890,36 +1103,30 @@ fn local_backend_choice_with(
         &crate::CUDA_EMBEDDED_ARCH_SET,
         crate::CUDA_MIN_DRIVER_VERSION,
     ) {
-        return rejection;
+        return crate::nvidia::BackendSelection::Selected(rejection);
     }
     if pin.is_none() {
-        return crate::BackendChoice {
+        return crate::nvidia::BackendSelection::Selected(crate::BackendChoice {
             backend: crate::Backend::Vulkan,
             reason: "CUDA runtime is not published for this platform".to_owned(),
-        };
+        });
     }
     let trust = if inspect_cuda_binary {
         pin.as_ref()
             .map(|(_, digest, _)| {
-                let artifact = pins::cache_root(journal)
+                let install_dir = pins::cache_root(journal)
                     .join("cuda")
                     .join(&key)
-                    .join(digest)
-                    .join("llama-server");
-                let declared = crate::CUDA_EMBEDDED_ARCH_SET
-                    .iter()
-                    .map(|arch| (*arch).to_owned())
-                    .collect::<Vec<_>>();
-                match manifest::cuda_trust(&artifact, &declared)["trust"].as_str() {
-                    Some("trusted") => crate::ArtifactTrust::Trusted,
-                    Some("absent") => crate::ArtifactTrust::Absent,
-                    _ => crate::ArtifactTrust::Unavailable,
-                }
+                    .join(digest);
+                assess_cuda_installation(&install_dir, &key)
             })
             .unwrap_or(crate::ArtifactTrust::Unavailable)
     } else {
         crate::ArtifactTrust::Unavailable
     };
+    if trust == crate::ArtifactTrust::Integrity {
+        return crate::nvidia::BackendSelection::IntegrityBlocked;
+    }
     if trust == crate::ArtifactTrust::Absent {
         let arch = probe
             .arch
@@ -928,13 +1135,13 @@ fn local_backend_choice_with(
         let driver_cuda_major = probe
             .driver_cuda_major
             .expect("hardware rejection checked driver CUDA major");
-        return crate::BackendChoice {
+        return crate::nvidia::BackendSelection::Selected(crate::BackendChoice {
             backend: crate::Backend::Vulkan,
             reason: format!(
                 "compute_cap {arch} covered; driver CUDA {driver_cuda_major} >= {}; CUDA runtime artifact does not cover this GPU",
                 crate::CUDA_MIN_DRIVER_VERSION
             ),
-        };
+        });
     }
     // Hardware qualifies and a CUDA pin is published. Select CUDA so first
     // install downloads it. Post-download `cuda_trust` still verifies the
@@ -947,13 +1154,13 @@ fn local_backend_choice_with(
     let driver_cuda_major = probe
         .driver_cuda_major
         .expect("hardware rejection checked driver CUDA major");
-    crate::BackendChoice {
+    crate::nvidia::BackendSelection::Selected(crate::BackendChoice {
         backend: crate::Backend::Cuda,
         reason: format!(
             "compute_cap {arch} covered; driver CUDA {driver_cuda_major} >= {}",
             crate::CUDA_MIN_DRIVER_VERSION
         ),
-    }
+    })
 }
 
 /// Mirrors Python's `parakeet_install.target_fingerprint` field-for-field:
@@ -1086,28 +1293,37 @@ fn run_local_install(
             65,
         ));
     }
-    let (filename, install_dir, pin_identity, exclude_names, cuda) = if backend == "cuda" {
-        let (_, digest, _) = pins::cuda_pin(&key)
-            .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
-        let install_dir = root.join("cuda").join(&key).join(digest);
-        (
-            format!("llama-{digest}.tar.gz"),
-            install_dir,
-            pins::cuda_identity(&key).unwrap(),
-            Vec::new(),
-            true,
-        )
-    } else {
-        let (release, filename, _digest, _) = pins::vulkan_pin(&key)
-            .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
-        (
-            filename.to_owned(),
-            root.join("bin").join(&key).join(release),
-            pins::vulkan_identity(&key).unwrap(),
-            vec![filename.to_owned()],
-            false,
-        )
-    };
+    let (release_tag, filename, install_dir, pin_identity, exclude_names, cuda) =
+        if backend == "cuda" {
+            let (_, digest, _) = pins::cuda_pin(&key)
+                .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+            let install_dir = root.join("cuda").join(&key).join(digest);
+            let identity = pins::cuda_identity(&key).unwrap();
+            let release_tag = identity
+                .get("release_tag")
+                .and_then(Value::as_str)
+                .unwrap_or("b10068")
+                .to_owned();
+            (
+                release_tag,
+                format!("llama-{digest}.tar.gz"),
+                install_dir,
+                identity,
+                Vec::new(),
+                true,
+            )
+        } else {
+            let (release, filename, _digest, _) = pins::vulkan_pin(&key)
+                .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+            (
+                release.to_owned(),
+                filename.to_owned(),
+                root.join("bin").join(&key).join(release),
+                pins::vulkan_identity(&key).unwrap(),
+                vec![filename.to_owned()],
+                false,
+            )
+        };
     let artifact = select_artifact(
         if cuda {
             "llama-server-cuda"
@@ -1178,39 +1394,90 @@ fn run_local_install(
         .map_err(|error| failure("io", "chmod_failed", error, 74))?;
     archive::clear_macos_quarantine(&staging)
         .map_err(|error| failure("io", "quarantine_clear_failed", error, 74))?;
-    let manifest_value = manifest::build_manifest(
-        "local",
-        if cuda {
-            "llama-server-cuda"
-        } else {
-            "llama-server-vulkan"
-        },
+    commit_staged_local_runtime(
+        &staging,
+        &install_dir,
+        &release_tag,
+        &key,
+        cuda,
+        &pin_identity,
         status_value.target_fingerprint_sha256.as_deref().unwrap(),
-        json!({"pin_identity":pin_identity}),
-        manifest::runtime_inventory(&staging, &exclude_names)
-            .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
-        None,
         status_value.attempt_id.as_deref(),
-    )
-    .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
-    manifest::write_manifest(&manifest::artifact_manifest_path(&staging), &manifest_value)
-        .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
-    if cuda {
-        let declared = crate::CUDA_EMBEDDED_ARCH_SET
-            .iter()
-            .map(|arch| (*arch).to_owned())
-            .collect::<Vec<_>>();
-        let trust = manifest::cuda_trust(&final_binary, &declared);
-        if trust["trust"] != "trusted" {
-            return Err(failure("verification", "cuda_runtime_untrusted", trust, 65));
-        }
-    }
-    publish_staged_tree(&staging, &install_dir)
-        .map_err(|error| failure("io", "publish_failed", error, 74))?;
+        &exclude_names,
+    )?;
     install_model(&journal, &model_id, status_value, policy)?;
     Ok(
         json!({"backend":backend,"binary_path":install_dir.join("llama-server"),"model_id":model_id}),
     )
+}
+
+pub fn commit_staged_local_runtime(
+    staging: &Path,
+    install_dir: &Path,
+    release_tag: &str,
+    artifact_key: &str,
+    is_cuda: bool,
+    pin_identity: &Value,
+    target_fingerprint_sha256: &str,
+    attempt_id: Option<&str>,
+    exclude_names: &[String],
+) -> Result<(), DispatchError> {
+    if let Err(error) = verify_required_oracle(staging, release_tag, artifact_key, is_cuda) {
+        let _ = fs::remove_dir_all(staging);
+        return Err(failure(
+            "verification",
+            "required_member_missing",
+            error,
+            65,
+        ));
+    }
+    let inventory = match manifest::runtime_inventory(staging, exclude_names) {
+        Ok(inventory) => inventory,
+        Err(error) => {
+            let _ = fs::remove_dir_all(staging);
+            return Err(failure("io", "manifest_inventory_failed", error, 74));
+        }
+    };
+    if is_cuda {
+        let trust = assess_cuda_bytes(staging, &inventory);
+        if trust != crate::ArtifactTrust::Trusted {
+            let _ = fs::remove_dir_all(staging);
+            return Err(failure(
+                "verification",
+                "cuda_runtime_integrity",
+                "cuda runtime integrity failure",
+                65,
+            ));
+        }
+    }
+    let manifest_value = match manifest::build_manifest(
+        "local",
+        if is_cuda {
+            "llama-server-cuda"
+        } else {
+            "llama-server-vulkan"
+        },
+        target_fingerprint_sha256,
+        json!({"pin_identity": pin_identity}),
+        inventory,
+        None,
+        attempt_id,
+    ) {
+        Ok(manifest_value) => manifest_value,
+        Err(error) => {
+            let _ = fs::remove_dir_all(staging);
+            return Err(failure("io", "manifest_build_failed", error, 74));
+        }
+    };
+    if let Err(error) =
+        manifest::write_manifest(&manifest::artifact_manifest_path(staging), &manifest_value)
+    {
+        let _ = fs::remove_dir_all(staging);
+        return Err(failure("io", "manifest_write_failed", error, 74));
+    }
+    publish_staged_tree(staging, install_dir)
+        .map_err(|error| failure("io", "publish_failed", error, 74))?;
+    Ok(())
 }
 
 /// Mirrors `run_local_install`'s download-extract-chmod-manifest-publish
