@@ -134,7 +134,14 @@ pub(crate) fn build_day(
     let sleep = sleep_analysis(&day_rows, &previous_rows, &next_rows, target, &typical);
     let glucose = glucose_stats(&day_rows);
     let glucose_series = glucose_series(&day_rows);
-    let activity = activity_analysis(&day_rows);
+    let mut activity = activity_analysis(&day_rows);
+    let strava = crate::strava::workouts_on(root, &day);
+    if !strava.is_empty() {
+        let activity = activity.get_or_insert_with(|| json!({"workouts": []}));
+        if let Some(workouts) = activity.get_mut("workouts").and_then(Value::as_array_mut) {
+            workouts.extend(strava.iter().cloned());
+        }
+    }
     let heart = heart_analysis(&day_rows, &typical);
     let recovery = recovery_analysis(&day_rows, &typical);
     let families = family_rows(&day_rows);
@@ -178,7 +185,7 @@ pub(crate) fn build_day(
     let summary = find_day_summary(root, &day)
         .map_err(|error| DayError::Chronicle(error.to_string()))?
         .unwrap_or_default();
-    let has_data = !day_rows.is_empty();
+    let has_data = !day_rows.is_empty() || !strava.is_empty();
     let nearest = nearest(stats.map(|value| &value.by_day), &day);
     let prompts = if has_data {
         prompts(

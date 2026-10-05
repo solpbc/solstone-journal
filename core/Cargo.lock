@@ -3837,6 +3837,7 @@ dependencies = [
  "solstone-core-convey-http",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "tempfile",
  "tokio",
  "tower",
 ]
