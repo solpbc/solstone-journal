@@ -36,7 +36,7 @@ mod entry;
 mod skills;
 
 #[cfg(not(target_os = "ios"))]
-pub use entry::process_main;
+pub use entry::{process_main, run_journal};
 
 pub use solstone_core_cli_boundary::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
 

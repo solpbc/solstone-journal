@@ -31,19 +31,20 @@ use solstone_core_cli::{
     FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
     GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
-    IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions,
-    IndexerPathLookupOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions,
-    IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
-    JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
-    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
-    MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpPermissionCommand,
-    McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
-    SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
-    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
-    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
-    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
-    THINKING_CHATGPT_HELP, THINKING_CHATGPT_MODELS_HELP, THINKING_CHATGPT_MODELS_USAGE,
-    THINKING_CHATGPT_SIGN_IN_HELP, THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
+    IndexerClassificationsOptions, IndexerCommand, IndexerCountsOptions,
+    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPathLookupOptions,
+    IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
+    IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
+    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
+    JournalPathOptions, LocalCommand, MCP_HELP, MCP_USAGE, McpCommand, McpOauthCommand,
+    McpPairingCommand, McpPermissionCommand, McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
+    SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
+    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
+    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
+    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
+    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_CHATGPT_HELP,
+    THINKING_CHATGPT_MODELS_HELP, THINKING_CHATGPT_MODELS_USAGE, THINKING_CHATGPT_SIGN_IN_HELP,
+    THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
     THINKING_CHATGPT_SIGN_OUT_USAGE, THINKING_CHATGPT_STATUS_HELP, THINKING_CHATGPT_STATUS_USAGE,
     THINKING_CHATGPT_USAGE, THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE,
     THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, ThinkingCommand,
@@ -113,7 +114,10 @@ use solstone_core_indexer_store::merge::{
 use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
-use solstone_core_indexer_store::{apply_path_lookup, inspect_path_lookup};
+use solstone_core_indexer_store::{
+    apply_classification_batch, apply_path_lookup, drain_classifications, inspect_classifications,
+    inspect_path_lookup,
+};
 use solstone_core_journal::{
     ConfigError, HomeError, Source, describe_package_roots_miss, ensure_journal_dir_with_label,
     read_config_journal, resolve_installation_root_from_executable_dir, resolve_journal_path,
@@ -6708,6 +6712,7 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::Agents(options) => run_indexer_agents(options),
         IndexerCommand::Coverage(options) => run_indexer_coverage(options),
         IndexerCommand::PathLookup(options) => run_indexer_path_lookup(options),
+        IndexerCommand::Classifications(options) => run_indexer_classifications(options),
         IndexerCommand::PruneStream(options) => run_indexer_prune_stream(options),
         IndexerCommand::PrunePaths(options) => run_indexer_prune_paths(options),
         IndexerCommand::FoldEntityEdges(options) => run_indexer_fold_entity_edges(options),
@@ -6715,6 +6720,31 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::RebuildEdgesFingerprint(options) => {
             run_indexer_rebuild_edges_fingerprint(options)
         }
+    }
+}
+
+fn run_indexer_classifications(options: IndexerClassificationsOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let result = if options.drain {
+        drain_classifications(&journal)
+    } else if options.apply {
+        apply_classification_batch(&journal)
+    } else {
+        inspect_classifications(&journal)
+    };
+    match result {
+        Ok(status) => {
+            if options.json {
+                print_json(&status.to_json_value());
+            } else {
+                print!("{}", status.format_human());
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_indexer_mutation_error("classifications", error),
     }
 }
 
@@ -7805,7 +7835,7 @@ mod tests {
         let _ = fs::remove_dir_all(fresh_dir);
     }
 
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn indexer_path_lookup() {
         const TEST_ENV: &str = "SOLSTONE_TEST_INDEXER_PATH_LOOKUP_CHILD";
@@ -7915,6 +7945,288 @@ mod tests {
         assert!(output3.status.success());
         let stdout3 = String::from_utf8_lossy(&output3.stdout);
         assert!(stdout3.contains("path lookup: ready"), "stdout: {stdout3}");
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn indexer_classifications() {
+        const TEST_ENV: &str = "SOLSTONE_TEST_INDEXER_CLASSIFICATIONS_CHILD";
+        if let Ok(raw) = std::env::var(TEST_ENV) {
+            install_logger();
+            let parts: Vec<&str> = raw.split('\x1f').collect();
+            let journal_path = parts[0];
+            let mode = parts[1];
+            let mut args = vec![
+                std::ffi::OsString::from("indexer"),
+                std::ffi::OsString::from("classifications"),
+                std::ffi::OsString::from("--journal"),
+                std::ffi::OsString::from(journal_path),
+            ];
+            if mode == "apply" {
+                args.push(std::ffi::OsString::from("--apply"));
+            } else if mode == "drain" {
+                args.push(std::ffi::OsString::from("--apply"));
+                args.push(std::ffi::OsString::from("--drain"));
+            }
+            if parts.get(2) == Some(&"json") {
+                args.push(std::ffi::OsString::from("--json"));
+            }
+            let command = evaluate_args(&args).expect("evaluate args in child");
+            let exit_code = match command {
+                Command::Indexer(cmd) => run_indexer(*cmd),
+                _ => panic!("unexpected command parsed"),
+            };
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+            let _ = std::io::stderr().flush();
+            let code = match exit_code {
+                code if code == ExitCode::SUCCESS => 0,
+                _ => EXIT_TEMPFAIL as i32,
+            };
+            std::process::exit(code);
+        }
+
+        let run_cmd = |journal: &Path,
+                       mode: &str,
+                       json: bool,
+                       envs: &[(&str, &str)]|
+         -> std::process::Output {
+            if let Ok(bin) = std::env::var("CARGO_BIN_EXE_solstone-core") {
+                let mut cmd = std::process::Command::new(bin);
+                cmd.arg("indexer")
+                    .arg("classifications")
+                    .arg("--journal")
+                    .arg(journal);
+                if mode == "apply" {
+                    cmd.arg("--apply");
+                } else if mode == "drain" {
+                    cmd.arg("--apply").arg("--drain");
+                }
+                if json {
+                    cmd.arg("--json");
+                }
+                for (k, v) in envs {
+                    cmd.env(k, v);
+                }
+                cmd.output().expect("spawn CARGO_BIN_EXE_solstone-core")
+            } else {
+                let current = std::env::current_exe().expect("current_exe");
+                let mut cmd = std::process::Command::new(current);
+                let json_flag = if json { "json" } else { "text" };
+                cmd.env(
+                    TEST_ENV,
+                    format!("{}\x1f{}\x1f{}", journal.display(), mode, json_flag),
+                );
+                for (k, v) in envs {
+                    cmd.env(k, v);
+                }
+                cmd.arg("--exact")
+                    .arg("tests::indexer_classifications")
+                    .arg("--nocapture");
+                cmd.output().expect("spawn current_exe re-entry")
+            }
+        };
+
+        let temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let absent_journal = temp.path().join("absent_journal");
+        let output1 = run_cmd(&absent_journal, "inspect", true, &[]);
+        assert!(output1.status.success());
+        let val1: serde_json::Value = serde_json::from_slice(&output1.stdout).expect("parse json");
+        assert_eq!(val1["initialization"], "absent");
+        assert!(!absent_journal.join("indexer").exists());
+        assert!(!absent_journal.join("indexer/journal.sqlite").exists());
+        assert!(!absent_journal.join("indexer/journal.sqlite-wal").exists());
+        assert!(!absent_journal.join("indexer/journal.sqlite-shm").exists());
+
+        let ready_journal = temp.path().join("ready_journal");
+        let conn = solstone_core_indexer_store::db::open_index(&ready_journal).expect("open");
+        conn.execute(
+            "INSERT INTO chunks(content, path) VALUES ('text', 'doc.md')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        solstone_core_indexer_store::apply_path_lookup(&ready_journal).expect("apply path lookup");
+
+        let db_file = ready_journal.join("indexer/journal.sqlite");
+        let master_before: String = {
+            let conn = rusqlite::Connection::open(&db_file).unwrap();
+            conn.query_row(
+                "SELECT sql FROM sqlite_master WHERE name='chunks'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+
+        let output2 = run_cmd(&ready_journal, "inspect", true, &[]);
+        assert!(output2.status.success());
+        let val2: serde_json::Value = serde_json::from_slice(&output2.stdout).expect("parse json");
+        assert_eq!(val2["initialization"], "ready");
+
+        let master_after: String = {
+            let conn = rusqlite::Connection::open(&db_file).unwrap();
+            conn.query_row(
+                "SELECT sql FROM sqlite_master WHERE name='chunks'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(master_before, master_after);
+
+        // Checkpointed WAL DB with no sidecars
+        let checkpointed_journal = temp.path().join("checkpointed_journal");
+        let mut conn2 =
+            solstone_core_indexer_store::db::open_index(&checkpointed_journal).expect("open");
+        conn2
+            .execute("INSERT INTO chunks(content, path) VALUES ('t', 'p.md')", [])
+            .unwrap();
+        drop(conn2);
+        solstone_core_indexer_store::apply_path_lookup(&checkpointed_journal).unwrap();
+        // Checkpoint to remove sidecars
+        {
+            let conn_chk =
+                rusqlite::Connection::open(checkpointed_journal.join("indexer/journal.sqlite"))
+                    .unwrap();
+            conn_chk
+                .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                .unwrap();
+        }
+        let chk_db = checkpointed_journal.join("indexer/journal.sqlite");
+        let chk_wal = checkpointed_journal.join("indexer/journal.sqlite-wal");
+        let chk_shm = checkpointed_journal.join("indexer/journal.sqlite-shm");
+        let _ = fs::remove_file(&chk_wal);
+        let _ = fs::remove_file(&chk_shm);
+        let db_bytes_before = fs::read(&chk_db).unwrap();
+
+        let output_chk = run_cmd(&checkpointed_journal, "inspect", false, &[]);
+        assert!(output_chk.status.success());
+        assert_eq!(fs::read(&chk_db).unwrap(), db_bytes_before);
+        assert_eq!(fs::metadata(&chk_wal).unwrap().len(), 0);
+        assert_eq!(fs::metadata(&chk_shm).unwrap().len(), 32768);
+
+        // Existing non-empty WAL
+        let active_journal = temp.path().join("active_journal");
+        let conn3 = solstone_core_indexer_store::db::open_index(&active_journal).expect("open");
+        drop(conn3);
+        solstone_core_indexer_store::apply_path_lookup(&active_journal).unwrap();
+        let act_db = active_journal.join("indexer/journal.sqlite");
+        let act_wal = active_journal.join("indexer/journal.sqlite-wal");
+        // Create an uncheckpointed write to leave active WAL frames
+        {
+            let conn_act = rusqlite::Connection::open(&act_db).unwrap();
+            conn_act
+                .execute(
+                    "INSERT INTO chunks(content, path) VALUES ('new', 'act.md')",
+                    [],
+                )
+                .unwrap();
+        }
+        let wal_len_before = fs::metadata(&act_wal).unwrap().len();
+        assert!(wal_len_before > 0);
+        let output_act = run_cmd(&active_journal, "inspect", false, &[]);
+        assert!(output_act.status.success());
+        assert_eq!(fs::metadata(&act_wal).unwrap().len(), wal_len_before);
+
+        // Live progress with FIFO hold
+        #[cfg(unix)]
+        {
+            let fifo_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+            let fifo_path = fifo_dir.path().join("batch_hold.fifo");
+            let c_path = std::ffi::CString::new(fifo_path.to_str().unwrap()).unwrap();
+            unsafe {
+                libc::mkfifo(c_path.as_ptr(), 0o600);
+            }
+
+            let progress_journal = temp.path().join("progress_journal");
+            let conn4 =
+                solstone_core_indexer_store::db::open_index(&progress_journal).expect("open");
+            for i in 0..40 {
+                conn4
+                    .execute(
+                        "INSERT INTO chunks(content, path) VALUES ('text', ?1)",
+                        [format!("item-{i:02}.md")],
+                    )
+                    .unwrap();
+            }
+            drop(conn4);
+            solstone_core_indexer_store::apply_path_lookup(&progress_journal).unwrap();
+
+            let fifo_path_clone = fifo_path.clone();
+            let journal_path_clone = progress_journal.clone();
+
+            let child_handle = std::thread::spawn(move || {
+                let bin = std::env::var("CARGO_BIN_EXE_solstone-core")
+                    .unwrap_or_else(|_| std::env::current_exe().unwrap().display().to_string());
+                let mut cmd = std::process::Command::new(bin);
+                if std::env::var("CARGO_BIN_EXE_solstone-core").is_ok() {
+                    cmd.arg("indexer")
+                        .arg("classifications")
+                        .arg("--journal")
+                        .arg(&journal_path_clone)
+                        .arg("--apply")
+                        .arg("--drain")
+                        .arg("--json");
+                } else {
+                    cmd.env(
+                        TEST_ENV,
+                        format!("{}\x1fdrain\x1fjson", journal_path_clone.display()),
+                    );
+                    cmd.arg("--exact")
+                        .arg("tests::indexer_classifications")
+                        .arg("--nocapture");
+                }
+                cmd.env("RUST_LOG", "info")
+                    .env(
+                        "SOLSTONE_INDEXER_CLASSIFICATION_BATCH_HOLD",
+                        &fifo_path_clone,
+                    )
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped());
+                cmd.spawn().expect("spawn child")
+            });
+
+            let mut child = child_handle.join().unwrap();
+            let stderr = child.stderr.take().unwrap();
+            let stdout = child.stdout.take().unwrap();
+
+            // Read stderr until "classification batch processed=" line
+            use std::io::{BufRead, BufReader, Write};
+            let mut reader = BufReader::new(stderr);
+            let mut found_progress = false;
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap() > 0 {
+                if line.contains("classification batch processed=") {
+                    found_progress = true;
+                    break;
+                }
+                line.clear();
+            }
+            assert!(
+                found_progress,
+                "must see classification batch progress line"
+            );
+
+            // Write one byte to release FIFO
+            let mut fifo_writer = fs::OpenOptions::new()
+                .write(true)
+                .open(&fifo_path)
+                .expect("open fifo writer");
+            fifo_writer.write_all(b"x").expect("write release byte");
+            drop(fifo_writer);
+
+            let status = child.wait().expect("child wait");
+            assert!(status.success());
+            let mut out_reader = BufReader::new(stdout);
+            let mut out_str = String::new();
+            use std::io::Read;
+            out_reader.read_to_string(&mut out_str).unwrap();
+            let final_json: serde_json::Value =
+                serde_json::from_str(out_str.trim()).expect("stdout is valid single json");
+            assert_eq!(final_json["completed"], true);
+            assert_eq!(final_json["processed"], 40);
+        }
     }
 }
 

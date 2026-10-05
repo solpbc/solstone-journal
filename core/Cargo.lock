@@ -4519,6 +4519,7 @@ dependencies = [
 name = "solstone-core-indexer-store"
 version = "2.0.33"
 dependencies = [
+ "log",
  "rusqlite",
  "serde_json",
  "sha2 0.10.9",
@@ -5235,8 +5236,12 @@ dependencies = [
 name = "solstone-core-sol-bin"
 version = "2.0.33"
 dependencies = [
+ "libc",
+ "rusqlite",
  "serde_json",
+ "solstone-core-indexer-store",
  "solstone-core-sol",
+ "tempfile",
 ]
 
 [[package]]
