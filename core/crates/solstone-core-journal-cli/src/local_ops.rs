@@ -37,6 +37,10 @@ use solstone_core_indexer_store::db::reset_index;
 use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
+#[cfg(not(target_os = "ios"))]
+use solstone_core_indexer_store::{
+    apply_classification_batch, drain_classifications, inspect_classifications,
+};
 use solstone_core_journal_archive::{
     ArchiveSource, DayWindow, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
     acquire_explicit_output_target, publish_archive,
@@ -103,12 +107,67 @@ fn indexer(_args: &[OsString]) -> Outcome {
 
 #[cfg(not(target_os = "ios"))]
 fn indexer(args: &[OsString]) -> Outcome {
-    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n       solstone journal indexer path-lookup [--apply] [--json]\n";
+    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n       solstone journal indexer path-lookup [--apply] [--json]\n       solstone journal indexer classifications [--json] [--apply] [--drain]\n";
 
     if let Some((verb, rest)) = args.split_first()
         && verb == OsStr::new("path-lookup")
     {
         return indexer_path_lookup(rest);
+    }
+
+    if args
+        .first()
+        .is_some_and(|arg| arg == std::ffi::OsStr::new("classifications"))
+    {
+        let mut apply = false;
+        let mut drain = false;
+        let mut json = false;
+        let mut index = 1;
+        while index < args.len() {
+            match args[index].to_str() {
+                Some("--apply") if !apply => {
+                    apply = true;
+                    index += 1;
+                }
+                Some("--drain") if !drain => {
+                    drain = true;
+                    index += 1;
+                }
+                Some("--json") if !json => {
+                    json = true;
+                    index += 1;
+                }
+                Some("--help" | "-h") if args.len() == 2 => return success(HELP.to_owned()),
+                _ => return usage("indexer", "unexpected or duplicate argument"),
+            }
+        }
+        if drain && !apply {
+            return usage("indexer", "--drain requires --apply");
+        }
+        let journal = match journal_root("indexer") {
+            Ok(path) => path,
+            Err(outcome) => return outcome,
+        };
+        let result = if drain {
+            drain_classifications(&journal)
+        } else if apply {
+            apply_classification_batch(&journal)
+        } else {
+            inspect_classifications(&journal)
+        };
+        return match result {
+            Ok(status) => {
+                if json {
+                    success(format!(
+                        "{}\n",
+                        serde_json::to_string(&status.to_json_value()).expect("serialize json")
+                    ))
+                } else {
+                    success(status.format_human())
+                }
+            }
+            Err(error) => failure("indexer", &error.to_string(), EXIT_IO),
+        };
     }
 
     let mut reset = false;

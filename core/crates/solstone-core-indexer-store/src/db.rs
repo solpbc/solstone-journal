@@ -88,7 +88,7 @@ id INTEGER PRIMARY KEY CHECK (id = 1),
 cursor TEXT NOT NULL,
 completed INTEGER NOT NULL CHECK (completed IN (0, 1))
 )";
-const CREATE_CHUNK_CLASSIFICATION: &str = "\
+pub(crate) const CREATE_CHUNK_CLASSIFICATION: &str = "\
 CREATE TABLE IF NOT EXISTS chunk_classification(
 path TEXT PRIMARY KEY,
 category TEXT,
@@ -103,15 +103,15 @@ CHECK (
     OR (eligible = 0 AND unclassified = 1 AND category IS NULL AND basis IS NULL)
 )
 )";
-const CREATE_CHUNK_CLASSIFICATION_FACETS: &str = "\
+pub(crate) const CREATE_CHUNK_CLASSIFICATION_FACETS: &str = "\
 CREATE TABLE IF NOT EXISTS chunk_classification_facets(
 path TEXT NOT NULL,
 facet_id TEXT NOT NULL,
 PRIMARY KEY(path, facet_id),
 FOREIGN KEY(path) REFERENCES chunk_classification(path) ON DELETE CASCADE
 )";
-const CREATE_CHUNK_CLASSIFICATION_FACETS_INDEX: &str = "CREATE INDEX IF NOT EXISTS chunk_classification_facets_by_facet_path ON chunk_classification_facets(facet_id, path)";
-const CREATE_CHUNK_CLASSIFICATION_BACKFILL: &str = "\
+pub(crate) const CREATE_CHUNK_CLASSIFICATION_FACETS_INDEX: &str = "CREATE INDEX IF NOT EXISTS chunk_classification_facets_by_facet_path ON chunk_classification_facets(facet_id, path)";
+pub(crate) const CREATE_CHUNK_CLASSIFICATION_BACKFILL: &str = "\
 CREATE TABLE IF NOT EXISTS chunk_classification_backfill(
 id INTEGER PRIMARY KEY CHECK (id = 1),
 cursor TEXT NOT NULL,

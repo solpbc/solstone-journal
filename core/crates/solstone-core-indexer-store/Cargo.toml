@@ -10,6 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
+log.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -20,3 +21,4 @@ solstone-core-memory-original.workspace = true
 
 [features]
 full-tests = []
+test-hooks = []

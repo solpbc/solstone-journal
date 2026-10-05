@@ -4520,6 +4520,7 @@ dependencies = [
 name = "solstone-core-indexer-store"
 version = "2.0.33"
 dependencies = [
+ "log",
  "rusqlite",
  "serde_json",
  "sha2 0.10.9",

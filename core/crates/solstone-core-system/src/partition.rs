@@ -222,4 +222,86 @@ mod tests {
             Partition::new("solstone")
         );
     }
+
+    #[test]
+    fn indexer_classifications_partition_routing() {
+        use crate::request::TaskArgv;
+        use crate::schedule::baseline_cap_contributions;
+        use std::time::Duration;
+
+        let commands = vec![
+            vec!["solstone", "journal", "indexer", "classifications"],
+            vec![
+                "solstone",
+                "journal",
+                "indexer",
+                "classifications",
+                "--apply",
+            ],
+            vec![
+                "solstone",
+                "journal",
+                "indexer",
+                "classifications",
+                "--apply",
+                "--drain",
+            ],
+            vec!["journal", "indexer", "classifications"],
+            vec!["journal", "indexer", "classifications", "--apply"],
+            vec![
+                "journal",
+                "indexer",
+                "classifications",
+                "--apply",
+                "--drain",
+            ],
+            vec![
+                "solstone.exe",
+                "journal",
+                "indexer",
+                "classifications",
+                "--apply",
+            ],
+        ];
+        assert!(!commands.is_empty());
+
+        for cmd in &commands {
+            let string_cmd: Vec<String> = cmd.iter().map(|s| (*s).to_string()).collect();
+            assert_eq!(
+                partition_for(&string_cmd),
+                Partition::new("indexer"),
+                "{cmd:?}"
+            );
+
+            let task_argv = TaskArgv::from_wire(string_cmd.clone()).expect("from_wire");
+            if cmd[0] == "solstone.exe" {
+                assert!(
+                    matches!(task_argv, TaskArgv::Unknown { .. }),
+                    "solstone.exe expected Unknown, got {task_argv:?}"
+                );
+            } else {
+                assert!(
+                    matches!(task_argv, TaskArgv::Indexer(_)),
+                    "canonical/alias expected Indexer, got {task_argv:?}"
+                );
+            }
+        }
+
+        let path_form = vec![
+            "/usr/local/bin/solstone".to_string(),
+            "journal".to_string(),
+            "indexer".to_string(),
+            "classifications".to_string(),
+            "--apply".to_string(),
+        ];
+        assert_eq!(partition_for(&path_form), Partition::new("solstone"));
+        let path_task_argv = TaskArgv::from_wire(path_form).expect("from_wire");
+        assert!(matches!(path_task_argv, TaskArgv::Unknown { .. }));
+
+        let baseline = baseline_cap_contributions();
+        assert!(
+            baseline.contains(&(Partition::new("indexer"), Duration::from_secs(7_200))),
+            "baseline caps must contain (indexer, 7200s)"
+        );
+    }
 }

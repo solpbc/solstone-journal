@@ -850,4 +850,19 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn indexer_classifications_drain_without_apply_returns_usage_and_creates_no_directory() {
+        let outcome = local_ops::dispatch(
+            "indexer",
+            &[OsString::from("classifications"), OsString::from("--drain")],
+        );
+        match outcome {
+            Outcome::LocalFailure { exit, stderr, .. } => {
+                assert_eq!(exit, 64);
+                assert!(stderr.contains("--drain requires --apply"));
+            }
+            other => panic!("expected LocalFailure with exit 64, got {other:?}"),
+        }
+    }
 }

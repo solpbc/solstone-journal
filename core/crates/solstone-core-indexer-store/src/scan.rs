@@ -32,24 +32,22 @@ use solstone_core_memory_original::{OriginalRead, read_original};
 
 use crate::StoreError;
 use crate::chunk_sources::{
-    CHUNK_SOURCES_LOOKUP_ROWIDS, CHUNK_SOURCES_LOOKUP_STREAM, chunk_path_lookup_ready,
-    delete_chunk_source_rowids, record_chunk_source, require_chunk_path_lookup,
+    CHUNK_SOURCES_LOOKUP_ROWIDS, chunk_path_lookup_ready, delete_chunk_source_rowids,
+    record_chunk_source, require_chunk_path_lookup,
 };
 use crate::classification::{FacetDeclarationSet, classify_source};
+use crate::classification_batch::{ResumeCount, classify_one_batch};
 use crate::db::{
-    ChunkClassificationBackfill, EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION,
-    delete_chunk_classification, mark_index_build_complete, next_unclassified_chunk_paths,
-    open_index, read_chunk_classification_backfill, read_entity_search_watermark,
-    read_segment_aggregate_migration, replace_chunk_classification,
-    write_chunk_classification_backfill, write_entity_search_watermark,
-    write_segment_aggregate_migration,
+    EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, delete_chunk_classification,
+    mark_index_build_complete, open_index, read_chunk_classification_backfill,
+    read_entity_search_watermark, read_segment_aggregate_migration, replace_chunk_classification,
+    write_entity_search_watermark, write_segment_aggregate_migration,
 };
 
 const MERGE_STEP: i64 = 32;
 const MERGE_BUDGET: usize = 2;
 const SEGMENT_AGGREGATE_MIGRATION_STEP: i64 = 32;
 const SEGMENT_AGGREGATE_MIGRATION_BUDGET: usize = 2;
-const CHUNK_CLASSIFICATION_BACKFILL_STEP: i64 = 32;
 const CHUNK_CLASSIFICATION_BACKFILL_BUDGET: usize = 2;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -564,61 +562,45 @@ fn migrate_chunk_classifications(
     journal: &Path,
 ) -> Result<Vec<String>, StoreError> {
     let existing = read_chunk_classification_backfill(conn)?;
-    let mut state = existing.clone().unwrap_or(ChunkClassificationBackfill {
-        cursor: String::new(),
-        completed: false,
-        stalled: false,
-        stalled_path: None,
-        resume_count: 0,
-    });
-    if state.completed {
-        return Ok(Vec::new());
-    }
-    if existing.is_some() {
-        state.resume_count += 1;
-    }
-    let declarations = match FacetDeclarationSet::from_journal(journal) {
-        Ok(declarations) => declarations,
-        Err(error) => {
-            state.stalled = true;
-            state.stalled_path = Some(state.cursor.clone());
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            write_chunk_classification_backfill(&tx, &state)?;
-            tx.commit()?;
+    if let Some(ref state) = existing
+        && state.completed
+    {
+        let status = classify_one_batch(conn, journal, ResumeCount::Preserve)?;
+        if status.coverage_mismatch {
             return Ok(vec![format!(
-                "chunk classification backfill stalled: {error}"
+                "chunk classification coverage mismatch: {} missing rows",
+                status.missing
             )]);
         }
+        return Ok(Vec::new());
+    }
+
+    let resume_target = match existing {
+        Some(state) => ResumeCount::Set(state.resume_count + 1),
+        None => ResumeCount::Set(0),
     };
+
+    let mut current_resume = resume_target;
     for _ in 0..CHUNK_CLASSIFICATION_BACKFILL_BUDGET {
-        let paths =
-            next_unclassified_chunk_paths(conn, &state.cursor, CHUNK_CLASSIFICATION_BACKFILL_STEP)?;
-        if paths.is_empty() {
-            state.completed = true;
-            state.stalled = false;
-            state.stalled_path = None;
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            write_chunk_classification_backfill(&tx, &state)?;
-            tx.commit()?;
+        let status = classify_one_batch(conn, journal, current_resume)?;
+        if status.stalled {
+            let err = status
+                .stalled_error
+                .unwrap_or_else(|| "facet directory read failed".to_string());
+            return Ok(vec![format!(
+                "chunk classification backfill stalled: {err}"
+            )]);
+        }
+        if status.completed || status.coverage_mismatch {
+            if status.coverage_mismatch {
+                return Ok(vec![format!(
+                    "chunk classification coverage mismatch: {} missing rows",
+                    status.missing
+                )]);
+            }
             break;
         }
-        for path in paths {
-            require_chunk_path_lookup(conn)?;
-            let stream = conn
-                .query_row(CHUNK_SOURCES_LOOKUP_STREAM, [&path], |row| {
-                    row.get::<_, Option<String>>(0)
-                })
-                .optional()?;
-            let classification =
-                classify_source(journal, &path, stream.flatten().as_deref(), &declarations);
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            replace_chunk_classification(&tx, &classification)?;
-            state.cursor = path;
-            state.stalled = false;
-            state.stalled_path = None;
-            write_chunk_classification_backfill(&tx, &state)?;
-            tx.commit()?;
-        }
+        current_resume = ResumeCount::Preserve;
     }
     Ok(Vec::new())
 }

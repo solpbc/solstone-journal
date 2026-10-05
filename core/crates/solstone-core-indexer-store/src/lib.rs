@@ -3,6 +3,7 @@
 
 pub mod chunk_sources;
 pub mod classification;
+pub mod classification_batch;
 pub mod db;
 pub mod merge;
 pub mod migrations;
@@ -11,6 +12,10 @@ pub mod retention;
 pub mod scan;
 
 pub use chunk_sources::{PathLookupStatus, apply_path_lookup, inspect_path_lookup};
+pub use classification_batch::{
+    ClassificationInitialization, ClassificationStatus, apply_classification_batch,
+    drain_classifications, inspect_classifications,
+};
 pub use retention::RetentionIndex;
 pub use scan::{SavedPublicationAttempt, SavedPublicationOutcome, attempt_saved_publication};
 
