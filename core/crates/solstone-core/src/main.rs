@@ -32,18 +32,18 @@ use solstone_core_cli::{
     GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
     IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions,
-    IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
-    IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, MCP_HELP, MCP_USAGE, McpCommand, McpOauthCommand,
-    McpPairingCommand, McpPermissionCommand, McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
-    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
-    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
-    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
-    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_CHATGPT_HELP,
-    THINKING_CHATGPT_MODELS_HELP, THINKING_CHATGPT_MODELS_USAGE, THINKING_CHATGPT_SIGN_IN_HELP,
-    THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
+    IndexerPathLookupOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions,
+    IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
+    JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
+    MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpPermissionCommand,
+    McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
+    SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
+    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
+    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
+    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
+    THINKING_CHATGPT_HELP, THINKING_CHATGPT_MODELS_HELP, THINKING_CHATGPT_MODELS_USAGE,
+    THINKING_CHATGPT_SIGN_IN_HELP, THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
     THINKING_CHATGPT_SIGN_OUT_USAGE, THINKING_CHATGPT_STATUS_HELP, THINKING_CHATGPT_STATUS_USAGE,
     THINKING_CHATGPT_USAGE, THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE,
     THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, ThinkingCommand,
@@ -113,6 +113,7 @@ use solstone_core_indexer_store::merge::{
 use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
+use solstone_core_indexer_store::{apply_path_lookup, inspect_path_lookup};
 use solstone_core_journal::{
     ConfigError, HomeError, Source, describe_package_roots_miss, ensure_journal_dir_with_label,
     read_config_journal, resolve_installation_root_from_executable_dir, resolve_journal_path,
@@ -6706,6 +6707,7 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::Counts(options) => run_indexer_counts(options),
         IndexerCommand::Agents(options) => run_indexer_agents(options),
         IndexerCommand::Coverage(options) => run_indexer_coverage(options),
+        IndexerCommand::PathLookup(options) => run_indexer_path_lookup(options),
         IndexerCommand::PruneStream(options) => run_indexer_prune_stream(options),
         IndexerCommand::PrunePaths(options) => run_indexer_prune_paths(options),
         IndexerCommand::FoldEntityEdges(options) => run_indexer_fold_entity_edges(options),
@@ -6713,6 +6715,31 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::RebuildEdgesFingerprint(options) => {
             run_indexer_rebuild_edges_fingerprint(options)
         }
+    }
+}
+
+fn run_indexer_path_lookup(options: IndexerPathLookupOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let result = if options.apply {
+        apply_path_lookup(&journal)
+    } else {
+        inspect_path_lookup(&journal)
+    };
+    match result {
+        Ok(status) => {
+            if options.json {
+                print_json(&json!({"ready": status.ready}));
+            } else if status.ready {
+                println!("path lookup: ready");
+            } else {
+                println!("path lookup: unready");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_indexer_mutation_error("path-lookup", error),
     }
 }
 
@@ -7776,6 +7803,118 @@ mod tests {
 
         let _ = fs::remove_dir_all(dir_path);
         let _ = fs::remove_dir_all(fresh_dir);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn indexer_path_lookup() {
+        const TEST_ENV: &str = "SOLSTONE_TEST_INDEXER_PATH_LOOKUP_CHILD";
+        if let Ok(raw) = std::env::var(TEST_ENV) {
+            let parts: Vec<&str> = raw.split('\x1f').collect();
+            let journal_path = parts[0];
+            let mode = parts[1];
+            let mut args = vec![
+                std::ffi::OsString::from("indexer"),
+                std::ffi::OsString::from("path-lookup"),
+                std::ffi::OsString::from("--journal"),
+                std::ffi::OsString::from(journal_path),
+            ];
+            if mode == "apply" {
+                args.push(std::ffi::OsString::from("--apply"));
+            }
+            let command = evaluate_args(&args).expect("evaluate args in child");
+            let exit_code = match command {
+                Command::Indexer(cmd) => run_indexer(*cmd),
+                _ => panic!("unexpected command parsed"),
+            };
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+            let _ = std::io::stderr().flush();
+            let code = match exit_code {
+                code if code == ExitCode::SUCCESS => 0,
+                _ => EXIT_TEMPFAIL as i32,
+            };
+            std::process::exit(code);
+        }
+
+        let run_cmd = |journal: &Path, mode: &str| -> std::process::Output {
+            if let Ok(bin) = std::env::var("CARGO_BIN_EXE_solstone-core") {
+                let mut cmd = std::process::Command::new(bin);
+                cmd.arg("indexer")
+                    .arg("path-lookup")
+                    .arg("--journal")
+                    .arg(journal);
+                if mode == "apply" {
+                    cmd.arg("--apply");
+                }
+                cmd.output().expect("spawn CARGO_BIN_EXE_solstone-core")
+            } else {
+                let current = std::env::current_exe().expect("current_exe");
+                let mut cmd = std::process::Command::new(current);
+                cmd.env(TEST_ENV, format!("{}\x1f{}", journal.display(), mode));
+                cmd.arg("--exact")
+                    .arg("tests::indexer_path_lookup")
+                    .arg("--nocapture");
+                cmd.output().expect("spawn current_exe re-entry")
+            }
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let absent_journal = temp.path().join("absent_journal");
+        let output1 = run_cmd(&absent_journal, "inspect");
+        assert!(output1.status.success());
+        let stdout1 = String::from_utf8_lossy(&output1.stdout);
+        assert!(
+            stdout1.contains("path lookup: unready"),
+            "stdout: {stdout1}"
+        );
+        assert!(!absent_journal.join("indexer").exists());
+
+        let existing_journal = temp.path().join("existing_journal");
+        fs::create_dir_all(existing_journal.join("indexer")).unwrap();
+        let db_file = existing_journal.join("indexer/journal.sqlite");
+        {
+            let conn = rusqlite::Connection::open(&db_file).unwrap();
+            conn.execute_batch(
+                "CREATE VIRTUAL TABLE chunks USING fts5(content, path UNINDEXED, day UNINDEXED, facet UNINDEXED, agent UNINDEXED, stream UNINDEXED, idx UNINDEXED, time_bucket UNINDEXED);
+                 INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('hello', 'test.md', '20260101', '', 'test', '', 0, '');",
+            )
+            .unwrap();
+        }
+        let len_before = fs::metadata(&db_file).unwrap().len();
+        let master_before: String = {
+            let conn = rusqlite::Connection::open(&db_file).unwrap();
+            conn.query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='chunks'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+
+        let output2 = run_cmd(&existing_journal, "inspect");
+        assert!(output2.status.success());
+        let stdout2 = String::from_utf8_lossy(&output2.stdout);
+        assert!(
+            stdout2.contains("path lookup: unready"),
+            "stdout: {stdout2}"
+        );
+        assert_eq!(fs::metadata(&db_file).unwrap().len(), len_before);
+        let master_after: String = {
+            let conn = rusqlite::Connection::open(&db_file).unwrap();
+            conn.query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='chunks'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(master_after, master_before);
+
+        let output3 = run_cmd(&existing_journal, "apply");
+        assert!(output3.status.success());
+        let stdout3 = String::from_utf8_lossy(&output3.stdout);
+        assert!(stdout3.contains("path lookup: ready"), "stdout: {stdout3}");
     }
 }
 
