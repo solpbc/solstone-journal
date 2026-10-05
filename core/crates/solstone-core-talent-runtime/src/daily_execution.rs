@@ -104,6 +104,7 @@ fn finished(record: &DailyUnitRecord) -> Result<RuntimeOutcome, String> {
         },
         usage,
         degraded,
+        output_changed: None,
     })
 }
 
@@ -239,6 +240,7 @@ pub(crate) fn execute(
             context,
             generated,
             skip,
+            writer,
         );
         Ok(match outcome {
             Ok(outcome) => Ok(outcome),
@@ -304,6 +306,7 @@ pub(crate) fn execute(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn publish(
     authority: &mut DailyUnitAuthority,
     token: &str,
@@ -312,6 +315,7 @@ fn publish(
     context: &ExecutionContext,
     generated: crate::GeneratedTalentResponse,
     skip: bool,
+    writer: &mut (impl Write + ?Sized),
 ) -> Result<RuntimeOutcome, StageError> {
     let name = &prepared.name;
     let record = authority.record().expect("checked publication authority");
@@ -366,8 +370,24 @@ fn publish(
         authority.checkpoint().map_err(|e| failure(name, e))?;
         publication
     };
-    let disposition =
+    let (disposition, changed_paths) =
         crate::writers::publish_daily_publication(authority, token, &publication, context)?;
+    let output_changed = if publication.configured_output {
+        for rel in &changed_paths {
+            let full = context.journal.join(rel);
+            let attempt = solstone_core_indexer_store::attempt_saved_publication(
+                &context.journal,
+                &full,
+                |j, p| {
+                    solstone_core_indexer_store::scan::rescan_file(j, p).map_err(|e| e.to_string())
+                },
+            );
+            crate::emit_index_attempt(writer, &attempt);
+        }
+        Some(!changed_paths.is_empty())
+    } else {
+        None
+    };
     let output = if let Some((spec, state)) = stage {
         if let Some(override_output) = spec.output_override {
             override_output(&response, prepared, state)?
@@ -406,6 +426,7 @@ fn publish(
         disposition,
         usage,
         degraded,
+        output_changed,
     })
 }
 

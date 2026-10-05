@@ -122,6 +122,98 @@ pub enum RescanFileStatus {
     Declined,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SavedPublicationOutcome {
+    Indexed,
+    Excluded,
+    Declined,
+    Failed,
+}
+
+impl SavedPublicationOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Indexed => "indexed",
+            Self::Excluded => "excluded",
+            Self::Declined => "declined",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedPublicationAttempt {
+    pub path: String,
+    pub outcome: SavedPublicationOutcome,
+    pub warnings: Vec<String>,
+    pub cause: Option<String>,
+}
+
+pub fn attempt_saved_publication(
+    journal: &Path,
+    saved: &Path,
+    rescan: impl FnOnce(&Path, &Path) -> Result<RescanFileStatus, String>,
+) -> SavedPublicationAttempt {
+    let (rel, path) = match resolve_rescan_target(journal, saved) {
+        Ok(pair) => pair,
+        Err(error) => {
+            return SavedPublicationAttempt {
+                path: saved.display().to_string(),
+                outcome: SavedPublicationOutcome::Failed,
+                warnings: Vec::new(),
+                cause: Some(error.to_string()),
+            };
+        }
+    };
+    let edge_source = match edge_source_for_rel(&rel) {
+        Ok(edge) => edge,
+        Err(error) => {
+            return SavedPublicationAttempt {
+                path: rel,
+                outcome: SavedPublicationOutcome::Failed,
+                warnings: Vec::new(),
+                cause: Some(error.to_string()),
+            };
+        }
+    };
+    let is_admitted = solstone_core_format::content::resolve_spec(&rel).is_some_and(|spec| {
+        matches!(
+            spec.disposition,
+            solstone_core_format::content::IndexDisposition::Admitted { .. }
+        )
+    });
+
+    if edge_source.is_some() || is_admitted {
+        match rescan(journal, &path) {
+            Ok(RescanFileStatus::Indexed { warnings }) => SavedPublicationAttempt {
+                path: rel,
+                outcome: SavedPublicationOutcome::Indexed,
+                warnings,
+                cause: None,
+            },
+            Ok(RescanFileStatus::Declined) => SavedPublicationAttempt {
+                path: rel,
+                outcome: SavedPublicationOutcome::Declined,
+                warnings: Vec::new(),
+                cause: None,
+            },
+            Err(err) => SavedPublicationAttempt {
+                path: rel,
+                outcome: SavedPublicationOutcome::Failed,
+                warnings: Vec::new(),
+                cause: Some(err),
+            },
+        }
+    } else {
+        SavedPublicationAttempt {
+            path: rel,
+            outcome: SavedPublicationOutcome::Excluded,
+            warnings: Vec::new(),
+            cause: None,
+        }
+    }
+}
+
 /// Row IDs for paths this scan has not processed yet. FTS5 cannot index the
 /// equality predicate on its UNINDEXED path column, so scanning it once avoids
 /// a full content-table walk for every changed file. No persistent schema or
@@ -6338,6 +6430,77 @@ not json
         );
 
         fs::remove_dir_all(root).expect("cleanup concurrent test root");
+    }
+
+    #[test]
+    fn attempt_saved_publication_outcomes() {
+        let root = temp_root("attempt-saved-pub");
+        let chronicle_dir = root.join("chronicle/20260101/stream/120000_60/talents");
+        fs::create_dir_all(&chronicle_dir).unwrap();
+
+        let note_path = chronicle_dir.join("note.md");
+        fs::write(&note_path, "# Notes\nContent").unwrap();
+
+        let sense_path = chronicle_dir.join("sense.json");
+        fs::write(&sense_path, "{}").unwrap();
+
+        let facets_path = chronicle_dir.join("facets.json");
+        fs::write(&facets_path, "[]").unwrap();
+
+        // 1. Admitted note.md calls closure and returns Indexed with warnings
+        let mut called = false;
+        let attempt = attempt_saved_publication(&root, &note_path, |_j, _p| {
+            called = true;
+            Ok(RescanFileStatus::Indexed {
+                warnings: vec!["sanitized markdown".to_owned()],
+            })
+        });
+        assert!(called);
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Indexed);
+        assert_eq!(attempt.warnings, vec!["sanitized markdown"]);
+        assert_eq!(attempt.path, "20260101/stream/120000_60/talents/note.md");
+        assert!(!attempt.path.starts_with("chronicle/"));
+
+        // 2. sense.json returns Excluded and does not call closure
+        let mut called = false;
+        let attempt = attempt_saved_publication(&root, &sense_path, |_j, _p| {
+            called = true;
+            Ok(RescanFileStatus::Indexed { warnings: vec![] })
+        });
+        assert!(!called);
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Excluded);
+        assert_eq!(attempt.path, "20260101/stream/120000_60/talents/sense.json");
+        assert!(!attempt.path.starts_with("chronicle/"));
+
+        // 3. facets.json returns Excluded and does not call closure
+        let mut called = false;
+        let attempt = attempt_saved_publication(&root, &facets_path, |_j, _p| {
+            called = true;
+            Ok(RescanFileStatus::Indexed { warnings: vec![] })
+        });
+        assert!(!called);
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Excluded);
+        assert_eq!(
+            attempt.path,
+            "20260101/stream/120000_60/talents/facets.json"
+        );
+        assert!(!attempt.path.starts_with("chronicle/"));
+
+        // 4. Closure Ok(Declined) returns declined
+        let attempt =
+            attempt_saved_publication(&root, &note_path, |_j, _p| Ok(RescanFileStatus::Declined));
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Declined);
+        assert_eq!(attempt.path, "20260101/stream/120000_60/talents/note.md");
+
+        // 5. Closure Err returns failed with cause
+        let attempt = attempt_saved_publication(&root, &note_path, |_j, _p| {
+            Err("sqlite lock error".to_owned())
+        });
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Failed);
+        assert_eq!(attempt.cause.as_deref(), Some("sqlite lock error"));
+        assert_eq!(attempt.path, "20260101/stream/120000_60/talents/note.md");
+
+        fs::remove_dir_all(root).expect("cleanup test root");
     }
 
     fn chunk_contents_contain(conn: &Connection, needle: &str) -> bool {

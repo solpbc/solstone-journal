@@ -535,47 +535,6 @@ fn reconcile_finished(
         {
             continue;
         }
-        let events = read_use_events(&context.journal, &id).map_err(|error| error.to_string())?;
-        let output_changed = events
-            .iter()
-            .rev()
-            .find(|event| event["event"] == "finish")
-            .and_then(|event| event.get("output_changed"))
-            .and_then(Value::as_bool);
-        let format = config
-            .metadata
-            .get("output")
-            .and_then(Value::as_str)
-            .unwrap_or("md");
-        let item = PendingUse {
-            use_id: id.clone(),
-            name: config.key.clone(),
-            facet: Some(facet.to_owned()),
-            output_path: Some(
-                context
-                    .journal
-                    .join("facets")
-                    .join(facet)
-                    .join("activities")
-                    .join(&context.day)
-                    .join(activity_id)
-                    .join(format!(
-                        "{}.{}",
-                        get_output_name(&config.key),
-                        if format == "json" { "json" } else { "md" }
-                    )),
-            ),
-            index_output: activity_contract::is_explicit_generate(&config.metadata)
-                && format != "json",
-        };
-        crate::dispatch::maybe_rescan_output(
-            context,
-            &item,
-            &solstone_core_cortex_client::UseCompletion {
-                end_state: UseEndState::Finish,
-                finish_fields: solstone_core_cortex_client::FinishFields { output_changed },
-            },
-        );
         log_complete(log, context, activity_id, facet, &config.key, &id, "finish");
         log.finish()?;
         work.complete(&config.key)?;
@@ -701,11 +660,6 @@ fn queue(
             use_id,
             name: config.key.clone(),
             facet: Some(facet.to_owned()),
-            output_path: request
-                .get("output_path")
-                .and_then(Value::as_str)
-                .map(std::path::PathBuf::from),
-            index_output: generate && format != "json",
         });
     }
     let request = solstone_core_cortex_client::CortexRequest::new(
@@ -728,12 +682,6 @@ fn queue(
         use_id,
         name: config.key.clone(),
         facet: Some(facet.to_owned()),
-        output_path: request
-            .config
-            .get("output_path")
-            .and_then(Value::as_str)
-            .map(std::path::PathBuf::from),
-        index_output: generate && format != "json",
     })
 }
 

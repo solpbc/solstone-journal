@@ -1087,8 +1087,6 @@ mod tests {
             name: "schedule".to_owned(),
             facet: None,
             use_id: "use-rej-1".to_owned(),
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log,
@@ -1167,8 +1165,6 @@ mod tests {
             name: "schedule".to_owned(),
             facet: None,
             use_id: "use-multiday-1".to_owned(),
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log,
@@ -1253,8 +1249,6 @@ mod tests {
             name: "schedule".to_owned(),
             facet: None,
             use_id: "use-legacy-1".to_owned(),
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log,
@@ -1293,8 +1287,6 @@ mod tests {
             name: "summarize".to_owned(),
             facet: None,
             use_id: "use-legacy-2".to_owned(),
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log2,
@@ -1355,8 +1347,6 @@ mod tests {
             name: "schedule".to_owned(),
             facet: None,
             use_id: "use-tz-1".to_owned(),
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log,
@@ -1513,8 +1503,6 @@ mod tests {
             name: "schedule".to_owned(),
             facet: None,
             use_id: loser_use_id,
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log,
@@ -1527,8 +1515,6 @@ mod tests {
             name: "schedule".to_owned(),
             facet: None,
             use_id: winner_use_id.clone(),
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log,
@@ -1592,8 +1578,6 @@ mod tests {
             name: "schedule".to_owned(),
             facet: None,
             use_id: "use-failed-retry".to_owned(),
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log,
@@ -1671,8 +1655,6 @@ mod tests {
             name: "schedule".to_owned(),
             facet: None,
             use_id: "use-c2-1".to_owned(),
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log,
@@ -1736,8 +1718,6 @@ mod tests {
             name: "schedule".to_owned(),
             facet: None,
             use_id: "use-mnf-1".to_owned(),
-            output_path: None,
-            index_output: false,
         };
         log_daily_terminal(
             &mut log,

@@ -302,8 +302,6 @@ mod terminal_event_tests {
             use_id: "use-ok".to_owned(),
             name: "some_cadence_talent".to_owned(),
             facet: None,
-            output_path: None,
-            index_output: false,
         };
         log_cadence_terminal(&mut log, &context, &finished, DrainOutcome::Finish);
 
@@ -311,8 +309,6 @@ mod terminal_event_tests {
             use_id: "use-fail".to_owned(),
             name: "some_cadence_talent".to_owned(),
             facet: None,
-            output_path: None,
-            index_output: false,
         };
         log_cadence_terminal(
             &mut log,

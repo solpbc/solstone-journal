@@ -850,23 +850,36 @@ fn dispatch_agent(
         ("segment".to_owned(), Value::String(segment.to_owned())),
         ("schedule".to_owned(), Value::String("segment".to_owned())),
     ]);
-    if generate {
-        request.insert(
-            "output".to_owned(),
-            Value::String(
-                config
-                    .metadata
-                    .get("output")
-                    .and_then(Value::as_str)
-                    .unwrap_or("md")
-                    .to_owned(),
-            ),
-        );
+    let output_format = if generate {
+        let format = config
+            .metadata
+            .get("output")
+            .and_then(Value::as_str)
+            .unwrap_or("md");
+        request.insert("output".to_owned(), Value::String(format.to_owned()));
         if refresh {
             request.insert("refresh".to_owned(), Value::Bool(true));
         }
+        Some(format)
     } else if let Some(output) = config.metadata.get("output") {
         request.insert("output".to_owned(), output.clone());
+        output.as_str()
+    } else {
+        None
+    };
+    if let Some(format) = output_format {
+        let path = get_output_path(
+            &context.day_dir,
+            &config.key,
+            Some(segment),
+            Some(format),
+            None,
+            stream,
+        );
+        request.insert(
+            "output_path".to_owned(),
+            Value::String(path.to_string_lossy().to_string()),
+        );
     }
     if let Some(stream) = stream {
         request.insert("stream".to_owned(), Value::String(stream.to_owned()));
@@ -2460,9 +2473,9 @@ fn empty_input_sense_output() -> Map<String, Value> {
     ])
 }
 
-pub(crate) fn write_sense_and_change(
+pub(crate) fn write_sense_and_change<W: std::io::Write>(
     context: &ThinkContext,
-    log: &mut RunLogWriter,
+    log: &mut RunLogWriter<W>,
     segment_name: &str,
     stream: Option<&str>,
     segment: &std::path::Path,
@@ -2472,15 +2485,31 @@ pub(crate) fn write_sense_and_change(
     // durable projections after both actual and no-input Sense completion.
     let talents = segment.join("talents");
     std::fs::create_dir_all(&talents).map_err(|error| error.to_string())?;
+
+    let activity_path = talents.join("activity.md");
     replace_text(
-        &talents.join("activity.md"),
+        &activity_path,
         sense
             .get("activity_summary")
             .and_then(Value::as_str)
             .unwrap_or_default(),
     )?;
-    // Preserve source evidence even when declaration observation refuses routing.
-    replace_json(&talents.join("sense.json"), &Value::Object(sense.clone()))?;
+    let attempt = solstone_core_indexer_store::attempt_saved_publication(
+        &context.journal,
+        &activity_path,
+        |j, p| context.index.rescan_file(j, p),
+    );
+    log_index_attempt(log, context, segment_name, stream, &attempt);
+
+    let sense_json_path = talents.join("sense.json");
+    replace_json(&sense_json_path, &Value::Object(sense.clone()))?;
+    let attempt = solstone_core_indexer_store::attempt_saved_publication(
+        &context.journal,
+        &sense_json_path,
+        |j, p| context.index.rescan_file(j, p),
+    );
+    log_index_attempt(log, context, segment_name, stream, &attempt);
+
     let inventory =
         observe_declared_facet_inventory(&context.journal).map_err(|error| error.to_string())?;
     let filtered_facets = filter_declared_facets(
@@ -2492,12 +2521,79 @@ pub(crate) fn write_sense_and_change(
         stream,
         true,
     )?;
-    replace_json(&talents.join("facets.json"), &filtered_facets.0)?;
-    replace_json(&talents.join("sense.json"), &Value::Object(sense.clone()))?;
+    let facets_json_path = talents.join("facets.json");
+    replace_json(&facets_json_path, &filtered_facets.0)?;
+    let attempt = solstone_core_indexer_store::attempt_saved_publication(
+        &context.journal,
+        &facets_json_path,
+        |j, p| context.index.rescan_file(j, p),
+    );
+    log_index_attempt(log, context, segment_name, stream, &attempt);
+
+    let will_write_sense_md =
+        sense
+            .get("entities")
+            .and_then(Value::as_array)
+            .is_some_and(|entities| {
+                !entities.is_empty()
+                    && entities.iter().filter_map(Value::as_object).any(|e| {
+                        !e.get("type")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .is_empty()
+                            || !e
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .is_empty()
+                            || !e
+                                .get("role")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .is_empty()
+                            || !e
+                                .get("source")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .is_empty()
+                            || !e
+                                .get("context")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .is_empty()
+                    })
+            });
+
+    refresh_segment_sibling_assignments(
+        context,
+        log,
+        segment_name,
+        stream,
+        &talents,
+        will_write_sense_md,
+    );
+
+    let sense_json_path = talents.join("sense.json");
+    replace_json(&sense_json_path, &Value::Object(sense.clone()))?;
+    let attempt = solstone_core_indexer_store::attempt_saved_publication(
+        &context.journal,
+        &sense_json_path,
+        |j, p| context.index.rescan_file(j, p),
+    );
+    log_index_attempt(log, context, segment_name, stream, &attempt);
+
+    let density_json_path = talents.join("density.json");
     replace_json(
-        &talents.join("density.json"),
+        &density_json_path,
         &serde_json::json!({"classification":sense["density"],"timestamp":Utc::now().to_rfc3339()}),
     )?;
+    let attempt = solstone_core_indexer_store::attempt_saved_publication(
+        &context.journal,
+        &density_json_path,
+        |j, p| context.index.rescan_file(j, p),
+    );
+    log_index_attempt(log, context, segment_name, stream, &attempt);
+
     if sense
         .get("entities")
         .and_then(Value::as_array)
@@ -2536,34 +2632,207 @@ pub(crate) fn write_sense_and_change(
             })
             .collect::<Vec<_>>();
         if !lines.is_empty() {
+            let sense_md_path = talents.join("sense.md");
             replace_text(
-                &talents.join("sense.md"),
+                &sense_md_path,
                 &format!("# Sense Entities\n\n{}", lines.join("\n")),
             )?;
+            let attempt = solstone_core_indexer_store::attempt_saved_publication(
+                &context.journal,
+                &sense_md_path,
+                |j, p| context.index.rescan_file(j, p),
+            );
+            log_index_attempt(log, context, segment_name, stream, &attempt);
         }
     }
     if sense.get("meeting_detected").is_some_and(python_truthy) {
+        let speakers_json_path = talents.join("speakers.json");
         replace_json(
-            &talents.join("speakers.json"),
+            &speakers_json_path,
             &sense
                 .get("speakers")
                 .cloned()
                 .unwrap_or(Value::Array(Vec::new())),
         )?;
+        let attempt = solstone_core_indexer_store::attempt_saved_publication(
+            &context.journal,
+            &speakers_json_path,
+            |j, p| context.index.rescan_file(j, p),
+        );
+        log_index_attempt(log, context, segment_name, stream, &attempt);
     }
-    let stream = Some(stream.unwrap_or(DEFAULT_STREAM));
-    let predecessor = resolve_predecessor(&context.journal, &context.day, stream, segment_name);
+    let stream_resolved = Some(stream.unwrap_or(DEFAULT_STREAM));
+    let predecessor = resolve_predecessor(
+        &context.journal,
+        &context.day,
+        stream_resolved,
+        segment_name,
+    );
     let change = detect_segment_change(
         &context.journal,
         &context.day,
-        stream,
+        stream_resolved,
         segment_name,
         segment,
         predecessor,
         &Utc::now().to_rfc3339(),
     );
-    replace_json(&segment.join("talents/change.json"), &change)?;
+    let change_json_path = segment.join("talents/change.json");
+    replace_json(&change_json_path, &change)?;
+    let attempt = solstone_core_indexer_store::attempt_saved_publication(
+        &context.journal,
+        &change_json_path,
+        |j, p| context.index.rescan_file(j, p),
+    );
+    log_index_attempt(log, context, segment_name, stream, &attempt);
     Ok(change)
+}
+
+fn refresh_segment_sibling_assignments<W: std::io::Write>(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<W>,
+    segment_name: &str,
+    stream: Option<&str>,
+    talents_dir: &std::path::Path,
+    will_write_sense_md: bool,
+) {
+    let Ok(entries) = std::fs::read_dir(talents_dir) else {
+        return;
+    };
+    let declarations =
+        solstone_core_indexer_store::classification::FacetDeclarationSet::from_journal(
+            &context.journal,
+        )
+        .unwrap_or_default();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        if will_write_sense_md
+            && path.file_name().and_then(|name| name.to_str()) == Some("sense.md")
+        {
+            continue;
+        }
+        let canonical = match path.canonicalize() {
+            Ok(c) => c,
+            Err(e) => {
+                let attempt = solstone_core_indexer_store::SavedPublicationAttempt {
+                    path: path.display().to_string(),
+                    outcome: solstone_core_indexer_store::SavedPublicationOutcome::Failed,
+                    warnings: Vec::new(),
+                    cause: Some(e.to_string()),
+                };
+                log_index_attempt(log, context, segment_name, stream, &attempt);
+                continue;
+            }
+        };
+        let Some(rel_str) =
+            solstone_core_format::paths::relative_to_journal(&context.journal, &canonical)
+        else {
+            let attempt = solstone_core_indexer_store::SavedPublicationAttempt {
+                path: canonical.display().to_string(),
+                outcome: solstone_core_indexer_store::SavedPublicationOutcome::Failed,
+                warnings: Vec::new(),
+                cause: Some(format!(
+                    "path {} is outside journal {}",
+                    canonical.display(),
+                    context.journal.display()
+                )),
+            };
+            log_index_attempt(log, context, segment_name, stream, &attempt);
+            continue;
+        };
+        let Some(spec) = solstone_core_format::content::resolve_spec(&rel_str) else {
+            continue;
+        };
+        let solstone_core_format::content::IndexDisposition::Admitted {
+            basis: solstone_core_format::content::ScopeBasis::SegmentAssigned,
+            ..
+        } = spec.disposition
+        else {
+            continue;
+        };
+        let classification = solstone_core_indexer_store::classification::classify_source(
+            &context.journal,
+            &rel_str,
+            None,
+            &declarations,
+        );
+        if !classification.eligible {
+            continue;
+        }
+        let mut expected_facet_ids = classification.facet_ids;
+        expected_facet_ids.sort();
+        let needs_rescan = match solstone_core_indexer_store::classification::stored_chunk_facet_ids(
+            &context.journal,
+            &rel_str,
+        ) {
+            Ok(Some(mut stored)) => {
+                stored.sort();
+                stored != expected_facet_ids
+            }
+            Ok(None) => true,
+            Err(err) => {
+                let attempt = solstone_core_indexer_store::SavedPublicationAttempt {
+                    path: rel_str.clone(),
+                    outcome: solstone_core_indexer_store::SavedPublicationOutcome::Failed,
+                    warnings: Vec::new(),
+                    cause: Some(err.to_string()),
+                };
+                log_index_attempt(log, context, segment_name, stream, &attempt);
+                continue;
+            }
+        };
+        if needs_rescan {
+            let attempt = solstone_core_indexer_store::attempt_saved_publication(
+                &context.journal,
+                &path,
+                |j, p| context.index.rescan_file(j, p),
+            );
+            log_index_attempt(log, context, segment_name, stream, &attempt);
+        }
+    }
+}
+
+fn log_index_attempt<W: std::io::Write>(
+    log: &mut RunLogWriter<W>,
+    context: &ThinkContext,
+    segment: &str,
+    stream: Option<&str>,
+    attempt: &solstone_core_indexer_store::SavedPublicationAttempt,
+) {
+    let fields = segment_event(
+        context,
+        segment,
+        stream,
+        Map::from_iter([
+            ("path".to_owned(), Value::String(attempt.path.clone())),
+            (
+                "outcome".to_owned(),
+                Value::String(attempt.outcome.as_str().to_owned()),
+            ),
+            (
+                "warnings".to_owned(),
+                Value::Array(
+                    attempt
+                        .warnings
+                        .iter()
+                        .cloned()
+                        .map(Value::String)
+                        .collect(),
+                ),
+            ),
+            (
+                "cause".to_owned(),
+                attempt
+                    .cause
+                    .as_ref()
+                    .map_or(Value::Null, |c| Value::String(c.clone())),
+            ),
+        ]),
+    );
+    log.log("index.attempt", context.event_now_ms(), fields);
 }
 
 /// Locate the requested segment. With a stream the lookup is exact; without one
@@ -2726,11 +2995,11 @@ fn python_truthy(value: &Value) -> bool {
     }
 }
 
-fn filter_declared_facets(
+fn filter_declared_facets<W: std::io::Write>(
     facets_value: Option<&Value>,
     inventory: &DeclaredFacetInventory,
     context: &ThinkContext,
-    log: &mut RunLogWriter,
+    log: &mut RunLogWriter<W>,
     segment: &str,
     stream: Option<&str>,
     record_disposition: bool,
@@ -2794,9 +3063,9 @@ fn filter_declared_facets(
     Ok((Value::Array(accepted), unreadable))
 }
 
-fn log_routing_state(
+fn log_routing_state<W: std::io::Write>(
     context: &ThinkContext,
-    log: &mut RunLogWriter,
+    log: &mut RunLogWriter<W>,
     segment: &str,
     stream: Option<&str>,
     pending: bool,

@@ -14,7 +14,32 @@ use solstone_core_format::paths::resolve_journal_path;
 use solstone_core_format::segment::{segment_key, segment_parse};
 
 use crate::StoreError;
-use crate::db::ChunkClassification;
+use crate::db::{ChunkClassification, open_index};
+
+/// Read stored chunk classification facet IDs for a path without writing.
+/// Returns `None` when no `chunk_classification` row exists for `path`,
+/// or `Some(ids)` (ordered) when it does.
+pub fn stored_chunk_facet_ids(
+    journal: &Path,
+    path: &str,
+) -> Result<Option<Vec<String>>, StoreError> {
+    let conn = open_index(journal)?;
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM chunk_classification WHERE path=?)",
+        [path],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Ok(None);
+    }
+    let mut stmt = conn.prepare(
+        "SELECT facet_id FROM chunk_classification_facets WHERE path=? ORDER BY facet_id",
+    )?;
+    let ids = stmt
+        .query_map([path], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(ids))
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum FacetResolution {

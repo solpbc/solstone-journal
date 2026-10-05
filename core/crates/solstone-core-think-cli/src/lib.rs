@@ -89,7 +89,6 @@ pub mod test_support {
             facet: None,
             use_id: use_id.to_owned(),
             output_path: None,
-            index_output: false,
         };
         crate::daily::log_daily_terminal(
             &mut log,
@@ -756,6 +755,7 @@ fn validate(
 mod tests {
     mod activity_lifecycle;
     mod activity_recovery;
+    mod segment_publication;
     use std::cell::Cell;
     use std::collections::BTreeSet;
     use std::fs;
@@ -803,8 +803,17 @@ mod tests {
     struct IndexRecorder(Mutex<Vec<std::path::PathBuf>>);
 
     impl context::IndexBoundary for IndexRecorder {
-        fn rescan_file(&self, _: &Path, path: &Path) {
+        fn rescan_file(
+            &self,
+            _: &Path,
+            path: &Path,
+        ) -> Result<solstone_core_indexer_store::scan::RescanFileStatus, String> {
             self.0.lock().unwrap().push(path.to_path_buf());
+            Ok(
+                solstone_core_indexer_store::scan::RescanFileStatus::Indexed {
+                    warnings: Vec::new(),
+                },
+            )
         }
     }
 
@@ -1594,8 +1603,7 @@ mod tests {
     }
 
     #[test]
-    fn indexing_gate_requires_changed_boolean_and_existing_output() {
-        // Source-derived, not measured: thinking.py:240-242 uses `is True` and an existing path.
+    fn drain_does_not_rescan_output_at_finish() {
         let journal = tempdir().unwrap();
         let (context, recorder, index) = recorder_context_with_index(journal.path(), "20260813", 9);
         let runtime = dispatch::runtime().unwrap();
@@ -1603,51 +1611,38 @@ mod tests {
             ("type".to_owned(), Value::String("generate".to_owned())),
             ("output".to_owned(), Value::String("md".to_owned())),
         ]));
-        let run = |changed: Option<bool>, create: bool| {
-            *recorder.finish_fields.lock().unwrap() = solstone_core_cortex_client::FinishFields {
-                output_changed: changed,
-            };
-            let pending = dispatch::dispatch(
-                &context,
-                &runtime,
-                &config,
-                "daily",
-                None,
-                false,
-                Map::new(),
-            )
-            .unwrap();
-            let path = recorder.requests.lock().unwrap().last().unwrap().config["output_path"]
-                .as_str()
-                .unwrap()
-                .to_owned();
-            if create {
-                let path = std::path::PathBuf::from(path);
-                fs::create_dir_all(path.parent().unwrap()).unwrap();
-                fs::write(path, "# output").unwrap();
-            } else {
-                let _ = fs::remove_file(path);
-            }
-            dispatch::drain_with_deadline_observed(
-                &context,
-                &runtime,
-                vec![pending],
-                Some(dispatch::DEFAULT_THINK_TIMEOUT),
-                &mut |_, _| {},
-            );
+        *recorder.finish_fields.lock().unwrap() = solstone_core_cortex_client::FinishFields {
+            output_changed: Some(true),
         };
-        run(Some(true), true);
-        assert_eq!(index.0.lock().unwrap().len(), 1);
-        run(Some(false), true);
-        run(None, true);
-        run(Some(true), false);
-        assert_eq!(index.0.lock().unwrap().len(), 1);
+        let pending = dispatch::dispatch(
+            &context,
+            &runtime,
+            &config,
+            "daily",
+            None,
+            false,
+            Map::new(),
+        )
+        .unwrap();
+        let path = recorder.requests.lock().unwrap().last().unwrap().config["output_path"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let path = std::path::PathBuf::from(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "# output").unwrap();
+        dispatch::drain_with_deadline_observed(
+            &context,
+            &runtime,
+            vec![pending],
+            Some(dispatch::DEFAULT_THINK_TIMEOUT),
+            &mut |_, _| {},
+        );
+        assert_eq!(index.0.lock().unwrap().len(), 0);
     }
 
     #[test]
-    fn shared_drain_indexes_changed_daily_weekly_and_cadence_outputs_only() {
-        // Source-derived, not measured: thinking.py:1102 applies the common
-        // changed-output indexing branch to daily, weekly, and cadence drains.
+    fn shared_drain_does_not_rescan_daily_weekly_and_cadence_outputs_at_finish() {
         let journal = tempdir().unwrap();
         let (context, recorder, index) = recorder_context_with_index(journal.path(), "20260813", 9);
         let runtime = dispatch::runtime().unwrap();
@@ -1686,40 +1681,7 @@ mod tests {
             );
             assert_eq!((result.success, result.failed), (1, 0));
         }
-        assert_eq!(index.0.lock().unwrap().len(), 3);
-
-        *recorder.finish_fields.lock().unwrap() = solstone_core_cortex_client::FinishFields {
-            output_changed: Some(false),
-        };
-        let config = talent(Map::from_iter([
-            ("type".to_owned(), Value::String("generate".to_owned())),
-            ("output".to_owned(), Value::String("md".to_owned())),
-        ]));
-        let pending = dispatch::dispatch(
-            &context,
-            &runtime,
-            &config,
-            "daily",
-            None,
-            false,
-            Map::new(),
-        )
-        .unwrap();
-        let path = recorder.requests.lock().unwrap().last().unwrap().config["output_path"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let path = std::path::PathBuf::from(path);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, "output").unwrap();
-        dispatch::drain_with_deadline_observed(
-            &context,
-            &runtime,
-            vec![pending],
-            Some(dispatch::DEFAULT_THINK_TIMEOUT),
-            &mut |_, _| {},
-        );
-        assert_eq!(index.0.lock().unwrap().len(), 3);
+        assert_eq!(index.0.lock().unwrap().len(), 0);
     }
 
     #[test]
@@ -2378,8 +2340,7 @@ mod tests {
         let requests = recorder.requests.lock().unwrap();
         assert_eq!(requests[0].config["output"], "json");
         assert_eq!(requests[1].config["output"], "md");
-        assert_eq!(index.0.lock().unwrap().len(), 1);
-        assert!(index.0.lock().unwrap()[0].ends_with("markdown.md"));
+        assert_eq!(index.0.lock().unwrap().len(), 0);
     }
 
     #[test]

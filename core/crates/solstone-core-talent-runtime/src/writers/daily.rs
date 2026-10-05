@@ -19,6 +19,8 @@ use solstone_core_entity::{ReviewOwnerConflictKind, ReviewOwnerError};
 pub struct PreparedDailyPublication {
     pub actions: Vec<PreparedDailyAction>,
     pub no_output: bool,
+    #[serde(default)]
+    pub configured_output: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -218,6 +220,7 @@ pub fn prepare_daily_output(
         return Ok(PreparedDailyPublication {
             actions: Vec::new(),
             no_output: true,
+            configured_output: true,
         });
     };
     let action = prepare_frozen_output_action(
@@ -230,6 +233,7 @@ pub fn prepare_daily_output(
     Ok(PreparedDailyPublication {
         actions: vec![action],
         no_output: false,
+        configured_output: true,
     })
 }
 
@@ -492,6 +496,7 @@ pub fn prepare_daily_publication(
     Ok(PreparedDailyPublication {
         no_output: actions.is_empty(),
         actions,
+        configured_output: false,
     })
 }
 
@@ -542,7 +547,7 @@ pub fn publish_daily_publication(
     token: &str,
     publication: &PreparedDailyPublication,
     context: &ExecutionContext,
-) -> Result<CommitDisposition, StageError> {
+) -> Result<(CommitDisposition, Vec<String>), StageError> {
     let record = authority
         .record()
         .cloned()
@@ -577,6 +582,7 @@ pub fn publish_daily_publication(
     authority
         .checkpoint()
         .map_err(|e| make_error(e.to_string()))?;
+    let mut changed_paths = Vec::new();
     for (index, action) in publication.actions.iter().enumerate() {
         authority
             .require_token(token)
@@ -753,23 +759,29 @@ pub fn publish_daily_publication(
                 before,
                 after,
                 ..
-            } => publish_output(
-                &context.journal,
-                path,
-                before,
-                after,
-                allow_before,
-                start,
-                receipt,
-            )
-            .map_err(make_review)?,
+            } => {
+                let written = publish_output(
+                    &context.journal,
+                    path,
+                    before,
+                    after,
+                    allow_before,
+                    start,
+                    receipt,
+                )
+                .map_err(make_review)?;
+                if written {
+                    changed_paths.push(path.clone());
+                }
+            }
         }
     }
-    Ok(if publication.no_output {
+    let disposition = if publication.no_output {
         CommitDisposition::CommittedNoOutput
     } else {
         CommitDisposition::Written
-    })
+    };
+    Ok((disposition, changed_paths))
 }
 
 fn publish_output(
@@ -780,12 +792,13 @@ fn publish_output(
     allow_before: bool,
     start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
-) -> Result<(), ReviewOwnerError> {
+) -> Result<bool, ReviewOwnerError> {
     let path = root.join(relative);
     relative_output(root, &path)?;
     let _lock = hold_lock(&path, LockOptions::default())
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let current = read_optional(&path).map_err(ReviewOwnerError::failed)?;
+    let mut written = false;
     if current.as_deref() != Some(after) {
         if !allow_before || &current != before {
             return Err(ReviewOwnerError::conflict(
@@ -796,8 +809,10 @@ fn publish_output(
         start().map_err(ReviewOwnerError::failed)?;
         atomic_replace(&path, after, AtomicWriteOptions { mode: Some(0o600) })
             .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+        written = true;
     }
-    receipt().map_err(ReviewOwnerError::failed)
+    receipt().map_err(ReviewOwnerError::failed)?;
+    Ok(written)
 }
 
 #[cfg(test)]
@@ -942,6 +957,7 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![PreparedDailyAction::Observation { batch }],
             no_output: false,
+            configured_output: false,
         };
         let identity =
             DailyUnitIdentity::new("20260910", "entities:entity_observer", Some("work".into()));
@@ -1010,6 +1026,7 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![action],
             no_output: false,
+            configured_output: false,
         };
         let identity =
             DailyUnitIdentity::new("20260910", "entities:entity_observer", Some("work".into()));
@@ -1129,6 +1146,7 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![action_0, action_1, action_2, action_3],
             no_output: false,
+            configured_output: false,
         };
 
         with_daily_unit_authority(journal, &identity, |authority| {
@@ -1200,6 +1218,7 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![action],
             no_output: false,
+            configured_output: false,
         };
 
         // Simulate a crash right after start() was called for an action:
@@ -1929,6 +1948,7 @@ mod tests {
             let publication = PreparedDailyPublication {
                 actions: vec![action],
                 no_output: false,
+                configured_output: false,
             };
             let identity =
                 DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
@@ -2320,6 +2340,7 @@ mod tests {
         let plan = PreparedDailyPublication {
             actions: vec![action],
             no_output: false,
+            configured_output: false,
         };
         solstone_core_entity::save_entity_identity(
             journal,
@@ -2389,6 +2410,7 @@ mod tests {
                 after: b"{\"ok\":true}\n".to_vec(),
             }],
             no_output: false,
+            configured_output: false,
         };
         with_daily_unit_authority(journal, &identity, |authority| {
             let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
@@ -2517,10 +2539,11 @@ mod tests {
                     entity_id: "ada".into(),
                     entity_dir: "ada".into(),
                     before: Some(current.clone()),
-                    after: current,
+                    after: current.clone(),
                 },
             }],
             no_output: false,
+            configured_output: false,
         };
         // A journal keeps one enabled facet; the sibling lets "work" go.
         let _ = solstone_core_facets::create_facet(
@@ -2605,6 +2628,7 @@ mod tests {
                 },
             }],
             no_output: false,
+            configured_output: false,
         };
         std::fs::write(&path, b"{").unwrap();
         with_daily_unit_authority(journal, &identity, |authority| {
