@@ -21,3 +21,4 @@ solstone-core-memory-original.workspace = true
 
 [features]
 full-tests = []
+test-hooks = []

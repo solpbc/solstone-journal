@@ -14,14 +14,7 @@ path = "src/main.rs"
 solstone-core-sol = { workspace = true }
 
 [dev-dependencies]
-libc = { workspace = true }
-rusqlite = { workspace = true }
 serde_json = { workspace = true }
-solstone-core-indexer-store = { workspace = true }
-tempfile = "3.24.0"
-
-[features]
-full-tests = []
 
 [lints]
 workspace = true

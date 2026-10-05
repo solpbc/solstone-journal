@@ -58,7 +58,7 @@ fn dispatch(
 }
 
 /// The `solstone journal` command family, which the `journal` alias enters.
-pub fn run_journal(args: Vec<OsString>) -> ExitCode {
+pub(crate) fn run_journal(args: Vec<OsString>) -> ExitCode {
     install_logger();
     solstone_core_journal_cli::run(args)
 }

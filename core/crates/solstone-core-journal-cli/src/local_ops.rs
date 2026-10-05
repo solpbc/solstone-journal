@@ -107,7 +107,13 @@ fn indexer(_args: &[OsString]) -> Outcome {
 
 #[cfg(not(target_os = "ios"))]
 fn indexer(args: &[OsString]) -> Outcome {
-    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n       solstone journal indexer classifications [--json] [--apply] [--drain]\n";
+    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n       solstone journal indexer path-lookup [--apply] [--json]\n       solstone journal indexer classifications [--json] [--apply] [--drain]\n";
+
+    if let Some((verb, rest)) = args.split_first()
+        && verb == OsStr::new("path-lookup")
+    {
+        return indexer_path_lookup(rest);
+    }
 
     if args
         .first()
@@ -390,6 +396,46 @@ fn indexer(args: &[OsString]) -> Outcome {
     }
 
     Outcome::LocalSuccess { stdout, stderr }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn indexer_path_lookup(args: &[OsString]) -> Outcome {
+    const HELP: &str = "Usage: solstone journal indexer path-lookup [--apply] [--json]\n";
+    if args.len() == 1 && matches!(args[0].to_str(), Some("--help" | "-h")) {
+        return success(HELP.to_owned());
+    }
+    let mut apply = false;
+    let mut json_output = false;
+    for arg in args {
+        match arg.to_str() {
+            Some("--apply") if !apply => apply = true,
+            Some("--json") if !json_output => json_output = true,
+            _ => return usage("indexer path-lookup", "unexpected or duplicate argument"),
+        }
+    }
+    let journal = match journal_root("indexer path-lookup") {
+        Ok(journal) => journal,
+        Err(outcome) => return outcome,
+    };
+    let result = if apply {
+        solstone_core_indexer_store::apply_path_lookup(&journal)
+    } else {
+        solstone_core_indexer_store::inspect_path_lookup(&journal)
+    };
+    match result {
+        Ok(status) => {
+            let stdout = if json_output {
+                format!("{}\n", json!({ "ready": status.ready }))
+            } else {
+                format!(
+                    "path lookup: {}\n",
+                    if status.ready { "ready" } else { "unready" }
+                )
+            };
+            success(stdout)
+        }
+        Err(error) => failure("indexer path-lookup", &error.to_string(), EXIT_TEMPFAIL),
+    }
 }
 
 #[cfg(not(target_os = "ios"))]

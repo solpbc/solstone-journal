@@ -3471,6 +3471,7 @@ dependencies = [
  "solstone-core-ingest-contract",
  "solstone-core-installation-identity",
  "solstone-core-journal",
+ "solstone-core-journal-cli",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
@@ -5236,12 +5237,8 @@ dependencies = [
 name = "solstone-core-sol-bin"
 version = "2.0.33"
 dependencies = [
- "libc",
- "rusqlite",
  "serde_json",
- "solstone-core-indexer-store",
  "solstone-core-sol",
- "tempfile",
 ]
 
 [[package]]

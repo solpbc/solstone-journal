@@ -4,6 +4,7 @@
 //! Batch execution, status inspection, and drain loop for chunk classifications.
 
 use std::path::Path;
+#[cfg(feature = "test-hooks")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
@@ -24,6 +25,7 @@ use crate::db::{
 
 pub const CHUNK_CLASSIFICATION_BACKFILL_STEP: i64 = 32;
 
+#[cfg(feature = "test-hooks")]
 static HELD_ONCE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,6 +62,10 @@ impl ClassificationStatus {
             ClassificationInitialization::Incomplete => "incomplete",
             ClassificationInitialization::Ready => "ready",
         };
+        let counts_known = !matches!(
+            self.initialization,
+            ClassificationInitialization::Absent | ClassificationInitialization::Unready
+        );
         json!({
             "initialization": initialization,
             "cursor": self.cursor,
@@ -67,9 +73,9 @@ impl ClassificationStatus {
             "stalled": self.stalled,
             "stalled_path": self.stalled_path,
             "processed": self.processed,
-            "remaining": self.remaining,
-            "missing": self.missing,
-            "unclassified": self.unclassified,
+            "remaining": counts_known.then_some(self.remaining),
+            "missing": counts_known.then_some(self.missing),
+            "unclassified": counts_known.then_some(self.unclassified),
             "coverage_mismatch": self.coverage_mismatch,
             "repair": self.repair,
         })
@@ -82,8 +88,10 @@ impl ClassificationStatus {
                 "classifications: database absent\n".to_string()
             }
             ClassificationInitialization::Unready => {
-                "classifications: unready (run 'solstone-core indexer path-lookup --apply')\n"
-                    .to_string()
+                format!(
+                    "classifications: unready at cursor '{}' (run 'solstone-core indexer path-lookup --apply')\n",
+                    self.cursor
+                )
             }
             ClassificationInitialization::Incomplete => format!(
                 "classifications: incomplete sidecar at cursor '{}' (run 'solstone-core indexer classifications --apply')\n",
@@ -134,7 +142,7 @@ pub(crate) enum ResumeCount {
     Set(i64),
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[derive(Default)]
 struct TestSeamSlot {
     target_journal: Option<std::path::PathBuf>,
@@ -142,55 +150,72 @@ struct TestSeamSlot {
     hold_before_commit: Option<std::sync::Arc<TestHoldSync>>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 struct TestHoldSync {
     recorded: std::sync::Mutex<Vec<Vec<String>>>,
     cvar: std::sync::Condvar,
     released_batches: std::sync::Mutex<usize>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 static TEST_SEAM: std::sync::Mutex<TestSeamSlot> = std::sync::Mutex::new(TestSeamSlot {
     target_journal: None,
     sql_before_commit: false,
     hold_before_commit: None,
 });
 
-#[cfg(test)]
-pub(crate) struct TestSeamGuard;
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) struct TestSeamGuard {
+    _owner: std::sync::MutexGuard<'static, ()>,
+}
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
+static TEST_SEAM_OWNER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(all(test, feature = "full-tests"))]
 impl Drop for TestSeamGuard {
     fn drop(&mut self) {
         let mut seam = TEST_SEAM.lock().expect("lock test seam on drop");
         seam.target_journal = None;
         seam.sql_before_commit = false;
-        seam.hold_before_commit = None;
+        if let Some(hold) = seam.hold_before_commit.take() {
+            *hold
+                .released_batches
+                .lock()
+                .expect("release abandoned hold") = usize::MAX;
+            hold.cvar.notify_all();
+        }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn arm_sql_before_commit(journal: &Path) -> TestSeamGuard {
+    let owner = TEST_SEAM_OWNER.lock().expect("own test seam");
     let mut seam = TEST_SEAM.lock().expect("lock test seam");
     seam.target_journal = Some(journal.to_path_buf());
     seam.sql_before_commit = true;
     seam.hold_before_commit = None;
-    TestSeamGuard
+    TestSeamGuard { _owner: owner }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) struct HoldController {
     sync: std::sync::Arc<TestHoldSync>,
     _guard: TestSeamGuard,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 impl HoldController {
     pub fn wait_for_recorded_window(&self, batch_index: usize) -> Vec<String> {
-        let mut rec = self.sync.recorded.lock().expect("lock recorded");
-        while rec.len() <= batch_index {
-            rec = self.sync.cvar.wait(rec).expect("wait recorded window");
-        }
+        let rec = self.sync.recorded.lock().expect("lock recorded");
+        let (rec, timeout) = self
+            .sync
+            .cvar
+            .wait_timeout_while(rec, std::time::Duration::from_secs(10), |rec| {
+                rec.len() <= batch_index
+            })
+            .expect("wait recorded window");
+        assert!(!timeout.timed_out(), "batch did not reach recorded window");
         rec[batch_index].clone()
     }
 
@@ -205,8 +230,9 @@ impl HoldController {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn arm_hold_before_commit(journal: &Path) -> HoldController {
+    let owner = TEST_SEAM_OWNER.lock().expect("own test seam");
     let sync = std::sync::Arc::new(TestHoldSync {
         recorded: std::sync::Mutex::new(Vec::new()),
         cvar: std::sync::Condvar::new(),
@@ -218,10 +244,12 @@ pub(crate) fn arm_hold_before_commit(journal: &Path) -> HoldController {
     seam.hold_before_commit = Some(sync.clone());
     HoldController {
         sync,
-        _guard: TestSeamGuard,
+        _guard: TestSeamGuard { _owner: owner },
     }
 }
 
+// Remaining and missing count distinct, nonempty maintained source paths.
+// Missing includes gaps at or before the saved cursor.
 fn count_remaining(conn: &Connection, cursor: &str) -> Result<usize, StoreError> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(DISTINCT path) FROM chunk_sources WHERE path IS NOT NULL AND path != '' AND path > ?",
@@ -252,6 +280,8 @@ fn count_missing_internal(
     }
 }
 
+// Unclassified counts all persisted classification rows, including rows without
+// a current source; it is a classification outcome, not a coverage certificate.
 fn count_unclassified(conn: &Connection) -> Result<usize, StoreError> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM chunk_classification WHERE unclassified = 1",
@@ -282,23 +312,6 @@ pub fn inspect_classifications(journal: &Path) -> Result<ClassificationStatus, S
     }
 
     let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    if !chunk_path_lookup_ready(&conn)? {
-        return Ok(ClassificationStatus {
-            initialization: ClassificationInitialization::Unready,
-            cursor: String::new(),
-            completed: false,
-            stalled: false,
-            stalled_path: None,
-            processed: 0,
-            remaining: 0,
-            missing: 0,
-            unclassified: 0,
-            coverage_mismatch: false,
-            repair: Some("indexer path-lookup --apply".to_string()),
-            committed: false,
-            stalled_error: None,
-        });
-    }
 
     let has_classification_table = sqlite_table_exists(&conn, "chunk_classification")?;
     let has_backfill_table = sqlite_table_exists(&conn, "chunk_classification_backfill")?;
@@ -319,6 +332,27 @@ pub fn inspect_classifications(journal: &Path) -> Result<ClassificationStatus, S
     } else {
         None
     };
+
+    if !chunk_path_lookup_ready(&conn)? {
+        return Ok(ClassificationStatus {
+            initialization: ClassificationInitialization::Unready,
+            cursor: backfill
+                .as_ref()
+                .map(|b| b.cursor.clone())
+                .unwrap_or_default(),
+            completed: backfill.as_ref().is_some_and(|b| b.completed),
+            stalled: backfill.as_ref().is_some_and(|b| b.stalled),
+            stalled_path: backfill.as_ref().and_then(|b| b.stalled_path.clone()),
+            processed: 0,
+            remaining: 0,
+            missing: 0,
+            unclassified: 0,
+            coverage_mismatch: false,
+            repair: Some("indexer path-lookup --apply".to_string()),
+            committed: false,
+            stalled_error: None,
+        });
+    }
 
     if backfill.is_some() && !has_classification_table {
         let cursor = backfill
@@ -504,7 +538,7 @@ pub(crate) fn classify_one_batch(
             .collect::<Result<Vec<_>, _>>()?
     };
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     {
         let hold_opt = {
             let seam = TEST_SEAM.lock().expect("lock test seam");
@@ -522,10 +556,14 @@ pub(crate) fn classify_one_batch(
                 hold.cvar.notify_all();
                 idx
             };
-            let mut rel = hold.released_batches.lock().expect("lock released_batches");
-            while *rel <= batch_index {
-                rel = hold.cvar.wait(rel).expect("wait release");
-            }
+            let rel = hold.released_batches.lock().expect("lock released_batches");
+            let (_released, timeout) = hold
+                .cvar
+                .wait_timeout_while(rel, std::time::Duration::from_secs(10), |rel| {
+                    *rel <= batch_index
+                })
+                .expect("wait release");
+            assert!(!timeout.timed_out(), "batch hold was not released");
         }
     }
 
@@ -553,7 +591,7 @@ pub(crate) fn classify_one_batch(
     let unclassified = count_unclassified(&tx)?;
     let coverage_mismatch = state.completed && missing > 0;
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     {
         let seam = TEST_SEAM.lock().expect("lock test seam");
         if seam.sql_before_commit && seam.target_journal.as_deref() == Some(journal) {
@@ -613,17 +651,36 @@ pub fn apply_classification_batch(journal: &Path) -> Result<ClassificationStatus
             status.coverage_mismatch
         );
 
-        if !HELD_ONCE.swap(true, Ordering::SeqCst)
-            && let Ok(hold_path) = std::env::var("SOLSTONE_INDEXER_CLASSIFICATION_BATCH_HOLD")
-            && let Ok(mut file) = std::fs::File::open(&hold_path)
-        {
-            use std::io::Read;
-            let mut buf = [0u8; 1];
-            let _ = file.read_exact(&mut buf);
+        if let Some(cause) = &status.stalled_error {
+            log::warn!("classification batch stalled at {}: {cause}", status.cursor);
         }
+        #[cfg(feature = "test-hooks")]
+        test_pause_after_committed_batch();
     }
 
     Ok(status)
+}
+
+// Process fixtures observe a committed batch before allowing the next one.
+// This control is absent from default production builds.
+#[cfg(feature = "test-hooks")]
+fn test_pause_after_committed_batch() {
+    let Some(release) = std::env::var_os("SOLSTONE_TEST_CLASSIFICATION_BATCH_RELEASE") else {
+        return;
+    };
+    if HELD_ONCE.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let release = std::path::PathBuf::from(release);
+    std::fs::write(release.with_extension("ready"), b"committed").expect("signal committed batch");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !release.is_file() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "classification test barrier timed out"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }
 
 pub fn drain_classifications(journal: &Path) -> Result<ClassificationStatus, StoreError> {
@@ -639,7 +696,7 @@ pub fn drain_classifications(journal: &Path) -> Result<ClassificationStatus, Sto
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
     use crate::test_support::reserve_temp_path;
@@ -684,6 +741,35 @@ mod tests {
         let backfill =
             crate::db::read_chunk_classification_backfill(&inspect_conn).expect("read backfill");
         assert!(backfill.is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn classification_batch_unready_inspection_preserves_saved_progress() {
+        let root = temp_root("inspect-unready-cursor");
+        let conn = crate::db::open_index(&root).expect("open index");
+        conn.execute(
+            "INSERT INTO chunks(content, path) VALUES ('sample', 'sample.md')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        crate::chunk_sources::apply_path_lookup(&root).unwrap();
+        let completed = apply_classification_batch(&root).unwrap();
+        let conn = Connection::open(db_path(&root)).unwrap();
+        conn.execute("DELETE FROM chunk_source_readiness", [])
+            .unwrap();
+        drop(conn);
+        let before = fs::read(db_path(&root)).unwrap();
+        let status = inspect_classifications(&root).unwrap();
+        assert_eq!(status.initialization, ClassificationInitialization::Unready);
+        assert_eq!(status.cursor, completed.cursor);
+        assert!(status.completed);
+        let json = status.to_json_value();
+        assert!(json["remaining"].is_null());
+        assert!(json["missing"].is_null());
+        assert!(json["unclassified"].is_null());
+        assert_eq!(fs::read(db_path(&root)).unwrap(), before);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -886,8 +972,13 @@ mod tests {
         // Arm SQL fault for second batch
         {
             let _guard = arm_sql_before_commit(&root);
-            let result = apply_classification_batch(&root);
-            assert!(result.is_err());
+            let error = apply_classification_batch(&root).expect_err("injected SQL failure");
+            assert!(
+                error
+                    .to_string()
+                    .contains("non_existent_table_for_test_fault"),
+                "{error}"
+            );
         }
 
         // Verify DB cursor is still doc-31.md and row count is still 32
@@ -902,6 +993,12 @@ mod tests {
             })
             .expect("count rows");
         assert_eq!(count, 32);
+        drop(verify_conn);
+        let retry = apply_classification_batch(&root).expect("retry committed cursor");
+        assert_eq!(retry.processed, 18);
+        assert_eq!(retry.cursor, "doc-49.md");
+        assert!(retry.completed);
+        assert_eq!(retry.missing, 0);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -937,10 +1034,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
     fn classification_batch_unreadable_facet_json_stores_unclassified() {
-        use std::os::unix::fs::PermissionsExt;
-
         let root = temp_root("unreadable-facet-json");
         let conn = crate::db::open_index(&root).expect("open");
         conn.execute(
@@ -967,9 +1061,8 @@ mod tests {
         // Create Secret facet with unreadable JSON
         fs::create_dir_all(root.join("facets/Secret")).expect("create Secret dir");
         let secret_json = root.join("facets/Secret/facet.json");
-        fs::write(&secret_json, r#"{"id":"0123456789abcdef01234568"}"#).expect("write Secret json");
-        fs::set_permissions(&secret_json, fs::Permissions::from_mode(0o000))
-            .expect("make unreadable");
+        // A directory cannot be read as JSON on any supported platform or privilege level.
+        fs::create_dir(&secret_json).expect("make unreadable declaration");
 
         let status = apply_classification_batch(&root).expect("apply batch");
         assert!(status.completed);
@@ -978,8 +1071,22 @@ mod tests {
         assert_eq!(status.missing, 0);
         assert!(!status.stalled);
 
-        // Restore permissions for cleanup
-        let _ = fs::set_permissions(&secret_json, fs::Permissions::from_mode(0o644));
+        let conn = Connection::open_with_flags(db_path(&root), OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("read classifications");
+        for (path, expected) in [
+            ("facets/Secret/news/20260101.md", 1_i64),
+            ("facets/Public/news/20260101.md", 0_i64),
+        ] {
+            let actual: i64 = conn
+                .query_row(
+                    "SELECT unclassified FROM chunk_classification WHERE path=?1",
+                    [path],
+                    |row| row.get(0),
+                )
+                .expect("classification row");
+            assert_eq!(actual, expected);
+        }
+        drop(conn);
         let _ = fs::remove_dir_all(root);
     }
 
