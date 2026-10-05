@@ -271,11 +271,10 @@ fn recent_day_rail(
             && glucose["unit"].as_str().is_some_and(|unit| unit != "mixed")
         {
             Some(format!(
-                "{}–{} {} · avg {}",
+                "{}–{} {}",
                 number(glucose["min"].as_f64().expect("glucose min")),
                 number(glucose["max"].as_f64().expect("glucose max")),
                 glucose["unit"].as_str().expect("glucose unit"),
-                number(glucose["mean"].as_f64().expect("glucose mean")),
             ))
         } else {
             glucose["count"]
@@ -310,7 +309,7 @@ fn recent_day_rail(
 fn day_error(error: DayError) -> StoreError {
     match error {
         DayError::Shard(error) => StoreError::ShardUnreadable(error),
-        DayError::Store(error) | DayError::Chronicle(error) => StoreError::Read(error),
+        DayError::Chronicle(error) => StoreError::Read(error),
     }
 }
 
@@ -1257,7 +1256,7 @@ mod tests {
         )
         .unwrap();
         let find = |day: &str| rail.iter().find(|item| item["day"] == day).unwrap();
-        assert_eq!(find("20260101")["glucose_label"], "90–110 mg/dL · avg 100");
+        assert_eq!(find("20260101")["glucose_label"], "90–110 mg/dL");
         assert_eq!(find("20260102")["glucose_label"], "2 readings");
         assert_eq!(find("20260103")["glucose_label"], Value::Null);
         assert_eq!(find("20260104")["sleep_duration"], "6h 00m");

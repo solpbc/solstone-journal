@@ -12,7 +12,9 @@ use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use solstone_core_format::content::{RawPerceptFamily, produce_raw_percept_chunks};
+use solstone_core_format::content::{
+    Family, RawPerceptFamily, produce_chunks, produce_raw_percept_chunks,
+};
 use solstone_core_journal_io::paths::Segment;
 
 /// Largest source-byte window parsed for one transcript page.
@@ -162,6 +164,7 @@ fn is_transcript_name(name: &str) -> bool {
         || name.ends_with("_transcript.jsonl")
         || name == "imported.md"
         || name.ends_with("_transcript.md")
+        || name == "workout.json"
 }
 
 fn source_version(
@@ -248,6 +251,14 @@ fn project_line(name: &str, line: &str) -> String {
             .collect::<Vec<_>>()
             .join("\n");
     }
+    if name == "workout.json" {
+        return produce_chunks(Family::Workout, name, line)
+            .chunks
+            .into_iter()
+            .map(|chunk| chunk.content)
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
     line.to_owned()
 }
 
@@ -324,6 +335,39 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_strava_workout_reads_as_what_strava_recorded_on_its_first_piece_only() {
+        let root = tempfile::tempdir().unwrap();
+        let workout = serde_json::json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "activity_id": 9,
+            "tile": {"index": 0, "count": 2},
+            "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0}
+        });
+        for (key, index) in [("070200_300", 0), ("070700_300", 1)] {
+            let segment = root
+                .path()
+                .join("chronicle/20261004/import.strava")
+                .join(key);
+            fs::create_dir_all(&segment).unwrap();
+            let mut tile = workout.clone();
+            tile["tile"]["index"] = serde_json::json!(index);
+            fs::write(segment.join("workout.json"), format!("{tile}\n")).unwrap();
+        }
+        let segments = iter_segments(root.path(), PathOrDay::Day("20261004")).unwrap();
+        let pages = segments
+            .iter()
+            .map(|segment| read_segment_transcript_page(segment, None).unwrap().entries)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            pages[0],
+            vec![super::SegmentTranscriptEntry {
+                text: "## Strava workout: Morning Run\nRun\n10.2 km".to_owned(),
+            }]
+        );
+        assert!(pages[1].is_empty());
     }
 
     #[test]

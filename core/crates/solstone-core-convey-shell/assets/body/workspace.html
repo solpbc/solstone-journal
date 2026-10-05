@@ -516,14 +516,6 @@ a.body-day-cell:focus-visible {
   font-size: 13px;
 }
 
-/* Self-baseline medians ride along muted — same ink for every value,
-   never a color that grades a number against its typical. */
-.body-fact-typical {
-  color: var(--ink-faint-paper);
-  font-size: 13px;
-  font-weight: normal;
-}
-
 /* Device juxtaposition lines: two devices' figures side by side, verbatim. */
 .body-device-compare {
   margin: var(--space-2) 0 0;
@@ -689,7 +681,7 @@ a.body-day-cell:focus-visible {
   fill: var(--orange-ink);
 }
 
-/* Bucket min–max band under a median day curve: same hue, low opacity. */
+/* Bucket lowest–highest band under the day curve: same hue, low opacity. */
 .body-curve path.body-curve-band {
   fill: var(--orange);
   fill-opacity: 0.18;
@@ -736,6 +728,34 @@ a.body-day-cell:focus-visible {
   flex-basis: 100%;
   color: var(--ink-soft, var(--ink));
   font-size: 13px;
+}
+
+.body-workout-more {
+  flex-basis: 100%;
+  font-size: 13px;
+  color: var(--ink-soft, var(--ink));
+}
+
+.body-workout-more summary {
+  cursor: pointer;
+  padding: var(--space-3) 0;
+}
+
+.body-workout-more dl {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-2);
+}
+
+.body-workout-more dt {
+  color: var(--ink-faint-paper);
+}
+
+.body-workout-more dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 
 .body-workout-delete {
@@ -1029,12 +1049,6 @@ a.body-day-cell:focus-visible {
   transform: none;
 }
 
-.body-trends-foot {
-  margin: var(--space-2) 0 0;
-  font-size: 13px;
-  color: var(--ink-faint);
-}
-
 @media (max-width: 768px) {
   .body-trends-ribbon-btn {
     grid-template-columns: 1fr;
@@ -1211,7 +1225,7 @@ a.body-day-cell:focus-visible {
     return html([
       '<div class="body-quick-row">',
       `<a class="body-btn body-btn--solid" href="${bodyDayHref(latestDay)}">open latest day</a>`,
-      '<a class="body-btn body-btn--outline" href="/app/body/trends">trends</a>',
+      '<a class="body-btn body-btn--outline" href="/app/body/trends">daily values</a>',
       '</div>',
     ]);
   }
@@ -1467,19 +1481,6 @@ a.body-day-cell:focus-visible {
     return `${kinds} ${kinds === 1 ? "kind" : "kinds"} · ${total} ${total === 1 ? "row" : "rows"}`;
   }
 
-  function anatomyDrawerLine(contributors) {
-    const items = asArray(contributors);
-    let strongest = null;
-    for (const item of items) {
-      const value = Number(asObject(item).value);
-      if (!Number.isFinite(value)) continue;
-      if (!strongest || value > strongest.value) {
-        strongest = { label: String(item.label ?? ""), value };
-      }
-    }
-    return strongest ? `${items.length} ${items.length === 1 ? "contributor" : "contributors"} · strongest: ${strongest.label}` : "";
-  }
-
   function dayAuditHasNothingToDisclose(bodyDay) {
     const audit = asObject(bodyDay.audit);
     return Object.entries(asObject(audit.types)).length === 0
@@ -1611,10 +1612,6 @@ a.body-day-cell:focus-visible {
     loadBodyStatus();
   }
 
-  function typicalSpan(label, extraClass = "") {
-    return label ? ` <span class="body-fact-typical${extraClass ? ` ${extraClass}` : ""}">&middot; ${escapeHtml(label)}</span>` : "";
-  }
-
   function renderScoreAnatomy(panelId, contributors) {
     const items = asArray(contributors);
     if (!items.length) return "";
@@ -1622,12 +1619,12 @@ a.body-day-cell:focus-visible {
     const bodyHtml = html([
       '<dl class="drawer-kv">',
       items.map((item) => `<dt>${escapeHtml(item.label)}</dt><dd class="body-num">${escapeHtml(item.value)}</dd>`).join(""),
-      '</dl><p class="drawer-provenance">Oura\'s contributors</p>',
+      '</dl>',
     ]);
     return window.Drawer.render({
       id,
-      label: "why this score?",
-      line: anatomyDrawerLine(items),
+      label: "Oura's contributors",
+      line: "",
       bodyHtml,
     });
   }
@@ -1658,7 +1655,7 @@ a.body-day-cell:focus-visible {
     }
     const firstGlucose = asArray(bodyDay.glucose_series)[0];
     if (firstGlucose) {
-      parts.push(`<article class="body-card body-highlight body-card--soft"><h2 class="body-highlight-title">glucose</h2><p class="body-highlight-value">${escapeHtml(firstGlucose.range_label)}</p><p class="body-highlight-detail">avg <span class="body-num">${escapeHtml(firstGlucose.mean_label)}</span> &middot; <span class="body-num">${escapeHtml(firstGlucose.count_label)}</span> readings</p></article>`);
+      parts.push(`<article class="body-card body-highlight body-card--soft"><h2 class="body-highlight-title">glucose</h2><p class="body-highlight-value">${escapeHtml(firstGlucose.range_label)}</p><p class="body-highlight-detail"><span class="body-num">${escapeHtml(firstGlucose.count_label)}</span> ${Number(firstGlucose.count) === 1 ? "reading" : "readings"}</p></article>`);
     }
     const workouts = asArray(bodyDay.activity?.workouts);
     if (bodyDay.activity && workouts.length) {
@@ -1675,20 +1672,20 @@ a.body-day-cell:focus-visible {
     if (!sleep) return "";
     const primary = [];
     if (sleep.asleep_duration && sleep.asleep_duration !== sleep.in_bed_duration) {
-      primary.push(`<p class="body-primary-line">asleep <span class="body-num">${escapeHtml(sleep.asleep_duration)}</span> &middot; in bed <span class="body-num">${escapeHtml(sleep.in_bed_duration)}</span>${typicalSpan(sleep.asleep_typical_label, "body-num")}</p>`);
+      primary.push(`<p class="body-primary-line">asleep <span class="body-num">${escapeHtml(sleep.asleep_duration)}</span> &middot; in bed <span class="body-num">${escapeHtml(sleep.in_bed_duration)}</span></p>`);
       if (sleep.window) primary.push(`<p class="body-muted body-num">${escapeHtml(sleep.window)}</p>`);
     } else if (sleep.window) {
-      primary.push(`<p class="body-primary-line"><span class="body-num">${escapeHtml(sleep.window)}</span> &middot; <span class="body-num">${escapeHtml(sleep.duration)}</span>${typicalSpan(sleep.asleep_typical_label, "body-num")}</p>`);
+      primary.push(`<p class="body-primary-line"><span class="body-num">${escapeHtml(sleep.window)}</span> &middot; <span class="body-num">${escapeHtml(sleep.duration)}</span></p>`);
     }
     const ticks = asArray(sleep.bar?.ticks).map((tick) => `<rect class="body-sleep-mark" x="${safeNumber(tick.x)}" y="8" width="2" height="18"></rect>`).join("");
     const segments = asArray(sleep.bar?.segments).map((seg) => `<rect class="body-sleep-seg body-sleep-seg--${escapeHtml(safeClass(seg.kind))}" x="${safeNumber(seg.x)}" y="6" width="${safeNumber(seg.width)}" height="22" rx="4"></rect>`).join("");
     const naps = asArray(sleep.naps);
     return html([
       '<section class="body-card body-card--accent" aria-labelledby="body-sleep-title">',
-      '<h2 id="body-sleep-title" class="body-question-title">how did I sleep?</h2>',
+      '<h2 id="body-sleep-title" class="body-question-title">sleep</h2>',
       primary.join(""),
       sleep.comparison_line ? `<p class="body-muted body-num body-device-compare">${escapeHtml(sleep.comparison_line)}</p>` : "",
-      sleep.score_line ? `<p class="body-muted body-num">${escapeHtml(sleep.score_line)}${typicalSpan(sleep.score_typical_label)}</p>` : "",
+      sleep.score_line ? `<p class="body-muted body-num">${escapeHtml(sleep.score_line)}</p>` : "",
       renderScoreAnatomy("body-sleep-anatomy", sleep.score_contributors),
       `<svg class="body-sleep-bar" viewBox="0 0 1440 34" preserveAspectRatio="none" aria-hidden="true"><rect class="body-sleep-axis" x="0" y="15" width="1440" height="4" rx="2"></rect>${ticks}${segments}</svg>`,
       '<div class="body-sleep-hours body-num" aria-hidden="true"><span>6 PM</span><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span></div>',
@@ -1703,9 +1700,9 @@ a.body-day-cell:focus-visible {
     if (!list.length) return "";
     return html([
       '<section class="body-card body-card--accent" aria-labelledby="body-glucose-title">',
-      '<h2 id="body-glucose-title" class="body-question-title">what was glucose doing?</h2>',
+      '<h2 id="body-glucose-title" class="body-question-title">glucose</h2>',
       list.map((series) => html([
-        `<p class="body-primary-line"><span class="body-num">${escapeHtml(series.range_label)}</span> &middot; avg <span class="body-num">${escapeHtml(series.mean_label)}</span> &middot; <span class="body-num">${escapeHtml(series.count_label)}</span> readings</p>`,
+        `<p class="body-primary-line"><span class="body-num">${escapeHtml(series.range_label)}</span> &middot; <span class="body-num">${escapeHtml(series.count_label)}</span> ${Number(series.count) === 1 ? "reading" : "readings"}</p>`,
         '<div class="body-curve-wrap">',
         `<div class="body-curve-y body-num" aria-hidden="true"><span>${escapeHtml(series.svg?.y_max_label)}</span><span>${escapeHtml(series.svg?.y_min_label)}</span></div>`,
         '<svg class="body-curve" viewBox="0 0 1440 260" preserveAspectRatio="none" role="img" aria-label="glucose readings through the day">',
@@ -1721,7 +1718,8 @@ a.body-day-cell:focus-visible {
   function renderStravaWorkout(workout) {
     const id = escapeHtml(workout.strava_activity_id);
     const details = asArray(workout.details);
-    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} &middot; Strava</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" aria-label="delete ${escapeHtml(workout.name)}">delete</button>${details.length ? `<span class="body-workout-details">Strava's figures: ${details.map(escapeHtml).join(" &middot; ")}</span>` : ""}</li>`;
+    const more = asArray(workout.more_from_strava);
+    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} &middot; Strava</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" aria-label="delete ${escapeHtml(workout.name)}">delete</button>${details.length ? `<span class="body-workout-details">Strava's figures: ${details.map(escapeHtml).join(" &middot; ")}</span>` : ""}${more.length ? `<details class="body-workout-more"><summary>more from Strava &middot; <span class="body-num">${escapeHtml(more.length)}</span></summary><dl>${more.map((field) => `<dt>${escapeHtml(String(field.label ?? "").toLowerCase())}</dt><dd>${escapeHtml(field.value)}</dd>`).join("")}</dl></details>` : ""}</li>`;
   }
 
   // Deleting a Strava workout takes every piece of it, on every day it covers.
@@ -1816,7 +1814,7 @@ a.body-day-cell:focus-visible {
     const counters = asArray(activity.counters);
     return html([
       '<section class="body-card" aria-labelledby="body-activity-title">',
-      '<h2 id="body-activity-title" class="body-question-title">how active was I?</h2>',
+      '<h2 id="body-activity-title" class="body-question-title">movement</h2>',
       workouts.length ? `<ul class="body-workouts">${workouts.map((workout) => workout.strava_activity_id ? renderStravaWorkout(workout) : `<li><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""}${workout.source ? ` &middot; ${escapeHtml(workout.source)}` : ""}</span></li>`).join("")}</ul>` : "",
       running.length ? `<h3 class="body-card-label">running dynamics</h3><ul class="body-facts">${running.map((item) => `<li><span>${escapeHtml(item.label)}</span>${item.summary ? `<strong class="body-num">${escapeHtml(item.summary)}</strong>` : `<strong><span class="body-num">${escapeHtml(item.count_label)}</span> <span class="body-fact-kind">entries</span></strong>`}</li>`).join("")}</ul>` : "",
       activity.steps ? (activity.steps.mode === "total" ? `<p class="body-primary-line"><span class="body-num">${escapeHtml(activity.steps.total_label)}</span> steps &middot; ${escapeHtml(activity.steps.source)}${activity.steps.others_label ? ` &middot; ${escapeHtml(activity.steps.others_label)}` : ""}</p>` : `<p class="body-primary-line">step-count samples: <span class="body-num">${escapeHtml(activity.steps.samples_label)}</span></p>`) : "",
@@ -1846,7 +1844,7 @@ a.body-day-cell:focus-visible {
         '<div class="body-curve-hours body-num" aria-hidden="true"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>',
       ]) : "",
       heart.comparison_line ? `<p class="body-muted body-num body-device-compare">${escapeHtml(heart.comparison_line)}</p>` : "",
-      facts.length ? `<ul class="body-facts">${facts.map((fact) => `<li><span>${escapeHtml(fact.label)}</span>${fact.value ? `<strong class="body-num">${escapeHtml(fact.value)}${typicalSpan(fact.typical_label)}</strong>` : `<strong><span class="body-num">${escapeHtml(fact.count_label)}</span> <span class="body-fact-kind">readings</span></strong>`}</li>`).join("")}</ul>` : "",
+      facts.length ? `<ul class="body-facts">${facts.map((fact) => `<li><span>${escapeHtml(fact.label)}</span>${fact.value ? `<strong class="body-num">${escapeHtml(fact.value)}</strong>` : `<strong><span class="body-num">${escapeHtml(fact.count_label)}</span> <span class="body-fact-kind">readings</span></strong>`}</li>`).join("")}</ul>` : "",
       heart.resting_comparison_line ? `<p class="body-muted body-num body-device-compare">${escapeHtml(heart.resting_comparison_line)}</p>` : "",
       bp ? html([
         '<h3 class="body-card-label">blood pressure</h3>',
@@ -1861,8 +1859,8 @@ a.body-day-cell:focus-visible {
     if (!recovery) return "";
     return html([
       '<section class="body-card body-card--accent" aria-labelledby="body-recovery-title">',
-      '<h2 id="body-recovery-title" class="body-question-title">how recovered am I?</h2>',
-      `<ul class="body-facts">${asArray(recovery.facts).map((fact) => `<li><span>${escapeHtml(fact.label)}</span><strong class="body-num">${escapeHtml(fact.detail)}${typicalSpan(fact.typical_label)}</strong></li>`).join("")}</ul>`,
+      '<h2 id="body-recovery-title" class="body-question-title">Oura readiness</h2>',
+      `<ul class="body-facts">${asArray(recovery.facts).map((fact) => `<li><span>${escapeHtml(fact.label)}</span><strong class="body-num">${escapeHtml(fact.detail)}</strong></li>`).join("")}</ul>`,
       renderScoreAnatomy("body-recovery-anatomy", recovery.contributors),
       '<p class="body-card-footer">Oura\'s daily numbers &middot; brought in via the Oura API</p>',
       '</section>',
@@ -1906,7 +1904,7 @@ a.body-day-cell:focus-visible {
       '<div class="body-chips">',
       asArray(sources.chips).map((chip) => `<span class="body-chip"><span>${escapeHtml(chip.name)}</span><span class="body-chip-range body-num">&middot; ${escapeHtml(chip.entries_label)}</span></span>`).join(""),
       '</div>',
-      `<p class="body-card-footer"><span class="body-num">${escapeHtml(sources.entry_total_label)}</span> entries observed &middot; brought in via ${escapeHtml(sources.via)}</p>`,
+      `<p class="body-card-footer"><span class="body-num">${escapeHtml(sources.entry_total_label)}</span> entries in your journal &middot; brought in via ${escapeHtml(sources.via)}</p>`,
       '</section>',
     ]);
   }
@@ -1979,8 +1977,8 @@ a.body-day-cell:focus-visible {
 
   function renderTrendsShell() {
     reveal(html([
-      renderHeader("body · trends", "", true),
-      '<section class="body-card" id="body-trends-status" aria-live="polite"><p class="body-muted" id="body-trends-status-line">loading trends&hellip;</p></section>',
+      renderHeader("body · daily values", "", true),
+      '<section class="body-card" id="body-trends-status" aria-live="polite"><p class="body-muted" id="body-trends-status-line">loading daily values&hellip;</p></section>',
       '<div class="body-trends-stack" id="body-trends-stack" hidden></div>',
     ]));
     startTrendsController();
@@ -2003,7 +2001,7 @@ a.body-day-cell:focus-visible {
 
     let signals = [];
     let annotations = [];
-    let weekly = {};
+    let plotted = {};
     let domain = { w0: 0, w1: 1 };
     const state = { open: null, range: "all", flags: true };
 
@@ -2011,8 +2009,9 @@ a.body-day-cell:focus-visible {
       return Date.UTC(parseInt(day.slice(0, 4), 10), parseInt(day.slice(4, 6), 10) - 1, parseInt(day.slice(6, 8), 10));
     }
 
+    // A day's place on the week axis, so a daily value sits on its own day.
     function weekOf(day) {
-      return Math.floor((dayToUtc(day) - WEEK_EPOCH) / MS_WEEK);
+      return (dayToUtc(day) - WEEK_EPOCH) / MS_WEEK;
     }
 
     function weekDate(week) {
@@ -2023,23 +2022,10 @@ a.body-day-cell:focus-visible {
       return weekDate(week).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
     }
 
-    function dayLabel(day) {
-      return new Date(dayToUtc(day)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-    }
-
-    function median(values) {
-      const sorted = values.slice().sort((a, b) => a - b);
-      const mid = Math.floor(sorted.length / 2);
-      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-    }
-
-    function weeklyMedians(daily) {
-      const byWeek = {};
-      daily.forEach((point) => {
-        const week = weekOf(point[0]);
-        (byWeek[week] = byWeek[week] || []).push(point[1]);
-      });
-      return Object.keys(byWeek).map((week) => parseInt(week, 10)).sort((a, b) => a - b).map((week) => ({ week, value: median(byWeek[week]) }));
+    // One point per day the journal holds a value for, placed on the week
+    // axis. The chart draws held values; it averages and smooths nothing.
+    function dailyPoints(daily) {
+      return daily.map((point) => ({ week: weekOf(point[0]), value: point[1] }));
     }
 
     function gapSegments(points) {
@@ -2136,7 +2122,7 @@ a.body-day-cell:focus-visible {
     }
 
     function ribbonMarkup(signal) {
-      const points = weekly[signal.key];
+      const points = plotted[signal.key];
       const canvasId = `body-trends-canvas-${safeClass(signal.key)}`;
       const hasData = points.length > 0;
       const latest = hasData ? `${formatValue(signal, signal.daily[signal.daily.length - 1][1])} · latest` : "not present yet";
@@ -2210,7 +2196,7 @@ a.body-day-cell:focus-visible {
       const canvas = document.getElementById(`body-trends-canvas-${safeClass(signal.key)}`);
       if (!canvas) return;
       const bounds = windowBounds();
-      const inWindow = weekly[signal.key].filter((point) => point.week >= bounds.w0 && point.week <= bounds.w1);
+      const inWindow = plotted[signal.key].filter((point) => point.week >= bounds.w0 && point.week <= bounds.w1);
       if (!inWindow.length) {
         canvas.innerHTML = `${chipsMarkup(signal)}<p class="body-muted">not present in this range.</p>`;
         return;
@@ -2222,14 +2208,14 @@ a.body-day-cell:focus-visible {
         if (point.value > vMax) vMax = point.value;
       });
       const dom = paddedDomain(inWindow, fineScale(signal));
-      const line = `${signal.label} · ${formatValue(signal, vMin)} – ${formatValue(signal, vMax)} · ${inWindow.length} weeks present · weekly median`;
+      const line = `${signal.label} · ${formatValue(signal, vMin)} – ${formatValue(signal, vMax)} · ${inWindow.length} ${inWindow.length === 1 ? "day" : "days"}`;
       canvas.innerHTML = html([
         chipsMarkup(signal),
         `<p class="body-primary-line body-num">${escapeHtml(line)}</p>`,
         '<div class="body-curve-wrap">',
         `<div class="body-curve-y body-num" aria-hidden="true"><span>${escapeHtml(formatValue(signal, dom.hi))}</span><span>${escapeHtml(formatValue(signal, dom.lo))}</span></div>`,
         '<div class="body-trends-plot">',
-        `<svg class="body-curve" viewBox="0 0 ${SVG_W} ${CANVAS_H}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(signal.label)} weekly medians over time">`,
+        `<svg class="body-curve" viewBox="0 0 ${SVG_W} ${CANVAS_H}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(signal.label)}, one value per day">`,
         curveMarkup(inWindow, bounds.w0, bounds.w1, dom, CANVAS_H, "", "", 4),
         '</svg>',
         state.flags ? flagMarkup(bounds.w0, bounds.w1) : "",
@@ -2323,7 +2309,7 @@ a.body-day-cell:focus-visible {
       statusCard.hidden = false;
       stack.hidden = true;
       statusCard.innerHTML = window.SurfaceState.error({
-        heading: "couldn't load body trends",
+        heading: "couldn't load daily values",
         desc: window.CONVEY_COPY.RELOAD_HINT,
         serverMessage: err?.serverMessage,
         detail: err,
@@ -2335,20 +2321,20 @@ a.body-day-cell:focus-visible {
     function renderTrends(payload) {
       signals = asArray(payload.signals);
       annotations = asArray(payload.annotations);
-      weekly = {};
+      plotted = {};
       let wMin = Infinity;
       let wMax = -Infinity;
       signals.forEach((signal) => {
         signal.daily = asArray(signal.daily).slice().sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
-        const points = weeklyMedians(signal.daily);
-        weekly[signal.key] = points;
+        const points = dailyPoints(signal.daily);
+        plotted[signal.key] = points;
         if (points.length) {
           if (points[0].week < wMin) wMin = points[0].week;
           if (points[points.length - 1].week > wMax) wMax = points[points.length - 1].week;
         }
       });
       if (wMin > wMax) {
-        statusCard.innerHTML = window.SurfaceState.empty({ heading: "no trend data present yet." });
+        statusCard.innerHTML = window.SurfaceState.empty({ heading: "no daily values in your journal yet." });
         statusCard.hidden = false;
         stack.hidden = true;
         return;
@@ -2359,18 +2345,17 @@ a.body-day-cell:focus-visible {
         if (week > wMax) wMax = week;
       });
       domain = { w0: wMin, w1: wMax };
-      const foot = payload.generated_at_day ? `<p class="body-trends-foot">weekly medians of daily points · through ${escapeHtml(dayLabel(payload.generated_at_day))}</p>` : "";
-      stack.innerHTML = signals.map(ribbonMarkup).join("") + foot;
+      stack.innerHTML = signals.map(ribbonMarkup).join("");
       statusCard.hidden = true;
       stack.hidden = false;
-      if (weekly.resting_hr && weekly.resting_hr.length) expandSignal("resting_hr");
+      if (plotted.resting_hr && plotted.resting_hr.length) expandSignal("resting_hr");
     }
 
     function loadTrends() {
       window.apiJson("/app/body/api/trends")
         .then((payload) => {
           if (payload.warming) {
-            showStatus("preparing trends. building your whole history takes a minute.");
+            showStatus("preparing daily values. building your whole history takes a minute.");
             window.setTimeout(loadTrends, POLL_MS);
             return;
           }

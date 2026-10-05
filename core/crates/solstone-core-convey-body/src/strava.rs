@@ -126,6 +126,21 @@ fn item(activity_id: u64, workout: &Value, day: &str) -> Value {
     }
     let distance_label =
         field("distance_m").map(|m| format!("{} km", grouped_decimal(m / 1000.0, 1)));
+    // Every other column Strava exported for the workout, as Strava labelled it
+    // and with its value as written.
+    let more_from_strava = workout
+        .get("strava_fields")
+        .and_then(Value::as_object)
+        .map(|fields| {
+            fields
+                .iter()
+                .filter_map(|(label, value)| {
+                    let value = value.as_str()?.trim();
+                    (!value.is_empty()).then(|| json!({"label": label, "value": value}))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     json!({
         "name": name,
         "source": "Strava",
@@ -133,6 +148,7 @@ fn item(activity_id: u64, workout: &Value, day: &str) -> Value {
         "duration": duration,
         "metrics_label": distance_label.unwrap_or_default(),
         "details": details,
+        "more_from_strava": more_from_strava,
         "strava_activity_id": activity_id.to_string(),
         "sort": start.map(|s| s.to_rfc3339()).unwrap_or_default(),
     })
@@ -171,7 +187,8 @@ mod tests {
             "heart_rate_avg_bpm":140.0,"heart_rate_max_bpm":171.0,"calories_kcal":900.0,
             "commute":false,"entered_by_hand":false});
         let run = json!({"name":"Morning Run","type":"Run","start":"2026-10-04T07:02:00-06:00",
-            "elapsed_seconds":2880.0,"distance_m":10200.0,"commute":true});
+            "elapsed_seconds":2880.0,"distance_m":10200.0,"commute":true,
+            "strava_fields":{"Activity Gear":"Pegasus 41","Relative Effort":"38","Weather":""}});
         piece(root.path(), "20261003", "233000_300", 7, ride.clone());
         piece(root.path(), "20261004", "000000_300", 7, ride.clone());
         piece(root.path(), "20261004", "000500_300", 7, ride);
@@ -194,6 +211,14 @@ mod tests {
                 .unwrap()
                 .contains(&json!("commute"))
         );
+        assert_eq!(
+            items[1]["more_from_strava"],
+            json!([
+                {"label": "Activity Gear", "value": "Pegasus 41"},
+                {"label": "Relative Effort", "value": "38"}
+            ])
+        );
+        assert_eq!(items[0]["more_from_strava"], json!([]));
         assert_eq!(workouts_on(root.path(), "20261003").len(), 1);
         assert!(workouts_on(root.path(), "20261005").is_empty());
     }

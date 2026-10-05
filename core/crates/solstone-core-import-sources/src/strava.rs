@@ -190,7 +190,8 @@ pub struct SkipCounts {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StravaWorkout {
     pub activity_id: u64,
-    pub local_start: NaiveDateTime,
+    /// The row's Activity Date. Strava writes it in UTC, with no zone marker.
+    pub start_utc: NaiveDateTime,
     pub activity_name: String,
     pub activity_type: String,
     pub elapsed_seconds: u64,
@@ -211,8 +212,16 @@ pub struct StravaWorkout {
 }
 
 impl StravaWorkout {
+    /// The workout's start, shown in `zone`.
     pub fn start_in(&self, zone: Tz) -> Option<DateTime<Tz>> {
-        zone.from_local_datetime(&self.local_start).earliest()
+        Some(zone.from_utc_datetime(&self.start_utc))
+    }
+
+    /// Where an earlier version placed this start: the UTC date read as wall time in
+    /// `zone`. Only used to find workouts it placed at the wrong time and the
+    /// deletions it recorded for them.
+    fn misread_start_in(&self, zone: Tz) -> Option<DateTime<Tz>> {
+        zone.from_local_datetime(&self.start_utc).earliest()
     }
 }
 
@@ -224,6 +233,7 @@ pub enum WorkoutDisposition {
     PresentCompleted,
     PresentTimingChanged,
     ZoneConflict,
+    Replaced,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -296,6 +306,8 @@ pub struct PlacementCounts {
     /// workout's; this counts what was not brought in, not what the owner deleted.
     pub deleted: usize,
     pub zone_conflict: usize,
+    /// Workouts an earlier version placed at the wrong time, released and placed again.
+    pub replaced_workouts: usize,
     pub complete_workouts: usize,
     pub incomplete_workouts: usize,
     pub created_tiles: usize,
@@ -319,6 +331,9 @@ pub struct PlannedTilePublication {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Placement {
     pub zone: Tz,
+    /// Tiles an earlier version placed at the wrong time. They are released before
+    /// the workout's tiles are written at the right time.
+    pub release: Vec<PlannedTilePublication>,
     pub tiles: Vec<TileAction>,
     pub publish: Vec<PlannedTilePublication>,
     pub counts: PlacementCounts,
@@ -812,7 +827,7 @@ pub fn read_workouts(path: &Path, max_bytes: usize) -> Result<ReadWorkouts, Stra
                     }
                 };
 
-                let local_start = match date_parsed {
+                let start_utc = match date_parsed {
                     Some(dt) => dt,
                     None => {
                         skips.date_unparseable += 1;
@@ -907,7 +922,7 @@ pub fn read_workouts(path: &Path, max_bytes: usize) -> Result<ReadWorkouts, Stra
 
                 workouts.push(StravaWorkout {
                     activity_id,
-                    local_start,
+                    start_utc,
                     activity_name,
                     activity_type,
                     elapsed_seconds,
@@ -967,8 +982,11 @@ pub fn tile_workout(workout: &StravaWorkout, zone: Tz) -> Vec<TileSlice> {
     let Some(start) = workout.start_in(zone) else {
         return Vec::new();
     };
+    tile_from(start, workout.elapsed_seconds)
+}
 
-    let effective_elapsed = workout.elapsed_seconds.max(1);
+fn tile_from(start: DateTime<Tz>, elapsed_seconds: u64) -> Vec<TileSlice> {
+    let effective_elapsed = elapsed_seconds.max(1);
     let tile_count = effective_elapsed.div_ceil(300);
     let mut slices = Vec::with_capacity(tile_count as usize);
 
@@ -1109,6 +1127,39 @@ fn released_with_import(segment_dir: &Path) -> Result<bool, String> {
                 .map(str::to_owned)
         });
     Ok(reason.as_deref() == Some(RELEASE_REASON))
+}
+
+/// The key an owner's deletion holds where an earlier version misplaced this piece.
+///
+/// Walks the candidates for the misplaced key as the placement probe does: a piece
+/// released with its import is stepped past, any other deletion is the answer, and
+/// the first absent key ends the walk.
+fn misread_deletion(journal: &Path, old: &TileSlice) -> Result<Option<String>, StravaError> {
+    let unreadable = |key: &str, detail: String| StravaError::ProbeUnreadable {
+        day: old.natural_day.clone(),
+        key: key.to_owned(),
+        detail,
+    };
+    let candidates = segment_key_candidates(&old.natural_key)
+        .map_err(|e| unreadable(&old.natural_key, e.to_string()))?;
+    for cand in candidates {
+        let dir = journal
+            .join("chronicle")
+            .join(&old.natural_day)
+            .join("import.strava")
+            .join(&cand);
+        match fs::symlink_metadata(&dir) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(unreadable(&cand, e.to_string())),
+        }
+        if owner_deleted(&dir).map_err(|e| unreadable(&cand, e.to_string()))?
+            && !released_with_import(&dir).map_err(|detail| unreadable(&cand, detail))?
+        {
+            return Ok(Some(cand));
+        }
+    }
+    Ok(None)
 }
 
 pub fn place(
@@ -1441,6 +1492,7 @@ pub fn place(
         ..Default::default()
     };
 
+    let mut release: Vec<PlannedTilePublication> = Vec::new();
     let mut claimed_keys: HashSet<(String, String)> = HashSet::new();
     let mut checked_owner_deleted_probe: HashSet<(String, String)> = HashSet::new();
 
@@ -1482,10 +1534,10 @@ pub fn place(
                         slice: TileSlice {
                             index: t.index,
                             start: t.workout_start.unwrap_or_else(|| {
-                                default_zone.from_utc_datetime(&workout.local_start)
+                                default_zone.from_utc_datetime(&workout.start_utc)
                             }),
                             end: t.workout_start.unwrap_or_else(|| {
-                                default_zone.from_utc_datetime(&workout.local_start)
+                                default_zone.from_utc_datetime(&workout.start_utc)
                             }),
                             seconds: 300,
                             natural_day: t.day.clone(),
@@ -1520,6 +1572,47 @@ pub fn place(
             .filter(|t| t.activity_id == workout.activity_id)
             .collect();
 
+        // An earlier version read the row's UTC date as wall time in the zone, so it
+        // placed this workout at the wrong time. Release those tiles; the workout is
+        // placed again at the right time below.
+        let misread_start = workout
+            .misread_start_in(workout_zone)
+            .map(|dt| dt.timestamp());
+        let right_start = workout.start_in(workout_zone).map(|dt| dt.timestamp());
+        let misplaced = !canonical_tiles.is_empty()
+            && misread_start != right_start
+            && canonical_tiles
+                .iter()
+                .all(|t| t.workout_start.map(|dt| dt.timestamp()) == misread_start);
+        if misplaced {
+            for t in inventory.iter().filter(|t| {
+                t.activity_id == workout.activity_id
+                    && t.workout_start.map(|dt| dt.timestamp()) == misread_start
+            }) {
+                release.push(PlannedTilePublication {
+                    day: t.day.clone(),
+                    segment: t.key.clone(),
+                });
+            }
+        }
+        let canonical_tiles: Vec<&LiveTile> = if misplaced {
+            Vec::new()
+        } else {
+            canonical_tiles
+        };
+
+        // What an earlier version recorded for a workout the owner deleted sits at the
+        // key it misplaced it to. Read those keys too, or the right key looks free and
+        // importing the same download again brings the workout back.
+        let misread_slices: Vec<TileSlice> = if canonical_tiles.is_empty() && !misplaced {
+            workout
+                .misread_start_in(workout_zone)
+                .map(|start| tile_from(start, workout.elapsed_seconds))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
         if !canonical_tiles.is_empty() {
             let timing_changed = canonical_tiles.iter().any(|t| {
                 let workout_start_instant = workout.start_in(workout_zone).map(|dt| dt.timestamp());
@@ -1538,10 +1631,10 @@ pub fn place(
                         slice: TileSlice {
                             index: t.index,
                             start: t.workout_start.unwrap_or_else(|| {
-                                workout_zone.from_utc_datetime(&workout.local_start)
+                                workout_zone.from_utc_datetime(&workout.start_utc)
                             }),
                             end: t.workout_start.unwrap_or_else(|| {
-                                workout_zone.from_utc_datetime(&workout.local_start)
+                                workout_zone.from_utc_datetime(&workout.start_utc)
                             }),
                             seconds: 300,
                             natural_day: t.day.clone(),
@@ -1571,7 +1664,11 @@ pub fn place(
         let mut all_indices_live = true;
 
         for slice in slices {
-            let canon = canonical_tiles_by_identity.get(&(workout.activity_id, slice.index));
+            let canon = if misplaced {
+                None
+            } else {
+                canonical_tiles_by_identity.get(&(workout.activity_id, slice.index))
+            };
             if let Some(stored) = canon {
                 let json_matches = {
                     let w = stored.full_workout_json.get("workout");
@@ -1705,6 +1802,23 @@ pub fn place(
                 };
 
                 let mut placed_candidate = None;
+                if let Some(old) = misread_slices.get(slice.index)
+                    && (old.natural_day != slice.natural_day
+                        || old.natural_key != slice.natural_key)
+                    && let Some(segment) = misread_deletion(journal, old)?
+                {
+                    placed_candidate = Some(TileAction::StayedDeleted {
+                        day: old.natural_day.clone(),
+                        segment,
+                        activity_id: workout.activity_id,
+                        slice: slice.clone(),
+                    });
+                }
+                let candidates = if placed_candidate.is_some() {
+                    Vec::new()
+                } else {
+                    candidates
+                };
                 for cand in candidates {
                     let cand_dir = journal
                         .join("chronicle")
@@ -1861,7 +1975,10 @@ pub fn place(
 
         if all_indices_live {
             counts.complete_workouts += 1;
-            if !had_canonical_before {
+            if misplaced {
+                counts.replaced_workouts += 1;
+                dispositions.insert(workout.activity_id, WorkoutDisposition::Replaced);
+            } else if !had_canonical_before {
                 counts.new_workouts += 1;
                 dispositions.insert(workout.activity_id, WorkoutDisposition::New);
             } else if had_created_in_workout {
@@ -1884,6 +2001,9 @@ pub fn place(
                     counts.present_unchanged += 1;
                     dispositions.insert(workout.activity_id, WorkoutDisposition::PresentUnchanged);
                 }
+            } else if misplaced {
+                counts.replaced_workouts += 1;
+                dispositions.insert(workout.activity_id, WorkoutDisposition::Replaced);
             } else {
                 if !had_created_in_workout && had_stayed_deleted_in_workout {
                     counts.deleted += 1;
@@ -1895,6 +2015,7 @@ pub fn place(
 
     Ok(Placement {
         zone: default_zone,
+        release,
         tiles: tile_actions,
         publish: publish_list,
         counts,
@@ -2117,6 +2238,20 @@ pub fn reconcile_written(
                     }
                     continue;
                 }
+                WorkoutDisposition::Replaced => {
+                    counts.replaced_workouts += 1;
+                    let states = workout_tile_states.get(&workout.activity_id);
+                    let total_slices = workout.elapsed_seconds.max(1).div_ceil(300) as usize;
+                    let is_complete = states.is_some_and(|s| {
+                        s.len() == total_slices && s.iter().all(|(_, st)| *st == "created")
+                    });
+                    if is_complete {
+                        counts.complete_workouts += 1;
+                    } else {
+                        counts.incomplete_workouts += 1;
+                    }
+                    continue;
+                }
                 WorkoutDisposition::ZoneConflict => {
                     counts.zone_conflict += 1;
                     let states = workout_tile_states.get(&workout.activity_id);
@@ -2330,7 +2465,7 @@ pub fn format_count_summary(counts: &PlacementCounts) -> String {
         + counts.present_timing_changed
         + counts.zone_conflict;
 
-    format!(
+    let mut summary = format!(
         "new={} tiles_to_create={} present={} stayed_deleted={} created={} updated={} unchanged={} no_free_key={} duplicate_identity={} republished={} marker_missing_in_chain={} present_unchanged={} present_updated={} present_completed={} present_timing_changed={} deleted={} zone_conflict={} complete={} incomplete={}",
         counts.new_workouts,
         counts.tiles_to_create,
@@ -2351,7 +2486,11 @@ pub fn format_count_summary(counts: &PlacementCounts) -> String {
         counts.zone_conflict,
         counts.complete_workouts,
         counts.incomplete_workouts,
-    )
+    );
+    if counts.replaced_workouts > 0 {
+        summary.push_str(&format!(" replaced={}", counts.replaced_workouts));
+    }
+    summary
 }
 
 #[cfg(test)]
@@ -2549,7 +2688,7 @@ mod tests {
         assert!(!w_en.entered_by_hand);
 
         assert_eq!(w_de.activity_id, 12345);
-        assert_eq!(w_de.local_start, w_en.local_start);
+        assert_eq!(w_de.start_utc, w_en.start_utc);
         assert_eq!(w_de.distance_meters, Some(5000.0));
     }
 
@@ -2679,13 +2818,13 @@ mod tests {
 
     #[test]
     fn test_tiler_durations_and_zero_rounding() {
-        let local_start = NaiveDate::from_ymd_opt(2026, 3, 5)
+        let start_utc = NaiveDate::from_ymd_opt(2026, 3, 5)
             .unwrap()
             .and_hms_opt(10, 0, 0)
             .unwrap();
         let w_3600 = StravaWorkout {
             activity_id: 1,
-            local_start,
+            start_utc,
             activity_name: "Run 3600".to_owned(),
             activity_type: "Run".to_owned(),
             elapsed_seconds: 3600,
@@ -2731,7 +2870,7 @@ mod tests {
             .and_hms_opt(23, 58, 0)
             .unwrap();
         let w_midnight = StravaWorkout {
-            local_start: midnight_start,
+            start_utc: midnight_start,
             elapsed_seconds: 600,
             ..w_3600.clone()
         };
@@ -2747,12 +2886,12 @@ mod tests {
     fn test_tiler_dst_fall_back_denver_oracle() {
         let start = NaiveDate::from_ymd_opt(2026, 11, 1)
             .unwrap()
-            .and_hms_opt(1, 30, 0)
+            .and_hms_opt(7, 30, 0)
             .unwrap();
         let denver = chrono_tz::America::Denver;
         let w = StravaWorkout {
             activity_id: 999,
-            local_start: start,
+            start_utc: start,
             activity_name: "Fall Back".to_owned(),
             activity_type: "Run".to_owned(),
             elapsed_seconds: 5400,
@@ -2929,13 +3068,13 @@ mod tests {
 
     #[test]
     fn test_format_workout_tile_timestamp_has_no_fractional_seconds() {
-        let local_start = NaiveDate::from_ymd_opt(2026, 3, 5)
+        let start_utc = NaiveDate::from_ymd_opt(2026, 3, 5)
             .unwrap()
             .and_hms_opt(10, 0, 0)
             .unwrap();
         let w = StravaWorkout {
             activity_id: 42,
-            local_start,
+            start_utc,
             activity_name: "Test Run".to_owned(),
             activity_type: "Run".to_owned(),
             elapsed_seconds: 300,
@@ -2951,7 +3090,7 @@ mod tests {
             entered_by_hand: false,
             strava_fields: BTreeMap::new(),
         };
-        let start = Tz::UTC.from_utc_datetime(&local_start);
+        let start = Tz::UTC.from_utc_datetime(&start_utc);
         let end = start + Duration::seconds(300);
         let json_str =
             format_workout_tile("20260305_120000", 42, "UTC", 1, 1, &start, &end, 300, &w);
@@ -3343,15 +3482,15 @@ mod tests {
         let res = read_workouts(&p, DEFAULT_LIST_CAP).unwrap();
         assert_eq!(res.workouts.len(), 3);
         assert_eq!(
-            res.workouts[0].local_start,
+            res.workouts[0].start_utc,
             NaiveDate::from_ymd_opt(2026, 9, 20)
                 .unwrap()
                 .and_hms_opt(14, 12, 12)
                 .unwrap()
         );
-        assert_eq!(res.workouts[0].local_start, res.workouts[1].local_start);
+        assert_eq!(res.workouts[0].start_utc, res.workouts[1].start_utc);
         assert_eq!(
-            res.workouts[2].local_start,
+            res.workouts[2].start_utc,
             NaiveDate::from_ymd_opt(2024, 5, 22)
                 .unwrap()
                 .and_hms_opt(8, 19, 26)
@@ -3373,7 +3512,7 @@ mod tests {
         let res_de = read_workouts(&p_de, DEFAULT_LIST_CAP).unwrap();
         assert_eq!(res_de.workouts.len(), 1);
         assert_eq!(
-            res_de.workouts[0].local_start,
+            res_de.workouts[0].start_utc,
             NaiveDate::from_ymd_opt(2024, 4, 2)
                 .unwrap()
                 .and_hms_opt(14, 5, 15)
@@ -3390,9 +3529,9 @@ mod tests {
         // In Denver (UTC-7): 2026-03-04 23:30:00 -> day 20260304 key 233000
         let w_denver = StravaWorkout {
             activity_id: 1,
-            local_start: NaiveDate::from_ymd_opt(2026, 3, 4)
+            start_utc: NaiveDate::from_ymd_opt(2026, 3, 5)
                 .unwrap()
-                .and_hms_opt(23, 30, 0)
+                .and_hms_opt(6, 30, 0)
                 .unwrap(),
             activity_name: "Denver Wall".to_owned(),
             activity_type: "Run".to_owned(),
@@ -3417,9 +3556,9 @@ mod tests {
         // In Tokyo (UTC+9): 2026-03-05 15:30:00 -> day 20260305 key 153000
         let w_tokyo = StravaWorkout {
             activity_id: 2,
-            local_start: NaiveDate::from_ymd_opt(2026, 3, 5)
+            start_utc: NaiveDate::from_ymd_opt(2026, 3, 5)
                 .unwrap()
-                .and_hms_opt(15, 30, 0)
+                .and_hms_opt(6, 30, 0)
                 .unwrap(),
             activity_name: "Tokyo Wall".to_owned(),
             activity_type: "Run".to_owned(),
@@ -3546,11 +3685,11 @@ mod tests {
             total_expected_tiles += tile_count;
 
             let cur_date = base_date + Duration::days((i % 100) as i64);
-            let local_start = cur_date.and_hms_opt(7, 0, 0).unwrap();
+            let start_utc = cur_date.and_hms_opt(7, 0, 0).unwrap();
 
             workouts.push(StravaWorkout {
                 activity_id: 1000 + i as u64,
-                local_start,
+                start_utc,
                 activity_name: format!("Workout {i}"),
                 activity_type: "Run".to_owned(),
                 elapsed_seconds,

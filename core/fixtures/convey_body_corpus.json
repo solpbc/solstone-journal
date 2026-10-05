@@ -141,11 +141,11 @@
         "why": "body date shell"
       },
       {
-        "body_bytes": 17780,
+        "body_bytes": 17763,
         "body_omitted_fields": [
           "freshness"
         ],
-        "body_sha256": "ac312e02e83a7eed4dcc53c63e584a184d572dea8fb79f64c04f5cc7b62abf75",
+        "body_sha256": "ddc120dc1ad9dc38acbb6d4713fd3c3b4c0ff4e406b7d74a3a4d31d243cefb68",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_status",
@@ -829,7 +829,7 @@
             "recent_days": [
               {
                 "day": "20260801",
-                "glucose_label": "91\u2013112 mg/dL \u00b7 avg 101.2",
+                "glucose_label": "91\u2013112 mg/dL",
                 "label": "Aug 1",
                 "sleep_duration": "8h 00m",
                 "sleep_in_bed": null,
@@ -1405,8 +1405,8 @@
         "why": "body archive status"
       },
       {
-        "body_bytes": 4327,
-        "body_sha256": "c60b1cb834b3737bb8ae80a00e50755375b319717b194f5221a17f63e4f8729c",
+        "body_bytes": 4310,
+        "body_sha256": "d82d5eeb488bfa8e082fa1b37f195fbb7080775a6fc92b9b46c123a7042cc89e",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_recent",
@@ -1414,7 +1414,7 @@
           "days": [
             {
               "day": "20260801",
-              "glucose_label": "91\u2013112 mg/dL \u00b7 avg 101.2",
+              "glucose_label": "91\u2013112 mg/dL",
               "label": "Aug 1",
               "sleep_duration": "8h 00m",
               "sleep_in_bed": null,
@@ -1703,8 +1703,8 @@
         "why": "recent carousel cap over a populated archive"
       },
       {
-        "body_bytes": 5813,
-        "body_sha256": "3dc2538540f3046f04e9406c849d2eefe9101b66f414235002a1175ca2c24514",
+        "body_bytes": 5553,
+        "body_sha256": "560912209dd468702a7ab71142b6aaad8ec6e67428fb2bc1146b7df2e10a581c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_day",
@@ -1825,7 +1825,6 @@
           "glucose": {
             "count": 4,
             "max": 112.0,
-            "mean": 101.25,
             "min": 91.0,
             "unit": "mg/dL"
           },
@@ -1834,8 +1833,6 @@
               "count": 4,
               "count_label": "4",
               "max": 112.0,
-              "mean": 101.25,
-              "mean_label": "101.2",
               "min": 91.0,
               "points": [
                 [
@@ -2075,11 +2072,6 @@
               }
             ]
           },
-          "prompts": [
-            "How did my body on August 1, 2026 compare with nearby days?",
-            "What was on my calendar during the glucose peak on August 1, 2026?",
-            "What happened in my journal after the workouts on August 1, 2026?"
-          ],
           "recovery": {
             "contributors": [
               {
@@ -3896,11 +3888,11 @@
         "why": "body date shell"
       },
       {
-        "body_bytes": 17780,
+        "body_bytes": 17763,
         "body_omitted_fields": [
           "freshness"
         ],
-        "body_sha256": "ac312e02e83a7eed4dcc53c63e584a184d572dea8fb79f64c04f5cc7b62abf75",
+        "body_sha256": "ddc120dc1ad9dc38acbb6d4713fd3c3b4c0ff4e406b7d74a3a4d31d243cefb68",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_status",
@@ -4584,7 +4576,7 @@
             "recent_days": [
               {
                 "day": "20260801",
-                "glucose_label": "91\u2013112 mg/dL \u00b7 avg 101.2",
+                "glucose_label": "91\u2013112 mg/dL",
                 "label": "Aug 1",
                 "sleep_duration": "8h 00m",
                 "sleep_in_bed": null,
@@ -5160,8 +5152,8 @@
         "why": "body archive status"
       },
       {
-        "body_bytes": 4327,
-        "body_sha256": "c60b1cb834b3737bb8ae80a00e50755375b319717b194f5221a17f63e4f8729c",
+        "body_bytes": 4310,
+        "body_sha256": "d82d5eeb488bfa8e082fa1b37f195fbb7080775a6fc92b9b46c123a7042cc89e",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_recent",
@@ -5169,7 +5161,7 @@
           "days": [
             {
               "day": "20260801",
-              "glucose_label": "91\u2013112 mg/dL \u00b7 avg 101.2",
+              "glucose_label": "91\u2013112 mg/dL",
               "label": "Aug 1",
               "sleep_duration": "8h 00m",
               "sleep_in_bed": null,
@@ -5458,8 +5450,8 @@
         "why": "recent carousel cap over a populated archive"
       },
       {
-        "body_bytes": 6075,
-        "body_sha256": "1637daa21afd1fb9f3aa325918826fae578afa5aae30cd350fc1d37cc79fb389",
+        "body_bytes": 5553,
+        "body_sha256": "560912209dd468702a7ab71142b6aaad8ec6e67428fb2bc1146b7df2e10a581c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_day",
@@ -5580,7 +5572,6 @@
           "glucose": {
             "count": 4,
             "max": 112.0,
-            "mean": 101.25,
             "min": 91.0,
             "unit": "mg/dL"
           },
@@ -5589,8 +5580,6 @@
               "count": 4,
               "count_label": "4",
               "max": 112.0,
-              "mean": 101.25,
-              "mean_label": "101.2",
               "min": 91.0,
               "points": [
                 [
@@ -5648,8 +5637,6 @@
                 "count": 1,
                 "count_label": "1",
                 "label": "resting heart rate",
-                "typical": "54 bpm",
-                "typical_label": "your 90-day median 54 bpm",
                 "value": "58 bpm"
               }
             ],
@@ -5832,11 +5819,6 @@
               }
             ]
           },
-          "prompts": [
-            "How did my body on August 1, 2026 compare with nearby days?",
-            "What was on my calendar during the glucose peak on August 1, 2026?",
-            "What happened in my journal after the workouts on August 1, 2026?"
-          ],
           "recovery": {
             "contributors": [
               {
@@ -5852,16 +5834,12 @@
               {
                 "detail": "82 \u00b7 Oura's score",
                 "label": "readiness",
-                "line": "Readiness 82 \u00b7 Oura's score",
-                "typical": "75",
-                "typical_label": "your 90-day median 75"
+                "line": "Readiness 82 \u00b7 Oura's score"
               }
             ]
           },
           "sleep": {
             "asleep_duration": "8h 00m",
-            "asleep_typical": "8h 00m",
-            "asleep_typical_label": "your 90-day median 8h 00m",
             "bar": {
               "segments": [
                 {
@@ -5893,8 +5871,6 @@
             "other_sources": [],
             "score_contributors": [],
             "score_line": "Sleep score 84 \u00b7 Oura's score",
-            "score_typical": "82",
-            "score_typical_label": "your 90-day median 82",
             "source": "Oura (API)",
             "window": "11:00 PM \u2013 7:00 AM"
           },
@@ -7583,8 +7559,8 @@
         "why": "August date-nav month counts"
       },
       {
-        "body_bytes": 11440,
-        "body_sha256": "98ec993d9f6531595ba2aa832913cc0f154de3c94ed8349fd79e94b7f6e640b2",
+        "body_bytes": 11275,
+        "body_sha256": "65ae421a29b8b6511407fab993090218d1063f01a2467eff0e834db227c333a6",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_trends",
@@ -9872,22 +9848,6 @@
               "key": "body_mass",
               "label": "body mass",
               "unit_label": "lb"
-            },
-            {
-              "coverage": {
-                "days": 1,
-                "first_day": "20260801",
-                "last_day": "20260801"
-              },
-              "daily": [
-                [
-                  "20260801",
-                  101.2
-                ]
-              ],
-              "key": "glucose_avg",
-              "label": "glucose average",
-              "unit_label": "mg/dL"
             }
           ],
           "warming": false
@@ -10360,8 +10320,8 @@
         "why": "torn status"
       },
       {
-        "body_bytes": 5803,
-        "body_sha256": "d2bd4d395802c1a684886747a9e50e2252d7d50e9df45d84b518340bbce91688",
+        "body_bytes": 5543,
+        "body_sha256": "8a8c4ed223ecf14a3901ddba0be3377d20461ba0d5243cd5786a66d9dcd7fdfd",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_day",
@@ -10482,7 +10442,6 @@
           "glucose": {
             "count": 4,
             "max": 112.0,
-            "mean": 101.25,
             "min": 91.0,
             "unit": "mg/dL"
           },
@@ -10491,8 +10450,6 @@
               "count": 4,
               "count_label": "4",
               "max": 112.0,
-              "mean": 101.25,
-              "mean_label": "101.2",
               "min": 91.0,
               "points": [
                 [
@@ -10732,11 +10689,6 @@
               }
             ]
           },
-          "prompts": [
-            "How did my body on August 1, 2026 compare with nearby days?",
-            "What was on my calendar during the glucose peak on August 1, 2026?",
-            "What happened in my journal after the workouts on August 1, 2026?"
-          ],
           "recovery": {
             "contributors": [
               {
@@ -11581,6 +11533,18 @@
       ],
       "store_state": "torn_db_unreadable: bundle manifests claim rows and imports/health-dedupe.sqlite exists, but health_dedupe is unreadable.",
       "why": "The reference exposes its shared SQL failure as an internal error, while native converts the claimed unreadable aggregate into a typed safe-unavailability response."
+    },
+    {
+      "native": "The day payload carries no glucose mean or mean_label, no 90-day median (typical, typical_label, score_typical, asleep_typical and their labels) and no prompts; running and walking dynamics summaries give the held range without an average; the heart curve draws each five-minute bucket's latest reading instead of the bucket median; status recent_days glucose_label is the held range only; the trends payload has no glucose_avg signal.",
+      "reference": "The recorded reference computed a glucose mean, 90-day medians over trend signals, a daily glucose average, running-dynamics averages, a median heart curve and question-shaped prompts.",
+      "routes": [
+        "/app/body/api/day/{day}",
+        "/app/body/api/status",
+        "/app/body/api/recent",
+        "/app/body/api/trends"
+      ],
+      "store_state": "Every populated phase.",
+      "why": "The body app shows what the journal holds and never interprets it. Every number is a held value attributed to its source or a fact about the record; nothing is computed from body values to characterize the owner. The recorded cases were updated in place to the native payloads."
     }
   ],
   "normalization_contract": {

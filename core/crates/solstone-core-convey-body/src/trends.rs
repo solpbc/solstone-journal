@@ -7,10 +7,12 @@
 //! `health-dedupe.sqlite` database and WAL signature. Native follows that
 //! behaviour, so changing normalized shards without changing that database
 //! intentionally leaves a stale payload. The shared signature is also the
-//! day-page baseline lookup's compatibility seam, so widening it here would
-//! diverge from the reference. A later wave must record this divergence in the
-//! corpus generator's `native_deviations`; this wave leaves the frozen fixture
-//! unchanged.
+//! aggregate stats cache's seam, so widening it here would diverge from the
+//! reference.
+//!
+//! Every daily value is one the journal holds (a source's latest, the ring's
+//! lowest, a sleep span, a step total). Nothing here averages, smooths or
+//! compares body values over time.
 //!
 //! One Convey process serves one journal root, so its warm flight is deliberately
 //! process-global rather than per-journal. The signature is captured before the
@@ -44,11 +46,8 @@ thread_local! {
     static TRENDS_WARM_INVOCATIONS: Cell<u64> = const { Cell::new(0) };
 }
 
-pub const TYPICAL_BASELINE_DAYS: i64 = 90;
-pub const TYPICAL_MIN_VALUES: usize = 14;
-const TYPICAL_SIGNAL_KEYS: [&str; 4] = ["readiness", "sleep_score", "asleep_minutes", "resting_hr"];
 const TREND_ANNOTATION_LIMIT: usize = 6;
-const TREND_SIGNALS: [(&str, &str, &str); 10] = [
+const TREND_SIGNALS: [(&str, &str, &str); 9] = [
     ("resting_hr", "resting heart rate", "bpm"),
     ("vascular_age", "vascular age", ""),
     ("asleep_minutes", "asleep", "h"),
@@ -58,22 +57,12 @@ const TREND_SIGNALS: [(&str, &str, &str); 10] = [
     ("stress_high_minutes", "daytime stress high", "h"),
     ("steps", "steps", "steps"),
     ("body_mass", "body mass", "lb"),
-    ("glucose_avg", "glucose average", "mg/dL"),
 ];
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TrendValue {
     Integer(i64),
     Real(f64),
-}
-
-impl TrendValue {
-    fn as_f64(&self) -> f64 {
-        match self {
-            Self::Integer(value) => *value as f64,
-            Self::Real(value) => *value,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -315,45 +304,6 @@ fn signal_json(signal: &TrendSignal) -> Value {
     json!({"key": signal.key, "label": signal.label, "unit_label": signal.unit_label, "daily": signal.daily.iter().map(|(day,value)| match value { TrendValue::Integer(value) => json!([day,value]), TrendValue::Real(value) => json!([day,value]) }).collect::<Vec<_>>(), "coverage": {"first_day": signal.coverage.first_day, "last_day": signal.coverage.last_day, "days": signal.coverage.days}})
 }
 
-pub fn typical_by_signal(payload: Option<&TrendsPayload>, day: &str) -> BTreeMap<String, f64> {
-    let Some(payload) = payload else {
-        return BTreeMap::new();
-    };
-    let Ok(day) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
-        return BTreeMap::new();
-    };
-    let start = (day - Duration::days(TYPICAL_BASELINE_DAYS))
-        .format("%Y%m%d")
-        .to_string();
-    let day = day.format("%Y%m%d").to_string();
-    let mut typical = BTreeMap::new();
-    for signal in &payload.signals {
-        if !TYPICAL_SIGNAL_KEYS.contains(&signal.key.as_str()) {
-            continue;
-        }
-        let mut values = signal
-            .daily
-            .iter()
-            .filter(|(value_day, _)| {
-                start.as_str() <= value_day.as_str() && value_day.as_str() < day.as_str()
-            })
-            .map(|(_, value)| value.as_f64())
-            .collect::<Vec<_>>();
-        if values.len() < TYPICAL_MIN_VALUES {
-            continue;
-        }
-        values.sort_by(f64::total_cmp);
-        let middle = values.len() / 2;
-        let median = if values.len().is_multiple_of(2) {
-            (values[middle - 1] + values[middle]) / 2.0
-        } else {
-            values[middle]
-        };
-        typical.insert(signal.key.clone(), median);
-    }
-    typical
-}
-
 pub(crate) fn build_trends_payload(root: &Path) -> Result<TrendsPayload, TrendsFoldError> {
     build_trends_payload_at(root, Utc::now())
 }
@@ -364,7 +314,6 @@ pub(crate) fn build_trends_payload_at(
 ) -> Result<TrendsPayload, TrendsFoldError> {
     let mut latest = BTreeMap::<&str, BTreeMap<String, (String, f64)>>::new();
     let mut steps = BTreeMap::<String, i64>::new();
-    let mut glucose = BTreeMap::<String, (f64, u64)>::new();
     let mut ring_resting = BTreeMap::<String, f64>::new();
     let mut sleep_rows = SleepRows::new();
     let mut first_source = BTreeMap::<String, String>::new();
@@ -410,10 +359,7 @@ pub(crate) fn build_trends_payload_at(
                 } else if record.contains("StepCount") {
                     day_steps.push(row);
                 } else if is_glucose(record) {
-                    if let Some(value) = value_float(&row) {
-                        let entry = glucose.entry(day.clone()).or_insert((0.0, 0));
-                        entry.0 += value;
-                        entry.1 += 1;
+                    if value_float(&row).is_some() {
                         first_glucose = Some(
                             first_glucose.map_or(day.clone(), |old: String| old.min(day.clone())),
                         );
@@ -467,12 +413,6 @@ pub(crate) fn build_trends_payload_at(
             .entry("steps")
             .or_default()
             .insert(day, TrendValue::Integer(value));
-    }
-    for (day, (sum, count)) in glucose {
-        daily
-            .entry("glucose_avg")
-            .or_default()
-            .insert(day, TrendValue::Real(round_even(sum / count as f64, 1)));
     }
     let signals = TREND_SIGNALS
         .iter()
@@ -1322,72 +1262,9 @@ mod tests {
                 ("temp_deviation", "temperature deviation", "°C"),
                 ("stress_high_minutes", "daytime stress high", "h"),
                 ("steps", "steps", "steps"),
-                ("body_mass", "body mass", "lb"),
-                ("glucose_avg", "glucose average", "mg/dL")
+                ("body_mass", "body mass", "lb")
             ]
         );
-    }
-    #[test]
-    fn payload_shape_and_typical_filter_match_python_contract() {
-        let target = NaiveDate::from_ymd_opt(2024, 6, 1).unwrap();
-        let days_before = |count| {
-            (1..=count)
-                .map(|offset| {
-                    (
-                        (target - Duration::days(offset))
-                            .format("%Y%m%d")
-                            .to_string(),
-                        TrendValue::Real(offset as f64),
-                    )
-                })
-                .collect::<Vec<_>>()
-        };
-        let mut readiness = days_before(14);
-        readiness.push(("20240601".into(), TrendValue::Real(999.0)));
-        let signals = [
-            ("resting_hr", "bpm", days_before(5)),
-            ("vascular_age", "", days_before(14)),
-            ("asleep_minutes", "h", days_before(13)),
-            ("sleep_score", "", days_before(14)),
-            ("readiness", "", readiness),
-            ("temp_deviation", "°C", days_before(14)),
-            ("stress_high_minutes", "h", days_before(14)),
-            ("steps", "steps", days_before(14)),
-            ("body_mass", "lb", days_before(14)),
-            ("glucose_avg", "mg/dL", days_before(14)),
-        ]
-        .into_iter()
-        .map(|(key, unit_label, daily)| TrendSignal {
-            key: key.into(),
-            label: format!("{key} label"),
-            unit_label: unit_label.into(),
-            coverage: TrendCoverage {
-                first_day: daily.first().map_or(String::new(), |(day, _)| day.clone()),
-                last_day: daily.last().map_or(String::new(), |(day, _)| day.clone()),
-                days: daily.len(),
-            },
-            daily,
-        })
-        .collect::<Vec<_>>();
-        let payload = TrendsPayload {
-            signals,
-            annotations: vec![TrendAnnotation {
-                day: "20240501".into(),
-                label: "source begins".into(),
-            }],
-            generated_at_day: "20240601".into(),
-        };
-        assert_eq!(payload.signals.len(), 10);
-        assert_eq!(payload.signals[1].unit_label, "");
-        assert_eq!(payload.annotations[0].label, "source begins");
-        let typical = typical_by_signal(Some(&payload), "20240601");
-        assert_eq!(
-            typical.keys().cloned().collect::<Vec<_>>(),
-            ["readiness", "sleep_score"]
-        );
-        assert_eq!(typical["readiness"], 7.5);
-        assert!(!typical.contains_key("asleep_minutes"));
-        assert!(!typical.contains_key("vascular_age"));
     }
     #[test]
     fn trend_values_preserve_integer_steps() {
@@ -1447,8 +1324,8 @@ mod tests {
         );
         assert_python_bytes(
             &normalized(actual),
-            11_440,
-            "98ec993d9f6531595ba2aa832913cc0f154de3c94ed8349fd79e94b7f6e640b2",
+            11_275,
+            "65ae421a29b8b6511407fab993090218d1063f01a2467eff0e834db227c333a6",
         );
     }
 
@@ -1739,42 +1616,6 @@ mod tests {
                 ("20240106", "d data begins")
             ]
         );
-    }
-
-    #[test]
-    fn typical_threshold_window_and_supported_keys_match_contract() {
-        let target = NaiveDate::from_ymd_opt(2024, 6, 1).unwrap();
-        let days = |count| {
-            (0..count)
-                .map(|offset| {
-                    (
-                        (target - Duration::days(90 - offset))
-                            .format("%Y%m%d")
-                            .to_string(),
-                        TrendValue::Real((offset + 1) as f64),
-                    )
-                })
-                .collect::<Vec<_>>()
-        };
-        let at_13 = TrendsPayload {
-            signals: vec![signal("readiness", days(13))],
-            annotations: vec![],
-            generated_at_day: String::new(),
-        };
-        assert!(typical_by_signal(Some(&at_13), "20240601").is_empty());
-        let mut values = days(14);
-        values.push(("20240601".into(), TrendValue::Real(999.0)));
-        let payload = TrendsPayload {
-            signals: vec![
-                signal("readiness", values),
-                signal("vascular_age", days(14)),
-            ],
-            annotations: vec![],
-            generated_at_day: String::new(),
-        };
-        let typical = typical_by_signal(Some(&payload), "20240601");
-        assert_eq!(typical["readiness"], 7.5);
-        assert!(!typical.contains_key("vascular_age"));
     }
 
     #[test]

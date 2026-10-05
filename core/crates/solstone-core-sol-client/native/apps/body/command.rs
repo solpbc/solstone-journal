@@ -71,11 +71,10 @@ pub fn day(ctx: CommandContext<'_>) -> CommandOutput {
         format!("day: {}", string_field(object.get("day"), day_value)),
         format!("entries: {}", display_or_zero(object.get("entry_total"))),
         format!(
-            "glucose: count={} min={} max={} mean={} unit={}",
+            "glucose: count={} min={} max={} unit={}",
             display_or_zero(glucose.and_then(|item| item.get("count"))),
             display_value(glucose.and_then(|item| item.get("min"))),
             display_value(glucose.and_then(|item| item.get("max"))),
-            display_value(glucose.and_then(|item| item.get("mean"))),
             display_value(glucose.and_then(|item| item.get("unit"))),
         ),
     ])
