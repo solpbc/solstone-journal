@@ -633,4 +633,163 @@ mod tests {
             assert!(!event.contains_key("day"));
         }
     }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_tests {
+        use super::*;
+        use chrono::Utc;
+        use solstone_core_system_health::read_indexing_observations;
+
+        fn setup_utc_journal(journal: &Path) {
+            let config_dir = journal.join("config");
+            fs::create_dir_all(&config_dir).unwrap();
+            fs::write(
+                config_dir.join("journal.json"),
+                r#"{"identity":{"timezone":"UTC"}}"#,
+            )
+            .unwrap();
+        }
+
+        #[test]
+        fn handle_stdout_stamps_missing_ts_and_day_index_retains_attempts() {
+            let directory = tempdir().unwrap();
+            setup_utc_journal(directory.path());
+            let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+
+            let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
+                "use_id": "1760000000000",
+                "name": "daily",
+                "day": "20261005",
+                "ts": 1760000000000_i64,
+            }))
+            .unwrap();
+
+            let (active, identity) = store
+                .claim("daily", "1760000000000", &request)
+                .unwrap()
+                .unwrap();
+            let (spawn_tx, _) = mpsc::channel();
+            let (cancel_tx, _) = mpsc::channel();
+            let (outbound_tx, _) = mpsc::channel();
+            let state = CortexState::new(
+                CortexStore::new(directory.path().to_path_buf()).unwrap(),
+                spawn_tx,
+                cancel_tx,
+                outbound_tx,
+            );
+            let work = Work {
+                use_id: "1760000000000".into(),
+                talent_name: "daily".into(),
+                active: active.clone(),
+                identity: identity.clone(),
+                request: request.clone(),
+            };
+
+            // Line 1: index.attempt with NO ts (handle_stdout stamps now_ms)
+            handle_stdout(
+                &state,
+                &work,
+                r#"{"event":"index.attempt","path":"20261005/talents/flow.md","outcome":"failed","cause":"disk full","warnings":["w1"]}"#.into(),
+            );
+
+            let now = Utc::now();
+            let explicit_ts = (now - chrono::Duration::seconds(10)).timestamp_millis();
+            handle_stdout(
+                &state,
+                &work,
+                format!(
+                    r#"{{"event":"index.attempt","ts":{},"path":"20261005/talents/flow2.md","outcome":"indexed","warnings":[]}}"#,
+                    explicit_ts
+                ),
+            );
+
+            // Terminal error
+            handle_stdout(
+                &state,
+                &work,
+                r#"{"event":"error","error":"fatal error","terminal":true}"#.into(),
+            );
+
+            // Complete the use to write to day-index talents/20261005.jsonl
+            store.complete("1760000000000", "daily", identity, Some(&request));
+
+            let day_index_path = store.talents().join("20261005.jsonl");
+            assert!(day_index_path.exists());
+            let summary_text = fs::read_to_string(&day_index_path).unwrap();
+            let summary: Value = serde_json::from_str(summary_text.trim()).unwrap();
+            assert_eq!(summary["status"], "error");
+            assert_eq!(summary["index_attempts"].as_array().unwrap().len(), 2);
+
+            let obs = read_indexing_observations(directory.path(), now);
+            assert_eq!(obs.outcomes.len(), 2);
+
+            let flow1 = obs
+                .outcomes
+                .iter()
+                .find(|o| o.identity == "20261005/talents/flow.md")
+                .unwrap();
+            assert_eq!(flow1.outcome, "failed");
+            assert_eq!(flow1.cause.as_deref(), Some("disk full"));
+            assert_eq!(flow1.warnings, vec!["w1".to_string()]);
+            assert_eq!(
+                flow1.ts,
+                summary["index_attempts"][0]["ts"].as_i64().unwrap()
+            );
+            assert_ne!(flow1.ts, summary["ts"].as_i64().unwrap());
+
+            let flow2 = obs
+                .outcomes
+                .iter()
+                .find(|o| o.identity == "20261005/talents/flow2.md")
+                .unwrap();
+            assert_eq!(flow2.outcome, "indexed");
+            assert_eq!(flow2.ts, explicit_ts);
+
+            // Rewrite only the summary object's outer ts and assert observation does not change
+            let mut modified_summary = summary.clone();
+            modified_summary["ts"] = Value::from(1000_i64);
+            fs::write(&day_index_path, format!("{}\n", modified_summary)).unwrap();
+
+            let obs_after = read_indexing_observations(directory.path(), now);
+            assert_eq!(obs_after.outcomes, obs.outcomes);
+
+            // Second use whose request ts and summary filename day are outside window,
+            // with attempt ts inside window, going through handle_stdout and complete
+            let old_request: Map<String, Value> = serde_json::from_value(serde_json::json!({
+                "use_id": "1000",
+                "name": "daily",
+                "day": "19700101",
+                "ts": 1000_i64,
+            }))
+            .unwrap();
+            let (old_active, old_identity) =
+                store.claim("daily", "1000", &old_request).unwrap().unwrap();
+            let old_work = Work {
+                use_id: "1000".into(),
+                talent_name: "daily".into(),
+                active: old_active,
+                identity: old_identity.clone(),
+                request: old_request.clone(),
+            };
+            let old_attempt_ts = (now - chrono::Duration::seconds(5)).timestamp_millis();
+            handle_stdout(
+                &state,
+                &old_work,
+                format!(
+                    r#"{{"event":"index.attempt","ts":{},"path":"20261005/talents/flow3.md","outcome":"failed","cause":"in window attempt","warnings":[]}}"#,
+                    old_attempt_ts
+                ),
+            );
+            handle_stdout(&state, &old_work, r#"{"event":"finish","ts":2000}"#.into());
+            store.complete("1000", "daily", old_identity, Some(&old_request));
+
+            let obs_with_old = read_indexing_observations(directory.path(), now);
+            let flow3 = obs_with_old
+                .outcomes
+                .iter()
+                .find(|o| o.identity == "20261005/talents/flow3.md");
+            assert!(flow3.is_some());
+            assert_eq!(flow3.unwrap().outcome, "failed");
+        }
+    }
 }

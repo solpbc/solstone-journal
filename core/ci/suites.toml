@@ -503,8 +503,9 @@ areas = ["services"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-cortex-client"
@@ -720,8 +721,9 @@ platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 serial_group = "local-services"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-home"

@@ -755,6 +755,8 @@ fn validate(
 mod tests {
     mod activity_lifecycle;
     mod activity_recovery;
+    #[cfg(feature = "full-tests")]
+    mod search_indexing_observations;
     mod segment_publication;
     use std::cell::Cell;
     use std::collections::BTreeSet;

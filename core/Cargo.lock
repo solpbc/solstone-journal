@@ -3960,6 +3960,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-spp-ratls",
  "solstone-core-system",
+ "solstone-core-system-health",
  "solstone-core-talent-cli",
  "tempfile",
  "thiserror 2.0.20",
@@ -5525,6 +5526,7 @@ name = "solstone-core-system-health"
 version = "2.0.33"
 dependencies = [
  "chrono",
+ "log",
  "regex",
  "serde",
  "serde_json",

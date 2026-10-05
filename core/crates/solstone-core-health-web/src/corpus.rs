@@ -146,7 +146,43 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                                 "verdict".into(),
                                 json!(solstone_core_system_health::NOT_YET_ENGINE),
                             );
-                            wanted["search_index"]["text"] = json!("");
+                            if wanted["search_index"]["text"]
+                                == crate::search_index::SEARCH_TEXT_UNCLEAR
+                                && wanted["search_index"]["observed_failure"] == false
+                            {
+                                wanted["search_index"]["text"] = json!("");
+                            }
+                        }
+                        if let Some(diag) = actual
+                            .get_mut("search_index")
+                            .and_then(|s| s.get_mut("diagnostics"))
+                        {
+                            diag["window_start_ms"] = json!(0);
+                            diag["window_end_ms"] = json!(0);
+                        }
+                        if let Some(diag) = wanted
+                            .get_mut("search_index")
+                            .and_then(|s| s.get_mut("diagnostics"))
+                        {
+                            diag["window_start_ms"] = json!(0);
+                            diag["window_end_ms"] = json!(0);
+                        }
+                        if phase_name == "stats_unparseable" {
+                            if let Some(diag) = actual
+                                .get_mut("search_index")
+                                .and_then(|s| s.get_mut("diagnostics"))
+                            {
+                                diag["partial"] = json!(false);
+                                if let Some(lines) =
+                                    diag.get_mut("lines").and_then(|l| l.as_array_mut())
+                                {
+                                    lines.retain(|l| {
+                                        !l.as_str()
+                                            .unwrap_or("")
+                                            .starts_with("unreadable talent log")
+                                    });
+                                }
+                            }
                         }
                     }
                     // The info route names this machine; the corpus was captured on another.

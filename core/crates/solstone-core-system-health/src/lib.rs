@@ -15,6 +15,7 @@ mod error;
 mod event;
 mod freshness;
 mod grep_compile;
+mod indexing_observation;
 mod loader;
 mod not_yet;
 mod progress;
@@ -55,6 +56,12 @@ pub use freshness::{
     parse_summary_time, select_unfinished_template, summary_freshness,
 };
 pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern, decimal_digit_value};
+pub use indexing_observation::{
+    IndexingAttemptObservation, IndexingDiagnostics, IndexingObservations,
+    LIMIT_TOKEN_FAILURES_NOT_RETAINED_PAST_HISTORY, LIMIT_TOKEN_PUBLICATION_NOT_CRASH_ATOMIC,
+    LIMIT_TOKEN_UNFINISHED_NO_DAY_INDEX, LIMIT_TOKEN_UNOBSERVED_OUTSIDE_DAYS,
+    indexing_window_bounds, normalize_indexing_identity, read_indexing_observations,
+};
 pub use loader::{
     BoundedStderr, STDERR_LIMIT, classify_loader_failure, read_bounded_stderr, unresolved_library,
 };

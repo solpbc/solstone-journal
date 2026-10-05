@@ -10,6 +10,7 @@ pub mod retention;
 pub mod scan;
 
 pub use classification::stored_chunk_facet_ids;
+pub use db::open_index_reader;
 pub use retention::RetentionIndex;
 pub use scan::{SavedPublicationAttempt, SavedPublicationOutcome, attempt_saved_publication};
 
