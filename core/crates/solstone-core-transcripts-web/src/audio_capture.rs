@@ -41,6 +41,12 @@ struct Source {
     statistics_available: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     statistics_complete: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generated_frames: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gap_count: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timeline_origin_seconds: Option<f64>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -63,6 +69,7 @@ struct Remix {
 #[derive(Deserialize)]
 struct Capture {
     version: u32,
+    timeline_version: Option<u32>,
     state: String,
     #[serde(default)]
     sources: Vec<Source>,
@@ -131,6 +138,7 @@ fn remix_valid(row: &Remix, allow_prior: bool) -> bool {
 
 fn capture_valid(capture: &Capture) -> bool {
     capture.version == 1
+        && capture.timeline_version.is_none_or(|version| version == 1)
         && state_rank(&capture.state).is_some()
         && capture.sources.len() <= SOURCE_LIMIT
         && capture.remix.len() <= SOURCE_LIMIT
@@ -155,6 +163,12 @@ fn capture_valid(capture: &Capture) -> bool {
                     || source.statistics_available == Some(true))
                 && source.accepted_frames <= source.received_frames
                 && source.dropped_frames <= source.received_frames
+                && source
+                    .timeline_origin_seconds
+                    .is_none_or(|origin| origin.is_finite() && origin == 0.0)
+                && (capture.timeline_version != Some(1)
+                    || (source.received_frames == 0 && source.generated_frames.unwrap_or(0) == 0)
+                    || source.timeline_origin_seconds == Some(0.0))
                 && failures_valid(&source.failures)
         })
         && capture.remix.iter().all(|row| remix_valid(row, true))
@@ -197,6 +211,8 @@ fn merge_statistics_flags(source: &mut Source, previous: &Source) {
             && candidate.received_frames >= other.received_frames
             && candidate.accepted_frames >= other.accepted_frames
             && candidate.dropped_frames >= other.dropped_frames
+            && candidate.generated_frames.unwrap_or(0) >= other.generated_frames.unwrap_or(0)
+            && candidate.gap_count.unwrap_or(0) >= other.gap_count.unwrap_or(0)
     };
     let old_covers = complete(previous, source);
     let new_covers = complete(source, previous);
@@ -218,6 +234,7 @@ fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
     let mut app_version = None;
     let mut app_build = None;
     let mut failures: Option<Vec<Failure>> = None;
+    let mut timeline_version = None;
     for value in values {
         seen = true;
         if value.to_string().len() > CAPTURE_BYTES_LIMIT {
@@ -237,6 +254,7 @@ fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
         }
         app_version = capture.app_version.or(app_version);
         app_build = capture.app_build.or(app_build);
+        timeline_version = capture.timeline_version.or(timeline_version);
         if let Some(incoming) = capture.failures {
             if !incoming.is_empty() && state_rank(&state) < state_rank("partial") {
                 state = "partial".to_owned();
@@ -258,6 +276,25 @@ fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
                 source.received_frames = source.received_frames.max(previous.received_frames);
                 source.accepted_frames = source.accepted_frames.max(previous.accepted_frames);
                 source.dropped_frames = source.dropped_frames.max(previous.dropped_frames);
+                if source.generated_frames.is_some() || previous.generated_frames.is_some() {
+                    source.generated_frames = Some(
+                        source
+                            .generated_frames
+                            .unwrap_or(0)
+                            .max(previous.generated_frames.unwrap_or(0)),
+                    );
+                }
+                if source.gap_count.is_some() || previous.gap_count.is_some() {
+                    source.gap_count = Some(
+                        source
+                            .gap_count
+                            .unwrap_or(0)
+                            .max(previous.gap_count.unwrap_or(0)),
+                    );
+                }
+                source.timeline_origin_seconds = source
+                    .timeline_origin_seconds
+                    .or(previous.timeline_origin_seconds);
                 if state_rank(&previous.state) > state_rank(&source.state) {
                     source.state = previous.state.clone();
                 }
@@ -301,6 +338,9 @@ fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
         "sources": sources.into_values().collect::<Vec<_>>(), "remix": remix.into_values().collect::<Vec<_>>() });
     if let Some(failures) = failures {
         result["failures"] = json!(failures);
+    }
+    if let Some(version) = timeline_version {
+        result["timeline_version"] = json!(version);
     }
     Some(result)
 }
@@ -474,6 +514,38 @@ mod tests {
         assert_eq!(result["failures"].as_array().unwrap().len(), 1);
         assert_eq!(result["failures"][0]["count"], 1);
         assert_eq!(warnings(&result, Utc::now()).len(), 1);
+    }
+    #[test]
+    fn timeline_origin_and_generated_pcm_survive_real_projection_and_duplicates() {
+        let first = fixture()["audio_capture"].clone();
+        let mut lower = first.clone();
+        lower["sources"][0]["generated_frames"] = json!(2400);
+        lower["sources"][0]["gap_count"] = json!(2);
+        lower["sources"][0]["statistics_complete"] = json!(false);
+        for values in [[&first, &lower], [&lower, &first]] {
+            let result = project(values.into_iter()).unwrap();
+            assert_eq!(result["timeline_version"], 1);
+            assert_eq!(result["sources"][1]["timeline_origin_seconds"], 0.0);
+            assert_eq!(result["sources"][1]["generated_frames"], 2400);
+            assert_eq!(result["sources"][1]["gap_count"], 2);
+            assert_eq!(result["sources"][1]["statistics_complete"], false);
+        }
+        let mut invalid = first.clone();
+        invalid["sources"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("timeline_origin_seconds");
+        assert_eq!(
+            project([&invalid].into_iter()).unwrap()["evidence_unavailable"],
+            true
+        );
+        let legacy = json!({"version": 1, "state": "finished", "sources": []});
+        assert!(
+            project([&legacy].into_iter())
+                .unwrap()
+                .get("timeline_version")
+                .is_none()
+        );
     }
     #[test]
     fn swift_emitted_capture_survives_duplicate_receipts_without_audio() {

@@ -21,6 +21,8 @@
             "stage" : "append"
           }
         ],
+        "gap_count" : 1,
+        "generated_frames" : 1200,
         "kind" : "system",
         "received_frames" : 1920,
         "source_id" : "system",
@@ -28,6 +30,7 @@
         "state" : "partial",
         "statistics_available" : true,
         "statistics_complete" : true,
+        "timeline_origin_seconds" : 0,
         "writer_status" : "completed"
       },
       {
@@ -53,6 +56,7 @@
       }
     ],
     "state" : "partial",
+    "timeline_version" : 1,
     "version" : 1
   }
 }

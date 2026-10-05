@@ -149,6 +149,14 @@
             "maxItems" : 16,
             "type" : "array"
           },
+          "gap_count" : {
+            "minimum" : 0,
+            "type" : "integer"
+          },
+          "generated_frames" : {
+            "minimum" : 0,
+            "type" : "integer"
+          },
           "kind" : {
             "enum" : [
               "system",
@@ -179,6 +187,9 @@
           },
           "statistics_complete" : {
             "type" : "boolean"
+          },
+          "timeline_origin_seconds" : {
+            "const" : 0
           },
           "writer_status" : {
             "enum" : [
@@ -216,6 +227,9 @@
         "interrupted",
         "unknown"
       ]
+    },
+    "timeline_version" : {
+      "const" : 1
     },
     "version" : {
       "const" : 1
