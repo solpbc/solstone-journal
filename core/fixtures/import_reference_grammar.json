@@ -23,7 +23,8 @@
       "image",
       "journal_archive",
       "apple_health",
-      "oura"
+      "oura",
+      "strava"
     ],
     "why_it_matters": "six importers claim *.zip, so insertion order decides which one receives an owner's archive. A hash-ordered native registry routes zips nondeterministically.",
     "patterns_claimed_by_more_than_one": {
@@ -96,6 +97,10 @@
     [
       "oura",
       "solstone.think.importers.oura"
+    ],
+    [
+      "strava",
+      "native"
     ]
   ],
   "importers": [
@@ -189,6 +194,15 @@
         "sleep.json"
       ],
       "description": "Preview Oura API v2 JSON documents (synthetic fixtures; save path is a later, gated phase)"
+    },
+    {
+      "name": "strava",
+      "display_name": "Strava",
+      "file_patterns": [
+        "*.zip",
+        "*.csv"
+      ],
+      "description": "Workouts from a Strava download (only its activities.csv is read)"
     }
   ],
   "syncable_registry_ordered": [

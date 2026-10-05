@@ -5,6 +5,16 @@ body data entering the journal. The filename is retained for links; `health` in
 owner-facing language means the journal system's health, while physiological
 records are body data.
 
+## Strava workouts
+
+Strava is the first body source an owner brings in from the import page (the **Strava** card), or with `solstone journal importer --source strava <download.zip | activities.csv>`.
+
+- **What is read:** only `activities.csv` at the root of the download. Photos, messages, the people you follow and every other file in the download are never opened. For each workout the journal keeps its type, name, start, elapsed and moving time, distance, elevation gain, heart rate, power, calories, and whether it was a commute or entered by hand. Descriptions, private notes, gear, weather and Strava's own scores are not kept. English and German downloads are read; any other language is refused with a message to switch Strava's language and download again.
+- **Where it lands:** each workout becomes pieces of up to five minutes under `chronicle/<day>/import.strava/`, from its start to its end, continuing past midnight. Each piece holds one `workout.json` with the workout's values. Body streams stay out of search, daily evidence and thinking.
+- **Time zone:** the download has no zone, so workouts are placed in the journal's zone at the first Strava import (kept in `imports/.strava-zone.json`), even if the journal's zone changes later.
+- **The download is not kept:** an upload is removed when its import ends.
+- **Deleting:** the body app deletes one workout (every piece, on every day it covers); a Strava import's own page deletes the whole import. A workout deleted on its own stays deleted when a download is imported again, unless its start time or length changed on Strava. A deleted import is released: importing the same download again brings its workouts back. Deletes don't reach copies made before them (encrypted backup, or wherever the journal folder was copied).
+
 ## current ownership
 
 Rust owns every production mutation in this lane:

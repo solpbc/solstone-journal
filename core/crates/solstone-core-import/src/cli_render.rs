@@ -86,6 +86,12 @@ pub const IMPORTERS: &[ImporterRow] = &[
         file_patterns: &["daily_sleep.json", "daily_readiness.json", "sleep.json"],
         description: "Preview Oura API v2 JSON documents (synthetic fixtures; save path is a later, gated phase)",
     },
+    ImporterRow {
+        name: "strava",
+        display_name: "Strava",
+        file_patterns: &["*.zip", "*.csv"],
+        description: "Workouts from a Strava download (only its activities.csv is read)",
+    },
 ];
 
 pub const BACKENDS: &[&str] = &["plaud", "obsidian", "audio", "oura"];

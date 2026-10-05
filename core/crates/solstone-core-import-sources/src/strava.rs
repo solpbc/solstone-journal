@@ -74,6 +74,22 @@ fn file_passes_csv_rule(path: &Path) -> bool {
     looks_like_strava_csv_bytes(&buf[..n])
 }
 
+/// Whether the importer reads this path as a Strava download: a zip with
+/// `activities.csv` at its root, or that CSV on its own. Narrower than the web
+/// doors' check, which also turns away a download nested one level down.
+pub fn claims_path(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    let Ok(file) = File::open(path) else {
+        return false;
+    };
+    if let Ok(archive) = zip::ZipArchive::new(file) {
+        return archive.file_names().any(|name| name == "activities.csv");
+    }
+    file_passes_csv_rule(path)
+}
+
 /// Check if a path points to a Strava export, activities CSV, or export directory.
 ///
 /// Any I/O or parse failure returns false.

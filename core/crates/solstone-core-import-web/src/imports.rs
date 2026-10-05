@@ -120,6 +120,16 @@ const SOURCES: &[SourceMetadata] = &[
         accept: ".png,.jpg,.jpeg,.webp,.gif",
     },
     SourceMetadata {
+        name: "strava",
+        display_name: "Strava",
+        icon: "activity",
+        description: "import your workouts from a Strava download",
+        input_type: "file",
+        upload_prompt: "upload your Strava download .zip, or just activities.csv from inside it",
+        has_guide: true,
+        accept: ".zip,.csv",
+    },
+    SourceMetadata {
         name: "quick",
         display_name: "quick import",
         icon: "zap",
