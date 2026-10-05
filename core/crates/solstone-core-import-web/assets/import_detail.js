@@ -575,11 +575,16 @@
         if (preview.ok) workouts = (await preview.json()).workouts;
       } catch (_) { /* the count is a courtesy; the delete still asks */ }
       button.setAttribute('data-confirming', '');
-      button.textContent = Number.isFinite(workouts) ? `delete ${workouts} ${workouts === 1 ? 'workout' : 'workouts'}` : 'delete this import';
-      const count = Number.isFinite(workouts) ? `${workouts} ` : '';
+      const someWorkouts = Number.isFinite(workouts) && workouts > 0;
+      button.textContent = someWorkouts ? `delete ${workouts} ${workouts === 1 ? 'workout' : 'workouts'}` : 'delete this import';
+      const count = someWorkouts ? `${workouts} ` : '';
+      section.querySelectorAll('.import-strava-delete-note').forEach((old) => old.remove());
       const note = document.createElement('p');
       note.className = 'import-strava-delete-note';
-      note.innerHTML = `${escapeHtml(`this deletes the ${count}workouts this import added to your journal. workouts you already deleted one at a time aren't counted. importing this Strava download again brings them back.`)} <details><summary>what stays</summary>a marker of each piece's start and length, and when this import was deleted, stays in your journal. markers don't keep these workouts away. your journal also keeps which time zone it places Strava workouts in. a delete doesn't reach copies made before it, in encrypted backup or wherever your journal folder was copied.</details>`;
+      const lead = Number.isFinite(workouts) && workouts === 0
+        ? "this import's workouts are already gone. this removes its page."
+        : `this deletes the ${count}workouts this import added to your journal. workouts you already deleted one at a time aren't counted. importing this Strava download again brings them back.`;
+      note.innerHTML = `${escapeHtml(lead)} <details><summary>what stays</summary>a marker of each piece's start and length, and when this import was deleted, stays in your journal. markers don't keep these workouts away. your journal also keeps which time zone it places Strava workouts in. a delete doesn't reach copies made before it, in encrypted backup or wherever your journal folder was copied.</details>`;
       section.insertBefore(note, button);
       return;
     }
@@ -628,12 +633,12 @@
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
-      section.innerHTML = "<p class=\"import-strava-delete-note\">this delete hasn't finished yet. reload to see how it ended.</p>";
+      section.innerHTML = "<p class=\"import-strava-delete-note\">this delete hasn't finished yet. reload in a minute to see whether it's gone.</p>";
     } catch (error) {
       button.disabled = false;
       button.removeAttribute('data-confirming');
       button.textContent = 'delete this import';
-      section.querySelector('.import-strava-delete-note')?.remove();
+      section.querySelectorAll('.import-strava-delete-note').forEach((old) => old.remove());
       const note = document.createElement('p');
       note.className = 'import-strava-delete-note';
       note.textContent = String(error.message || error);

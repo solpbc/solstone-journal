@@ -415,10 +415,7 @@ fn run(
             DeleteState::NotDeleted
         };
         let reason = match target.kind {
-            Kind::Workout => format!(
-                "{left} of its {} pieces couldn't be deleted. try again.",
-                target.pieces.len()
-            ),
+            Kind::Workout => "part of it couldn't be deleted. try again.".to_owned(),
             Kind::Import => {
                 let workouts = target
                     .pieces
@@ -431,12 +428,12 @@ fn run(
                             .and_then(|v| v.get("activity_id").and_then(Value::as_u64))
                     })
                     .collect::<std::collections::BTreeSet<_>>()
-                    .len()
-                    .max(1);
-                format!(
-                    "{workouts} {} couldn't be fully deleted. try again.",
-                    if workouts == 1 { "workout" } else { "workouts" }
-                )
+                    .len();
+                match workouts {
+                    0 => "some workouts couldn't be fully deleted. try again.".to_owned(),
+                    1 => "1 workout couldn't be fully deleted. try again.".to_owned(),
+                    n => format!("{n} workouts couldn't be fully deleted. try again."),
+                }
             }
         };
         return Some((state, Some(reason), detail));
