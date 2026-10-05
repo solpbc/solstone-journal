@@ -256,6 +256,45 @@ fn clean_optional(value: Option<&Value>) -> Option<String> {
 /// The import card that brings in a Strava download.
 const STRAVA_SOURCE: &str = "strava";
 
+/// How long a Strava upload may wait to be started before it is removed.
+const ABANDONED_STRAVA_UPLOAD: Duration = Duration::from_secs(60 * 60);
+
+/// Remove Strava downloads uploaded on the Strava card and never imported.
+///
+/// The card promises the download isn't kept. A run removes its upload when it
+/// ends; an upload whose import was never started (the owner left the card) is
+/// removed here once it has waited an hour. Best effort: a failure leaves it for
+/// the next start.
+pub(crate) fn sweep_abandoned_strava_uploads(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root.join("imports")) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let id = entry.file_name().to_string_lossy().into_owned();
+        if id.starts_with('.') || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let Ok(metadata) = read_import_metadata(root, &id) else {
+            continue;
+        };
+        if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE) {
+            continue;
+        }
+        let old_enough = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= ABANDONED_STRAVA_UPLOAD);
+        if old_enough
+            && solstone_core_import::project_import_result(root, &id).status
+                == solstone_core_import::ProjectionStatus::Pending
+        {
+            let _ = solstone_core_import::remove_import_records(root, &id);
+        }
+    }
+}
+
 fn source_hint(metadata: &ImportMetadata) -> Option<String> {
     clean_optional(metadata.get("source_hint")).filter(|hint| hint != "null")
 }
@@ -3028,6 +3067,38 @@ mod tests {
             .unwrap();
             assert!(manifest_exists(root.path(), &hash));
         }
+    }
+
+    #[test]
+    fn a_strava_upload_left_unstarted_for_an_hour_is_removed() {
+        let root = TempDir::new().unwrap();
+        let stage = |id: &str, hint: &str, age_secs: u64| {
+            let dir = root.path().join("imports").join(id);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("export.zip"), b"zip").unwrap();
+            std::fs::write(
+                dir.join("import.json"),
+                serde_json::json!({"source_hint": hint, "original_filename": "export.zip"})
+                    .to_string(),
+            )
+            .unwrap();
+            let when = std::time::SystemTime::now() - Duration::from_secs(age_secs);
+            std::fs::File::open(&dir)
+                .unwrap()
+                .set_modified(when)
+                .unwrap();
+            dir
+        };
+        let abandoned = stage("20260801_000000", "strava", 2 * 60 * 60);
+        let fresh = stage("20260801_010000", "strava", 60);
+        let other = stage("20260801_020000", "chatgpt", 2 * 60 * 60);
+        super::sweep_abandoned_strava_uploads(root.path());
+        assert!(
+            !abandoned.exists(),
+            "an abandoned Strava upload is not kept"
+        );
+        assert!(fresh.is_dir(), "an upload still within its hour stays");
+        assert!(other.is_dir(), "other sources are untouched");
     }
 
     fn make_zip_bytes(entry_path: &str, contents: &[u8]) -> Vec<u8> {
