@@ -3255,28 +3255,8 @@ mod tests {
         assert_eq!(RegistrySource::from_name("ics"), Some(RegistrySource::Ics));
     }
 
-    fn assert_no_sentinels_in_dir(dir: &Path) {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.is_dir() {
-                    assert_no_sentinels_in_dir(&path);
-                } else if path.is_file() {
-                    let text = fs::read_to_string(&path).unwrap_or_default();
-                    assert!(!text.contains("SENTINEL_DESC"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_NOTE"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_GEAR"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_MEDIA"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_WEATHER"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_DIST"), "found in {:?}", path);
-                    assert!(!text.contains("SENTINEL_EFFORT"), "found in {:?}", path);
-                }
-            }
-        }
-    }
-
     #[test]
-    fn strava_sentinels_not_written_to_journal() {
+    fn strava_keeps_every_field_of_the_owners_workout() {
         let journal = tempfile::tempdir().unwrap();
         write_utc_zone(journal.path());
         let csv_file = journal.path().join("activities.csv");
@@ -3307,7 +3287,24 @@ mod tests {
         assert_eq!(run.exit_code, 0, "{}", run.stderr);
         let import_id = id.unwrap();
 
-        assert_no_sentinels_in_dir(&journal.path().join("chronicle"));
+        // Every column of the owner's own row is kept, attributed to Strava.
+        let tile = fs::read_to_string(
+            journal
+                .path()
+                .join("chronicle/20260810/import.strava/063000_300/workout.json"),
+        )
+        .unwrap();
+        for kept in [
+            "SENTINEL_DESC",
+            "SENTINEL_NOTE",
+            "SENTINEL_GEAR",
+            "SENTINEL_MEDIA",
+            "SENTINEL_WEATHER",
+            "SENTINEL_DIST",
+            "SENTINEL_EFFORT",
+        ] {
+            assert!(tile.contains(kept), "{kept} missing from {tile}");
+        }
 
         assert!(
             !journal
@@ -4571,9 +4568,7 @@ mod tests {
                 .exists()
         );
 
-        assert!(!journal.path().join("awareness").exists());
         record_finished_import(journal.path(), "20260810_100000", 0);
-        assert!(!journal.path().join("awareness").exists());
 
         let pub_record = solstone_core_import::publish::read_publication_record(
             &journal.path().join("imports/20260810_100000"),

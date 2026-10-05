@@ -204,6 +204,10 @@ pub struct StravaWorkout {
     pub calories: Option<f64>,
     pub commute: Option<bool>,
     pub entered_by_hand: bool,
+    /// Every other non-empty column of the workout's row, keyed by its header as
+    /// Strava exported it (a repeated header gets " (2)"). The owner's own words,
+    /// gear, weather and Strava's own scores are theirs, so all of it is kept.
+    pub strava_fields: BTreeMap<String, String>,
 }
 
 impl StravaWorkout {
@@ -717,6 +721,43 @@ pub fn read_workouts(path: &Path, max_bytes: usize) -> Result<ReadWorkouts, Stra
         }
     };
 
+    let header_names = {
+        let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+        headers
+            .iter()
+            .map(|raw| {
+                let name = String::from_utf8_lossy(raw)
+                    .trim_start_matches('\u{feff}')
+                    .trim()
+                    .to_owned();
+                let count = seen.entry(name.clone()).or_insert(0);
+                *count += 1;
+                if *count == 1 {
+                    name
+                } else {
+                    format!("{name} ({count})")
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let mapped = [
+        cols.activity_id,
+        cols.activity_date,
+        cols.activity_name,
+        cols.activity_type,
+        cols.elapsed_time,
+        cols.moving_time,
+        cols.distance,
+        cols.elevation_gain,
+        cols.average_heart_rate,
+        cols.max_heart_rate,
+        cols.average_watts,
+        cols.weighted_average_power,
+        cols.calories,
+        cols.commute,
+        cols.filename,
+    ];
+
     let mut skips = SkipCounts::default();
     let mut workouts = Vec::new();
     let mut seen_ids = HashSet::new();
@@ -854,6 +895,15 @@ pub fn read_workouts(path: &Path, max_bytes: usize) -> Result<ReadWorkouts, Stra
                 };
 
                 let entered_by_hand = fields[cols.filename].trim().is_empty();
+                let strava_fields = header_names
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| !mapped.contains(index))
+                    .filter_map(|(index, name)| {
+                        let value = fields.get(index)?.trim();
+                        (!value.is_empty()).then(|| (name.clone(), value.to_owned()))
+                    })
+                    .collect::<BTreeMap<_, _>>();
 
                 workouts.push(StravaWorkout {
                     activity_id,
@@ -871,6 +921,7 @@ pub fn read_workouts(path: &Path, max_bytes: usize) -> Result<ReadWorkouts, Stra
                     calories,
                     commute,
                     entered_by_hand,
+                    strava_fields,
                 });
             }
             Ok(false) => break,
@@ -2262,6 +2313,9 @@ fn format_workout_tile(
         },
     );
     workout_map.insert("entered_by_hand".to_owned(), json!(workout.entered_by_hand));
+    if !workout.strava_fields.is_empty() {
+        workout_map.insert("strava_fields".to_owned(), json!(workout.strava_fields));
+    }
     map.insert("workout".to_owned(), Value::Object(workout_map));
 
     let mut out = serde_json::to_string(&Value::Object(map)).unwrap();
@@ -2645,6 +2699,7 @@ mod tests {
             calories: None,
             commute: None,
             entered_by_hand: false,
+            strava_fields: BTreeMap::new(),
         };
 
         let slices_3600 = tile_workout(&w_3600, Tz::UTC);
@@ -2711,6 +2766,7 @@ mod tests {
             calories: None,
             commute: None,
             entered_by_hand: false,
+            strava_fields: BTreeMap::new(),
         };
 
         let temp = TempDir::new().unwrap();
@@ -2893,6 +2949,7 @@ mod tests {
             calories: None,
             commute: None,
             entered_by_hand: false,
+            strava_fields: BTreeMap::new(),
         };
         let start = Tz::UTC.from_utc_datetime(&local_start);
         let end = start + Duration::seconds(300);
@@ -3022,7 +3079,16 @@ mod tests {
         assert_eq!(w1_en.calories, Some(340.9));
         assert_eq!(w1_en.commute, Some(true));
         assert!(!w1_en.entered_by_hand);
-        assert_eq!(w1_en, w1_de);
+        assert_eq!(
+            StravaWorkout {
+                strava_fields: BTreeMap::new(),
+                ..w1_en.clone()
+            },
+            StravaWorkout {
+                strava_fields: BTreeMap::new(),
+                ..w1_de.clone()
+            }
+        );
 
         let w2_en = &en_res.workouts[1];
         let w2_de = &de_res.workouts[1];
@@ -3341,6 +3407,7 @@ mod tests {
             calories: None,
             commute: None,
             entered_by_hand: false,
+            strava_fields: BTreeMap::new(),
         };
         let slices_denver = tile_workout(&w_denver, denver);
         assert_eq!(slices_denver.len(), 1);
@@ -3367,6 +3434,7 @@ mod tests {
             calories: None,
             commute: None,
             entered_by_hand: false,
+            strava_fields: BTreeMap::new(),
         };
         let slices_tokyo = tile_workout(&w_tokyo, tokyo);
         assert_eq!(slices_tokyo.len(), 1);
@@ -3496,6 +3564,7 @@ mod tests {
                 calories: None,
                 commute: None,
                 entered_by_hand: false,
+                strava_fields: BTreeMap::new(),
             });
         }
 

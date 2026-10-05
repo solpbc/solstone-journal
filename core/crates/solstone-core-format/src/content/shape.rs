@@ -53,9 +53,6 @@ enum WrittenLookup {
 /// path-derived [`classify`]. Anything that exists must yield a usable written
 /// value or the file is [`ContentResolution::Unrecognized`].
 pub fn resolve_content_shape(content_path: &Path, rel: &str) -> ContentResolution {
-    if crate::body::is_body_source_path(rel) {
-        return ContentResolution::Unrecognized;
-    }
     match lookup_written_shape(content_path) {
         WrittenLookup::Absent | WrittenLookup::Omitted => classify(rel),
         WrittenLookup::Hit(resolution) => resolution,
@@ -322,47 +319,6 @@ mod tests {
         assert_eq!(
             resolve_content_shape(&path, CHAT_REL),
             ContentResolution::Unindexed(RawPerceptFamily::RawScreen)
-        );
-    }
-
-    #[test]
-    fn body_source_shapes_are_unrecognized_even_with_sidecar() {
-        let temporary = TempDir::new("body-shape-refusal");
-        let body_md_rel = "20260731/import.apple_health/120000_60/day_summary_transcript.md";
-        let body_json_rel = "20260731/import.apple_health/120000_60/activity.json";
-        let ctrl_md_rel = "20260731/import.ics/120000_60/day_summary_transcript.md";
-        let ctrl_json_rel = "20260731/import.ics/120000_60/activity.json";
-
-        let body_md_path = content_path(&temporary.path, body_md_rel);
-        let body_json_path = content_path(&temporary.path, body_json_rel);
-        let ctrl_md_path = content_path(&temporary.path, ctrl_md_rel);
-        let ctrl_json_path = content_path(&temporary.path, ctrl_json_rel);
-
-        write(
-            &body_md_path.with_file_name(SHAPE_SIDECAR_BASENAME),
-            r#"{"day_summary_transcript.md":"Markdown","activity.json":"StructuredImport"}"#,
-        );
-        write(
-            &ctrl_md_path.with_file_name(SHAPE_SIDECAR_BASENAME),
-            r#"{"day_summary_transcript.md":"Markdown","activity.json":"StructuredImport"}"#,
-        );
-
-        assert_eq!(
-            resolve_content_shape(&body_md_path, body_md_rel),
-            ContentResolution::Unrecognized
-        );
-        assert_eq!(
-            resolve_content_shape(&body_json_path, body_json_rel),
-            ContentResolution::Unrecognized
-        );
-
-        assert_eq!(
-            resolve_content_shape(&ctrl_md_path, ctrl_md_rel),
-            ContentResolution::Indexed(Family::Markdown)
-        );
-        assert_eq!(
-            resolve_content_shape(&ctrl_json_path, ctrl_json_rel),
-            ContentResolution::Indexed(Family::StructuredImport)
         );
     }
 }

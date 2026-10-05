@@ -110,15 +110,6 @@ mod tests {
                 is_body_source_path(path),
                 "expected true for positive path: {path}"
             );
-            assert_eq!(
-                classify(path),
-                ContentResolution::Unrecognized,
-                "classify must be Unrecognized for positive path: {path}"
-            );
-            assert!(
-                resolve_spec(path).is_none(),
-                "resolve_spec must be None for positive path: {path}"
-            );
         }
 
         let negative_paths = [
@@ -153,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn every_registered_stream_is_refused() {
+    fn every_registered_stream_is_recognized() {
         for stream in health_card_streams() {
             assert!(
                 is_body_stream(stream),
