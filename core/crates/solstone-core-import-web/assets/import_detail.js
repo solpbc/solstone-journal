@@ -576,29 +576,53 @@
       } catch (_) { /* the count is a courtesy; the delete still asks */ }
       button.setAttribute('data-confirming', '');
       button.textContent = Number.isFinite(workouts) ? `delete ${workouts} ${workouts === 1 ? 'workout' : 'workouts'}` : 'delete this import';
+      const count = Number.isFinite(workouts) ? `${workouts} ` : '';
       const note = document.createElement('p');
       note.className = 'import-strava-delete-note';
-      const count = Number.isFinite(workouts) ? `${workouts} ` : '';
-      note.textContent = `this deletes the ${count}workouts this import added to your journal. workouts you already deleted one at a time aren't counted. importing this Strava download again brings them back.`;
+      note.textContent = `this deletes the ${count}workouts this import added to your journal. workouts you already deleted one at a time aren't counted. importing this Strava download again brings them back. a marker of each piece's start and length, and when this import was deleted, stays in your journal; markers don't keep these workouts away. your journal also keeps which time zone it places Strava workouts in. a delete doesn't reach copies made before it, in encrypted backup or wherever your journal folder was copied.`;
       section.insertBefore(note, button);
       return;
     }
     button.disabled = true;
+    const label = button.textContent.replace(/^delete /, '');
     try {
       const response = await fetch(`${base}/import/${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error((data && data.error) || "this import couldn't be deleted.");
-      section.innerHTML = `<p class="import-strava-delete-note">deleting this import… it cancels in 10s.</p><button type="button" class="btn" data-strava-import-cancel="${escapeHtml(data.pending)}">cancel</button>`;
-      const leave = setTimeout(() => { window.location.href = '/app/import/'; }, (data.ttl_seconds || 10) * 1000 + 1500);
-      section.querySelector('[data-strava-import-cancel]').addEventListener('click', async (event) => {
+      const restore = section.innerHTML;
+      section.innerHTML = `<p class="import-strava-delete-note">deleting ${escapeHtml(label)}… you can cancel for 10 seconds.</p><button type="button" class="btn" data-strava-import-cancel>cancel</button>`;
+      const cancelButton = section.querySelector('[data-strava-import-cancel]');
+      cancelButton.addEventListener('click', async () => {
         const cancel = await fetch(`${base}/cancel-delete/${encodeURIComponent(data.pending)}`, { method: 'POST' }).catch(() => null);
-        if (cancel && cancel.ok) {
-          clearTimeout(leave);
+        const result = cancel && cancel.ok ? await cancel.json().catch(() => ({})) : {};
+        if (result.cancelled) {
           section.innerHTML = '<p class="import-strava-delete-note">delete cancelled. nothing was deleted.</p>';
         } else {
-          event.target.disabled = true;
+          cancelButton.disabled = true;
         }
       }, { once: true });
+      // Read the outcome back once the window has passed; never assume it.
+      await new Promise((resolve) => setTimeout(resolve, ((data.ttl_seconds || 10) + 1) * 1000));
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const statusResponse = await fetch(`${base}/delete-status/${encodeURIComponent(data.pending)}`).catch(() => null);
+        const status = statusResponse && statusResponse.ok ? await statusResponse.json().catch(() => ({})) : {};
+        if (status.state === 'cancelled') return;
+        if (status.state === 'deleted') {
+          window.location.href = '/app/import/';
+          return;
+        }
+        if (status.state && status.state !== 'pending') {
+          section.innerHTML = restore;
+          const note = document.createElement('p');
+          note.className = 'import-strava-delete-note';
+          note.textContent = `${status.state === 'incomplete' ? 'this import was only partly deleted.' : "this import wasn't deleted."} ${status.reason || ''}`.trim();
+          section.appendChild(note);
+          const again = section.querySelector('[data-strava-import-delete]');
+          if (again) { again.disabled = false; again.removeAttribute('data-confirming'); again.textContent = 'delete this import'; }
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
     } catch (error) {
       button.disabled = false;
       button.removeAttribute('data-confirming');

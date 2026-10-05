@@ -11,4 +11,4 @@ the download can be large, since it holds your photos and more. this import open
 
 ### before you import
 
-these workouts are kept in your journal folder, so they go wherever that folder is copied, and encrypted backup, if you use it, includes them. they don't appear in search, and thinking doesn't use them. your Strava download itself isn't kept.
+these workouts are kept in your journal folder, so they go wherever that folder is copied, and encrypted backup, if you use it, includes them. they don't appear in search, and thinking doesn't use them. your Strava download itself isn't kept after the import.

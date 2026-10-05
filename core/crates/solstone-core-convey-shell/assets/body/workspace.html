@@ -1725,7 +1725,35 @@ a.body-day-cell:focus-visible {
   }
 
   // Deleting a Strava workout takes every piece of it, on every day it covers.
-  // The first press asks; the second deletes, with ten seconds to cancel.
+  // The first press asks; the second deletes, with ten seconds to cancel. The
+  // outcome is read back from the journal, never assumed.
+  const STRAVA_API = "/app/transcripts/api/strava";
+  function bodyToast(options) {
+    const notifications = window.AppServices && window.AppServices.notifications;
+    return notifications ? notifications.show({ app: "body", ...options }) : null;
+  }
+  function resetStravaButton(button) {
+    button.removeAttribute("data-confirming");
+    button.textContent = "delete";
+    button.parentElement?.querySelector("[data-strava-note]")?.remove();
+  }
+  async function watchStravaDelete(pending, rows, button, waitMs) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? waitMs : 1000));
+      const response = await fetch(`${STRAVA_API}/delete-status/${encodeURIComponent(pending)}`).catch(() => null);
+      if (!response || !response.ok) continue;
+      const status = await response.json().catch(() => ({}));
+      if (status.state === "pending") continue;
+      if (status.state === "deleted") {
+        bodyToast({ icon: "trash-2", title: "workout deleted", autoDismiss: 4000 });
+      } else if (status.state !== "cancelled") {
+        rows.forEach((row) => { row.hidden = false; });
+        resetStravaButton(button);
+        bodyToast({ icon: "alert-triangle", title: status.state === "incomplete" ? "workout only partly deleted" : "workout not deleted", message: status.reason || "", autoDismiss: 8000 });
+      }
+      return;
+    }
+  }
   if (!window.__bodyStravaDeleteBound) {
   window.__bodyStravaDeleteBound = true;
   document.addEventListener("click", async (event) => {
@@ -1737,7 +1765,7 @@ a.body-day-cell:focus-visible {
       const note = document.createElement("span");
       note.className = "body-workout-details";
       note.setAttribute("data-strava-note", "");
-      note.textContent = "this deletes the whole workout from your journal, on every day it covers. importing a Strava download again won't bring it back, unless its start time or length has changed on Strava.";
+      note.textContent = "this deletes the whole workout from your journal, on every day it covers. importing a Strava download again won't bring it back, unless its start time or length has changed on Strava. the start time and length of each of its pieces stay, marked as a Strava workout you deleted and when, so a later import skips this workout. a delete doesn't reach copies made before it, in encrypted backup or wherever your journal folder was copied.";
       button.insertAdjacentElement("afterend", note);
       return;
     }
@@ -1745,42 +1773,37 @@ a.body-day-cell:focus-visible {
     const id = button.getAttribute("data-strava-delete");
     const rows = Array.from(document.querySelectorAll(`[data-strava-row="${CSS.escape(id)}"]`));
     try {
-      const response = await fetch(`/app/transcripts/api/strava/workout/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const response = await fetch(`${STRAVA_API}/workout/${encodeURIComponent(id)}`, { method: "DELETE" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error((data && data.error) || "that workout couldn't be deleted.");
       rows.forEach((row) => { row.hidden = true; });
-      const notifications = window.AppServices && window.AppServices.notifications;
-      if (!notifications) return;
+      const waitMs = ((data.ttl_seconds || 10) + 1) * 1000;
       let toast = null;
-      toast = notifications.show({
-        app: "body",
+      toast = bodyToast({
         icon: "trash-2",
         title: "deleting workout…",
-        message: "cancels in 10s",
+        message: "you can cancel for 10 seconds",
         dismissible: true,
         autoDismiss: 10000,
         buttons: [{
           label: "cancel",
           dismiss: false,
           onClick: async () => {
-            const cancel = await fetch(`/app/transcripts/api/strava/cancel-delete/${encodeURIComponent(data.pending)}`, { method: "POST" }).catch(() => null);
-            if (cancel && cancel.ok) {
+            const cancel = await fetch(`${STRAVA_API}/cancel-delete/${encodeURIComponent(data.pending)}`, { method: "POST" }).catch(() => null);
+            const result = cancel && cancel.ok ? await cancel.json().catch(() => ({})) : {};
+            if (result.cancelled) {
               rows.forEach((row) => { row.hidden = false; });
-              button.removeAttribute("data-confirming");
-              button.textContent = "delete";
-              notifications.dismiss(toast);
-              notifications.show({ app: "body", icon: "rotate-ccw", title: "delete cancelled", autoDismiss: 4000 });
+              resetStravaButton(button);
+              window.AppServices?.notifications?.dismiss(toast);
+              bodyToast({ icon: "rotate-ccw", title: "delete cancelled", autoDismiss: 4000 });
             }
           },
         }],
       });
+      watchStravaDelete(data.pending, rows, button, waitMs);
     } catch (error) {
-      button.removeAttribute("data-confirming");
-      button.textContent = "delete";
-      const notifications = window.AppServices && window.AppServices.notifications;
-      if (notifications) {
-        notifications.show({ app: "body", icon: "alert-triangle", title: "workout not deleted", message: String(error.message || error), autoDismiss: 6000 });
-      }
+      resetStravaButton(button);
+      bodyToast({ icon: "alert-triangle", title: "workout not deleted", message: String(error.message || error), autoDismiss: 6000 });
     }
   });
   }

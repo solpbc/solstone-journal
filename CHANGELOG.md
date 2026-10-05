@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- you can bring in your workouts from a Strava download on the import page. only the list of your workouts is read, and the download itself isn't kept. each workout shows on the days it covers in the body app, where you can delete it, and you can delete a whole Strava import from its page.
+- you can bring in your workouts from a Strava download on the import page. only the list of your workouts is read, and the download itself isn't kept after the import. each workout shows on the days it covers in the body app, where you can delete it, and you can delete a whole Strava import from its page.
 
 ### Changed
 

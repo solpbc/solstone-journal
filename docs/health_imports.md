@@ -1,6 +1,6 @@
 # body imports
 
-This document is the current engineering boundary for Apple Health and Oura
+This document is the current engineering boundary for Apple Health, Oura and Strava
 body data entering the journal. The filename is retained for links; `health` in
 owner-facing language means the journal system's health, while physiological
 records are body data.
@@ -9,7 +9,7 @@ records are body data.
 
 Strava is the first body source an owner brings in from the import page (the **Strava** card), or with `solstone journal importer --source strava <download.zip | activities.csv>`.
 
-- **What is read:** only `activities.csv` at the root of the download. Photos, messages, the people you follow and every other file in the download are never opened. For each workout the journal keeps its type, name, start, elapsed and moving time, distance, elevation gain, heart rate, power, calories, and whether it was a commute or entered by hand. Descriptions, private notes, gear, weather and Strava's own scores are not kept. English and German downloads are read; any other language is refused with a message to switch Strava's language and download again.
+- **What is read:** only `activities.csv` at the root of the download. Photos, messages, the people you follow and every other file in the download are never opened. For each workout the journal keeps its type, name, start, elapsed and moving time, distance, elevation gain, heart rate, power, calories, and whether it was a commute or entered by hand. Descriptions, private notes, gear, weather and Strava's own scores are not kept. English and German downloads are read; any other language is refused.
 - **Where it lands:** each workout becomes pieces of up to five minutes under `chronicle/<day>/import.strava/`, from its start to its end, continuing past midnight. Each piece holds one `workout.json` with the workout's values. Body streams stay out of search, daily evidence and thinking.
 - **Time zone:** the download has no zone, so workouts are placed in the journal's zone at the first Strava import (kept in `imports/.strava-zone.json`), even if the journal's zone changes later.
 - **The download is not kept:** an upload is removed when its import ends.

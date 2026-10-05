@@ -53,7 +53,7 @@ const LOCK_WAIT: Duration = Duration::from_secs(10);
 #[cfg(test)]
 const LOCK_WAIT: Duration = Duration::from_millis(50);
 const BUSY_REASON: &str =
-    "a Strava import was running, so nothing was deleted. try again when it finishes";
+    "a Strava import was running, so nothing was deleted. try again when it finishes.";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -168,7 +168,7 @@ pub(crate) async fn delete_workout(
     RoutePath(activity_id): RoutePath<String>,
 ) -> Response {
     if !valid_workout_id(&activity_id) {
-        return bad_request("that isn't a workout this journal knows.");
+        return bad_request("that isn't a workout in your journal.");
     }
     request(&state, Kind::Workout, activity_id).await
 }
@@ -178,7 +178,7 @@ pub(crate) async fn delete_import(
     RoutePath(import_id): RoutePath<String>,
 ) -> Response {
     if !valid_import_id(&import_id) {
-        return bad_request("that isn't an import this journal knows.");
+        return bad_request("that isn't an import in your journal.");
     }
     request(&state, Kind::Import, import_id).await
 }
@@ -440,7 +440,7 @@ pub(crate) async fn preview_workout(
     RoutePath(activity_id): RoutePath<String>,
 ) -> Response {
     if !valid_workout_id(&activity_id) {
-        return bad_request("that isn't a workout this journal knows.");
+        return bad_request("that isn't a workout in your journal.");
     }
     preview(&state, Kind::Workout, activity_id).await
 }
@@ -450,7 +450,7 @@ pub(crate) async fn preview_import(
     RoutePath(import_id): RoutePath<String>,
 ) -> Response {
     if !valid_import_id(&import_id) {
-        return bad_request("that isn't an import this journal knows.");
+        return bad_request("that isn't an import in your journal.");
     }
     preview(&state, Kind::Import, import_id).await
 }
