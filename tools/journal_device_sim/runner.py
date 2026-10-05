@@ -2187,6 +2187,7 @@ class Simulator:
         attempts_this_run = 0
         while attempts_this_run < self.config.max_attempts:
             response: HttpResponse | None = None
+            accepted_physical: str | None = None
             entry = self.state["segments"].setdefault(segment.fixture_id, {})
             try:
                 with self._fixture_uploads(segment) as uploads:
@@ -2259,7 +2260,7 @@ class Simulator:
                                 f"fixture {segment.fixture_id} expected upload status "
                                 f"{segment.expectation.upload_statuses}, got {response_status!r}"
                             )
-                        landed_segment = self._validate_upload_response(
+                        accepted_physical = self._validate_upload_response(
                             response, segment, envelope
                         )
                     except SimulationFailure as caught:
@@ -2276,17 +2277,21 @@ class Simulator:
                         )
                         self._save_state()
                         raise
-                    entry.update(
-                        {
-                            "phase": "accepted",
-                            "landed_segment": landed_segment,
-                            "last_response_status": response.status,
-                            "accepted_response": {
-                                "http_status": response.status,
-                                "body": response.body,
-                            },
-                        }
-                    )
+                    accepted_update = {
+                        "phase": "accepted",
+                        "last_response_status": response.status,
+                        "accepted_response": {
+                            "http_status": response.status,
+                            "body": response.body,
+                        },
+                    }
+                    saved_landed_segment = entry.get("landed_segment")
+                    if isinstance(saved_landed_segment, str):
+                        landed_segment = saved_landed_segment
+                    else:
+                        landed_segment = accepted_physical
+                        accepted_update["landed_segment"] = accepted_physical
+                    entry.update(accepted_update)
                     entry.pop("contract_failure", None)
                     self._save_state()
                 elif response.status >= 500:
@@ -2344,6 +2349,14 @@ class Simulator:
                 physical_segment = self._physical_segment_name(item)
                 if not isinstance(wire_key, str) or physical_segment is None:
                     raise SimulationFailure("listing returned an invalid landed segment")
+                if (
+                    response is not None
+                    and response.status == 200
+                    and accepted_physical != physical_segment
+                ):
+                    raise SimulationFailure(
+                        f"fixture {segment.fixture_id} accepted response changed its physical segment"
+                    )
                 if landed_segment is None:
                     landed_segment = physical_segment
                 elif landed_segment not in {wire_key, physical_segment}:

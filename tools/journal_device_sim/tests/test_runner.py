@@ -52,6 +52,7 @@ class FakeIngestState:
         self.status_extra: dict[str, Any] = {}
         self.observed: object = False
         self.listing_total_delta = 0
+        self.hide_listing_reads = 0
         self.listing_http_status = 200
         self.listing_file_status = "present"
         self.post_http_status = 200
@@ -117,11 +118,15 @@ def handler_for(state: FakeIngestState) -> type[BaseHTTPRequestHandler]:
             if parsed.path.startswith("/app/devices/ingest/segments/"):
                 day = parsed.path.rsplit("/", 1)[-1]
                 with state.lock:
-                    items = [
-                        item["listing"]
-                        for item in state.items
-                        if item["day"] == day and item["source"] == source
-                    ]
+                    if state.hide_listing_reads > 0:
+                        state.hide_listing_reads -= 1
+                        items = []
+                    else:
+                        items = [
+                            item["listing"]
+                            for item in state.items
+                            if item["day"] == day and item["source"] == source
+                        ]
                 self._json(
                     state.listing_http_status,
                     {
@@ -2018,6 +2023,47 @@ class RunnerTests(unittest.TestCase):
             }
             with self.assertRaisesRegex(SimulationFailure, "listing is ambiguous"):
                 simulator._find_listing_item(listing, segment, segment.segment)
+
+    def test_uncertain_retry_keeps_saved_alias_across_equal_byte_twins(self) -> None:
+        state = FakeIngestState()
+        state.hide_listing_reads = 1
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            simulator = Simulator(self._config(temporary, bridge_url))
+            segment = simulator.segments[0]
+            expected = segment.files[0]
+            mapped_day = simulator.day_map[segment.day]
+            saved_alias = f"{segment.segment}~browser_a"
+            state.items.extend(
+                {
+                    "day": mapped_day,
+                    "source": segment.source,
+                    "listing": self._listing_item(
+                        f"{segment.segment}~{stream}",
+                        segment.segment,
+                        stream,
+                        expected.submitted,
+                        expected.size,
+                        expected.sha256,
+                    ),
+                }
+                for stream in ("browser_a", "browser_z")
+            )
+            simulator.state["segments"][segment.fixture_id] = {
+                "phase": "uncertain",
+                "mapped_day": mapped_day,
+                "requested_segment": segment.segment,
+                "landed_segment": saved_alias,
+            }
+            simulator._save_state()
+
+            result = simulator._upload_one(BridgeHttpClient(bridge_url, 5), segment)
+
+            self.assertEqual(result["listing"]["stream"], "browser_a")
+            self.assertEqual(result["landed_segment"], saved_alias)
+            self.assertEqual(
+                simulator.state["segments"][segment.fixture_id]["landed_segment"],
+                saved_alias,
+            )
 
     def test_hash_mismatch_refuses_without_reupload(self) -> None:
         state = FakeIngestState()
