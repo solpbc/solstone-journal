@@ -4610,6 +4610,7 @@ dependencies = [
  "solstone-core-setup",
  "solstone-core-sol",
  "solstone-core-system",
+ "tempfile",
  "zip 2.4.2",
 ]
 

@@ -35,8 +35,8 @@
             }
           ],
           "relay_access": {
-            "protocol_version": 1,
-            "status": "active",
+            "protocol_version": 2,
+            "status": "ready",
             "relay_origin": "https://relay.example.invalid",
             "instance_id": "fixture-instance",
             "device_token": "fixture-token",
@@ -70,8 +70,8 @@
             }
           ],
           "relay_access": {
-            "protocol_version": 1,
-            "status": "active",
+            "protocol_version": 2,
+            "status": "ready",
             "relay_origin": "https://relay.example.invalid",
             "instance_id": "fixture-instance",
             "device_token": "fixture-token",

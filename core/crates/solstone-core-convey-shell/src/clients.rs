@@ -949,8 +949,8 @@ mod tests {
             route_ipv4: None,
         };
         let relay = RelayAccessSnapshot {
-            protocol_version: 1,
-            status: "active".to_owned(),
+            protocol_version: 2,
+            status: "ready".to_owned(),
             relay_origin: "https://relay.example.invalid".to_owned(),
             instance_id: "fixture-instance".to_owned(),
             device_token: "injected-token".to_owned(),
