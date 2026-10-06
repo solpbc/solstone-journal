@@ -896,6 +896,23 @@ fn local_syncs_save_into_the_journal_and_only_once() {
         recordings.join("memo.mp3"),
     )
     .expect("copy recording");
+    // Audio sync adopts the file's modified time. Keep this long recording within
+    // one owner day regardless of when the test runs.
+    fs::create_dir_all(journal.path().join("config")).expect("config directory");
+    fs::write(
+        journal.path().join("config/journal.json"),
+        br#"{"identity":{"timezone":"UTC"}}"#,
+    )
+    .expect("UTC owner zone");
+    File::options()
+        .write(true)
+        .open(recordings.join("memo.mp3"))
+        .expect("audio fixture metadata")
+        .set_times(
+            fs::FileTimes::new()
+                .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(1_773_230_400)),
+        )
+        .expect("fixed audio source time");
     for saved in ["saved=1", "saved=0"] {
         let output = run(
             &["--sync", "audio", "--path", &path(&recordings), "--save"],
