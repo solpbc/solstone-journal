@@ -18,6 +18,8 @@ fn main() {
     let rpath = match target_os.as_str() {
         // Windows loads the signed private runtime explicitly, before any ORT API.
         "windows" => return,
+        // Android runtime library lookup is not decided in this script.
+        "android" => return,
         "linux" => "$ORIGIN/../lib/solstone-core-speakers-analyze",
         "macos" => "@loader_path/../lib/solstone-core-speakers-analyze",
         other => {

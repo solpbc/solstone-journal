@@ -19,7 +19,12 @@ pub use authority::{
 pub(crate) use instance::hold_while_instance_live;
 #[cfg(target_os = "macos")]
 pub(crate) use instance::macos_sweep_table;
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "android"
+))]
 pub use instance::process_owner;
 pub use pdeathsig::apply_parent_death_kill;
 pub use spawn::ManagedProcess;

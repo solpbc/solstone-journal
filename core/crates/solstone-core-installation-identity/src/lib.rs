@@ -82,12 +82,41 @@ const MARKER_BYTES: &[u8] = b"solstone-installation-identity-marker-v1\n";
 const NAMESPACE_DOMAIN: &[u8] = b"solstone-installation-identity-namespace-v1\0";
 const RECORD_DOMAIN: &[u8] = b"solstone-installation-identity-record-v1\0";
 
+const ANDROID_IDENTITY_UNSUPPORTED: &str = "installation identity is unsupported for Android";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DesktopPlatform {
+    Linux,
+    Macos,
+    Windows,
+}
+
+impl DesktopPlatform {
+    fn from_platform_tag(tag: PlatformTag) -> Result<Self, IdentityError> {
+        match tag {
+            PlatformTag::Linux => Ok(Self::Linux),
+            PlatformTag::Macos => Ok(Self::Macos),
+            PlatformTag::Windows => Ok(Self::Windows),
+            PlatformTag::Android => Err(IdentityError::InvalidInput(ANDROID_IDENTITY_UNSUPPORTED)),
+        }
+    }
+
+    const fn as_platform_tag(self) -> PlatformTag {
+        match self {
+            Self::Linux => PlatformTag::Linux,
+            Self::Macos => PlatformTag::Macos,
+            Self::Windows => PlatformTag::Windows,
+        }
+    }
+}
+
 /// OS family used in the namespace hash and record.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum PlatformTag {
     Linux,
     Macos,
     Windows,
+    Android,
 }
 
 impl PlatformTag {
@@ -97,11 +126,16 @@ impl PlatformTag {
             Self::Linux => "linux",
             Self::Macos => "macos",
             Self::Windows => "windows",
+            Self::Android => "android",
         }
     }
 
     /// The platform supported by this build.
     pub const fn current() -> Self {
+        #[cfg(target_os = "android")]
+        {
+            Self::Android
+        }
         #[cfg(target_os = "linux")]
         {
             Self::Linux
@@ -121,6 +155,7 @@ impl PlatformTag {
             "linux" => Ok(Self::Linux),
             "macos" => Ok(Self::Macos),
             "windows" => Ok(Self::Windows),
+            "android" => Ok(Self::Android),
             _ => Err(RecordError::InvalidField("platform")),
         }
     }
@@ -322,7 +357,7 @@ impl InstallationBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OwnerBase {
     home: PathBuf,
-    platform: PlatformTag,
+    platform: DesktopPlatform,
 }
 
 impl OwnerBase {
@@ -333,25 +368,38 @@ impl OwnerBase {
     /// the current user's LocalAppData known folder is used instead. The base
     /// itself is never created by the provider.
     pub fn at_home(home: PathBuf, platform: PlatformTag) -> Result<Self, IdentityError> {
-        #[cfg(windows)]
+        #[cfg(target_os = "android")]
         {
-            let _ = home;
-            if platform != PlatformTag::Windows {
-                return Err(IdentityError::InvalidInput(
-                    "owner platform does not match this Windows build",
-                ));
+            let _ = (home, platform);
+            Err(IdentityError::InvalidInput(ANDROID_IDENTITY_UNSUPPORTED))
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let desktop = DesktopPlatform::from_platform_tag(platform)?;
+            #[cfg(windows)]
+            {
+                let _ = home;
+                if desktop != DesktopPlatform::Windows {
+                    return Err(IdentityError::InvalidInput(
+                        "owner platform does not match this Windows build",
+                    ));
+                }
+                Ok(Self {
+                    home: known_folder_local_app_data()?,
+                    platform: desktop,
+                })
             }
-            Ok(Self {
-                home: known_folder_local_app_data()?,
-                platform,
-            })
+            #[cfg(unix)]
+            {
+                if !home.is_absolute() {
+                    return Err(IdentityError::InvalidInput("home must be absolute"));
+                }
+                Ok(Self {
+                    home,
+                    platform: desktop,
+                })
+            }
         }
-        #[cfg(unix)]
-        if !home.is_absolute() {
-            return Err(IdentityError::InvalidInput("home must be absolute"));
-        }
-        #[cfg(unix)]
-        Ok(Self { home, platform })
     }
 
     /// Returns the resolved path of the provider base.
@@ -365,7 +413,7 @@ impl OwnerBase {
 
     /// Returns the protocol platform for this owner base.
     pub const fn platform(&self) -> PlatformTag {
-        self.platform
+        self.platform.as_platform_tag()
     }
 }
 
@@ -791,7 +839,11 @@ pub fn decode_record(bytes: &[u8]) -> Result<IdentityRecord, RecordError> {
 
 /// Returns the current user's platform-specific owner base without creating it.
 pub fn owner_base() -> Result<OwnerBase, IdentityError> {
-    #[cfg(unix)]
+    #[cfg(target_os = "android")]
+    {
+        Err(IdentityError::InvalidInput(ANDROID_IDENTITY_UNSUPPORTED))
+    }
+    #[cfg(all(unix, not(target_os = "android")))]
     {
         let home = env::var_os("HOME").ok_or(IdentityError::InvalidInput("HOME is not set"))?;
         OwnerBase::at_home(PathBuf::from(home), PlatformTag::current())
@@ -1092,7 +1144,7 @@ pub fn admit_setup_with_effective_journal_validator(
 ) -> Result<SetupAdmission, IdentityError> {
     validate_effective_journal(&request.journal_token)?;
     validate_setup_evidence(&request.artifacts, request.legacy_manifest)?;
-    let namespace_name = namespace_name(request.owner.platform, &request.root_token);
+    let namespace_name = namespace_name(request.owner.platform(), &request.root_token);
 
     #[cfg(target_os = "linux")]
     {
@@ -1138,7 +1190,7 @@ pub fn admit_setup_with_effective_journal_validator(
             state: LifecycleState::Prepared,
             generation: Generation::new(1)?,
             id: generate_id()?,
-            platform: request.owner.platform,
+            platform: request.owner.platform(),
             root_token: request.root_token.clone(),
             journal_token: request.journal_token.clone(),
         };
@@ -1191,7 +1243,7 @@ fn admit_setup_linux(
             state: LifecycleState::Prepared,
             generation: Generation::new(1)?,
             id: generate_id()?,
-            platform: request.owner.platform,
+            platform: request.owner.platform(),
             root_token: request.root_token.clone(),
             journal_token: request.journal_token.clone(),
         };
@@ -1219,7 +1271,7 @@ pub fn admit_clean_uninstall(
     ) {
         return Err(IdentityError::AdmissionRefused(UNCERTAIN_ARTIFACTS_REFUSAL));
     }
-    let namespace_name = namespace_name(request.owner.platform, &request.root_token);
+    let namespace_name = namespace_name(request.owner.platform(), &request.root_token);
     #[cfg(target_os = "linux")]
     let gate = lock_linux_owner_admission_gate(&request.owner, OwnerAdmissionMode::Exclusive)?;
     let provider = open_provider(&request.owner, true)?;
@@ -1239,7 +1291,7 @@ pub fn admit_clean_uninstall(
     let record = snapshot
         .record
         .ok_or(IdentityError::UnsafeState("namespace record is missing"))?;
-    if record.platform != request.owner.platform || record.root_token != request.root_token {
+    if record.platform != request.owner.platform() || record.root_token != request.root_token {
         return Err(IdentityError::AdmissionRefused(
             "record does not bind the requested root",
         ));
@@ -1622,10 +1674,10 @@ enum PublishPreparedError {
     Identity(IdentityError),
 }
 
-fn base_segments(platform: PlatformTag) -> &'static [&'static str] {
+fn base_segments(platform: DesktopPlatform) -> &'static [&'static str] {
     match platform {
-        PlatformTag::Linux => &[".local", "share", "solstone", "installation-identity", "v1"],
-        PlatformTag::Macos => &[
+        DesktopPlatform::Linux => &[".local", "share", "solstone", "installation-identity", "v1"],
+        DesktopPlatform::Macos => &[
             "Library",
             "Application Support",
             "solstone",
@@ -1636,19 +1688,22 @@ fn base_segments(platform: PlatformTag) -> &'static [&'static str] {
         // is the solstone app's own per-user install and data root. Setup for the
         // app refuses a directory it did not create, and uninstalling the app
         // removes the whole root. `solstone-journal` is no Velopack package's root.
-        PlatformTag::Windows => &["solstone-journal", "installation-identity", "v1"],
+        DesktopPlatform::Windows => &["solstone-journal", "installation-identity", "v1"],
     }
 }
 
-fn first_exact_index(platform: PlatformTag) -> usize {
+fn first_exact_index(platform: DesktopPlatform) -> usize {
     match platform {
-        PlatformTag::Linux | PlatformTag::Macos => 3,
-        PlatformTag::Windows => 0,
+        DesktopPlatform::Linux | DesktopPlatform::Macos => 3,
+        DesktopPlatform::Windows => 0,
     }
 }
 
 #[cfg(unix)]
 fn open_provider(owner: &OwnerBase, create: bool) -> Result<SecureDir, IdentityError> {
+    if cfg!(target_os = "android") || owner.platform() == PlatformTag::Android {
+        return Err(IdentityError::InvalidInput(ANDROID_IDENTITY_UNSUPPORTED));
+    }
     let mut current = open_absolute_dir(&owner.home)?;
     for (index, segment) in base_segments(owner.platform).iter().enumerate() {
         let exact_mode = index >= first_exact_index(owner.platform);
@@ -2028,7 +2083,7 @@ fn admit_existing_setup(
     let mut record = snapshot
         .record
         .ok_or(IdentityError::UnsafeState("namespace record is missing"))?;
-    if record.platform != request.owner.platform || record.root_token != request.root_token {
+    if record.platform != request.owner.platform() || record.root_token != request.root_token {
         return Err(IdentityError::UnsafeState(
             "namespace record does not match its root namespace",
         ));
@@ -2093,7 +2148,7 @@ fn admit_existing_setup(
                 state: LifecycleState::Prepared,
                 generation: record.generation.next()?,
                 id: generate_id()?,
-                platform: request.owner.platform,
+                platform: request.owner.platform(),
                 root_token: request.root_token,
                 journal_token: request.journal_token,
             };
@@ -3081,6 +3136,9 @@ fn open_or_create_child_dir(
 /// Builds the provider through the Windows full-path traversal; see
 /// [`open_child_dir`] for its intentional Unix divergence.
 fn open_provider(owner: &OwnerBase, create: bool) -> Result<SecureDir, IdentityError> {
+    if cfg!(target_os = "android") || owner.platform() == PlatformTag::Android {
+        return Err(IdentityError::InvalidInput(ANDROID_IDENTITY_UNSUPPORTED));
+    }
     let mut current = open_absolute_dir(&owner.home)?;
     for (index, segment) in base_segments(owner.platform).iter().enumerate() {
         let exact_mode = index >= first_exact_index(owner.platform);
@@ -5283,6 +5341,61 @@ mod tests {
                 .is_err()
         );
         assert!(parse_wrapper_guard("# solstone-installation-unexpected: value\n").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn android_platform_tag_refuses_and_desktop_tags_still_construct() {
+        let path = PathBuf::from("/solstone-android-identity-unused");
+        assert!(matches!(
+            OwnerBase::at_home(path.clone(), PlatformTag::Android),
+            Err(IdentityError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            OwnerBase::at_home(path.clone(), PlatformTag::Linux),
+            Ok(_)
+        ));
+        assert!(matches!(
+            OwnerBase::at_home(path.clone(), PlatformTag::Macos),
+            Ok(_)
+        ));
+        assert!(matches!(
+            OwnerBase::at_home(path, PlatformTag::Windows),
+            Ok(_)
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn android_platform_tag_refuses_on_windows() {
+        assert!(matches!(
+            OwnerBase::at_home(PathBuf::new(), PlatformTag::Android),
+            Err(IdentityError::InvalidInput(_))
+        ));
+    }
+
+    #[cfg(target_os = "android")]
+    #[test]
+    fn android_platform_refuses_every_tag_and_owner_base() {
+        let path = PathBuf::from("/solstone-android-identity-unused");
+        for tag in [
+            PlatformTag::Linux,
+            PlatformTag::Macos,
+            PlatformTag::Windows,
+            PlatformTag::Android,
+        ] {
+            assert!(matches!(
+                OwnerBase::at_home(path.clone(), tag),
+                Err(IdentityError::InvalidInput(_))
+            ));
+        }
+        let original_home = env::var_os("HOME");
+        env::remove_var("HOME");
+        let result = owner_base();
+        if let Some(home) = original_home {
+            env::set_var("HOME", home);
+        }
+        assert!(matches!(result, Err(IdentityError::InvalidInput(_))));
     }
 }
 

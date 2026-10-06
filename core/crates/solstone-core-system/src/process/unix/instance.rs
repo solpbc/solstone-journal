@@ -1408,6 +1408,24 @@ pub fn process_owner(_pid: u32) -> ProcessOwner {
     ProcessOwner::Unknown
 }
 
+// No by-pid owner instrument is available, so the result is Unknown
+// rather than Absent or a guessed uid.
+#[cfg(target_os = "android")]
+pub fn process_owner(_pid: u32) -> ProcessOwner {
+    ProcessOwner::Unknown
+}
+
+#[cfg(all(test, target_os = "android"))]
+mod android_owner_tests {
+    use super::*;
+
+    #[test]
+    fn android_process_owner_is_always_unknown() {
+        assert_eq!(process_owner(0), ProcessOwner::Unknown);
+        assert_eq!(process_owner(std::process::id()), ProcessOwner::Unknown);
+    }
+}
+
 /// Owner uid of the process at `pid` through `/bin/ps`, which answers for
 /// every user's processes where `proc_pidinfo` is `EPERM`. The crate's macOS
 /// census already relies on `/bin/ps` for the same reason.

@@ -138,6 +138,23 @@ pub struct PreReadySupervisorLifecycle {
 }
 
 impl SupervisorBootAdmission {
+    #[cfg(target_os = "android")]
+    pub fn acquire(
+        _journal: impl AsRef<Path>,
+        _writer_id: WriterId,
+    ) -> Result<Self, LifecycleError> {
+        Err(LifecycleError::Identity(
+            "supervisor lifecycle is unsupported on this platform",
+        ))
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn activate(self) -> Result<PreReadySupervisorLifecycle, LifecycleError> {
+        Err(LifecycleError::Identity(
+            "supervisor lifecycle is unsupported on this platform",
+        ))
+    }
+
     /// Bind `health`/`sync` beneath a resolved journal root, retain the
     /// singleton lock, and complete the bounded foreign-heartbeat admission
     /// sequence before any identity or real-heartbeat write.

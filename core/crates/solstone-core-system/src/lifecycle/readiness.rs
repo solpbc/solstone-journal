@@ -68,6 +68,17 @@ pub(crate) fn wait_ready_with_start_time(
     }
 }
 
+/// Readiness is unsupported on Android.
+#[cfg(target_os = "android")]
+pub fn wait_ready(
+    _journal: &Path,
+    _timeout: Duration,
+    _poll_interval: Duration,
+) -> Option<ReadinessMarker> {
+    log::debug!("supervisor readiness is unsupported on Android");
+    None
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn wait_ready(
     journal: &Path,
