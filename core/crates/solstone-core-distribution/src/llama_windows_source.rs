@@ -20,11 +20,6 @@ pub const LOADER_COMMIT: &str = "5f157b62e333c63260d05d81bf66faa216ab0fb8";
 /// The archive `prepare-source` produces.
 pub const SOURCE_SHA256: &str = "16318b04ce7b32f67366d3ce41d7f9f96ce6ad7f9f450341510ee96171be9a17";
 pub const SOURCE_BYTES: u64 = 39595062;
-/// The same members and manifest as `SOURCE_SHA256`, packed by the earlier
-/// org-side preparer. Receipts recorded against it stay verifiable.
-const LEGACY_SOURCE_SHA256: &str =
-    "ea613b46d078609bdac8dc05f99959bd38e965e7a5abadf58eab023c83203828";
-const LEGACY_SOURCE_BYTES: u64 = 37_227_459;
 pub const SDK_SHA256: &str = "81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d";
 pub const SDK_BYTES: u64 = 287_971_024;
 const MANIFEST_SHA256: &str = "3996105a6ad7ac14edc28f767a4760052d58dbd9f030c8ba69de66460fa7af14";
@@ -190,16 +185,11 @@ pub(crate) fn inspect_source_with_census(
     }
     let mut bytes = Vec::new();
     fs::File::open(path)?
-        .take(LEGACY_SOURCE_BYTES.max(SOURCE_BYTES) + 1)
+        .take(SOURCE_BYTES + 1)
         .read_to_end(&mut bytes)?;
     let source_sha256 = sha256_hex(&bytes);
     let source_bytes = bytes.len() as u64;
-    if ![
-        (SOURCE_SHA256, SOURCE_BYTES),
-        (LEGACY_SOURCE_SHA256, LEGACY_SOURCE_BYTES),
-    ]
-    .contains(&(source_sha256.as_str(), source_bytes))
-    {
+    if source_sha256 != SOURCE_SHA256 || source_bytes != SOURCE_BYTES {
         return Err(refuse("llama source archive identity mismatch"));
     }
     let (manifest_bytes, members) = archive_members(&bytes)?;
@@ -816,16 +806,14 @@ mod tests {
                 SourceInput {
                     component: "llama".to_owned(),
                     commit: LLAMA_COMMIT.to_owned(),
-                    sha256: "9c802144585b8102e78dc6942adfde273686a87b2efae9b99de98891a20c06d3"
-                        .to_owned(),
-                    bytes: 35_828_683,
+                    sha256: UPSTREAM[0].tarball_sha256.to_owned(),
+                    bytes: UPSTREAM[0].tarball_bytes,
                 },
                 SourceInput {
                     component: "loader".to_owned(),
                     commit: LOADER_COMMIT.to_owned(),
-                    sha256: "549d19257e7334727547cf01829a92205a9a96e3a7f47472b119dc88e16f41f7"
-                        .to_owned(),
-                    bytes: 1_817_456,
+                    sha256: UPSTREAM[1].tarball_sha256.to_owned(),
+                    bytes: UPSTREAM[1].tarball_bytes,
                 },
             ],
             members: vec![SourceMember {
@@ -850,6 +838,11 @@ mod tests {
         validate_manifest(&manifest(), &members).unwrap();
         let mut changed = manifest();
         changed.sources[0].commit = "0".repeat(40);
+        assert!(validate_manifest(&changed, &members).is_err());
+        let mut changed = manifest();
+        changed.sources[0].sha256 =
+            "9c802144585b8102e78dc6942adfde273686a87b2efae9b99de98891a20c06d3".to_owned();
+        changed.sources[0].bytes = 35_828_683;
         assert!(validate_manifest(&changed, &members).is_err());
         let mut changed = manifest();
         changed.members[0].sha256 = sha256_hex(b"b");

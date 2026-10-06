@@ -235,7 +235,7 @@ try {
         Write-NewText (Join-Path $fence 'owner.token') $token
         Write-NewText (Join-Path $fence 'held.marker') ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString())
         Write-NewJson (Join-Path $fence 'holder.json') ([ordered]@{class='build';holder=$env:EXTRO_SESSION;
-            purpose='req_vnf77z5v controlled llama candidate';operator_host=$env:COMPUTERNAME;
+            purpose=('controlled llama source '+$ExpectedProductCommit);operator_host=$env:COMPUTERNAME;
             acquired_at=[DateTimeOffset]::UtcNow.ToString('o');token=$token})
     } finally {
         if ([IO.File]::ReadAllText($gateOwner) -cne $gateToken) {throw 'short gate ownership changed; retained'}
