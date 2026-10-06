@@ -191,7 +191,23 @@ pub(crate) fn apply_anthropic(body: &mut Value, candidate: &AnthropicThinking) {
     }
 }
 
-/// Gemini `thinkingBudget` values in the order to try. Models that must think
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GoogleThinkingControl {
+    Level(&'static str),
+    Budget(u64),
+}
+
+pub(crate) fn google_levels(thinking: Thinking) -> &'static [&'static str] {
+    match thinking {
+        Thinking::Off => &["MINIMAL", "LOW"],
+        Thinking::Budget(8_192) => &["LOW"],
+        Thinking::Budget(16_384) => &["MEDIUM", "LOW"],
+        Thinking::Budget(_) => &["HIGH"],
+    }
+}
+
+/// Gemini `thinkingBudget` values in the order to try. These integer budgets are tried
+/// only after the level control itself is refused. Models that must think
 /// refuse `0` (floors of 128 and 512 were measured), and Gemini 2.5 Flash caps a
 /// budget at 24,576.
 pub(crate) fn google_budgets(thinking: Thinking) -> &'static [u64] {
@@ -203,9 +219,39 @@ pub(crate) fn google_budgets(thinking: Thinking) -> &'static [u64] {
     }
 }
 
+pub(crate) fn google_rejected_thinking_level(status: u16, body: &str, level: &str) -> bool {
+    status == 400
+        && serde_json::from_str::<Value>(body).is_ok_and(|body| {
+            let status_matches =
+                body.pointer("/error/status").and_then(Value::as_str) == Some("INVALID_ARGUMENT");
+            let message = body.pointer("/error/message").and_then(Value::as_str);
+            let expected_level_phrase = format!("Thinking level {level} is not supported");
+            status_matches
+                && message.is_some_and(|msg| {
+                    msg.contains(&expected_level_phrase)
+                        && msg.contains("Please retry with other thinking level.")
+                })
+        })
+}
+
+pub(crate) fn google_rejected_thinking_level_control(status: u16, body: &str) -> bool {
+    status == 400
+        && serde_json::from_str::<Value>(body).is_ok_and(|body| {
+            let status_matches =
+                body.pointer("/error/status").and_then(Value::as_str) == Some("INVALID_ARGUMENT");
+            let message = body.pointer("/error/message").and_then(Value::as_str);
+            status_matches
+                && message.is_some_and(|msg| {
+                    msg.contains("Thinking level is not supported for this model.")
+                        && !msg.contains("Please retry with other thinking level.")
+                })
+        })
+}
+
 /// Gemini answers a refused budget with a 400 `INVALID_ARGUMENT`, sometimes with no
 /// more detail than that, so any such refusal that is not about the context window
-/// steps to the next budget.
+/// steps to the next budget. This is consulted only by the budget ladder; a level attempt
+/// does not use it.
 pub(crate) fn google_refused_thinking(status: u16, body: &str, context_window: bool) -> bool {
     status == 400
         && !context_window
@@ -286,10 +332,17 @@ mod tests {
             Thinking::Budget(32_768),
         ] {
             assert_eq!(openai_efforts(thinking).last(), Some(&None));
-            assert!(!google_budgets(thinking).is_empty());
             let candidates = anthropic_candidates(thinking);
             assert!(!candidates.is_empty());
         }
+        assert_eq!(google_levels(Thinking::Off), &["MINIMAL", "LOW"]);
+        assert_eq!(google_budgets(Thinking::Off), &[0, 128, 512]);
+        assert_eq!(google_levels(Thinking::Budget(8_192)), &["LOW"]);
+        assert_eq!(google_budgets(Thinking::Budget(8_192)), &[8_192]);
+        assert_eq!(google_levels(Thinking::Budget(16_384)), &["MEDIUM", "LOW"]);
+        assert_eq!(google_budgets(Thinking::Budget(16_384)), &[16_384]);
+        assert_eq!(google_levels(Thinking::Budget(32_768)), &["HIGH"]);
+        assert_eq!(google_budgets(Thinking::Budget(32_768)), &[32_768, 24_576]);
         let fixed = anthropic_candidates(Thinking::Budget(32_768));
         assert_eq!(
             fixed
@@ -316,5 +369,53 @@ mod tests {
         assert!(google_refused_thinking(400, budget, false));
         assert!(!google_refused_thinking(400, budget, true));
         assert!(!google_refused_thinking(429, budget, false));
+
+        let minimal_value = r#"{"error":{"code":400,"message":"Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.","status":"INVALID_ARGUMENT"}}"#;
+        assert!(google_rejected_thinking_level(
+            400,
+            minimal_value,
+            "MINIMAL"
+        ));
+        assert!(!google_rejected_thinking_level(400, minimal_value, "LOW"));
+        assert!(!google_rejected_thinking_level_control(400, minimal_value));
+        assert!(!google_rejected_thinking_level(
+            429,
+            minimal_value,
+            "MINIMAL"
+        ));
+
+        let medium_value = r#"{"error":{"code":400,"message":"Thinking level MEDIUM is not supported for this model. Please retry with other thinking level.","status":"INVALID_ARGUMENT"}}"#;
+        assert!(google_rejected_thinking_level(400, medium_value, "MEDIUM"));
+        assert!(!google_rejected_thinking_level(400, medium_value, "LOW"));
+
+        let high_value = r#"{"error":{"code":400,"message":"Thinking level HIGH is not supported for this model. Please retry with other thinking level.","status":"INVALID_ARGUMENT"}}"#;
+        assert!(google_rejected_thinking_level(400, high_value, "HIGH"));
+        assert!(!google_rejected_thinking_level(400, high_value, "MEDIUM"));
+
+        let control_refusal = r#"{"error":{"code":400,"message":"Thinking level is not supported for this model.","status":"INVALID_ARGUMENT"}}"#;
+        assert!(google_rejected_thinking_level_control(400, control_refusal));
+        assert!(!google_rejected_thinking_level(
+            400,
+            control_refusal,
+            "MINIMAL"
+        ));
+        assert!(!google_rejected_thinking_level(400, control_refusal, "LOW"));
+        assert!(!google_rejected_thinking_level(
+            400,
+            control_refusal,
+            "MEDIUM"
+        ));
+        assert!(!google_rejected_thinking_level(
+            400,
+            control_refusal,
+            "HIGH"
+        ));
+        assert!(!google_rejected_thinking_level_control(
+            429,
+            control_refusal
+        ));
+
+        assert!(!google_rejected_thinking_level(400, budget, "MINIMAL"));
+        assert!(!google_rejected_thinking_level_control(400, budget));
     }
 }

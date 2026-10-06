@@ -33,6 +33,7 @@ solstone-core-callosum = { workspace = true, features = ["wire", "test-hooks"] }
 solstone-core-indexer-query.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-system.workspace = true
+solstone-core-transcripts-web.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread"] }
 tower = { workspace = true }

@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- your journal now works with Gemini models that require the newer thinking settings, while keeping your saved thinking choice.
 - if you couldn't find the developer mode setting the agents app told you to turn on for ChatGPT, the connect steps now say to add your journal's address as a custom MCP server.
 - your morning briefing now includes what you owe and what you're waiting on, with how long older items have been open. since 2.0.33, the briefing your journal makes on its own each morning could leave them out or list them without their age.
 
