@@ -16,13 +16,11 @@ mod tests {
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use crate::search_freshness::{
-        IndexMetadata, SEARCH_NOTE_ATTEMPT_FAILED, SEARCH_TEXT_BEHIND_7_DAYS,
-        SEARCH_TEXT_BEHIND_ATTEMPT_FAILED, SEARCH_TEXT_CURRENT, SEARCH_TEXT_UNCLEAR,
-        evaluate_search_freshness,
+    use crate::search_index::{
+        IndexMetadata, SEARCH_NOTE_ATTEMPT_FAILED, SEARCH_TEXT_BEHIND_ATTEMPT_FAILED,
+        SEARCH_TEXT_UNCLEAR, evaluate_search_index, render_search_text,
     };
     use crate::{Clock, backlog, routes_with_clock};
-    use solstone_core_system_health::{IndexerPhase, SummaryFreshness};
 
     struct StubIndexMetadata {
         entries: Mutex<BTreeMap<PathBuf, std::io::Result<SystemTime>>>,
@@ -56,14 +54,6 @@ mod tests {
         }
     }
 
-    fn rendered(template: &str, updated_at_ms: Option<i64>, now: chrono::DateTime<Utc>) -> String {
-        let updated = chrono::DateTime::<Utc>::from_timestamp_millis(
-            updated_at_ms.expect("a rendered search line has a known index age"),
-        )
-        .expect("valid timestamp");
-        crate::search_freshness::render_search_text(template, now - updated)
-    }
-
     #[test]
     fn test_6_search_freshness_precedence_and_evaluation_rules() {
         let temp = TempDir::new().unwrap();
@@ -75,7 +65,7 @@ mod tests {
 
         let stub = StubIndexMetadata::new();
 
-        // 1. sqlite NotFound -> unknown, flag false, updated_at_ms null (ignore WAL)
+        // 1. sqlite NotFound -> unknown, observed_failure false, index_activity_at_ms null (ignore WAL)
         stub.insert(
             &sqlite,
             Err(std::io::Error::new(
@@ -84,13 +74,14 @@ mod tests {
             )),
         );
         stub.insert(&wal, Ok(now_sys));
-        let eval = evaluate_search_freshness(root, &stub, None, SummaryFreshness::Fresh, now);
+        let eval = evaluate_search_index(root, &stub, now);
+        assert_eq!(eval.coverage, "unknown");
         assert_eq!(eval.state, "unknown");
-        assert_eq!(eval.updated_at_ms, None);
-        assert!(!eval.last_attempt_failed);
+        assert_eq!(eval.index_activity_at_ms, None);
+        assert!(!eval.observed_failure);
         assert_eq!(eval.text, SEARCH_TEXT_UNCLEAR);
 
-        // 2. Other metadata error on sqlite -> unknown, flag false, updated_at_ms null
+        // 2. Other metadata error on sqlite -> unknown, observed_failure false, index_activity_at_ms null
         stub.insert(
             &sqlite,
             Err(std::io::Error::new(
@@ -98,13 +89,13 @@ mod tests {
                 "denied",
             )),
         );
-        let eval = evaluate_search_freshness(root, &stub, None, SummaryFreshness::Fresh, now);
+        let eval = evaluate_search_index(root, &stub, now);
         assert_eq!(eval.state, "unknown");
-        assert_eq!(eval.updated_at_ms, None);
-        assert!(!eval.last_attempt_failed);
+        assert_eq!(eval.index_activity_at_ms, None);
+        assert!(!eval.observed_failure);
         assert_eq!(eval.text, SEARCH_TEXT_UNCLEAR);
 
-        // 3. Other metadata error on existing WAL -> unknown, flag false, do not return Err
+        // 3. Other metadata error on existing WAL -> unknown, observed_failure false, index_activity_at_ms null
         stub.insert(&sqlite, Ok(now_sys));
         stub.insert(
             &wal,
@@ -113,10 +104,10 @@ mod tests {
                 "denied",
             )),
         );
-        let eval = evaluate_search_freshness(root, &stub, None, SummaryFreshness::Fresh, now);
+        let eval = evaluate_search_index(root, &stub, now);
         assert_eq!(eval.state, "unknown");
-        assert_eq!(eval.updated_at_ms, None);
-        assert!(!eval.last_attempt_failed);
+        assert_eq!(eval.index_activity_at_ms, None);
+        assert!(!eval.observed_failure);
         assert_eq!(eval.text, SEARCH_TEXT_UNCLEAR);
 
         // 4. Newest mtime more than 5 minutes ahead -> unknown
@@ -128,68 +119,48 @@ mod tests {
                 "not found",
             )),
         );
-        let eval = evaluate_search_freshness(root, &stub, None, SummaryFreshness::Fresh, now);
+        let eval = evaluate_search_index(root, &stub, now);
         assert_eq!(eval.state, "unknown");
-        assert_eq!(eval.updated_at_ms, Some(1_800_000_301 * 1000));
-        assert!(!eval.last_attempt_failed);
+        assert_eq!(eval.index_activity_at_ms, None);
+        assert!(!eval.observed_failure);
         assert_eq!(eval.text, SEARCH_TEXT_UNCLEAR);
 
-        // 5. Age strictly over 7 days -> stale, flag false (wins over summary and attempt)
-        let eight_days_ago = now_sys - StdDuration::from_secs(8 * 86400);
-        stub.insert(&sqlite, Ok(eight_days_ago));
-        let failed_indexer = IndexerPhase {
-            success: false,
-            run_started_at_ms: 100,
-            reason_code: Some("failed".to_owned()),
-        };
-        let eval = evaluate_search_freshness(
-            root,
-            &stub,
-            Some(&failed_indexer),
-            SummaryFreshness::Stale,
-            now,
+        // 5. Valid mtime with no failure -> state unknown, index_activity_at_ms Some, rendered text
+        let one_hour_ago = now_sys - StdDuration::from_secs(3600);
+        stub.insert(&sqlite, Ok(one_hour_ago));
+        stub.insert(
+            &wal,
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "not found",
+            )),
         );
-        assert_eq!(eval.state, "stale");
-        assert!(!eval.last_attempt_failed);
+        let eval = evaluate_search_index(root, &stub, now);
+        assert_eq!(eval.state, "unknown");
+        assert_eq!(
+            eval.index_activity_at_ms,
+            Some((1_800_000_000 - 3600) * 1000)
+        );
+        assert!(!eval.observed_failure);
         assert_eq!(
             eval.text,
-            rendered(SEARCH_TEXT_BEHIND_7_DAYS, eval.updated_at_ms, now)
+            render_search_text("search index last changed {age} ago.", Duration::hours(1))
         );
 
-        // 6. Summary missing, unreadable, degraded, or not Fresh -> unknown, flag false
-        let one_day_ago = now_sys - StdDuration::from_secs(86400);
-        stub.insert(&sqlite, Ok(one_day_ago));
-        let eval = evaluate_search_freshness(
-            root,
-            &stub,
-            Some(&failed_indexer),
-            SummaryFreshness::Stale,
-            now,
-        );
-        assert_eq!(eval.state, "unknown");
-        assert!(!eval.last_attempt_failed);
-        assert_eq!(eval.text, SEARCH_TEXT_UNCLEAR);
-
-        // 7. indexer_phase.success == false -> stale, flag true
-        let eval = evaluate_search_freshness(
-            root,
-            &stub,
-            Some(&failed_indexer),
-            SummaryFreshness::Fresh,
-            now,
-        );
-        assert_eq!(eval.state, "stale");
-        assert!(eval.last_attempt_failed);
+        // 6. Failed attempt in chronicle health log -> state degraded, observed_failure true
+        let health_dir = root.join("chronicle/20261005/health");
+        fs::create_dir_all(&health_dir).unwrap();
+        let record = json!({
+            "ts": 1_800_000_000_000i64 - 1000,
+            "event": "index.attempt",
+            "path": "20261005/test.md",
+            "outcome": "failed",
+        });
+        fs::write(health_dir.join("001.jsonl"), record.to_string() + "\n").unwrap();
+        let eval = evaluate_search_index(root, &stub, now);
+        assert_eq!(eval.state, "degraded");
+        assert!(eval.observed_failure);
         assert_eq!(eval.text, SEARCH_TEXT_BEHIND_ATTEMPT_FAILED);
-
-        // 8. Else fresh
-        let eval = evaluate_search_freshness(root, &stub, None, SummaryFreshness::Fresh, now);
-        assert_eq!(eval.state, "fresh");
-        assert!(!eval.last_attempt_failed);
-        assert_eq!(
-            eval.text,
-            rendered(SEARCH_TEXT_CURRENT, eval.updated_at_ms, now)
-        );
     }
 
     #[test]
@@ -216,17 +187,16 @@ mod tests {
         fs::create_dir_all(root.join("indexer")).unwrap();
         fs::write(root.join("indexer/journal.sqlite"), b"sqlite").unwrap();
 
-        let stats = json!({
-            "generated_at": now.to_rfc3339(),
-            "backlog": {
-                "indexer_phase": {
-                    "success": false,
-                    "reason_code": "lock_failed",
-                    "run_started_at_ms": 1_000
-                }
-            }
+        let day = now.format("%Y%m%d").to_string();
+        let health_dir = root.join("chronicle").join(&day).join("health");
+        fs::create_dir_all(&health_dir).unwrap();
+        let record = json!({
+            "ts": now.timestamp_millis(),
+            "event": "index.attempt",
+            "path": format!("{day}/test.md"),
+            "outcome": "failed",
         });
-        fs::write(root.join("stats.json"), stats.to_string()).unwrap();
+        fs::write(health_dir.join("001.jsonl"), record.to_string() + "\n").unwrap();
 
         let (_synth, notes) = crate::journal_data::report::build_synthesis_health(
             root,
@@ -262,11 +232,7 @@ mod tests {
                             "units": []
                         }
                     }
-                ],
-                "indexer_phase": {
-                    "success": true,
-                    "run_started_at_ms": 1_000
-                }
+                ]
             }
         });
         fs::write(root.join("stats.json"), stats.to_string()).unwrap();
@@ -308,12 +274,13 @@ mod tests {
                 assert!(backlog["copy"]["unfinished_template_one"].is_string());
 
                 let search = &body["search_index"];
-                assert_eq!(search["state"], "fresh");
-                assert_eq!(search["last_attempt_failed"], false);
+                assert_eq!(search["coverage"], "unknown");
+                assert_eq!(search["state"], "unknown");
+                assert_eq!(search["observed_failure"], false);
                 assert!(
                     search["text"]
                         .as_str()
-                        .is_some_and(|text| text.starts_with("search last caught up ")
+                        .is_some_and(|text| text.starts_with("search index last changed ")
                             && text.ends_with(" ago."))
                 );
             });
@@ -764,13 +731,12 @@ mod tests {
         set_file_mtime(&sqlite_path, FileTime::from_unix_time(t_secs + 2, 0)).unwrap();
         set_file_mtime(&wal_path, FileTime::from_unix_time(t_secs + 5, 0)).unwrap();
 
-        // Health log has indexer phase.complete failure whose ts is T
+        // Health log has index.attempt failure whose ts is T
         let fail_record = json!({
             "ts": t_secs * 1000,
-            "event": "phase.complete",
-            "phase": "indexer",
-            "success": false,
-            "reason_code": "failed"
+            "event": "index.attempt",
+            "path": format!("{day}/seg.md"),
+            "outcome": "failed"
         });
         write_run_log(root, day, "001.jsonl", &[&fail_record.to_string()]);
 
@@ -807,16 +773,16 @@ mod tests {
                 serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
                     .unwrap();
 
-            assert_eq!(body["search_index"]["state"], "stale");
-            assert_eq!(body["search_index"]["last_attempt_failed"], true);
+            assert_eq!(body["search_index"]["state"], "degraded");
+            assert_eq!(body["search_index"]["observed_failure"], true);
         });
 
-        // Append a later success: true row
+        // Append a later success/indexed attempt for the same path
         let succ_record = json!({
             "ts": (t_secs + 5) * 1000,
-            "event": "phase.complete",
-            "phase": "indexer",
-            "success": true
+            "event": "index.attempt",
+            "path": format!("{day}/seg.md"),
+            "outcome": "indexed"
         });
         write_run_log(root, day, "002.jsonl", &[&succ_record.to_string()]);
 
@@ -847,8 +813,8 @@ mod tests {
                 serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
                     .unwrap();
 
-            assert_eq!(body["search_index"]["state"], "fresh");
-            assert_eq!(body["search_index"]["last_attempt_failed"], false);
+            assert_eq!(body["search_index"]["state"], "unknown");
+            assert_eq!(body["search_index"]["observed_failure"], false);
         });
     }
 
@@ -874,21 +840,23 @@ mod tests {
         set_file_mtime(&sqlite, FileTime::from_unix_time(eight_days_ago_secs, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(eight_days_ago_secs, 0)).unwrap();
 
-        let meta = crate::search_freshness::FsIndexMetadata;
+        let meta = crate::search_index::FsIndexMetadata;
 
-        // Call twice; both stale, mtimes unchanged
-        let eval1 = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
-        assert_eq!(eval1.state, "stale");
+        // Call twice; both unknown state, mtimes unchanged
+        let eval1 = evaluate_search_index(root, &meta, now);
+        assert_eq!(eval1.state, "unknown");
+        assert_eq!(eval1.coverage, "unknown");
+        assert!(!eval1.observed_failure);
         assert_eq!(
             eval1.text,
-            rendered(SEARCH_TEXT_BEHIND_7_DAYS, eval1.updated_at_ms, now)
+            render_search_text("search index last changed {age} ago.", Duration::days(8))
         );
 
-        let eval2 = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
-        assert_eq!(eval2.state, "stale");
+        let eval2 = evaluate_search_index(root, &meta, now);
+        assert_eq!(eval2.state, "unknown");
         assert_eq!(
             eval2.text,
-            rendered(SEARCH_TEXT_BEHIND_7_DAYS, eval2.updated_at_ms, now)
+            render_search_text("search index last changed {age} ago.", Duration::days(8))
         );
 
         let m1 = fs::metadata(&sqlite).unwrap().modified().unwrap();
@@ -902,50 +870,32 @@ mod tests {
             eight_days_ago_secs as u64
         );
 
-        // db now-1h is fresh
+        // db now-1h
         set_file_mtime(&sqlite, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
-        let eval_fresh = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
-        assert_eq!(eval_fresh.state, "fresh");
+        let eval_fresh = evaluate_search_index(root, &meta, now);
+        assert_eq!(eval_fresh.state, "unknown");
+        assert_eq!(
+            eval_fresh.index_activity_at_ms,
+            Some((1_800_000_000 - 3600) * 1000)
+        );
 
-        // db now-8d with WAL now-1h is fresh
+        // db now-8d with WAL now-1h
         set_file_mtime(&sqlite, FileTime::from_unix_time(eight_days_ago_secs, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
-        let eval_wal_fresh =
-            evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
-        assert_eq!(eval_wal_fresh.state, "fresh");
+        let eval_wal_fresh = evaluate_search_index(root, &meta, now);
+        assert_eq!(eval_wal_fresh.state, "unknown");
+        assert_eq!(
+            eval_wal_fresh.index_activity_at_ms,
+            Some((1_800_000_000 - 3600) * 1000)
+        );
 
-        // db now+1d is unknown
+        // db now+1d is unknown (future mtime suppressed)
         set_file_mtime(&sqlite, FileTime::from_unix_time(1_800_000_000 + 86400, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
-        let eval_future =
-            evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
+        let eval_future = evaluate_search_index(root, &meta, now);
         assert_eq!(eval_future.state, "unknown");
-
-        // summary 40h old with a failed attempt and mtime now-1h is unknown with last_attempt_failed == false
-        set_file_mtime(&sqlite, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
-        set_file_mtime(&wal, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
-        let failed_indexer = solstone_core_system_health::IndexerPhase {
-            success: false,
-            run_started_at_ms: 100,
-            reason_code: Some("failed".to_owned()),
-        };
-        let eval_summary_old = evaluate_search_freshness(
-            root,
-            &meta,
-            Some(&failed_indexer),
-            SummaryFreshness::Stale,
-            now,
-        );
-        assert_eq!(eval_summary_old.state, "unknown");
-        assert!(!eval_summary_old.last_attempt_failed);
-
-        // summary missing, both files now-30d, is stale
-        let thirty_days_ago = 1_800_000_000 - 30 * 86400;
-        set_file_mtime(&sqlite, FileTime::from_unix_time(thirty_days_ago, 0)).unwrap();
-        set_file_mtime(&wal, FileTime::from_unix_time(thirty_days_ago, 0)).unwrap();
-        let eval_30d = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Unknown, now);
-        assert_eq!(eval_30d.state, "stale");
+        assert_eq!(eval_future.index_activity_at_ms, None);
     }
 
     #[tokio::test]
@@ -992,32 +942,13 @@ mod tests {
             !notes
                 .iter()
                 .any(|n| n.message == SEARCH_NOTE_ATTEMPT_FAILED),
-            "degraded backlog must not emit attempt failed note"
+            "no index attempt failure in chronicle logs"
         );
-        assert_eq!(synth.indexer_last_rebuild_at, Some(one_hour_ago * 1000));
+        assert_eq!(synth.index_activity_at, Some(one_hour_ago * 1000));
 
-        let (gen_at_opt, backlog_opt) = crate::backlog::load(root);
-        let indexer_phase = backlog_opt
-            .as_ref()
-            .and_then(|b| b.get("indexer_phase"))
-            .and_then(solstone_core_system_health::IndexerPhase::from_json_value);
-        let summary_freshness = if backlog_opt
-            .as_ref()
-            .is_none_or(|b| b.get("degraded") == Some(&serde_json::Value::Bool(true)))
-        {
-            solstone_core_system_health::SummaryFreshness::Unknown
-        } else {
-            solstone_core_system_health::summary_freshness(gen_at_opt.as_deref(), now)
-        };
-        let eval = evaluate_search_freshness(
-            root,
-            &crate::search_freshness::FsIndexMetadata,
-            indexer_phase.as_ref(),
-            summary_freshness,
-            now,
-        );
+        let eval = evaluate_search_index(root, &crate::search_index::FsIndexMetadata, now);
         assert_eq!(eval.state, "unknown");
-        assert!(!eval.last_attempt_failed);
+        assert!(!eval.observed_failure);
 
         let router = crate::routes_with_clock(root.to_path_buf(), Clock::new(move || now));
         let resp = router
@@ -1047,6 +978,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(body["search_index"]["state"], "unknown");
-        assert_eq!(body["search_index"]["last_attempt_failed"], false);
+        assert_eq!(body["search_index"]["observed_failure"], false);
     }
 }

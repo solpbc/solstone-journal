@@ -132,6 +132,20 @@ pub fn resolve_nvattest_dir(
     config: Option<&serde_json::Map<String, serde_json::Value>>,
     journal_path: &Path,
 ) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let _ = (config, journal_path);
+        // The Windows verifier belongs to the installed signed program.
+        // Neither journal state nor environment can select an executable.
+        return std::env::current_exe()
+            .ok()
+            .and_then(|exe| {
+                let bin = exe.parent()?;
+                (bin.file_name()? == "bin").then(|| bin.parent().map(Path::to_path_buf))?
+            })
+            .unwrap_or_default();
+    }
+    #[cfg(not(windows))]
     config
         .and_then(|root| root.get("services"))
         .and_then(serde_json::Value::as_object)

@@ -31,7 +31,8 @@ use solstone_core_cli::{
     FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
     GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
-    IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions,
+    IndexerClassificationsOptions, IndexerCommand, IndexerCountsOptions,
+    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPathLookupOptions,
     IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
     IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
     JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
@@ -112,6 +113,10 @@ use solstone_core_indexer_store::merge::{
 };
 use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
+};
+use solstone_core_indexer_store::{
+    apply_classification_batch, apply_path_lookup, drain_classifications, inspect_classifications,
+    inspect_path_lookup,
 };
 use solstone_core_journal::{
     ConfigError, HomeError, Source, describe_package_roots_miss, ensure_journal_dir_with_label,
@@ -6706,6 +6711,8 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::Counts(options) => run_indexer_counts(options),
         IndexerCommand::Agents(options) => run_indexer_agents(options),
         IndexerCommand::Coverage(options) => run_indexer_coverage(options),
+        IndexerCommand::PathLookup(options) => run_indexer_path_lookup(options),
+        IndexerCommand::Classifications(options) => run_indexer_classifications(options),
         IndexerCommand::PruneStream(options) => run_indexer_prune_stream(options),
         IndexerCommand::PrunePaths(options) => run_indexer_prune_paths(options),
         IndexerCommand::FoldEntityEdges(options) => run_indexer_fold_entity_edges(options),
@@ -6713,6 +6720,56 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::RebuildEdgesFingerprint(options) => {
             run_indexer_rebuild_edges_fingerprint(options)
         }
+    }
+}
+
+fn run_indexer_classifications(options: IndexerClassificationsOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let result = if options.drain {
+        drain_classifications(&journal)
+    } else if options.apply {
+        apply_classification_batch(&journal)
+    } else {
+        inspect_classifications(&journal)
+    };
+    match result {
+        Ok(status) => {
+            if options.json {
+                print_json(&status.to_json_value());
+            } else {
+                print!("{}", status.format_human());
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_indexer_mutation_error("classifications", error),
+    }
+}
+
+fn run_indexer_path_lookup(options: IndexerPathLookupOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let result = if options.apply {
+        apply_path_lookup(&journal)
+    } else {
+        inspect_path_lookup(&journal)
+    };
+    match result {
+        Ok(status) => {
+            if options.json {
+                print_json(&json!({"ready": status.ready}));
+            } else if status.ready {
+                println!("path lookup: ready");
+            } else {
+                println!("path lookup: unready");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_indexer_mutation_error("path-lookup", error),
     }
 }
 
@@ -7777,6 +7834,12 @@ mod tests {
         let _ = fs::remove_dir_all(dir_path);
         let _ = fs::remove_dir_all(fresh_dir);
     }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    include!("tests/indexer_path_lookup.rs");
+
+    #[cfg(all(test, feature = "full-tests"))]
+    include!("tests/indexer_classifications.rs");
 }
 
 #[cfg(all(test, unix, feature = "journal-mcp-endpoint"))]

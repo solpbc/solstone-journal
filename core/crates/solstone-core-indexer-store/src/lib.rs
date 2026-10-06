@@ -1,15 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+pub mod chunk_sources;
 pub mod classification;
+pub mod classification_batch;
 pub mod db;
 pub mod merge;
 pub mod migrations;
 pub mod reconcile;
 pub mod retention;
 pub mod scan;
+pub(crate) mod writer_admission;
 
+pub use chunk_sources::{PathLookupStatus, apply_path_lookup, inspect_path_lookup};
+pub use classification_batch::{
+    ClassificationInitialization, ClassificationStatus, apply_classification_batch,
+    drain_classifications, inspect_classifications,
+};
+pub use db::open_index_reader;
 pub use retention::RetentionIndex;
+pub use scan::{SavedPublicationAttempt, SavedPublicationOutcome, attempt_saved_publication};
 
 #[cfg(test)]
 mod test_support;
@@ -30,6 +40,18 @@ pub enum StoreError {
     NonUtf8Path(PathBuf),
     MissingFile(PathBuf),
     EdgeRebuildFailed(scan::EdgeRebuildReport),
+    PathLookupRequired {
+        cause: Option<String>,
+    },
+    ClassificationFacetsMissing,
+    WriterBusy {
+        operation: &'static str,
+        cause: String,
+    },
+    WriterAdmission {
+        operation: &'static str,
+        cause: String,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -56,6 +78,27 @@ impl fmt::Display for StoreError {
             }
             StoreError::EdgeRebuildFailed(report) => {
                 write!(formatter, "edge rebuild failed: {report:?}")
+            }
+            StoreError::ClassificationFacetsMissing => write!(
+                formatter,
+                "search classification facet memberships are missing; run 'solstone-core indexer --reset --rescan-full'"
+            ),
+            StoreError::PathLookupRequired { cause: None } => {
+                write!(formatter, "indexer path-lookup --apply")
+            }
+            StoreError::PathLookupRequired {
+                cause: Some(message),
+            } => {
+                write!(formatter, "indexer path-lookup --apply: {message}")
+            }
+            StoreError::WriterBusy { operation, cause } => {
+                write!(formatter, "index writer busy for {operation}: {cause}")
+            }
+            StoreError::WriterAdmission { operation, cause } => {
+                write!(
+                    formatter,
+                    "index writer admission failed for {operation}: {cause}"
+                )
             }
         }
     }

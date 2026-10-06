@@ -182,9 +182,39 @@ try {
     }
     Assert-NoNative 'host-before-fence'
     $cmd=Join-Path $env:SystemRoot 'System32\cmd.exe'
-    Invoke-Native 'host-fence-acquire' $cmd @('/d','/s','/c',"mkdir `"$fence`"") $RunRoot 30 ('/d /s /c "mkdir "{0}""' -f $fence)
-    Write-NewText (Join-Path $fence 'owner.token') $token
-    Write-NewText (Join-Path $fence 'held.marker') ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString())
+    $holds=Join-Path (Split-Path -Parent $fence) 'winbuild-holds'
+    $gate=Join-Path $holds '.gate'
+    New-Item -ItemType Directory -Force -Path $holds | Out-Null
+    $gateToken=[Guid]::NewGuid().ToString('N')
+    $gateOwner=Join-Path $gate 'owner.token'
+    $gateDeadline=[DateTime]::UtcNow.AddSeconds(30)
+    while ($true) {
+        try {New-Item -ItemType Directory -Path $gate -ErrorAction Stop | Out-Null;break}
+        catch {
+            if (-not (Test-Path -LiteralPath $gate)) {throw}
+            if ([DateTime]::UtcNow -gt $gateDeadline) {throw 'winbuild short gate busy; manual quiescence recovery required'}
+            Start-Sleep -Milliseconds 200
+        }
+    }
+    Write-NewText $gateOwner $gateToken
+    try {
+        foreach ($class in @('desktop','guest','idle')) {
+            $other=Join-Path $holds $class
+            if (Test-Path -LiteralPath $other) {throw "winbuild $class held; yield without touching its hold"}
+        }
+        # A fresh, old, malformed or unreadable build fence all refuse mkdir.
+        Invoke-Native 'host-fence-acquire' $cmd @('/d','/s','/c',"mkdir `"$fence`"") $RunRoot 30 `
+            ('/d /s /c "mkdir "{0}""' -f $fence)
+        Write-NewText (Join-Path $fence 'owner.token') $token
+        Write-NewText (Join-Path $fence 'held.marker') ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString())
+        Write-NewJson (Join-Path $fence 'holder.json') ([ordered]@{class='build';holder=$env:EXTRO_SESSION;
+            purpose=('private Windows producer '+$ExpectedProductCommit);operator_host=$env:COMPUTERNAME;
+            acquired_at=[DateTimeOffset]::UtcNow.ToString('o');token=$token})
+    } finally {
+        if ([IO.File]::ReadAllText($gateOwner) -cne $gateToken) {throw 'short gate ownership changed; retained'}
+        Remove-Item -LiteralPath $gateOwner -ErrorAction Stop
+        Remove-Item -LiteralPath $gate -ErrorAction Stop
+    }
     Assert-NoNative 'host-after-fence'
     foreach ($entry in @(Get-ChildItem Env:)) {
         if ($entry.Name.StartsWith('GIT_',[StringComparison]::OrdinalIgnoreCase)) { Set-BuildEnvironment $entry.Name $null }

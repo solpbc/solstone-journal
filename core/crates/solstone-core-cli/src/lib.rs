@@ -19,7 +19,7 @@ macro_rules! speaker_resolve_usage {
 }
 
 pub const USAGE: &str = concat!(
-    "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
+    "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core indexer path-lookup [--journal PATH] [--json] [--apply]\n  solstone-core indexer classifications [--journal PATH] [--json] [--apply] [--drain]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone journal convey --port PORT [--journal PATH]\n  solstone journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule]\n",
     "  solstone journal top [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
@@ -1360,11 +1360,28 @@ pub enum IndexerCommand {
     Counts(IndexerCountsOptions),
     Agents(IndexerReadOptions),
     Coverage(IndexerReadOptions),
+    PathLookup(IndexerPathLookupOptions),
+    Classifications(IndexerClassificationsOptions),
     PruneStream(IndexerPruneStreamOptions),
     PrunePaths(IndexerPrunePathsOptions),
     FoldEntityEdges(IndexerFoldEntityEdgesOptions),
     EdgeFingerprint(IndexerReadOptions),
     RebuildEdgesFingerprint(IndexerReadOptions),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerClassificationsOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+    pub apply: bool,
+    pub drain: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerPathLookupOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+    pub apply: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5037,6 +5054,12 @@ fn parse_indexer(args: &[OsString]) -> Result<IndexerCommand, UsageError> {
         [verb, rest @ ..] if verb == OsStr::new("coverage") => {
             parse_indexer_read(rest).map(IndexerCommand::Coverage)
         }
+        [verb, rest @ ..] if verb == OsStr::new("path-lookup") => {
+            parse_indexer_path_lookup(rest).map(IndexerCommand::PathLookup)
+        }
+        [verb, rest @ ..] if verb == OsStr::new("classifications") => {
+            parse_indexer_classifications(rest).map(IndexerCommand::Classifications)
+        }
         [verb, rest @ ..] if verb == OsStr::new("prune-stream") => {
             parse_indexer_prune_stream(rest).map(IndexerCommand::PruneStream)
         }
@@ -5281,6 +5304,109 @@ fn parse_indexer_read(args: &[OsString]) -> Result<IndexerReadOptions, UsageErro
     Ok(IndexerReadOptions {
         journal_override,
         json,
+    })
+}
+
+fn parse_indexer_path_lookup(args: &[OsString]) -> Result<IndexerPathLookupOptions, UsageError> {
+    let mut journal_override = None;
+    let mut json = false;
+    let mut apply = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--apply") {
+            if apply {
+                return Err(UsageError);
+            }
+            apply = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if is_query_flag(value.as_os_str()) {
+                return Err(UsageError);
+            }
+            journal_override = Some(value.clone());
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    Ok(IndexerPathLookupOptions {
+        journal_override,
+        json,
+        apply,
+    })
+}
+
+fn parse_indexer_classifications(
+    args: &[OsString],
+) -> Result<IndexerClassificationsOptions, UsageError> {
+    let mut journal_override = None;
+    let mut json = false;
+    let mut apply = false;
+    let mut drain = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--apply") {
+            if apply {
+                return Err(UsageError);
+            }
+            apply = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--drain") {
+            if drain {
+                return Err(UsageError);
+            }
+            drain = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if is_query_flag(value.as_os_str()) {
+                return Err(UsageError);
+            }
+            journal_override = Some(value.clone());
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    if drain && !apply {
+        return Err(UsageError);
+    }
+    Ok(IndexerClassificationsOptions {
+        journal_override,
+        json,
+        apply,
+        drain,
     })
 }
 
@@ -6806,6 +6932,97 @@ mod tests {
                 json: false,
             })))
         );
+        assert_eq!(
+            evaluate_args(&args(&["indexer", "path-lookup"])),
+            Ok(indexer(IndexerCommand::PathLookup(
+                IndexerPathLookupOptions {
+                    journal_override: None,
+                    json: false,
+                    apply: false,
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "indexer",
+                "path-lookup",
+                "--apply",
+                "--json",
+                "--journal",
+                "/tmp/j"
+            ])),
+            Ok(indexer(IndexerCommand::PathLookup(
+                IndexerPathLookupOptions {
+                    journal_override: Some(OsString::from("/tmp/j")),
+                    json: true,
+                    apply: true,
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "indexer",
+                "classifications",
+                "--apply",
+                "--drain",
+                "--json",
+                "--journal",
+                "/tmp/j"
+            ])),
+            Ok(indexer(IndexerCommand::Classifications(
+                IndexerClassificationsOptions {
+                    journal_override: Some(OsString::from("/tmp/j")),
+                    json: true,
+                    apply: true,
+                    drain: true,
+                }
+            )))
+        );
+    }
+
+    #[test]
+    fn indexer_classifications_cli_parser_contracts() {
+        assert_eq!(
+            evaluate_args(&args(&["indexer", "classifications", "--drain"])),
+            Err(UsageError)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["indexer", "classifications", "--apply", "--apply"])),
+            Err(UsageError)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["indexer", "classifications", "--rescan"])),
+            Err(UsageError)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["indexer", "classifications", "--json"])),
+            Ok(indexer(IndexerCommand::Classifications(
+                IndexerClassificationsOptions {
+                    journal_override: None,
+                    json: true,
+                    apply: false,
+                    drain: false,
+                }
+            )))
+        );
+        assert!(evaluate_args(&args(&["indexer", "path-lookup", "--apply", "--apply"])).is_err());
+        assert!(evaluate_args(&args(&["indexer", "path-lookup", "--json", "--json"])).is_err());
+        assert!(
+            evaluate_args(&args(&[
+                "indexer",
+                "path-lookup",
+                "--journal",
+                "/tmp/a",
+                "--journal",
+                "/tmp/b"
+            ]))
+            .is_err()
+        );
+        assert!(evaluate_args(&args(&["indexer", "path-lookup", "--unknown"])).is_err());
+        assert!(evaluate_args(&args(&["indexer", "path-lookup", "extra-pos"])).is_err());
+        assert!(evaluate_args(&args(&["indexer", "path-lookup", "--journal"])).is_err());
+        assert!(evaluate_args(&args(&["indexer", "path-lookup", "--journal", "--apply"])).is_err());
+        assert!(evaluate_args(&args(&["indexer", "--apply"])).is_err());
     }
 
     #[test]

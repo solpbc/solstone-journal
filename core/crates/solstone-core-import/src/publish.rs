@@ -806,6 +806,7 @@ mod tests {
             "{\"name\":\"Alice Edge\",\"segments\":[\"s1\"]}\n{\"name\":\"Bob Edge\",\"segments\":[\"s1\"]}\n",
         )
         .unwrap();
+        solstone_core_indexer_store::db::reset_index(root).unwrap();
         let before = fingerprint_edge_rows(root).unwrap();
         let files = vec![source];
 

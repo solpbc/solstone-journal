@@ -31,21 +31,25 @@ use solstone_core_indexer::stream::extract_stream;
 use solstone_core_memory_original::{OriginalRead, read_original};
 
 use crate::StoreError;
+use crate::chunk_sources::{
+    CHUNK_SOURCES_LOOKUP_ROWIDS, chunk_path_lookup_ready, delete_chunk_source_rowids,
+    record_chunk_source, require_chunk_path_lookup,
+};
 use crate::classification::{FacetDeclarationSet, classify_source};
+use crate::classification_batch::{ResumeCount, classify_one_batch};
 use crate::db::{
-    ChunkClassificationBackfill, EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION,
-    delete_chunk_classification, mark_index_build_complete, next_unclassified_chunk_paths,
-    open_index, read_chunk_classification_backfill, read_entity_search_watermark,
-    read_segment_aggregate_migration, replace_chunk_classification,
-    write_chunk_classification_backfill, write_entity_search_watermark,
+    EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, delete_chunk_classification,
+    mark_index_build_complete, open_index_admitted, prune_authored_chat_paths_admitted,
+    read_chunk_classification_backfill, read_entity_search_watermark,
+    read_segment_aggregate_migration, replace_chunk_classification, write_entity_search_watermark,
     write_segment_aggregate_migration,
 };
+use crate::writer_admission::{IndexAdmission, check_test_seam};
 
 const MERGE_STEP: i64 = 32;
 const MERGE_BUDGET: usize = 2;
 const SEGMENT_AGGREGATE_MIGRATION_STEP: i64 = 32;
 const SEGMENT_AGGREGATE_MIGRATION_BUDGET: usize = 2;
-const CHUNK_CLASSIFICATION_BACKFILL_STEP: i64 = 32;
 const CHUNK_CLASSIFICATION_BACKFILL_BUDGET: usize = 2;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -122,6 +126,98 @@ pub enum RescanFileStatus {
     Declined,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SavedPublicationOutcome {
+    Indexed,
+    Excluded,
+    Declined,
+    Failed,
+}
+
+impl SavedPublicationOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Indexed => "indexed",
+            Self::Excluded => "excluded",
+            Self::Declined => "declined",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedPublicationAttempt {
+    pub path: String,
+    pub outcome: SavedPublicationOutcome,
+    pub warnings: Vec<String>,
+    pub cause: Option<String>,
+}
+
+pub fn attempt_saved_publication(
+    journal: &Path,
+    saved: &Path,
+    rescan: impl FnOnce(&Path, &Path) -> Result<RescanFileStatus, String>,
+) -> SavedPublicationAttempt {
+    let (rel, path) = match resolve_rescan_target(journal, saved) {
+        Ok(pair) => pair,
+        Err(error) => {
+            return SavedPublicationAttempt {
+                path: saved.display().to_string(),
+                outcome: SavedPublicationOutcome::Failed,
+                warnings: Vec::new(),
+                cause: Some(error.to_string()),
+            };
+        }
+    };
+    let edge_source = match edge_source_for_rel(&rel) {
+        Ok(edge) => edge,
+        Err(error) => {
+            return SavedPublicationAttempt {
+                path: rel,
+                outcome: SavedPublicationOutcome::Failed,
+                warnings: Vec::new(),
+                cause: Some(error.to_string()),
+            };
+        }
+    };
+    let is_admitted = solstone_core_format::content::resolve_spec(&rel).is_some_and(|spec| {
+        matches!(
+            spec.disposition,
+            solstone_core_format::content::IndexDisposition::Admitted { .. }
+        )
+    });
+
+    if edge_source.is_some() || is_admitted {
+        match rescan(journal, &path) {
+            Ok(RescanFileStatus::Indexed { warnings }) => SavedPublicationAttempt {
+                path: rel,
+                outcome: SavedPublicationOutcome::Indexed,
+                warnings,
+                cause: None,
+            },
+            Ok(RescanFileStatus::Declined) => SavedPublicationAttempt {
+                path: rel,
+                outcome: SavedPublicationOutcome::Declined,
+                warnings: Vec::new(),
+                cause: None,
+            },
+            Err(err) => SavedPublicationAttempt {
+                path: rel,
+                outcome: SavedPublicationOutcome::Failed,
+                warnings: Vec::new(),
+                cause: Some(err),
+            },
+        }
+    } else {
+        SavedPublicationAttempt {
+            path: rel,
+            outcome: SavedPublicationOutcome::Excluded,
+            warnings: Vec::new(),
+            cause: None,
+        }
+    }
+}
+
 /// Row IDs for paths this scan has not processed yet. FTS5 cannot index the
 /// equality predicate on its UNINDEXED path column, so scanning it once avoids
 /// a full content-table walk for every changed file. No persistent schema or
@@ -143,12 +239,13 @@ impl PendingChunkRows {
     /// between validating the snapshot and using the row IDs. Each path is
     /// taken once; our own writes only affect paths already removed here.
     fn take(&mut self, tx: &Transaction<'_>, path: &str) -> Result<Vec<i64>, StoreError> {
+        require_chunk_path_lookup(tx)?;
         let version = tx.query_row("PRAGMA data_version", [], |row| row.get(0))?;
         if self.data_version != Some(version) {
             for rows in self.paths.values_mut() {
                 rows.clear();
             }
-            let mut statement = tx.prepare("SELECT rowid, path FROM chunks")?;
+            let mut statement = tx.prepare("SELECT rowid, path FROM chunk_sources")?;
             let mut rows = statement.query([])?;
             while let Some(row) = rows.next()? {
                 let path: Option<String> = row.get(1)?;
@@ -175,8 +272,18 @@ fn delete_file_chunks(
         for id in rows {
             statement.execute(params![id, path])?;
         }
+        delete_chunk_source_rowids(conn, rows)?;
     } else {
-        conn.execute("DELETE FROM chunks WHERE path=?", [path])?;
+        require_chunk_path_lookup(conn)?;
+        let mut select_stmt = conn.prepare(CHUNK_SOURCES_LOOKUP_ROWIDS)?;
+        let rowids = select_stmt
+            .query_map([path], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut delete_stmt = conn.prepare_cached("DELETE FROM chunks WHERE rowid=? AND path=?")?;
+        for id in &rowids {
+            delete_stmt.execute(params![id, path])?;
+        }
+        delete_chunk_source_rowids(conn, &rowids)?;
     }
     delete_chunk_classification(conn, path)?;
     conn.execute("DELETE FROM memory_originals WHERE path=?", [path])?;
@@ -261,8 +368,20 @@ fn memory_original_exists(conn: &Connection, path: &str) -> Result<bool, StoreEr
 }
 
 pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
-    crate::db::prune_authored_chat_paths(journal)?;
-    let mut conn = open_index(journal)?;
+    let admission = IndexAdmission::acquire(journal, "scan")?;
+    scan_journal_admitted(journal, full, &admission)
+}
+
+pub(crate) fn scan_journal_admitted(
+    journal: &Path,
+    full: bool,
+    admission: &IndexAdmission,
+) -> Result<ScanReport, StoreError> {
+    prune_authored_chat_paths_admitted(journal, admission)?;
+    let mut conn = open_index_admitted(journal, admission)?;
+    if !chunk_path_lookup_ready(&conn)? {
+        return Err(StoreError::PathLookupRequired { cause: None });
+    }
     let mut report = ScanReport::default();
     let files = discover_indexable_files(journal)?;
 
@@ -454,62 +573,45 @@ fn migrate_chunk_classifications(
     journal: &Path,
 ) -> Result<Vec<String>, StoreError> {
     let existing = read_chunk_classification_backfill(conn)?;
-    let mut state = existing.clone().unwrap_or(ChunkClassificationBackfill {
-        cursor: String::new(),
-        completed: false,
-        stalled: false,
-        stalled_path: None,
-        resume_count: 0,
-    });
-    if state.completed {
-        return Ok(Vec::new());
-    }
-    if existing.is_some() {
-        state.resume_count += 1;
-    }
-    let declarations = match FacetDeclarationSet::from_journal(journal) {
-        Ok(declarations) => declarations,
-        Err(error) => {
-            state.stalled = true;
-            state.stalled_path = Some(state.cursor.clone());
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            write_chunk_classification_backfill(&tx, &state)?;
-            tx.commit()?;
+    if let Some(ref state) = existing
+        && state.completed
+    {
+        let status = classify_one_batch(conn, journal, ResumeCount::Preserve)?;
+        if status.coverage_mismatch {
             return Ok(vec![format!(
-                "chunk classification backfill stalled: {error}"
+                "chunk classification coverage mismatch: {} missing rows",
+                status.missing
             )]);
         }
+        return Ok(Vec::new());
+    }
+
+    let resume_target = match existing {
+        Some(state) => ResumeCount::Set(state.resume_count + 1),
+        None => ResumeCount::Set(0),
     };
+
+    let mut current_resume = resume_target;
     for _ in 0..CHUNK_CLASSIFICATION_BACKFILL_BUDGET {
-        let paths =
-            next_unclassified_chunk_paths(conn, &state.cursor, CHUNK_CLASSIFICATION_BACKFILL_STEP)?;
-        if paths.is_empty() {
-            state.completed = true;
-            state.stalled = false;
-            state.stalled_path = None;
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            write_chunk_classification_backfill(&tx, &state)?;
-            tx.commit()?;
+        let status = classify_one_batch(conn, journal, current_resume)?;
+        if status.stalled {
+            let err = status
+                .stalled_error
+                .unwrap_or_else(|| "facet directory read failed".to_string());
+            return Ok(vec![format!(
+                "chunk classification backfill stalled: {err}"
+            )]);
+        }
+        if status.completed || status.coverage_mismatch {
+            if status.coverage_mismatch {
+                return Ok(vec![format!(
+                    "chunk classification coverage mismatch: {} missing rows",
+                    status.missing
+                )]);
+            }
             break;
         }
-        for path in paths {
-            let stream = conn
-                .query_row(
-                    "SELECT stream FROM chunks WHERE path=? LIMIT 1",
-                    [&path],
-                    |row| row.get::<_, Option<String>>(0),
-                )
-                .optional()?;
-            let classification =
-                classify_source(journal, &path, stream.flatten().as_deref(), &declarations);
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            replace_chunk_classification(&tx, &classification)?;
-            state.cursor = path;
-            state.stalled = false;
-            state.stalled_path = None;
-            write_chunk_classification_backfill(&tx, &state)?;
-            tx.commit()?;
-        }
+        current_resume = ResumeCount::Preserve;
     }
     Ok(Vec::new())
 }
@@ -557,6 +659,16 @@ fn run_bounded_merge(conn: &mut Connection) -> (usize, Option<String>) {
 }
 
 pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, StoreError> {
+    let admission = IndexAdmission::acquire(journal, "rescan-file")?;
+    rescan_file_admitted(journal, input, &admission)
+}
+
+pub(crate) fn rescan_file_admitted(
+    journal: &Path,
+    input: &Path,
+    admission: &IndexAdmission,
+) -> Result<RescanFileStatus, StoreError> {
+    check_test_seam("before-source");
     let (rel, path) = resolve_rescan_target(journal, input)?;
     let resolution = resolve_content_shape(&path, &rel);
     let edge_source = edge_source_for_rel(&rel)?;
@@ -572,20 +684,24 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     if !path.is_file() {
         return Err(StoreError::MissingFile(path));
     }
-    let memory_original = if family == Some(Family::AgentMemory) {
-        match read_memory_original(journal, &rel) {
-            Ok(original) => Some(original),
-            Err(_) => {
-                let mut conn = open_index(journal)?;
-                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                delete_file_chunks(&tx, &rel, None)?;
-                tx.execute("DELETE FROM files WHERE path=?", [&rel])?;
-                tx.commit()?;
-                return Ok(RescanFileStatus::Declined);
-            }
-        }
+    let memory_original_res = if family == Some(Family::AgentMemory) {
+        Some(read_memory_original(journal, &rel))
     } else {
         None
+    };
+    check_test_seam("after-memory-read");
+    let mut conn = open_index_admitted(journal, admission)?;
+    require_chunk_path_lookup(&conn)?;
+    let memory_original = match memory_original_res {
+        Some(Ok(original)) => Some(original),
+        Some(Err(_)) => {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            delete_file_chunks(&tx, &rel, None)?;
+            tx.execute("DELETE FROM files WHERE path=?", [&rel])?;
+            tx.commit()?;
+            return Ok(RescanFileStatus::Declined);
+        }
+        None => None,
     };
     let mut edge_resolver = EdgeResolver::new(journal);
     if edge_source.is_some() {
@@ -596,7 +712,6 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     } else {
         file_mtime_secs(&path)?
     };
-    let mut conn = open_index(journal)?;
     // Immediate, not deferred: this reads current state (ensure_file_current's
     // mtime comparison) before writing. A deferred transaction's read snapshot
     // can be invalidated by a concurrent committer between that read and this
@@ -632,14 +747,15 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     Ok(RescanFileStatus::Indexed { warnings })
 }
 
-pub fn rebuild_edges_guarded<F>(
+pub(crate) fn rebuild_edges_guarded<F>(
     journal: &Path,
+    admission: &IndexAdmission,
     before_commit: F,
 ) -> Result<Option<EdgeRebuildReport>, StoreError>
 where
     F: FnOnce() -> Result<bool, StoreError>,
 {
-    let mut conn = open_index(journal)?;
+    let mut conn = open_index_admitted(journal, admission)?;
     let mut resolver = EdgeResolver::new(journal);
     let mut report = EdgeRebuildReport::default();
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -692,7 +808,9 @@ where
 }
 
 pub fn rebuild_edges(journal: &Path) -> Result<EdgeRebuildReport, StoreError> {
-    rebuild_edges_guarded(journal, || Ok(true)).map(|opt| opt.expect("closure returned true"))
+    let admission = IndexAdmission::acquire(journal, "rebuild-edges")?;
+    rebuild_edges_guarded(journal, &admission, || Ok(true))
+        .map(|opt| opt.expect("closure returned true"))
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1074,6 +1192,14 @@ fn migrate_segment_aggregate(
             )));
         }
     }
+    let segment_rowids = {
+        let mut statement =
+            tx.prepare("SELECT rowid FROM chunks WHERE path=? AND agent='segment'")?;
+        statement
+            .query_map([rel_segment], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    delete_chunk_source_rowids(&tx, &segment_rowids)?;
     tx.execute(
         "DELETE FROM chunks WHERE path=? AND agent='segment'",
         [rel_segment],
@@ -1142,6 +1268,7 @@ fn index_entity_search_build(
                 for id in ids {
                     delete.execute(params![id, path])?;
                 }
+                delete_chunk_source_rowids(conn, ids)?;
             }
             delete_chunk_classification(conn, &path)?;
             if let Some(rows) = built {
@@ -1152,6 +1279,14 @@ fn index_entity_search_build(
                 )?;
             }
         }
+        let legacy_entity_rowids = {
+            let mut statement =
+                conn.prepare("SELECT rowid FROM chunks WHERE path LIKE 'entities/%/entity.json'")?;
+            statement
+                .query_map([], |row| row.get::<_, i64>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        delete_chunk_source_rowids(conn, &legacy_entity_rowids)?;
         conn.execute(
             "DELETE FROM chunks WHERE path LIKE 'entities/%/entity.json'",
             [],
@@ -1253,6 +1388,12 @@ fn insert_entity_search_rows(
                 row.idx,
                 row.time_bucket,
             ],
+        )?;
+        record_chunk_source(
+            conn,
+            None,
+            Some(row.path.as_str()),
+            Some(row.stream.as_str()),
         )?;
     }
     Ok(())
@@ -1386,6 +1527,8 @@ fn index_file(
             ],
         )
         .map_err(|error| format!("chunk insert failed for {rel}: {error}"))?;
+        record_chunk_source(conn, None, Some(rel), stream.as_deref())
+            .map_err(|error| format!("chunk source mapping failed for {rel}: {error}"))?;
     }
     replace_chunk_classification(conn, &classification)
         .map_err(|error| format!("classification insert failed for {rel}: {error}"))?;
@@ -1496,9 +1639,9 @@ mod tests {
     use super::*;
     use crate::db::{
         ChunkClassification, EntitySearchWatermark, IndexBuildLifecycle, IndexBuildState, db_path,
-        read_chunk_classification_backfill, read_entity_search_watermark, read_index_build_state,
-        read_segment_aggregate_migration, replace_chunk_classification, reset_index,
-        write_entity_search_watermark, write_segment_aggregate_migration,
+        open_index, read_chunk_classification_backfill, read_entity_search_watermark,
+        read_index_build_state, read_segment_aggregate_migration, replace_chunk_classification,
+        reset_index, write_entity_search_watermark, write_segment_aggregate_migration,
     };
     use crate::test_support::reserve_temp_path;
     use rusqlite::{Connection, params};
@@ -1612,6 +1755,7 @@ mod tests {
             )
             .expect("seed legacy chunk");
         }
+        crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
         // AC20: two 32-path pages make bounded progress and leave an
         // assertable running cursor; the resumed invocation alone increments.
         assert!(
@@ -1656,6 +1800,7 @@ mod tests {
                 [],
             )
             .expect("seed stalled chunk");
+        crate::chunk_sources::apply_path_lookup(&stalled_root).expect("apply path lookup");
         fs::write(stalled_root.join("facets"), "not a directory").expect("block facets scan");
         assert!(
             !migrate_chunk_classifications(&mut stalled_conn, &stalled_root)
@@ -1683,6 +1828,7 @@ mod tests {
             [],
         )
         .expect("seed");
+        crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
         let other = open_index(&root).expect("other writer");
         other
             .busy_timeout(std::time::Duration::ZERO)
@@ -1707,11 +1853,17 @@ mod tests {
             [],
         )
         .expect("own replacement");
+        crate::chunk_sources::record_chunk_source(&tx, None, Some("a"), None)
+            .expect("record chunk source");
         tx.commit().expect("commit a");
         other
             .execute("DELETE FROM chunks WHERE rowid=2", [])
             .expect("other delete");
+        other
+            .execute("DELETE FROM chunk_sources WHERE rowid=2", [])
+            .expect("other delete mapping");
         other.execute("INSERT INTO chunks(rowid, content, path) VALUES (2, 'unrelated', 'elsewhere'), (4, 'new', 'b'), (5, 'newly arrived', 'c')", []).expect("other replacement");
+        other.execute("INSERT INTO chunk_sources(rowid, path) VALUES (2, 'elsewhere'), (4, 'b'), (5, 'c')", []).expect("other replacement mapping");
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .expect("begin b");
@@ -1751,6 +1903,7 @@ mod tests {
         let root = temp_root("pending-chunks-exact");
         let mut conn = open_index(&root).expect("open");
         conn.execute("INSERT INTO chunks(content, path) VALUES ('one', 'a_%'), ('two', 'a_%'), ('other', 'abc'), ('no path', NULL)", []).expect("seed");
+        crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
         let mut pending = PendingChunkRows::new(["a_%", "missing"].into_iter().map(str::to_string));
         for path in ["a_%", "missing"] {
             let tx = conn
@@ -6338,6 +6491,77 @@ not json
         );
 
         fs::remove_dir_all(root).expect("cleanup concurrent test root");
+    }
+
+    #[test]
+    fn attempt_saved_publication_outcomes() {
+        let root = temp_root("attempt-saved-pub");
+        let chronicle_dir = root.join("chronicle/20260101/stream/120000_60/talents");
+        fs::create_dir_all(&chronicle_dir).unwrap();
+
+        let note_path = chronicle_dir.join("note.md");
+        fs::write(&note_path, "# Notes\nContent").unwrap();
+
+        let sense_path = chronicle_dir.join("sense.json");
+        fs::write(&sense_path, "{}").unwrap();
+
+        let facets_path = chronicle_dir.join("facets.json");
+        fs::write(&facets_path, "[]").unwrap();
+
+        // 1. Admitted note.md calls closure and returns Indexed with warnings
+        let mut called = false;
+        let attempt = attempt_saved_publication(&root, &note_path, |_j, _p| {
+            called = true;
+            Ok(RescanFileStatus::Indexed {
+                warnings: vec!["sanitized markdown".to_owned()],
+            })
+        });
+        assert!(called);
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Indexed);
+        assert_eq!(attempt.warnings, vec!["sanitized markdown"]);
+        assert_eq!(attempt.path, "20260101/stream/120000_60/talents/note.md");
+        assert!(!attempt.path.starts_with("chronicle/"));
+
+        // 2. sense.json returns Excluded and does not call closure
+        let mut called = false;
+        let attempt = attempt_saved_publication(&root, &sense_path, |_j, _p| {
+            called = true;
+            Ok(RescanFileStatus::Indexed { warnings: vec![] })
+        });
+        assert!(!called);
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Excluded);
+        assert_eq!(attempt.path, "20260101/stream/120000_60/talents/sense.json");
+        assert!(!attempt.path.starts_with("chronicle/"));
+
+        // 3. facets.json returns Excluded and does not call closure
+        let mut called = false;
+        let attempt = attempt_saved_publication(&root, &facets_path, |_j, _p| {
+            called = true;
+            Ok(RescanFileStatus::Indexed { warnings: vec![] })
+        });
+        assert!(!called);
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Excluded);
+        assert_eq!(
+            attempt.path,
+            "20260101/stream/120000_60/talents/facets.json"
+        );
+        assert!(!attempt.path.starts_with("chronicle/"));
+
+        // 4. Closure Ok(Declined) returns declined
+        let attempt =
+            attempt_saved_publication(&root, &note_path, |_j, _p| Ok(RescanFileStatus::Declined));
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Declined);
+        assert_eq!(attempt.path, "20260101/stream/120000_60/talents/note.md");
+
+        // 5. Closure Err returns failed with cause
+        let attempt = attempt_saved_publication(&root, &note_path, |_j, _p| {
+            Err("sqlite lock error".to_owned())
+        });
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Failed);
+        assert_eq!(attempt.cause.as_deref(), Some("sqlite lock error"));
+        assert_eq!(attempt.path, "20260101/stream/120000_60/talents/note.md");
+
+        fs::remove_dir_all(root).expect("cleanup test root");
     }
 
     fn chunk_contents_contain(conn: &Connection, needle: &str) -> bool {

@@ -41,6 +41,9 @@ pub use nvattest_install::ensure_nvattest_installed_on_for_tests as ensure_nvatt
 #[cfg(all(unix, feature = "test-hooks"))]
 #[doc(hidden)]
 pub use nvattest_install::ensure_nvattest_installed_with_for_tests as ensure_nvattest_installed_with;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use ratls::channel::establish_local_test_channel_with_clock;
 pub use ratls::{
     channel::{
         AdmissionClock, AttestedChannel, AttestedHttpError, AttestedHttpResponse, AttestedIo,

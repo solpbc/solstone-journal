@@ -54,8 +54,20 @@ fn install_for_platform(
     ensure_nvattest_installed_with(nvattest_dir, platform, authority_json, policy)
 }
 
+// The Windows verifier is admitted by the signed application inventory. It
+// is never acquired into journal state or downloaded on demand.
+#[cfg(windows)]
+fn install_for_platform(
+    nvattest_dir: &Path,
+    _platform: &str,
+    _authority_json: &str,
+    _policy: &DownloadHostPolicy<'_>,
+) -> NvattestEnsureStatus {
+    crate::check_nvattest_readiness(nvattest_dir)
+}
+
 /// This platform has no verifier installer.
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn install_for_platform(
     _nvattest_dir: &Path,
     _platform: &str,

@@ -62,6 +62,12 @@ impl<'a> Image<'a> {
         if word(bytes, coff)? != crate::pe::IMAGE_FILE_MACHINE_AMD64 {
             return Err("Windows payload requires AMD64 PE images".into());
         }
+        let optional = coff + 20;
+        let size = word(bytes, coff + 16)? as usize;
+        let optional_range = range(optional, size, bytes.len())?;
+        if size < 112 || word(bytes, optional)? != 0x20b {
+            return Err("dependency census requires PE32+".into());
+        }
         let count = word(bytes, coff + 2)? as usize;
         if count == 0 || count > 96 {
             return Err("unsupported PE section count".into());
@@ -69,12 +75,6 @@ impl<'a> Image<'a> {
         let characteristics = word(bytes, coff + 18)?;
         if characteristics & 2 == 0 {
             return Err("PE image lacks executable characteristic".into());
-        }
-        let optional = coff + 20;
-        let size = word(bytes, coff + 16)? as usize;
-        let optional_range = range(optional, size, bytes.len())?;
-        if size < 112 || word(bytes, optional)? != 0x20b {
-            return Err("dependency census requires PE32+".into());
         }
         let directory_count = dword(bytes, optional + 108)? as usize;
         if directory_count > (size - 112) / 8 {
@@ -352,7 +352,7 @@ pub(crate) mod tests {
         put(bytes, OPT + 116 + index * 8, size);
     }
 
-    fn with_import(delayed: bool) -> Vec<u8> {
+    pub(crate) fn with_import(delayed: bool) -> Vec<u8> {
         let mut bytes = image();
         directory(
             &mut bytes,
@@ -372,7 +372,7 @@ pub(crate) mod tests {
         bytes
     }
 
-    fn with_forwarder(text: &[u8]) -> Vec<u8> {
+    pub(crate) fn with_forwarder(text: &[u8]) -> Vec<u8> {
         let mut bytes = image();
         directory(&mut bytes, 0, 0, 0x100);
         put(&mut bytes, RAW + 20, 1);

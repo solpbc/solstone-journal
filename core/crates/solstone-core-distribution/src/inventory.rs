@@ -335,6 +335,7 @@ pub enum WindowsNativeComponent {
     Restic,
     Rclone,
     Ffmpeg,
+    Nvattest,
 }
 
 #[derive(Debug, Clone, Deserialize)]

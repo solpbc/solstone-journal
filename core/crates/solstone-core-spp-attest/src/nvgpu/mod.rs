@@ -7,6 +7,8 @@ pub mod appraise;
 pub mod binary;
 pub mod claims;
 mod rims;
+#[cfg(any(windows, test))]
+mod windows;
 
 pub use appraise::{
     GpuAppraiser, GpuStatusInput, NVATTEST_TIMEOUT, NvattestGpuAppraiser, appraise_gpu_leg,
@@ -20,3 +22,9 @@ pub use claims::{
     StatusExpectation, build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout,
 };
 pub use rims::{GpuProfile, GpuProfiles, ManifestSet, StatusMode};
+
+/// Trusts a fixture signing key for a privately signed Windows payload, so a
+/// test harness can run the real helper through the production locator.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use solstone_core_distribution::manifest_verify::install_test_fixture_pin;

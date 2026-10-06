@@ -1367,3 +1367,58 @@ member = "notices/miniaudio-LICENSE.txt"
 dest = "share/licenses/llama/miniaudio-LICENSE.txt"
 mode = 420
 targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "nvattest"
+member = "bin/nvattest.exe"
+dest = "bin/nvattest.exe"
+mode = 0o755
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "nvattest"
+member = "share/ca/ca-bundle.pem"
+dest = "share/ca/ca-bundle.pem"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "nvattest"
+member = "LICENSE"
+dest = "share/licenses/nvattest/LICENSE"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "nvattest"
+member = "receipt.json"
+dest = "share/provenance/nvattest/receipt.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "nvattest"
+member = "build-evidence.json"
+dest = "share/provenance/nvattest/build-evidence.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "nvattest"
+member = "validation.log"
+dest = "share/provenance/nvattest/validation.log"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/nvattest-windows-NOTICES.md"
+dest = "share/licenses/nvattest/NOTICES.md"
+mode = 0o644
+targets = ["windows-x86_64"]

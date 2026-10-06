@@ -72,7 +72,7 @@ ipconfig = { version = "0.3.2", default-features = false }
 proc-macro2 = "1.0.107"
 rusqlite.workspace = true
 serde.workspace = true
-solstone-core-indexer-store.workspace = true
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 syn = { version = "2.0.119", features = ["full", "visit"] }
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "test-util"] }

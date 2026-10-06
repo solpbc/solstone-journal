@@ -1,0 +1,165 @@
+﻿{
+    "schema":  1,
+    "source_commit":  "8fdbb0f8c10594a5f88f77fdec4766803b4e6d59",
+    "source_clean":  null,
+    "tools":  {
+                  "msvc":  "14.44.35207",
+                  "vs":  {
+
+                         },
+                  "windows_sdk":  "10.0.26100.0\\",
+                  "cmake":  "cmake version 3.31.12",
+                  "rustc":  "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+                  "cargo":  "cargo 1.97.1 (c980f4866 2026-06-30)",
+                  "crt_redist":  "Microsoft.VC143.CRT"
+              },
+    "sources":  [
+                    {
+                        "name":  "openssl-3.6.1.tar.gz",
+                        "url":  "https://github.com/openssl/openssl/releases/download/openssl-3.6.1/openssl-3.6.1.tar.gz",
+                        "sha256":  "b1bfedcd5b289ff22aee87c9d600f515767ebf45f77168cb6d64f231f518a82e"
+                    },
+                    {
+                        "name":  "libxml2-2.11.9.tar.xz",
+                        "url":  "https://download.gnome.org/sources/libxml2/2.11/libxml2-2.11.9.tar.xz",
+                        "sha256":  "780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f"
+                    },
+                    {
+                        "name":  "xmlsec1-1.2.39.tar.gz",
+                        "url":  "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_39/xmlsec1-1.2.39.tar.gz",
+                        "sha256":  "15f2f55ea5968e578fcd24b3b427e553876c86c147dc7f03923e98fc2768a1fa"
+                    },
+                    {
+                        "name":  "curl-7.88.1.tar.gz",
+                        "url":  "https://github.com/curl/curl/releases/download/curl-7_88_1/curl-7.88.1.tar.gz",
+                        "sha256":  "cdb38b72e36bc5d33d5b8810f8018ece1baa29a8f215b4495e495ded82bbf3c7"
+                    },
+                    {
+                        "name":  "zlib-1.3.1.tar.gz",
+                        "url":  "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+                        "sha256":  "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+                    },
+                    {
+                        "name":  "cli11-bfffd37e1f804ca4fae1caae106935791696b6a9.tar.gz",
+                        "url":  "https://codeload.github.com/CLIUtils/CLI11/tar.gz/bfffd37e1f804ca4fae1caae106935791696b6a9",
+                        "sha256":  "03c9b7921b8f99ca39ae660b03ebf9bd5a3f4280201f7d04bc5639b1e0496401"
+                    },
+                    {
+                        "name":  "corrosion-6be991bb34c348dfb8344be22f3606288ea5c7fd.tar.gz",
+                        "url":  "https://codeload.github.com/corrosion-rs/corrosion/tar.gz/6be991bb34c348dfb8344be22f3606288ea5c7fd",
+                        "sha256":  "84d8fbc2810af9a42e250411dcd30b8e8cc59deba196c1dcd1fb44fec459a793"
+                    },
+                    {
+                        "name":  "regorus-c7bf460bc160c96e38048296e5708943d2e43909.tar.gz",
+                        "url":  "https://codeload.github.com/microsoft/regorus/tar.gz/c7bf460bc160c96e38048296e5708943d2e43909",
+                        "sha256":  "188805b3b44b1cd2f9e8fd9b74a281b5f8eaa1c1b4087fd442afc88eccfef7cd"
+                    },
+                    {
+                        "name":  "regorus-build-revision",
+                        "revision":  "c7bf460bc160c96e38048296e5708943d2e43909",
+                        "original_sha256":  "7dc931d2a3cc9203b9cf63c9da29e85122f8b10ae2b1a4318494eacc178a3956",
+                        "sha256":  "bef3c5f151c9f48f2e0bcf9a71ceb7c4d7ad9c5aec723d483076d4247ba86c15"
+                    },
+                    {
+                        "name":  "jwt-cpp-e71e0c2d584baff06925bbb3aad683f677e4d498.tar.gz",
+                        "url":  "https://codeload.github.com/Thalhammer/jwt-cpp/tar.gz/e71e0c2d584baff06925bbb3aad683f677e4d498",
+                        "sha256":  "1988cbe1c930638ac4341578fb0fc0616fe39cf468a9087624b27581d81f8b51"
+                    },
+                    {
+                        "name":  "fmt-e69e5f977d458f2650bb346dadf2ad30c5320281.tar.gz",
+                        "url":  "https://codeload.github.com/fmtlib/fmt/tar.gz/e69e5f977d458f2650bb346dadf2ad30c5320281",
+                        "sha256":  "1723f27eed50e751037f49dcdf73e33b17658f1178ea1c1f829a30bb02335745"
+                    },
+                    {
+                        "name":  "spdlog-27cb4c76708608465c413f6d0e6b8d99a4d84302.tar.gz",
+                        "url":  "https://codeload.github.com/gabime/spdlog/tar.gz/27cb4c76708608465c413f6d0e6b8d99a4d84302",
+                        "sha256":  "7d512b37019b61646cd6fd1e48f52a3cf3e098f36b33ba9c059fe51301ff40b3"
+                    },
+                    {
+                        "name":  "json-3.12.0.tar.xz",
+                        "url":  "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz",
+                        "sha256":  "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa"
+                    }
+                ],
+    "build_tools":  [
+                        {
+                            "name":  "strawberry-perl-5.40.0.1-64bit-portable.zip",
+                            "url":  "https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases/download/SP_54001_64bit_UCRT/strawberry-perl-5.40.0.1-64bit-portable.zip",
+                            "sha256":  "754f3e2a8e473dc68d1540c7802fb166a025f35ef18960c4564a31f8b5933907"
+                        },
+                        {
+                            "name":  "cmake-3.31.12-windows-x86_64.zip",
+                            "url":  "https://cmake.org/files/v3.31/cmake-3.31.12-windows-x86_64.zip",
+                            "sha256":  "0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c"
+                        }
+                    ],
+    "ca_bundle":  {
+                      "url":  "https://curl.se/ca/cacert-2026-07-16.pem",
+                      "sha256":  "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91"
+                  },
+    "imports":  [
+                    "ADVAPI32.dll",
+                    "USER32.dll",
+                    "bcrypt.dll",
+                    "CRYPT32.dll",
+                    "kernel32.dll",
+                    "api-ms-win-core-synch-l1-2-0.dll",
+                    "bcryptprimitives.dll",
+                    "KERNEL32.dll",
+                    "ntdll.dll",
+                    "WS2_32.dll",
+                    "SHELL32.dll",
+                    "MSVCP140.dll",
+                    "VCRUNTIME140.dll",
+                    "VCRUNTIME140_1.dll",
+                    "api-ms-win-crt-runtime-l1-1-0.dll",
+                    "api-ms-win-crt-stdio-l1-1-0.dll",
+                    "api-ms-win-crt-filesystem-l1-1-0.dll",
+                    "api-ms-win-crt-heap-l1-1-0.dll",
+                    "api-ms-win-crt-convert-l1-1-0.dll",
+                    "api-ms-win-crt-environment-l1-1-0.dll",
+                    "api-ms-win-crt-string-l1-1-0.dll",
+                    "api-ms-win-crt-locale-l1-1-0.dll",
+                    "api-ms-win-crt-math-l1-1-0.dll",
+                    "api-ms-win-crt-time-l1-1-0.dll",
+                    "api-ms-win-crt-utility-l1-1-0.dll"
+                ],
+    "outputs":  [
+                    {
+                        "path":  "bin/msvcp140.dll",
+                        "bytes":  557728,
+                        "sha256":  "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+                        "file_version":  "14.44.35211.0"
+                    },
+                    {
+                        "path":  "bin/nvattest.exe",
+                        "bytes":  14700032,
+                        "sha256":  "220849fea69d60563fc6ef0ea7c020450d842565d08e7cbd2eecfecbd41ecdc8",
+                        "file_version":  null
+                    },
+                    {
+                        "path":  "bin/vcruntime140.dll",
+                        "bytes":  124544,
+                        "sha256":  "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+                        "file_version":  "14.44.35211.0"
+                    },
+                    {
+                        "path":  "bin/vcruntime140_1.dll",
+                        "bytes":  49792,
+                        "sha256":  "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+                        "file_version":  "14.44.35211.0"
+                    },
+                    {
+                        "path":  "LICENSE",
+                        "bytes":  11348,
+                        "sha256":  "82d36972a71088e8d4a4793313e64e18340c60de08e3175a58360a277c962a33",
+                        "file_version":  null
+                    },
+                    {
+                        "path":  "share/ca/ca-bundle.pem",
+                        "bytes":  186446,
+                        "sha256":  "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91",
+                        "file_version":  null
+                    }
+                ]
+}

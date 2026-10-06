@@ -14,6 +14,7 @@ use solstone_core_distribution::cleanroom::{
 use solstone_core_distribution::discover_and_validate_inventory;
 use solstone_core_distribution::ffmpeg_windows;
 use solstone_core_distribution::llama_windows_source;
+use solstone_core_distribution::nvattest_windows_source;
 use solstone_core_distribution::onnx_windows_source;
 use solstone_core_distribution::parakeet_windows_source;
 use solstone_core_distribution::produce::{self, ProduceArgs};
@@ -21,7 +22,7 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|llama-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|llama-windows|nvattest-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -131,6 +132,18 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
+        Some("nvattest-windows") => {
+            match nvattest_windows_source::run_cli(&args.collect::<Vec<_>>()) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Some("publish") => {
             let rest = args.collect::<Vec<_>>();
             match publish::run_cli(&rest) {

@@ -30,7 +30,7 @@ tokio = { workspace = true, features = ["sync", "time", "rt"] }
 
 [dev-dependencies]
 rusqlite.workspace = true
-solstone-core-indexer-store.workspace = true
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tower.workspace = true
 

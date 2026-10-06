@@ -209,14 +209,43 @@ try {
     if (@($vms | Where-Object {$_.State.ToString() -ne 'Off'}).Count) { throw 'wait for VM handback' }
     $cmd=Join-Path $env:SystemRoot 'System32\cmd.exe'
     Require-CmdPath $fence
-    Invoke-Native 'host-fence-acquire' $cmd @('/d','/s','/c',"mkdir `"$fence`"") $RunRoot 30 @{} `
-        ('/d /s /c "mkdir "{0}""' -f $fence)
-    Write-NewText (Join-Path $fence 'owner.token') $token
-    Write-NewText (Join-Path $fence 'held.marker') ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString())
+    $holds=Join-Path (Split-Path -Parent $fence) 'winbuild-holds'
+    $gate=Join-Path $holds '.gate'
+    New-Item -ItemType Directory -Force -Path $holds | Out-Null
+    $gateToken=[Guid]::NewGuid().ToString('N')
+    $gateOwner=Join-Path $gate 'owner.token'
+    $gateDeadline=[DateTime]::UtcNow.AddSeconds(30)
+    while ($true) {
+        try {New-Item -ItemType Directory -Path $gate -ErrorAction Stop | Out-Null;break}
+        catch {
+            if (-not (Test-Path -LiteralPath $gate)) {throw}
+            if ([DateTime]::UtcNow -gt $gateDeadline) {throw 'winbuild short gate busy; manual quiescence recovery required'}
+            Start-Sleep -Milliseconds 200
+        }
+    }
+    Write-NewText $gateOwner $gateToken
+    try {
+        foreach ($class in @('desktop','guest','idle')) {
+            $other=Join-Path $holds $class
+            if (Test-Path -LiteralPath $other) {throw "winbuild $class held; yield without touching its hold"}
+        }
+        # A fresh, old, malformed or unreadable build fence all refuse mkdir.
+        Invoke-Native 'host-fence-acquire' $cmd @('/d','/s','/c',"mkdir `"$fence`"") $RunRoot 30 @{} `
+            ('/d /s /c "mkdir "{0}""' -f $fence)
+        Write-NewText (Join-Path $fence 'owner.token') $token
+        Write-NewText (Join-Path $fence 'held.marker') ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString())
+        Write-NewJson (Join-Path $fence 'holder.json') ([ordered]@{class='build';holder=$env:EXTRO_SESSION;
+            purpose=('controlled llama source '+$ExpectedProductCommit);operator_host=$env:COMPUTERNAME;
+            acquired_at=[DateTimeOffset]::UtcNow.ToString('o');token=$token})
+    } finally {
+        if ([IO.File]::ReadAllText($gateOwner) -cne $gateToken) {throw 'short gate ownership changed; retained'}
+        Remove-Item -LiteralPath $gateOwner -ErrorAction Stop
+        Remove-Item -LiteralPath $gate -ErrorAction Stop
+    }
     Assert-NoNative 'host-after-fence'
     $git=Join-Path $GitRoot 'cmd\git.exe'
     foreach ($path in @($SourceArchive,$SdkArchive,$CmakeArchive,$git)) {Require-File $path}
-    if ((Digest $SourceArchive) -cne '97b1b72399a961a285ea1ba72663b22ff0e3adee5c4ccfb818b2237dfc58dc56') {throw 'source archive digest mismatch'}
+    if ((Digest $SourceArchive) -cne '16318b04ce7b32f67366d3ce41d7f9f96ce6ad7f9f450341510ee96171be9a17') {throw 'source archive digest mismatch'}
     if ((Digest $SdkArchive) -cne '81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d') {throw 'SDK archive digest mismatch'}
     if ((Digest $CmakeArchive) -cne '0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c') {throw 'CMake archive digest mismatch'}
     foreach ($entry in @(Get-ChildItem Env:)) {
@@ -366,9 +395,9 @@ endif()
         try {
             Remove-Denies
             if ([IO.File]::ReadAllText((Join-Path $fence 'owner.token')) -cne $token) {throw 'fence ownership changed'}
-            $unexpected=@(Get-ChildItem -LiteralPath $fence -Force -ErrorAction Stop | Where-Object {$_.Name -notin @('owner.token','held.marker')})
+            $unexpected=@(Get-ChildItem -LiteralPath $fence -Force -ErrorAction Stop | Where-Object {$_.Name -notin @('owner.token','held.marker','holder.json')})
             if ($unexpected.Count) {throw 'unexpected fence contents; retained'}
-            Remove-Item -LiteralPath (Join-Path $fence 'owner.token'),(Join-Path $fence 'held.marker') -ErrorAction Stop
+            Remove-Item -LiteralPath (Join-Path $fence 'owner.token'),(Join-Path $fence 'held.marker'),(Join-Path $fence 'holder.json') -ErrorAction Stop
             Remove-Item -LiteralPath $fence -ErrorAction Stop
             if(Test-Path -LiteralPath $fence){throw 'fence removal unconfirmed'}
             $fenceOwned=$false

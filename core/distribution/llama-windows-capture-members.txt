@@ -60,9 +60,6 @@ engine-build/tools/mtmd/llama-mtmd-cli.vcxproj
 engine-build/tools/mtmd/llama-mtmd-debug.vcxproj
 engine-build/tools/mtmd/llama-qwen2vl-cli.vcxproj
 engine-build/tools/mtmd/mtmd.vcxproj
-engine-build/tools/parser/INSTALL.vcxproj
-engine-build/tools/parser/llama-debug-template-parser.vcxproj
-engine-build/tools/parser/llama-template-analysis.vcxproj
 engine-build/tools/perplexity/INSTALL.vcxproj
 engine-build/tools/perplexity/llama-perplexity-impl.vcxproj
 engine-build/tools/perplexity/llama-perplexity.vcxproj
@@ -81,10 +78,16 @@ engine-build/tools/tts/INSTALL.vcxproj
 engine-build/tools/tts/llama-tts.vcxproj
 engine-build/tools/ui/INSTALL.vcxproj
 engine-build/tools/ui/llama-ui-assets.vcxproj
-engine-build/tools/ui/llama-ui-embed.vcxproj
 engine-build/tools/ui/llama-ui.vcxproj
+engine-build/vendor/INSTALL.vcxproj
 engine-build/vendor/cpp-httplib/INSTALL.vcxproj
 engine-build/vendor/cpp-httplib/cpp-httplib.vcxproj
+engine-build/vendor/hash/INSTALL.vcxproj
+engine-build/vendor/hash/vendor-hash.vcxproj
+engine-build/vendor/miniaudio/INSTALL.vcxproj
+engine-build/vendor/nlohmann/INSTALL.vcxproj
+engine-build/vendor/sheredom/INSTALL.vcxproj
+engine-build/vendor/stb/INSTALL.vcxproj
 loader-build/ALL_BUILD.vcxproj
 loader-build/CMakeCache.txt
 loader-build/CMakeFiles/3.31.12/CompilerIdC/CompilerIdC.vcxproj

@@ -575,6 +575,76 @@ pub fn establish_attested_channel_with_clock(
     clock: &dyn AdmissionClock,
 ) -> Result<AttestedChannel, RatlsChannelError> {
     refuse_held_platform(std::env::consts::OS)?;
+    establish_unheld_channel_with_clock(
+        endpoint,
+        owner_nonce,
+        nvattest_dir,
+        now,
+        roots_dir,
+        policy,
+        quote_verifier,
+        composite_verifier,
+        socket_timeout,
+        epoch,
+        clock,
+    )
+}
+
+/// Establishes only a literal loopback endpoint for native fixture qualification.
+/// This entry is absent from builds without the test-hooks feature.
+#[cfg(feature = "test-hooks")]
+#[allow(clippy::too_many_arguments)]
+pub fn establish_local_test_channel_with_clock(
+    endpoint: &RatlsEndpoint,
+    owner_nonce: &[u8],
+    nvattest_dir: &Path,
+    now: SystemTime,
+    roots_dir: Option<&Path>,
+    policy: Option<&Policy>,
+    quote_verifier: Option<&dyn QuoteVerifier>,
+    composite_verifier: &dyn CompositeVerifier,
+    socket_timeout: Duration,
+    epoch: u64,
+    clock: &dyn AdmissionClock,
+) -> Result<AttestedChannel, RatlsChannelError> {
+    if !endpoint
+        .host
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(|address| address.is_loopback())
+    {
+        return Err(RatlsChannelError {
+            reason_code: "test_endpoint_not_loopback",
+        });
+    }
+    establish_unheld_channel_with_clock(
+        endpoint,
+        owner_nonce,
+        nvattest_dir,
+        now,
+        roots_dir,
+        policy,
+        quote_verifier,
+        composite_verifier,
+        socket_timeout,
+        epoch,
+        clock,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn establish_unheld_channel_with_clock(
+    endpoint: &RatlsEndpoint,
+    owner_nonce: &[u8],
+    nvattest_dir: &Path,
+    now: SystemTime,
+    roots_dir: Option<&Path>,
+    policy: Option<&Policy>,
+    quote_verifier: Option<&dyn QuoteVerifier>,
+    composite_verifier: &dyn CompositeVerifier,
+    socket_timeout: Duration,
+    epoch: u64,
+    clock: &dyn AdmissionClock,
+) -> Result<AttestedChannel, RatlsChannelError> {
     let addresses = resolve_engine_addresses(endpoint)?;
     let connect_timeout = if addresses.len() > 1 {
         socket_timeout.min(MULTI_ADDRESS_CONNECT_TIMEOUT)

@@ -284,10 +284,30 @@
                 }
               },
               "search_index": {
+                "coverage": "unknown",
+                "index_activity_at_ms": null,
                 "state": "unknown",
-                "updated_at_ms": null,
-                "last_attempt_failed": false,
-                "text": "it's unclear when search last caught up."
+                "observed_failure": false,
+                "text": "it's unclear when search last caught up.",
+                "outcomes": [],
+                "classification": {
+                  "backfill": "unknown",
+                  "stalled_path": null,
+                  "index_build": "unknown",
+                  "segment_aggregate": "unknown"
+                },
+                "diagnostics": {
+                  "think_days": [],
+                  "window_start_ms": 0,
+                  "window_end_ms": 0,
+                  "partial": false,
+                  "lines": [
+                    "unobserved_history_outside_selected_think_days",
+                    "unfinished_uses_have_no_day_index_row",
+                    "failures_not_retained_past_inspected_history",
+                    "publication_notification_not_crash_atomic"
+                  ]
+                }
               },
               "agent_errors": {
                 "items": [],
@@ -518,10 +538,34 @@
                 }
               },
               "search_index": {
+                "coverage": "unknown",
+                "index_activity_at_ms": null,
                 "state": "unknown",
-                "updated_at_ms": null,
-                "last_attempt_failed": false,
-                "text": "it's unclear when search last caught up."
+                "observed_failure": false,
+                "text": "it's unclear when search last caught up.",
+                "outcomes": [],
+                "classification": {
+                  "backfill": "unknown",
+                  "stalled_path": null,
+                  "index_build": "unknown",
+                  "segment_aggregate": "unknown"
+                },
+                "diagnostics": {
+                  "think_days": [
+                    "20260403",
+                    "20260315",
+                    "20260214"
+                  ],
+                  "window_start_ms": 0,
+                  "window_end_ms": 0,
+                  "partial": false,
+                  "lines": [
+                    "unobserved_history_outside_selected_think_days",
+                    "unfinished_uses_have_no_day_index_row",
+                    "failures_not_retained_past_inspected_history",
+                    "publication_notification_not_crash_atomic"
+                  ]
+                }
               },
               "agent_errors": {
                 "items": [
@@ -786,10 +830,34 @@
                 }
               },
               "search_index": {
+                "coverage": "unknown",
+                "index_activity_at_ms": null,
                 "state": "unknown",
-                "updated_at_ms": null,
-                "last_attempt_failed": false,
-                "text": "it's unclear when search last caught up."
+                "observed_failure": false,
+                "text": "it's unclear when search last caught up.",
+                "outcomes": [],
+                "classification": {
+                  "backfill": "unknown",
+                  "stalled_path": null,
+                  "index_build": "unknown",
+                  "segment_aggregate": "unknown"
+                },
+                "diagnostics": {
+                  "think_days": [
+                    "20260403",
+                    "20260315",
+                    "20260214"
+                  ],
+                  "window_start_ms": 0,
+                  "window_end_ms": 0,
+                  "partial": false,
+                  "lines": [
+                    "unobserved_history_outside_selected_think_days",
+                    "unfinished_uses_have_no_day_index_row",
+                    "failures_not_retained_past_inspected_history",
+                    "publication_notification_not_crash_atomic"
+                  ]
+                }
               },
               "agent_errors": {
                 "items": [
@@ -1031,10 +1099,34 @@
                 }
               },
               "search_index": {
+                "coverage": "unknown",
+                "index_activity_at_ms": null,
                 "state": "unknown",
-                "updated_at_ms": null,
-                "last_attempt_failed": false,
-                "text": "it's unclear when search last caught up."
+                "observed_failure": false,
+                "text": "it's unclear when search last caught up.",
+                "outcomes": [],
+                "classification": {
+                  "backfill": "unknown",
+                  "stalled_path": null,
+                  "index_build": "unknown",
+                  "segment_aggregate": "unknown"
+                },
+                "diagnostics": {
+                  "think_days": [
+                    "20260403",
+                    "20260315",
+                    "20260214"
+                  ],
+                  "window_start_ms": 0,
+                  "window_end_ms": 0,
+                  "partial": false,
+                  "lines": [
+                    "unobserved_history_outside_selected_think_days",
+                    "unfinished_uses_have_no_day_index_row",
+                    "failures_not_retained_past_inspected_history",
+                    "publication_notification_not_crash_atomic"
+                  ]
+                }
               },
               "agent_errors": {
                 "items": [],
@@ -1264,10 +1356,35 @@
                 }
               },
               "search_index": {
+                "coverage": "unknown",
+                "index_activity_at_ms": null,
                 "state": "unknown",
-                "updated_at_ms": null,
-                "last_attempt_failed": false,
-                "text": "it's unclear when search last caught up."
+                "observed_failure": false,
+                "text": "it's unclear when search last caught up.",
+                "outcomes": [],
+                "classification": {
+                  "backfill": "unknown",
+                  "stalled_path": null,
+                  "index_build": "unknown",
+                  "segment_aggregate": "unknown"
+                },
+                "diagnostics": {
+                  "think_days": [
+                    "20260403",
+                    "20260315",
+                    "20260214"
+                  ],
+                  "window_start_ms": 0,
+                  "window_end_ms": 0,
+                  "partial": true,
+                  "lines": [
+                    "unobserved_history_outside_selected_think_days",
+                    "unfinished_uses_have_no_day_index_row",
+                    "failures_not_retained_past_inspected_history",
+                    "publication_notification_not_crash_atomic",
+                    "unreadable talent log"
+                  ]
+                }
               },
               "agent_errors": {
                 "items": [],

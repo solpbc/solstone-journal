@@ -62,6 +62,22 @@ impl AdmittedControlledInput {
         &self.outputs
     }
 
+    pub(crate) fn new(
+        receipt: ControlledBuildReceipt,
+        receipt_bytes: Vec<u8>,
+        evidence_bytes: Vec<u8>,
+        validation_bytes: Vec<u8>,
+        outputs: BTreeMap<String, Vec<u8>>,
+    ) -> Self {
+        Self {
+            receipt,
+            receipt_bytes,
+            evidence_bytes,
+            validation_bytes,
+            outputs,
+        }
+    }
+
     pub(super) fn into_retained_members(mut self) -> Result<BTreeMap<String, Vec<u8>>, String> {
         for (label, bytes) in [
             ("receipt.json", self.receipt_bytes),
@@ -74,6 +90,36 @@ impl AdmittedControlledInput {
         }
         Ok(self.outputs)
     }
+}
+
+pub struct NvattestInputPaths<'a> {
+    pub receipt: &'a Path,
+    pub evidence: &'a Path,
+    pub validation: &'a Path,
+    pub source_archive: &'a Path,
+    pub bundle_archive: &'a Path,
+    pub output_root: &'a Path,
+}
+
+pub(crate) fn verify_receipt_document_binding(
+    receipt: &ControlledBuildReceipt,
+    evidence_bytes: &[u8],
+    validation_bytes: &[u8],
+    evidence_label: &str,
+) -> Result<(), String> {
+    if receipt.supporting
+        != [SupportingArtifactRef {
+            label: evidence_label.into(),
+            sha256: sha256_hex(evidence_bytes),
+        }]
+        || validation_bytes.is_empty()
+        || receipt.validation.sha256 != sha256_hex(validation_bytes)
+    {
+        return Err(
+            "unbound-evidence: native receipt does not bind the original evidence and validation bytes".into(),
+        );
+    }
+    Ok(())
 }
 
 struct CapturedBuild {
@@ -89,18 +135,12 @@ impl CapturedBuild {
         let receipt = decode_controlled_build_receipt(&receipt_bytes).map_err(|e| e.to_string())?;
         let evidence_bytes = read_bounded(paths.evidence, DOCUMENT_LIMIT)?;
         let validation_bytes = read_bounded(paths.validation, DOCUMENT_LIMIT)?;
-        if receipt.supporting
-            != [SupportingArtifactRef {
-                label: evidence_label.into(),
-                sha256: sha256_hex(&evidence_bytes),
-            }]
-            || validation_bytes.is_empty()
-            || receipt.validation.sha256 != sha256_hex(&validation_bytes)
-        {
-            return Err(
-                "native receipt does not bind the original evidence and validation bytes".into(),
-            );
-        }
+        verify_receipt_document_binding(
+            &receipt,
+            &evidence_bytes,
+            &validation_bytes,
+            evidence_label,
+        )?;
         Ok(Self {
             receipt,
             receipt_bytes,
@@ -389,6 +429,125 @@ pub fn admit_rfdetr(
             admitted.outputs.insert(notice.member.into(), bytes);
         }
         Ok(admitted)
+    })
+}
+
+/// The NVIDIA GPU verifier. The input file names paths only; every pin comes
+/// from the committed constants, and nothing here can supply another value.
+pub fn admit_nvattest(
+    repo: &Path,
+    paths: NvattestInputPaths<'_>,
+    msvc: crate::nvattest_windows::MsvcRuntimeBytes<'_>,
+) -> Result<AdmittedControlledInput, String> {
+    admit_nvattest_under(
+        repo,
+        &paths,
+        &crate::nvattest_windows::production_pins(),
+        &msvc,
+    )
+}
+
+/// Routine tests' fixture-pin seam; never compiled into the producer.
+#[cfg(test)]
+pub(crate) fn admit_nvattest_with_pins(
+    repo: &Path,
+    paths: NvattestInputPaths<'_>,
+    pins: &crate::nvattest_windows::Pins,
+    msvc: crate::nvattest_windows::MsvcRuntimeBytes<'_>,
+) -> Result<AdmittedControlledInput, String> {
+    admit_nvattest_under(repo, &paths, pins, &msvc)
+}
+
+fn admit_nvattest_under(
+    repo: &Path,
+    paths: &NvattestInputPaths<'_>,
+    pins: &crate::nvattest_windows::Pins,
+    msvc: &crate::nvattest_windows::MsvcRuntimeBytes<'_>,
+) -> Result<AdmittedControlledInput, String> {
+    use crate::nvattest_windows::*;
+    // The bundle's largest member, the Strawberry Perl archive, is 299,399,930
+    // bytes; 512 MiB admits it with margin. Each whole archive stays bounded by
+    // its pinned size, since the streams are uncompressed tar.
+    const BUNDLE_MEMBER_LIMIT: u64 = 512 * 1024 * 1024;
+    const SOURCE_MEMBER_LIMIT: u64 = 64 * 1024 * 1024;
+    let receipt_bytes = read_bounded(paths.receipt, DOCUMENT_LIMIT)?;
+    let evidence_bytes = read_bounded(paths.evidence, DOCUMENT_LIMIT)?;
+    let validation_bytes = read_bounded(paths.validation, DOCUMENT_LIMIT)?;
+    let notices_index = read_bounded(
+        &super::windows_stage::join_components(repo, NVATTEST_NOTICES_INDEX_PATH),
+        DOCUMENT_LIMIT,
+    )?;
+    let notices_body = read_bounded(
+        &super::windows_stage::join_components(repo, NVATTEST_NOTICES_BODY_PATH),
+        DOCUMENT_LIMIT,
+    )?;
+    with_snapshot(|snapshot| {
+        let source_path = snapshot_file(
+            snapshot,
+            "source.tar",
+            paths.source_archive,
+            pins.source_archive.bytes,
+        )
+        .map_err(|e| format!("source-archive: {e}"))?;
+        let bundle_path = snapshot_file(
+            snapshot,
+            "bundle.tar",
+            paths.bundle_archive,
+            pins.bundle_archive.bytes,
+        )
+        .map_err(|e| format!("bundle-archive: {e}"))?;
+        for (path, pin, member_limit) in [
+            (&source_path, &pins.source_archive, SOURCE_MEMBER_LIMIT),
+            (&bundle_path, &pins.bundle_archive, BUNDLE_MEMBER_LIMIT),
+        ] {
+            preflight_tar_stream(
+                fs::File::open(path).map_err(|e| e.to_string())?,
+                pin.bytes,
+                member_limit,
+                1024 * 1024,
+                100_000,
+            )?;
+        }
+        let source_bytes = fs::read(&source_path).map_err(|e| e.to_string())?;
+        let bundle_bytes = fs::read(&bundle_path).map_err(|e| e.to_string())?;
+        let output = |label: &str, limit: u64| {
+            read_bounded(
+                &super::windows_stage::join_components(paths.output_root, label),
+                limit,
+            )
+        };
+        let output_exe = output(NVATTEST_EXE_OUTPUT_LABEL, OUTPUT_LIMIT)?;
+        let output_license = output(NVATTEST_LICENSE_LABEL, DOCUMENT_LIMIT)?;
+        let [msvcp140, vcruntime140, vcruntime140_1] =
+            NVATTEST_RUNTIME_OUTPUT_LABELS.map(|label| output(label, OUTPUT_LIMIT));
+        let (msvcp140, vcruntime140, vcruntime140_1) = (msvcp140?, vcruntime140?, vcruntime140_1?);
+        let admitted = admit(
+            pins,
+            &AdmissionBytes {
+                receipt: &receipt_bytes,
+                evidence: &evidence_bytes,
+                validation: &validation_bytes,
+                notices_index: &notices_index,
+                notices_body: &notices_body,
+                source_archive: &source_bytes,
+                bundle_archive: &bundle_bytes,
+                output_exe: &output_exe,
+                output_license: &output_license,
+                output_msvcp140: &msvcp140,
+                output_vcruntime140: &vcruntime140,
+                output_vcruntime140_1: &vcruntime140_1,
+            },
+            msvc,
+        )?;
+        // Re-read through the retained root; the staged bytes stay the ones
+        // admitted above, never a replacement learned after this returns.
+        verify_controlled_build_artifacts(
+            paths.output_root,
+            admitted.receipt(),
+            crate::nvattest_windows_source::OUTPUT_LIMITS,
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(admitted.into_admitted_controlled_input())
     })
 }
 
@@ -1313,5 +1472,300 @@ mod llama_capture_tests {
         changed["source"]["product"]["commit"] = serde_json::Value::String("0".repeat(40));
         fs::write(&receipt, serde_json::to_vec(&changed).unwrap()).unwrap();
         assert!(admit(&receipt, &values["evidence"]).is_err());
+    }
+}
+
+/// The producer's real admission path over the real retained verifier bytes:
+/// the pinned SDK source archive, the pinned offline bundle tar, the build's
+/// output root, and the SDK report, dumpbin texts and tool population that
+/// build captured. No run of the controlled driver exists yet, so the receipt,
+/// evidence wrapper, validation log, driver controls and the invoked-version
+/// census are synthesized in `synthesize_driver_documents` around those real
+/// bytes, as the driver and recorder would write them.
+#[cfg(all(test, feature = "full-tests"))]
+mod nvattest_retained_tests {
+    use super::*;
+    use crate::nvattest_windows::test_support::{controls, recorder_receipt};
+    use crate::nvattest_windows::*;
+
+    struct Retained {
+        source_archive: PathBuf,
+        bundle_archive: PathBuf,
+        output_root: PathBuf,
+        evidence_dir: PathBuf,
+    }
+
+    fn retained() -> Retained {
+        let var = |name: &str| {
+            PathBuf::from(std::env::var(name).unwrap_or_else(|_| panic!("{name} is required")))
+        };
+        Retained {
+            source_archive: var("SOLSTONE_NVATTEST_SOURCE_ARCHIVE"),
+            bundle_archive: var("SOLSTONE_NVATTEST_BUNDLE_ARCHIVE"),
+            output_root: var("SOLSTONE_NVATTEST_OUTPUT_ROOT"),
+            evidence_dir: var("SOLSTONE_NVATTEST_EVIDENCE_DIR"),
+        }
+    }
+
+    fn repo() -> &'static Path {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap()
+    }
+
+    /// The digest of `cmake.exe` inside the bundle's pinned CMake archive.
+    fn bundled_cmake_sha256(bundle: &Path) -> String {
+        let bytes = fs::read(bundle).unwrap();
+        let mut archive = tar::Archive::new(io::Cursor::new(bytes));
+        for entry in archive.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            if entry.path_bytes().as_ref() == b"./cmake-3.31.12-windows-x86_64.zip" {
+                let mut zipped = Vec::new();
+                entry.read_to_end(&mut zipped).unwrap();
+                let mut zip = ::zip::ZipArchive::new(io::Cursor::new(zipped)).unwrap();
+                let mut exe = zip
+                    .by_name("cmake-3.31.12-windows-x86_64/bin/cmake.exe")
+                    .unwrap();
+                let mut cmake = Vec::new();
+                exe.read_to_end(&mut cmake).unwrap();
+                return sha256_hex(&cmake);
+            }
+        }
+        panic!("bundle has no CMake archive");
+    }
+
+    /// SYNTHESIZED: the invoked-version census the driver would record, from
+    /// the build host's captured tool population (paths, digests, file
+    /// versions) and the versions the SDK report recorded by invoking them.
+    fn synthesize_census(retained: &Retained, report: &NvattestBuildReport) -> NvattestToolCensus {
+        let population: Vec<serde_json::Value> = {
+            let raw = fs::read(retained.evidence_dir.join("tool-identities.json")).unwrap();
+            serde_json::from_slice(raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw)).unwrap()
+        };
+        let find = |suffix: &str| {
+            let tool = population
+                .iter()
+                .find(|t| t["path"].as_str().unwrap().ends_with(suffix))
+                .unwrap_or_else(|| panic!("no captured tool {suffix}"));
+            (
+                tool["path"].as_str().unwrap().to_string(),
+                tool["sha256"].as_str().unwrap().to_string(),
+                tool["version"].as_str().map(str::to_string),
+            )
+        };
+        let tool = |suffix: &str, version: Option<String>| {
+            let (path, sha256, file_version) = find(suffix);
+            NvattestToolVersionPath {
+                version: version.or(file_version),
+                path,
+                sha256,
+            }
+        };
+        NvattestToolCensus {
+            schema: NVATTEST_TOOL_CENSUS_SCHEMA_V1.into(),
+            rustc: tool(r"\bin\rustc.exe", Some(report.tools.rustc.clone())),
+            cargo: tool(r"\bin\cargo.exe", Some(report.tools.cargo.clone())),
+            cmake: NvattestToolVersionPath {
+                version: Some(report.tools.cmake.clone()),
+                path: r"C:\work\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe".into(),
+                sha256: bundled_cmake_sha256(&retained.bundle_archive),
+            },
+            cl: tool(r"\Hostx64\x64\cl.exe", None),
+            link: tool(r"\Hostx64\x64\link.exe", None),
+            nmake: tool(r"\Hostx64\x64\nmake.exe", None),
+            msbuild: tool(r"\MSBuild\Current\Bin\amd64\MSBuild.exe", None),
+            msvc: NvattestMsvcToolsVersion {
+                vc_tools_version: Some(report.tools.msvc.clone()),
+            },
+            windows_sdk: NvattestWindowsSdkVersion {
+                version: Some(report.tools.windows_sdk.clone()),
+            },
+            vs: None,
+        }
+    }
+
+    /// SYNTHESIZED: receipt, evidence and validation as the recorder writes
+    /// them, embedding the real raw report and dumpbin bytes.
+    fn synthesize_driver_documents(
+        retained: &Retained,
+        report_raw: &[u8],
+        mutate_receipt: impl FnOnce(&mut crate::controlled_build::ControlledBuildReceipt),
+    ) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+        let pins = production_pins();
+        // The census is the driver's own observation, independent of the
+        // (possibly forged) report under test: build it from the captured one.
+        let captured = fs::read(retained.evidence_dir.join("build-report.json")).unwrap();
+        let report = decode_build_report(&captured).unwrap();
+        let driver = controls(&pins);
+        let dumpbin = |name: &str| {
+            base64_encode(
+                &fs::read(retained.evidence_dir.join(format!("{name}.dumpbin.txt"))).unwrap(),
+            )
+        };
+        let evidence = NvattestWindowsBuildEvidence {
+            schema: NVATTEST_BUILD_EVIDENCE_SCHEMA_V1.into(),
+            report_base64: base64_encode(report_raw),
+            census: synthesize_census(retained, &report),
+            invocation: driver.invocation,
+            refusals: driver.refusals,
+            network: driver.network,
+            dumpbin_dependents: NvattestDumpbinDependents {
+                nvattest_exe: dumpbin("nvattest.exe"),
+                msvcp140: dumpbin("msvcp140.dll"),
+                vcruntime140: dumpbin("vcruntime140.dll"),
+                vcruntime140_1: dumpbin("vcruntime140_1.dll"),
+            },
+        };
+        let evidence = serde_json::to_vec_pretty(&evidence).unwrap();
+        let validation =
+            b"schema=solstone.nvattest-windows-validation.v1\nsynthesized=true\n".to_vec();
+        let exe = fs::read(retained.output_root.join("bin/nvattest.exe")).unwrap();
+        let mut receipt = recorder_receipt(&pins, &exe, &evidence, &validation);
+        mutate_receipt(&mut receipt);
+        let dir = tempfile::tempdir().unwrap();
+        let paths = (
+            dir.path().join("receipt.json"),
+            dir.path().join("evidence.json"),
+            dir.path().join("validation.log"),
+        );
+        fs::write(
+            &paths.0,
+            crate::controlled_build::encode_controlled_build_receipt(&receipt).unwrap(),
+        )
+        .unwrap();
+        fs::write(&paths.1, evidence).unwrap();
+        fs::write(&paths.2, validation).unwrap();
+        (dir, paths.0, paths.1, paths.2)
+    }
+
+    fn admit_retained(
+        retained: &Retained,
+        report_raw: &[u8],
+        mutate_receipt: impl FnOnce(&mut crate::controlled_build::ControlledBuildReceipt),
+    ) -> Result<AdmittedControlledInput, String> {
+        let (_dir, receipt, evidence, validation) =
+            synthesize_driver_documents(retained, report_raw, mutate_receipt);
+        let runtime: Vec<Vec<u8>> = NVATTEST_RUNTIME_OUTPUT_LABELS
+            .iter()
+            .map(|label| fs::read(retained.output_root.join(label)).unwrap())
+            .collect();
+        admit_nvattest(
+            repo(),
+            NvattestInputPaths {
+                receipt: &receipt,
+                evidence: &evidence,
+                validation: &validation,
+                source_archive: &retained.source_archive,
+                bundle_archive: &retained.bundle_archive,
+                output_root: &retained.output_root,
+            },
+            MsvcRuntimeBytes {
+                msvcp140: &runtime[0],
+                vcruntime140: &runtime[1],
+                vcruntime140_1: &runtime[2],
+            },
+        )
+    }
+
+    fn forged_report(report_raw: &[u8], forge: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
+        let json = report_raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap();
+        let mut value: serde_json::Value = serde_json::from_slice(json).unwrap();
+        forge(&mut value);
+        let mut forged = vec![0xEF, 0xBB, 0xBF];
+        forged.extend(serde_json::to_vec_pretty(&value).unwrap());
+        forged
+    }
+
+    #[test]
+    #[ignore = "requires the retained verifier archives, build outputs and captured evidence"]
+    fn nvattest_retained_real_bytes_admit_through_production_and_forgeries_refuse() {
+        let retained = retained();
+        let report_raw = fs::read(retained.evidence_dir.join("build-report.json")).unwrap();
+        assert!(report_raw.starts_with(&[0xEF, 0xBB, 0xBF]));
+
+        let input = admit_retained(&retained, &report_raw, |_| {}).unwrap();
+        let exe = &input.outputs()[NVATTEST_EXE_OUTPUT_LABEL];
+        assert_eq!(
+            sha256_hex(exe),
+            "220849fea69d60563fc6ef0ea7c020450d842565d08e7cbd2eecfecbd41ecdc8"
+        );
+        // Imports parsed from the real executable bytes match the real report.
+        let pe = crate::pe_dependencies::inspect_dependencies(exe).unwrap();
+        let report = decode_build_report(&report_raw).unwrap();
+        let reported: std::collections::BTreeSet<String> = report
+            .imports
+            .iter()
+            .map(|i| i.to_ascii_lowercase())
+            .collect();
+        let parsed: std::collections::BTreeSet<String> = pe
+            .imports
+            .iter()
+            .chain(&pe.delay_imports)
+            .cloned()
+            .collect();
+        assert_eq!(parsed, reported);
+        assert!(pe.forwarders.is_empty());
+        let ca = &input.outputs()[NVATTEST_CA_BUNDLE_LABEL];
+        assert_eq!(
+            sha256_hex(ca),
+            "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91"
+        );
+        assert_eq!(
+            sha256_hex(&input.outputs()[NVATTEST_LICENSE_LABEL]),
+            "82d36972a71088e8d4a4793313e64e18340c60de08e3175a58360a277c962a33"
+        );
+        crate::produce::windows_stage::AdmittedWindowsNativeInputs::from_controlled(vec![input])
+            .unwrap();
+
+        type Forgery = (
+            &'static str,
+            Vec<u8>,
+            fn(&mut crate::controlled_build::ControlledBuildReceipt),
+        );
+        let refusals: Vec<Forgery> = vec![
+            (
+                "report-sources",
+                forged_report(&report_raw, |r| {
+                    r["sources"].as_array_mut().unwrap().remove(4);
+                }),
+                |_| {},
+            ),
+            (
+                "regorus-build-revision",
+                forged_report(&report_raw, |r| {
+                    r["sources"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|s| s["name"] != "regorus-build-revision");
+                }),
+                |_| {},
+            ),
+            (
+                "report-tools",
+                forged_report(&report_raw, |r| r["build_tools"] = serde_json::json!([])),
+                |_| {},
+            ),
+            (
+                "tool-census",
+                forged_report(&report_raw, |r| {
+                    r["tools"]["rustc"] = serde_json::json!("rustc 1.97.1 (8bab26f4f 2026-07-15)");
+                }),
+                |_| {},
+            ),
+            ("receipt-inputs", report_raw.clone(), |r| r.inputs.clear()),
+            ("receipt-configuration", report_raw.clone(), |r| {
+                r.configuration.target_triple = "x86_64-pc-windows-gnu".into();
+            }),
+        ];
+        for (boundary, report, mutate) in refusals {
+            match admit_retained(&retained, &report, mutate) {
+                Ok(_) => panic!("{boundary}: forged input admitted"),
+                Err(error) => {
+                    assert!(error.starts_with(boundary), "{boundary}: {error}");
+                    println!("refused as expected: {error}");
+                }
+            }
+        }
     }
 }

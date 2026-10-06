@@ -13,7 +13,7 @@ autotests = false
 unsafe_code = "deny"
 
 [features]
-full-tests = ["solstone-core-chatgpt-auth/test-hooks"]
+full-tests = ["solstone-core-chatgpt-auth/test-hooks", "solstone-core-indexer-store/test-hooks"]
 test-hooks = ["solstone-core-system/test-hooks", "solstone-core-local/test-hooks"]
 journal-mcp-endpoint = ["dep:solstone-core-mcp-endpoint"]
 
@@ -213,6 +213,8 @@ solstone-core-win-owner-rail = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_Threading", "Win32_System_SystemInformation"] }
 
 [dev-dependencies]
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
+solstone-core-journal-cli.workspace = true
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 image.workspace = true
 solstone-core-grab = { workspace = true, features = ["test-hooks"] }

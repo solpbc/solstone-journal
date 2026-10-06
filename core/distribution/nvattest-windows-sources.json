@@ -1,0 +1,82 @@
+{
+  "schema": "solstone.nvattest-windows-notices.v1",
+  "notices_body_sha256": "36c2cec38a03bfd53b35833598ce8f4129493d036e309adb6e395a91a4acf017",
+  "body_assembly_revision": "7db176e058ca749f7c02a2867bbf3ca1caaf41cc",
+  "admitted_sdk_revision": "8fdbb0f8c10594a5f88f77fdec4766803b4e6d59",
+  "regorus_cargo_lock": {
+    "member": "sol/release/regorus-Cargo.lock",
+    "sha256": "b8352c80ef609b602bfd25e393ad774f74894bab1ab60a9afbeb61d6aae3c910"
+  },
+  "windows_population_marker": "windows-link 0.2.1",
+  "rust_standard_library": "1.97.1",
+  "mozilla_ca_notice": true,
+  "notices_live_in": "journal",
+  "native_sources": [
+    {
+      "name": "openssl-3.6.1.tar.gz",
+      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.6.1/openssl-3.6.1.tar.gz",
+      "sha256": "b1bfedcd5b289ff22aee87c9d600f515767ebf45f77168cb6d64f231f518a82e"
+    },
+    {
+      "name": "libxml2-2.11.9.tar.xz",
+      "url": "https://download.gnome.org/sources/libxml2/2.11/libxml2-2.11.9.tar.xz",
+      "sha256": "780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f"
+    },
+    {
+      "name": "xmlsec1-1.2.39.tar.gz",
+      "url": "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_39/xmlsec1-1.2.39.tar.gz",
+      "sha256": "15f2f55ea5968e578fcd24b3b427e553876c86c147dc7f03923e98fc2768a1fa"
+    },
+    {
+      "name": "curl-7.88.1.tar.gz",
+      "url": "https://github.com/curl/curl/releases/download/curl-7_88_1/curl-7.88.1.tar.gz",
+      "sha256": "cdb38b72e36bc5d33d5b8810f8018ece1baa29a8f215b4495e495ded82bbf3c7"
+    },
+    {
+      "name": "zlib-1.3.1.tar.gz",
+      "url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+      "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+    },
+    {
+      "name": "cli11-bfffd37e1f804ca4fae1caae106935791696b6a9.tar.gz",
+      "url": "https://codeload.github.com/CLIUtils/CLI11/tar.gz/bfffd37e1f804ca4fae1caae106935791696b6a9",
+      "sha256": "03c9b7921b8f99ca39ae660b03ebf9bd5a3f4280201f7d04bc5639b1e0496401"
+    },
+    {
+      "name": "corrosion-6be991bb34c348dfb8344be22f3606288ea5c7fd.tar.gz",
+      "url": "https://codeload.github.com/corrosion-rs/corrosion/tar.gz/6be991bb34c348dfb8344be22f3606288ea5c7fd",
+      "sha256": "84d8fbc2810af9a42e250411dcd30b8e8cc59deba196c1dcd1fb44fec459a793"
+    },
+    {
+      "name": "regorus-c7bf460bc160c96e38048296e5708943d2e43909.tar.gz",
+      "url": "https://codeload.github.com/microsoft/regorus/tar.gz/c7bf460bc160c96e38048296e5708943d2e43909",
+      "sha256": "188805b3b44b1cd2f9e8fd9b74a281b5f8eaa1c1b4087fd442afc88eccfef7cd"
+    },
+    {
+      "name": "regorus-build-revision",
+      "revision": "c7bf460bc160c96e38048296e5708943d2e43909",
+      "original_sha256": "7dc931d2a3cc9203b9cf63c9da29e85122f8b10ae2b1a4318494eacc178a3956",
+      "sha256": "bef3c5f151c9f48f2e0bcf9a71ceb7c4d7ad9c5aec723d483076d4247ba86c15"
+    },
+    {
+      "name": "jwt-cpp-e71e0c2d584baff06925bbb3aad683f677e4d498.tar.gz",
+      "url": "https://codeload.github.com/Thalhammer/jwt-cpp/tar.gz/e71e0c2d584baff06925bbb3aad683f677e4d498",
+      "sha256": "1988cbe1c930638ac4341578fb0fc0616fe39cf468a9087624b27581d81f8b51"
+    },
+    {
+      "name": "fmt-e69e5f977d458f2650bb346dadf2ad30c5320281.tar.gz",
+      "url": "https://codeload.github.com/fmtlib/fmt/tar.gz/e69e5f977d458f2650bb346dadf2ad30c5320281",
+      "sha256": "1723f27eed50e751037f49dcdf73e33b17658f1178ea1c1f829a30bb02335745"
+    },
+    {
+      "name": "spdlog-27cb4c76708608465c413f6d0e6b8d99a4d84302.tar.gz",
+      "url": "https://codeload.github.com/gabime/spdlog/tar.gz/27cb4c76708608465c413f6d0e6b8d99a4d84302",
+      "sha256": "7d512b37019b61646cd6fd1e48f52a3cf3e098f36b33ba9c059fe51301ff40b3"
+    },
+    {
+      "name": "json-3.12.0.tar.xz",
+      "url": "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz",
+      "sha256": "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa"
+    }
+  ]
+}

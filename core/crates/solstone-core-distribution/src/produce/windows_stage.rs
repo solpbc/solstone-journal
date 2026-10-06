@@ -76,6 +76,9 @@ impl AdmittedWindowsNativeInputs {
                 [output] if output.label == crate::rfdetr_windows::RFDETR_CLI_OUTPUT_LABEL => {
                     WindowsNativeComponent::Rfdetr
                 }
+                [output] if output.label == crate::nvattest_windows::NVATTEST_EXE_OUTPUT_LABEL => {
+                    WindowsNativeComponent::Nvattest
+                }
                 _ => return Err("unsupported controlled Windows input output set".into()),
             };
             for (label, bytes) in input.into_retained_members()? {
@@ -607,5 +610,208 @@ mod tests {
             fs::read(root.path().join("share/original")).unwrap(),
             b"original"
         );
+    }
+
+    fn nvattest_inventory(repo: &Path, root: &Path) -> (PathBuf, Inventory) {
+        let mut inventory = load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
+        inventory.entry.retain(|entry| match entry {
+            Entry::WindowsNative { component, .. } => {
+                *component == WindowsNativeComponent::Nvattest
+            }
+            Entry::Copy { source, .. } => {
+                source == crate::nvattest_windows::NVATTEST_NOTICES_BODY_PATH
+            }
+            _ => false,
+        });
+        inventory.payload = "empty.list".into();
+        fs::write(root.join("empty.list"), b"").unwrap();
+        (root.join("inventory.toml"), inventory)
+    }
+
+    fn admitted_nvattest(
+        repo: &Path,
+    ) -> (
+        crate::nvattest_windows::test_support::Fixture,
+        crate::nvattest_windows::test_support::WrittenInputs,
+        AdmittedWindowsNativeInputs,
+    ) {
+        use super::super::windows_inputs::{
+            NvattestInputPaths, admit_nvattest, admit_nvattest_with_pins,
+        };
+        let fixture = crate::nvattest_windows::test_support::Fixture::new();
+        let written = fixture.write_inputs();
+        // The build's own CA copy is never what is staged.
+        fs::write(
+            written.output_root.join("share/ca/ca-bundle.pem"),
+            b"output-root copy",
+        )
+        .unwrap();
+        let paths = || NvattestInputPaths {
+            receipt: &written.receipt,
+            evidence: &written.evidence,
+            validation: &written.validation,
+            source_archive: &written.source_archive,
+            bundle_archive: &written.bundle_archive,
+            output_root: &written.output_root,
+        };
+        // Production admission builds its pins from the committed constants
+        // only, so the synthesized archives refuse at their pinned identity.
+        let error = admit_nvattest(repo, paths(), fixture.msvc()).unwrap_err();
+        assert!(error.starts_with("source-archive"), "{error}");
+        let input = admit_nvattest_with_pins(repo, paths(), &fixture.pins, fixture.msvc()).unwrap();
+        let native = AdmittedWindowsNativeInputs::from_controlled(vec![input]).unwrap();
+        (fixture, written, native)
+    }
+
+    #[test]
+    fn nvattest_admits_and_stages_exactly_its_declared_members() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let (fixture, written, native) = admitted_nvattest(repo);
+        let root = tempfile::tempdir().unwrap();
+        let (inventory_path, inventory) = nvattest_inventory(repo, root.path());
+        let products = BTreeMap::new();
+        let plan =
+            collect_plan(repo, &inventory_path, &inventory, &products, &native, &[]).unwrap();
+        let stage = root.path().join("stage");
+        fs::create_dir(&stage).unwrap();
+        write_plan(&stage, &plan).unwrap();
+        let staged = |dest: &str| fs::read(join_components(&stage, dest)).unwrap();
+        let expected: BTreeMap<&str, Vec<u8>> = BTreeMap::from([
+            ("bin/nvattest.exe", fixture.output_exe.clone()),
+            (
+                "share/ca/ca-bundle.pem",
+                crate::nvattest_windows::test_support::FIXTURE_CA.to_vec(),
+            ),
+            (
+                "share/licenses/nvattest/LICENSE",
+                crate::nvattest_windows::test_support::FIXTURE_LICENSE.to_vec(),
+            ),
+            (
+                "share/licenses/nvattest/NOTICES.md",
+                crate::nvattest_windows::test_support::NOTICES_BODY.to_vec(),
+            ),
+            (
+                "share/provenance/nvattest/receipt.json",
+                fs::read(&written.receipt).unwrap(),
+            ),
+            (
+                "share/provenance/nvattest/build-evidence.json",
+                fs::read(&written.evidence).unwrap(),
+            ),
+            (
+                "share/provenance/nvattest/validation.log",
+                fs::read(&written.validation).unwrap(),
+            ),
+        ]);
+        assert_eq!(
+            plan.keys().map(String::as_str).collect::<Vec<_>>(),
+            expected.keys().copied().collect::<Vec<_>>()
+        );
+        for (dest, bytes) in &expected {
+            assert_eq!(&staged(dest), bytes, "{dest}");
+        }
+        // The staged CA is the bundle member compared against the pin.
+        assert_eq!(
+            sha256_hex(&staged("share/ca/ca-bundle.pem")),
+            fixture.pins.ca_bundle.sha256
+        );
+        assert_eq!(
+            sha256_hex(&staged("share/licenses/nvattest/LICENSE")),
+            fixture.pins.license.sha256
+        );
+        // Runtime DLLs are the MSVC component's; the verifier stages none.
+        assert!(
+            plan.keys()
+                .all(|dest| !dest.to_ascii_lowercase().ends_with(".dll"))
+        );
+    }
+
+    #[test]
+    fn nvattest_inventory_requires_the_exact_admitted_member_set() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let (_fixture, _written, native) = admitted_nvattest(repo);
+        let root = tempfile::tempdir().unwrap();
+        let (inventory_path, inventory) = nvattest_inventory(repo, root.path());
+        let products = BTreeMap::new();
+
+        let mut missing = inventory.clone();
+        let position = missing
+            .entry
+            .iter()
+            .position(|entry| matches!(entry, Entry::WindowsNative { member, .. } if member == "share/ca/ca-bundle.pem"))
+            .unwrap();
+        missing.entry.remove(position);
+        assert!(
+            collect_plan(repo, &inventory_path, &missing, &products, &native, &[])
+                .err()
+                .unwrap()
+                .contains("undeclared")
+        );
+
+        let mut extra = inventory.clone();
+        extra.entry.push(Entry::WindowsNative {
+            component: WindowsNativeComponent::Nvattest,
+            member: "bin/msvcp140.dll".into(),
+            dest: "bin/msvcp140.dll".into(),
+            mode: 0o644,
+            targets: vec![WINDOWS_PAYLOAD_TARGET.into()],
+        });
+        assert!(
+            collect_plan(repo, &inventory_path, &extra, &products, &native, &[])
+                .err()
+                .unwrap()
+                .contains("missing admitted native input: Nvattest/bin/msvcp140.dll")
+        );
+    }
+
+    #[test]
+    fn nvattest_inventory_and_notices_match() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let inventory_path = repo.join("core/distribution/inventory.toml");
+        let inventory = load_inventory(&inventory_path).unwrap();
+        let nvattest_entries: Vec<_> = inventory
+            .entry
+            .iter()
+            .filter_map(|entry| match entry {
+                Entry::WindowsNative {
+                    component: WindowsNativeComponent::Nvattest,
+                    member,
+                    dest,
+                    ..
+                } => Some((member.as_str(), dest.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            nvattest_entries,
+            vec![
+                ("bin/nvattest.exe", "bin/nvattest.exe"),
+                ("share/ca/ca-bundle.pem", "share/ca/ca-bundle.pem"),
+                ("LICENSE", "share/licenses/nvattest/LICENSE"),
+                ("receipt.json", "share/provenance/nvattest/receipt.json"),
+                (
+                    "build-evidence.json",
+                    "share/provenance/nvattest/build-evidence.json"
+                ),
+                ("validation.log", "share/provenance/nvattest/validation.log"),
+            ]
+        );
+        let notice_entry = inventory.entry.iter().any(|entry| match entry {
+            Entry::Copy { source, dest, .. } => {
+                source == "core/distribution/nvattest-windows-NOTICES.md"
+                    && dest == "share/licenses/nvattest/NOTICES.md"
+            }
+            _ => false,
+        });
+        assert!(notice_entry);
     }
 }
