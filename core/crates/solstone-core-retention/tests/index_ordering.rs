@@ -206,10 +206,20 @@ fn a_journal_without_an_index_accepts_a_notification_and_gains_none() {
         notify_index(&index, &outcome).expect("no index is not an error"),
         PruneCounts::default()
     );
+    let index_dir = journal.join("indexer");
     assert!(
-        !journal.join("indexer").exists(),
-        "a notification must not bring an index into existence"
+        !index_dir.join("journal.sqlite").exists(),
+        "a notification must not bring an index database into existence"
     );
+    let entries: Vec<_> = fs::read_dir(&index_dir)
+        .expect("writer lock directory")
+        .map(|entry| entry.expect("writer lock entry").file_name())
+        .collect();
+    assert_eq!(
+        entries,
+        vec![std::ffi::OsString::from("journal.sqlite.lock")]
+    );
+    assert!(index_dir.join("journal.sqlite.lock").is_file());
 
     fs::remove_dir_all(&journal).expect("teardown");
 }

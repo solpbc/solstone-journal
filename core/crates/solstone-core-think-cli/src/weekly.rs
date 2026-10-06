@@ -353,8 +353,6 @@ mod terminal_event_tests {
             use_id: "use-ok".to_owned(),
             name: "weekly_reflection".to_owned(),
             facet: Some("work".to_owned()),
-            output_path: None,
-            index_output: false,
         };
         log_weekly_terminal(&mut log, &context, &finished, DrainOutcome::Finish);
 
@@ -362,8 +360,6 @@ mod terminal_event_tests {
             use_id: "use-fail".to_owned(),
             name: "weekly_reflection".to_owned(),
             facet: Some("work".to_owned()),
-            output_path: None,
-            index_output: false,
         };
         log_weekly_terminal(
             &mut log,

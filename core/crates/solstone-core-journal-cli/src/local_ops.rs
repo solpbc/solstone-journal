@@ -37,6 +37,10 @@ use solstone_core_indexer_store::db::reset_index;
 use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
+#[cfg(not(target_os = "ios"))]
+use solstone_core_indexer_store::{
+    apply_classification_batch, drain_classifications, inspect_classifications,
+};
 use solstone_core_journal_archive::{
     ArchiveSource, DayWindow, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
     acquire_explicit_output_target, publish_archive,
@@ -103,7 +107,68 @@ fn indexer(_args: &[OsString]) -> Outcome {
 
 #[cfg(not(target_os = "ios"))]
 fn indexer(args: &[OsString]) -> Outcome {
-    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n";
+    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n       solstone journal indexer path-lookup [--apply] [--json]\n       solstone journal indexer classifications [--json] [--apply] [--drain]\n";
+
+    if let Some((verb, rest)) = args.split_first()
+        && verb == OsStr::new("path-lookup")
+    {
+        return indexer_path_lookup(rest);
+    }
+
+    if args
+        .first()
+        .is_some_and(|arg| arg == std::ffi::OsStr::new("classifications"))
+    {
+        let mut apply = false;
+        let mut drain = false;
+        let mut json = false;
+        let mut index = 1;
+        while index < args.len() {
+            match args[index].to_str() {
+                Some("--apply") if !apply => {
+                    apply = true;
+                    index += 1;
+                }
+                Some("--drain") if !drain => {
+                    drain = true;
+                    index += 1;
+                }
+                Some("--json") if !json => {
+                    json = true;
+                    index += 1;
+                }
+                Some("--help" | "-h") if args.len() == 2 => return success(HELP.to_owned()),
+                _ => return usage("indexer", "unexpected or duplicate argument"),
+            }
+        }
+        if drain && !apply {
+            return usage("indexer", "--drain requires --apply");
+        }
+        let journal = match journal_root("indexer") {
+            Ok(path) => path,
+            Err(outcome) => return outcome,
+        };
+        let result = if drain {
+            drain_classifications(&journal)
+        } else if apply {
+            apply_classification_batch(&journal)
+        } else {
+            inspect_classifications(&journal)
+        };
+        return match result {
+            Ok(status) => {
+                if json {
+                    success(format!(
+                        "{}\n",
+                        serde_json::to_string(&status.to_json_value()).expect("serialize json")
+                    ))
+                } else {
+                    success(status.format_human())
+                }
+            }
+            Err(error) => failure("indexer", &error.to_string(), EXIT_IO),
+        };
+    }
 
     let mut reset = false;
     let mut rebuild = false;
@@ -331,6 +396,46 @@ fn indexer(args: &[OsString]) -> Outcome {
     }
 
     Outcome::LocalSuccess { stdout, stderr }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn indexer_path_lookup(args: &[OsString]) -> Outcome {
+    const HELP: &str = "Usage: solstone journal indexer path-lookup [--apply] [--json]\n";
+    if args.len() == 1 && matches!(args[0].to_str(), Some("--help" | "-h")) {
+        return success(HELP.to_owned());
+    }
+    let mut apply = false;
+    let mut json_output = false;
+    for arg in args {
+        match arg.to_str() {
+            Some("--apply") if !apply => apply = true,
+            Some("--json") if !json_output => json_output = true,
+            _ => return usage("indexer path-lookup", "unexpected or duplicate argument"),
+        }
+    }
+    let journal = match journal_root("indexer path-lookup") {
+        Ok(journal) => journal,
+        Err(outcome) => return outcome,
+    };
+    let result = if apply {
+        solstone_core_indexer_store::apply_path_lookup(&journal)
+    } else {
+        solstone_core_indexer_store::inspect_path_lookup(&journal)
+    };
+    match result {
+        Ok(status) => {
+            let stdout = if json_output {
+                format!("{}\n", json!({ "ready": status.ready }))
+            } else {
+                format!(
+                    "path lookup: {}\n",
+                    if status.ready { "ready" } else { "unready" }
+                )
+            };
+            success(stdout)
+        }
+        Err(error) => failure("indexer path-lookup", &error.to_string(), EXIT_TEMPFAIL),
+    }
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -1066,7 +1171,16 @@ fn facet_doctor_orphans(
     if merge {
         #[cfg(not(target_os = "ios"))]
         {
-            return facet_doctor_adopt_merge(&journal, &groups);
+            let (outcome, committed_merges) = facet_doctor_adopt_merge(&journal, &groups);
+            drop(_lock);
+            if committed_merges > 0 {
+                #[cfg(all(test, feature = "full-tests"))]
+                check_doctor_after_trust_seam();
+                if let Err(error) = scan_journal(&journal, true) {
+                    return facet_doctor_index_failure(outcome, &error.to_string());
+                }
+            }
+            return outcome;
         }
         #[cfg(target_os = "ios")]
         {
@@ -1279,7 +1393,7 @@ fn group_orphan_facets(orphans: &[String]) -> BTreeMap<String, Vec<String>> {
 }
 
 #[cfg(not(target_os = "ios"))]
-fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> Outcome {
+fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> (Outcome, usize) {
     let transaction = transaction_id();
     let left = unclear_orphan_groups(groups);
     let mut merged = Vec::new();
@@ -1388,28 +1502,55 @@ fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> Outcome {
                 "{repaired} orphan facet(s) repaired. Run 'solstone journal indexer --rescan-full' to refresh the index.\n"
             ));
         }
-        return success(stdout);
+        return (success(stdout), merged.len());
     }
     if failed_orphans == 0 {
         stdout.push_str(&format!(
             "{repaired} orphan facet(s) repaired; {} merge(s) committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run 'solstone journal indexer --rescan-full' to refresh the index.\n",
             committed_failures.len()
         ));
-        return Outcome::LocalFailure {
-            stdout,
-            stderr: "solstone journal facet doctor: one or more orphan facet merges committed with maintenance failures\n"
-                .to_owned(),
-            exit: EXIT_IO,
-        };
+        return (
+            Outcome::LocalFailure {
+                stdout,
+                stderr: "solstone journal facet doctor: one or more orphan facet merges committed with maintenance failures\n"
+                    .to_owned(),
+                exit: EXIT_IO,
+            },
+            merged.len(),
+        );
     }
     stdout.push_str(&format!(
         "{repaired} orphan facet(s) repaired; {failed_orphans} orphan facet(s) failed. Run 'solstone journal indexer --rescan-full' to refresh the index.\n"
     ));
+    (
+        Outcome::LocalFailure {
+            stdout,
+            stderr: "solstone journal facet doctor: one or more orphan facet repairs failed\n"
+                .to_owned(),
+            exit: EXIT_IO,
+        },
+        merged.len(),
+    )
+}
+
+#[cfg(not(target_os = "ios"))]
+fn facet_doctor_index_failure(outcome: Outcome, error: &str) -> Outcome {
+    let (stdout, mut stderr, exit) = match outcome {
+        Outcome::LocalSuccess { stdout, stderr } => (stdout, stderr, EXIT_FAILED),
+        Outcome::LocalFailure {
+            stdout,
+            stderr,
+            exit,
+        } => (stdout, stderr, exit),
+        _ => unreachable!("facet doctor merge returns a local result"),
+    };
+    stderr.push_str(&format!(
+        "solstone journal facet doctor: merge committed but index rebuild failed: {error}\n"
+    ));
     Outcome::LocalFailure {
         stdout,
-        stderr: "solstone journal facet doctor: one or more orphan facet repairs failed\n"
-            .to_owned(),
-        exit: EXIT_IO,
+        stderr,
+        exit,
     }
 }
 
@@ -1994,10 +2135,17 @@ fn facet_merge_transaction_in_journal(
     // The doctor runs its merges under its own facet trust lock and brings
     // search up to date once, after releasing it; reconciling here would wait
     // on another process's reconcile while holding that lock.
-    let reconcile_here = mode == FacetMergeMode::Owner;
-    // Both run after the facet trust lock is released: the rebuild refreshes
-    // the moved files, and the reconcile brings stored classifications for
-    // material that still names SOURCE onto DEST.
+    if mode == FacetMergeMode::DoctorOrphan {
+        return Ok(FacetMergeCommit {
+            report,
+            post_commit_failure: None,
+            source_removed,
+        });
+    }
+    // These run in the owner path after this function's inner facet trust
+    // guard is gone: the rebuild refreshes the moved files, and the reconcile
+    // brings stored classifications for material that still names SOURCE onto
+    // DEST. The doctor does not index here.
     if let Err(error) = scan_journal(journal, true) {
         return Ok(FacetMergeCommit {
             report,
@@ -2007,13 +2155,6 @@ fn facet_merge_transaction_in_journal(
                 &format!("merge committed but index rebuild failed: {error}"),
                 EXIT_FAILED,
             )),
-        });
-    }
-    if !reconcile_here {
-        return Ok(FacetMergeCommit {
-            report,
-            post_commit_failure: None,
-            source_removed,
         });
     }
     let post_commit_failure = match crate::facet_names::reconcile_facet_classifications(journal) {
@@ -3653,5 +3794,310 @@ mod archive_merge_source_kind_tests {
         let error = regular_archive_file(&dir).unwrap_err();
         let _ = fs::remove_dir(&dir);
         assert_eq!(error, "SOURCE must be a regular file");
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+fn check_doctor_after_trust_seam() {
+    if let (Some(seam_var), Some(pause)) = (
+        std::env::var_os("SOLSTONE_TEST_INDEX_WRITER_SEAM"),
+        std::env::var_os("SOLSTONE_TEST_INDEX_WRITER_PAUSE"),
+    ) && pause.to_string_lossy() == "after-trust"
+    {
+        let seam_dir = std::path::PathBuf::from(seam_var);
+        let _ = std::fs::write(seam_dir.join("trust-released"), b"released");
+        let release_file = seam_dir.join("after-trust.release");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !release_file.is_file() {
+            assert!(std::time::Instant::now() < deadline, "test seam timeout");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(not(target_os = "ios"))]
+mod tests {
+    use super::*;
+    use solstone_core_facets::hold_facet_trust_lock;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct DoctorChild {
+        child: std::process::Child,
+        log_path: PathBuf,
+    }
+
+    impl DoctorChild {
+        fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            loop {
+                if let Some(status) = self.child.try_wait()? {
+                    let output = fs::read_to_string(&self.log_path)?;
+                    assert!(status.success(), "doctor child failed: {output}");
+                    assert_eq!(
+                        output
+                            .matches("test result: ok. 1 passed; 0 failed;")
+                            .count(),
+                        1,
+                        "doctor child must execute one test: {output}"
+                    );
+                    assert!(output.contains("test local_ops::tests::facet_doctor_adopt_merge_indexes_only_after_trust_release ... ok"), "selected doctor child test must pass: {output}");
+                    return Ok(status);
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "doctor child did not finish",
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    }
+
+    impl Drop for DoctorChild {
+        fn drop(&mut self) {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+
+    #[test]
+    fn doctor_index_failure_preserves_repair_report_and_original_failure() {
+        let report = "Merged orphan facets:\n- source -> target\nRegular-file collisions:\n- source retained in archive\n";
+        for prior_error in [None, Some("original repair failure\n")] {
+            let outcome = match prior_error {
+                None => Outcome::LocalSuccess {
+                    stdout: report.to_owned(),
+                    stderr: String::new(),
+                },
+                Some(error) => Outcome::LocalFailure {
+                    stdout: report.to_owned(),
+                    stderr: error.to_owned(),
+                    exit: EXIT_IO,
+                },
+            };
+            let Outcome::LocalFailure {
+                stdout,
+                stderr,
+                exit,
+            } = facet_doctor_index_failure(outcome, "index writer busy")
+            else {
+                panic!("index failure must be reported")
+            };
+            assert_eq!(stdout, report);
+            assert!(
+                stderr.ends_with("merge committed but index rebuild failed: index writer busy\n")
+            );
+            if let Some(error) = prior_error {
+                assert!(stderr.starts_with(error));
+                assert_eq!(exit, EXIT_IO);
+            } else {
+                assert_eq!(exit, EXIT_FAILED);
+            }
+        }
+    }
+
+    fn make_test_journal() -> (PathBuf, PathBuf) {
+        let count = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "solstone-doctor-adopt-test-{}-{count}",
+            std::process::id()
+        ));
+        let journal = base.join("journal");
+        let seam = base.join("seam");
+        fs::create_dir_all(journal.join("facets").join("work")).expect("create work");
+        fs::write(
+            journal.join("facets").join("work").join("facet.json"),
+            r#"{"id":"22222222-2222-4222-8222-222222222222","title":"Work"}"#,
+        )
+        .expect("write work facet");
+        fs::create_dir_all(journal.join("facets").join("w-ork").join("news"))
+            .expect("create orphan logs");
+        fs::write(
+            journal
+                .join("facets")
+                .join("w-ork")
+                .join("news")
+                .join("20260717.md"),
+            "# A saved note\n\nsearchable doctor fixture",
+        )
+        .expect("write orphan note");
+        fs::create_dir_all(&seam).expect("create seam dir");
+        (journal, seam)
+    }
+
+    #[test]
+    fn facet_doctor_adopt_merge_indexes_only_after_trust_release() {
+        let role = std::env::var("SOLSTONE_TEST_CHILD_ROLE").unwrap_or_default();
+        if role == "doctor_child" {
+            let journal = PathBuf::from(std::env::var("SOLSTONE_TEST_JOURNAL").unwrap());
+            let outcome = facet_doctor_orphans(&journal, true, true, &Default::default());
+            if !matches!(outcome, Outcome::LocalSuccess { .. }) {
+                eprintln!("doctor child failed: {outcome:?}");
+                std::process::exit(1);
+            }
+            return;
+        }
+
+        let (journal, seam) = make_test_journal();
+        let old_path = "facets/w-ork/news/20260717.md";
+        let new_path = "facets/work/news/20260717.md";
+        assert!(matches!(
+            solstone_core_indexer_store::scan::rescan_file(&journal, &journal.join(old_path))
+                .unwrap(),
+            solstone_core_indexer_store::scan::RescanFileStatus::Indexed { .. }
+        ));
+        let reference_path = "20260717/default/100000_300/talents/w-ork/brief.md";
+        let reference_file = journal.join("chronicle").join(reference_path);
+        fs::create_dir_all(reference_file.parent().unwrap()).unwrap();
+        fs::write(
+            &reference_file,
+            "# Reference\n\nmaterial naming the merged facet",
+        )
+        .unwrap();
+        assert!(matches!(
+            solstone_core_indexer_store::scan::rescan_file(&journal, &reference_file).unwrap(),
+            solstone_core_indexer_store::scan::RescanFileStatus::Indexed { .. }
+        ));
+        let reader = solstone_core_indexer_store::open_index_reader(&journal).unwrap();
+        let memberships: i64 = reader
+            .query_row(
+                "SELECT COUNT(*) FROM chunk_classification_facets WHERE path=?1",
+                [reference_path],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            memberships, 0,
+            "fixture must have an unresolved facet reference"
+        );
+        drop(reader);
+        let exe = std::env::current_exe().expect("current exe");
+
+        let log_path = seam.join("doctor.child.log");
+        let output = fs::File::create(&log_path).unwrap();
+        let mut child = DoctorChild {
+            child: std::process::Command::new(exe)
+                .arg("--exact")
+                .arg("local_ops::tests::facet_doctor_adopt_merge_indexes_only_after_trust_release")
+                .arg("--nocapture")
+                .env("SOLSTONE_TEST_CHILD_ROLE", "doctor_child")
+                .env("SOLSTONE_TEST_JOURNAL", &journal)
+                .env("SOLSTONE_TEST_INDEX_WRITER_SEAM", &seam)
+                .env("SOLSTONE_TEST_INDEX_WRITER_PAUSE", "after-trust")
+                .stdout(output.try_clone().unwrap())
+                .stderr(output)
+                .spawn()
+                .expect("spawn child doctor process"),
+            log_path,
+        };
+
+        let trust_released_file = seam.join("trust-released");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !trust_released_file.is_file() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for trust-released"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        let scan_admitted_file = seam.join("scan-admitted");
+        assert!(
+            !scan_admitted_file.exists(),
+            "scan must not be admitted yet while child is paused at after-trust"
+        );
+
+        let acquired_lock = hold_facet_trust_lock(&journal);
+        assert!(
+            acquired_lock.is_ok(),
+            "facet trust lock should be available after doctor releases it"
+        );
+        drop(acquired_lock);
+
+        let reconcile_res = crate::facet_names::reconcile_facet_classifications(&journal);
+        let reconciled = reconcile_res.expect("competing reconciliation completed");
+        assert!(!reconciled.incomplete);
+        assert_eq!(
+            reconciled.changed, 1,
+            "reconciliation must update the stale classification"
+        );
+        let reader = solstone_core_indexer_store::open_index_reader(&journal).unwrap();
+        let facet_id: String = reader
+            .query_row(
+                "SELECT facet_id FROM chunk_classification_facets WHERE path=?1",
+                [reference_path],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(facet_id, "22222222-2222-4222-8222-222222222222");
+        drop(reader);
+
+        assert!(
+            !scan_admitted_file.exists(),
+            "scan-admitted must not be created by reconcile"
+        );
+
+        fs::write(seam.join("after-trust.release"), b"go").expect("write release file");
+
+        let status = child.wait().expect("child doctor process finishes");
+        assert!(status.success(), "child doctor process succeeded");
+
+        assert!(
+            scan_admitted_file.exists(),
+            "scan-admitted must exist after doctor finishes index scan"
+        );
+        assert!(
+            !journal.join("facets").join("w-ork").exists(),
+            "w-ork directory must be gone after merge"
+        );
+        assert!(
+            journal
+                .join("facets")
+                .join("work")
+                .join("news")
+                .join("20260717.md")
+                .exists(),
+            "moved note must exist in target facet logs"
+        );
+
+        let writer = solstone_core_journal_io::locking::hold_lock(
+            solstone_core_indexer_store::db::db_path(&journal),
+            solstone_core_journal_io::locking::LockOptions::default(),
+        )
+        .unwrap();
+        let results = search(
+            &journal,
+            OwnerBoundary,
+            &SearchRequest::new("searchable", Order::Relevance),
+            NaiveDate::from_ymd_opt(2026, 7, 17).unwrap(),
+        )
+        .expect("public owner search remains available while a writer is admitted");
+        assert_eq!(results.results.len(), 1);
+        assert_eq!(results.results[0].metadata.path, new_path);
+        drop(writer);
+
+        let reader = solstone_core_indexer_store::open_index_reader(&journal).unwrap();
+        let hits: i64 = reader
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE path=?1 AND chunks MATCH 'searchable'",
+                [new_path],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(hits, 1, "doctor must finish indexing the moved source");
+        let old_hits: i64 = reader
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE path=?1",
+                [old_path],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(old_hits, 0);
+        drop(reader);
+        let _ = fs::remove_dir_all(journal.parent().unwrap());
     }
 }

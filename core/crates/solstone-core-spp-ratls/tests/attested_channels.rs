@@ -33,7 +33,7 @@ use solstone_core_spp_attest::{
 use solstone_core_spp_ratls::{
     AttestationFailureKind, AttestationStateStore, AttestedChannel, CompositeVerdict,
     CompositeVerificationError, CompositeVerificationInput, CompositeVerifier, RatlsChannelError,
-    RatlsEndpoint, classify_channel_failure, establish_attested_channel,
+    RatlsEndpoint, classify_channel_failure,
     qualification::{QualificationRequest, qualification_policy, run_qualification},
     ratls::contract::{
         COMPOSITE_EVIDENCE_OID, CompositeEvidence, EXPORTER_BYTES, EXPORTER_LABEL,
@@ -497,6 +497,38 @@ fn start_gateway(config: ServerConfig, plan: GatewayPlan) -> Gateway {
 
 fn endpoint(port: u16) -> RatlsEndpoint {
     RatlsEndpoint::new("127.0.0.1", port)
+}
+
+#[cfg(not(feature = "test-hooks"))]
+use solstone_core_spp_ratls::establish_attested_channel;
+
+#[cfg(feature = "test-hooks")]
+#[allow(clippy::too_many_arguments)]
+fn establish_attested_channel(
+    endpoint: &RatlsEndpoint,
+    nonce: &[u8],
+    root: &Path,
+    now: SystemTime,
+    roots: Option<&Path>,
+    policy: Option<&solstone_core_spp_attest::Policy>,
+    quote: Option<&dyn solstone_core_spp_attest::QuoteVerifier>,
+    verifier: &dyn CompositeVerifier,
+    timeout: Duration,
+    epoch: u64,
+) -> Result<AttestedChannel, RatlsChannelError> {
+    solstone_core_spp_ratls::establish_local_test_channel_with_clock(
+        endpoint,
+        nonce,
+        root,
+        now,
+        roots,
+        policy,
+        quote,
+        verifier,
+        timeout,
+        epoch,
+        &solstone_core_spp_ratls::SystemAdmissionClock,
+    )
 }
 
 fn establish(
@@ -1347,7 +1379,11 @@ fn establish_python(
     verifier: &dyn CompositeVerifier,
     clock: &dyn solstone_core_spp_ratls::AdmissionClock,
 ) -> Result<AttestedChannel, RatlsChannelError> {
-    solstone_core_spp_ratls::establish_attested_channel_with_clock(
+    #[cfg(not(feature = "test-hooks"))]
+    use solstone_core_spp_ratls::establish_attested_channel_with_clock as establish_with_clock;
+    #[cfg(feature = "test-hooks")]
+    use solstone_core_spp_ratls::establish_local_test_channel_with_clock as establish_with_clock;
+    establish_with_clock(
         &endpoint(port),
         &python_evidence().owner_nonce,
         Path::new("."),
@@ -1880,4 +1916,29 @@ fn real_helper_trap_control_counts_the_online_path() {
     assert_eq!(error.reason_code, "gpu_appraisal_failed");
     drop(gateway.finish());
     assert!(trap.attempts.load(std::sync::atomic::Ordering::SeqCst) > before);
+}
+
+#[cfg(feature = "test-hooks")]
+#[test]
+fn fixture_seam_refuses_every_non_loopback_endpoint_before_resolution() {
+    for host in [
+        "processing.solstone.app",
+        "localhost",
+        "192.0.2.1",
+        "::ffff:192.0.2.1",
+    ] {
+        let error = rejected(establish_attested_channel(
+            &RatlsEndpoint::new(host, 443),
+            &[7; 32],
+            Path::new("."),
+            SystemTime::UNIX_EPOCH,
+            None,
+            None,
+            None,
+            &AcceptingCompositeVerifier,
+            IO_TIMEOUT,
+            0,
+        ));
+        assert_eq!(error.reason_code, "test_endpoint_not_loopback");
+    }
 }

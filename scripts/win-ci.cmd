@@ -95,6 +95,7 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --li
 echo === cargo test --locked (late material reaches an old or finished day) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --lib --features full-tests -- --exact daily_coverage::tests::late_raw_input_adopts_an_old_day_and_reopens_a_finished_one daily_coverage::tests::adoption_persists_closed_calendar_boundary_and_reconciles_derived_only_changes daily_coverage::tests::explicit_old_day_registration_survives_restart_and_finds_lost_wake_changes || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-local --lib --features full-tests || exit /b 1
+call :run_exact_library "solstone-core-generate-wire" "confidential::tests::nvattest_directory_refuses_config_outside_an_installed_windows_package" || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wire --lib || exit /b 1
 echo === cargo test --locked (Windows portal installer Job ownership) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install || exit /b 1
@@ -104,6 +105,16 @@ call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::on
 call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::windows_owners_are_held_back_even_with_a_verifier_target" || exit /b 1
 call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::a_held_platform_opens_no_channel" || exit /b 1
 call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::windows_refuses_every_channel_before_connecting" || exit /b 1
+call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_environment_discards_ambient_configuration_case_insensitively" || exit /b 1
+call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_paths_refuse_network_paths_and_count_utf16_units" || exit /b 1
+call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "signed_layout_refuses_missing_or_changed_executable_ca_and_runtime" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "production_spawn_clears_hostile_environment_and_uses_the_verified_directory" "test-hooks" || exit /b 1
+echo JOURNAL_WIN_CI_WINDOWS_VERIFIER=executed/pass
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "fixture_seam_refuses_every_non_loopback_endpoint_before_resolution" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_evidence_nonce_spki_criticality_and_presence_are_enforced" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exporter_mismatch_rejects_after_a_verified_certificate" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exact_spprat1_preface_nonce_and_exporter_request_establish_channel" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_rejection_writes_no_exporter_http_payload_and_closes" "test-hooks" || exit /b 1
 call :run_exact_library "solstone-core-brain" "presentation::tests::a_platform_with_no_hardware_check_says_so_on_every_brain_surface" || exit /b 1
 call :run_exact_library "solstone-core-thinking" "brain::tests::this_platform_offers_confidential_processing_everywhere_but_windows" || exit /b 1
 call :run_exact_library "solstone-core-thinking" "brain::tests::with_no_hardware_check_confidential_processing_reads_not_on_platform" || exit /b 1
@@ -212,6 +223,16 @@ call :run_exact_library "solstone-core-system" "process::platform::launch_contro
 call :run_exact_library "solstone-core-journal-cli" "runner::installed_task_controls::installed_request_preserves_exact_public_action" || exit /b 1
 call :run_exact_library "solstone-core-journal-cli" "runner::installed_task_controls::installed_request_refuses_partial_non_unicode_and_rewritten_action" || exit /b 1
 call :run_exact_library "solstone-core-journal-cli" "runner::installed_task_controls::installed_forwarding_refuses_changed_argv_before_launch" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::two_writers_exclude_each_other_before_source_and_cursor_reads" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::process_death_releases_the_lease_and_reacquire_keeps_the_sidecar" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::memory_rescan_paused_before_database_creation_makes_prune_wait" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::classification_batch_releases_admission_before_the_post_commit_barrier" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::completed_prune_rejects_a_later_rescan_of_the_removed_original" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::all_mutators_wait_for_admission_while_readers_remain_available" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::classification_drain_stops_on_a_busy_next_batch" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_classifications" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_path_lookup" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-journal-cli" "local_ops::tests::facet_doctor_adopt_merge_indexes_only_after_trust_release" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::guarded_action_round_trips_nondefault_port_and_unicode_path" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::rejects_missing_partial_duplicate_malformed_and_extra_guard_fields" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::quoting_matches_independent_literal_vectors" || exit /b 1
@@ -271,7 +292,9 @@ exit /b 0
 
 :run_exact_integration
 set "JOURNAL_WIN_CI_EXACT_LOG=core\target\journal-win-ci-integration-%RANDOM%%RANDOM%.log"
-cargo test --manifest-path core\Cargo.toml --locked -p "%~1" --test "%~2" -- --exact "%~3" --show-output > "%JOURNAL_WIN_CI_EXACT_LOG%" 2>&1
+set "JOURNAL_WIN_CI_EXACT_FEATURES="
+if not "%~4"=="" set "JOURNAL_WIN_CI_EXACT_FEATURES=--features %~4"
+cargo test --manifest-path core\Cargo.toml --locked -p "%~1" --test "%~2" %JOURNAL_WIN_CI_EXACT_FEATURES% -- --exact "%~3" --show-output > "%JOURNAL_WIN_CI_EXACT_LOG%" 2>&1
 set "JOURNAL_WIN_CI_EXACT_EXIT=%ERRORLEVEL%"
 type "%JOURNAL_WIN_CI_EXACT_LOG%"
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_EXACT_LOG%" -TestName "%~3" -TestExitCode %JOURNAL_WIN_CI_EXACT_EXIT% || exit /b 1

@@ -503,8 +503,9 @@ areas = ["services"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-cortex-client"
@@ -720,8 +721,9 @@ platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 serial_group = "local-services"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-home"
@@ -935,8 +937,9 @@ areas = ["journal"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-journal-config"
@@ -1491,8 +1494,9 @@ areas = ["system"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-talent-cli"
@@ -5035,6 +5039,23 @@ runtime = "none"
 [suites.windows]
 satisfaction = "cargo"
 acknowledgement = "JOURNAL_WIN_CI_GENERATE_ENVIRONMENT=executed/pass"
+
+[[suites]]
+id = "solstone-core-spp-attest::windows_verifier"
+package = "solstone-core-spp-attest"
+target = "windows_verifier"
+set = "component"
+areas = ["trust"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[suites.windows]
+satisfaction = "cargo"
+acknowledgement = "JOURNAL_WIN_CI_WINDOWS_VERIFIER=executed/pass"
 
 [[suites]]
 id = "solstone-core-spp-ratls::attested_channels"

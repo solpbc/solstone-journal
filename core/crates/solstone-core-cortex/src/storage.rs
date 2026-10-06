@@ -209,6 +209,7 @@ impl CortexStore {
         let mut model = Value::Null;
         let mut runtime_seconds = Value::Null;
         let mut status = "completed";
+        let mut index_attempts: Vec<Value> = Vec::new();
         if let Ok(text) = fs::read_to_string(completed) {
             for line in text.lines() {
                 let Ok(event) = serde_json::from_str::<Value>(line) else {
@@ -218,6 +219,28 @@ impl CortexStore {
                     Some("thinking") => thinking_count += 1,
                     Some("tool_start") => tool_count += 1,
                     Some("start") => model = event.get("model").cloned().unwrap_or(Value::Null),
+                    Some("index.attempt") => {
+                        let ts = event.get("ts").and_then(Value::as_i64);
+                        let path = event.get("path").and_then(Value::as_str);
+                        if let (Some(ts), Some(path)) = (ts, path) {
+                            let outcome = event
+                                .get("outcome")
+                                .cloned()
+                                .unwrap_or(Value::String("unknown".into()));
+                            let warnings = event
+                                .get("warnings")
+                                .cloned()
+                                .unwrap_or(Value::Array(Vec::new()));
+                            let cause = event.get("cause").cloned().unwrap_or(Value::Null);
+                            index_attempts.push(json!({
+                                "ts": ts,
+                                "path": path,
+                                "outcome": outcome,
+                                "warnings": warnings,
+                                "cause": cause,
+                            }));
+                        }
+                    }
                     Some("finish") => {
                         status = "completed";
                         degraded = event.get("degraded").cloned().unwrap_or(Value::Null);
@@ -265,6 +288,7 @@ impl CortexStore {
                 .map(Value::String)
                 .unwrap_or(Value::Null),
             "prompt": request.get("prompt").cloned().unwrap_or_else(|| Value::String(String::new())),
+            "index_attempts": index_attempts,
         });
         let path = self.talents.join(format!("{day}.jsonl"));
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
@@ -1073,6 +1097,7 @@ mod tests {
             "degraded",
             "output_file",
             "prompt",
+            "index_attempts",
         ];
         assert_eq!(
             row.as_object()

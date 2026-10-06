@@ -213,11 +213,17 @@ fn indexer_write_failure_exits_tempfail() {
         .expect("solstone-core should execute");
 
     assert_eq!(output.status.code(), Some(75));
-    assert!(
-        String::from_utf8(output.stderr)
-            .expect("stderr should be utf-8")
-            .starts_with("indexer scan failed: ")
-    );
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    let failures: Vec<_> = stderr
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("indexer scan failed: index writer admission failed for scan: ")
+        })
+        .collect();
+    assert_eq!(failures.len(), 1, "stderr: {stderr}");
+    assert!(!failures[0].is_empty(), "stderr: {stderr}");
+    assert!(output.stdout.is_empty());
+    assert_eq!(fs::read_to_string(&root).expect("source path"), "not a dir");
     fs::remove_file(root).expect("cleanup write failure path");
 }
 

@@ -542,6 +542,7 @@ pub fn publish_daily_publication(
     token: &str,
     publication: &PreparedDailyPublication,
     context: &ExecutionContext,
+    changed_paths: &mut Vec<String>,
 ) -> Result<CommitDisposition, StageError> {
     let record = authority
         .record()
@@ -753,25 +754,30 @@ pub fn publish_daily_publication(
                 before,
                 after,
                 ..
-            } => publish_output(
-                &context.journal,
-                path,
-                before,
-                after,
-                allow_before,
-                start,
-                receipt,
-            )
-            .map_err(make_review)?,
+            } => {
+                publish_output(
+                    &context.journal,
+                    path,
+                    before,
+                    after,
+                    allow_before,
+                    start,
+                    receipt,
+                    || changed_paths.push(path.clone()),
+                )
+                .map_err(make_review)?;
+            }
         }
     }
-    Ok(if publication.no_output {
+    let disposition = if publication.no_output {
         CommitDisposition::CommittedNoOutput
     } else {
         CommitDisposition::Written
-    })
+    };
+    Ok(disposition)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn publish_output(
     root: &Path,
     relative: &str,
@@ -780,6 +786,7 @@ fn publish_output(
     allow_before: bool,
     start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
+    published: impl FnOnce(),
 ) -> Result<(), ReviewOwnerError> {
     let path = root.join(relative);
     relative_output(root, &path)?;
@@ -796,6 +803,9 @@ fn publish_output(
         start().map_err(ReviewOwnerError::failed)?;
         atomic_replace(&path, after, AtomicWriteOptions { mode: Some(0o600) })
             .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+        // Record the save before a fallible receipt. The caller attempts indexing
+        // after this owner lock has been released, including on receipt failure.
+        published();
     }
     receipt().map_err(ReviewOwnerError::failed)
 }
@@ -804,6 +814,34 @@ fn publish_output(
 mod tests {
     use super::*;
     use solstone_core_journal_io::{DailyUnitIdentity, DailyUnitRecord, with_daily_unit_authority};
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn saved_output_is_reported_even_when_receipt_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let mut saved = Vec::new();
+        let result = publish_output(
+            root.path(),
+            "saved.md",
+            &None,
+            b"saved before receipt failed",
+            true,
+            || Ok(()),
+            || Err("receipt write failed".into()),
+            || saved.push("saved.md"),
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("receipt write failed")
+        );
+        assert_eq!(saved, ["saved.md"]);
+        assert_eq!(
+            std::fs::read(root.path().join("saved.md")).unwrap(),
+            b"saved before receipt failed"
+        );
+    }
 
     fn fixture() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
@@ -955,7 +993,8 @@ mod tests {
             record.action_plan = Some(serde_json::to_value(&plan).unwrap());
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
-            publish_daily_publication(authority, "attempt", &plan, &context).unwrap();
+            publish_daily_publication(authority, "attempt", &plan, &context, &mut Vec::new())
+                .unwrap();
             Ok(())
         })
         .unwrap();
@@ -978,8 +1017,12 @@ mod tests {
             // and the historical receipts of its completed owner actions.
             authority.record_mut().as_mut().unwrap().lock_token = Some("replacement".into());
             authority.checkpoint()?;
-            assert!(publish_daily_publication(authority, "attempt", &plan, &context).is_err());
-            publish_daily_publication(authority, "replacement", &plan, &context).unwrap();
+            assert!(
+                publish_daily_publication(authority, "attempt", &plan, &context, &mut Vec::new())
+                    .is_err()
+            );
+            publish_daily_publication(authority, "replacement", &plan, &context, &mut Vec::new())
+                .unwrap();
             Ok(())
         })
         .unwrap();
@@ -1026,8 +1069,14 @@ mod tests {
             authority.checkpoint()
         }).unwrap();
         with_daily_unit_authority(root.path(), &identity, |authority| {
-            let error =
-                publish_daily_publication(authority, "replacement", &plan, &context).unwrap_err();
+            let error = publish_daily_publication(
+                authority,
+                "replacement",
+                &plan,
+                &context,
+                &mut Vec::new(),
+            )
+            .unwrap_err();
             assert_eq!(error.phase, "conflict");
             Ok(())
         })
@@ -1140,7 +1189,8 @@ mod tests {
             authority.checkpoint()?;
 
             let err =
-                publish_daily_publication(authority, "attempt-1", &plan, &context).unwrap_err();
+                publish_daily_publication(authority, "attempt-1", &plan, &context, &mut Vec::new())
+                    .unwrap_err();
             assert_eq!(err.talent, "entities:entities_review");
             assert_eq!(err.day(), "20260910");
             assert_eq!(err.facet(), Some("work"));
@@ -1220,8 +1270,14 @@ mod tests {
             let binding = authority.record();
             let record = binding.as_ref().unwrap();
             assert!(record.has_uncommitted_started_receipt());
-            let err = publish_daily_publication(authority, "interrupted-token", &plan, &context)
-                .unwrap_err();
+            let err = publish_daily_publication(
+                authority,
+                "interrupted-token",
+                &plan,
+                &context,
+                &mut Vec::new(),
+            )
+            .unwrap_err();
             assert_eq!(err.phase, "conflict");
             assert_eq!(err.talent, "entities:entities_review");
             Ok(())
@@ -1964,6 +2020,7 @@ mod tests {
                     &ExecutionContext {
                         journal: root.path().into(),
                     },
+                    &mut Vec::new(),
                 )
                 .unwrap_err();
                 assert_eq!(error.phase, "conflict", "{kind}: {error:?}");
@@ -2336,7 +2393,8 @@ mod tests {
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
             let err =
-                publish_daily_publication(authority, "attempt-1", &plan, &context).unwrap_err();
+                publish_daily_publication(authority, "attempt-1", &plan, &context, &mut Vec::new())
+                    .unwrap_err();
             assert_eq!(err.phase, "conflict");
             assert_eq!(err.talent, "entities:entities_review");
             assert_eq!(err.day(), "20260910");
@@ -2397,7 +2455,7 @@ mod tests {
             record.action_plan = Some(serde_json::to_value(&plan).unwrap());
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
-            publish_daily_publication(authority, "noop", &plan, &context).unwrap();
+            publish_daily_publication(authority, "noop", &plan, &context, &mut Vec::new()).unwrap();
             let binding = authority.record();
             let current = binding.as_ref().unwrap();
             assert!(!current.has_uncommitted_started_receipt());
@@ -2517,7 +2575,7 @@ mod tests {
                     entity_id: "ada".into(),
                     entity_dir: "ada".into(),
                     before: Some(current.clone()),
-                    after: current,
+                    after: current.clone(),
                 },
             }],
             no_output: false,
@@ -2544,7 +2602,9 @@ mod tests {
             record.action_plan = Some(serde_json::to_value(&plan).unwrap());
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
-            let error = publish_daily_publication(authority, "guard", &plan, &context).unwrap_err();
+            let error =
+                publish_daily_publication(authority, "guard", &plan, &context, &mut Vec::new())
+                    .unwrap_err();
             assert_eq!(error.owner_conflict_kind(), Some("owning_facet_changed"));
             assert!(
                 !authority
@@ -2615,7 +2675,8 @@ mod tests {
             *authority.record_mut() = Some(record);
             authority.checkpoint()?;
             let error =
-                publish_daily_publication(authority, "malformed", &plan, &context).unwrap_err();
+                publish_daily_publication(authority, "malformed", &plan, &context, &mut Vec::new())
+                    .unwrap_err();
             assert_eq!(error.phase, "publication");
             assert_eq!(error.reason_code(), "talent_stage_failed");
             assert_eq!(error.owner_conflict_kind(), None);

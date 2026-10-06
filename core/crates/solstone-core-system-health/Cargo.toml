@@ -10,8 +10,12 @@ license.workspace = true
 publish = false
 autotests = false
 
+[features]
+full-tests = []
+
 [dependencies]
 chrono.workspace = true
+log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

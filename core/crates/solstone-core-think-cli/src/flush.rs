@@ -3,7 +3,7 @@
 
 use serde_json::{Map, Value};
 use solstone_core_cortex_client::{TimedOutUse, UseEndState};
-use solstone_core_talent_config::{TalentFilter, load_talent_configs};
+use solstone_core_talent_config::{TalentFilter, get_output_path, load_talent_configs};
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
@@ -190,16 +190,23 @@ fn queue(
     }
     request.insert("env".to_owned(), Value::Object(env));
     if generate {
+        let format = config
+            .metadata
+            .get("output")
+            .and_then(Value::as_str)
+            .unwrap_or("md");
+        request.insert("output".to_owned(), Value::String(format.to_owned()));
+        let path = get_output_path(
+            &context.day_dir,
+            &config.key,
+            Some(segment),
+            Some(format),
+            None,
+            stream,
+        );
         request.insert(
-            "output".to_owned(),
-            Value::String(
-                config
-                    .metadata
-                    .get("output")
-                    .and_then(Value::as_str)
-                    .unwrap_or("md")
-                    .to_owned(),
-            ),
+            "output_path".to_owned(),
+            Value::String(path.to_string_lossy().to_string()),
         );
     }
     dispatch_direct(context, runtime, &config.key, String::new(), request, None)

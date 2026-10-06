@@ -11,7 +11,9 @@ use std::{
 
 use crate::{error::GpuAppraisalReason, tlv::SPDM_NONCE_SIZE};
 
+#[cfg(not(windows))]
 const NVATTEST_LIB_RELPATH: &str = "lib";
+#[cfg(not(windows))]
 const CA_BUNDLE_RELATIVE_PATH: &str = "share/ca/ca-bundle.pem";
 
 /// Resolved files required to invoke an nvattest payload.
@@ -34,6 +36,18 @@ pub struct NvattestCommand {
 
 /// Resolves and validates the nvattest payload beneath `nvattest_dir`.
 pub fn locate_nvattest(nvattest_dir: &Path) -> Result<NvattestInstallation, GpuAppraisalReason> {
+    #[cfg(windows)]
+    {
+        super::windows::locate(nvattest_dir)
+    }
+    #[cfg(not(windows))]
+    {
+        locate_unix_nvattest(nvattest_dir)
+    }
+}
+
+#[cfg(not(windows))]
+fn locate_unix_nvattest(nvattest_dir: &Path) -> Result<NvattestInstallation, GpuAppraisalReason> {
     if !nvattest_dir.is_dir() {
         return Err(GpuAppraisalReason::NvattestUnavailable);
     }
@@ -91,7 +105,7 @@ pub fn build_nvattest_attest_command(
         .into_iter()
         .map(OsString::from),
     );
-    argv.push(evidence_file.as_os_str().to_owned());
+    argv.push(child_input_path(evidence_file)?);
     argv.extend(
         ["--verifier", "local", "--rim-store"]
             .into_iter()
@@ -102,7 +116,7 @@ pub fn build_nvattest_attest_command(
     argv.push(installation.ca_bundle.clone().into_os_string());
     if let Some(rim_dir) = rim_dir {
         argv.extend(["--rim-dir"].into_iter().map(OsString::from));
-        argv.push(rim_dir.as_os_str().to_owned());
+        argv.push(child_input_path(rim_dir)?);
     }
     argv.extend(["--nonce"].into_iter().map(OsString::from));
     argv.push(OsString::from(hex_lower(owner_nonce)));
@@ -110,10 +124,7 @@ pub fn build_nvattest_attest_command(
     Ok(NvattestCommand {
         executable: installation.binary,
         argv,
-        env: BTreeMap::from([(
-            OsString::from("LD_LIBRARY_PATH"),
-            installation.lib_dir.into_os_string(),
-        )]),
+        env: child_environment(&installation.lib_dir)?,
     })
 }
 
@@ -150,15 +161,15 @@ pub fn build_nvattest_offline_attest_command(
         .into_iter()
         .map(OsString::from),
     );
-    argv.push(evidence_file.as_os_str().to_owned());
+    argv.push(child_input_path(evidence_file)?);
     argv.extend(
         ["--verifier", "local", "--rim-store", "dir", "--rim-dir"]
             .into_iter()
             .map(OsString::from),
     );
-    argv.push(rim_dir.as_os_str().to_owned());
+    argv.push(child_input_path(rim_dir)?);
     argv.push(OsString::from("--ocsp-proof-bundle"));
-    argv.push(proof_bundle_file.as_os_str().to_owned());
+    argv.push(child_input_path(proof_bundle_file)?);
     argv.push(OsString::from("--ocsp-verification-time"));
     argv.push(OsString::from(verification_time_unix.to_string()));
     argv.push(OsString::from("--nonce"));
@@ -167,11 +178,34 @@ pub fn build_nvattest_offline_attest_command(
     Ok(NvattestCommand {
         executable: installation.binary,
         argv,
-        env: BTreeMap::from([(
-            OsString::from("LD_LIBRARY_PATH"),
-            installation.lib_dir.into_os_string(),
-        )]),
+        env: child_environment(&installation.lib_dir)?,
     })
+}
+
+fn child_input_path(path: &Path) -> Result<OsString, GpuAppraisalReason> {
+    #[cfg(windows)]
+    {
+        Ok(super::windows::child_path(path)?.into_os_string())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(path.as_os_str().to_owned())
+    }
+}
+
+fn child_environment(lib_dir: &Path) -> Result<BTreeMap<OsString, OsString>, GpuAppraisalReason> {
+    #[cfg(windows)]
+    {
+        let _ = lib_dir;
+        super::windows::environment(std::env::vars_os())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(BTreeMap::from([(
+            OsString::from("LD_LIBRARY_PATH"),
+            lib_dir.as_os_str().to_owned(),
+        )]))
+    }
 }
 
 fn hex_lower(bytes: &[u8]) -> String {
@@ -184,7 +218,7 @@ fn hex_lower(bytes: &[u8]) -> String {
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use std::{
         ffi::OsStr,

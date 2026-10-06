@@ -7,6 +7,8 @@ pub mod appraise;
 pub mod binary;
 pub mod claims;
 mod rims;
+#[cfg(any(windows, test))]
+mod windows;
 
 pub use appraise::{
     GpuAppraiser, GpuStatusInput, NVATTEST_TIMEOUT, NvattestGpuAppraiser, appraise_gpu_leg,

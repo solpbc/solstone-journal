@@ -323,6 +323,7 @@ pub enum RuntimeOutcome {
         disposition: CommitDisposition,
         usage: Option<Box<Value>>,
         degraded: Option<Box<Value>>,
+        output_changed: Option<bool>,
     },
     Skipped {
         stage: String,
@@ -695,6 +696,7 @@ fn finish_unavailable(
         disposition,
         usage,
         degraded,
+        output_changed: None,
     }
 }
 
@@ -850,6 +852,7 @@ pub(crate) fn generate_and_write(
             );
         }
         let disposition;
+        let mut output_changed = None;
         if let Some(commit) = stage.commit {
             let parsed = match (commit.parse)(&response, prepared, &state) {
                 Ok(parsed) => parsed,
@@ -864,6 +867,7 @@ pub(crate) fn generate_and_write(
                         disposition: CommitDisposition::RejectedNoMutation,
                         usage,
                         degraded,
+                        output_changed: None,
                     };
                 }
                 Err(mut error) => {
@@ -905,7 +909,30 @@ pub(crate) fn generate_and_write(
             };
         } else {
             disposition = match writers::write_output_if_configured(prepared, context, &response) {
-                Ok(_) => CommitDisposition::Written,
+                Ok(changed) => {
+                    output_changed = Some(changed);
+                    if changed
+                        && let Some(path) =
+                            prepared.config.get("output_path").and_then(Value::as_str)
+                    {
+                        let path = Path::new(path);
+                        let full = if path.is_absolute() {
+                            path.to_path_buf()
+                        } else {
+                            context.journal.join(path)
+                        };
+                        let attempt = solstone_core_indexer_store::attempt_saved_publication(
+                            &context.journal,
+                            &full,
+                            |j, p| {
+                                solstone_core_indexer_store::scan::rescan_file(j, p)
+                                    .map_err(|e| e.to_string())
+                            },
+                        );
+                        emit_index_attempt(writer, &attempt);
+                    }
+                    CommitDisposition::Written
+                }
                 Err(error) => {
                     let mut err = stage_error("write", "runtime", prepared, error);
                     err.usage = usage;
@@ -934,15 +961,38 @@ pub(crate) fn generate_and_write(
             disposition,
             usage,
             degraded,
+            output_changed,
         };
     }
     match writers::write_output_if_configured(prepared, context, &response) {
-        Ok(_) => RuntimeOutcome::Finished {
-            output: response,
-            disposition: CommitDisposition::Written,
-            usage,
-            degraded,
-        },
+        Ok(changed) => {
+            if changed
+                && let Some(path) = prepared.config.get("output_path").and_then(Value::as_str)
+            {
+                let path = Path::new(path);
+                let full = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    context.journal.join(path)
+                };
+                let attempt = solstone_core_indexer_store::attempt_saved_publication(
+                    &context.journal,
+                    &full,
+                    |j, p| {
+                        solstone_core_indexer_store::scan::rescan_file(j, p)
+                            .map_err(|e| e.to_string())
+                    },
+                );
+                emit_index_attempt(writer, &attempt);
+            }
+            RuntimeOutcome::Finished {
+                output: response,
+                disposition: CommitDisposition::Written,
+                usage,
+                degraded,
+                output_changed: Some(changed),
+            }
+        }
         Err(error) => {
             let mut err = stage_error("write", "runtime", prepared, error);
             err.usage = usage;
@@ -1099,6 +1149,22 @@ fn emit(writer: &mut (impl Write + ?Sized), event: Value) {
     let _ = writer.write_all(b"\n");
 }
 
+pub(crate) fn emit_index_attempt(
+    writer: &mut (impl Write + ?Sized),
+    attempt: &solstone_core_indexer_store::SavedPublicationAttempt,
+) {
+    emit(
+        writer,
+        json!({
+            "event": "index.attempt",
+            "path": attempt.path,
+            "outcome": attempt.outcome.as_str(),
+            "warnings": attempt.warnings,
+            "cause": attempt.cause,
+        }),
+    );
+}
+
 fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
     match outcome {
         RuntimeOutcome::Finished {
@@ -1106,6 +1172,7 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
             disposition,
             usage,
             degraded,
+            output_changed,
         } => {
             let mut event = json!({
                 "event": "finish",
@@ -1117,6 +1184,9 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
             }
             if let Some(degraded) = degraded {
                 event["degraded"] = *degraded;
+            }
+            if let Some(output_changed) = output_changed {
+                event["output_changed"] = serde_json::Value::Bool(output_changed);
             }
             emit(writer, event);
         }
@@ -1534,14 +1604,15 @@ mod tests {
             Ok(&client),
         );
         let output_events = events(&output);
-        assert_eq!(output_events.len(), 3);
+        assert_eq!(output_events.len(), 4);
         assert_eq!(output_events[0]["event"], "start");
         assert_eq!(output_events[0]["name"], "plain");
         assert!(output_events[0].get("model").is_some());
         assert!(output_events[0].get("provider").is_some());
         assert_eq!(output_events[1]["event"], "generate_attempt");
         assert_eq!(output_events[1]["status"], "success");
-        assert_eq!(output_events[2]["event"], "finish");
+        assert_eq!(output_events[2]["event"], "index.attempt");
+        assert_eq!(output_events[3]["event"], "finish");
         assert_eq!(
             fs::read_to_string(context.journal.join("chronicle/20260101/talents/plain.md"))
                 .unwrap(),
@@ -1595,10 +1666,11 @@ mod tests {
             Ok(&client),
         );
         let enabled_events = events(&enabled_output);
-        assert_eq!(enabled_events.len(), 3);
+        assert_eq!(enabled_events.len(), 4);
         assert_eq!(enabled_events[0]["event"], "start");
         assert_eq!(enabled_events[1]["event"], "generate_attempt");
-        assert_eq!(enabled_events[2]["event"], "finish");
+        assert_eq!(enabled_events[2]["event"], "index.attempt");
+        assert_eq!(enabled_events[3]["event"], "finish");
         assert_eq!(fs::read_to_string(output_path).unwrap(), "generated");
     }
 
@@ -3380,6 +3452,7 @@ mod tests {
             disposition: CommitDisposition::RejectedNoMutation,
             usage: None,
             degraded: None,
+            output_changed: None,
         };
         let mut output = Vec::new();
         emit_outcome(&mut output, outcome);
@@ -3387,5 +3460,359 @@ mod tests {
         assert_eq!(evts.len(), 1);
         assert_eq!(evts[0]["event"], "finish");
         assert_eq!(evts[0].get("day"), None);
+    }
+
+    #[test]
+    fn emit_outcome_output_changed_field() {
+        // 1. Some(true)
+        let outcome_true = RuntimeOutcome::Finished {
+            output: "output".to_owned(),
+            disposition: CommitDisposition::Written,
+            usage: None,
+            degraded: None,
+            output_changed: Some(true),
+        };
+        let mut out = Vec::new();
+        emit_outcome(&mut out, outcome_true);
+        let evts = events(&out);
+        assert_eq!(evts[0]["output_changed"], true);
+
+        // 2. Some(false)
+        let outcome_false = RuntimeOutcome::Finished {
+            output: "output".to_owned(),
+            disposition: CommitDisposition::Written,
+            usage: None,
+            degraded: None,
+            output_changed: Some(false),
+        };
+        let mut out = Vec::new();
+        emit_outcome(&mut out, outcome_false);
+        let evts = events(&out);
+        assert_eq!(evts[0]["output_changed"], false);
+
+        // 3. None omits the field
+        let outcome_none = RuntimeOutcome::Finished {
+            output: "output".to_owned(),
+            disposition: CommitDisposition::CommittedNoOutput,
+            usage: None,
+            degraded: None,
+            output_changed: None,
+        };
+        let mut out = Vec::new();
+        emit_outcome(&mut out, outcome_none);
+        let evts = events(&out);
+        assert_eq!(evts[0].get("output_changed"), None);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn published_output_changed_body_indexes_and_is_searchable() {
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        let client = OneShotClient::at_path(test_support::one_shot_stub(
+            root.path(),
+            "unique published sentence for testing search",
+        ));
+        let mut output = Vec::new();
+        run_lines(
+            Cursor::new("{\"name\":\"plain\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+            &mut output,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let evts = events(&output);
+        let finish = evts.iter().find(|e| e["event"] == "finish").unwrap();
+        assert_eq!(finish["output_changed"], true);
+        let attempts: Vec<_> = evts
+            .iter()
+            .filter(|e| e["event"] == "index.attempt")
+            .collect();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0]["outcome"], "indexed");
+        assert_eq!(attempts[0]["path"], "20260101/talents/plain.md");
+
+        let ref_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let search_res = solstone_core_indexer_query::search(
+            &context.journal,
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new("testing search", Default::default()),
+            ref_date,
+        )
+        .expect("search should succeed");
+        assert_eq!(search_res.results.len(), 1);
+        assert!(
+            search_res.results[0]
+                .text
+                .contains("unique published sentence")
+        );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn published_output_unchanged_body_and_provenance_skips_indexing() {
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        let client = OneShotClient::at_path(test_support::one_shot_stub(
+            root.path(),
+            "first and second body identical",
+        ));
+        let mut output1 = Vec::new();
+        run_lines(
+            Cursor::new("{\"name\":\"plain\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+            &mut output1,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let evts1 = events(&output1);
+        let finish1 = evts1.iter().find(|e| e["event"] == "finish").unwrap();
+        assert_eq!(finish1["output_changed"], true);
+
+        let mut output2 = Vec::new();
+        run_lines(
+            Cursor::new("{\"name\":\"plain\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+            &mut output2,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let evts2 = events(&output2);
+        let finish2 = evts2.iter().find(|e| e["event"] == "finish").unwrap();
+        assert_eq!(finish2["output_changed"], false);
+        let attempts2: Vec<_> = evts2
+            .iter()
+            .filter(|e| e["event"] == "index.attempt")
+            .collect();
+        assert_eq!(attempts2.len(), 0);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn published_output_provenance_only_change_indexes_and_marks_changed() {
+        use chrono::TimeZone;
+        use solstone_core_format::agent_memory::{Coordinate, Origin, OriginKind, SourceKey};
+        use solstone_core_format::content::ConsumedOriginal;
+
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        let client =
+            OneShotClient::at_path(test_support::one_shot_stub(root.path(), "stable body text"));
+        let mut output1 = Vec::new();
+        run_lines(
+            Cursor::new("{\"name\":\"plain\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+            &mut output1,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let evts1 = events(&output1);
+        let finish1 = evts1.iter().find(|e| e["event"] == "finish").unwrap();
+        assert_eq!(finish1["output_changed"], true);
+
+        let source_key = SourceKey::from_verified_id("source-prov");
+        let coordinate = Coordinate {
+            day: "20260101".to_owned(),
+            stream: format!("agent-memory-{}", source_key.component()),
+            segment: "010203_1".to_owned(),
+        };
+        let original = ConsumedOriginal {
+            origin: Origin {
+                kind: OriginKind::AgentMemory,
+                source_key,
+                creation_label: "prov test".to_owned(),
+                created_at: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 1, 2, 3).unwrap(),
+                stream: coordinate.stream.clone(),
+                segment: coordinate.segment.clone(),
+            },
+            coordinate,
+        };
+        let mut prepared = prepare::prepare(
+            json!({"name": "plain", "day": "20260101", "prompt": "hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            prepare::PrepareMode::Execute,
+        )
+        .unwrap();
+        prepared.config.insert(
+            "_memory_sources".to_owned(),
+            serde_json::to_value(&[original]).unwrap(),
+        );
+        let mut output2 = Vec::new();
+        let outcome = generate_and_write(&mut prepared, &context, &client, &mut output2, None);
+        emit_outcome(&mut output2, outcome);
+        let evts2 = events(&output2);
+        let finish2 = evts2.iter().find(|e| e["event"] == "finish").unwrap();
+        assert_eq!(finish2["output_changed"], true);
+        let attempts2: Vec<_> = evts2
+            .iter()
+            .filter(|e| e["event"] == "index.attempt")
+            .collect();
+        assert_eq!(attempts2.len(), 1);
+        assert_eq!(attempts2[0]["outcome"], "indexed");
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn story_participation_and_skip_finish_omit_output_changed() {
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        fs::write(
+            context.journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"test","model":"test-model"}},"talent_overrides":{"talent.system.plain":{"disabled":true}}}"#,
+        )
+        .unwrap();
+        let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
+        let mut skipped_output = Vec::new();
+        run_lines(
+            Cursor::new("{\"name\":\"plain\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+            &mut skipped_output,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let skipped_events = events(&skipped_output);
+        let skip_finish = skipped_events
+            .iter()
+            .find(|e| e["event"] == "finish")
+            .unwrap();
+        assert_eq!(skip_finish.get("output_changed"), None);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn published_output_same_second_replaces_and_is_searchable() {
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        let output_path = context.journal.join("chronicle/20260101/talents/plain.md");
+        let ref_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+
+        let mut iter = 0;
+        loop {
+            iter += 1;
+            assert!(
+                iter <= 10,
+                "did not observe same-second execution in 10 attempts"
+            );
+            let client1 = OneShotClient::at_path(test_support::one_shot_stub(
+                root.path(),
+                &format!("first iteration text {iter}"),
+            ));
+            let mut output1 = Vec::new();
+            run_lines(
+                Cursor::new("{\"name\":\"plain\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+                &mut output1,
+                &paths,
+                &context,
+                Ok(&client1),
+            );
+            let mtime1 = fs::metadata(&output_path).unwrap().modified().unwrap();
+            let duration1 = mtime1
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            let client2 = OneShotClient::at_path(test_support::one_shot_stub(
+                root.path(),
+                &format!("second iteration text {iter}"),
+            ));
+            let mut output2 = Vec::new();
+            run_lines(
+                Cursor::new("{\"name\":\"plain\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+                &mut output2,
+                &paths,
+                &context,
+                Ok(&client2),
+            );
+            let mtime2 = fs::metadata(&output_path).unwrap().modified().unwrap();
+            let duration2 = mtime2
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            if duration1 == duration2 {
+                let search_res = solstone_core_indexer_query::search(
+                    &context.journal,
+                    solstone_core_indexer_query::OwnerBoundary,
+                    &solstone_core_indexer_query::SearchRequest::new(
+                        format!("second iteration text {iter}"),
+                        Default::default(),
+                    ),
+                    ref_date,
+                )
+                .expect("search should succeed");
+                assert_eq!(search_res.results.len(), 1);
+                assert!(
+                    search_res.results[0]
+                        .text
+                        .contains(&format!("second iteration text {iter}"))
+                );
+                break;
+            }
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn published_output_index_failure_warns_and_preserves_output_and_finishes() {
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        fs::write(context.journal.join("indexer"), b"not a directory").unwrap();
+
+        let client = OneShotClient::at_path(test_support::one_shot_stub(
+            root.path(),
+            "surviving output text",
+        ));
+        let mut output = Vec::new();
+        run_lines(
+            Cursor::new("{\"name\":\"plain\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+            &mut output,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let evts = events(&output);
+        let finish = evts.iter().find(|e| e["event"] == "finish").unwrap();
+        assert_eq!(finish["output_changed"], true);
+        assert!(!evts.iter().any(|e| e["event"] == "error"));
+
+        let attempts: Vec<_> = evts
+            .iter()
+            .filter(|e| e["event"] == "index.attempt")
+            .collect();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0]["outcome"], "failed");
+        assert!(attempts[0].get("cause").is_some());
+
+        let saved = fs::read_to_string(context.journal.join("chronicle/20260101/talents/plain.md"))
+            .unwrap();
+        assert_eq!(saved, "surviving output text");
     }
 }

@@ -32,7 +32,7 @@ solstone-core-thinking.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true
-solstone-core-indexer-store.workspace = true
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 tempfile = "3.24.0"
 
 [lints]

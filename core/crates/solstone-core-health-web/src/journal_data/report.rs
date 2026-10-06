@@ -81,7 +81,7 @@ pub(crate) struct SynthesisHealth {
     pub(crate) activities_anticipated_unfilled: u64,
     pub(crate) talent_run_failures_24h: Option<u64>,
     pub(crate) talent_degraded_outputs_24h: Option<u64>,
-    pub(crate) indexer_last_rebuild_at: Option<i64>,
+    pub(crate) index_activity_at: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -513,55 +513,40 @@ pub(crate) fn build_synthesis_health(
         (None, None)
     };
     let indexer_sqlite = journal_root.join("indexer/journal.sqlite");
-    let (gen_at_opt, backlog_opt) = crate::backlog::load(journal_root);
-    let indexer_phase = backlog_opt
-        .as_ref()
-        .and_then(|b| b.get("indexer_phase"))
-        .and_then(solstone_core_system_health::IndexerPhase::from_json_value);
     let utc_now = now.with_timezone(&Utc);
-    let summary_freshness = if backlog_opt
-        .as_ref()
-        .is_none_or(|b| b.get("degraded") == Some(&serde_json::Value::Bool(true)))
-    {
-        solstone_core_system_health::SummaryFreshness::Unknown
-    } else {
-        solstone_core_system_health::summary_freshness(gen_at_opt.as_deref(), utc_now)
-    };
-    let search_eval = crate::search_freshness::evaluate_search_freshness(
+    let search_eval = crate::search_index::evaluate_search_index(
         journal_root,
-        &crate::search_freshness::FsIndexMetadata,
-        indexer_phase.as_ref(),
-        summary_freshness,
+        &crate::search_index::FsIndexMetadata,
         utc_now,
     );
 
-    let indexer_last_rebuild_at = search_eval.updated_at_ms;
+    let index_activity_at = search_eval.index_activity_at_ms;
+
+    if search_eval.observed_failure {
+        notes.push(note(
+            "warn",
+            "synthesis",
+            crate::search_index::SEARCH_NOTE_ATTEMPT_FAILED,
+            generated_at,
+            None,
+        ));
+    } else if let Some(mtime_ms) = search_eval.index_activity_at_ms
+        && generated_at - mtime_ms > 7 * DAY_MS
+    {
+        notes.push(note(
+            "warn",
+            "synthesis",
+            &format!(
+                "search index last changed {}d ago; search-backed consumers may be stale.",
+                (generated_at - mtime_ms) / DAY_MS
+            ),
+            generated_at,
+            None,
+        ));
+    }
 
     match fs::metadata(&indexer_sqlite) {
-        Ok(_) => {
-            if search_eval.state == "stale" && !search_eval.last_attempt_failed {
-                if let Some(mtime_ms) = search_eval.updated_at_ms {
-                    notes.push(note(
-                        "warn",
-                        "synthesis",
-                        &format!(
-                            "indexer database last rebuilt {}d ago; search-backed consumers may be stale.",
-                            (generated_at - mtime_ms) / DAY_MS
-                        ),
-                        generated_at,
-                        None,
-                    ));
-                }
-            } else if search_eval.last_attempt_failed {
-                notes.push(note(
-                    "warn",
-                    "synthesis",
-                    crate::search_freshness::SEARCH_NOTE_ATTEMPT_FAILED,
-                    generated_at,
-                    None,
-                ));
-            }
-        }
+        Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             notes.push(note(
                 "warn",
@@ -582,7 +567,7 @@ pub(crate) fn build_synthesis_health(
             activities_anticipated_unfilled: aggregate.activities_anticipated_unfilled,
             talent_run_failures_24h: failures,
             talent_degraded_outputs_24h: degraded,
-            indexer_last_rebuild_at,
+            index_activity_at,
         },
         notes,
     ))
@@ -1969,7 +1954,7 @@ mod tests {
         healthy_talent_guards(temporary.path(), now());
         let (health, notes) =
             build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
-        assert_eq!(health.indexer_last_rebuild_at, None);
+        assert_eq!(health.index_activity_at, None);
         assert!(
             notes
                 .iter()
@@ -1994,7 +1979,7 @@ mod tests {
         assert!(
             !notes
                 .iter()
-                .any(|note| note.message.contains("last rebuilt"))
+                .any(|note| note.message.contains("last changed"))
         );
         set_file_mtime(
             &index,
@@ -2006,7 +1991,7 @@ mod tests {
         assert!(
             notes
                 .iter()
-                .any(|note| note.message.contains("last rebuilt"))
+                .any(|note| note.message.contains("last changed"))
         );
     }
 
