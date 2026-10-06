@@ -631,7 +631,7 @@ this repository.
 
 Files: `llama-server`, extracted from
 `llama-b11429-bin-macos-arm64.tar.gz`,
-`llama-b10068-bin-ubuntu-vulkan-arm64.tar.gz`, and
+`llama-b11429-bin-ubuntu-vulkan-arm64.tar.gz`, and
 `llama-b11429-bin-ubuntu-vulkan-x64.tar.gz`.
 
 Source: https://github.com/ggml-org/llama.cpp

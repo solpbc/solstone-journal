@@ -512,11 +512,7 @@ fn preflip_origin_readiness_fixture_preserves_all_pin_identities_and_proofs() {
     for row in fixture["llama_server_vulkan"].as_array().unwrap() {
         let arch_key = row["arch_key"].as_str().unwrap();
         let identity = pins::vulkan_identity(arch_key).unwrap();
-        if arch_key == "aarch64-unknown-linux-gnu" {
-            assert_eq!(identity, row["pin_identity"]);
-        } else {
-            assert_ne!(identity, row["pin_identity"]);
-        }
+        assert_ne!(identity, row["pin_identity"]);
         assert_manifest_proves_preflip_identity(
             &root.join(format!("vulkan-{}", arch_key)),
             "llama-server-vulkan",
@@ -617,20 +613,7 @@ fn preflip_fixture_preserves_paths_and_native_pins_json_fields() {
             .iter()
             .find(|entry| entry["artifact_key"] == arch_key)
             .unwrap();
-        if arch_key == "aarch64-unknown-linux-gnu" {
-            let expected = &row["pin_identity"];
-            for field in [
-                "artifact_key",
-                "release_tag",
-                "filename",
-                "sha256",
-                "binary_name",
-            ] {
-                assert_eq!(actual[field], expected[field], "{field}");
-            }
-        } else {
-            assert_ne!(actual, &row["pin_identity"]);
-        }
+        assert_ne!(actual, &row["pin_identity"]);
         let paths = pins::paths(journal, arch_key, Some("local/qwen3.5-4b"));
         assert_eq!(
             path_value(&paths["binary_path"]),
@@ -2570,11 +2553,23 @@ fn registry_binds_existing_pins_and_the_parakeet_model_pin() {
         );
         assert!(!artifact.upstream_url.contains("/main/"));
     }
+    let arm_vulkan = resolve("llama-server-vulkan", Some(Platform::LinuxArm64), None);
+    assert_eq!(arm_vulkan.len(), 1);
+    assert_eq!(arm_vulkan[0].size_bytes, 24845090);
+    assert_eq!(
+        arm_vulkan[0].upstream_url,
+        "https://github.com/ggml-org/llama.cpp/releases/download/b11429/llama-b11429-bin-ubuntu-vulkan-arm64.tar.gz"
+    );
+    assert_eq!(
+        arm_vulkan[0].origin_key,
+        "assets/llama-server-vulkan/b11429/llama-b11429-bin-ubuntu-vulkan-arm64.tar.gz"
+    );
 }
 
 #[test]
 fn registry_preserves_prechange_identity_literals() {
     let historical_vulkan = "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b10068-bin-ubuntu-vulkan-x64.tar.gz\",\"release_tag\":\"b10068\",\"sha256\":\"713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3\",\"unit\":\"llama-server-vulkan\"}";
+    let historical_arm_vulkan = "{\"artifact_key\":\"aarch64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b10068-bin-ubuntu-vulkan-arm64.tar.gz\",\"release_tag\":\"b10068\",\"sha256\":\"c3c49e6e124a574165ca28317be021b1a12a2ea06977e3eb7daee3eb443eb186\",\"unit\":\"llama-server-vulkan\"}";
     let historical_cuda = "{\"arch\":\"amd64\",\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"llama_cpp_revision\":\"571d0d540df04f25298d0e159e520d9fc62ed121\",\"release_tag\":\"b10068\",\"repack_revision\":\"sol1\",\"sha256\":\"3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea\",\"size_bytes\":550238443,\"unit\":\"llama-server-cuda\",\"upstream_image_digest\":\"sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63\",\"url\":\"https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz\",\"wanted_files\":[\"libcublas.so.13\",\"libcublasLt.so.13\",\"libcudart.so.13\",\"libggml-base.so.0\",\"libggml-cpu-alderlake.so\",\"libggml-cpu-cannonlake.so\",\"libggml-cpu-cascadelake.so\",\"libggml-cpu-cooperlake.so\",\"libggml-cpu-haswell.so\",\"libggml-cpu-icelake.so\",\"libggml-cpu-ivybridge.so\",\"libggml-cpu-piledriver.so\",\"libggml-cpu-sandybridge.so\",\"libggml-cpu-sapphirerapids.so\",\"libggml-cpu-skylakex.so\",\"libggml-cpu-sse42.so\",\"libggml-cpu-x64.so\",\"libggml-cpu-zen4.so\",\"libggml-cuda.so\",\"libggml.so.0\",\"libllama-common.so.0\",\"libllama-server-impl.so\",\"libllama.so.0\",\"libmtmd.so.0\",\"llama-server\"]}";
 
     let current_vulkan =
@@ -2583,6 +2578,14 @@ fn registry_preserves_prechange_identity_literals() {
     assert_eq!(
         current_vulkan,
         "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b11429-bin-ubuntu-vulkan-x64.tar.gz\",\"release_tag\":\"b11429\",\"sha256\":\"632c4e98feba2b94407a2130e3133e0c3aefb0ea1ab41337e926d8bfafdd0b74\",\"unit\":\"llama-server-vulkan\"}"
+    );
+    let current_arm_vulkan =
+        fingerprint::canonical(pins::vulkan_identity("aarch64-unknown-linux-gnu").unwrap())
+            .unwrap();
+    assert_ne!(current_arm_vulkan, historical_arm_vulkan);
+    assert_eq!(
+        current_arm_vulkan,
+        "{\"artifact_key\":\"aarch64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b11429-bin-ubuntu-vulkan-arm64.tar.gz\",\"release_tag\":\"b11429\",\"sha256\":\"702d99c4219b4314cc6d3b10fb41ae96cbfc68226305c2681269dfb51487af34\",\"unit\":\"llama-server-vulkan\"}"
     );
     let current_metal =
         fingerprint::canonical(pins::vulkan_identity("aarch64-apple-darwin").unwrap()).unwrap();
@@ -2874,6 +2877,182 @@ fn oracle_missing_or_corrupt_member_fails_loudly_without_unrelated_errors() {
     assert!(
         super::verify_required_oracle(&staging, "b11429", "x86_64-unknown-linux-gnu", false)
             .is_ok()
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn oracle_arm64_vulkan_b11429_required_members_match_archive_subset() {
+    assert_eq!(
+        pins::required_members_for("b11429", "aarch64-unknown-linux-gnu"),
+        Some(pins::VULKAN_LINUX_ARM64_B11429_REQUIRED)
+    );
+    assert_eq!(
+        pins::required_members_for("b11429", "x86_64-unknown-linux-gnu"),
+        Some(pins::VULKAN_LINUX_X64_B11429_REQUIRED)
+    );
+    assert_eq!(
+        pins::required_members_for("b11429", "aarch64-apple-darwin"),
+        Some(pins::METAL_MACOS_ARM64_B11429_REQUIRED)
+    );
+    assert_eq!(
+        pins::required_members_for("b10068", "x86_64-unknown-linux-gnu"),
+        Some(pins::B10068_REQUIRED)
+    );
+    assert_eq!(
+        pins::required_members_for("b10068", "aarch64-unknown-linux-gnu"),
+        Some(pins::B10068_REQUIRED)
+    );
+
+    let arm_members = pins::VULKAN_LINUX_ARM64_B11429_REQUIRED;
+    let base_idx = arm_members
+        .iter()
+        .position(|m| matches!(m, pins::RequiredMember::Regular("libggml-base.so.0.26.0")))
+        .expect("libggml-base.so.0.26.0 present");
+    let rpc_idx = arm_members
+        .iter()
+        .position(|m| matches!(m, pins::RequiredMember::Regular("libggml-rpc.so")))
+        .expect("libggml-rpc.so present");
+
+    let expected_cpu = [
+        "libggml-cpu-armv8.0_1.so",
+        "libggml-cpu-armv8.2_1.so",
+        "libggml-cpu-armv8.2_2.so",
+        "libggml-cpu-armv8.2_3.so",
+        "libggml-cpu-armv8.6_1.so",
+        "libggml-cpu-armv8.6_2.so",
+        "libggml-cpu-armv9.2_1.so",
+        "libggml-cpu-armv9.2_2.so",
+    ];
+
+    let actual_cpu: Vec<&str> = arm_members[base_idx + 1..rpc_idx]
+        .iter()
+        .map(|m| match m {
+            pins::RequiredMember::Regular(name) => *name,
+            pins::RequiredMember::Link { name, .. } => *name,
+        })
+        .collect();
+    assert_eq!(actual_cpu, expected_cpu);
+
+    let x86_cpu_tokens = [
+        "libggml-cpu-alderlake.so",
+        "libggml-cpu-cannonlake.so",
+        "libggml-cpu-cascadelake.so",
+        "libggml-cpu-cooperlake.so",
+        "libggml-cpu-haswell.so",
+        "libggml-cpu-icelake.so",
+        "libggml-cpu-ivybridge.so",
+        "libggml-cpu-piledriver.so",
+        "libggml-cpu-sandybridge.so",
+        "libggml-cpu-sapphirerapids.so",
+        "libggml-cpu-skylakex.so",
+        "libggml-cpu-sse42.so",
+        "libggml-cpu-x64.so",
+    ];
+    for member in arm_members {
+        let name = match member {
+            pins::RequiredMember::Regular(name) => *name,
+            pins::RequiredMember::Link { name, .. } => *name,
+        };
+        for token in x86_cpu_tokens {
+            assert_ne!(name, token, "arm64 members must not contain {token}");
+        }
+    }
+
+    let x64_non_cpu: Vec<_> = pins::VULKAN_LINUX_X64_B11429_REQUIRED
+        .iter()
+        .filter(|m| {
+            let name = match m {
+                pins::RequiredMember::Regular(name) => *name,
+                pins::RequiredMember::Link { name, .. } => *name,
+            };
+            !name.starts_with("libggml-cpu-")
+        })
+        .cloned()
+        .collect();
+    let arm_non_cpu: Vec<_> = arm_members
+        .iter()
+        .filter(|m| {
+            let name = match m {
+                pins::RequiredMember::Regular(name) => *name,
+                pins::RequiredMember::Link { name, .. } => *name,
+            };
+            !name.starts_with("libggml-cpu-")
+        })
+        .cloned()
+        .collect();
+    assert_eq!(arm_non_cpu, x64_non_cpu);
+}
+
+#[test]
+#[cfg(unix)]
+fn oracle_arm64_vulkan_symlink_chain_admits_complete_tree_and_rejects_breaks() {
+    fn build_arm_tree(dir: &Path) {
+        fs::create_dir_all(dir).unwrap();
+        for member in pins::VULKAN_LINUX_ARM64_B11429_REQUIRED {
+            match member {
+                pins::RequiredMember::Regular(name) => {
+                    fs::write(dir.join(name), format!("regular {name}")).unwrap();
+                }
+                pins::RequiredMember::Link { name, target } => {
+                    std::os::unix::fs::symlink(target, dir.join(name)).unwrap();
+                }
+            }
+        }
+    }
+
+    let root = temp("oracle-arm64-vulkan");
+
+    // Case 1: Complete tree admits
+    let complete = root.join("complete");
+    build_arm_tree(&complete);
+    assert!(
+        super::verify_required_oracle(&complete, "b11429", "aarch64-unknown-linux-gnu", false)
+            .is_ok()
+    );
+
+    // Case 2: Missing regular llama-server fails
+    let missing_regular = root.join("missing_regular");
+    build_arm_tree(&missing_regular);
+    fs::remove_file(missing_regular.join("llama-server")).unwrap();
+    assert!(
+        super::verify_required_oracle(
+            &missing_regular,
+            "b11429",
+            "aarch64-unknown-linux-gnu",
+            false
+        )
+        .is_err()
+    );
+
+    // Case 3: Missing symlink libggml-base.so fails
+    let missing_symlink = root.join("missing_symlink");
+    build_arm_tree(&missing_symlink);
+    fs::remove_file(missing_symlink.join("libggml-base.so")).unwrap();
+    assert!(
+        super::verify_required_oracle(
+            &missing_symlink,
+            "b11429",
+            "aarch64-unknown-linux-gnu",
+            false
+        )
+        .is_err()
+    );
+
+    // Case 4: Retargeted symlink libggml.so fails
+    let retargeted_symlink = root.join("retargeted_symlink");
+    build_arm_tree(&retargeted_symlink);
+    fs::remove_file(retargeted_symlink.join("libggml.so")).unwrap();
+    std::os::unix::fs::symlink("libggml.so.0.26.0", retargeted_symlink.join("libggml.so")).unwrap();
+    assert!(
+        super::verify_required_oracle(
+            &retargeted_symlink,
+            "b11429",
+            "aarch64-unknown-linux-gnu",
+            false
+        )
+        .is_err()
     );
 
     let _ = fs::remove_dir_all(root);
