@@ -4551,6 +4551,7 @@ dependencies = [
  "solstone-core-segment",
  "solstone-core-sol-link",
  "solstone-core-system",
+ "solstone-core-transcripts-web",
  "tempfile",
  "time",
  "tokio",

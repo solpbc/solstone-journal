@@ -2248,6 +2248,118 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn audio_capture_duplicate_evidence_survives_real_ingest_and_reopened_projection() {
+        for mode in ["partial", "healthy", "zero", "legacy"] {
+            let dir = root();
+            let root = dir.path().to_path_buf();
+            let frames = if mode == "zero" { 0 } else { 960 };
+            let source = json!({"source_id":"system", "kind":"system", "expected":true,
+                "started":true, "state":"finished", "received_frames":frames,
+                "accepted_frames":frames, "dropped_frames":0, "writer_status":"completed",
+                "failures":[], "statistics_available":true, "statistics_complete":true,
+                "generated_frames":0, "gap_count":0, "timeline_origin_seconds":0.0});
+            let mut first = json!({"audio_capture":{"version":1,"timeline_version":1,
+                "state":"finished","sources":[source],"remix":[]}});
+            if mode == "partial" {
+                first["audio_capture"]["state"] = json!("partial");
+                let source = &mut first["audio_capture"]["sources"][0];
+                source["state"] = json!("partial");
+                source["statistics_complete"] = json!(false);
+                source["generated_frames"] = json!(1200);
+                source["gap_count"] = json!(1);
+                source["failures"] =
+                    json!([{"stage":"append","domain":"fixture","code":7,"count":1}]);
+            } else if mode == "legacy" {
+                first = json!({});
+            }
+            let mut later = first.clone();
+            later["resend_note"] = json!("enriched metadata");
+            if mode == "partial" {
+                later["audio_capture"]["state"] = json!("finished");
+                let source = &mut later["audio_capture"]["sources"][0];
+                source["received_frames"] = json!(1920);
+                source["accepted_frames"] = json!(1920);
+                source["statistics_complete"] = json!(true);
+                source["state"] = json!("finished");
+                source["failures"] = json!([]);
+                later["audio_capture"]["remix"] =
+                    json!([{"source_id":"system","state":"complete","frames_copied":3120}]);
+            }
+            let app = router(&root);
+            for (meta, expected) in [(first.clone(), "ok"), (later.clone(), "duplicate")] {
+                let request = json!({"day":"20260804","segment":"120000_1", "meta":meta,
+                    "files":[{"submitted":"screen.mp4"}]});
+                let (status, response) = call_upload(&app, request, "screen.mp4", b"video").await;
+                assert_eq!(status, StatusCode::OK, "{mode}: {response}");
+                assert_eq!(response["status"], expected, "{mode}: {response}");
+            }
+            drop(app);
+            let segment = root.join("chronicle/20260804/device/120000_1");
+            let report = solstone_core_callosum::read_device_ingest_events(&segment).unwrap();
+            assert_eq!(report.records.len(), 2, "{mode}");
+            assert_eq!(&report.records[0].meta, first.as_object().unwrap());
+            assert_eq!(&report.records[1].meta, later.as_object().unwrap());
+            let stream: Value =
+                serde_json::from_slice(&fs::read(root.join("streams/device.json")).unwrap())
+                    .unwrap();
+            assert_eq!(
+                stream["seq"], 1,
+                "duplicate metadata does not advance the stream"
+            );
+            for _ in 0..2 {
+                let reopened = solstone_core_transcripts_web::router(
+                    root.clone(),
+                    solstone_core_transcripts_web::Clock::system(),
+                    || axum::response::Response::new(Body::empty()),
+                );
+                let response = reopened
+                    .oneshot(
+                        Request::builder()
+                            .uri("/app/transcripts/api/segment/20260804/device/120000_1")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                let value: Value = serde_json::from_slice(
+                    &to_bytes(response.into_body(), usize::MAX).await.unwrap(),
+                )
+                .unwrap();
+                if mode == "legacy" {
+                    assert!(value.get("audio_capture").is_none());
+                    continue;
+                }
+                let capture = &value["audio_capture"];
+                assert_eq!(
+                    capture["state"],
+                    if mode == "partial" {
+                        "partial"
+                    } else {
+                        "finished"
+                    },
+                    "{mode}: {capture}"
+                );
+                let source = &capture["sources"][0];
+                assert_eq!(source["statistics_available"], true);
+                assert_eq!(source["statistics_complete"], true);
+                assert_eq!(
+                    source["accepted_frames"],
+                    if mode == "partial" { 1920 } else { frames }
+                );
+                assert_eq!(source["timeline_origin_seconds"], 0.0);
+                if mode == "partial" {
+                    assert_eq!(source["generated_frames"], 1200);
+                    assert_eq!(source["gap_count"], 1);
+                    assert_eq!(source["failures"][0]["code"], 7);
+                    assert_eq!(source["state"], "partial");
+                    assert_eq!(capture["remix"][0]["state"], "complete");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn a_resend_into_a_removed_segment_is_refused_as_removed() {
         let dir = root();
         let root = dir.path().to_path_buf();
