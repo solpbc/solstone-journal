@@ -910,3 +910,72 @@ fn production_pins_carry_the_committed_toolchain_and_archive_identities() {
     assert_eq!(sha256_hex(REGORUS_LOCK), pins.regorus_cargo_lock.sha256);
     assert_eq!(REGORUS_LOCK.len() as u64, pins.regorus_cargo_lock.bytes);
 }
+
+#[test]
+fn the_driver_carries_the_committed_pins_boundaries_and_child_environment() {
+    let driver = include_str!("../../../../distribution/nvattest-windows-build.ps1");
+    let assigned = |name: &str| -> String {
+        let prefix = format!("{name} = ");
+        let line = driver
+            .lines()
+            .find(|line| line.starts_with(&prefix))
+            .unwrap_or_else(|| panic!("driver does not assign {name}"));
+        line[prefix.len()..]
+            .trim()
+            .trim_matches(['\'', '"'])
+            .to_string()
+    };
+    let pins = production_pins();
+    assert_eq!(assigned("$PinnedSdkRevision"), pins.sdk_revision);
+    assert_eq!(assigned("$PinnedSourceSha256"), pins.source_archive.sha256);
+    assert_eq!(
+        assigned("$PinnedSourceSize"),
+        pins.source_archive.bytes.to_string()
+    );
+    assert_eq!(assigned("$PinnedBundleSha256"), pins.bundle_archive.sha256);
+    assert_eq!(
+        assigned("$PinnedBundleSize"),
+        pins.bundle_archive.bytes.to_string()
+    );
+    assert_eq!(assigned("$PinnedManifestSha256"), pins.manifest_sha256);
+    assert_eq!(assigned("$CorruptMember"), NVATTEST_REFUSAL_CORRUPT_MEMBER);
+    assert_eq!(
+        assigned("$RefusalManifestBoundary"),
+        NVATTEST_REFUSAL_MANIFEST_BOUNDARY
+    );
+    assert_eq!(
+        assigned("$RefusalReuseBoundary"),
+        NVATTEST_REFUSAL_REUSE_BOUNDARY
+    );
+    assert_eq!(
+        assigned("$RefusalCorruptBoundary")
+            .replace("$CorruptMember", NVATTEST_REFUSAL_CORRUPT_MEMBER),
+        NVATTEST_REFUSAL_CORRUPT_BOUNDARY
+    );
+    assert_eq!(assigned("$CmakeArchiveName"), BUILD_TOOLS[1].name);
+
+    let start = driver
+        .find("$ChildEnvironmentNames = [string[]]@(")
+        .unwrap();
+    let list = &driver[start..start + driver[start..].find("')").unwrap() + 1];
+    let names: Vec<&str> = list.split('\'').skip(1).step_by(2).collect();
+    assert_eq!(names, NVATTEST_SDK_CHILD_ENVIRONMENT);
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    assert_eq!(
+        sorted, names,
+        "the driver compares the environment in ordinal order"
+    );
+
+    for schema in [
+        NVATTEST_TOOL_CENSUS_SCHEMA_V1,
+        NVATTEST_DRIVER_CONTROLS_SCHEMA_V1,
+    ] {
+        assert!(driver.contains(&format!("'{schema}'")), "{schema}");
+    }
+    for name in crate::nvattest_windows_source::NVATTEST_DUMPBIN_FILES {
+        let binary = name.strip_suffix(".dependents.txt").unwrap();
+        assert!(driver.contains(&format!("'{binary}'")), "{binary}");
+    }
+    assert!(driver.contains("\"$name.dependents.txt\""));
+}
