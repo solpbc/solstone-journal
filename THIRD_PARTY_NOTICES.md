@@ -93,8 +93,8 @@ Attribution: parakeet.cpp project (mudler).
 
 Source:
 
-- Linux release binaries: https://github.com/mudler/parakeet.cpp/releases/tag/v0.5.0
-- Windows build: sol pbc builds v0.5.0 from source with one patch
+- linux release binaries: https://github.com/mudler/parakeet.cpp/releases/tag/v0.5.0
+- windows build: sol pbc builds v0.5.0 from source with one patch
   (`core/distribution/parakeet-windows-patches/`). It statically links ggml
   (MIT, https://github.com/ggml-org/ggml), whose license ships with the package.
 - Project: https://github.com/mudler/parakeet.cpp
@@ -104,16 +104,16 @@ License notice: MIT.
 The MIT license permits sol pbc's redistribution of this server binary and its
 windows build.
 
-The Linux v0.5.0 archives have notice sidecars beside the downloads:
+The linux v0.5.0 archives have notice sidecars beside the downloads:
 
 - [parakeet-v0.5.0-bin-linux-cpu-arm64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-arm64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-arm64.tar.gz.THIRD_PARTY_NOTICES.md)
 - [parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz.THIRD_PARTY_NOTICES.md)
 - [parakeet-v0.5.0-bin-linux-vulkan-arm64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-arm64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-arm64.tar.gz.THIRD_PARTY_NOTICES.md)
 - [parakeet-v0.5.0-bin-linux-vulkan-x64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-x64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-x64.tar.gz.THIRD_PARTY_NOTICES.md)
 
-Windows packages built from this source place the YaRN and cpp-httplib blocks at `share/licenses/parakeet/YaRN-LICENSE.txt` and `share/licenses/parakeet/cpp-httplib-LICENSE.txt` beside the parakeet.cpp and ggml licence files. The full text for each component follows.
+windows packages built from this source place the YaRN and cpp-httplib blocks at `share/licenses/parakeet/YaRN-LICENSE.txt` and `share/licenses/parakeet/cpp-httplib-LICENSE.txt` beside the parakeet.cpp and ggml licence files. The full text for each component follows.
 
-## parakeet.cpp (Linux CLI and server; Windows server)
+## parakeet.cpp (linux CLI and server; windows server)
 
 Source: https://github.com/mudler/parakeet.cpp/blob/1bfbebfaaf493866f49597cd3b7901959d395c60/LICENSE
 
@@ -141,7 +141,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## ggml (Linux CLI and server; Windows server)
+## ggml (linux CLI and server; windows server)
 
 Source: https://github.com/ggml-org/ggml/blob/e705c5fed490514458bdd2eaddc43bd098fcce9b/LICENSE
 
@@ -169,7 +169,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Mozilla Foundation sgemm.cpp (Linux CLI and server)
+## Mozilla Foundation sgemm.cpp (linux CLI and server)
 
 Source: https://github.com/ggml-org/ggml/blob/e705c5fed490514458bdd2eaddc43bd098fcce9b/src/ggml-cpu/llamafile/sgemm.cpp
 
@@ -197,7 +197,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## YaRN (Linux CLI and server; Windows server)
+## YaRN (linux CLI and server; windows server)
 
 Source: https://github.com/jquesnelle/yarn/blob/995db5b575e75230b3384d658f8b944c9662f775/LICENSE
 
@@ -225,7 +225,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## cpp-httplib v0.18.3 (Linux and Windows server only)
+## cpp-httplib v0.18.3 (linux and windows server only)
 
 Source: https://github.com/yhirose/cpp-httplib/blob/v0.18.3/LICENSE
 
@@ -522,29 +522,29 @@ files.
 Files: `libcudart.so.13`, `libcublas.so.13`,
 `libcublasLt.so.13`.
 
-Source: NVIDIA CUDA Toolkit 13.3 packages contained in the pinned upstream
-llama.cpp CUDA image.
+Source:
+- linux x86_64 archive `llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz` and linux arm64 archive `llama-b11429-bin-linux-cuda13-arm64-sol1.tar.gz` each carry CUDA Toolkit 13.4.1 components. Each archive is packaged with the MIT license file `licenses/llama.cpp-LICENSE.txt` and the unmodified EULA at `licenses/NVIDIA-CUDA-EULA-13.4.1.html`. The archive root also contains `provenance.json`.
 
-License: NVIDIA CUDA Toolkit End User License Agreement, Release 13.3,
-including the CUDA Toolkit Supplement, Attachment A, and Attachment B.
+License: NVIDIA CUDA Toolkit End User License Agreement, Release 13.4.1
+for linux x86_64 and linux arm64, including the CUDA Toolkit
+Supplement, Attachment A, and Attachment B.
 
 These files are proprietary NVIDIA software. They are not licensed under
 solstone's AGPL-3.0-only license or the llama.cpp MIT license. Their use and
 redistribution remain subject to the NVIDIA CUDA Toolkit EULA. A verbatim
-copy of the package-accompanying EULA, including its third-party notices,
-is reproduced in `licenses/NVIDIA-CUDA-EULA-13.3.txt` and accompanies each
-runtime artifact. NVIDIA does not sponsor or endorse solstone.
+copy of the unmodified 13.4.1 EULA accompanies each selected linux archive at
+`licenses/NVIDIA-CUDA-EULA-13.4.1.html`. NVIDIA does not sponsor or endorse solstone.
 
 sol pbc redistributes these CUDA components from `updates.solstone.app` only as
 Attachment-A distributable portions: unmodified except for unzipping, inside
 the solstone application with material additional functionality, and not as a
 stand-alone SDK distribution. Their redistribution is permitted only within
-those NVIDIA CUDA Toolkit EULA 13.3 bounds.
+those NVIDIA CUDA Toolkit EULA bounds.
 
 ## runtime-downloaded provider artifacts (llama.cpp Vulkan/CPU)
 
 These artifacts are downloaded on demand into the journal provider cache for
-solstone's local inference runtime on supported macOS and Linux systems. They
+solstone's local inference runtime on supported macos and linux systems. They
 are distributed as application components, not as stand-alone runtime
 distributions.
 sol pbc redistributes them from `updates.solstone.app`; they are not bundled in
@@ -553,9 +553,9 @@ this repository.
 ### llama.cpp Vulkan/CPU runtime
 
 Files: `llama-server`, extracted from
-`llama-b10068-bin-macos-arm64.tar.gz`,
+`llama-b11429-bin-macos-arm64.tar.gz`,
 `llama-b10068-bin-ubuntu-vulkan-arm64.tar.gz`, and
-`llama-b10068-bin-ubuntu-vulkan-x64.tar.gz`.
+`llama-b11429-bin-ubuntu-vulkan-x64.tar.gz`.
 
 Source: https://github.com/ggml-org/llama.cpp
 

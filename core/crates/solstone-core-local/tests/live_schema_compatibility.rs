@@ -31,7 +31,9 @@ fn every_shipped_prepared_schema_is_admitted_by_the_configured_engine() {
         "local schema probe: backend={backend:?} model={model:?} schemas={}",
         schemas.len()
     );
-    let invalid_control = json!({"type": "string", "pattern": "["});
+    // Use anchored malformed syntax: newer converters deliberately ignore
+    // unanchored patterns, so an unanchored control cannot prove rejection.
+    let invalid_control = json!({"type": "string", "pattern": "^[$"});
     let control_status = post_status(
         &base_url,
         credential.as_deref(),

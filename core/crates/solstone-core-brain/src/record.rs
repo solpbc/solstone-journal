@@ -284,6 +284,7 @@ fn spp_reason(raw: &str) -> &'static str {
         | "certificate_evidence_invalid"
         | "nonce_mismatch"
         | "pcr_pin_mismatch"
+        | "id_key_pin_mismatch"
         | "spki_mismatch"
         | "cpu_verification_failed"
         | "gpu_nonce_mismatch"

@@ -181,6 +181,10 @@ pub enum SnpVerifyError {
     PolicyVmpl,
     #[error("SNP report policy allows DEBUG")]
     PolicyDebugEnabled,
+    #[error("SNP report carries no ID key digest")]
+    PolicyIdKeyAbsent,
+    #[error("SNP report ID key digest is not in pinned policy")]
+    PolicyIdKeyNotPinned,
     #[error("{label} TCB has no {field} field")]
     PolicyTcbMissing { label: String, field: &'static str },
     #[error("{label} TCB {field}={value} is below policy floor {floor}")]

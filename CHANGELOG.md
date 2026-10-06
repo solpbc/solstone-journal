@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - the health page now shows search updates that could not finish and whether search classification is still incomplete. the time of the index's last change is shown as activity, rather than as proof that everything is searchable.
+- when you name a voice with "everywhere this voice appears", the name now goes only on the segments where that voice closely matches, plus the segment you named it from. in segments where the match is weaker, that voice's sentences read "probably" and the name instead, so you can check them yourself.
 - your Strava workouts now turn up in search and when your agents read your journal, including the description and private notes Strava exported for each. your journal's own thinking now includes workouts from the past seven days, and a large import doesn't start thinking over years of past days.
 - the body app now shows only what your journal holds: the values your sources recorded, with where each came from, and counts, ranges and dates. it no longer works out its own averages, 90-day medians or a "strongest" contributor, and each section is named for the data it holds. the trends page is now called "daily values" and shows each day's own value instead of weekly medians. what your agents read from the body app follows the same rule.
 
@@ -21,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - search now tries to include saved thinking results even when a later step fails. changing a segment's facets also refreshes the search classification of its saved results.
 - search updates and manual index repairs now run one at a time.
+- security fix: with confidential processing on, your journal now checks who signed the firmware the service's computer starts from, and only uses the service when that signer is the one your journal accepts. before, your journal checked the service's hardware and that its computer booted the exact image we pinned, but not who signed that firmware, so firmware someone else signed could have reported that boot falsely. none of your journal data is known to have been exposed.
 - workouts from a Strava download now show at their real start time. before, they could land hours off, and an evening workout could land on the wrong day. import your download again and your earlier workouts move to the right time; a workout you deleted stays deleted.
 
 ## [2.0.33] - 2026-10-05

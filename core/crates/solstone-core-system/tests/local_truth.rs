@@ -26,7 +26,8 @@ fn ready_journal() -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("solstone-local-truth-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let cache = pins::cache_root(&root);
-    let runtime = cache.join("bin/aarch64-apple-darwin/b10068");
+    let (release, _, _, _) = pins::vulkan_pin("aarch64-apple-darwin").expect("Darwin runtime pin");
+    let runtime = cache.join("bin").join("aarch64-apple-darwin").join(release);
     let model = cache.join("models/local__qwen3.5-4b");
     std::fs::create_dir_all(&runtime).expect("runtime directory");
     std::fs::create_dir_all(&model).expect("model directory");

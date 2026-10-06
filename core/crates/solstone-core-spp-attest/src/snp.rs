@@ -48,6 +48,7 @@ const SNP_OFF_KEY_INFO: usize = 0x048;
 const SNP_OFF_REPORT_DATA: usize = 0x050;
 const SNP_OFF_MEASUREMENT: usize = 0x090;
 const SNP_OFF_HOST_DATA: usize = 0x0c0;
+const SNP_OFF_ID_KEY_DIGEST: usize = 0x0e0;
 const SNP_OFF_REPORTED_TCB: usize = 0x180;
 const SNP_OFF_CPUID_FAMILY: usize = 0x188;
 const SNP_OFF_CPUID_MODEL: usize = 0x189;
@@ -160,6 +161,10 @@ pub struct Policy {
     pub min_tcb: BTreeMap<String, TcbFloor>,
     pub pcr_mode: PcrMode,
     pub pcr_pins: BTreeSet<String>,
+    /// SHA-384 digests of the ID keys allowed to have signed the launch.
+    /// `None` leaves the ID key unchecked; `Some` refuses a zero digest and
+    /// any digest outside the set, so an empty set refuses every report.
+    pub id_key_digests: Option<BTreeSet<[u8; 48]>>,
 }
 
 impl Default for Policy {
@@ -172,6 +177,7 @@ impl Default for Policy {
             min_tcb: BTreeMap::new(),
             pcr_mode: PcrMode::Record,
             pcr_pins: BTreeSet::new(),
+            id_key_digests: None,
         }
     }
 }
@@ -190,6 +196,7 @@ pub struct SnpReport {
     pub report_data: [u8; 64],
     pub measurement: [u8; 48],
     pub host_data: [u8; 32],
+    pub id_key_digest: [u8; 48],
     pub chip_id: [u8; 64],
     pub cpuid_family: Option<u8>,
     pub cpuid_model: Option<u8>,
@@ -233,6 +240,7 @@ impl SnpReport {
             report_data: array_at(raw, SNP_OFF_REPORT_DATA)?,
             measurement: array_at(raw, SNP_OFF_MEASUREMENT)?,
             host_data: array_at(raw, SNP_OFF_HOST_DATA)?,
+            id_key_digest: array_at(raw, SNP_OFF_ID_KEY_DIGEST)?,
             chip_id: array_at(raw, SNP_OFF_CHIP_ID)?,
             cpuid_family,
             cpuid_model,
@@ -388,6 +396,16 @@ fn check_policy_with(report: &SnpReport, policy: &Policy) -> Result<(), SnpVerif
             _ => return Err(SnpVerifyError::PolicyTcbLabelUnknown),
         };
         floor.check(observed, label)?;
+    }
+    if let Some(pinned) = &policy.id_key_digests {
+        // The firmware reports a nonzero ID key digest only after checking the
+        // ID block's signature, so a zero digest means no signer vouched.
+        if report.id_key_digest == [0; 48] {
+            return Err(SnpVerifyError::PolicyIdKeyAbsent);
+        }
+        if !pinned.contains(&report.id_key_digest) {
+            return Err(SnpVerifyError::PolicyIdKeyNotPinned);
+        }
     }
     Ok(())
 }
@@ -558,6 +576,15 @@ fn appraise_cpu_leg_at(
             python_bool(debug_allowed(&report))
         ),
     ));
+    if policy.id_key_digests.is_some() {
+        steps.push(ok_step(
+            "snp-id-key",
+            format!(
+                "pinned ID key digest matched {}",
+                hex_lower(&report.id_key_digest)
+            ),
+        ));
+    }
 
     verify_ak_binding(&hcla.runtime, bundle.ak_public_key_pem).map_err(|source| {
         CpuLegError::SnpVerify {
@@ -661,7 +688,7 @@ fn ok_step(name: &'static str, detail: String) -> AppraisalStep {
     }
 }
 
-fn hex_lower(bytes: &[u8]) -> String {
+pub(crate) fn hex_lower(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut result = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -1049,7 +1076,7 @@ fn version_at(raw: [u8; 3]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{collections::BTreeSet, fs, path::PathBuf};
 
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use x509_parser::pem::parse_x509_pem;
@@ -1058,7 +1085,7 @@ mod tests {
         CpuAppraisalStage, CpuEvidence, CpuLegError, HCL_REPORT_OFFSET, PcrMode, Policy,
         SNP_OFF_MEASUREMENT, SNP_OFF_VERSION, SnpParseError, SnpReport, SnpVerifyError,
         appraise_cpu_evidence, check_pcr_fingerprint, check_policy_with, embedded_root_pairs,
-        parse_hcla, select_root_generation, verify_amd_chain_and_report,
+        hex_lower, parse_hcla, select_root_generation, verify_amd_chain_and_report,
         verify_rsa_pss_sha384_signature,
     };
     use crate::test_support::fixture_bytes;
@@ -1534,5 +1561,95 @@ mod tests {
             check_pcr_fingerprint(b"PCR bytes", &policy),
             Err(crate::error::PcrFingerprintError::UnknownMode { .. })
         ));
+    }
+
+    const ACCEPTED_AZURE_LAUNCH_STATES: [&str; 3] = ["aa7c9da5", "11920f61", "af9e20e1"];
+
+    fn id_key_fixture(state: &str) -> (Vec<u8>, [Vec<u8>; 3]) {
+        (
+            fixture_bytes(&format!("id-key/{state}/report.bin")),
+            [
+                fixture_bytes("certs/ark.pem"),
+                fixture_bytes("certs/ask.pem"),
+                fixture_bytes(&format!("id-key/{state}/vcek.pem")),
+            ],
+        )
+    }
+
+    #[test]
+    fn pinned_id_key_admits_a_real_report_from_each_accepted_azure_state() {
+        let policy = crate::production_policy();
+        for state in ACCEPTED_AZURE_LAUNCH_STATES {
+            let (raw, certificates) = id_key_fixture(state);
+            let report = SnpReport::parse(&raw).expect("fixture report parses");
+            assert!(hex_lower(&report.measurement).starts_with(state), "{state}");
+            let refs = certificates.each_ref().map(Vec::as_slice);
+            verify_amd_chain_and_report(&report, &refs, VALID_NOW_UNIX_SECONDS)
+                .unwrap_or_else(|error| panic!("{state} is AMD-signed: {error}"));
+            assert_eq!(check_policy_with(&report, &policy), Ok(()), "{state}");
+        }
+    }
+
+    #[test]
+    fn id_key_digest_lies_inside_the_amd_signed_report_bytes() {
+        let (mut raw, certificates) = id_key_fixture("af9e20e1");
+        raw[super::SNP_OFF_ID_KEY_DIGEST] ^= 1;
+        let refs = certificates.each_ref().map(Vec::as_slice);
+        assert_eq!(
+            verify_amd_chain_and_report(
+                &SnpReport::parse(&raw).expect("mutated report parses"),
+                &refs,
+                VALID_NOW_UNIX_SECONDS,
+            ),
+            Err(SnpVerifyError::ReportSignatureInvalid)
+        );
+    }
+
+    #[test]
+    fn pinned_id_key_refuses_a_zero_digest() {
+        let mut report = fixture_report();
+        report.id_key_digest = [0; 48];
+        assert_eq!(
+            check_policy_with(&report, &crate::production_policy()),
+            Err(SnpVerifyError::PolicyIdKeyAbsent)
+        );
+    }
+
+    #[test]
+    fn pinned_id_key_refuses_a_foreign_digest() {
+        let mut report = fixture_report();
+        assert_eq!(
+            check_policy_with(&report, &crate::production_policy()),
+            Ok(())
+        );
+        report.id_key_digest[47] ^= 1;
+        assert_eq!(
+            check_policy_with(&report, &crate::production_policy()),
+            Err(SnpVerifyError::PolicyIdKeyNotPinned)
+        );
+        report.id_key_digest = [0x5a; 48];
+        assert_eq!(
+            check_policy_with(&report, &crate::production_policy()),
+            Err(SnpVerifyError::PolicyIdKeyNotPinned)
+        );
+    }
+
+    #[test]
+    fn an_empty_id_key_pin_set_refuses_every_report() {
+        let policy = Policy {
+            id_key_digests: Some(BTreeSet::new()),
+            ..Policy::default()
+        };
+        assert_eq!(
+            check_policy_with(&fixture_report(), &policy),
+            Err(SnpVerifyError::PolicyIdKeyNotPinned)
+        );
+    }
+
+    #[test]
+    fn default_policy_leaves_the_id_key_unchecked() {
+        let mut report = fixture_report();
+        report.id_key_digest = [0; 48];
+        assert_eq!(check_policy_with(&report, &Policy::default()), Ok(()));
     }
 }

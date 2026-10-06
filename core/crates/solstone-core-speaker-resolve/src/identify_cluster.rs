@@ -1802,6 +1802,82 @@ mod tests {
         (temporary, a, b)
     }
 
+    /// Adds a third recording to voice 5 whose voice matches the voice's
+    /// centroid at .6, under the naming floor.
+    fn add_far_recording(root: &Path) -> PathBuf {
+        let c = segment_path(root, "20260808", "101000_300", "mic", true).unwrap();
+        fs::create_dir_all(c.join("talents")).unwrap();
+        let mut far = vec![0.0; 256];
+        far[1] = 0.6;
+        far[3] = 0.8;
+        write_npz(&c, "audio", &[(1, far.clone()), (2, far)]);
+        let path = root.join("awareness/speaker_candidates.json");
+        let mut pool: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let voice = pool["candidates"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|row| row["cand_id"] == json!(5))
+            .unwrap();
+        voice["source_segments"]
+            .as_array_mut()
+            .unwrap()
+            .push(voice_source("101000_300", "audio", &[1, 2]));
+        fs::write(&path, pool.to_string()).unwrap();
+        c
+    }
+
+    #[test]
+    fn naming_a_voice_skips_a_recording_below_the_similarity_floor() {
+        let (temporary, _a, _b) = voice_journal();
+        let root = temporary.path();
+        let c = add_far_recording(root);
+        let result =
+            identify_voice(&request(root, "floor-1", "ryan"), 5, None, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert!(
+            labels_of(&c).is_empty(),
+            "a recording that does not sound like the voice keeps no name"
+        );
+        let members = result_members(root, &result);
+        assert!(
+            members
+                .iter()
+                .all(|(segment, _, _)| segment != "101000_300"),
+            "{members:?}"
+        );
+        let saved = crate::identify_forward_phases::voiceprint_metadata(root, "ryan");
+        assert!(
+            saved.keys().all(|key| key.segment_key != "101000_300"),
+            "no voiceprint from a recording under the floor"
+        );
+    }
+
+    #[test]
+    fn naming_a_voice_from_a_recording_below_the_floor_still_names_that_recording() {
+        let (temporary, _a, _b) = voice_journal();
+        let root = temporary.path();
+        let c = add_far_recording(root);
+        let tapped = crate::voice_members::VoiceAnchor {
+            day: "20260808".into(),
+            stream: "mic".into(),
+            segment_key: "101000_300".into(),
+            source: "audio".into(),
+            sentence_id: 1,
+        };
+        let result = identify_voice(
+            &request(root, "floor-2", "ryan"),
+            5,
+            Some(&tapped),
+            &encoder(),
+        )
+        .unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        let c_labels = labels_of(&c);
+        assert_eq!(c_labels[&1]["speaker"], "ryan");
+        assert_eq!(c_labels[&2]["speaker"], "ryan");
+    }
+
     #[test]
     fn naming_a_voice_writes_the_person_on_exactly_its_unnamed_sentences() {
         let (temporary, a, b) = voice_journal();
