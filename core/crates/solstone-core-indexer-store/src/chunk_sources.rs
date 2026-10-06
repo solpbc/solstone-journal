@@ -132,6 +132,13 @@ pub fn apply_path_lookup(journal: &Path) -> Result<PathLookupStatus, StoreError>
     conn.execute_batch(
         "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
     )?;
+    seed_path_lookup(&mut conn)?;
+    Ok(PathLookupStatus { ready: true })
+}
+
+/// Rebuild the path lookup from `chunks` and mark it ready. The caller must
+/// hold the index writer admission.
+pub(crate) fn seed_path_lookup(conn: &mut Connection) -> Result<(), StoreError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
     if !sqlite_table_exists(&tx, "chunks")? {
@@ -169,7 +176,7 @@ pub fn apply_path_lookup(journal: &Path) -> Result<PathLookupStatus, StoreError>
         [],
     )?;
     tx.commit()?;
-    Ok(PathLookupStatus { ready: true })
+    Ok(())
 }
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -659,12 +666,51 @@ mod tests {
     }
 
     #[test]
-    fn unready_scan_and_rescan_refuse_while_prune_succeeds() {
-        let root = temp_root("unready-refuse-prune-succeed");
-        let file_path = root.join("facets/work/events/20260101.jsonl");
+    fn unready_index_seeds_on_first_admitted_write() {
+        // An index built before the path lookup existed keeps indexing after
+        // upgrade: the first scan seeds the lookup, and later writes use it.
+        let scan_root = temp_root("unready-scan-seeds");
+        let file_path = scan_root.join("facets/work/events/20260101.jsonl");
         fs::create_dir_all(file_path.parent().unwrap()).expect("create dir");
         fs::write(&file_path, r#"{"type":"meeting","title":"Standup"}"#).expect("write file");
+        let conn = open_index(&scan_root).expect("open index");
+        conn.execute(
+            "UPDATE chunk_source_readiness SET ready = 0 WHERE id = 1",
+            [],
+        )
+        .expect("set unready");
+        drop(conn);
+        assert!(!inspect_path_lookup(&scan_root).expect("inspect").ready);
 
+        let report = scan_journal(&scan_root, false).expect("scan seeds lookup");
+        assert_eq!(report.indexed, 1);
+        assert!(inspect_path_lookup(&scan_root).expect("inspect").ready);
+        fs::write(&file_path, r#"{"type":"meeting","title":"Retro"}"#).expect("rewrite file");
+        rescan_file(&scan_root, &file_path).expect("rescan uses lookup");
+        let conn = Connection::open(db_path(&scan_root)).expect("open");
+        let rows: Vec<(String, String)> = {
+            let mut stmt = conn
+                .prepare("SELECT c.path, c.content FROM chunks AS c JOIN chunk_sources AS s ON s.rowid = c.rowid")
+                .expect("prepare");
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                .expect("query")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect")
+        };
+        let total: i64 = conn
+            .query_row("SELECT count(*) FROM chunks", [], |r| r.get(0))
+            .expect("count");
+        assert_eq!(total, rows.len() as i64);
+        assert!(
+            rows.iter()
+                .all(|(path, _)| path == "facets/work/events/20260101.jsonl")
+        );
+        assert!(rows.iter().any(|(_, content)| content.contains("Retro")));
+        assert!(!rows.iter().any(|(_, content)| content.contains("Standup")));
+        drop(conn);
+        let _ = fs::remove_dir_all(&scan_root);
+
+        let root = temp_root("unready-prune-seeds");
         let conn = open_index(&root).expect("open index");
         conn.execute(
             "UPDATE chunk_source_readiness SET ready = 0 WHERE id = 1",
@@ -672,12 +718,6 @@ mod tests {
         )
         .expect("set unready");
         drop(conn);
-
-        let err_scan = scan_journal(&root, false).unwrap_err();
-        assert!(matches!(err_scan, StoreError::PathLookupRequired { .. }));
-
-        let err_rescan = rescan_file(&root, &file_path).unwrap_err();
-        assert!(matches!(err_rescan, StoreError::PathLookupRequired { .. }));
 
         // Seed data for prunes on unready database, including survivor rowid 4
         let conn = Connection::open(db_path(&root)).expect("open");
@@ -701,7 +741,7 @@ mod tests {
         .expect("insert chunk_sources");
         drop(conn);
 
-        // Prunes succeed on unready database
+        // Prunes on an unready database seed the lookup first, then prune both tables
         let counts_stream = prune_chunks_by_stream(&root, "stream-a").expect("prune stream");
         assert_eq!(counts_stream.chunks, 1);
 
@@ -739,7 +779,7 @@ mod tests {
         assert!(counts_chat.is_some());
         assert_eq!(counts_chat.unwrap().chunks, 1);
 
-        // Verify only the survivor remains in both tables and ready remains 0
+        // Verify only the survivor remains in both tables and the lookup is ready
         let conn = Connection::open(db_path(&root)).expect("open");
         let remaining_chunks: Vec<i64> = {
             let mut stmt = conn
@@ -770,7 +810,7 @@ mod tests {
                 |r| r.get(0),
             )
             .expect("ready");
-        assert_eq!(ready_val, 0);
+        assert_eq!(ready_val, 1);
         drop(conn);
 
         // Legacy database without chunk_sources table: prune_authored_chat_paths succeeds and does not create chunk_sources
@@ -1160,8 +1200,7 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_edges_and_reconcile_stale_classifications_on_unready_index_succeed_without_setting_marker()
-     {
+    fn rebuild_edges_and_reconcile_stale_classifications_on_unready_index_seed_lookup() {
         let root = temp_root("unready-rebuild-reconcile");
         let conn = open_index(&root).expect("open index");
         conn.execute(
@@ -1180,7 +1219,7 @@ mod tests {
         assert!(!reconcile_report.incomplete);
 
         let status = inspect_path_lookup(&root).expect("inspect");
-        assert!(!status.ready);
+        assert!(status.ready);
 
         let _ = fs::remove_dir_all(root);
     }

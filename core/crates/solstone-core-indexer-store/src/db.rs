@@ -11,7 +11,8 @@ use rusqlite::{
 use crate::StoreError;
 use crate::chunk_sources::{
     CHUNK_SOURCES_LOOKUP_PATHS, CREATE_CHUNK_SOURCE_READINESS, CREATE_CHUNK_SOURCES,
-    CREATE_CHUNK_SOURCES_PATH_INDEX, delete_chunk_source_rowids, require_chunk_path_lookup,
+    CREATE_CHUNK_SOURCES_PATH_INDEX, chunk_path_lookup_ready, delete_chunk_source_rowids,
+    require_chunk_path_lookup, seed_path_lookup,
 };
 use crate::writer_admission::IndexAdmission;
 
@@ -213,7 +214,13 @@ pub(crate) fn open_index_admitted(
     journal: &Path,
     _admission: &IndexAdmission,
 ) -> Result<Connection, StoreError> {
-    open_index_connection(journal)
+    let mut conn = open_index_connection(journal)?;
+    // An index built before the path lookup existed seeds it on the first
+    // admitted write, so an upgraded journal keeps indexing on its own.
+    if !chunk_path_lookup_ready(&conn)? {
+        seed_path_lookup(&mut conn)?;
+    }
+    Ok(conn)
 }
 
 pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
