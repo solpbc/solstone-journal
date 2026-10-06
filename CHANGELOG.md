@@ -8,15 +8,19 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- you can run search classification updates in small batches from the command line, with progress reported after each batch.
 - in the body app, each Strava workout now lists everything else Strava exported for it, like your description, private notes, gear and weather, under "more from Strava".
 
 ### Changed
 
+- the health page now shows search updates that could not finish and whether search classification is still incomplete. the time of the index's last change is shown as activity, rather than as proof that everything is searchable.
 - your Strava workouts now turn up in search and when your agents read your journal, including the description and private notes Strava exported for each. your journal's own thinking now includes workouts from the past seven days, and a large import doesn't start thinking over years of past days.
 - the body app now shows only what your journal holds: the values your sources recorded, with where each came from, and counts, ranges and dates. it no longer works out its own averages, 90-day medians or a "strongest" contributor, and each section is named for the data it holds. the trends page is now called "daily values" and shows each day's own value instead of weekly medians. what your agents read from the body app follows the same rule.
 
 ### Fixed
 
+- search now tries to include saved thinking results even when a later step fails. changing a segment's facets also refreshes the search classification of its saved results.
+- search updates and manual index repairs now run one at a time.
 - workouts from a Strava download now show at their real start time. before, they could land hours off, and an evening workout could land on the wrong day. import your download again and your earlier workouts move to the right time; a workout you deleted stays deleted.
 
 ## [2.0.33] - 2026-10-05
