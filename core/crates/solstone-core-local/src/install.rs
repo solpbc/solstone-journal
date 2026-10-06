@@ -1397,10 +1397,12 @@ fn run_local_install(
     commit_staged_local_runtime(
         &staging,
         &install_dir,
-        &release_tag,
-        &key,
-        cuda,
-        &pin_identity,
+        LocalRuntimeAdmission {
+            release_tag: &release_tag,
+            artifact_key: &key,
+            is_cuda: cuda,
+            pin_identity: &pin_identity,
+        },
         status_value.target_fingerprint_sha256.as_deref().unwrap(),
         status_value.attempt_id.as_deref(),
         &exclude_names,
@@ -1411,17 +1413,27 @@ fn run_local_install(
     )
 }
 
+pub struct LocalRuntimeAdmission<'a> {
+    pub release_tag: &'a str,
+    pub artifact_key: &'a str,
+    pub is_cuda: bool,
+    pub pin_identity: &'a Value,
+}
+
 pub fn commit_staged_local_runtime(
     staging: &Path,
     install_dir: &Path,
-    release_tag: &str,
-    artifact_key: &str,
-    is_cuda: bool,
-    pin_identity: &Value,
+    admission: LocalRuntimeAdmission<'_>,
     target_fingerprint_sha256: &str,
     attempt_id: Option<&str>,
     exclude_names: &[String],
 ) -> Result<(), DispatchError> {
+    let LocalRuntimeAdmission {
+        release_tag,
+        artifact_key,
+        is_cuda,
+        pin_identity,
+    } = admission;
     if let Err(error) = verify_required_oracle(staging, release_tag, artifact_key, is_cuda) {
         let _ = fs::remove_dir_all(staging);
         return Err(failure(
