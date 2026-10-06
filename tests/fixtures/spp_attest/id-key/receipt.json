@@ -1,0 +1,38 @@
+{
+  "purpose": "Real Azure SEV-SNP reports, one per accepted launch state, for the pinned ID-key policy. Each VCEK was fetched from AMD KDS for the report's chip_id and reported TCB.",
+  "reports": [
+    {
+      "dir": "aa7c9da5",
+      "state": "image #3 qualification, pre-roll Azure firmware state",
+      "capture": "probe-a1-pre-roll-boot1-capture",
+      "captured": "2026-10-03",
+      "launch_measurement": "aa7c9da55c1386e5b1653b125978beda7b3f95a85aeb0f9ddbbdb783ce056a28c9d021da239c34a58c3a657654270eef",
+      "id_key_digest": "942fd93ebde6ea7a96efadeafc60f1c6b3d10e703b1dafd7555b92f7f3d32d0e006767648cba5b102af3d65756af4177",
+      "report_sha256": "4d8cfcae41211649369d551ac2340e5e76ba508cd94a9d82938d1e7be53fdfde",
+      "vcek_sha256": "59e5c2b9d108fafa6d694f72b34f12632c003a2f8b076e1f0a4ee0577f69f34d",
+      "vcek_url": "https://kdsintf.amd.com/vcek/v1/Genoa/5943a3b23bc9f7f090e9b7e187db0164c9935a7ddb9e63cd1601a8df4123bb9fb82a3da211f19c4e08018d52d60cc24e6f0042183d3d175d61875a0668c55304?blSPL=10&teeSPL=0&snpSPL=27&ucodeSPL=88"
+    },
+    {
+      "dir": "11920f61",
+      "state": "image #3 qualification, post-roll Azure firmware state",
+      "capture": "probe-a2-post-roll-boot1-capture",
+      "captured": "2026-10-03",
+      "launch_measurement": "11920f61def85094b343e12e306217e95dace3b19e1aaf9d116749e3655ee73a185f517b08a5fd932a04295a559591c4",
+      "id_key_digest": "942fd93ebde6ea7a96efadeafc60f1c6b3d10e703b1dafd7555b92f7f3d32d0e006767648cba5b102af3d65756af4177",
+      "report_sha256": "af4d66c0b2106dccc1b0d389732ac051865f0af14ddee2dcb2b9e556ed0c2d5f",
+      "vcek_sha256": "57e2d2a20ae17e08aeb66bf21936dd9542639c964d314bb1541d0d326a1e2a8a",
+      "vcek_url": "https://kdsintf.amd.com/vcek/v1/Genoa/f29adbf6ba5a9d4cbf58f32ddcfbb75ae2389ad42624d82ed7dea0b0d688c9d069dd2176328cd8e3c7cbfe04341cbad38adecdb53fc5361d7c1f2c70fa4efeab?blSPL=10&teeSPL=0&snpSPL=27&ucodeSPL=88"
+    },
+    {
+      "dir": "af9e20e1",
+      "state": "spp-engine-02 after reboot (third accepted Azure state)",
+      "capture": "postboot/probe-b1-capture",
+      "captured": "2026-10-05",
+      "launch_measurement": "af9e20e1454f63e8b247d176b43d7d7bf0215edd4368b49898fb111d886a3233bcd610d6f912d21af2b9fabbd627227d",
+      "id_key_digest": "942fd93ebde6ea7a96efadeafc60f1c6b3d10e703b1dafd7555b92f7f3d32d0e006767648cba5b102af3d65756af4177",
+      "report_sha256": "13b41cfca3a587732c09f22ce969177c40d78016dd7daea88aa53a577e96d3a5",
+      "vcek_sha256": "640c5e88581b54c4405402749c4dd17a2995acd8ea46f9552a4c10bdcae28776",
+      "vcek_url": "https://kdsintf.amd.com/vcek/v1/Genoa/77d2525c49db6d4ab7b25be471b5390559bb18c52eeaba5f0848c0cd9a5cfc4e34ba3b77cbe7cc184dd7f9675c1add830bcee3975565ef8d376aff6a1338bf86?blSPL=10&teeSPL=0&snpSPL=27&ucodeSPL=88"
+    }
+  ]
+}

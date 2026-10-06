@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: with confidential processing on, your journal now checks who signed the firmware the service's computer starts from, and only uses the service when that signer is the one your journal accepts. before, your journal checked the service's hardware and that its computer booted the exact image we pinned, but not who signed that firmware, so firmware someone else signed could have reported that boot falsely. none of your journal data is known to have been exposed.
 - workouts from a Strava download now show at their real start time. before, they could land hours off, and an evening workout could land on the wrong day. import your download again and your earlier workouts move to the right time; a workout you deleted stays deleted.
 
 ## [2.0.33] - 2026-10-05
