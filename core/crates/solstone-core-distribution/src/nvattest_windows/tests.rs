@@ -14,7 +14,7 @@ const CAPTURED_DUMPBIN: &[u8] =
 fn refuses(fixture: &Fixture, boundary: &str) -> String {
     let error = fixture.admit().unwrap_err();
     assert!(
-        error.starts_with(boundary) || error.contains(boundary),
+        error.starts_with(boundary),
         "expected {boundary}, got {error}"
     );
     error
@@ -829,6 +829,28 @@ fn network_controls_must_prove_ipv4_and_ipv6_denial_and_full_cleanup() {
         let mut fixture = Fixture::new();
         mutate(&mut fixture.evidence.network);
         refuses(&fixture, "network-rules");
+    }
+}
+
+#[test]
+fn the_recorded_argv_must_build_offline_from_the_bundle_with_the_pinned_manifest() {
+    let mutations: [fn(&mut Vec<String>); 5] = [
+        |argv| argv.retain(|a| a != "-OfflineBundle"),
+        |argv| {
+            let last = argv.len() - 1;
+            argv[last] = "0".repeat(64);
+        },
+        |argv| argv.push("-ReuseDependencies".into()),
+        |argv| argv.extend(["-OfflineBundle".into(), r"C:\elsewhere".into()]),
+        |argv| {
+            let index = argv.iter().position(|a| a == "-OfflineBundle").unwrap();
+            argv[index + 1] = r"C:\elsewhere".into();
+        },
+    ];
+    for mutate in mutations {
+        let mut fixture = Fixture::new();
+        mutate(&mut fixture.evidence.invocation.argv);
+        refuses(&fixture, "invocation");
     }
 }
 

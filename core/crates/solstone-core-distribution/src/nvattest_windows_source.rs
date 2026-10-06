@@ -468,8 +468,11 @@ pub(crate) fn publish_documents(
         evidence.cleanup,
         solstone_core_journal_io::StageCleanup::Removed
     ) {
+        let removal = fs::remove_file(evidence_path)
+            .map(|()| "removed".to_string())
+            .unwrap_or_else(|e| format!("could not be removed: {e}"));
         return Err(NvattestWindowsSourceError::new(format!(
-            "evidence publication is unconfirmed: {evidence:?}"
+            "evidence publication is unconfirmed: {evidence:?}; evidence {removal}"
         )));
     }
     let withdraw = |message: String| {
@@ -486,15 +489,16 @@ pub(crate) fn publish_documents(
             "published-but-not-durable"
         }
         ControlledBuildReceiptPublication::PublicationUnconfirmed { publication, .. } => {
-            return Err(NvattestWindowsSourceError::new(format!(
+            return Err(withdraw(format!(
                 "receipt publication is unconfirmed: {publication:?}"
             )));
         }
     };
-    let written = read("receipt", receipt_path)?;
+    let written = read("receipt", receipt_path).map_err(|e| withdraw(e.to_string()))?;
     if written != documents.receipt_bytes {
-        return Err(NvattestWindowsSourceError::new(
-            "published receipt bytes differ from the admitted receipt",
+        return Err(withdraw(
+            "published receipt bytes differ from the admitted receipt; the receipt remains for inspection"
+                .into(),
         ));
     }
     Ok(state)

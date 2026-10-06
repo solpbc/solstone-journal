@@ -939,6 +939,29 @@ fn validate_invocation(pins: &Pins, invocation: &NvattestInvocation) -> Result<(
     if invocation.bundle_path.is_empty() || invocation.argv.is_empty() {
         return Err("invocation: bundle path and argv must be recorded".into());
     }
+    // The recorded argv is the real build's: offline from the recorded bundle
+    // directory, bound to the pinned manifest, never reusing dependencies.
+    let argument_after = |flag: &str| {
+        let mut found = invocation
+            .argv
+            .windows(2)
+            .filter(|pair| pair[0].eq_ignore_ascii_case(flag))
+            .map(|pair| pair[1].as_str());
+        let first = found.next();
+        if found.next().is_some() { None } else { first }
+    };
+    if argument_after("-OfflineBundle") != Some(invocation.bundle_path.as_str())
+        || argument_after("-OfflineManifestSha256") != Some(pins.manifest_sha256)
+        || invocation
+            .argv
+            .iter()
+            .any(|argument| argument.eq_ignore_ascii_case("-ReuseDependencies"))
+    {
+        return Err(
+            "invocation: argv must build offline from the recorded bundle with the pinned manifest and no reuse"
+                .into(),
+        );
+    }
     let mut actual: Vec<&str> = invocation.environment.iter().map(String::as_str).collect();
     actual.sort_unstable();
     let mut expected = NVATTEST_SDK_CHILD_ENVIRONMENT.to_vec();

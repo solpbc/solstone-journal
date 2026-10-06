@@ -162,9 +162,11 @@ function Remove-Rules {
     return $script:rulesRemaining
 }
 function Test-TcpProbe([string]$Address, [int]$TimeoutMs = 5000) {
-    $ip = [Net.IPAddress]::Parse($Address)
-    $client = [Net.Sockets.TcpClient]::new($ip.AddressFamily)
+    $client = $null
     try {
+        # A guest with the protocol disabled throws here; that is unreachable too.
+        $ip = [Net.IPAddress]::Parse($Address)
+        $client = [Net.Sockets.TcpClient]::new($ip.AddressFamily)
         $pending = $client.BeginConnect($ip, $ProbePort, $null, $null)
         if (-not $pending.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
         $client.EndConnect($pending)
@@ -172,8 +174,30 @@ function Test-TcpProbe([string]$Address, [int]$TimeoutMs = 5000) {
     } catch {
         return $false
     } finally {
-        $client.Dispose()
+        if ($null -ne $client) { $client.Dispose() }
     }
+}
+function Stop-DescendantProcesses {
+    # A child that outlived its deadline must not outlive the network denial.
+    $all = @(Get-CimInstance Win32_Process)
+    $parents = @{}
+    foreach ($process in $all) { $parents[[int]$process.ProcessId] = [int]$process.ParentProcessId }
+    $stopped = 0
+    foreach ($process in $all) {
+        $id = [int]$process.ProcessId
+        $cursor = $parents[$id]
+        $seen = 0
+        while ($null -ne $cursor -and $cursor -ne 0 -and $seen -lt 64) {
+            if ($cursor -eq $PID) {
+                Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+                $stopped++
+                break
+            }
+            $cursor = $parents[$cursor]
+            $seen++
+        }
+    }
+    return $stopped
 }
 function Step-Address([byte[]]$Bytes, [int]$Delta) {
     $copy = [byte[]]$Bytes.Clone()
@@ -589,6 +613,13 @@ $result = [ordered]@{
     $failures.Add($_.ToString())
     $failures.Add($_.ScriptStackTrace)
 } finally {
+    $stoppedChildren = 0
+    try {
+        $stoppedChildren = Stop-DescendantProcesses
+        if ($stoppedChildren -ne 0) { $failures.Add("stopped $stoppedChildren child processes still running before the denial was lifted") }
+    } catch {
+        $failures.Add("child process census failed before the denial was lifted: $_")
+    }
     try {
         if ($rules.Count -ne 0 -and $rulesRemaining -ne 0) { Remove-Rules | Out-Null }
     } catch {
@@ -598,7 +629,7 @@ $result = [ordered]@{
     if ($rulesRemaining -ne 0 -or $failures.Count -ne 0) { $exitCode = 1 }
     foreach ($name in $environmentChanges.Keys) { [Environment]::SetEnvironmentVariable($name, $environmentChanges[$name], 'Process') }
     Write-NewJson (Join-Path $ReportRoot 'execution.json') ([ordered]@{exit_code=$exitCode; failures=@($failures.ToArray());
-        firewall_rules_added=$rulesAdded; firewall_rules_remaining=$rulesRemaining; firewall_rules=@($rules.ToArray());
+        firewall_rules_added=$rulesAdded; firewall_rules_remaining=$rulesRemaining; children_stopped_before_lifting_denial=$stoppedChildren; firewall_rules=@($rules.ToArray());
         captured_processes=@($captures | ForEach-Object {
             [ordered]@{pid=$_.pid; started=$_.started; exit_code=$_.exit_code; completed=$_.completed; elapsed_ms=$_.elapsed_ms; error=$_.error}
         });

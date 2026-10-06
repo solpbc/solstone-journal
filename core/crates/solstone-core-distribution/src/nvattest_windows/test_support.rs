@@ -211,11 +211,23 @@ pub(crate) fn controls(pins: &Pins) -> NvattestDriverControls {
                 .iter()
                 .map(|name| (*name).to_string())
                 .collect(),
-            argv: vec![
-                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe".into(),
-                "-File".into(),
-                r"C:\work\source\sol\windows\build.ps1".into(),
-            ],
+            argv: [
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                r"C:\work\source\sol\windows\build.ps1",
+                "-Root",
+                r"C:\work\build",
+                "-OfflineBundle",
+                r"C:\work\offline-inputs",
+                "-OfflineManifestSha256",
+                pins.manifest_sha256,
+            ]
+            .map(String::from)
+            .to_vec(),
         },
         refusals: NvattestRefusals {
             manifest_digest: NvattestRefusalEntry {
@@ -523,6 +535,10 @@ impl Fixture {
     pub(crate) fn set_manifest(&mut self, manifest: Vec<u8>) {
         self.pins.manifest_sha256 = leak(sha256_hex(&manifest));
         self.evidence.invocation.manifest_sha256 = self.pins.manifest_sha256.into();
+        let argv = &mut self.evidence.invocation.argv;
+        if let Some(index) = argv.iter().position(|a| a == "-OfflineManifestSha256") {
+            argv[index + 1] = self.pins.manifest_sha256.into();
+        }
         self.set_bundle_archive(bundle_tar(&manifest, FIXTURE_CA));
     }
 
