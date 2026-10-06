@@ -22,6 +22,7 @@ use crate::db::{
     ChunkClassificationBackfill, db_path, replace_chunk_classification, sqlite_table_exists,
     write_chunk_classification_backfill,
 };
+use crate::writer_admission::{IndexAdmission, check_test_seam};
 
 pub const CHUNK_CLASSIFICATION_BACKFILL_STEP: i64 = 32;
 
@@ -636,6 +637,8 @@ pub(crate) fn classify_one_batch(
 }
 
 pub fn apply_classification_batch(journal: &Path) -> Result<ClassificationStatus, StoreError> {
+    let admission = IndexAdmission::acquire(journal, "classification-batch")?;
+    check_test_seam("before-cursor");
     let path = db_path(journal);
     if !path.is_file() {
         return Err(StoreError::MissingFile(path));
@@ -654,6 +657,9 @@ pub fn apply_classification_batch(journal: &Path) -> Result<ClassificationStatus
 
     let status = classify_one_batch(&mut conn, journal, ResumeCount::Preserve)?;
     drop(conn);
+    drop(admission);
+
+    check_test_seam("after-classification-release");
 
     if status.committed {
         log::info!(

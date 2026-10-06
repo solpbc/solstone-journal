@@ -9,6 +9,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, pa
 
 use crate::StoreError;
 use crate::db::{db_path, migrate_legacy_chunks, sqlite_table_exists};
+use crate::writer_admission::IndexAdmission;
 
 pub const CREATE_CHUNK_SOURCES: &str = "\
 CREATE TABLE IF NOT EXISTS chunk_sources(
@@ -120,6 +121,7 @@ pub fn inspect_path_lookup(journal: &Path) -> Result<PathLookupStatus, StoreErro
 }
 
 pub fn apply_path_lookup(journal: &Path) -> Result<PathLookupStatus, StoreError> {
+    let _admission = IndexAdmission::acquire(journal, "path-lookup")?;
     let path = db_path(journal);
     if !path.is_file() {
         return Err(StoreError::PathLookupRequired {

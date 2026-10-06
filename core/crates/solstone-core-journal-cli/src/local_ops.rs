@@ -1171,7 +1171,20 @@ fn facet_doctor_orphans(
     if merge {
         #[cfg(not(target_os = "ios"))]
         {
-            return facet_doctor_adopt_merge(&journal, &groups);
+            let (outcome, committed_merges) = facet_doctor_adopt_merge(&journal, &groups);
+            drop(_lock);
+            if committed_merges > 0 {
+                #[cfg(all(test, feature = "full-tests"))]
+                check_doctor_after_trust_seam();
+                if let Err(error) = scan_journal(&journal, true) {
+                    return failure(
+                        "facet doctor",
+                        &format!("merge committed but index rebuild failed: {error}"),
+                        EXIT_FAILED,
+                    );
+                }
+            }
+            return outcome;
         }
         #[cfg(target_os = "ios")]
         {
@@ -1384,7 +1397,7 @@ fn group_orphan_facets(orphans: &[String]) -> BTreeMap<String, Vec<String>> {
 }
 
 #[cfg(not(target_os = "ios"))]
-fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> Outcome {
+fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> (Outcome, usize) {
     let transaction = transaction_id();
     let left = unclear_orphan_groups(groups);
     let mut merged = Vec::new();
@@ -1493,29 +1506,35 @@ fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> Outcome {
                 "{repaired} orphan facet(s) repaired. Run 'solstone journal indexer --rescan-full' to refresh the index.\n"
             ));
         }
-        return success(stdout);
+        return (success(stdout), merged.len());
     }
     if failed_orphans == 0 {
         stdout.push_str(&format!(
             "{repaired} orphan facet(s) repaired; {} merge(s) committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run 'solstone journal indexer --rescan-full' to refresh the index.\n",
             committed_failures.len()
         ));
-        return Outcome::LocalFailure {
-            stdout,
-            stderr: "solstone journal facet doctor: one or more orphan facet merges committed with maintenance failures\n"
-                .to_owned(),
-            exit: EXIT_IO,
-        };
+        return (
+            Outcome::LocalFailure {
+                stdout,
+                stderr: "solstone journal facet doctor: one or more orphan facet merges committed with maintenance failures\n"
+                    .to_owned(),
+                exit: EXIT_IO,
+            },
+            merged.len(),
+        );
     }
     stdout.push_str(&format!(
         "{repaired} orphan facet(s) repaired; {failed_orphans} orphan facet(s) failed. Run 'solstone journal indexer --rescan-full' to refresh the index.\n"
     ));
-    Outcome::LocalFailure {
-        stdout,
-        stderr: "solstone journal facet doctor: one or more orphan facet repairs failed\n"
-            .to_owned(),
-        exit: EXIT_IO,
-    }
+    (
+        Outcome::LocalFailure {
+            stdout,
+            stderr: "solstone journal facet doctor: one or more orphan facet repairs failed\n"
+                .to_owned(),
+            exit: EXIT_IO,
+        },
+        merged.len(),
+    )
 }
 
 /// Each entity has one link folder per facet, named by its id. Report what
@@ -2099,10 +2118,17 @@ fn facet_merge_transaction_in_journal(
     // The doctor runs its merges under its own facet trust lock and brings
     // search up to date once, after releasing it; reconciling here would wait
     // on another process's reconcile while holding that lock.
-    let reconcile_here = mode == FacetMergeMode::Owner;
-    // Both run after the facet trust lock is released: the rebuild refreshes
-    // the moved files, and the reconcile brings stored classifications for
-    // material that still names SOURCE onto DEST.
+    if mode == FacetMergeMode::DoctorOrphan {
+        return Ok(FacetMergeCommit {
+            report,
+            post_commit_failure: None,
+            source_removed,
+        });
+    }
+    // These run in the owner path after this function's inner facet trust
+    // guard is gone: the rebuild refreshes the moved files, and the reconcile
+    // brings stored classifications for material that still names SOURCE onto
+    // DEST. The doctor does not index here.
     if let Err(error) = scan_journal(journal, true) {
         return Ok(FacetMergeCommit {
             report,
@@ -2112,13 +2138,6 @@ fn facet_merge_transaction_in_journal(
                 &format!("merge committed but index rebuild failed: {error}"),
                 EXIT_FAILED,
             )),
-        });
-    }
-    if !reconcile_here {
-        return Ok(FacetMergeCommit {
-            report,
-            post_commit_failure: None,
-            source_removed,
         });
     }
     let post_commit_failure = match crate::facet_names::reconcile_facet_classifications(journal) {
@@ -3758,5 +3777,148 @@ mod archive_merge_source_kind_tests {
         let error = regular_archive_file(&dir).unwrap_err();
         let _ = fs::remove_dir(&dir);
         assert_eq!(error, "SOURCE must be a regular file");
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+fn check_doctor_after_trust_seam() {
+    if let (Some(seam_var), Some(pause)) = (
+        std::env::var_os("SOLSTONE_TEST_INDEX_WRITER_SEAM"),
+        std::env::var_os("SOLSTONE_TEST_INDEX_WRITER_PAUSE"),
+    ) {
+        if pause.to_string_lossy() == "after-trust" {
+            let seam_dir = std::path::PathBuf::from(seam_var);
+            let _ = std::fs::write(seam_dir.join("trust-released"), b"released");
+            let release_file = seam_dir.join("after-trust.release");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while !release_file.is_file() {
+                assert!(std::time::Instant::now() < deadline, "test seam timeout");
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    }
+}
+
+#[cfg(all(test, feature = "full-tests", not(target_os = "ios")))]
+mod tests {
+    use super::*;
+    use solstone_core_facets::hold_facet_trust_lock;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn make_test_journal() -> (PathBuf, PathBuf) {
+        let count = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "solstone-doctor-adopt-test-{}-{count}",
+            std::process::id()
+        ));
+        let journal = base.join("journal");
+        let seam = base.join("seam");
+        fs::create_dir_all(journal.join("facets").join("work")).expect("create work");
+        fs::write(
+            journal.join("facets").join("work").join("facet.json"),
+            r#"{"id":"22222222-2222-4222-8222-222222222222","title":"Work"}"#,
+        )
+        .expect("write work facet");
+        fs::create_dir_all(journal.join("facets").join("w-ork").join("logs"))
+            .expect("create orphan logs");
+        fs::write(
+            journal
+                .join("facets")
+                .join("w-ork")
+                .join("logs")
+                .join("note.txt"),
+            "hello",
+        )
+        .expect("write orphan note");
+        fs::create_dir_all(&seam).expect("create seam dir");
+        (journal, seam)
+    }
+
+    #[test]
+    fn facet_doctor_adopt_merge_indexes_only_after_trust_release() {
+        let role = std::env::var("SOLSTONE_TEST_CHILD_ROLE").unwrap_or_default();
+        if role == "doctor_child" {
+            let journal = PathBuf::from(std::env::var("SOLSTONE_TEST_JOURNAL").unwrap());
+            let outcome = facet_doctor_orphans(&journal, true, true, &Default::default());
+            if !matches!(outcome, Outcome::LocalSuccess { .. }) {
+                eprintln!("doctor child failed: {outcome:?}");
+                std::process::exit(1);
+            }
+            return;
+        }
+
+        let (journal, seam) = make_test_journal();
+        let exe = std::env::current_exe().expect("current exe");
+
+        let mut child = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("local_ops::tests::facet_doctor_adopt_merge_indexes_only_after_trust_release")
+            .arg("--nocapture")
+            .env("SOLSTONE_TEST_CHILD_ROLE", "doctor_child")
+            .env("SOLSTONE_TEST_JOURNAL", &journal)
+            .env("SOLSTONE_TEST_INDEX_WRITER_SEAM", &seam)
+            .env("SOLSTONE_TEST_INDEX_WRITER_PAUSE", "after-trust")
+            .spawn()
+            .expect("spawn child doctor process");
+
+        let trust_released_file = seam.join("trust-released");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !trust_released_file.is_file() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for trust-released"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        let scan_admitted_file = seam.join("scan-admitted");
+        assert!(
+            !scan_admitted_file.exists(),
+            "scan must not be admitted yet while child is paused at after-trust"
+        );
+
+        let acquired_lock = hold_facet_trust_lock(&journal);
+        assert!(
+            acquired_lock.is_ok(),
+            "facet trust lock should be available after doctor releases it"
+        );
+        drop(acquired_lock);
+
+        let reconcile_res = crate::facet_names::reconcile_facet_classifications(&journal);
+        assert!(
+            reconcile_res.is_ok(),
+            "reconcile succeeded: {reconcile_res:?}"
+        );
+        assert!(
+            !scan_admitted_file.exists(),
+            "scan-admitted must not be created by reconcile"
+        );
+
+        fs::write(seam.join("after-trust.release"), b"go").expect("write release file");
+
+        let status = child.wait().expect("child doctor process finishes");
+        assert!(status.success(), "child doctor process succeeded");
+
+        assert!(
+            scan_admitted_file.exists(),
+            "scan-admitted must exist after doctor finishes index scan"
+        );
+        assert!(
+            !journal.join("facets").join("w-ork").exists(),
+            "w-ork directory must be gone after merge"
+        );
+        assert!(
+            journal
+                .join("facets")
+                .join("work")
+                .join("logs")
+                .join("note.txt")
+                .exists(),
+            "note.txt must exist in target facet logs"
+        );
+
+        let _ = fs::remove_dir_all(journal.parent().unwrap());
     }
 }

@@ -4527,6 +4527,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-format",
  "solstone-core-indexer",
+ "solstone-core-journal-io",
  "solstone-core-memory-original",
  "solstone-core-retention",
 ]

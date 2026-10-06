@@ -10,6 +10,7 @@ pub mod migrations;
 pub mod reconcile;
 pub mod retention;
 pub mod scan;
+pub(crate) mod writer_admission;
 
 pub use chunk_sources::{PathLookupStatus, apply_path_lookup, inspect_path_lookup};
 pub use classification_batch::{
@@ -39,8 +40,14 @@ pub enum StoreError {
     NonUtf8Path(PathBuf),
     MissingFile(PathBuf),
     EdgeRebuildFailed(scan::EdgeRebuildReport),
-    PathLookupRequired { cause: Option<String> },
+    PathLookupRequired {
+        cause: Option<String>,
+    },
     ClassificationFacetsMissing,
+    WriterBusy {
+        operation: &'static str,
+        cause: String,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -79,6 +86,9 @@ impl fmt::Display for StoreError {
                 cause: Some(message),
             } => {
                 write!(formatter, "indexer path-lookup --apply: {message}")
+            }
+            StoreError::WriterBusy { operation, cause } => {
+                write!(formatter, "index writer busy for {operation}: {cause}")
             }
         }
     }

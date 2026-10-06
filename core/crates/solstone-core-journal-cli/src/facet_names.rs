@@ -127,9 +127,10 @@ pub(crate) fn admit_facet_merge(
 
 /// Bring stored search classifications in step with facet names.
 ///
-/// Single-flight through its own lock, taken before the facet trust lock,
-/// which is held only while the declarations are read. Callers must not hold
-/// the facet trust lock.
+/// Single-flight `health/locks/facet-reconcile`, then the index writer lease
+/// inside `reconcile_stale_classifications`, then entity/facet trust only while
+/// the snapshot reads declarations. Callers must not hold facet trust or the
+/// index writer lease.
 pub(crate) fn reconcile_facet_classifications(journal: &Path) -> Result<ReconcileReport, String> {
     let _single = hold_lock(
         journal.join(RECONCILE_LOCK),

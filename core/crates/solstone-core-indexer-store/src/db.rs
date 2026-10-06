@@ -13,6 +13,7 @@ use crate::chunk_sources::{
     CHUNK_SOURCES_LOOKUP_PATHS, CREATE_CHUNK_SOURCE_READINESS, CREATE_CHUNK_SOURCES,
     CREATE_CHUNK_SOURCES_PATH_INDEX, delete_chunk_source_rowids, require_chunk_path_lookup,
 };
+use crate::writer_admission::IndexAdmission;
 
 pub const INDEX_DIR: &str = "indexer";
 pub const DB_NAME: &str = "journal.sqlite";
@@ -191,7 +192,7 @@ pub fn open_index_reader(journal: &Path) -> Result<Connection, StoreError> {
     Ok(conn)
 }
 
-pub fn open_index(journal: &Path) -> Result<Connection, StoreError> {
+fn open_index_connection(journal: &Path) -> Result<Connection, StoreError> {
     let index_dir = journal.join(INDEX_DIR);
     fs::create_dir_all(&index_dir)?;
     let mut conn = Connection::open(db_path(journal))?;
@@ -202,7 +203,27 @@ pub fn open_index(journal: &Path) -> Result<Connection, StoreError> {
     Ok(conn)
 }
 
+/// Fixture seeding only; not a production mutation entry point.
+pub fn open_index(journal: &Path) -> Result<Connection, StoreError> {
+    open_index_connection(journal)
+}
+
+pub(crate) fn open_index_admitted(
+    journal: &Path,
+    _admission: &IndexAdmission,
+) -> Result<Connection, StoreError> {
+    open_index_connection(journal)
+}
+
 pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
+    let admission = IndexAdmission::acquire(journal, "reset")?;
+    reset_index_admitted(journal, &admission)
+}
+
+pub(crate) fn reset_index_admitted(
+    journal: &Path,
+    _admission: &IndexAdmission,
+) -> Result<(), StoreError> {
     let index_dir = journal.join(INDEX_DIR);
     fs::create_dir_all(&index_dir)?;
     let mut conn = Connection::open(db_path(journal))?;
@@ -256,7 +277,11 @@ pub fn prune_chunks_by_stream(
     journal: &Path,
     stream: &str,
 ) -> Result<StreamPruneCounts, StoreError> {
-    let mut conn = open_index(journal)?;
+    let admission = IndexAdmission::acquire(journal, "prune-stream")?;
+    if !db_path(journal).is_file() {
+        return Ok(StreamPruneCounts::default());
+    }
+    let mut conn = open_index_admitted(journal, &admission)?;
     let tx = conn.transaction()?;
     let paths = {
         let mut statement = tx.prepare(
@@ -312,10 +337,11 @@ pub fn prune_by_paths(
     journal: &Path,
     rels: &[&str],
 ) -> Result<Option<StreamPruneCounts>, StoreError> {
+    let admission = IndexAdmission::acquire(journal, "prune-paths")?;
     if !db_path(journal).exists() {
         return Ok(None);
     }
-    let mut conn = open_index(journal)?;
+    let mut conn = open_index_admitted(journal, &admission)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut counts = StreamPruneCounts::default();
     for rel in rels {
@@ -343,6 +369,14 @@ pub const AUTHORED_CHAT_PATH_PREDICATE: &str =
 /// Also matches the optional `chronicle/` prefix. Returns `None` when the journal
 /// has no index and does not create one.
 pub fn prune_authored_chat_paths(journal: &Path) -> Result<Option<StreamPruneCounts>, StoreError> {
+    let admission = IndexAdmission::acquire(journal, "prune-authored-chat")?;
+    prune_authored_chat_paths_admitted(journal, &admission)
+}
+
+pub(crate) fn prune_authored_chat_paths_admitted(
+    journal: &Path,
+    _admission: &IndexAdmission,
+) -> Result<Option<StreamPruneCounts>, StoreError> {
     let path = db_path(journal);
     if !path.is_file() {
         return Ok(None);

@@ -14,8 +14,9 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, OpenFlags};
 
 use crate::StoreError;
-use crate::db::{db_path, reset_index};
-use crate::scan::scan_journal;
+use crate::db::{db_path, reset_index_admitted};
+use crate::scan::scan_journal_admitted;
+use crate::writer_admission::IndexAdmission;
 
 const EXPECTED_CHUNK_COLUMNS: [&str; 7] =
     ["content", "path", "day", "facet", "agent", "stream", "idx"];
@@ -60,8 +61,9 @@ pub fn migrate_index_stream(
     if dry_run {
         return Ok(IndexStreamMigration::WouldRebuild { missing });
     }
-    reset_index(journal)?;
-    scan_journal(journal, true)?;
+    let admission = IndexAdmission::acquire(journal, "migrate-index-stream")?;
+    reset_index_admitted(journal, &admission)?;
+    scan_journal_admitted(journal, true, &admission)?;
     Ok(IndexStreamMigration::Rebuilt { missing })
 }
 
@@ -87,6 +89,7 @@ impl IndexArtifactRemovalReport {
 pub fn remove_legacy_index_artifacts(
     journal: &Path,
 ) -> Result<IndexArtifactRemovalReport, StoreError> {
+    let _admission = IndexAdmission::acquire(journal, "remove-legacy-index")?;
     let mut report = IndexArtifactRemovalReport::default();
     for path in legacy_index_artifacts(journal) {
         if !path.exists() {
@@ -112,7 +115,7 @@ pub fn remove_legacy_index_artifacts(
 }
 
 /// The database plus the two SQLite WAL sidecars that shadow it.
-fn legacy_index_artifacts(journal: &Path) -> Vec<PathBuf> {
+pub(crate) fn legacy_index_artifacts(journal: &Path) -> Vec<PathBuf> {
     let database = db_path(journal);
     let name = database
         .file_name()

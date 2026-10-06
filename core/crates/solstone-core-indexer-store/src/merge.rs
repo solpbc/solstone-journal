@@ -10,8 +10,9 @@ use sha2::{Digest, Sha256};
 use solstone_core_indexer::edges::discovery::discover_edge_files;
 
 use crate::StoreError;
-use crate::db::open_index;
-use crate::scan::rebuild_edges;
+use crate::db::{open_index_admitted, open_index_reader};
+use crate::scan::rebuild_edges_guarded;
+use crate::writer_admission::IndexAdmission;
 
 const EDGE_COLUMNS: [&str; 14] = [
     "src", "dst", "kind", "directed", "src_name", "dst_name", "day", "facet", "source", "path",
@@ -30,7 +31,8 @@ pub fn fold_entity_edges_for_recorded_merge(
     source_id: &str,
     target_id: &str,
 ) -> Result<EntityEdgeFoldReport, StoreError> {
-    let mut conn = open_index(journal)?;
+    let admission = IndexAdmission::acquire(journal, "fold-entity-edges")?;
+    let mut conn = open_index_admitted(journal, &admission)?;
     let fallback_rebuild = edge_rows_all_from_sources(&conn, journal)?;
     let transaction = conn.transaction()?;
     let rows_folded = transaction.query_row(
@@ -62,7 +64,8 @@ pub fn fold_entity_edges_for_recorded_merge(
     drop(conn);
 
     if fallback_rebuild {
-        let rebuild = rebuild_edges(journal)?;
+        let rebuild = rebuild_edges_guarded(journal, &admission, || Ok(true))?
+            .expect("closure returned true");
         if rebuild.failed > 0 {
             return Err(StoreError::EdgeRebuildFailed(rebuild));
         }
@@ -75,15 +78,18 @@ pub fn fold_entity_edges_for_recorded_merge(
 }
 
 pub fn rebuild_edges_for_recorded_merge_undo(journal: &Path) -> Result<String, StoreError> {
-    let rebuild = rebuild_edges(journal)?;
+    let admission = IndexAdmission::acquire(journal, "rebuild-edges-fingerprint")?;
+    let rebuild =
+        rebuild_edges_guarded(journal, &admission, || Ok(true))?.expect("closure returned true");
     if rebuild.failed > 0 {
         return Err(StoreError::EdgeRebuildFailed(rebuild));
     }
+    drop(admission);
     fingerprint_edge_rows(journal)
 }
 
 pub fn fingerprint_edge_rows(journal: &Path) -> Result<String, StoreError> {
-    let conn = open_index(journal)?;
+    let conn = open_index_reader(journal)?;
     let columns = EDGE_COLUMNS.join(", ");
     let mut statement = conn.prepare(&format!("SELECT {columns} FROM edges ORDER BY {columns}"))?;
     let mut rows = statement.query([])?;
