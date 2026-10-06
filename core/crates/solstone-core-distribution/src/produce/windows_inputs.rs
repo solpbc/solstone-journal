@@ -544,7 +544,7 @@ fn admit_nvattest_under(
         verify_controlled_build_artifacts(
             paths.output_root,
             admitted.receipt(),
-            ControlledBuildArtifactVerificationLimits::new(16, 2, OUTPUT_LIMIT as usize),
+            crate::nvattest_windows_source::OUTPUT_LIMITS,
         )
         .map_err(|e| e.to_string())?;
         Ok(admitted.into_admitted_controlled_input())

@@ -34,9 +34,11 @@ use crate::nvattest_windows::{
 };
 use crate::provenance::{Provenance, lock_digest, require_clean, require_commit, require_lock};
 
-/// Output tree bound for re-hashing the persisted executable.
-const OUTPUT_LIMITS: ControlledBuildArtifactVerificationLimits =
-    ControlledBuildArtifactVerificationLimits::new(16, 2, 128 * 1024 * 1024);
+/// Output tree bound for re-hashing the persisted executable. The deepest
+/// member is `share/ca/ca-bundle.pem`; the Windows inventory counts the file
+/// itself as a level, so that tree is three deep there.
+pub(crate) const OUTPUT_LIMITS: ControlledBuildArtifactVerificationLimits =
+    ControlledBuildArtifactVerificationLimits::new(16, 3, 128 * 1024 * 1024);
 
 /// The dumpbin `/dependents` captures the driver writes, by file name.
 pub const NVATTEST_DUMPBIN_FILES: [&str; 4] = [
