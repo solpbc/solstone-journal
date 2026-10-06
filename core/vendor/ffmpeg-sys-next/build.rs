@@ -630,7 +630,8 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
             configure.arg(format!(
                 "--{tool}={}",
                 android_cc_path
-                    .join("..")
+                    .parent()
+                    .unwrap_or_else(|| panic!("failed to resolve a path to android {}", tool))
                     .join(format!("llvm-{tool}"))
                     .canonicalize()
                     .unwrap_or_else(|_| panic!("failed to resolve a path to android {}", tool))

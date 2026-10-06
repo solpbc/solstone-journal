@@ -820,7 +820,8 @@ pub(crate) fn generate_and_write(
     };
     if let Some((stage, state)) = stage {
         // The briefing's checked output and saved output must be the same bytes.
-        // This uses its existing stage, before either ordinary or frozen daily publication.
+        // This uses its existing stage before ordinary publication; a scheduled
+        // (frozen) daily briefing renders in `daily_execution::execute`.
         let response = if stage.stage == contract::StageId::MorningBriefing {
             match morning_briefing::preserve_open_loops(&response, prepared, &state) {
                 Ok(output) => output,

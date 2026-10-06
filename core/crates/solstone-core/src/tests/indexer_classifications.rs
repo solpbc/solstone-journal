@@ -106,7 +106,7 @@ fn indexer_classifications() {
         for n in 0..count {
             conn.execute(
                 "INSERT INTO chunks(content,path) VALUES('fixture',?1)",
-                [format!("item-{n:02}.md")],
+                [format!("item-{n:03}.md")],
             )
             .unwrap();
         }
@@ -114,6 +114,8 @@ fn indexer_classifications() {
         solstone_core_indexer_store::apply_path_lookup(journal).unwrap();
     }
 
+    const STEP: usize = solstone_core_indexer_store::classification_batch::CHUNK_CLASSIFICATION_BACKFILL_STEP as usize;
+    let last_of_first_batch = format!("item-{:03}.md", STEP - 1);
     let temp = tempfile::tempdir().unwrap();
     for route in ["native", "journal"] {
         let absent = temp.path().join(format!("{route}-absent"));
@@ -131,16 +133,16 @@ fn indexer_classifications() {
         assert_eq!(fs::read_dir(absent.join("indexer")).unwrap().count(), 1);
 
         let journal = temp.path().join(format!("{route}-ready"));
-        seed(&journal, 40);
+        seed(&journal, STEP + 8);
         let db = solstone_core_indexer_store::db::db_path(&journal);
         let before = fs::read(&db).unwrap();
         let inspected = json(&spawn(&journal, route, "inspect", None).finish());
-        assert_eq!(inspected["remaining"], 40);
-        assert_eq!(inspected["missing"], 40);
+        assert_eq!(inspected["remaining"], STEP + 8);
+        assert_eq!(inspected["missing"], STEP + 8);
         assert_eq!(fs::read(&db).unwrap(), before);
         let first = json(&spawn(&journal, route, "apply", None).finish());
-        assert_eq!(first["processed"], 32);
-        assert_eq!(first["cursor"], "item-31.md");
+        assert_eq!(first["processed"], STEP);
+        assert_eq!(first["cursor"], last_of_first_batch);
         assert_eq!(first["remaining"], 8);
         let last = json(&spawn(&journal, route, "drain", None).finish());
         assert_eq!(last["processed"], 8);
@@ -158,14 +160,14 @@ fn indexer_classifications() {
         drop(writer);
 
         let progress = temp.path().join(format!("{route}-progress"));
-        seed(&progress, 40);
+        seed(&progress, STEP + 8);
         let release = temp.path().join(format!("{route}.release"));
         let mut child = spawn(&progress, route, "drain", Some(&release));
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             let stderr = fs::read_to_string(child.logs.path().join("stderr")).unwrap();
             if release.with_extension("ready").is_file()
-                && stderr.contains("classification batch processed=32")
+                && stderr.contains(&format!("classification batch processed={STEP}"))
             {
                 break;
             }
@@ -185,12 +187,12 @@ fn indexer_classifications() {
             "SELECT cursor,completed FROM chunk_classification_backfill WHERE id=1",
             [], |row| Ok((row.get(0)?,row.get(1)?)),
         ).unwrap();
-        assert_eq!(cursor, "item-31.md");
+        assert_eq!(cursor, last_of_first_batch);
         assert_eq!(completed, 0);
         drop(conn);
         fs::write(&release, b"continue").unwrap();
         let final_status = json(&child.finish());
-        assert_eq!(final_status["processed"], 40);
+        assert_eq!(final_status["processed"], STEP + 8);
         assert_eq!(final_status["completed"], true);
         assert_eq!(final_status["missing"], 0);
     }

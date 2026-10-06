@@ -426,6 +426,29 @@ mod tests {
     }
 
     #[test]
+    fn root_unverifiable_with_unknown_owner_holds() {
+        let verdict =
+            verdict_after_owner_recheck(InstanceVerdict::Unverifiable, ProcessOwner::Unknown, 1000);
+        assert_eq!(verdict, InstanceVerdict::Unverifiable);
+        let obs = PlatformObservations::Unix {
+            root: RootObservation::Unverifiable {
+                birth_verifiable: false,
+                birth: None,
+            },
+            bound: vec![],
+            group: GroupCensus::Complete(Vec::new()),
+            group_id: 100,
+            owner_uid: 1000,
+        };
+        assert_eq!(
+            evaluate_hold_proof(obs, HoldPrelude::default()),
+            HoldProof::Unproven {
+                reasons: vec![ReasonCode::RootUnverifiable]
+            }
+        );
+    }
+
+    #[test]
     fn root_unverifiable_with_different_uid_is_proven() {
         let verdict = verdict_after_owner_recheck(
             InstanceVerdict::Unverifiable,

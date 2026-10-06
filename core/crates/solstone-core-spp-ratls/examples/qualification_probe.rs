@@ -74,7 +74,7 @@ Options:
   --model <MODEL>         Model name for qualification chat probe (required unless --no-content)
   --credential-file <PATH> File holding the owner credential sent as the bearer (required unless --no-content)
   --nvattest-dir <DIR>    Path to nvattest directory (defaults to SPP_NVATTEST_DIR env var)
-  --request-json <PATH>   Send one custom chat JSON body after admission; save HTTP status/body (no fixed chat/audio probes)\n  --no-content            Captures evidence and does not send chat or transcription
+  --request-json <PATH>   Send one custom chat JSON body after admission; save JSON status/body or bounded streaming HTTP wire bytes (no fixed chat/audio probes)\n  --no-content            Captures evidence and does not send chat or transcription
   --offline-status-profile Stages the packaged 595.71.05 manifests and OfflineSignedAge for --pin only; requires --pcr-mode pin, never changes production admission
   --help                  Show this help message and exit
 ";
@@ -367,8 +367,12 @@ fn main() {
     };
 
     if let Some(body) = request_body {
-        run_custom_request(&request, &resolved_nvattest_dir, &composite_verifier, &body)
-            .expect("custom attested request must complete");
+        if let Err(error) =
+            run_custom_request(&request, &resolved_nvattest_dir, &composite_verifier, &body)
+        {
+            eprintln!("custom attested request failed: {error}");
+            std::process::exit(1);
+        }
         return;
     }
     match run_qualification(&request, &resolved_nvattest_dir, &composite_verifier) {
@@ -441,6 +445,19 @@ fn run_custom_request(
         return Err("status no longer permits a new request".into());
     }
     channel.set_io_timeout(Some(Duration::from_secs(900)))?;
+    if serde_json::from_slice::<serde_json::Value>(body)?
+        .get("stream")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+    {
+        // The JSON response API deliberately refuses transfer encoding. The
+        // manual streaming probe records bounded wire bytes for the caller's
+        // HTTP/SSE decoder, after the same composite and admission checks.
+        let wire = capture_streaming_response(&mut channel, request, body)?;
+        std::fs::write(request.output_dir.join("http-wire-response.bin"), &wire)?;
+        println!("streaming HTTP wire bytes: {}", wire.len());
+        return Ok(());
+    }
     let response = send_json_request(
         &mut channel,
         &format!("{}:{}", request.host, request.port),
@@ -457,4 +474,31 @@ fn run_custom_request(
     )?;
     println!("HTTP status: {}", response.status);
     Ok(())
+}
+
+fn capture_streaming_response(
+    channel: &mut dyn solstone_core_spp_ratls::AttestedIo,
+    request: &QualificationRequest,
+    body: &[u8],
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    use std::io::Read;
+    const MAX_WIRE_BYTES: u64 = 2 * 1024 * 1024;
+    let authority = format!("{}:{}", request.host, request.port);
+    let credential = request.credential.as_deref().unwrap_or_default();
+    if authority.contains(['\r', '\n']) || credential.contains(['\r', '\n']) {
+        return Err("qualification HTTP header contains a line break".into());
+    }
+    let head = format!(
+        "POST /v1/chat/completions HTTP/1.1\r\nHost: {authority}\r\nContent-Type: application/json\r\nAuthorization: Bearer {credential}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    channel.write_all(head.as_bytes())?;
+    channel.write_all(body)?;
+    channel.flush()?;
+    let mut wire = Vec::new();
+    channel.take(MAX_WIRE_BYTES + 1).read_to_end(&mut wire)?;
+    if wire.len() as u64 > MAX_WIRE_BYTES {
+        return Err("qualification streaming response exceeds capture limit".into());
+    }
+    Ok(wire)
 }

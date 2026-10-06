@@ -222,7 +222,22 @@ pub(crate) fn execute(
             ));
         }
         match crate::generate_response(&mut prepared, context, generate, writer) {
-            Ok(value) => value,
+            Ok((response, usage, degraded)) => match stage.as_ref() {
+                // A scheduled briefing renders its open loops before the result is
+                // retained, so the checked, retained and saved bytes are the same.
+                Some((spec, state)) if spec.stage == crate::contract::StageId::MorningBriefing => {
+                    match crate::morning_briefing::preserve_open_loops(&response, &prepared, state)
+                    {
+                        Ok(output) => (output, usage, degraded),
+                        Err(mut error) => {
+                            error.usage = usage;
+                            error.degraded = degraded;
+                            return RuntimeOutcome::StageFailed(error);
+                        }
+                    }
+                }
+                _ => (response, usage, degraded),
+            },
             Err(outcome) => return outcome,
         }
     };
@@ -1090,6 +1105,52 @@ mod tests {
             &mut Vec::new(),
         );
         assert!(!matches!(outcome, RuntimeOutcome::Finished { .. }));
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn scheduled_briefing_publishes_its_open_loops() {
+        let root = tempfile::tempdir().unwrap();
+        let (context, identity, request) = fixture(root.path(), false);
+        let mut record = load_daily_unit_record(&context.journal, &identity)
+            .unwrap()
+            .unwrap();
+        let mut packet = record.frozen_packet.take().unwrap();
+        packet["state"]["MorningBriefing"]["values"] = json!({"briefing_open_loop_rows":[
+            {"owed":true,"voice":false,"row":{"text":"what you owe: send report; still open for 90 days","source_id":"sol://owed/1"}},
+            {"owed":false,"voice":false,"row":{"text":"what you're waiting on: Pat to send estimate; still open for 40 days","source_id":"sol://waiting/1"}}
+        ]});
+        record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
+        record.frozen_packet = Some(packet);
+        save_daily_unit_record(&context.journal, &record).unwrap();
+        let stub = crate::test_support::one_shot_stub(
+            root.path(),
+            &json!({"needs_attention":[],"your_day":[]}).to_string(),
+        );
+        let outcome = execute(
+            request,
+            &context,
+            &OneShotClient::at_path(stub),
+            &mut Vec::new(),
+        );
+        let RuntimeOutcome::Finished { output, .. } = outcome else {
+            panic!("expected a published briefing: {outcome:?}")
+        };
+        let saved = fs::read_to_string(
+            context
+                .journal
+                .join("chronicle/20260101/talents/morning_briefing.md"),
+        )
+        .unwrap();
+        assert_eq!(saved, output);
+        let saved: Value = serde_json::from_str(&saved).unwrap();
+        let sources = saved["needs_attention"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["source_id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(sources, ["sol://owed/1", "sol://waiting/1"]);
     }
 
     #[cfg(all(test, feature = "full-tests"))]
