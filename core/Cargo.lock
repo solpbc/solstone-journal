@@ -5411,9 +5411,12 @@ name = "solstone-core-spp-attest"
 version = "2.0.33"
 dependencies = [
  "base64 0.22.1",
+ "minisign",
  "ring",
  "serde_json",
+ "solstone-core-distribution",
  "subtle",
+ "tempfile",
  "thiserror 2.0.20",
  "x509-parser",
 ]

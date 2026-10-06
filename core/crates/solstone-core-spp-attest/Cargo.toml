@@ -10,6 +10,7 @@ base64 = "=0.22.1"
 ring = "=0.17.14"
 serde_json = { workspace = true }
 subtle.workspace = true
+solstone-core-distribution.workspace = true
 thiserror = { workspace = true }
 x509-parser = "=0.16.0"
 
@@ -18,3 +19,13 @@ workspace = true
 
 [features]
 full-tests = []
+test-hooks = ["solstone-core-distribution/test-fixture-pin"]
+
+[dev-dependencies]
+minisign.workspace = true
+tempfile = "3"
+
+[[test]]
+name = "windows_verifier"
+path = "tests/windows_verifier.rs"
+required-features = ["test-hooks"]

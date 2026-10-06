@@ -203,16 +203,46 @@ fn appraisal_steps(expectation: StatusExpectation) -> Vec<AppraisalStep> {
     ]
 }
 
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn run_nvattest_for_tests(
+    invocation: crate::nvgpu::NvattestCommand,
+    timeout: Duration,
+) -> Result<Output, GpuAppraisalReason> {
+    run_nvattest(invocation, timeout)
+}
+
 fn run_nvattest(
     invocation: crate::nvgpu::NvattestCommand,
     timeout: Duration,
 ) -> Result<Output, GpuAppraisalReason> {
     // The released Linux binary's RUNPATH ends in an empty entry, which the
     // loader reads as the working directory: never inherit the caller's.
-    let mut process = Command::new(&invocation.executable)
-        .args(invocation.argv.iter().skip(1))
-        .envs(invocation.env)
-        .current_dir("/")
+    let mut command = Command::new(&invocation.executable);
+    command.args(invocation.argv.iter().skip(1));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let bin = invocation
+            .executable
+            .parent()
+            .ok_or(GpuAppraisalReason::NvattestUnavailable)?;
+        let root = bin
+            .parent()
+            .ok_or(GpuAppraisalReason::NvattestUnavailable)?;
+        let installation = super::windows::locate(root)?;
+        if installation.binary != invocation.executable {
+            return Err(GpuAppraisalReason::NvattestIntegrityFailed);
+        }
+        command
+            .env_clear()
+            .envs(super::windows::environment(std::env::vars_os())?)
+            .current_dir(bin)
+            .creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    #[cfg(not(windows))]
+    command.current_dir("/").envs(invocation.env);
+    let mut process = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

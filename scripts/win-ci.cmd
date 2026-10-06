@@ -104,6 +104,16 @@ call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::on
 call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::windows_owners_are_held_back_even_with_a_verifier_target" || exit /b 1
 call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::a_held_platform_opens_no_channel" || exit /b 1
 call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::windows_refuses_every_channel_before_connecting" || exit /b 1
+call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_environment_discards_ambient_configuration_case_insensitively" || exit /b 1
+call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_paths_refuse_network_paths_and_count_utf16_units" || exit /b 1
+call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "signed_layout_refuses_missing_or_changed_executable_ca_and_runtime" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "production_spawn_clears_hostile_environment_and_uses_the_verified_directory" "test-hooks" || exit /b 1
+echo JOURNAL_WIN_CI_WINDOWS_VERIFIER=executed/pass
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "fixture_seam_refuses_every_non_loopback_endpoint_before_resolution" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_evidence_nonce_spki_criticality_and_presence_are_enforced" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exporter_mismatch_rejects_after_a_verified_certificate" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exact_spprat1_preface_nonce_and_exporter_request_establish_channel" "test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_rejection_writes_no_exporter_http_payload_and_closes" "test-hooks" || exit /b 1
 call :run_exact_library "solstone-core-brain" "presentation::tests::a_platform_with_no_hardware_check_says_so_on_every_brain_surface" || exit /b 1
 call :run_exact_library "solstone-core-thinking" "brain::tests::this_platform_offers_confidential_processing_everywhere_but_windows" || exit /b 1
 call :run_exact_library "solstone-core-thinking" "brain::tests::with_no_hardware_check_confidential_processing_reads_not_on_platform" || exit /b 1
@@ -271,7 +281,9 @@ exit /b 0
 
 :run_exact_integration
 set "JOURNAL_WIN_CI_EXACT_LOG=core\target\journal-win-ci-integration-%RANDOM%%RANDOM%.log"
-cargo test --manifest-path core\Cargo.toml --locked -p "%~1" --test "%~2" -- --exact "%~3" --show-output > "%JOURNAL_WIN_CI_EXACT_LOG%" 2>&1
+set "JOURNAL_WIN_CI_EXACT_FEATURES="
+if not "%~4"=="" set "JOURNAL_WIN_CI_EXACT_FEATURES=--features %~4"
+cargo test --manifest-path core\Cargo.toml --locked -p "%~1" --test "%~2" %JOURNAL_WIN_CI_EXACT_FEATURES% -- --exact "%~3" --show-output > "%JOURNAL_WIN_CI_EXACT_LOG%" 2>&1
 set "JOURNAL_WIN_CI_EXACT_EXIT=%ERRORLEVEL%"
 type "%JOURNAL_WIN_CI_EXACT_LOG%"
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_EXACT_LOG%" -TestName "%~3" -TestExitCode %JOURNAL_WIN_CI_EXACT_EXIT% || exit /b 1
