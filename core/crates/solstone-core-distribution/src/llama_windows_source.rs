@@ -15,11 +15,11 @@ use sha2::{Digest, Sha256};
 use crate::controlled_build::InputIdentityEntry;
 use crate::digest::sha256_hex;
 
-pub const LLAMA_COMMIT: &str = "571d0d540df04f25298d0e159e520d9fc62ed121";
+pub const LLAMA_COMMIT: &str = "d81235049384534c167caea52b85a694f6103d14";
 pub const LOADER_COMMIT: &str = "5f157b62e333c63260d05d81bf66faa216ab0fb8";
 /// The archive `prepare-source` produces.
-pub const SOURCE_SHA256: &str = "97b1b72399a961a285ea1ba72663b22ff0e3adee5c4ccfb818b2237dfc58dc56";
-pub const SOURCE_BYTES: u64 = 37_651_145;
+pub const SOURCE_SHA256: &str = "16318b04ce7b32f67366d3ce41d7f9f96ce6ad7f9f450341510ee96171be9a17";
+pub const SOURCE_BYTES: u64 = 39595062;
 /// The same members and manifest as `SOURCE_SHA256`, packed by the earlier
 /// org-side preparer. Receipts recorded against it stay verifiable.
 const LEGACY_SOURCE_SHA256: &str =
@@ -27,7 +27,7 @@ const LEGACY_SOURCE_SHA256: &str =
 const LEGACY_SOURCE_BYTES: u64 = 37_227_459;
 pub const SDK_SHA256: &str = "81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d";
 pub const SDK_BYTES: u64 = 287_971_024;
-const MANIFEST_SHA256: &str = "10741e5d2fceb9c6027c90dae67c6a36bde196e08b537e38d9c3ef009c09fe79";
+const MANIFEST_SHA256: &str = "3996105a6ad7ac14edc28f767a4760052d58dbd9f030c8ba69de66460fa7af14";
 const MAX_MEMBER_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_MEMBERS: usize = 20_000;
@@ -49,8 +49,8 @@ const UPSTREAM: [UpstreamInput; 2] = [
         component: "llama",
         repository: "https://github.com/ggml-org/llama.cpp.git",
         commit: LLAMA_COMMIT,
-        tarball_sha256: "9c802144585b8102e78dc6942adfde273686a87b2efae9b99de98891a20c06d3",
-        tarball_bytes: 35_828_683,
+        tarball_sha256: "7d79e94bc257d9dfa2a97a194bba612aaca85a811de52b536aafa90e37763084",
+        tarball_bytes: 37759820,
     },
     UpstreamInput {
         component: "loader",
