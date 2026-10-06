@@ -5345,18 +5345,9 @@ mod tests {
             OwnerBase::at_home(path.clone(), PlatformTag::Android),
             Err(IdentityError::InvalidInput(_))
         ));
-        assert!(matches!(
-            OwnerBase::at_home(path.clone(), PlatformTag::Linux),
-            Ok(_)
-        ));
-        assert!(matches!(
-            OwnerBase::at_home(path.clone(), PlatformTag::Macos),
-            Ok(_)
-        ));
-        assert!(matches!(
-            OwnerBase::at_home(path, PlatformTag::Windows),
-            Ok(_)
-        ));
+        assert!(OwnerBase::at_home(path.clone(), PlatformTag::Linux).is_ok());
+        assert!(OwnerBase::at_home(path.clone(), PlatformTag::Macos).is_ok());
+        assert!(OwnerBase::at_home(path, PlatformTag::Windows).is_ok());
     }
 
     #[cfg(windows)]

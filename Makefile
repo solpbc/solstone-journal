@@ -306,6 +306,7 @@ UV_OPTIONAL_GOALS := \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
 	check-rust-journal-mcp-endpoint \
+	check-rust-android check-rust-android-prepared \
 	\
 	check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-describe-cli-stubs \
 	require-win-remote-host sync-win-host win-host-ci \
