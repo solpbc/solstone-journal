@@ -1422,4 +1422,3 @@ source = "core/distribution/nvattest-windows-NOTICES.md"
 dest = "share/licenses/nvattest/NOTICES.md"
 mode = 0o644
 targets = ["windows-x86_64"]
-
