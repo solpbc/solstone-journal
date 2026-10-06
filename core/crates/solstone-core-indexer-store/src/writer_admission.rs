@@ -875,18 +875,28 @@ pub(crate) mod tests {
             );
             drop(held);
             let status = inspect_classifications(&root).unwrap();
-            assert_eq!(status.cursor, "item-31.md");
+            assert_eq!(
+                status.cursor,
+                format!(
+                    "item-{:03}.md",
+                    crate::classification_batch::CHUNK_CLASSIFICATION_BACKFILL_STEP - 1
+                )
+            );
             assert_eq!(status.remaining, 8);
             assert!(!status.completed);
             fs::remove_dir_all(root).unwrap();
         }
 
+        // One full step plus eight, so a drain runs an interior batch and a short last one.
+        const CLASSIFICATION_FIXTURE_PATHS: usize =
+            crate::classification_batch::CHUNK_CLASSIFICATION_BACKFILL_STEP as usize + 8;
+
         fn seed_classification_batches(root: &Path) {
             let conn = open_index(root).unwrap();
-            for n in 0..40 {
+            for n in 0..CLASSIFICATION_FIXTURE_PATHS {
                 conn.execute(
                     "INSERT INTO chunks(content, path) VALUES ('text', ?1)",
-                    [format!("item-{n:02}.md")],
+                    [format!("item-{n:03}.md")],
                 )
                 .unwrap();
             }
@@ -931,9 +941,13 @@ pub(crate) mod tests {
                     r.get(0)
                 })
                 .unwrap();
-            assert_eq!(count, 32, "first batch must be finite and committed");
+            assert_eq!(
+                count,
+                crate::classification_batch::CHUNK_CLASSIFICATION_BACKFILL_STEP,
+                "first batch must be finite and committed"
+            );
             drop(reader);
-            let prune_res = prune_by_paths(&root, &["item-39.md"]);
+            let prune_res = prune_by_paths(&root, &["item-135.md"]);
             assert!(
                 prune_res.is_ok(),
                 "parent must be able to acquire writer lease while child is at post-commit barrier, got {prune_res:?}"
@@ -948,7 +962,8 @@ pub(crate) mod tests {
                 serde_json::from_slice(&fs::read(seam.join("drained.json")).unwrap()).unwrap();
             assert_eq!(status["completed"], true);
             assert_eq!(
-                status["cursor"], "item-38.md",
+                status["cursor"],
+                format!("item-{:03}.md", CLASSIFICATION_FIXTURE_PATHS - 2),
                 "next admission must reread candidates after pruning"
             );
             assert_eq!(status["remaining"], 0);
@@ -959,7 +974,7 @@ pub(crate) mod tests {
                     r.get(0)
                 })
                 .unwrap();
-            assert_eq!(count, 39);
+            assert_eq!(count, (CLASSIFICATION_FIXTURE_PATHS - 1) as i64);
             drop(reader);
 
             let _ = fs::remove_dir_all(&root);

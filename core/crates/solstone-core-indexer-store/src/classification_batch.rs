@@ -24,7 +24,24 @@ use crate::db::{
 };
 use crate::writer_admission::{IndexAdmission, check_test_seam};
 
-pub const CHUNK_CLASSIFICATION_BACKFILL_STEP: i64 = 32;
+/// Paths classified per explicit `--apply` batch and per drain batch.
+pub const CHUNK_CLASSIFICATION_BACKFILL_STEP: i64 = 128;
+/// Paths classified per batch inside an ordinary rescan, which runs a bounded
+/// number of batches in one admission and has no lease release between them.
+pub(crate) const RESCAN_CLASSIFICATION_STEP: i64 = 32;
+
+/// How much of the status a batch counts. The `missing` count is a distinct-path
+/// join over the whole source table and dominates a batch, so batches whose
+/// status is not returned to a caller skip it unless it decides the outcome.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Counts {
+    /// Every field of the status is real. Used when the status is returned.
+    Full,
+    /// `missing` and `unclassified` are real only when the batch completes the
+    /// backfill or stalls (the only outcomes that consult them); otherwise they
+    /// are zero and the status must not be returned to an owner.
+    Terminal,
+}
 
 #[cfg(feature = "test-hooks")]
 static HELD_ONCE: AtomicBool = AtomicBool::new(false);
@@ -263,10 +280,17 @@ fn count_remaining(conn: &Connection, cursor: &str) -> Result<usize, StoreError>
     Ok(count as usize)
 }
 
+#[cfg(all(test, feature = "full-tests"))]
+thread_local! {
+    static MISSING_COUNT_RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn count_missing_internal(
     conn: &Connection,
     has_classification_table: bool,
 ) -> Result<usize, StoreError> {
+    #[cfg(all(test, feature = "full-tests"))]
+    MISSING_COUNT_RUNS.with(|runs| runs.set(runs.get() + 1));
     if has_classification_table {
         let count: i64 = conn.query_row(
             "SELECT COUNT(DISTINCT s.path) FROM chunk_sources s LEFT JOIN chunk_classification cc ON cc.path = s.path WHERE s.path IS NOT NULL AND s.path != '' AND cc.path IS NULL",
@@ -434,6 +458,8 @@ pub(crate) fn classify_one_batch(
     conn: &mut Connection,
     journal: &Path,
     resume: ResumeCount,
+    step: i64,
+    counts: Counts,
 ) -> Result<ClassificationStatus, StoreError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     require_chunk_path_lookup(&tx)?;
@@ -543,13 +569,9 @@ pub(crate) fn classify_one_batch(
     let paths = {
         let mut statement = tx.prepare(CHUNK_SOURCES_LOOKUP_PATHS)?;
         statement
-            .query_map(
-                [
-                    &state.cursor,
-                    &CHUNK_CLASSIFICATION_BACKFILL_STEP.to_string(),
-                ],
-                |row| row.get::<_, String>(0),
-            )?
+            .query_map([&state.cursor, &step.to_string()], |row| {
+                row.get::<_, String>(0)
+            })?
             .collect::<Result<Vec<_>, _>>()?
     };
 
@@ -602,8 +624,11 @@ pub(crate) fn classify_one_batch(
     }
 
     write_chunk_classification_backfill(&tx, &state)?;
-    let missing = count_missing_internal(&tx, true)?;
-    let unclassified = count_unclassified(&tx)?;
+    let (missing, unclassified) = if counts == Counts::Full || state.completed {
+        (count_missing_internal(&tx, true)?, count_unclassified(&tx)?)
+    } else {
+        (0, 0)
+    };
     let coverage_mismatch = state.completed && missing > 0;
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -637,6 +662,10 @@ pub(crate) fn classify_one_batch(
 }
 
 pub fn apply_classification_batch(journal: &Path) -> Result<ClassificationStatus, StoreError> {
+    apply_batch(journal, Counts::Full)
+}
+
+fn apply_batch(journal: &Path, counts: Counts) -> Result<ClassificationStatus, StoreError> {
     let admission = IndexAdmission::acquire(journal, "classification-batch")?;
     check_test_seam("before-cursor");
     let path = db_path(journal);
@@ -655,7 +684,13 @@ pub fn apply_classification_batch(journal: &Path) -> Result<ClassificationStatus
         "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
     )?;
 
-    let status = classify_one_batch(&mut conn, journal, ResumeCount::Preserve)?;
+    let status = classify_one_batch(
+        &mut conn,
+        journal,
+        ResumeCount::Preserve,
+        CHUNK_CLASSIFICATION_BACKFILL_STEP,
+        counts,
+    )?;
     drop(conn);
     drop(admission);
 
@@ -706,7 +741,10 @@ fn test_pause_after_committed_batch() {
 pub fn drain_classifications(journal: &Path) -> Result<ClassificationStatus, StoreError> {
     let mut total_processed = 0;
     loop {
-        let status = apply_classification_batch(journal)?;
+        // Interior batches skip the whole-table counts. The loop returns only on
+        // completed, stalled or coverage-mismatch, and each of those carries real
+        // counts, so no placeholder status leaves this function.
+        let status = apply_batch(journal, Counts::Terminal)?;
         total_processed += status.processed;
         if status.stalled || status.coverage_mismatch || status.completed {
             let mut final_status = status;
@@ -719,6 +757,8 @@ pub fn drain_classifications(journal: &Path) -> Result<ClassificationStatus, Sto
 #[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
+
+    const STEP: usize = CHUNK_CLASSIFICATION_BACKFILL_STEP as usize;
     use crate::test_support::reserve_temp_path;
     use std::fs;
     use std::path::PathBuf;
@@ -797,20 +837,20 @@ mod tests {
     fn classification_batch_saved_cursor_with_dropped_classification_table() {
         let root = temp_root("incomplete-sidecar");
         let conn = crate::db::open_index(&root).expect("open");
-        for i in 0..50 {
+        for i in 0..STEP + 18 {
             conn.execute(
                 "INSERT INTO chunks(content, path) VALUES ('text', ?1)",
-                [format!("doc-{i:02}.md")],
+                [format!("doc-{i:03}.md")],
             )
             .expect("seed");
         }
         drop(conn);
         crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
 
-        // Run one batch (32 items) to advance cursor to doc-31.md.
+        // Run one batch (one step) to advance cursor to the last path of the first batch.
         let status1 = apply_classification_batch(&root).expect("apply batch 1");
-        assert_eq!(status1.processed, 32);
-        assert_eq!(status1.cursor, "doc-31.md");
+        assert_eq!(status1.processed, STEP);
+        assert_eq!(status1.cursor, format!("doc-{:03}.md", STEP - 1));
         let saved_cursor = status1.cursor.clone();
 
         // Drop chunk_classification table directly to create incomplete sidecar.
@@ -835,7 +875,7 @@ mod tests {
         // Apply recreates table and resumes from saved_cursor without resetting to ''.
         let apply_status = apply_classification_batch(&root).expect("apply resume");
         assert_eq!(apply_status.processed, 18);
-        assert_eq!(apply_status.cursor, "doc-49.md");
+        assert_eq!(apply_status.cursor, format!("doc-{:03}.md", STEP + 17));
         assert!(apply_status.cursor > saved_cursor);
         assert!(apply_status.completed);
         let _ = fs::remove_dir_all(root);
@@ -852,8 +892,8 @@ mod tests {
             )
             .unwrap();
             let conn = crate::db::open_index(&root).unwrap();
-            for i in 0..40 {
-                let path = format!("facets/Public/news/20260101-{i:02}.md");
+            for i in 0..STEP + 8 {
+                let path = format!("facets/Public/news/20260101-{i:03}.md");
                 fs::write(root.join(&path), "# News\nsearchable fixture").unwrap();
                 conn.execute(
                     "INSERT INTO chunks(content, path) VALUES ('fixture', ?1)",
@@ -939,59 +979,59 @@ mod tests {
                     |r| r.get(0),
                 )
                 .unwrap();
-            assert_eq!(repaired, 40);
+            assert_eq!(repaired, (STEP + 8) as i64);
             drop(conn);
             fs::remove_dir_all(root).unwrap();
         }
     }
 
     #[test]
-    fn classification_batch_writes_at_most_32_paths_and_resolves_lowest_rowid_stream() {
+    fn classification_batch_writes_at_most_one_step_of_paths_and_resolves_lowest_rowid_stream() {
         let root = temp_root("batch-limit-and-lowest-stream");
         let conn = crate::db::open_index(&root).expect("open");
-        // Insert 40 chunks
-        for i in 0..40 {
+        // Insert one step plus eight chunks
+        for i in 0..STEP + 8 {
             conn.execute(
                 "INSERT INTO chunks(content, path) VALUES ('text', ?1)",
-                [format!("path-{i:02}.md")],
+                [format!("path-{i:03}.md")],
             )
             .expect("seed");
         }
         drop(conn);
         crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
 
-        // For path-00.md, insert two chunk_sources rows: lowest rowid with stream 'mcp.agent', higher with 'transcripts'
+        // For path-000.md, insert two chunk_sources rows: lowest rowid with stream 'mcp.agent', higher with 'transcripts'
         let raw_conn = Connection::open(db_path(&root)).expect("open raw");
         let max_rowid: i64 = raw_conn
             .query_row("SELECT MAX(rowid) FROM chunk_sources", [], |row| row.get(0))
             .unwrap_or(0);
         raw_conn
-            .execute("DELETE FROM chunk_sources WHERE path = 'path-00.md'", [])
+            .execute("DELETE FROM chunk_sources WHERE path = 'path-000.md'", [])
             .expect("delete");
         raw_conn
             .execute(
-                "INSERT INTO chunk_sources(rowid, path, stream) VALUES (?1, 'path-00.md', 'mcp.agent')",
+                "INSERT INTO chunk_sources(rowid, path, stream) VALUES (?1, 'path-000.md', 'mcp.agent')",
                 [max_rowid + 1],
             )
             .expect("insert mcp");
         raw_conn
             .execute(
-                "INSERT INTO chunk_sources(rowid, path, stream) VALUES (?1, 'path-00.md', 'transcripts')",
+                "INSERT INTO chunk_sources(rowid, path, stream) VALUES (?1, 'path-000.md', 'transcripts')",
                 [max_rowid + 2],
             )
             .expect("insert transcripts");
         drop(raw_conn);
 
         let status = apply_classification_batch(&root).expect("apply batch");
-        assert_eq!(status.processed, 32);
+        assert_eq!(status.processed, STEP);
         assert!(!status.completed);
         assert_eq!(status.remaining, 8);
 
-        // Check path-00.md classification row: mcp.agent stream leads to excluded (eligible=0, unclassified=0)
+        // Check path-000.md classification row: mcp.agent stream leads to excluded (eligible=0, unclassified=0)
         let verify_conn = Connection::open(db_path(&root)).expect("open verify");
         let (eligible, unclassified): (i64, i64) = verify_conn
             .query_row(
-                "SELECT eligible, unclassified FROM chunk_classification WHERE path = 'path-00.md'",
+                "SELECT eligible, unclassified FROM chunk_classification WHERE path = 'path-000.md'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -1012,10 +1052,10 @@ mod tests {
     fn classification_batch_concurrent_hold_seam_preserves_cursor_ordering() {
         let root = temp_root("concurrent-hold");
         let conn = crate::db::open_index(&root).expect("open");
-        for i in 0..50 {
+        for i in 0..STEP + 18 {
             conn.execute(
                 "INSERT INTO chunks(content, path) VALUES ('text', ?1)",
-                [format!("item-{i:02}.md")],
+                [format!("item-{i:03}.md")],
             )
             .expect("seed");
         }
@@ -1028,9 +1068,9 @@ mod tests {
             apply_classification_batch(&root_a).expect("thread a batch")
         });
 
-        // Wait for thread A's recorded window (32 items)
+        // Wait for thread A's recorded window (one step)
         let window_a = controller.wait_for_recorded_window(0);
-        assert_eq!(window_a.len(), 32);
+        assert_eq!(window_a.len(), STEP);
         let last_a = window_a.last().unwrap().clone();
 
         // Start thread B while thread A is held inside its transaction
@@ -1043,7 +1083,7 @@ mod tests {
         controller.release_next();
         let status_a = thread_a.join().expect("join thread a");
         assert_eq!(status_a.cursor, last_a);
-        assert_eq!(status_a.processed, 32);
+        assert_eq!(status_a.processed, STEP);
 
         // Thread B should unblock and record its window (18 items)
         let window_b = controller.wait_for_recorded_window(1);
@@ -1063,13 +1103,13 @@ mod tests {
             .expect("read backfill")
             .expect("backfill exists");
         assert!(backfill.completed);
-        assert_eq!(backfill.cursor, "item-49.md");
+        assert_eq!(backfill.cursor, format!("item-{:03}.md", STEP + 17));
         let count: i64 = verify_conn
             .query_row("SELECT count(*) FROM chunk_classification", [], |row| {
                 row.get(0)
             })
             .expect("count rows");
-        assert_eq!(count, 50);
+        assert_eq!(count, (STEP + 18) as i64);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1078,20 +1118,20 @@ mod tests {
     fn classification_batch_sql_fault_rolls_back_cursor_and_classifications() {
         let root = temp_root("sql-fault");
         let conn = crate::db::open_index(&root).expect("open");
-        for i in 0..50 {
+        for i in 0..STEP + 18 {
             conn.execute(
                 "INSERT INTO chunks(content, path) VALUES ('text', ?1)",
-                [format!("doc-{i:02}.md")],
+                [format!("doc-{i:03}.md")],
             )
             .expect("seed");
         }
         drop(conn);
         crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
 
-        // First batch succeeds (32 items)
+        // First batch succeeds (one step)
         let status1 = apply_classification_batch(&root).expect("apply batch 1");
-        assert_eq!(status1.processed, 32);
-        assert_eq!(status1.cursor, "doc-31.md");
+        assert_eq!(status1.processed, STEP);
+        assert_eq!(status1.cursor, format!("doc-{:03}.md", STEP - 1));
 
         // Arm SQL fault for second batch
         {
@@ -1105,22 +1145,22 @@ mod tests {
             );
         }
 
-        // Verify DB cursor is still doc-31.md and row count is still 32
+        // Verify DB cursor is still the last path of the first batch and row count is still one step
         let verify_conn = Connection::open(db_path(&root)).expect("open verify");
         let backfill = crate::db::read_chunk_classification_backfill(&verify_conn)
             .expect("read backfill")
             .expect("backfill exists");
-        assert_eq!(backfill.cursor, "doc-31.md");
+        assert_eq!(backfill.cursor, format!("doc-{:03}.md", STEP - 1));
         let count: i64 = verify_conn
             .query_row("SELECT count(*) FROM chunk_classification", [], |row| {
                 row.get(0)
             })
             .expect("count rows");
-        assert_eq!(count, 32);
+        assert_eq!(count, STEP as i64);
         drop(verify_conn);
         let retry = apply_classification_batch(&root).expect("retry committed cursor");
         assert_eq!(retry.processed, 18);
-        assert_eq!(retry.cursor, "doc-49.md");
+        assert_eq!(retry.cursor, format!("doc-{:03}.md", STEP + 17));
         assert!(retry.completed);
         assert_eq!(retry.missing, 0);
         let _ = fs::remove_dir_all(root);
@@ -1302,5 +1342,71 @@ mod tests {
         assert_eq!(value["unclassified"], 2);
         assert_eq!(value["coverage_mismatch"], false);
         assert_eq!(value["repair"], serde_json::Value::Null);
+    }
+    fn seed_docs(root: &Path, count: usize) {
+        let conn = crate::db::open_index(root).expect("open");
+        for i in 0..count {
+            conn.execute(
+                "INSERT INTO chunks(content, path) VALUES ('text', ?1)",
+                [format!("doc-{i:04}.md")],
+            )
+            .expect("seed");
+        }
+        drop(conn);
+        crate::chunk_sources::apply_path_lookup(root).expect("apply path lookup");
+    }
+
+    fn raw_missing(root: &Path) -> i64 {
+        Connection::open(db_path(root))
+            .expect("open raw")
+            .query_row(
+                "SELECT COUNT(DISTINCT s.path) FROM chunk_sources s LEFT JOIN chunk_classification cc ON cc.path = s.path WHERE cc.path IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("raw missing")
+    }
+
+    #[test]
+    fn classification_drain_counts_missing_once_and_reports_real_counts() {
+        let root = temp_root("drain-counts-once");
+        seed_docs(&root, 2 * STEP + 5);
+
+        MISSING_COUNT_RUNS.with(|runs| runs.set(0));
+        let status = drain_classifications(&root).expect("drain");
+        let runs = MISSING_COUNT_RUNS.with(|runs| runs.get());
+
+        assert_eq!(status.processed, 2 * STEP + 5);
+        assert!(status.completed && !status.coverage_mismatch);
+        assert_eq!(status.remaining, 0);
+        assert_eq!(status.missing as i64, raw_missing(&root));
+        assert_eq!(status.missing, 0);
+        assert_eq!(runs, 1, "interior batches must not run the missing count");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn classification_drain_across_batches_reports_a_gap_behind_the_cursor() {
+        let root = temp_root("drain-gap");
+        seed_docs(&root, 2 * STEP + 5);
+        apply_classification_batch(&root).expect("first batch");
+        let conn = Connection::open(db_path(&root)).expect("open raw");
+        conn.execute(
+            "DELETE FROM chunk_classification WHERE path = 'doc-0003.md'",
+            [],
+        )
+        .expect("open a gap behind the cursor");
+        drop(conn);
+
+        MISSING_COUNT_RUNS.with(|runs| runs.set(0));
+        let status = drain_classifications(&root).expect("drain");
+        let runs = MISSING_COUNT_RUNS.with(|runs| runs.get());
+
+        assert!(status.completed);
+        assert!(status.coverage_mismatch);
+        assert_eq!(status.missing, 1);
+        assert_eq!(status.missing as i64, raw_missing(&root));
+        assert_eq!(runs, 1);
+        let _ = fs::remove_dir_all(root);
     }
 }

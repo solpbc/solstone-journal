@@ -36,7 +36,9 @@ use crate::chunk_sources::{
     record_chunk_source, require_chunk_path_lookup,
 };
 use crate::classification::{FacetDeclarationSet, classify_source};
-use crate::classification_batch::{ResumeCount, classify_one_batch};
+use crate::classification_batch::{
+    Counts, RESCAN_CLASSIFICATION_STEP, ResumeCount, classify_one_batch,
+};
 use crate::db::{
     EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, delete_chunk_classification,
     mark_index_build_complete, open_index_admitted, prune_authored_chat_paths_admitted,
@@ -576,7 +578,13 @@ fn migrate_chunk_classifications(
     if let Some(ref state) = existing
         && state.completed
     {
-        let status = classify_one_batch(conn, journal, ResumeCount::Preserve)?;
+        let status = classify_one_batch(
+            conn,
+            journal,
+            ResumeCount::Preserve,
+            RESCAN_CLASSIFICATION_STEP,
+            Counts::Terminal,
+        )?;
         if status.coverage_mismatch {
             return Ok(vec![format!(
                 "chunk classification coverage mismatch: {} missing rows",
@@ -593,7 +601,13 @@ fn migrate_chunk_classifications(
 
     let mut current_resume = resume_target;
     for _ in 0..CHUNK_CLASSIFICATION_BACKFILL_BUDGET {
-        let status = classify_one_batch(conn, journal, current_resume)?;
+        let status = classify_one_batch(
+            conn,
+            journal,
+            current_resume,
+            RESCAN_CLASSIFICATION_STEP,
+            Counts::Terminal,
+        )?;
         if status.stalled {
             let err = status
                 .stalled_error
