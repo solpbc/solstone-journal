@@ -328,9 +328,10 @@ try {
 
     # Network denial for every process: positive controls, then the
     # complement of the transport peer, then negative controls.
-    foreach ($probe in @($Ipv4Probe, $Ipv6Probe)) {
-        if (-not (Test-TcpProbe $probe)) { throw "network positive control could not connect before denial: $probe" }
-    }
+    # IPv4 must connect before denial. A guest with no IPv6 route records that
+    # instead; IPv6 is denied either way and must refuse afterwards.
+    if (-not (Test-TcpProbe $Ipv4Probe)) { throw "network positive control could not connect before denial: $Ipv4Probe" }
+    $ipv6Positive = if (Test-TcpProbe $Ipv6Probe) { 'connected' } else { 'unreachable' }
     Add-RemoteDeny (Get-ComplementRanges $peer)
     foreach ($probe in @($Ipv4Probe, $Ipv6Probe)) {
         if (Test-TcpProbe $probe 3000) { throw "network negative control connected under denial: $probe" }
@@ -543,7 +544,7 @@ $result = [ordered]@{
         network = [ordered]@{
             transport_peer = $peer.ToString()
             ipv4 = [ordered]@{target = "${Ipv4Probe}:$ProbePort"; positive_control = 'connected'; negative_control = 'refused'}
-            ipv6 = [ordered]@{target = "[$Ipv6Probe]:$ProbePort"; positive_control = 'connected'; negative_control = 'refused'}
+            ipv6 = [ordered]@{target = "[$Ipv6Probe]:$ProbePort"; positive_control = $ipv6Positive; negative_control = 'refused'}
             rules_added = $rulesAdded; rules_remaining = $rulesRemaining
         }
     }

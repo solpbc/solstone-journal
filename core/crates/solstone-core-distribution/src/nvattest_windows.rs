@@ -60,6 +60,9 @@ pub const NVATTEST_REFUSAL_CORRUPT_BOUNDARY: &str =
 
 pub const NVATTEST_NETWORK_CONNECTED: &str = "connected";
 pub const NVATTEST_NETWORK_REFUSED: &str = "refused";
+/// An IPv6 positive control on a guest with no IPv6 route. IPv6 is still
+/// denied and its negative control must still refuse.
+pub const NVATTEST_NETWORK_UNREACHABLE: &str = "unreachable";
 
 /// The complete environment every SDK child receives, in ordinal order. The
 /// driver clears everything else; `NVAT_SOURCE_COMMIT` is the committed
@@ -977,12 +980,14 @@ fn validate_refusals(refusals: &NvattestRefusals) -> Result<(), String> {
 
 fn validate_network(network: &NvattestNetworkEvidence) -> Result<(), String> {
     for (family, probe) in [("ipv4", &network.ipv4), ("ipv6", &network.ipv6)] {
+        let positive_admitted = probe.positive_control == NVATTEST_NETWORK_CONNECTED
+            || (family == "ipv6" && probe.positive_control == NVATTEST_NETWORK_UNREACHABLE);
         if probe.target.is_empty()
-            || probe.positive_control != NVATTEST_NETWORK_CONNECTED
+            || !positive_admitted
             || probe.negative_control != NVATTEST_NETWORK_REFUSED
         {
             return Err(format!(
-                "network-rules: {family} positive control must connect and negative control must refuse"
+                "network-rules: {family} positive control must connect (IPv6 may be unreachable) and negative control must refuse"
             ));
         }
     }

@@ -816,8 +816,9 @@ fn refusal_controls_must_refuse_at_their_named_boundaries() {
 
 #[test]
 fn network_controls_must_prove_ipv4_and_ipv6_denial_and_full_cleanup() {
-    let mutations: [fn(&mut NvattestNetworkEvidence); 6] = [
+    let mutations: [fn(&mut NvattestNetworkEvidence); 7] = [
         |n| n.ipv4.positive_control = "unavailable".into(),
+        |n| n.ipv4.positive_control = NVATTEST_NETWORK_UNREACHABLE.into(),
         |n| n.ipv4.negative_control = NVATTEST_NETWORK_CONNECTED.into(),
         |n| n.ipv6.positive_control = "unavailable".into(),
         |n| n.ipv6.negative_control = NVATTEST_NETWORK_CONNECTED.into(),
@@ -829,6 +830,15 @@ fn network_controls_must_prove_ipv4_and_ipv6_denial_and_full_cleanup() {
         mutate(&mut fixture.evidence.network);
         refuses(&fixture, "network-rules");
     }
+}
+
+#[test]
+fn an_unrouted_ipv6_positive_control_admits_when_ipv6_is_still_refused() {
+    let mut fixture = Fixture::new();
+    fixture.evidence.network.ipv6.positive_control = NVATTEST_NETWORK_UNREACHABLE.into();
+    fixture.admit().unwrap();
+    fixture.evidence.network.ipv6.negative_control = NVATTEST_NETWORK_UNREACHABLE.into();
+    refuses(&fixture, "network-rules");
 }
 
 #[test]
