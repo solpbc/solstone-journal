@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- your morning briefing now includes what you owe and what you're waiting on, with how long older items have been open. since 2.0.33, the briefing your journal makes on its own each morning could leave them out or list them without their age.
+
 ## [2.0.34] - 2026-10-06
 
 ### Added
