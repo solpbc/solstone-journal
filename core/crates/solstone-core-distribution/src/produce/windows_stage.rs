@@ -76,6 +76,9 @@ impl AdmittedWindowsNativeInputs {
                 [output] if output.label == crate::rfdetr_windows::RFDETR_CLI_OUTPUT_LABEL => {
                     WindowsNativeComponent::Rfdetr
                 }
+                [output] if output.label == crate::nvattest_windows::NVATTEST_EXE_OUTPUT_LABEL => {
+                    WindowsNativeComponent::Nvattest
+                }
                 _ => return Err("unsupported controlled Windows input output set".into()),
             };
             for (label, bytes) in input.into_retained_members()? {
@@ -607,5 +610,50 @@ mod tests {
             fs::read(root.path().join("share/original")).unwrap(),
             b"original"
         );
+    }
+
+    #[test]
+    fn nvattest_inventory_and_notices_match() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let inventory_path = repo.join("core/distribution/inventory.toml");
+        let inventory = load_inventory(&inventory_path).unwrap();
+        let nvattest_entries: Vec<_> = inventory
+            .entry
+            .iter()
+            .filter_map(|entry| match entry {
+                Entry::WindowsNative {
+                    component: WindowsNativeComponent::Nvattest,
+                    member,
+                    dest,
+                    ..
+                } => Some((member.as_str(), dest.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            nvattest_entries,
+            vec![
+                ("bin/nvattest.exe", "bin/nvattest.exe"),
+                ("share/ca/ca-bundle.pem", "share/ca/ca-bundle.pem"),
+                ("LICENSE", "share/licenses/nvattest/LICENSE"),
+                ("receipt.json", "share/provenance/nvattest/receipt.json"),
+                (
+                    "build-evidence.json",
+                    "share/provenance/nvattest/build-evidence.json"
+                ),
+                ("validation.log", "share/provenance/nvattest/validation.log"),
+            ]
+        );
+        let notice_entry = inventory.entry.iter().any(|entry| match entry {
+            Entry::Copy { source, dest, .. } => {
+                source == "core/distribution/nvattest-windows-NOTICES.md"
+                    && dest == "share/licenses/nvattest/NOTICES.md"
+            }
+            _ => false,
+        });
+        assert!(notice_entry);
     }
 }

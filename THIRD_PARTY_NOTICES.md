@@ -676,6 +676,15 @@ gives no warranty for them. Microsoft does not sponsor or endorse solstone.
 The same restrictions are restated in the installed package at
 share/licenses/msvc/NOTICE.md.
 
+## NVIDIA GPU attestation verifier (windows)
+
+The windows package includes the NVIDIA GPU attestation verifier
+(`bin/nvattest.exe`) and the CA bundle it uses (`share/ca/ca-bundle.pem`).
+They are not part of solstone and are not covered by solstone's AGPL-3.0-only license.
+
+The Apache-2.0 license is at share/licenses/nvattest/LICENSE.
+Third-party notices are at share/licenses/nvattest/NOTICES.md.
+
 ## Microsoft Edge WebView2 loader (windows)
 
 The journal app for windows (`bin/journal-app.exe`) embeds the Microsoft Edge

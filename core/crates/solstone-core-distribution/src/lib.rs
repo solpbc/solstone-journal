@@ -30,6 +30,8 @@ mod llama_windows_config;
 pub mod llama_windows_source;
 pub mod macho;
 pub mod manifest_verify;
+pub mod nvattest_windows;
+pub mod nvattest_windows_source;
 pub mod onnx_runtime;
 pub mod onnx_windows;
 pub mod onnx_windows_source;

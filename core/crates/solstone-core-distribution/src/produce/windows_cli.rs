@@ -14,8 +14,9 @@ use serde::Deserialize;
 use super::windows_archives::{admit_msvc, admit_pdfium, admit_rclone, admit_restic};
 use super::windows_build::{build_windows_product, capture_source, read_bounded};
 use super::windows_inputs::{
-    ControlledInputPaths, LlamaInputPaths, OnnxInputPaths, RfdetrInputPaths, admit_ced,
-    admit_ffmpeg_notices, admit_llama, admit_onnx, admit_parakeet, admit_rfdetr,
+    ControlledInputPaths, LlamaInputPaths, NvattestInputPaths, OnnxInputPaths, RfdetrInputPaths,
+    admit_ced, admit_ffmpeg_notices, admit_llama, admit_nvattest, admit_onnx, admit_parakeet,
+    admit_rfdetr,
 };
 use super::windows_stage::{AdmittedWindowsNativeInputs, stage_windows_payload};
 
@@ -234,6 +235,30 @@ struct RfdetrFiles {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct NvattestFiles {
+    receipt: InputPath,
+    evidence: InputPath,
+    validation: InputPath,
+    source_archive: InputPath,
+    bundle_archive: InputPath,
+    output_root: InputPath,
+}
+
+impl NvattestFiles {
+    fn paths(&self) -> NvattestInputPaths<'_> {
+        NvattestInputPaths {
+            receipt: &self.receipt.0,
+            evidence: &self.evidence.0,
+            validation: &self.validation.0,
+            source_archive: &self.source_archive.0,
+            bundle_archive: &self.bundle_archive.0,
+            output_root: &self.output_root.0,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ArchiveWithLicense {
     archive: InputPath,
     license: InputPath,
@@ -265,6 +290,7 @@ struct LocalInputs {
     parakeet: ParakeetFiles,
     onnx: OnnxFiles,
     rfdetr: RfdetrFiles,
+    nvattest: NvattestFiles,
     restic: ArchiveWithLicense,
     rclone: ArchiveWithLicense,
     msvc: MsvcFiles,
@@ -274,6 +300,19 @@ struct LocalInputs {
 
 impl LocalInputs {
     fn admit(&self, repo: &Path) -> Result<AdmittedWindowsNativeInputs, String> {
+        let msvc_input = admit_msvc(&self.msvc.archive.0, &self.msvc.runtime_license.0)?;
+        let msvcp140 = msvc_input
+            .outputs()
+            .get("msvcp140.dll")
+            .ok_or("missing admitted msvcp140.dll")?;
+        let vcruntime140 = msvc_input
+            .outputs()
+            .get("vcruntime140.dll")
+            .ok_or("missing admitted vcruntime140.dll")?;
+        let vcruntime140_1 = msvc_input
+            .outputs()
+            .get("vcruntime140_1.dll")
+            .ok_or("missing admitted vcruntime140_1.dll")?;
         let controlled = vec![
             admit_llama(
                 repo,
@@ -311,11 +350,20 @@ impl LocalInputs {
                     stb_license: &self.rfdetr.stb_license.0,
                 },
             )?,
+            admit_nvattest(
+                repo,
+                self.nvattest.paths(),
+                crate::nvattest_windows::MsvcRuntimeBytes {
+                    msvcp140,
+                    vcruntime140,
+                    vcruntime140_1,
+                },
+            )?,
         ];
         AdmittedWindowsNativeInputs::from_controlled(controlled)?.with_archives(vec![
             admit_restic(&self.restic.archive.0, &self.restic.license.0)?,
             admit_rclone(&self.rclone.archive.0, &self.rclone.license.0)?,
-            admit_msvc(&self.msvc.archive.0, &self.msvc.runtime_license.0)?,
+            msvc_input,
             admit_pdfium(&self.pdfium_archive.0)?,
             admit_ffmpeg_notices(repo, &self.ffmpeg_archive.0)?,
         ])
@@ -698,6 +746,75 @@ version = "9.0.0"
         let mut relative = value;
         relative["license"] = serde_json::json!("relative");
         assert!(serde_json::from_value::<ArchiveWithLicense>(relative).is_err());
+    }
+
+    #[test]
+    fn local_inputs_rejects_missing_nvattest_and_unknown_fields() {
+        let root = tempfile::tempdir().unwrap();
+        let p = root.path().join("file");
+        let controlled = serde_json::json!({
+            "receipt": p,
+            "evidence": p,
+            "validation": p,
+            "source_archive": p,
+            "cmake_archive": p,
+            "output_root": p,
+        });
+        let nvattest = serde_json::json!({
+            "receipt": p,
+            "evidence": p,
+            "validation": p,
+            "source_archive": p,
+            "bundle_archive": p,
+            "output_root": p,
+        });
+        let valid = serde_json::json!({
+            "llama": {
+                "receipt": p,
+                "evidence": p,
+                "source_archive": p,
+                "sdk_archive": p,
+                "cmake_archive": p,
+                "capture_root": p,
+            },
+            "ced": controlled,
+            "parakeet": {
+                "build": controlled,
+                "model": p,
+            },
+            "onnx": {
+                "build": controlled,
+                "mirror_archive": p,
+                "python_archive": p,
+                "protoc_archive": p,
+                "cmake_cache": p,
+            },
+            "rfdetr": {
+                "build": controlled,
+                "ggml_bundle": p,
+                "cmake_cache": p,
+                "build_options": p,
+                "subprocess_evidence": p,
+                "license": p,
+                "ggml_license": p,
+                "stb_license": p,
+            },
+            "nvattest": nvattest,
+            "restic": {"archive": p, "license": p},
+            "rclone": {"archive": p, "license": p},
+            "msvc": {"archive": p, "runtime_license": p},
+            "pdfium_archive": p,
+            "ffmpeg_archive": p,
+        });
+        assert!(serde_json::from_value::<LocalInputs>(valid.clone()).is_ok());
+
+        let mut without_nvattest = valid.clone();
+        without_nvattest.as_object_mut().unwrap().remove("nvattest");
+        assert!(serde_json::from_value::<LocalInputs>(without_nvattest).is_err());
+
+        let mut with_unknown = valid.clone();
+        with_unknown["unknown_field"] = serde_json::json!("forbidden");
+        assert!(serde_json::from_value::<LocalInputs>(with_unknown).is_err());
     }
 
     #[cfg(not(windows))]

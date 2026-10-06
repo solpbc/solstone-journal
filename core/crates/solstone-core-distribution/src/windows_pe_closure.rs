@@ -31,6 +31,9 @@ const SYSTEM_DLLS: &[&str] = &[
     // picker through the shell and the WebView2 loader. Part of every
     // supported Windows; never supplied by the payload.
     "comctl32.dll",
+    // Crypto API, imported by nvattest.exe. Part of every supported Windows;
+    // never supplied by the payload.
+    "crypt32.dll",
     "dbghelp.dll",
     // DWM, for the journal app's native caption appearance. Present on both
     // supported Windows versions; newer caption attributes remain optional.

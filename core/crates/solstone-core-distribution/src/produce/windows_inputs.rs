@@ -62,6 +62,22 @@ impl AdmittedControlledInput {
         &self.outputs
     }
 
+    pub(crate) fn new(
+        receipt: ControlledBuildReceipt,
+        receipt_bytes: Vec<u8>,
+        evidence_bytes: Vec<u8>,
+        validation_bytes: Vec<u8>,
+        outputs: BTreeMap<String, Vec<u8>>,
+    ) -> Self {
+        Self {
+            receipt,
+            receipt_bytes,
+            evidence_bytes,
+            validation_bytes,
+            outputs,
+        }
+    }
+
     pub(super) fn into_retained_members(mut self) -> Result<BTreeMap<String, Vec<u8>>, String> {
         for (label, bytes) in [
             ("receipt.json", self.receipt_bytes),
@@ -74,6 +90,36 @@ impl AdmittedControlledInput {
         }
         Ok(self.outputs)
     }
+}
+
+pub struct NvattestInputPaths<'a> {
+    pub receipt: &'a Path,
+    pub evidence: &'a Path,
+    pub validation: &'a Path,
+    pub source_archive: &'a Path,
+    pub bundle_archive: &'a Path,
+    pub output_root: &'a Path,
+}
+
+pub(crate) fn verify_receipt_document_binding(
+    receipt: &ControlledBuildReceipt,
+    evidence_bytes: &[u8],
+    validation_bytes: &[u8],
+    evidence_label: &str,
+) -> Result<(), String> {
+    if receipt.supporting
+        != [SupportingArtifactRef {
+            label: evidence_label.into(),
+            sha256: sha256_hex(evidence_bytes),
+        }]
+        || validation_bytes.is_empty()
+        || receipt.validation.sha256 != sha256_hex(validation_bytes)
+    {
+        return Err(
+            "unbound-evidence: native receipt does not bind the original evidence and validation bytes".into(),
+        );
+    }
+    Ok(())
 }
 
 struct CapturedBuild {
@@ -89,18 +135,12 @@ impl CapturedBuild {
         let receipt = decode_controlled_build_receipt(&receipt_bytes).map_err(|e| e.to_string())?;
         let evidence_bytes = read_bounded(paths.evidence, DOCUMENT_LIMIT)?;
         let validation_bytes = read_bounded(paths.validation, DOCUMENT_LIMIT)?;
-        if receipt.supporting
-            != [SupportingArtifactRef {
-                label: evidence_label.into(),
-                sha256: sha256_hex(&evidence_bytes),
-            }]
-            || validation_bytes.is_empty()
-            || receipt.validation.sha256 != sha256_hex(&validation_bytes)
-        {
-            return Err(
-                "native receipt does not bind the original evidence and validation bytes".into(),
-            );
-        }
+        verify_receipt_document_binding(
+            &receipt,
+            &evidence_bytes,
+            &validation_bytes,
+            evidence_label,
+        )?;
         Ok(Self {
             receipt,
             receipt_bytes,
@@ -389,6 +429,128 @@ pub fn admit_rfdetr(
             admitted.outputs.insert(notice.member.into(), bytes);
         }
         Ok(admitted)
+    })
+}
+
+pub fn admit_nvattest(
+    repo: &Path,
+    paths: NvattestInputPaths<'_>,
+    msvc: crate::nvattest_windows::MsvcRuntimeBytes<'_>,
+) -> Result<AdmittedControlledInput, String> {
+    admit_nvattest_with_pins(
+        repo,
+        paths,
+        crate::nvattest_windows::production_pins(),
+        msvc,
+    )
+}
+
+pub fn admit_nvattest_with_pins(
+    repo: &Path,
+    paths: NvattestInputPaths<'_>,
+    pins: crate::nvattest_windows::Pins,
+    msvc: crate::nvattest_windows::MsvcRuntimeBytes<'_>,
+) -> Result<AdmittedControlledInput, String> {
+    use crate::nvattest_windows::*;
+    let receipt_bytes = read_bounded(paths.receipt, DOCUMENT_LIMIT)?;
+    let evidence_bytes = read_bounded(paths.evidence, DOCUMENT_LIMIT)?;
+    let validation_bytes = read_bounded(paths.validation, DOCUMENT_LIMIT)?;
+
+    let index_bytes = read_bounded(
+        &super::windows_stage::join_components(
+            repo,
+            "core/distribution/nvattest-windows-sources.json",
+        ),
+        DOCUMENT_LIMIT,
+    )?;
+    let index: NoticesIndex =
+        serde_json::from_slice(&index_bytes).map_err(|e| format!("notices-index: {e}"))?;
+
+    let notices_body_bytes = read_bounded(
+        &super::windows_stage::join_components(
+            repo,
+            "core/distribution/nvattest-windows-NOTICES.md",
+        ),
+        DOCUMENT_LIMIT,
+    )?;
+
+    with_snapshot(|snapshot| {
+        let source_path =
+            snapshot_file(snapshot, "source.tar", paths.source_archive, SOURCE_LIMIT)?;
+        let bundle_path =
+            snapshot_file(snapshot, "bundle.tar", paths.bundle_archive, SOURCE_LIMIT)?;
+
+        // Preflight uncompressed tar streams directly
+        {
+            let source_file = fs::File::open(&source_path).map_err(|e| e.to_string())?;
+            preflight_tar_stream(
+                source_file,
+                2 * 1024 * 1024 * 1024,
+                256 * 1024 * 1024,
+                1024 * 1024,
+                100_000,
+            )?;
+            let bundle_file = fs::File::open(&bundle_path).map_err(|e| e.to_string())?;
+            preflight_tar_stream(
+                bundle_file,
+                2 * 1024 * 1024 * 1024,
+                256 * 1024 * 1024,
+                1024 * 1024,
+                100_000,
+            )?;
+        }
+
+        let source_bytes = fs::read(&source_path).map_err(|e| e.to_string())?;
+        let bundle_bytes = fs::read(&bundle_path).map_err(|e| e.to_string())?;
+
+        let output_exe_path =
+            super::windows_stage::join_components(paths.output_root, NVATTEST_EXE_OUTPUT_LABEL);
+        let output_exe = read_bounded(&output_exe_path, OUTPUT_LIMIT)?;
+
+        let output_license_path =
+            super::windows_stage::join_components(paths.output_root, NVATTEST_LICENSE_LABEL);
+        let output_license = read_bounded(&output_license_path, DOCUMENT_LIMIT)?;
+
+        let output_msvcp140_path =
+            super::windows_stage::join_components(paths.output_root, "bin/msvcp140.dll");
+        let output_msvcp140 = read_bounded(&output_msvcp140_path, OUTPUT_LIMIT)?;
+
+        let output_vcruntime140_path =
+            super::windows_stage::join_components(paths.output_root, "bin/vcruntime140.dll");
+        let output_vcruntime140 = read_bounded(&output_vcruntime140_path, OUTPUT_LIMIT)?;
+
+        let output_vcruntime140_1_path =
+            super::windows_stage::join_components(paths.output_root, "bin/vcruntime140_1.dll");
+        let output_vcruntime140_1 = read_bounded(&output_vcruntime140_1_path, OUTPUT_LIMIT)?;
+
+        let input_bytes = AdmissionBytes {
+            receipt: &receipt_bytes,
+            evidence: &evidence_bytes,
+            validation: &validation_bytes,
+            notices_body: &notices_body_bytes,
+            source_archive: &source_bytes,
+            bundle_archive: &bundle_bytes,
+            output_exe: &output_exe,
+            output_license: &output_license,
+            output_msvcp140: &output_msvcp140,
+            output_vcruntime140: &output_vcruntime140,
+            output_vcruntime140_1: &output_vcruntime140_1,
+        };
+
+        let admitted = admit(&pins, &index, &input_bytes, &msvc)?;
+
+        crate::artifact_verify::verify_controlled_build_artifacts(
+            paths.output_root,
+            admitted.receipt(),
+            crate::artifact_verify::ControlledBuildArtifactVerificationLimits::new(
+                16,
+                2,
+                OUTPUT_LIMIT as usize,
+            ),
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok(admitted.into_admitted_controlled_input())
     })
 }
 
