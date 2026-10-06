@@ -9,8 +9,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Sender, TryRecvError};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use solstone_core_generate::contract;
@@ -88,12 +89,23 @@ struct RecordedRequest {
     body: String,
 }
 
-/// A loopback llama-compatible endpoint that records every request.  It exits
-/// after the client has been idle briefly, so tests can assert the complete
-/// observed request set without guessing how many capacity probes a client makes.
-fn serve_recording(
-    completions: Vec<(u16, String)>,
-) -> (u16, thread::JoinHandle<Vec<RecordedRequest>>) {
+struct RecordingServer {
+    stop: Sender<()>,
+    handle: thread::JoinHandle<Vec<RecordedRequest>>,
+}
+
+impl RecordingServer {
+    fn finish(self) -> Vec<RecordedRequest> {
+        // A disconnected receiver means the server panicked; join preserves that failure.
+        let _ = self.stop.send(());
+        self.handle.join().expect("join recording server")
+    }
+}
+
+/// Record requests until the client has finished, independent of scheduling gaps
+/// or the number of capacity probes. Dropping the sender also stops the server
+/// when a test fails before it can join.
+fn serve_recording(completions: Vec<(u16, String)>) -> (u16, RecordingServer) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind recording server");
     listener
         .set_nonblocking(true)
@@ -102,11 +114,10 @@ fn serve_recording(
         .local_addr()
         .expect("recording server address")
         .port();
+    let (stop, stopped) = mpsc::channel();
     let handle = thread::spawn(move || {
         let mut requests = Vec::new();
         let mut completion_index = 0;
-        let started = Instant::now();
-        let mut last_request = None;
         loop {
             match listener.accept() {
                 Ok((mut stream, _)) => {
@@ -140,24 +151,18 @@ fn serve_recording(
                         .write_all(http_response(status, &body).as_bytes())
                         .expect("write recording response");
                     requests.push(request);
-                    last_request = Some(Instant::now());
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    if last_request.is_some_and(|time| time.elapsed() >= Duration::from_millis(150))
-                    {
+                    if !matches!(stopped.try_recv(), Err(TryRecvError::Empty)) {
                         return requests;
                     }
-                    assert!(
-                        started.elapsed() < Duration::from_secs(5),
-                        "recording server received no request"
-                    );
                     thread::sleep(Duration::from_millis(5));
                 }
                 Err(error) => panic!("accept recording request: {error}"),
             }
         }
     });
-    (port, handle)
+    (port, RecordingServer { stop, handle })
 }
 
 fn read_recorded_request(stream: &mut std::net::TcpStream) -> RecordedRequest {
@@ -196,6 +201,32 @@ fn read_recorded_request(stream: &mut std::net::TcpStream) -> RecordedRequest {
         body: String::from_utf8(bytes[header_end..header_end + content_length].to_vec())
             .expect("UTF-8 request body"),
     }
+}
+
+#[test]
+fn recording_server_survives_late_start_and_idle_client() {
+    let (port, server) = serve_recording(Vec::new());
+    // Cross both old shutdown windows: five seconds before the first request,
+    // then 150 ms of idle time between requests.
+    for delay in [Duration::from_millis(5500), Duration::from_millis(200)] {
+        thread::sleep(delay);
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))
+            .expect("recording server remains available until the client finishes");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("set response read timeout");
+        stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .expect("write delayed health request");
+        let mut response = String::new();
+        stream
+            .read_to_string(&mut response)
+            .expect("read health response");
+        assert_eq!(response, http_response(200, r#"{"loaded_model":"served"}"#));
+    }
+    let requests = server.finish();
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|request| request.path == "/health"));
 }
 
 fn serve_endpoint() -> (u16, thread::JoinHandle<usize>) {
@@ -456,14 +487,14 @@ fn bundled_native_loopback_enforces_schema_output_and_sends_multimodal_response_
         request["json_schema"] = schema.clone();
 
         let response = stdout_json(&one_shot(&journal, &request));
-        assert_eq!(response["outcome"], expected_outcome, "{name}");
+        let requests = server.finish();
+        assert_eq!(response["outcome"], expected_outcome, "{name}: {response}");
         if expected_outcome == "generated" {
             assert_eq!(response["schema_validation"]["valid"], true);
             assert_eq!(response["text"], r#"{"answer":"OK"}"#);
         } else {
             assert_eq!(response["provider"], "local");
         }
-        let requests = server.join().expect("join recording server");
         assert_only_local_requests(&requests);
         let chat = requests
             .iter()
@@ -498,13 +529,16 @@ fn bundled_native_schema_validation_is_advisory() {
     });
 
     let response = stdout_json(&one_shot(&journal, &request));
-    assert_eq!(response["outcome"], "generated");
+    let requests = server.finish();
+    assert_eq!(
+        response["outcome"], "generated",
+        "full response: {response}"
+    );
     assert_eq!(response["schema_validation"]["valid"], false);
     assert_eq!(
         response["schema_validation"]["errors"][0]["constraint"],
         "required"
     );
-    let requests = server.join().expect("join recording server");
     assert_only_local_requests(&requests);
     let _ = std::fs::remove_dir_all(journal);
 }
@@ -532,12 +566,12 @@ fn refusing_native_endpoint_stays_local_and_never_spawns_mlx() {
         Some(input.as_bytes()),
         Some(&poison_bin),
     );
+    let requests = server.finish();
     assert_eq!(output.status.code(), Some(0));
     let response = stdout_json(&output);
     assert_eq!(response["outcome"], "refused");
     assert_eq!(response["provider"], "local");
     assert!(response["reason_code"].is_string(), "explicit local error");
-    let requests = server.join().expect("join refusing server");
     assert_only_local_requests(&requests);
     assert_eq!(
         requests
