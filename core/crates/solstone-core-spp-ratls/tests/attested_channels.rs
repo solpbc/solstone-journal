@@ -1663,13 +1663,27 @@ fn qualification_starts_no_request_past_the_offline_admission_window() {
 
 // --- synthetic full exchange through the actual nvattest helper ---------------
 //
-// Operator-run: the helper is a separately published native artifact, so these
-// are ignored unless a real installation is named. Run with
+// Operator-run: the helper is a separately built native artifact, so these
+// are ignored unless a real installation is named.
+//
+// Unix: name an installed helper and point every NVIDIA endpoint at one
+// loopback trap, which the helper inherits:
 //
 //   SOLSTONE_SPP_TEST_NVATTEST_DIR=<installed nvattest> \
 //   NVAT_OCSP_BASE_URL=http://127.0.0.1:47811/ NVAT_RIM_SERVICE_BASE_URL=http://127.0.0.1:47811/ \
 //   NVAT_NRAS_BASE_URL=http://127.0.0.1:47811/ cargo test -p solstone-core-spp-ratls \
 //     --test attested_channels -- --ignored --test-threads 1 real_helper
+//
+// Windows: the helper is app-local, so name a privately signed payload root
+// and the public key that signed its inventory. The production launch clears
+// the helper's environment, so no trap URL can reach it; the harness counts
+// the helper's outbound connection attempts with Windows Filtering Platform
+// audit events instead, per test, with the online control as its instrument
+// check:
+//
+//   SOLSTONE_SPP_TEST_NVATTEST_DIR=<payload root> SOLSTONE_SPP_TEST_PAYLOAD_PIN=<minisign .pub>
+//   cargo test -p solstone-core-spp-ratls --features real-helper-tests \
+//     --test attested_channels -- --ignored --test-threads 1 --exact <one real_helper test>
 //
 // The gateway is synthetic and cannot reproduce an AMD-signed CPU leg, so the
 // composite verifier substitutes a fixed CPU appraisal for a test-only pin and
@@ -1682,12 +1696,17 @@ const REAL_HELPER_PIN: &str = "5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5
 const REAL_PROOFS_VERIFIED_AT: u64 = 1_790_996_649;
 const REAL_PROOFS_DEADLINE: u64 = 1_790_993_048 + 86_400;
 
+#[cfg(any(unix, feature = "real-helper-tests"))]
 struct SyntheticCpuRealGpu {
     nvattest_dir: std::path::PathBuf,
     profiles: solstone_core_spp_attest::nvgpu::GpuProfiles,
     now: SystemTime,
+    /// Hands the helper a nonce the GPU evidence does not carry, as if a CPU
+    /// leg had accepted an engine whose GPU evidence was made for another owner.
+    gpu_nonce: Option<[u8; 32]>,
 }
 
+#[cfg(any(unix, feature = "real-helper-tests"))]
 impl CompositeVerifier for SyntheticCpuRealGpu {
     fn verify(
         &self,
@@ -1696,6 +1715,13 @@ impl CompositeVerifier for SyntheticCpuRealGpu {
     ) -> Result<CompositeVerdict, CompositeVerificationError> {
         let mut cpu = test_verdict().cpu;
         cpu.pcr_sha256 = REAL_HELPER_PIN.to_owned();
+        let input = CompositeVerificationInput {
+            owner_nonce: self
+                .gpu_nonce
+                .as_ref()
+                .map_or(input.owner_nonce, |nonce| nonce),
+            ..input
+        };
         solstone_core_spp_ratls::verify_gpu_after_cpu(
             cpu,
             &input,
@@ -1707,23 +1733,43 @@ impl CompositeVerifier for SyntheticCpuRealGpu {
     }
 }
 
+#[cfg(any(unix, feature = "real-helper-tests"))]
 fn real_helper_dir() -> std::path::PathBuf {
-    std::env::var_os("SOLSTONE_SPP_TEST_NVATTEST_DIR")
+    let dir = std::env::var_os("SOLSTONE_SPP_TEST_NVATTEST_DIR")
         .map(std::path::PathBuf::from)
-        .expect("SOLSTONE_SPP_TEST_NVATTEST_DIR names an installed nvattest helper")
+        .expect("SOLSTONE_SPP_TEST_NVATTEST_DIR names an installed nvattest helper");
+    #[cfg(windows)]
+    {
+        let pin = std::env::var_os("SOLSTONE_SPP_TEST_PAYLOAD_PIN")
+            .expect("SOLSTONE_SPP_TEST_PAYLOAD_PIN names the payload's fixture signing key");
+        solstone_core_spp_attest::nvgpu::install_test_fixture_pin(Path::new(&pin))
+            .expect("fixture payload pin");
+    }
+    dir
 }
 
+#[cfg(any(unix, feature = "real-helper-tests"))]
+fn real_helper(mode: solstone_core_spp_attest::nvgpu::StatusMode, now: u64) -> SyntheticCpuRealGpu {
+    SyntheticCpuRealGpu {
+        nvattest_dir: real_helper_dir(),
+        profiles: real_helper_profiles(mode),
+        now: at(now),
+        gpu_nonce: None,
+    }
+}
+
+#[cfg(any(unix, feature = "real-helper-tests"))]
 fn real_helper_profiles(
     mode: solstone_core_spp_attest::nvgpu::StatusMode,
 ) -> solstone_core_spp_attest::nvgpu::GpuProfiles {
-    use solstone_core_spp_attest::nvgpu::{GpuProfile, GpuProfiles, ManifestSet, StatusMode};
+    use solstone_core_spp_attest::nvgpu::{GpuProfile, GpuProfiles, ManifestSet};
     // Test-only coexistence: the current production pin keeps its online
     // profile beside the staged successor pin.
     GpuProfiles::from_profiles(vec![
         GpuProfile::new(
             solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS[0],
             ManifestSet::QUALIFIED_595_71_05,
-            StatusMode::OnlineNonce,
+            solstone_core_spp_attest::nvgpu::StatusMode::OnlineNonce,
         ),
         GpuProfile::new(REAL_HELPER_PIN, ManifestSet::QUALIFIED_595_71_05, mode),
     ])
@@ -1733,16 +1779,18 @@ fn real_helper_profiles(
 /// NRAS endpoints. The operator points all three at one loopback port
 /// (`NVAT_OCSP_BASE_URL`, `NVAT_RIM_SERVICE_BASE_URL`, `NVAT_NRAS_BASE_URL`);
 /// the helper inherits that environment.
+#[cfg(unix)]
 struct EndpointTrap {
-    url: String,
     attempts: Arc<std::sync::atomic::AtomicUsize>,
 }
 
+#[cfg(unix)]
 fn endpoint_trap() -> &'static EndpointTrap {
     static TRAP: std::sync::OnceLock<EndpointTrap> = std::sync::OnceLock::new();
     TRAP.get_or_init(bind_endpoint_trap)
 }
 
+#[cfg(unix)]
 fn bind_endpoint_trap() -> EndpointTrap {
     let urls = [
         "NVAT_OCSP_BASE_URL",
@@ -1767,25 +1815,46 @@ fn bind_endpoint_trap() -> EndpointTrap {
             drop(connection);
         }
     });
-    EndpointTrap {
-        url: urls[0].clone(),
-        attempts,
+    EndpointTrap { attempts }
+}
+
+/// The helper's endpoint attempts so far, where this process can count them.
+/// On Windows the harness counts them outside the process.
+#[cfg(any(unix, feature = "real-helper-tests"))]
+fn helper_contacts() -> Option<usize> {
+    #[cfg(unix)]
+    {
+        Some(
+            endpoint_trap()
+                .attempts
+                .load(std::sync::atomic::Ordering::SeqCst),
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        None
     }
 }
 
+#[cfg(any(unix, feature = "real-helper-tests"))]
+fn assert_no_helper_contact(before: Option<usize>) {
+    assert_eq!(
+        helper_contacts(),
+        before,
+        "the helper contacted an endpoint"
+    );
+}
+
+#[cfg(any(unix, feature = "real-helper-tests"))]
 #[test]
 #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
 fn real_helper_offline_exchange_admits_with_signed_age_and_contacts_no_one() {
-    let trap = endpoint_trap();
-    let before = trap.attempts.load(std::sync::atomic::Ordering::SeqCst);
+    let before = helper_contacts();
     let gateway = python_gateway("certificate.der", true, vec![]);
-    let verifier = SyntheticCpuRealGpu {
-        nvattest_dir: real_helper_dir(),
-        profiles: real_helper_profiles(
-            solstone_core_spp_attest::nvgpu::StatusMode::OfflineSignedAge,
-        ),
-        now: at(REAL_PROOFS_VERIFIED_AT),
-    };
+    let verifier = real_helper(
+        solstone_core_spp_attest::nvgpu::StatusMode::OfflineSignedAge,
+        REAL_PROOFS_VERIFIED_AT,
+    );
     let channel = establish_python(
         gateway.port,
         &verifier,
@@ -1806,20 +1875,15 @@ fn real_helper_offline_exchange_admits_with_signed_age_and_contacts_no_one() {
     );
     drop(channel);
     drop(gateway.finish());
-    assert_eq!(
-        trap.attempts.load(std::sync::atomic::Ordering::SeqCst),
-        before,
-        "the helper contacted {}",
-        trap.url
-    );
+    assert_no_helper_contact(before);
 }
 
+#[cfg(any(unix, feature = "real-helper-tests"))]
 #[test]
 #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
 fn real_helper_offline_refusals_contact_no_one() {
     use solstone_core_spp_attest::nvgpu::StatusMode;
-    let trap = endpoint_trap();
-    let before = trap.attempts.load(std::sync::atomic::Ordering::SeqCst);
+    let before = helper_contacts();
     let cases: [(&str, &str, StatusMode, u64, u64, &str); 5] = [
         // No proofs: stops before the helper is launched.
         (
@@ -1869,16 +1933,10 @@ fn real_helper_offline_refusals_contact_no_one() {
     ];
     for (label, certificate, mode, appraised_at, admitted_at, reason) in cases {
         let gateway = python_gateway(certificate, true, vec![]);
-        let profiles = if label == "unknown pin" {
-            solstone_core_spp_attest::nvgpu::GpuProfiles::production()
-        } else {
-            real_helper_profiles(mode)
-        };
-        let verifier = SyntheticCpuRealGpu {
-            nvattest_dir: real_helper_dir(),
-            profiles,
-            now: at(appraised_at),
-        };
+        let mut verifier = real_helper(mode, appraised_at);
+        if label == "unknown pin" {
+            verifier.profiles = solstone_core_spp_attest::nvgpu::GpuProfiles::production();
+        }
         let error = rejected(establish_python(
             gateway.port,
             &verifier,
@@ -1887,27 +1945,218 @@ fn real_helper_offline_refusals_contact_no_one() {
         assert_eq!(error.reason_code, reason, "{label}");
         drop(gateway.finish());
     }
-    assert_eq!(
-        trap.attempts.load(std::sync::atomic::Ordering::SeqCst),
-        before,
-        "the helper contacted {}",
-        trap.url
-    );
+    assert_no_helper_contact(before);
 }
 
+/// The python certificate's composite extension, re-issued on a fresh key:
+/// the evidence then binds an SPKI the presented certificate does not have.
+#[cfg(any(unix, feature = "real-helper-tests"))]
+fn python_evidence_on_a_fresh_key() -> ServerConfig {
+    let der = exchange_fixture("exchange/certificate.der");
+    let (_, certificate) = x509_parser::prelude::X509Certificate::from_der(&der).expect("cert");
+    let mut extensions = Vec::new();
+    for extension in certificate.extensions() {
+        let oid = extension.oid.to_id_string();
+        if oid == COMPOSITE_EVIDENCE_OID
+            || oid
+                == solstone_core_spp_ratls::ratls::contract::STATUS_PROOFS_OID_ARCS
+                    .iter()
+                    .map(u64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(".")
+        {
+            let arcs: Vec<u64> = oid.split('.').map(|arc| arc.parse().unwrap()).collect();
+            let mut copy = CustomExtension::from_oid_content(&arcs, extension.value.to_vec());
+            copy.set_criticality(extension.critical);
+            extensions.push(copy);
+        }
+    }
+    assert_eq!(extensions.len(), 2, "evidence and proofs re-issued");
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test key");
+    let mut params = CertificateParams::new(vec!["spp-engine".to_owned()]).expect("params");
+    params.custom_extensions = extensions;
+    let reissued = params.self_signed(&key).expect("certificate");
+    server_config(
+        &[&rustls::version::TLS13],
+        CertificateDer::from(reissued.der().to_vec()),
+        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
+    )
+}
+
+/// An exporter proof for the python evidence whose exporter value is not this
+/// session's: the certificate and the real helper both admit first.
+#[cfg(any(unix, feature = "real-helper-tests"))]
+fn python_wrong_exporter_response() -> Vec<u8> {
+    let evidence = python_evidence();
+    let proof = ExporterProof {
+        owner_nonce: evidence.owner_nonce.clone(),
+        tls_spki_der: evidence.tls_spki_der.clone(),
+        tls_exporter: vec![0; EXPORTER_BYTES],
+        quote_message: Vec::new(),
+        quote_signature: Vec::new(),
+        quote_pcrs: Vec::new(),
+    }
+    .to_der();
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: {EXPORTER_PROOF_MEDIA_TYPE}\r\nContent-Length: {}\r\n\r\n",
+        proof.len()
+    )
+    .into_bytes()
+    .into_iter()
+    .chain(proof)
+    .collect()
+}
+
+#[cfg(any(unix, feature = "real-helper-tests"))]
+#[test]
+#[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
+fn real_helper_composite_refusals_send_no_application_content() {
+    use solstone_core_spp_attest::nvgpu::StatusMode;
+    let before = helper_contacts();
+    let owner_nonce = python_evidence().owner_nonce;
+    let mut wrong_owner_nonce = owner_nonce.clone();
+    wrong_owner_nonce[0] ^= 1;
+    let python_config = |certificate: &str| {
+        server_config(
+            &[&rustls::version::TLS13],
+            CertificateDer::from(exchange_fixture(&format!("exchange/{certificate}"))),
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(pem_contents(&exchange_fixture(
+                "exchange/tls-key.pem",
+            )))),
+        )
+    };
+    let wrong_gpu_nonce = {
+        let mut verifier = real_helper(StatusMode::OfflineSignedAge, REAL_PROOFS_VERIFIED_AT);
+        let mut nonce = [0; 32];
+        nonce.copy_from_slice(&wrong_owner_nonce);
+        verifier.gpu_nonce = Some(nonce);
+        verifier
+    };
+    let offline = real_helper(StatusMode::OfflineSignedAge, REAL_PROOFS_VERIFIED_AT);
+    let expired = real_helper(StatusMode::OfflineSignedAge, REAL_PROOFS_DEADLINE);
+    type Case<'a> = (
+        &'a str,
+        ServerConfig,
+        GatewayResponse,
+        &'a [u8],
+        &'a SyntheticCpuRealGpu,
+        u64,
+        &'a str,
+    );
+    let cases: [Case<'_>; 6] = [
+        // The helper itself refuses GPU evidence made for another nonce.
+        (
+            "gpu nonce",
+            python_config("certificate.der"),
+            GatewayResponse::None,
+            &owner_nonce,
+            &wrong_gpu_nonce,
+            REAL_PROOFS_VERIFIED_AT,
+            "gpu_nonce_mismatch",
+        ),
+        // The certificate's evidence is for another owner nonce.
+        (
+            "owner nonce",
+            python_config("certificate.der"),
+            GatewayResponse::None,
+            &wrong_owner_nonce,
+            &offline,
+            REAL_PROOFS_VERIFIED_AT,
+            "nonce_mismatch",
+        ),
+        // The evidence binds an SPKI the presented certificate lacks.
+        (
+            "spki",
+            python_evidence_on_a_fresh_key(),
+            GatewayResponse::None,
+            &owner_nonce,
+            &offline,
+            REAL_PROOFS_VERIFIED_AT,
+            "spki_mismatch",
+        ),
+        // The certificate and helper admit; the exporter proof is not this session's.
+        (
+            "exporter",
+            python_config("certificate.der"),
+            GatewayResponse::Static(python_wrong_exporter_response()),
+            &owner_nonce,
+            &offline,
+            REAL_PROOFS_VERIFIED_AT,
+            "exporter_mismatch",
+        ),
+        // Expired status on this device's clock.
+        (
+            "status expired",
+            python_config("certificate.der"),
+            GatewayResponse::None,
+            &owner_nonce,
+            &expired,
+            REAL_PROOFS_DEADLINE,
+            "gpu_appraisal_failed",
+        ),
+        // Appraised in time, too little status left at admission.
+        (
+            "status headroom",
+            python_config("certificate.der"),
+            GatewayResponse::ValidProofSignedBy(
+                Box::new(python_evidence()),
+                pem_contents(&exchange_fixture("exchange/ak-key.pem")),
+            ),
+            &owner_nonce,
+            &real_helper(StatusMode::OfflineSignedAge, REAL_PROOFS_DEADLINE - 200),
+            REAL_PROOFS_DEADLINE - 129,
+            "status_deadline_insufficient",
+        ),
+    ];
+    for (label, config, proof, nonce, verifier, admitted_at, reason) in cases {
+        let gateway = start_gateway(
+            config,
+            GatewayPlan {
+                proof,
+                application_responses: vec![],
+                capture_unanswered_application: true,
+            },
+        );
+        #[cfg(not(feature = "test-hooks"))]
+        use solstone_core_spp_ratls::establish_attested_channel_with_clock as establish_with_clock;
+        #[cfg(feature = "test-hooks")]
+        use solstone_core_spp_ratls::establish_local_test_channel_with_clock as establish_with_clock;
+        let error = rejected(establish_with_clock(
+            &endpoint(gateway.port),
+            nonce,
+            Path::new("."),
+            SystemTime::UNIX_EPOCH,
+            None,
+            None,
+            None,
+            verifier,
+            Duration::from_secs(2),
+            4,
+            &FixedClock(at(admitted_at), std::time::Instant::now()),
+        ));
+        assert_eq!(error.reason_code, reason, "{label}");
+        let observation = gateway.finish();
+        assert!(
+            observation.application_requests.is_empty(),
+            "{label}: application content reached the gateway"
+        );
+    }
+    assert_no_helper_contact(before);
+}
+
+#[cfg(any(unix, feature = "real-helper-tests"))]
 #[test]
 #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
 fn real_helper_trap_control_counts_the_online_path() {
     // The instrument check: the same helper under an online profile asks the
-    // trapped OCSP endpoint, so a zero above is a measurement, not silence.
-    let trap = endpoint_trap();
-    let before = trap.attempts.load(std::sync::atomic::Ordering::SeqCst);
+    // OCSP endpoint, so a zero above is a measurement, not silence. On Unix
+    // the trap counts it; on Windows the harness does.
+    let before = helper_contacts();
     let gateway = python_gateway("certificate.der", true, vec![]);
-    let verifier = SyntheticCpuRealGpu {
-        nvattest_dir: real_helper_dir(),
-        profiles: real_helper_profiles(solstone_core_spp_attest::nvgpu::StatusMode::OnlineNonce),
-        now: at(REAL_PROOFS_VERIFIED_AT),
-    };
+    let verifier = real_helper(
+        solstone_core_spp_attest::nvgpu::StatusMode::OnlineNonce,
+        REAL_PROOFS_VERIFIED_AT,
+    );
     let error = rejected(establish_python(
         gateway.port,
         &verifier,
@@ -1915,7 +2164,9 @@ fn real_helper_trap_control_counts_the_online_path() {
     ));
     assert_eq!(error.reason_code, "gpu_appraisal_failed");
     drop(gateway.finish());
-    assert!(trap.attempts.load(std::sync::atomic::Ordering::SeqCst) > before);
+    if let (Some(before), Some(after)) = (before, helper_contacts()) {
+        assert!(after > before);
+    }
 }
 
 #[cfg(feature = "test-hooks")]
@@ -1940,5 +2191,351 @@ fn fixture_seam_refuses_every_non_loopback_endpoint_before_resolution() {
             0,
         ));
         assert_eq!(error.reason_code, "test_endpoint_not_loopback");
+    }
+}
+
+// --- the app-local Windows payload, through the production locator ----------
+//
+// Operator-run with the real-helper variables above, plus
+// SOLSTONE_SPP_TEST_NVATTEST_FIXTURES naming the offline appraisal fixtures
+// (`offline/gpu-evidence.json`, `offline/rims`, `offline/bundle.der`). Each
+// mutation of the named payload is restored before the next case.
+
+#[cfg(all(windows, feature = "real-helper-tests"))]
+mod windows_payload {
+    use super::*;
+    use solstone_core_spp_attest::error::GpuAppraisalReason;
+    use solstone_core_spp_attest::nvgpu::{
+        NvattestVerdict, StatusExpectation, appraise::run_nvattest_for_tests,
+        build_nvattest_offline_attest_command, classify_nvattest_result, parse_nvattest_stdout,
+    };
+    use std::path::PathBuf;
+
+    const OFFLINE_NONCE: &str = "a892c0c66c8a5abf562b00223099061ae2c789673515554ccee5ea276a377ef1";
+
+    fn fixtures() -> PathBuf {
+        PathBuf::from(
+            std::env::var_os("SOLSTONE_SPP_TEST_NVATTEST_FIXTURES")
+                .expect("SOLSTONE_SPP_TEST_NVATTEST_FIXTURES names the offline fixtures"),
+        )
+    }
+
+    fn nonce() -> [u8; 32] {
+        let mut nonce = [0; 32];
+        for (index, byte) in nonce.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&OFFLINE_NONCE[index * 2..index * 2 + 2], 16).unwrap();
+        }
+        nonce
+    }
+
+    /// One offline appraisal through the production locator and launch.
+    fn appraise(root: &Path, evidence: &Path) -> Result<Output, GpuAppraisalReason> {
+        let fixtures = fixtures();
+        let command = build_nvattest_offline_attest_command(
+            root,
+            evidence,
+            &nonce(),
+            &fixtures.join("offline").join("rims"),
+            &fixtures.join("offline").join("bundle.der"),
+            REAL_PROOFS_VERIFIED_AT as i64,
+        )?;
+        run_nvattest_for_tests(command, Duration::from_secs(60))
+    }
+
+    use std::process::Output;
+
+    fn classify(output: &Output) -> NvattestVerdict {
+        let stdout = String::from_utf8(output.stdout.clone()).expect("UTF-8 helper output");
+        let parsed = parse_nvattest_stdout(&stdout).expect("helper JSON");
+        classify_nvattest_result(
+            output.status.code().unwrap_or(-1),
+            &parsed,
+            &nonce(),
+            StatusExpectation::OfflineSignedAge {
+                verification_time_unix: REAL_PROOFS_VERIFIED_AT as i64,
+            },
+        )
+    }
+
+    fn evidence() -> PathBuf {
+        fixtures().join("offline").join("gpu-evidence.json")
+    }
+
+    fn assert_admits(root: &Path) {
+        let output = appraise(root, &evidence()).expect("the helper runs");
+        assert!(
+            matches!(classify(&output), NvattestVerdict::Accepted(_)),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+
+    /// Runs `body` with `path` changed, restoring the original bytes after.
+    fn with_changed(path: &Path, change: impl FnOnce(&Path), body: impl FnOnce()) {
+        let original = std::fs::read(path).expect("payload member");
+        change(path);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+        if std::fs::read(path).ok().as_deref() != Some(original.as_slice()) {
+            std::fs::write(path, &original).expect("restore");
+        }
+        if let Err(panic) = result {
+            std::panic::resume_unwind(panic);
+        }
+    }
+
+    fn icacls(path: &Path, args: &[&str]) {
+        let status = std::process::Command::new("icacls")
+            .arg(path)
+            .args(args)
+            .status()
+            .expect("icacls");
+        assert!(status.success(), "icacls {args:?}");
+    }
+
+    #[test]
+    #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
+    fn real_helper_windows_payload_refuses_missing_changed_and_denied_members() {
+        let root = real_helper_dir();
+        assert_admits(&root);
+        for member in [
+            "bin/nvattest.exe",
+            "share/ca/ca-bundle.pem",
+            "bin/msvcp140.dll",
+            "bin/vcruntime140.dll",
+            "bin/vcruntime140_1.dll",
+        ] {
+            let path = root.join(member);
+            with_changed(
+                &path,
+                |path| std::fs::remove_file(path).unwrap(),
+                || assert!(appraise(&root, &evidence()).is_err(), "missing {member}"),
+            );
+            with_changed(
+                &path,
+                |path| {
+                    let mut bytes = std::fs::read(path).unwrap();
+                    let last = bytes.len() - 1;
+                    bytes[last] ^= 1;
+                    std::fs::write(path, bytes).unwrap();
+                },
+                || {
+                    assert_eq!(
+                        appraise(&root, &evidence()).unwrap_err(),
+                        GpuAppraisalReason::NvattestIntegrityFailed,
+                        "changed {member}"
+                    )
+                },
+            );
+        }
+        // An owner who cannot read the pinned CA cannot appraise with it.
+        let ca = root.join("share/ca/ca-bundle.pem");
+        let user = std::env::var("USERNAME").expect("USERNAME");
+        icacls(&ca, &["/deny", &format!("{user}:(R)")]);
+        let denied = std::panic::catch_unwind(|| appraise(&root, &evidence()));
+        icacls(&ca, &["/remove:d", &user]);
+        assert!(denied.expect("no panic").is_err(), "denied CA");
+        // A DLL planted beside the helper is outside the signed inventory.
+        let planted = root.join("bin/version.dll");
+        std::fs::write(&planted, b"planted").unwrap();
+        let result = appraise(&root, &evidence());
+        std::fs::remove_file(&planted).unwrap();
+        assert_eq!(
+            result.unwrap_err(),
+            GpuAppraisalReason::NvattestIntegrityFailed
+        );
+        assert_admits(&root);
+    }
+
+    #[test]
+    #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
+    fn real_helper_windows_paths_refuse_unc_and_beyond_max_path() {
+        let root = real_helper_dir();
+        let canonical = std::fs::canonicalize(&root).unwrap();
+        let text = canonical
+            .to_str()
+            .unwrap()
+            .trim_start_matches(r"\\?\")
+            .to_owned();
+        let drive = &text[..1];
+        let rest = &text[3..];
+        for unc in [
+            format!(r"\\localhost\{drive}$\{rest}"),
+            format!(r"\\?\UNC\localhost\{drive}$\{rest}"),
+        ] {
+            assert!(
+                appraise(Path::new(&unc), &evidence()).is_err(),
+                "UNC root {unc}"
+            );
+        }
+        // A root whose helper path exceeds MAX_PATH in UTF-16 units refuses
+        // before anything is verified or launched.
+        let scratch = TempTestDir::new("win-payload");
+        let mut long = scratch.path().to_path_buf();
+        while long.to_str().unwrap().encode_utf16().count() < 300 {
+            long.push("长路径段");
+        }
+        std::fs::create_dir_all(long.join("bin")).unwrap();
+        std::fs::copy(root.join("bin/nvattest.exe"), long.join("bin/nvattest.exe")).unwrap();
+        assert_eq!(
+            appraise(&long, &evidence()).unwrap_err(),
+            GpuAppraisalReason::NvattestUnavailable
+        );
+        // An evidence path beyond MAX_PATH refuses before launch too.
+        let long_evidence = long.join("gpu-evidence.json");
+        std::fs::copy(evidence(), &long_evidence).unwrap();
+        assert!(appraise(&root, &long_evidence).is_err());
+    }
+
+    #[test]
+    #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
+    fn real_helper_windows_malformed_evidence_and_helper_output_refuse() {
+        let root = real_helper_dir();
+        let scratch = TempTestDir::new("win-payload");
+        let original = std::fs::read(evidence()).unwrap();
+        let truncated = scratch.path().join("truncated.json");
+        std::fs::write(&truncated, &original[..original.len() / 2]).unwrap();
+        let not_json = scratch.path().join("not-json.json");
+        std::fs::write(&not_json, b"\x00\xffnot evidence").unwrap();
+        for malformed in [&truncated, &not_json] {
+            let output = appraise(&root, malformed).expect("the helper runs");
+            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+            let refused = match parse_nvattest_stdout(&stdout) {
+                Err(_) => true,
+                Ok(parsed) => !matches!(
+                    classify_nvattest_result(
+                        output.status.code().unwrap_or(-1),
+                        &parsed,
+                        &nonce(),
+                        StatusExpectation::OfflineSignedAge {
+                            verification_time_unix: REAL_PROOFS_VERIFIED_AT as i64,
+                        },
+                    ),
+                    NvattestVerdict::Accepted(_)
+                ),
+            };
+            assert!(
+                refused,
+                "malformed evidence {} admitted",
+                malformed.display()
+            );
+        }
+        // The helper's own accepted output, cut short or extended, does not parse
+        // as an acceptance.
+        let output = appraise(&root, &evidence()).expect("the helper runs");
+        assert!(matches!(classify(&output), NvattestVerdict::Accepted(_)));
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        for malformed in [
+            stdout[..stdout.len() / 2].to_owned(),
+            format!("{stdout}{stdout}"),
+            stdout.replacen('{', "[", 1),
+        ] {
+            let admitted = parse_nvattest_stdout(&malformed).is_ok_and(|parsed| {
+                matches!(
+                    classify_nvattest_result(
+                        0,
+                        &parsed,
+                        &nonce(),
+                        StatusExpectation::OfflineSignedAge {
+                            verification_time_unix: REAL_PROOFS_VERIFIED_AT as i64,
+                        },
+                    ),
+                    NvattestVerdict::Accepted(_)
+                )
+            });
+            assert!(!admitted, "malformed helper output admitted");
+        }
+    }
+
+    #[test]
+    #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
+    fn real_helper_windows_launch_ignores_hostile_environment_and_cwd() {
+        // The positive control: the same appraisal admits here first.
+        assert_admits(&real_helper_dir());
+        let hostile = TempTestDir::new("win-hostile");
+        for planted in [
+            "vcruntime140.dll",
+            "vcruntime140_1.dll",
+            "msvcp140.dll",
+            "libcrypto-3-x64.dll",
+            "version.dll",
+        ] {
+            std::fs::write(hostile.path().join(planted), b"planted").unwrap();
+        }
+        std::fs::write(
+            hostile.path().join("evil.cnf"),
+            b"openssl_conf = evil\n[evil]\n",
+        )
+        .unwrap();
+        // The child re-runs the positive offline appraisal under the hostile
+        // environment and working directory; it must admit unchanged.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "windows_payload::real_helper_windows_hostile_environment_driver",
+                "--ignored",
+                "--nocapture",
+                "--test-threads",
+                "1",
+            ])
+            .env("PATH", hostile.path())
+            .env("OPENSSL_CONF", hostile.path().join("evil.cnf"))
+            .env("OPENSSL_MODULES", hostile.path())
+            .env("OPENSSL_ENGINES", hostile.path())
+            .env("SSL_CERT_FILE", hostile.path().join("evil.cnf"))
+            .env("SSL_CERT_DIR", hostile.path())
+            .env("CURL_CA_BUNDLE", hostile.path().join("evil.cnf"))
+            .env("NVAT_OCSP_BASE_URL", "http://192.0.2.1/")
+            .env("NVAT_RIM_SERVICE_BASE_URL", "http://192.0.2.1/")
+            .env("NVAT_NRAS_BASE_URL", "http://192.0.2.1/")
+            .env("HTTPS_PROXY", "http://192.0.2.1:3128")
+            .env("HTTP_PROXY", "http://192.0.2.1:3128")
+            .env("ALL_PROXY", "http://192.0.2.1:3128")
+            .current_dir(hostile.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        // Without the OS root the launch refuses before starting the helper.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "windows_payload::real_helper_windows_missing_system_root_driver",
+                "--ignored",
+                "--nocapture",
+                "--test-threads",
+                "1",
+            ])
+            .env_remove("SystemRoot")
+            .env_remove("SYSTEMROOT")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+    }
+
+    #[test]
+    #[ignore = "child process entry"]
+    fn real_helper_windows_hostile_environment_driver() {
+        assert_admits(&real_helper_dir());
+    }
+
+    #[test]
+    #[ignore = "child process entry"]
+    fn real_helper_windows_missing_system_root_driver() {
+        assert!(std::env::var_os("SystemRoot").is_none());
+        assert_eq!(
+            appraise(&real_helper_dir(), &evidence()).unwrap_err(),
+            GpuAppraisalReason::NvattestUnavailable
+        );
     }
 }

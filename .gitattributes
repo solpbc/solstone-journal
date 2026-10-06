@@ -7,3 +7,4 @@ scripts/win-ci.cmd text eol=crlf
 
 # Preserve the exact upstream notice bytes used by the source index.
 core/distribution/*-rust-NOTICES.txt -text -whitespace
+core/distribution/nvattest-windows-NOTICES.md -text -whitespace
