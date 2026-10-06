@@ -86,6 +86,7 @@
     crashed: new Map(),         // Crashed services (separate from running)
     tasks: [],
     health: null,
+    searchIndex: null,
     queues: {},                 // From supervisor.status
     schedules: [],              // From supervisor.status
     agents: new Map(),
@@ -483,6 +484,7 @@
     loadMediaBacklog();
     try {
       const payload = await getJson('/app/health/api/state');
+      state.searchIndex = payload.search_index || null;
       renderBacklogState(payload.backlog, payload.search_index);
       renderAgentErrorsState(payload.agent_errors);
     } catch (error) {
@@ -829,6 +831,13 @@
         key: 'HEALTH_GLANCE_CLIENT_SILENT',
         vars: { age: relativeTime(ageMs) },
         action: GLANCE_DEVICES_ACTION,
+      };
+    }
+
+    if (state.searchIndex && ['degraded', 'incomplete'].includes(state.searchIndex.state) && state.searchIndex.text) {
+      return {
+        key: 'HEALTH_GLANCE_BRAIN_ATTENTION',
+        vars: { headline: state.searchIndex.text },
       };
     }
 

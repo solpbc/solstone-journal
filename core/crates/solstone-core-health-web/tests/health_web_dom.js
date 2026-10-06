@@ -373,23 +373,28 @@ function extractGlanceFunction(source) {
   return source.slice(start, end);
 }
 
-function glanceFor(crashed, staleHeartbeats) {
+function glanceFor(crashed, staleHeartbeats, searchIndex = null, attention = {}) {
   const context = vm.createContext({ Array, Object, String, Number, Math, Set, Map });
   context.crashedEntries = crashed;
   context.staleHeartbeats = staleHeartbeats;
+  context.searchIndex = searchIndex;
+  context.brainSnapshot = attention.brain || null;
+  context.deviceVerdict = attention.device || null;
+  context.clients = attention.clients || [];
   vm.runInContext(`
     const connectError = false;
-    const brainSnapshot = null;
+    const GLANCE_DEVICES_ACTION = {};
     const STALE_MS = 1;
     const SERVICE_NAMES = {};
     function serviceName(internal) { return String(internal || '').replace(/[_:-]+/g, ' '); }
-    function selectDeviceVerdict() { return null; }
+    function selectDeviceVerdict() { return deviceVerdict; }
     function relativeTime() { return ''; }
     function ageAgo() { return ''; }
     const state = {
-      agents: new Map(), imports: new Map(), clients: new Map(), services: new Map([['observe', {}]]),
+      agents: new Map(), imports: new Map(), clients: new Map(clients), services: new Map([['observe', {}]]),
       crashed: new Map(crashedEntries.map(name => [name, {}])),
       health: { stale_heartbeats: staleHeartbeats },
+      searchIndex,
       connected: true,
     };
     ${extractGlanceFunction(loadHealthSource())}
@@ -410,6 +415,55 @@ test('a stale check-in is not counted as a failing service', async () => {
 
   const none = glanceFor([], []);
   assert.strictEqual(none.key, 'HEALTH_GLANCE_OK');
+});
+
+test('known failed or incomplete search prevents an otherwise healthy headline', async () => {
+  for (const searchState of ['degraded', 'incomplete']) {
+    const search = { state: searchState, text: 'search needs attention' };
+    const selection = glanceFor([], [], search);
+    assert.notStrictEqual(selection.key, 'HEALTH_GLANCE_OK');
+    assert.strictEqual(selection.vars.headline, search.text);
+  }
+  assert.strictEqual(glanceFor([], [], { state: 'active', text: 'index activity' }).key, 'HEALTH_GLANCE_OK');
+  assert.strictEqual(glanceFor(['observe'], [], { state: 'degraded', text: 'search needs attention' }).key, 'HEALTH_GLANCE_SERVICE_ATTENTION');
+  const search = { state: 'degraded', text: 'search needs attention' };
+  const thinking = glanceFor([], [], search, { brain: { state: 'blocked', headline: 'thinking needs attention' } });
+  assert.strictEqual(thinking.vars.headline, 'thinking needs attention');
+  const device = { key: 'HEALTH_GLANCE_DEVICE_FAILING', vars: { device: 'work laptop' } };
+  assert.strictEqual(glanceFor([], [], search, { device }).key, device.key);
+  const quietClient = glanceFor([], [], search, { clients: [['work laptop', { lastSeen: -10 }]] });
+  assert.strictEqual(quietClient.key, 'HEALTH_GLANCE_CLIENT_SILENT');
+});
+
+test('loaded search status reaches the headline and survives a later state-read error', async () => {
+  const { context } = createEnvironment();
+  const source = loadHealthSource();
+  const loaderStart = source.indexOf('async function loadHealthState(');
+  const loaderEnd = source.indexOf('let timeoutFired', loaderStart);
+  const errorsStart = source.indexOf('function renderAgentErrorsState(');
+  const errorsEnd = source.indexOf('function renderMediaBacklog(', errorsStart);
+  assert.ok(loaderStart >= 0 && loaderEnd > loaderStart && errorsStart >= 0 && errorsEnd > errorsStart);
+  context.state = {};
+  context.elements = {};
+  context.loadMediaBacklog = () => {};
+  context.seedAgentErrors = () => {};
+  context.updateStatusSummary = () => { context.selection = glanceFor([], [], context.state.searchIndex); };
+  context.renderHealthStateError = (error) => { context.readError = error; };
+  const search = { state: 'degraded', text: 'search needs attention' };
+  context.getJson = async (route) => {
+    assert.strictEqual(route, '/app/health/api/state');
+    return { backlog: {}, search_index: search, agent_errors: {} };
+  };
+  vm.runInContext(source.slice(errorsStart, errorsEnd) + source.slice(loaderStart, loaderEnd), context);
+  await vm.runInContext('loadHealthState()', context);
+  assert.strictEqual(context.state.searchIndex, search);
+  assert.notStrictEqual(context.selection.key, 'HEALTH_GLANCE_OK');
+  assert.strictEqual(context.selection.vars.headline, search.text);
+  const readError = new Error('state unavailable');
+  context.getJson = async () => { throw readError; };
+  await vm.runInContext('loadHealthState()', context);
+  assert.strictEqual(context.readError, readError);
+  assert.strictEqual(context.state.searchIndex, search);
 });
 
 async function runAsyncCases() {
