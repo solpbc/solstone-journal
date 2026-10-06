@@ -140,6 +140,8 @@ impl PlatformTag {
         {
             Self::Linux
         }
+        // iOS inherits the macOS tag so the crate compiles for iOS. This is
+        // not a qualified iOS identity design.
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             Self::Macos

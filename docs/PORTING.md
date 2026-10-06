@@ -22,6 +22,8 @@ Do not add shims, fallback aliases, or dual Python/Rust paths.
 compilation support. Nothing is packaged, installed or run, and it is not a
 claim that the journal runs on iOS: process lifecycle, supervisor admission and
 readiness refuse on iOS in source, and every engine is still a separate program.
+Installation identity still maps iOS to the macOS platform tag and an absolute
+installation path. That is inherited, not a qualified iOS identity design.
 
 - **Minimum iOS:** 26.0, set as `IPHONEOS_DEPLOYMENT_TARGET` for cargo's
   children only. Exported into a shell that also builds host tools, Apple clang
