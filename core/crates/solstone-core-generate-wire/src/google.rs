@@ -13,7 +13,9 @@ use crate::NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS;
 use crate::endpoint::EndpointTransportError;
 use crate::schema_prep::prepare_provider_schema;
 use crate::thinking::{
-    Thinking, byo_thinking, google_budgets, google_ceiling, google_refused_thinking,
+    GoogleThinkingControl, Thinking, byo_thinking, google_budgets, google_ceiling, google_levels,
+    google_refused_thinking, google_rejected_thinking_level,
+    google_rejected_thinking_level_control,
 };
 
 const GOOGLE_API_KEY_ENV: &str = "GOOGLE_API_KEY";
@@ -134,17 +136,21 @@ fn google_generate_with_lookup<T: GoogleTransport>(
     let base_url = crate::overrides::configured_base_url_with(config, GOOGLE_BASE_URL, env);
     let path = format!("/v1beta/models/{model}:generateContent");
     let thinking = byo_thinking(config);
+    let levels = google_levels(thinking);
     let budgets = google_budgets(thinking);
-    let mut step = 0;
+    let timeout = request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking));
+    enum Phase {
+        Level(usize),
+        Budget(usize),
+    }
+    let mut phase = Phase::Level(0);
     let response = loop {
-        let body = request_body(request, &model, thinking, budgets[step]);
-        let response = match transport.post_json(
-            &base_url,
-            &path,
-            &body,
-            &api_key,
-            request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking)),
-        ) {
+        let control = match phase {
+            Phase::Level(i) => GoogleThinkingControl::Level(levels[i]),
+            Phase::Budget(i) => GoogleThinkingControl::Budget(budgets[i]),
+        };
+        let body = request_body(request, &model, thinking, control);
+        let response = match transport.post_json(&base_url, &path, &body, &api_key, timeout) {
             Ok(response) => response,
             Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
             Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
@@ -155,19 +161,53 @@ fn google_generate_with_lookup<T: GoogleTransport>(
                 return failure("provider_response_invalid");
             }
         };
-        // A model that refuses this thinking budget answers INVALID_ARGUMENT; try
-        // the next budget before failing the talent.
-        if step + 1 < budgets.len()
-            && google_refused_thinking(
-                response.status,
-                &response.body,
-                is_context_window_error(&response.body),
-            )
-        {
-            step += 1;
-            continue;
+        // A level value rejection tries the next level. A level-control refusal drops the
+        // remaining levels and starts `google_budgets` at its first value. The bare invalid-argument
+        // sentence steps only on the budget ladder.
+        match phase {
+            Phase::Level(i) => {
+                if google_rejected_thinking_level(response.status, &response.body, levels[i]) {
+                    if i + 1 < levels.len() {
+                        phase = Phase::Level(i + 1);
+                        continue;
+                    } else {
+                        break response;
+                    }
+                }
+                if google_rejected_thinking_level_control(response.status, &response.body) {
+                    phase = Phase::Budget(0);
+                    continue;
+                }
+                break response;
+            }
+            Phase::Budget(i) => {
+                let is_schema_or_content = serde_json::from_str::<Value>(&response.body)
+                    .ok()
+                    .and_then(|v| {
+                        v.pointer("/error/message")
+                            .and_then(Value::as_str)
+                            .map(|msg| {
+                                let msg = msg.to_ascii_lowercase();
+                                msg.contains("schema") || msg.contains("content")
+                            })
+                    })
+                    .unwrap_or(false);
+                if is_schema_or_content || response.body.contains("API_KEY_INVALID") {
+                    break response;
+                }
+                if i + 1 < budgets.len()
+                    && google_refused_thinking(
+                        response.status,
+                        &response.body,
+                        is_context_window_error(&response.body),
+                    )
+                {
+                    phase = Phase::Budget(i + 1);
+                    continue;
+                }
+                break response;
+            }
         }
-        break response;
     };
     if !(200..300).contains(&response.status) {
         let reason_code = classify_http_failure(response.status, &response.body);
@@ -181,15 +221,15 @@ fn google_generate_with_lookup<T: GoogleTransport>(
 }
 
 /// Build the smallest request every Gemini model accepts: contents, an output
-/// ceiling, an optional system instruction, the JSON response format, and the
-/// thinking budget being tried. Sampling controls are never sent. The ceiling is
+/// ceiling, an optional system instruction, the JSON response format, and one
+/// thinking control, level or budget. Sampling controls are never sent. The ceiling is
 /// the talent's own visible budget plus the thinking room, which Gemini's total
 /// cap may clamp but never below the visible part.
 fn request_body(
     request: &GenerateRequest,
     _model: &str,
     thinking: Thinking,
-    thinking_budget: u64,
+    control: GoogleThinkingControl,
 ) -> Value {
     let parts = request
         .contents
@@ -201,11 +241,15 @@ fn request_body(
             }
         })
         .collect::<Vec<_>>();
+    let thinking_config = match control {
+        GoogleThinkingControl::Level(level) => json!({"thinkingLevel": level}),
+        GoogleThinkingControl::Budget(budget) => json!({"thinkingBudget": budget}),
+    };
     let mut body = json!({
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
             "maxOutputTokens": google_ceiling(request.max_output_tokens, thinking),
-            "thinkingConfig": {"thinkingBudget": thinking_budget},
+            "thinkingConfig": thinking_config,
         },
     });
     if let Some(system) = &request.system_instruction {
@@ -461,6 +505,7 @@ mod tests {
         base_urls: Vec<String>,
         paths: Vec<String>,
         api_keys: Vec<String>,
+        timeouts: Vec<Duration>,
     }
 
     impl GoogleTransport for StubTransport {
@@ -470,12 +515,13 @@ mod tests {
             path: &str,
             body: &Value,
             api_key: &str,
-            _timeout: Duration,
+            timeout: Duration,
         ) -> Result<HttpResponse, EndpointTransportError> {
             self.posts.push(body.clone());
             self.base_urls.push(base_url.to_owned());
             self.paths.push(path.to_owned());
             self.api_keys.push(api_key.to_owned());
+            self.timeouts.push(timeout);
             self.responses.remove(0)
         }
     }
@@ -555,16 +601,31 @@ mod tests {
         crate::validation::isolated_journal_dir("google")
     }
 
-    fn post_with(budget: Option<u64>, responses: Vec<HttpResponse>) -> Vec<Value> {
+    fn generate_with_recorded(
+        budget: Option<u64>,
+        req: &GenerateRequest,
+        responses: Vec<Result<HttpResponse, EndpointTransportError>>,
+    ) -> (GoogleResult, StubTransport) {
         let mut config = config(Some("configured-secret"), None);
         if let Some(budget) = budget {
             config["providers"]["byo_thinking_budget"] = json!(budget);
         }
+        let original_config = config.clone();
         let mut transport = StubTransport {
-            responses: responses.into_iter().map(Ok).collect(),
+            responses,
             ..Default::default()
         };
-        let _ = google_generate_with(&request(), &config, &mut transport);
+        let result = google_generate_with(req, &config, &mut transport);
+        assert_eq!(
+            config, original_config,
+            "config map must be unchanged after call"
+        );
+        (result, transport)
+    }
+
+    fn post_with(budget: Option<u64>, responses: Vec<HttpResponse>) -> Vec<Value> {
+        let (_result, transport) =
+            generate_with_recorded(budget, &request(), responses.into_iter().map(Ok).collect());
         transport.posts
     }
 
@@ -576,21 +637,104 @@ mod tests {
         }
     }
 
+    fn value_rejection(level: &str) -> HttpResponse {
+        HttpResponse {
+            status: 400,
+            body: json!({"error": {"code": 400, "message": format!("Thinking level {level} is not supported for this model. Please retry with other thinking level."), "status": "INVALID_ARGUMENT"}}).to_string(),
+        }
+    }
+
+    fn control_rejection() -> HttpResponse {
+        HttpResponse {
+            status: 400,
+            body: json!({"error": {"code": 400, "message": "Thinking level is not supported for this model.", "status": "INVALID_ARGUMENT"}}).to_string(),
+        }
+    }
+
+    fn schema_refusal() -> HttpResponse {
+        HttpResponse {
+            status: 400,
+            body: json!({"error": {"code": 400, "message": "Invalid response schema.", "status": "INVALID_ARGUMENT"}}).to_string(),
+        }
+    }
+
+    fn content_refusal() -> HttpResponse {
+        HttpResponse {
+            status: 400,
+            body: json!({"error": {"code": 400, "message": "The submitted content violates the content policy.", "status": "INVALID_ARGUMENT"}}).to_string(),
+        }
+    }
+
+    fn api_key_invalid() -> HttpResponse {
+        HttpResponse {
+            status: 400,
+            body: json!({"error": {"code": 400, "message": "API key not valid. Please pass a valid API key.", "status": "INVALID_ARGUMENT", "details": [{"reason": "API_KEY_INVALID"}]}}).to_string(),
+        }
+    }
+
     #[test]
     fn thinking_off_asks_for_no_thinking_and_steps_up_only_when_refused() {
         let posts = post_with(
             None,
             vec![
+                value_rejection("MINIMAL"),
+                control_rejection(),
                 invalid_argument(),
                 invalid_argument(),
                 response(successful_body()),
             ],
         );
-        let budgets = posts
-            .iter()
-            .map(|body| body["generationConfig"]["thinkingConfig"]["thinkingBudget"].clone())
-            .collect::<Vec<_>>();
-        assert_eq!(budgets, vec![json!(0), json!(128), json!(512)]);
+        assert_eq!(posts.len(), 5);
+        assert_eq!(
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MINIMAL"
+        );
+        assert!(
+            posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+
+        assert_eq!(
+            posts[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "LOW"
+        );
+        assert!(
+            posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+
+        assert_eq!(
+            posts[2]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            0
+        );
+        assert!(
+            posts[2]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+
+        assert_eq!(
+            posts[3]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            128
+        );
+        assert!(
+            posts[3]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+
+        assert_eq!(
+            posts[4]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            512
+        );
+        assert!(
+            posts[4]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+
         for body in &posts {
             assert_eq!(body["generationConfig"]["maxOutputTokens"], 4_000 + 1_024);
             assert!(body["generationConfig"].get("temperature").is_none());
@@ -601,21 +745,48 @@ mod tests {
     fn an_owner_budget_is_sent_and_added_to_the_visible_budget() {
         let posts = post_with(
             Some(32_768),
-            vec![invalid_argument(), response(successful_body())],
+            vec![
+                control_rejection(),
+                invalid_argument(),
+                response(successful_body()),
+            ],
         );
+        assert_eq!(posts.len(), 3);
         assert_eq!(
-            posts[0]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
-            32_768
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "HIGH"
         );
-        // Gemini 2.5 Flash caps a thinking budget at 24,576.
+        assert!(
+            posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+
         assert_eq!(
             posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            32_768
+        );
+        assert!(
+            posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+
+        // Gemini 2.5 Flash caps a thinking budget at 24,576.
+        assert_eq!(
+            posts[2]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
             24_576
         );
-        assert_eq!(
-            posts[0]["generationConfig"]["maxOutputTokens"],
-            4_000 + 32_768
+        assert!(
+            posts[2]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
         );
+
+        for body in &posts {
+            assert_eq!(body["generationConfig"]["maxOutputTokens"], 4_000 + 32_768);
+            assert!(body["generationConfig"].get("temperature").is_none());
+        }
     }
 
     #[test]
@@ -664,8 +835,12 @@ mod tests {
             "items": {"type": "string", "maxLength": 2, "minimum": 0},
             "properties": {"nested": {"type": "string", "minLength": 1, "maximum": 3}},
         }));
-        let config =
-            &request_body(&request, "gemini-test-model", Thinking::Off, 0)["generationConfig"];
+        let config = &request_body(
+            &request,
+            "gemini-test-model",
+            Thinking::Off,
+            GoogleThinkingControl::Level("MINIMAL"),
+        )["generationConfig"];
         let schema = &config["responseJsonSchema"];
         assert_eq!(config["responseMimeType"], "application/json");
         assert!(schema.get("minLength").is_none());
@@ -684,8 +859,12 @@ mod tests {
     fn json_output_without_schema_uses_only_response_mime_type() {
         let mut request = request();
         request.json_output = true;
-        let config =
-            &request_body(&request, "gemini-test-model", Thinking::Off, 0)["generationConfig"];
+        let config = &request_body(
+            &request,
+            "gemini-test-model",
+            Thinking::Off,
+            GoogleThinkingControl::Level("MINIMAL"),
+        )["generationConfig"];
         assert_eq!(config["responseMimeType"], "application/json");
         assert!(config.get("responseJsonSchema").is_none());
     }
@@ -719,7 +898,12 @@ mod tests {
             mime_type: "image/png".into(),
             data: "encoded".into(),
         });
-        let body = request_body(&request, "gemini-test-model", Thinking::Off, 0);
+        let body = request_body(
+            &request,
+            "gemini-test-model",
+            Thinking::Off,
+            GoogleThinkingControl::Level("MINIMAL"),
+        );
         assert_eq!(body["contents"][0]["parts"][0], json!({"text": "hello"}));
         assert_eq!(
             body["contents"][0]["parts"][1],
@@ -1072,5 +1256,717 @@ mod tests {
             classify_http_failure(400, r#"{"error":{"status":"INVALID_ARGUMENT"}}"#),
             "provider_request_rejected"
         );
+    }
+
+    #[test]
+    fn first_post_sends_level_without_budget_for_all_configs() {
+        for (budget, expected_level) in [
+            (None, "MINIMAL"),
+            (Some(0), "MINIMAL"),
+            (Some(8_192), "LOW"),
+            (Some(16_384), "MEDIUM"),
+            (Some(32_768), "HIGH"),
+        ] {
+            let posts = post_with(budget, vec![response(successful_body())]);
+            assert_eq!(posts.len(), 1);
+            assert_eq!(
+                posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+                expected_level
+            );
+            assert!(
+                posts[0]["generationConfig"]["thinkingConfig"]
+                    .get("thinkingBudget")
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn value_rejection_steps_to_next_level_and_exhaustion_stops_without_budgets() {
+        // Off: MINIMAL value-rejection then LOW, no budget key
+        let posts = post_with(
+            None,
+            vec![value_rejection("MINIMAL"), response(successful_body())],
+        );
+        assert_eq!(posts.len(), 2);
+        assert_eq!(
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MINIMAL"
+        );
+        assert!(
+            posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert_eq!(
+            posts[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "LOW"
+        );
+        assert!(
+            posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+
+        // 8192: value-rejection is one post (LOW) and GoogleResult::Failed, no budget
+        let (result, transport) =
+            generate_with_recorded(Some(8_192), &request(), vec![Ok(value_rejection("LOW"))]);
+        assert_eq!(transport.posts.len(), 1);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "LOW"
+        );
+        assert!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert!(matches!(result, GoogleResult::Failed(_)));
+
+        // 16384: MEDIUM value-rejection's next post is LOW, not HIGH, and has no budget.
+        // A following LOW value-rejection returns Failed and does not post a budget.
+        let (result, transport) = generate_with_recorded(
+            Some(16_384),
+            &request(),
+            vec![Ok(value_rejection("MEDIUM")), Ok(value_rejection("LOW"))],
+        );
+        assert_eq!(transport.posts.len(), 2);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MEDIUM"
+        );
+        assert!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert_eq!(
+            transport.posts[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "LOW"
+        );
+        assert!(
+            transport.posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert!(matches!(result, GoogleResult::Failed(_)));
+
+        // 32768: one HIGH value-rejection returns Failed in one post
+        let (result, transport) =
+            generate_with_recorded(Some(32_768), &request(), vec![Ok(value_rejection("HIGH"))]);
+        assert_eq!(transport.posts.len(), 1);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "HIGH"
+        );
+        assert!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert!(matches!(result, GoogleResult::Failed(_)));
+    }
+
+    #[test]
+    fn control_refusal_starts_saved_budget_ladder_and_has_no_level() {
+        // absent / 0 -> budgets 0, 128, 512
+        let posts = post_with(None, vec![control_rejection(), response(successful_body())]);
+        assert_eq!(posts.len(), 2);
+        assert_eq!(
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MINIMAL"
+        );
+        assert!(
+            posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert_eq!(
+            posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            0
+        );
+        assert!(
+            posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+
+        // 8192 -> budget 8192 only
+        let posts = post_with(
+            Some(8_192),
+            vec![control_rejection(), response(successful_body())],
+        );
+        assert_eq!(posts.len(), 2);
+        assert_eq!(
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "LOW"
+        );
+        assert!(
+            posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert_eq!(
+            posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            8_192
+        );
+        assert!(
+            posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+
+        // 16384 -> budget 16384 only (LOW is NOT posted)
+        let posts = post_with(
+            Some(16_384),
+            vec![control_rejection(), response(successful_body())],
+        );
+        assert_eq!(posts.len(), 2);
+        assert_eq!(
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MEDIUM"
+        );
+        assert!(
+            posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert_eq!(
+            posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            16_384
+        );
+        assert!(
+            posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+
+        // 32768 -> budget 32768 then 24576
+        let posts = post_with(
+            Some(32_768),
+            vec![
+                control_rejection(),
+                invalid_argument(),
+                response(successful_body()),
+            ],
+        );
+        assert_eq!(posts.len(), 3);
+        assert_eq!(
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "HIGH"
+        );
+        assert!(
+            posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert_eq!(
+            posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            32_768
+        );
+        assert!(
+            posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+        assert_eq!(
+            posts[2]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            24_576
+        );
+        assert!(
+            posts[2]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn success_on_level_posts_once_and_never_posts_budget() {
+        // Off: MINIMAL value-rejected, LOW then 200 -> exactly two posts, both levels, no budget
+        let posts = post_with(
+            None,
+            vec![value_rejection("MINIMAL"), response(successful_body())],
+        );
+        assert_eq!(posts.len(), 2);
+        assert_eq!(
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MINIMAL"
+        );
+        assert!(
+            posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert_eq!(
+            posts[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "LOW"
+        );
+        assert!(
+            posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+
+        // 16384: first-try MEDIUM 200 is one post, level MEDIUM, no budget
+        let posts = post_with(Some(16_384), vec![response(successful_body())]);
+        assert_eq!(posts.len(), 1);
+        assert_eq!(
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MEDIUM"
+        );
+        assert!(
+            posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn exhausted_ladders_produce_provider_request_rejected_with_last_body() {
+        // Exhausted off, control refused on MINIMAL, then bare budget refusals:
+        // posts: level MINIMAL, budget 0, budget 128, budget 512
+        let last_body_off = invalid_argument().body;
+        let (result, transport) = generate_with_recorded(
+            None,
+            &request(),
+            vec![
+                Ok(control_rejection()),
+                Ok(invalid_argument()),
+                Ok(invalid_argument()),
+                Ok(invalid_argument()),
+            ],
+        );
+        assert_eq!(transport.posts.len(), 4);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MINIMAL"
+        );
+        assert_eq!(
+            transport.posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            0
+        );
+        assert_eq!(
+            transport.posts[2]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            128
+        );
+        assert_eq!(
+            transport.posts[3]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            512
+        );
+        let GoogleResult::Failed(failure) = result else {
+            panic!("must fail");
+        };
+        let refusal = refusal_for(&LaneOutcome::GoogleFailure(failure), "google", None);
+        assert_eq!(
+            refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+            Some("provider_request_rejected")
+        );
+        assert_eq!(refusal.detail, last_body_off);
+
+        // Exhausted 32768: level HIGH, budget 32768, budget 24576
+        let last_body_32k = invalid_argument().body;
+        let (result, transport) = generate_with_recorded(
+            Some(32_768),
+            &request(),
+            vec![
+                Ok(control_rejection()),
+                Ok(invalid_argument()),
+                Ok(invalid_argument()),
+            ],
+        );
+        assert_eq!(transport.posts.len(), 3);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "HIGH"
+        );
+        assert_eq!(
+            transport.posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            32_768
+        );
+        assert_eq!(
+            transport.posts[2]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            24_576
+        );
+        let GoogleResult::Failed(failure) = result else {
+            panic!("must fail");
+        };
+        let refusal = refusal_for(&LaneOutcome::GoogleFailure(failure), "google", None);
+        assert_eq!(
+            refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+            Some("provider_request_rejected")
+        );
+        assert_eq!(refusal.detail, last_body_32k);
+
+        // Longer off path: MINIMAL value-rejected, LOW control-refused, then budgets 0, 128, 512
+        let (result, transport) = generate_with_recorded(
+            None,
+            &request(),
+            vec![
+                Ok(value_rejection("MINIMAL")),
+                Ok(control_rejection()),
+                Ok(invalid_argument()),
+                Ok(invalid_argument()),
+                Ok(invalid_argument()),
+            ],
+        );
+        assert_eq!(transport.posts.len(), 5);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MINIMAL"
+        );
+        assert!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert_eq!(
+            transport.posts[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "LOW"
+        );
+        assert!(
+            transport.posts[1]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert_eq!(
+            transport.posts[2]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            0
+        );
+        assert!(
+            transport.posts[2]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+        assert_eq!(
+            transport.posts[3]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            128
+        );
+        assert!(
+            transport.posts[3]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+        assert_eq!(
+            transport.posts[4]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            512
+        );
+        assert!(
+            transport.posts[4]["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none()
+        );
+        assert!(matches!(result, GoogleResult::Failed(_)));
+    }
+
+    #[test]
+    fn terminal_errors_stop_in_single_post_and_stop_budget_ladder() {
+        let terminal_cases = [
+            (
+                Ok(HttpResponse {
+                    status: 401,
+                    body: "{}".into(),
+                }),
+                "provider_key_invalid",
+            ),
+            (
+                Ok(HttpResponse {
+                    status: 403,
+                    body: "{}".into(),
+                }),
+                "provider_key_invalid",
+            ),
+            (
+                Ok(api_key_invalid()),
+                "provider_key_invalid",
+            ),
+            (
+                Ok(HttpResponse {
+                    status: 429,
+                    body: "{}".into(),
+                }),
+                "provider_quota_exceeded",
+            ),
+            (
+                Ok(HttpResponse {
+                    status: 500,
+                    body: "{}".into(),
+                }),
+                "provider_unavailable",
+            ),
+            (
+                Err(EndpointTransportError::Connection),
+                "network_unreachable",
+            ),
+            (
+                Ok(HttpResponse {
+                    status: 400,
+                    body: json!({"error": {"message": "The input token count (1200000) exceeds the maximum number of tokens allowed (1048576).", "status": "INVALID_ARGUMENT"}}).to_string(),
+                }),
+                "context_window_exceeded",
+            ),
+            (
+                Ok(schema_refusal()),
+                "provider_request_rejected",
+            ),
+            (
+                Ok(content_refusal()),
+                "provider_request_rejected",
+            ),
+        ];
+
+        for (response, expected_code) in terminal_cases {
+            let (result, transport) = generate_with_recorded(None, &request(), vec![response]);
+            assert_eq!(transport.posts.len(), 1);
+            let GoogleResult::Failed(failure) = result else {
+                panic!("case must fail");
+            };
+            assert_eq!(failure.reason_code.as_deref(), Some(expected_code));
+        }
+
+        // After control refusal has entered budget ladder, explicit schema or content stops further budgets
+        let (result, transport) = generate_with_recorded(
+            None,
+            &request(),
+            vec![Ok(control_rejection()), Ok(schema_refusal())],
+        );
+        assert_eq!(transport.posts.len(), 2);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MINIMAL"
+        );
+        assert_eq!(
+            transport.posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            0
+        );
+        assert!(matches!(result, GoogleResult::Failed(_)));
+    }
+
+    #[test]
+    fn bare_invalid_argument_stops_on_level_and_steps_only_in_budget_phase() {
+        // Bare INVALID_ARGUMENT on first level posts once and does not start budgets
+        let (result, transport) =
+            generate_with_recorded(None, &request(), vec![Ok(invalid_argument())]);
+        assert_eq!(transport.posts.len(), 1);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MINIMAL"
+        );
+        assert!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        assert!(matches!(result, GoogleResult::Failed(_)));
+
+        // The same bare body after a control refusal walks the remaining budget ladder
+        let (result, transport) = generate_with_recorded(
+            None,
+            &request(),
+            vec![
+                Ok(control_rejection()),
+                Ok(invalid_argument()),
+                Ok(invalid_argument()),
+                Ok(response(successful_body())),
+            ],
+        );
+        assert_eq!(transport.posts.len(), 4);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MINIMAL"
+        );
+        assert_eq!(
+            transport.posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            0
+        );
+        assert_eq!(
+            transport.posts[2]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            128
+        );
+        assert_eq!(
+            transport.posts[3]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            512
+        );
+        assert!(matches!(result, GoogleResult::Generated(_)));
+    }
+
+    #[test]
+    fn sampling_omitted_and_ceilings_timeouts_clamp_stable() {
+        let mut req = request();
+        req.system_instruction = Some("system test".into());
+        req.temperature = 0.3;
+        req.json_schema = Some(json!({"type": "object"}));
+        req.json_output = true;
+
+        for (budget, expected_ceiling, expected_timeout_secs) in [
+            (None, 5024, 136),
+            (Some(0), 5024, 136),
+            (Some(8_192), 12192, 248),
+            (Some(16_384), 20384, 376),
+            (Some(32_768), 36768, 632),
+        ] {
+            let responses = if budget == Some(8_192) || budget == Some(16_384) {
+                vec![Ok(control_rejection()), Ok(response(successful_body()))]
+            } else {
+                vec![
+                    Ok(control_rejection()),
+                    Ok(invalid_argument()),
+                    Ok(response(successful_body())),
+                ]
+            };
+            let (result, transport) = generate_with_recorded(budget, &req, responses);
+            assert!(matches!(result, GoogleResult::Generated(_)));
+            assert!(transport.posts.len() >= 2);
+            for post in &transport.posts {
+                assert!(post.get("temperature").is_none());
+                assert!(post.get("topP").is_none());
+                assert!(post.get("topK").is_none());
+                assert!(post.get("top_p").is_none());
+                assert!(post.get("top_k").is_none());
+                assert!(post["generationConfig"].get("temperature").is_none());
+                assert!(post["generationConfig"].get("topP").is_none());
+                assert!(post["generationConfig"].get("topK").is_none());
+                assert!(post["generationConfig"].get("top_p").is_none());
+                assert!(post["generationConfig"].get("top_k").is_none());
+
+                assert_eq!(
+                    post["generationConfig"]["maxOutputTokens"],
+                    expected_ceiling
+                );
+                assert_eq!(post["contents"], transport.posts[0]["contents"]);
+                assert_eq!(
+                    post["systemInstruction"],
+                    transport.posts[0]["systemInstruction"]
+                );
+                assert_eq!(
+                    post["generationConfig"]["responseJsonSchema"],
+                    transport.posts[0]["generationConfig"]["responseJsonSchema"]
+                );
+                assert_eq!(
+                    post["generationConfig"]["responseMimeType"],
+                    transport.posts[0]["generationConfig"]["responseMimeType"]
+                );
+            }
+            for timeout in &transport.timeouts {
+                assert_eq!(*timeout, Duration::from_secs(expected_timeout_secs));
+            }
+        }
+
+        // Clamp tests with saved 32768
+        let mut clamp_40k = req.clone();
+        clamp_40k.max_output_tokens = 40_000;
+        let (_result, transport_40k) = generate_with_recorded(
+            Some(32_768),
+            &clamp_40k,
+            vec![Ok(control_rejection()), Ok(response(successful_body()))],
+        );
+        for post in &transport_40k.posts {
+            assert_eq!(post["generationConfig"]["maxOutputTokens"], 65535);
+        }
+
+        let mut clamp_70k = req.clone();
+        clamp_70k.max_output_tokens = 70_000;
+        let (_result, transport_70k) = generate_with_recorded(
+            Some(32_768),
+            &clamp_70k,
+            vec![Ok(control_rejection()), Ok(response(successful_body()))],
+        );
+        for post in &transport_70k.posts {
+            assert_eq!(post["generationConfig"]["maxOutputTokens"], 70000);
+        }
+
+        // Explicit timeout_s: Some(45.0)
+        let mut req_explicit_timeout = req.clone();
+        req_explicit_timeout.timeout_s = Some(45.0);
+        let (_result, transport_explicit) = generate_with_recorded(
+            Some(32_768),
+            &req_explicit_timeout,
+            vec![Ok(control_rejection()), Ok(response(successful_body()))],
+        );
+        for timeout in &transport_explicit.timeouts {
+            assert_eq!(*timeout, Duration::from_secs_f64(45.0));
+        }
+    }
+
+    #[test]
+    fn empty_text_validations_distinguish_thinking_consumed_from_invalid() {
+        let mut body = successful_body();
+        body["candidates"] = json!([{
+            "content": {"parts": [{"text": ""}]},
+            "finishReason": "MAX_TOKENS",
+        }]);
+        body["usageMetadata"] = json!({
+            "promptTokenCount": 10,
+            "candidatesTokenCount": 20,
+            "totalTokenCount": 30,
+            "thoughtsTokenCount": 15,
+        });
+        let (result, transport) =
+            generate_with_recorded(Some(8_192), &request(), vec![Ok(response(body))]);
+        assert_eq!(transport.posts.len(), 1);
+        assert_eq!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "LOW"
+        );
+        assert!(
+            transport.posts[0]["generationConfig"]["thinkingConfig"]
+                .get("thinkingBudget")
+                .is_none()
+        );
+        let GoogleResult::Generated(success) = result else {
+            panic!("must succeed as Generated");
+        };
+        let journal = temp_journal();
+        let assessment = assess_provider_result(ProviderResultView {
+            journal_path: &journal,
+            context: "test.generate",
+            model: &success.model,
+            text: &success.text,
+            finish_reason: &success.finish_reason,
+            usage: &success.usage,
+            json_output: false,
+            enforce_responsiveness: false,
+            raw_response_snippet: success.raw_response_snippet.as_deref(),
+            thinking_seen: false,
+        });
+        assert_eq!(
+            assessment.failure,
+            Some(ValidationFailure::ThinkingConsumedBudget { json_output: false })
+        );
+        let _ = fs::remove_dir_all(journal);
+
+        // Second case: empty text, finishReason STOP, no thoughts -> ProviderResponseInvalid
+        let mut body_invalid = successful_body();
+        body_invalid["candidates"] = json!([{
+            "content": {"parts": [{"text": ""}]},
+            "finishReason": "STOP",
+        }]);
+        body_invalid["usageMetadata"] = json!({
+            "promptTokenCount": 10,
+            "candidatesTokenCount": 0,
+            "totalTokenCount": 10,
+        });
+        let (result_invalid, _) =
+            generate_with_recorded(None, &request(), vec![Ok(response(body_invalid))]);
+        let GoogleResult::Generated(success_invalid) = result_invalid else {
+            panic!("must succeed as Generated");
+        };
+        let journal = temp_journal();
+        let assessment_invalid = assess_provider_result(ProviderResultView {
+            journal_path: &journal,
+            context: "test.generate",
+            model: &success_invalid.model,
+            text: &success_invalid.text,
+            finish_reason: &success_invalid.finish_reason,
+            usage: &success_invalid.usage,
+            json_output: false,
+            enforce_responsiveness: false,
+            raw_response_snippet: success_invalid.raw_response_snippet.as_deref(),
+            thinking_seen: false,
+        });
+        assert!(matches!(
+            assessment_invalid.failure,
+            Some(ValidationFailure::ProviderResponseInvalid { .. })
+        ));
+        let _ = fs::remove_dir_all(journal);
     }
 }

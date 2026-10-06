@@ -164,7 +164,7 @@ refuses that field:
 |---|---|---|
 | OpenAI | `reasoning.effort` `none`, then `low`, then none; ceiling + 1,024 | `medium`, `high` or `xhigh`, stepping down one level if refused; ceiling + budget |
 | Anthropic | `output_config.effort` `low`, then none; ceiling + 1,024 | adaptive thinking at `medium`, `high` or `xhigh`, or a fixed `budget_tokens` on a model without effort; ceiling + budget |
-| Google | `thinkingBudget` `0`, then `128`, then `512`; ceiling + 1,024 | `thinkingBudget` equal to the budget (`24576` where a model caps it lower); ceiling + budget, capped at 65,535 in total |
+| Google | `thinkingLevel` `MINIMAL`, then `LOW` if that level value is rejected; if the level control itself is refused, `thinkingBudget` `0`, then `128`, then `512`; ceiling + 1,024 | `thinkingLevel` `LOW` at 8192, `MEDIUM` then `LOW` at 16384, or `HIGH` at 32768; a rejected level value steps only to the next listed level and never starts budgets; if the level control is refused, `thinkingBudget` equal to the budget, with `24576` after `32768`; ceiling + budget, capped at 65,535 in total |
 | configured endpoint | nothing sent | nothing sent; ceiling + budget as room for a model that thinks on its own |
 
 The 1,024 covers the reasoning a current cloud model still does at its lowest
