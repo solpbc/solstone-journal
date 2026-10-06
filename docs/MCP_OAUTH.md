@@ -119,6 +119,7 @@ Only these callback shapes are admitted:
   Codex-style `/callback/<id>` path)
 - exactly `https://claude.ai/api/mcp/auth_callback`
 - exactly `https://chatgpt.com/connector_platform_oauth_redirect`
+- exactly `https://grok.com/connectors-oauth-exchange-code/`
 - `https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-<id>`
   for the observed Gemini custom-app callback shape. `<id>` is one nonempty
   segment of at most 160 ASCII letters, digits, underscores or hyphens.

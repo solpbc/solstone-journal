@@ -38,8 +38,9 @@ pub use install::{
     dispatch as dispatch_install,
 };
 pub use nvidia::{
-    ArtifactTrust, Backend, BackendChoice, CUDA_EMBEDDED_ARCH_SET, CUDA_MIN_DRIVER_VERSION,
-    MemorySource, NvidiaProbe, hardware_backend_rejection, probe_nvidia_gpu, select_local_backend,
+    ArtifactTrust, Backend, BackendChoice, BackendSelection, CUDA_EMBEDDED_ARCH_SET,
+    CUDA_MIN_DRIVER_VERSION, MemorySource, NvidiaProbe, hardware_backend_rejection,
+    probe_nvidia_gpu, select_local_backend,
 };
 pub use plan::{LaunchPlan, PlanInput, PlanOutcome, Platform, VulkanDevice, plan};
 pub use vulkan::{

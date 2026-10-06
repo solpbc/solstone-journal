@@ -957,6 +957,30 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn a_strava_workout_is_daily_evidence_for_its_day_once() {
+        let root = root("daily-sources-strava");
+        for (key, index) in [("070200_300", 0), ("070700_300", 1)] {
+            write(
+                &root,
+                &format!("chronicle/20260910/import.strava/{key}/workout.json"),
+                &serde_json::json!({
+                    "activity_id": 9,
+                    "tile": {"index": index, "count": 2},
+                    "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0}
+                })
+                .to_string(),
+            );
+        }
+        let sources = capture_day_sources(&root, "20260910").unwrap();
+        let workouts = sources
+            .iter()
+            .filter(|chunk| chunk.text.contains("## Strava workout: Morning Run"))
+            .collect::<Vec<_>>();
+        assert_eq!(workouts.len(), 1);
+        assert_eq!(workouts[0].agent, "import.strava");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn daily_evidence_projection_preserves_agent_and_original_chunk_identity() {
         let root = root("daily-source-chunks");
         write(

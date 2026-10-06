@@ -1430,7 +1430,10 @@ mod tests {
             .join(receipt.origin.stream)
             .join(receipt.origin.segment);
         let note = segment.join("note.txt");
-        fs::File::open(&note)
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&note)
             .unwrap()
             .set_times(
                 std::fs::FileTimes::new()

@@ -332,6 +332,34 @@ pub(crate) fn current_owner_centroid(
     }
 }
 
+/// Cosine between one recording's voice (the unit sum of its unit statement
+/// embeddings among `sentence_ids`) and the unit vector `centroid`. `None` when
+/// the recording holds none of those statements.
+pub(crate) fn recording_similarity(
+    segment: &Path,
+    source: &str,
+    sentence_ids: &BTreeSet<i64>,
+    centroid: &[f32],
+) -> Option<f32> {
+    let Ok(Some(embeddings)) = load_embeddings_file(&segment.join(format!("{source}.npz"))) else {
+        return None;
+    };
+    let mut total = vec![0.0f32; centroid.len()];
+    for (sentence_id, embedding) in &embeddings.statements {
+        if !sentence_ids.contains(sentence_id) {
+            continue;
+        }
+        let Some(embedding) = normalize_embedding(embedding) else {
+            continue;
+        };
+        for (sum, value) in total.iter_mut().zip(&embedding) {
+            *sum += value;
+        }
+    }
+    let center = normalize_embedding(&total)?;
+    Some(dot(&center, centroid))
+}
+
 pub(crate) fn load_member_embedding(
     journal_root: &Path,
     member: &MemberProvenance,

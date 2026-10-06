@@ -11,7 +11,7 @@ use std::{
 use ring::rand::{SecureRandom, SystemRandom};
 use solstone_core_spp_attest::{
     CpuBundle, GpuAppraiser, NvattestGpuAppraiser, appraise_cpu_leg,
-    error::{CpuLegError, GpuAppraisalReason, PcrFingerprintError},
+    error::{CpuLegError, GpuAppraisalReason, PcrFingerprintError, SnpVerifyError},
     locate_nvattest,
     nvgpu::{GpuProfiles, GpuStatusInput},
     production_policy,
@@ -206,6 +206,10 @@ fn cpu_error(error: CpuLegError) -> CompositeVerificationError {
             source: PcrFingerprintError::PinMismatch(_),
             ..
         } => composite_error("pcr_pin_mismatch"),
+        CpuLegError::SnpVerify {
+            source: SnpVerifyError::PolicyIdKeyAbsent | SnpVerifyError::PolicyIdKeyNotPinned,
+            ..
+        } => composite_error("id_key_pin_mismatch"),
         _ => composite_error("cpu_verification_failed"),
     }
 }
@@ -545,6 +549,27 @@ mod tests {
             ..solstone_core_spp_attest::Policy::default()
         };
         assert!(fixture.verify(Some(&record_policy), &appraiser).is_ok());
+    }
+
+    #[test]
+    fn id_key_pin_rejects_before_gpu_with_its_own_reason() {
+        let fixture = Fixture::load();
+        for pinned in [
+            std::collections::BTreeSet::from([[0x5a; 48]]),
+            std::collections::BTreeSet::new(),
+        ] {
+            let appraiser = FixtureGpuAppraiser::accepted();
+            let policy = solstone_core_spp_attest::Policy {
+                id_key_digests: Some(pinned),
+                ..solstone_core_spp_attest::production_policy()
+            };
+            let error = fixture
+                .verify(Some(&policy), &appraiser)
+                .expect_err("unpinned firmware signer rejects");
+            assert_eq!(error.reason_code, "id_key_pin_mismatch");
+            assert!(!appraiser.called.load(Ordering::SeqCst));
+            assert!(!error.to_string().contains("942fd93e"));
+        }
     }
 
     #[test]

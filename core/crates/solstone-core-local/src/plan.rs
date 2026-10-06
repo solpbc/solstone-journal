@@ -10,7 +10,8 @@ use serde_json::Value;
 
 use crate::LoopbackAddr;
 use crate::nvidia::{
-    ArtifactTrust, Backend, NVIDIA_PROBE_SCHEMA, NvidiaProbe, select_local_backend,
+    ArtifactTrust, Backend, BackendSelection, NVIDIA_PROBE_SCHEMA, NvidiaProbe,
+    select_local_backend,
 };
 use crate::tier::{
     CAPABLE_CONTEXT_TOKENS, CAPABLE_MIN_VRAM_MIB, CAPABLE_PARALLEL_SLOTS, CAPABLE_PROMPT_CACHE_MIB,
@@ -265,6 +266,9 @@ fn plan_linux(input: PlanInput) -> PlanOutcome {
     if let Some(backend) = input.backend_override {
         return match backend {
             PlanBackend::Cuda => {
+                if input.cuda_artifact_trust == Some(ArtifactTrust::Integrity) {
+                    return rejected("cuda runtime integrity failure");
+                }
                 let Some(probe) = input.nvidia_probe.as_ref() else {
                     return rejected("CUDA override requires NVIDIA probe");
                 };
@@ -303,27 +307,34 @@ fn plan_linux(input: PlanInput) -> PlanOutcome {
         if let (Some(min_driver), Some(trust)) =
             (input.cuda_min_driver_version, input.cuda_artifact_trust)
         {
-            let choice = select_local_backend(
+            let selection = select_local_backend(
                 probe,
                 &arch_set,
                 min_driver,
                 trust,
                 input.cuda_persisted_installed_cuda_target.unwrap_or(false),
             );
-            if choice.backend == Backend::Cuda {
-                let memory = probe.vram_mib.or(probe.unified_memory_mib);
-                if let Some(memory) = memory {
-                    Some((
-                        probe.gpu_index,
-                        probe.gpu_name.clone(),
-                        memory,
-                        choice.reason,
-                    ))
-                } else {
-                    None
+            match selection {
+                BackendSelection::IntegrityBlocked => {
+                    return rejected("cuda runtime integrity failure");
                 }
-            } else {
-                None
+                BackendSelection::Selected(choice) => {
+                    if choice.backend == Backend::Cuda {
+                        let memory = probe.vram_mib.or(probe.unified_memory_mib);
+                        if let Some(memory) = memory {
+                            Some((
+                                probe.gpu_index,
+                                probe.gpu_name.clone(),
+                                memory,
+                                choice.reason,
+                            ))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
             }
         } else {
             None
@@ -802,6 +813,30 @@ mod tests {
         missing_binary.backend_override = Some(PlanBackend::Cuda);
         missing_binary.cuda_binary_path = None;
         assert_rejected(missing_binary, "cuda binary path is required");
+    }
+    #[test]
+    fn cuda_integrity_trust_rejects_plan_and_cuda_override() {
+        let mut inp = input(16_000);
+        inp.cuda_artifact_trust = Some(ArtifactTrust::Integrity);
+        assert_rejected(inp.clone(), "cuda runtime integrity failure");
+
+        let mut cuda_override = inp.clone();
+        cuda_override.backend_override = Some(PlanBackend::Cuda);
+        assert_rejected(cuda_override, "cuda runtime integrity failure");
+
+        let mut undetected = inp;
+        undetected.nvidia_probe = Some(NvidiaProbe::undetected("no nvidia-smi".into()));
+        undetected.vulkan_devices = Some(vec![VulkanDevice {
+            index: 1,
+            name: "Vulkan".into(),
+            device_type: Some(1),
+            vram_mib: 16_000,
+        }]);
+        undetected.vulkan_selected_gpu_index = Some(1);
+        undetected.vulkan_selected_gpu_name = Some("Vulkan".into());
+        undetected.vulkan_selected_vram_mib = Some(16_000);
+        let plan = launch(undetected);
+        assert_eq!(plan.backend, PlanBackend::Vulkan);
     }
     #[test]
     fn plan_rejects_invalid_or_unknown_nvidia_probe_fields() {

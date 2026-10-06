@@ -32,6 +32,10 @@ const SYSTEM_DLLS: &[&str] = &[
     // supported Windows; never supplied by the payload.
     "comctl32.dll",
     "dbghelp.dll",
+    // DWM, for the journal app's native caption appearance. Present on both
+    // supported Windows versions; newer caption attributes remain optional.
+    // https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmsetwindowattribute
+    "dwmapi.dll",
     "dxgi.dll",
     "gdi32.dll",
     // IP Helper. The journal's pair-link discovery calls

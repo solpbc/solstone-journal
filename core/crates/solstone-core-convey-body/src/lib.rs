@@ -27,7 +27,7 @@ mod window;
 pub use aggregate::{
     HealthDedupeStats, HealthDedupeStatsError, HealthDedupeTimeRange, read_health_dedupe_stats,
 };
-pub use chronicle::{ChronicleReadError, find_day_summary, has_chronicle_day};
+pub use chronicle::{ChronicleReadError, find_day_summary};
 pub use health::{
     BodyStoreHealthError, BodyStoreHealthReason, BodyStoreHealthVerdict, read_body_store_health,
 };
@@ -58,7 +58,7 @@ pub use solstone_core_body_source::{BodyValue, FieldState, ValueState};
 pub use trends::{
     TrendAnnotation, TrendCoverage, TrendSignal, TrendValue, TrendsCacheError, TrendsFoldError,
     TrendsPayload, TrendsWarmOutcome, TrendsWarmProbe, read_trends_cache, replace_trends_cache,
-    typical_by_signal, warm_trends,
+    warm_trends,
 };
 
 #[cfg(all(test, not(feature = "full-tests")))]

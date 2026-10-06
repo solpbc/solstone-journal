@@ -13,11 +13,6 @@ use sha2::{Digest, Sha256};
 
 const PLACEHOLDER_ROOT: &str = "<journal-root>";
 
-/// Returns the recorded JSON payload for one corpus phase and route rule.
-pub(crate) fn recorded(phase: &str, rule: &str) -> Value {
-    recorded_case(phase, rule)["json"].clone()
-}
-
 /// Reports the first structural difference between two JSON values.
 pub(crate) fn first_difference(left: &Value, right: &Value, path: &str) -> Option<String> {
     match (left, right) {

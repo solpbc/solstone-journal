@@ -73,10 +73,6 @@ pub fn find_day_summary(
     Ok(None)
 }
 
-pub fn has_chronicle_day(journal_root: impl AsRef<Path>, day: &str) -> bool {
-    journal_root.as_ref().join("chronicle").join(day).is_dir()
-}
-
 #[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
@@ -144,14 +140,6 @@ mod tests {
         assert!(
             matches!(find_day_summary(temporary.path(), "20240104"), Err(ChronicleReadError::Read { path, .. }) if path == first)
         );
-    }
-
-    #[test]
-    fn chronicle_day_predicate_is_independent_of_summary_files() {
-        let temporary = TempDir::new();
-        fs::create_dir_all(temporary.path().join("chronicle/20240105")).unwrap();
-        assert!(has_chronicle_day(temporary.path(), "20240105"));
-        assert!(!has_chronicle_day(temporary.path(), "20240106"));
     }
 
     #[test]

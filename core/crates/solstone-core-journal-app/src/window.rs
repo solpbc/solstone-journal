@@ -10,7 +10,11 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::Graphics::Dwm::{
+    DWMWA_CAPTION_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute,
+};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows_sys::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
 };
@@ -20,7 +24,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     MINMAXINFO, MSG, PostMessageW, PostQuitMessage, RegisterClassExW, SIZE_MINIMIZED,
     SPI_GETWORKAREA, SW_MINIMIZE, SW_RESTORE, SW_SHOWMINNOACTIVE, SW_SHOWNORMAL, SWP_NOZORDER,
     SetForegroundWindow, SetWindowPos, ShowWindow, SystemParametersInfoW, TranslateMessage, WM_APP,
-    WM_CLOSE, WM_DESTROY, WM_GETMINMAXINFO, WM_MOVE, WM_SIZE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+    WM_CLOSE, WM_DESTROY, WM_GETMINMAXINFO, WM_MOVE, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED,
+    WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
 };
 
 /// What other threads can ask of the window.
@@ -63,6 +68,62 @@ thread_local! {
 
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// Keep the native caption on the page's cream ground and system appearance.
+/// The frame remains Windows' own, including its buttons and resize behavior.
+fn apply_caption_appearance(hwnd: HWND) {
+    let key = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let name = wide("AppsUseLightTheme");
+    let mut light = 1_u32;
+    let mut size = size_of::<u32>() as u32;
+    // SAFETY: the strings are NUL-terminated, and the DWORD output has the
+    // exact size admitted by RRF_RT_REG_DWORD. A missing preference is light.
+    let result = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&raw mut light).cast(),
+            &raw mut size,
+        )
+    };
+    let dark = i32::from(result == 0 && light == 0);
+    // Derive the native COLORREF from the same compiled tokens as the page;
+    // a token revision must change both without a second palette to maintain.
+    let tokens = if dark != 0 {
+        include_str!("../../solstone-core-convey-shell/assets/static/tokens-dark.css")
+    } else {
+        include_str!("../../solstone-core-convey-shell/assets/static/tokens.css")
+    };
+    let hex = tokens
+        .split("--cream:")
+        .nth(1)
+        .expect("the page defines its cream ground")
+        .trim_start()
+        .strip_prefix('#')
+        .expect("the cream ground is an RGB token");
+    let rgb = u32::from_str_radix(&hex[..6], 16).expect("the cream ground is an RGB token");
+    let caption = ((rgb & 0xff) << 16) | (rgb & 0xff00) | ((rgb >> 16) & 0xff);
+    // SAFETY: hwnd is the live top-level window, both attributes read one
+    // four-byte value for this call, and neither retains the pointer. DWM
+    // attributes unsupported on Win10 leave the native default intact.
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+            (&raw const dark).cast(),
+            size_of::<i32>() as u32,
+        );
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR as u32,
+            (&raw const caption).cast(),
+            size_of::<u32>() as u32,
+        );
+    }
 }
 
 /// Hands work to the window from any thread.
@@ -136,6 +197,7 @@ impl Window {
             )
         };
         assert!(!hwnd.is_null(), "create the journal window");
+        apply_caption_appearance(hwnd);
         let window = Self {
             hwnd,
             queue: Arc::default(),
@@ -272,6 +334,11 @@ unsafe extern "system" fn window_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match message {
+        WM_SETTINGCHANGE | WM_THEMECHANGED => {
+            apply_caption_appearance(hwnd);
+            // SAFETY: forwarding the unchanged system appearance notification.
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
         WM_APP_EVENT => {
             loop {
                 let next = QUEUE.with(|slot| {

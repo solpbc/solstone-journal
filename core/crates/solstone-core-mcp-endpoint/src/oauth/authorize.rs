@@ -487,7 +487,8 @@ fn pairing_error(error: OAuthStoreError) -> HttpResponse {
         ),
         OAuthStoreError::TransactionNotFound
         | OAuthStoreError::TransactionExpired
-        | OAuthStoreError::TransactionExhausted => expired_error(),
+        | OAuthStoreError::TransactionExhausted
+        | OAuthStoreError::InvalidToken => expired_error(),
         OAuthStoreError::NoActivePairing => local_error(
             "there's no open pairing code. make one in the agents app, then connect from your agent again.",
         ),
@@ -771,6 +772,7 @@ fn redirect_host_label(parsed: &super::redirect::ParsedRedirectUri) -> String {
         RedirectHost::Claude => "claude.ai",
         RedirectHost::ChatGpt => "chatgpt.com",
         RedirectHost::Gemini => "oauth-redirect.googleusercontent.com",
+        RedirectHost::Grok => "grok.com",
     };
     match parsed.port {
         Some(port) => format!("{host}:{port}"),
@@ -1561,6 +1563,21 @@ mod tests {
         );
         assert_eq!(response.status, 302);
         assert_eq!(header(&response, "Cache-Control"), Some("no-store"));
+        // Returning from a client app and submitting the completed consent
+        // again is an invalid request, not an unavailable authorization service.
+        let repeated = post_authorize(
+            &post_request(&format!(
+                "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
+                query_value_encode(&transaction_id),
+                query_value_encode(&pairing.code)
+            )),
+            SOURCE,
+            &oauth,
+        );
+        let expired = super::expired_error();
+        assert_eq!(repeated.status, expired.status);
+        assert_eq!(body_text(&repeated), body_text(&expired));
+        assert!(header(&repeated, "Location").is_none());
         let location = header(&response, "Location").unwrap();
         assert!(location.contains(&format!("state={}", query_value_encode("st&ate"))));
         assert!(location.contains(&format!("iss={}", query_value_encode(ORIGIN))));

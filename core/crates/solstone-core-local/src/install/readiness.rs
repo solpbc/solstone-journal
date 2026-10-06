@@ -29,7 +29,7 @@ pub fn inspect_local_present(input: Map<String, Value>) -> Value {
 fn inspect_local_with(
     input: Map<String, Value>,
     check_manifest: fn(&Path, &Value, &[&str]) -> Value,
-    choose_backend: fn(&Path, Option<crate::NvidiaProbe>) -> crate::BackendChoice,
+    choose_backend: fn(&Path, Option<crate::NvidiaProbe>) -> crate::nvidia::BackendSelection,
     resolve_package: impl FnOnce() -> Result<
         super::windows_engine::WindowsLlamaPackage,
         super::windows_engine::WindowsLlamaPackageError,
@@ -59,13 +59,79 @@ fn inspect_local_with(
         .transpose()
         .ok()
         .flatten();
-    let choice = if key == "x86_64-windows" {
-        crate::BackendChoice {
+    let selection = if key == "x86_64-windows" {
+        crate::nvidia::BackendSelection::Selected(crate::BackendChoice {
             backend: crate::Backend::Vulkan,
             reason: "Windows packaged Vulkan runtime".into(),
-        }
+        })
     } else {
         choose_backend(&journal, nvidia_probe)
+    };
+    let choice = match selection {
+        crate::nvidia::BackendSelection::Selected(choice) => choice,
+        crate::nvidia::BackendSelection::IntegrityBlocked => {
+            let root = pins::cache_root(&journal);
+            let model_root = root.join("models").join(model_id.replace('/', "__"));
+            let model_identity = pins::model_identity(model_id).unwrap_or(Value::Null);
+            let model_file = model_identity
+                .get("filename")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let projector_file = model_identity
+                .get("mmproj_filename")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let model_proof = check_manifest(
+                &manifest::artifact_manifest_path(&model_root),
+                &model_identity,
+                &[model_file, projector_file],
+            );
+            let (binary_root, identity) = (
+                pins::cuda_pin(key).map(|(_, digest, _)| root.join("cuda").join(key).join(digest)),
+                pins::cuda_identity(key),
+            );
+            let platform_supported = identity.is_some();
+            let binary_root = binary_root.unwrap_or_else(|| root.join("missing"));
+            let binary_path = binary_root.join("llama-server");
+            let binary_proof = json!({
+                "status": "missing-or-mismatched",
+                "reason_code": "cuda_runtime_integrity",
+                "cache_hit": false
+            });
+            let install = status::read_status(&journal, "local")
+                .map(|value| serde_json::to_value(value).unwrap())
+                .unwrap_or(Value::Null);
+            return json!({
+                "provider": "local",
+                "ready": false,
+                "status": "missing-or-mismatched",
+                "reason_code": "cuda_runtime_integrity",
+                "target": {
+                    "model_id": model_id,
+                    "target_fingerprint_json": install["target_fingerprint_json"],
+                    "target_fingerprint_sha256": install["target_fingerprint_sha256"]
+                },
+                "install": install,
+                "host": {
+                    "platform_supported": platform_supported,
+                    "backend": "cuda",
+                    "backend_reason": "cuda runtime integrity failure",
+                    "vulkan_observation": input.get("vulkan_observation").cloned().unwrap_or(Value::Null)
+                },
+                "artifacts": {
+                    "model_id": model_id,
+                    "binary_installed": false,
+                    "model_installed": model_proof["status"] == "ready",
+                    "binary_path": binary_path,
+                    "model_path": model_root.join(model_file),
+                    "projector_path": model_root.join(projector_file)
+                },
+                "proof": {
+                    "binary": binary_proof,
+                    "model": model_proof
+                }
+            });
+        }
     };
     let backend = match choice.backend {
         crate::Backend::Cuda => "cuda",
