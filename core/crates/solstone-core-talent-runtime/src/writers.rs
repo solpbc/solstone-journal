@@ -975,14 +975,15 @@ mod tests {
         let before_inode = fs::metadata(&path).unwrap().ino();
         let locked = std::fs::OpenOptions::new().read(true).open(&path).unwrap();
         let _lock = Flock::lock(locked, FlockArg::LockExclusiveNonblock).unwrap();
-        // A classified path would fail to open this as the index directory.
-        // Reaching no warning therefore proves append_day_record saw Declined.
-        fs::write(root.path().join("indexer"), b"not a directory").unwrap();
+        // Admission creates the stable lock before checking eligibility.
+        // A declined path still leaves the database absent and emits no warning.
         reset_index_warnings();
         let mut record = Map::from_iter([("new".to_owned(), json!(true))]);
         append_day_record(root.path(), "20260101", "nested/unrecognized", &mut record).unwrap();
         assert_ne!(fs::metadata(&path).unwrap().ino(), before_inode);
         assert_eq!(index_warnings(), 0);
+        assert!(!root.path().join("indexer/journal.sqlite").exists());
+        assert!(root.path().join("indexer/journal.sqlite.lock").is_file());
     }
 
     #[cfg(all(test, feature = "full-tests"))]

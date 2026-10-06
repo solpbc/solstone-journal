@@ -49,6 +49,7 @@ solstone-core-speaker-resolve.workspace = true
 nix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 serde_json.workspace = true
 solstone-core-npy.workspace = true
 tempfile = "3.24.0"

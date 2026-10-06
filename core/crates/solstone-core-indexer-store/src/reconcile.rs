@@ -26,7 +26,8 @@ use solstone_core_indexer::stream::extract_stream;
 
 use crate::StoreError;
 use crate::classification::{FacetDeclarationSet, classify_source};
-use crate::db::{ChunkClassification, open_index, replace_chunk_classification};
+use crate::db::{ChunkClassification, open_index_admitted, replace_chunk_classification};
+use crate::writer_admission::IndexAdmission;
 
 const BATCH: usize = 500;
 const MAX_RESTARTS: usize = 3;
@@ -54,7 +55,8 @@ pub fn reconcile_stale_classifications(
     journal: &Path,
     snapshot: &mut dyn FnMut() -> Result<FacetDeclarationSet, StoreError>,
 ) -> Result<ReconcileReport, StoreError> {
-    let mut conn = open_index(journal)?;
+    let admission = IndexAdmission::acquire(journal, "reconcile-classifications")?;
+    let mut conn = open_index_admitted(journal, &admission)?;
     let mut report = ReconcileReport::default();
     'pass: loop {
         let declarations = snapshot()?;

@@ -39,10 +39,12 @@ use crate::classification::{FacetDeclarationSet, classify_source};
 use crate::classification_batch::{ResumeCount, classify_one_batch};
 use crate::db::{
     EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, delete_chunk_classification,
-    mark_index_build_complete, open_index, read_chunk_classification_backfill,
-    read_entity_search_watermark, read_segment_aggregate_migration, replace_chunk_classification,
-    write_entity_search_watermark, write_segment_aggregate_migration,
+    mark_index_build_complete, open_index_admitted, prune_authored_chat_paths_admitted,
+    read_chunk_classification_backfill, read_entity_search_watermark,
+    read_segment_aggregate_migration, replace_chunk_classification, write_entity_search_watermark,
+    write_segment_aggregate_migration,
 };
+use crate::writer_admission::{IndexAdmission, check_test_seam};
 
 const MERGE_STEP: i64 = 32;
 const MERGE_BUDGET: usize = 2;
@@ -366,8 +368,17 @@ fn memory_original_exists(conn: &Connection, path: &str) -> Result<bool, StoreEr
 }
 
 pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
-    crate::db::prune_authored_chat_paths(journal)?;
-    let mut conn = open_index(journal)?;
+    let admission = IndexAdmission::acquire(journal, "scan")?;
+    scan_journal_admitted(journal, full, &admission)
+}
+
+pub(crate) fn scan_journal_admitted(
+    journal: &Path,
+    full: bool,
+    admission: &IndexAdmission,
+) -> Result<ScanReport, StoreError> {
+    prune_authored_chat_paths_admitted(journal, admission)?;
+    let mut conn = open_index_admitted(journal, admission)?;
     if !chunk_path_lookup_ready(&conn)? {
         return Err(StoreError::PathLookupRequired { cause: None });
     }
@@ -648,6 +659,16 @@ fn run_bounded_merge(conn: &mut Connection) -> (usize, Option<String>) {
 }
 
 pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, StoreError> {
+    let admission = IndexAdmission::acquire(journal, "rescan-file")?;
+    rescan_file_admitted(journal, input, &admission)
+}
+
+pub(crate) fn rescan_file_admitted(
+    journal: &Path,
+    input: &Path,
+    admission: &IndexAdmission,
+) -> Result<RescanFileStatus, StoreError> {
+    check_test_seam("before-source");
     let (rel, path) = resolve_rescan_target(journal, input)?;
     let resolution = resolve_content_shape(&path, &rel);
     let edge_source = edge_source_for_rel(&rel)?;
@@ -663,21 +684,24 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     if !path.is_file() {
         return Err(StoreError::MissingFile(path));
     }
-    let mut conn = open_index(journal)?;
-    require_chunk_path_lookup(&conn)?;
-    let memory_original = if family == Some(Family::AgentMemory) {
-        match read_memory_original(journal, &rel) {
-            Ok(original) => Some(original),
-            Err(_) => {
-                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                delete_file_chunks(&tx, &rel, None)?;
-                tx.execute("DELETE FROM files WHERE path=?", [&rel])?;
-                tx.commit()?;
-                return Ok(RescanFileStatus::Declined);
-            }
-        }
+    let memory_original_res = if family == Some(Family::AgentMemory) {
+        Some(read_memory_original(journal, &rel))
     } else {
         None
+    };
+    check_test_seam("after-memory-read");
+    let mut conn = open_index_admitted(journal, admission)?;
+    require_chunk_path_lookup(&conn)?;
+    let memory_original = match memory_original_res {
+        Some(Ok(original)) => Some(original),
+        Some(Err(_)) => {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            delete_file_chunks(&tx, &rel, None)?;
+            tx.execute("DELETE FROM files WHERE path=?", [&rel])?;
+            tx.commit()?;
+            return Ok(RescanFileStatus::Declined);
+        }
+        None => None,
     };
     let mut edge_resolver = EdgeResolver::new(journal);
     if edge_source.is_some() {
@@ -723,14 +747,15 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     Ok(RescanFileStatus::Indexed { warnings })
 }
 
-pub fn rebuild_edges_guarded<F>(
+pub(crate) fn rebuild_edges_guarded<F>(
     journal: &Path,
+    admission: &IndexAdmission,
     before_commit: F,
 ) -> Result<Option<EdgeRebuildReport>, StoreError>
 where
     F: FnOnce() -> Result<bool, StoreError>,
 {
-    let mut conn = open_index(journal)?;
+    let mut conn = open_index_admitted(journal, admission)?;
     let mut resolver = EdgeResolver::new(journal);
     let mut report = EdgeRebuildReport::default();
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -783,7 +808,9 @@ where
 }
 
 pub fn rebuild_edges(journal: &Path) -> Result<EdgeRebuildReport, StoreError> {
-    rebuild_edges_guarded(journal, || Ok(true)).map(|opt| opt.expect("closure returned true"))
+    let admission = IndexAdmission::acquire(journal, "rebuild-edges")?;
+    rebuild_edges_guarded(journal, &admission, || Ok(true))
+        .map(|opt| opt.expect("closure returned true"))
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1612,9 +1639,9 @@ mod tests {
     use super::*;
     use crate::db::{
         ChunkClassification, EntitySearchWatermark, IndexBuildLifecycle, IndexBuildState, db_path,
-        read_chunk_classification_backfill, read_entity_search_watermark, read_index_build_state,
-        read_segment_aggregate_migration, replace_chunk_classification, reset_index,
-        write_entity_search_watermark, write_segment_aggregate_migration,
+        open_index, read_chunk_classification_backfill, read_entity_search_watermark,
+        read_index_build_state, read_segment_aggregate_migration, replace_chunk_classification,
+        reset_index, write_entity_search_watermark, write_segment_aggregate_migration,
     };
     use crate::test_support::reserve_temp_path;
     use rusqlite::{Connection, params};

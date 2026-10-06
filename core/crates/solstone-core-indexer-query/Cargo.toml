@@ -26,3 +26,6 @@ solstone-core-indexer.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal-config.workspace = true
 unicode-normalization.workspace = true
+
+[dev-dependencies]
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }

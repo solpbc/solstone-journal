@@ -1103,7 +1103,12 @@ mod tests {
         let segment_dir = root.path().join("chronicle/20260805/field.audio/070000_17");
         assert!(segment_dir.join(super::TOMBSTONE_NAME).is_file());
 
-        assert!(!root.path().join("indexer").exists());
+        assert!(!root.path().join("indexer/journal.sqlite").exists());
+        assert!(root.path().join("indexer/journal.sqlite.lock").is_file());
+        assert_eq!(
+            fs::read_dir(root.path().join("indexer")).unwrap().count(),
+            1
+        );
 
         let action_rows = read_all_actions(root.path());
         let committed = action_rows

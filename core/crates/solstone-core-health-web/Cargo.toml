@@ -36,6 +36,7 @@ solstone-core-thinking.workspace = true
 [build-dependencies]
 
 [dev-dependencies]
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 solstone-core-convey-shell.workspace = true
 solstone-core-journal-stats-cli.workspace = true
 filetime = "0.2.29"

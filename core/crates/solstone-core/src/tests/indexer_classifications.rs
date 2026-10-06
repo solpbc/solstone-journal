@@ -126,7 +126,9 @@ fn indexer_classifications() {
         assert!(!spawn(&absent, route, "invalid", None).finish().status.success());
         assert!(!absent.join("indexer").exists());
         assert!(!spawn(&absent, route, "apply", None).finish().status.success());
-        assert!(!absent.join("indexer").exists());
+        assert!(!absent.join("indexer/journal.sqlite").exists());
+        assert!(absent.join("indexer/journal.sqlite.lock").is_file());
+        assert_eq!(fs::read_dir(absent.join("indexer")).unwrap().count(), 1);
 
         let journal = temp.path().join(format!("{route}-ready"));
         seed(&journal, 40);

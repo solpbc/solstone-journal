@@ -18,7 +18,9 @@ solstone-core-format.workspace = true
 solstone-core-indexer.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-memory-original.workspace = true
+solstone-core-journal-io.workspace = true
 
 [features]
 full-tests = []
 test-hooks = []
+test-fixtures = []
