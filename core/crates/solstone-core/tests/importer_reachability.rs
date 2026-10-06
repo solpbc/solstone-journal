@@ -867,6 +867,14 @@ fn search_streams(journal: &TempDir, query: &str) -> Vec<String> {
 #[test]
 fn local_syncs_save_into_the_journal_and_only_once() {
     let journal = TempDir::new().expect("journal");
+    // This duplicate-sync fixture needs a full owner day for its long recording.
+    // Its timestamp must not depend on the host zone or the time CI copies it.
+    fs::create_dir(journal.path().join("config")).expect("config folder");
+    fs::write(
+        journal.path().join("config/journal.json"),
+        r#"{"identity":{"timezone":"UTC"}}"#,
+    )
+    .expect("fixed owner zone");
 
     let vault = journal.path().join("vault");
     fs::create_dir_all(vault.join(".obsidian")).expect("vault marker");
@@ -896,6 +904,22 @@ fn local_syncs_save_into_the_journal_and_only_once() {
         recordings.join("memo.mp3"),
     )
     .expect("copy recording");
+    let recording = recordings.join("memo.mp3");
+    // 2026-10-05 12:00:00 UTC: sufficient day remaining for the 605-second fixture.
+    let modified = std::time::UNIX_EPOCH + Duration::from_secs(1_791_201_600);
+    File::options()
+        .write(true)
+        .open(&recording)
+        .expect("open recording to pin timestamp")
+        .set_times(fs::FileTimes::new().set_modified(modified))
+        .expect("pin recording timestamp");
+    assert_eq!(
+        fs::metadata(&recording)
+            .expect("recording metadata")
+            .modified()
+            .expect("recording timestamp"),
+        modified
+    );
     for saved in ["saved=1", "saved=0"] {
         let output = run(
             &["--sync", "audio", "--path", &path(&recordings), "--save"],
