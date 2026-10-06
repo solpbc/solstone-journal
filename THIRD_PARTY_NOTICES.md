@@ -680,10 +680,24 @@ share/licenses/msvc/NOTICE.md.
 
 The windows package includes the NVIDIA GPU attestation verifier
 (`bin/nvattest.exe`) and the CA bundle it uses (`share/ca/ca-bundle.pem`).
-They are not part of solstone and are not covered by solstone's AGPL-3.0-only license.
+They are not part of solstone and are not covered by solstone's AGPL-3.0-only
+license.
 
-The Apache-2.0 license is at share/licenses/nvattest/LICENSE.
-Third-party notices are at share/licenses/nvattest/NOTICES.md.
+Attribution: NVIDIA Corporation. sol pbc's changes are marked in the source.
+
+Source:
+
+- Verifier: https://github.com/solpbc/attestation-sdk, revision
+  8fdbb0f8c10594a5f88f77fdec4766803b4e6d59, built from source. The build
+  receipt is at share/provenance/nvattest/receipt.json.
+- CA bundle: https://curl.se/ca/cacert-2026-07-16.pem
+  (SHA-256 3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91)
+
+The verifier is licensed under the Apache License 2.0, at
+share/licenses/nvattest/LICENSE. The CA bundle is derived from Mozilla's root
+certificate store and is licensed under the Mozilla Public License 2.0. The
+notices for the CA bundle and for the libraries built into the verifier are at
+share/licenses/nvattest/NOTICES.md.
 
 ## Microsoft Edge WebView2 loader (windows)
 
