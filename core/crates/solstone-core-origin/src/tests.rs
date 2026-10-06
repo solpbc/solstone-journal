@@ -468,6 +468,7 @@ fn guard_current_cuda_keys_pinned_by_their_releases_and_head() {
             .filter(|(_, pins)| pins.iter().any(|pin| pin.origin_key == key))
             .map(|(version, _)| PinOwner::Release(version))
             .collect::<Vec<_>>();
+        assert!(!owners.is_empty(), "expected release owners for {key}");
         owners.push(PinOwner::HeadUnreleased);
         assert_eq!(
             assess_prune_with_current_support(key).unwrap(),
@@ -526,6 +527,7 @@ fn guard_current_vulkan_keys_pinned_by_their_releases_and_head() {
             .filter(|(_, pins)| pins.iter().any(|pin| pin.origin_key == key))
             .map(|(version, _)| PinOwner::Release(version))
             .collect::<Vec<_>>();
+        assert!(!owners.is_empty(), "expected release owners for {key}");
         owners.push(PinOwner::HeadUnreleased);
         assert_eq!(
             assess_prune_with_current_support(key).unwrap(),
