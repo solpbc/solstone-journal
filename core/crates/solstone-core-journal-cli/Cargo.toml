@@ -37,7 +37,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 
 [features]
-full-tests = []
+full-tests = ["solstone-core-indexer-store/test-hooks"]
 
 [lints]
 workspace = true

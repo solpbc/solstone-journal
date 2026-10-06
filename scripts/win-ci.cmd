@@ -212,10 +212,15 @@ call :run_exact_library "solstone-core-system" "process::platform::launch_contro
 call :run_exact_library "solstone-core-journal-cli" "runner::installed_task_controls::installed_request_preserves_exact_public_action" || exit /b 1
 call :run_exact_library "solstone-core-journal-cli" "runner::installed_task_controls::installed_request_refuses_partial_non_unicode_and_rewritten_action" || exit /b 1
 call :run_exact_library "solstone-core-journal-cli" "runner::installed_task_controls::installed_forwarding_refuses_changed_argv_before_launch" || exit /b 1
-call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::two_writers_exclude_each_other_before_source_and_cursor_reads" "full-tests" || exit /b 1
-call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::process_death_releases_the_lease_and_reacquire_keeps_the_sidecar" "full-tests" || exit /b 1
-call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::memory_rescan_paused_before_database_creation_makes_prune_wait" "full-tests" || exit /b 1
-call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::classification_batch_releases_admission_before_the_post_commit_barrier" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::two_writers_exclude_each_other_before_source_and_cursor_reads" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::process_death_releases_the_lease_and_reacquire_keeps_the_sidecar" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::memory_rescan_paused_before_database_creation_makes_prune_wait" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::classification_batch_releases_admission_before_the_post_commit_barrier" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::completed_prune_rejects_a_later_rescan_of_the_removed_original" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::all_mutators_wait_for_admission_while_readers_remain_available" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::classification_drain_stops_on_a_busy_next_batch" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_classifications" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_path_lookup" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-journal-cli" "local_ops::tests::facet_doctor_adopt_merge_indexes_only_after_trust_release" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::guarded_action_round_trips_nondefault_port_and_unicode_path" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::rejects_missing_partial_duplicate_malformed_and_extra_guard_fields" || exit /b 1

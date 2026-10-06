@@ -113,7 +113,9 @@ fn indexer_path_lookup() {
     assert!(!absent_journal.join("indexer").exists());
     let empty_apply = run_journal(&absent_journal, "journal-apply");
     assert!(!empty_apply.status.success());
-    assert!(!absent_journal.join("indexer").exists());
+    assert!(!absent_journal.join("indexer/journal.sqlite").exists());
+    assert!(absent_journal.join("indexer/journal.sqlite.lock").is_file());
+    assert_eq!(fs::read_dir(absent_journal.join("indexer")).unwrap().count(), 1);
 
     let existing_journal = temp.path().join("existing_journal");
     fs::create_dir_all(existing_journal.join("indexer")).unwrap();

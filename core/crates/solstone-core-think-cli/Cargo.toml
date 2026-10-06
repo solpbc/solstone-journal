@@ -48,6 +48,7 @@ solstone-core-talent-runtime.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-generate.workspace = true

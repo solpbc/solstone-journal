@@ -84,7 +84,6 @@ pub fn rebuild_edges_for_recorded_merge_undo(journal: &Path) -> Result<String, S
     if rebuild.failed > 0 {
         return Err(StoreError::EdgeRebuildFailed(rebuild));
     }
-    drop(admission);
     fingerprint_edge_rows(journal)
 }
 

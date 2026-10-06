@@ -36,6 +36,11 @@ pub fn migrate_index_stream(
     journal: &Path,
     dry_run: bool,
 ) -> Result<IndexStreamMigration, StoreError> {
+    let admission = if dry_run {
+        None
+    } else {
+        Some(IndexAdmission::acquire(journal, "migrate-index-stream")?)
+    };
     let path = db_path(journal);
     if !path.exists() {
         return Ok(IndexStreamMigration::Absent);
@@ -61,9 +66,11 @@ pub fn migrate_index_stream(
     if dry_run {
         return Ok(IndexStreamMigration::WouldRebuild { missing });
     }
-    let admission = IndexAdmission::acquire(journal, "migrate-index-stream")?;
-    reset_index_admitted(journal, &admission)?;
-    scan_journal_admitted(journal, true, &admission)?;
+    let admission = admission
+        .as_ref()
+        .expect("non-dry-run migration is admitted");
+    reset_index_admitted(journal, admission)?;
+    scan_journal_admitted(journal, true, admission)?;
     Ok(IndexStreamMigration::Rebuilt { missing })
 }
 

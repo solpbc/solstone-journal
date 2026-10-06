@@ -28,6 +28,6 @@ tokio = { workspace = true, features = ["rt"] }
 [dev-dependencies]
 solstone-core-convey-shell.workspace = true
 solstone-core-indexer-query = { workspace = true, features = ["test-hooks"] }
-solstone-core-indexer-store.workspace = true
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower.workspace = true

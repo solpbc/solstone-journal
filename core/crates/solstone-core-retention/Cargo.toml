@@ -32,7 +32,7 @@ serde_json = { workspace = true }
 # The index-ordering test drives a real SQLite index through the notification
 # boundary. ⛔ Dev-only: the executor depends on the trait, never on a database,
 # so the contract can move without touching it.
-solstone-core-indexer-store = { workspace = true }
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 solstone-core-depict.workspace = true
 solstone-core-generate.workspace = true
 # The outcome model's emitted shape is part of its contract -- a later wave's

@@ -204,6 +204,7 @@ fn open_index_connection(journal: &Path) -> Result<Connection, StoreError> {
 }
 
 /// Fixture seeding only; not a production mutation entry point.
+#[cfg(any(test, feature = "test-fixtures"))]
 pub fn open_index(journal: &Path) -> Result<Connection, StoreError> {
     open_index_connection(journal)
 }

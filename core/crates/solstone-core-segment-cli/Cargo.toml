@@ -22,4 +22,5 @@ solstone-core-segment.workspace = true
 solstone-core-system-health.workspace = true
 
 [dev-dependencies]
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 tempfile = "3.24.0"

@@ -26,6 +26,7 @@ full-tests = []
 test-hooks = []
 
 [dev-dependencies]
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 tempfile = "3"
 
 [lints]

@@ -48,6 +48,10 @@ pub enum StoreError {
         operation: &'static str,
         cause: String,
     },
+    WriterAdmission {
+        operation: &'static str,
+        cause: String,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -89,6 +93,12 @@ impl fmt::Display for StoreError {
             }
             StoreError::WriterBusy { operation, cause } => {
                 write!(formatter, "index writer busy for {operation}: {cause}")
+            }
+            StoreError::WriterAdmission { operation, cause } => {
+                write!(
+                    formatter,
+                    "index writer admission failed for {operation}: {cause}"
+                )
             }
         }
     }

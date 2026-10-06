@@ -45,6 +45,7 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 jsonschema.workspace = true
 rusqlite.workspace = true
 sha2.workspace = true
