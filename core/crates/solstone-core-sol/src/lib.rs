@@ -31,11 +31,9 @@ use solstone_core_sol_client_cli::{
 #[cfg(not(target_os = "ios"))]
 use solstone_core_sol_link::{SplLinkJoinPairingSeam, SplLinkServeRunner};
 
-#[cfg(not(target_os = "ios"))]
 mod entry;
 mod skills;
 
-#[cfg(not(target_os = "ios"))]
 pub use entry::process_main;
 
 pub use solstone_core_cli_boundary::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
@@ -104,7 +102,6 @@ fn run_with_stdin_provider(
         }
         // The journal family acts on this computer only; it never reaches a
         // connected journal, so it is entered before any access setup.
-        #[cfg(not(target_os = "ios"))]
         [command, rest @ ..] if command == OsStr::new("journal") => {
             entry::run_journal(rest.to_vec())
         }

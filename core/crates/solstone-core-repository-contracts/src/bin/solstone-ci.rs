@@ -1558,6 +1558,11 @@ fn check_prerequisite(repo: &Path, prerequisite: &str) -> Result<(), String> {
                     ],
                 )?
         }
+        "ios-onnx-runtime" => command_status(
+            repo,
+            "make",
+            &["--no-print-directory", "check-rust-ios-ready"],
+        )?,
         "host-tools" => host_tools_ready(repo)?,
         other => return Err(format!("runner does not know prerequisite {other}")),
     };

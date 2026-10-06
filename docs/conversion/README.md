@@ -6,7 +6,7 @@ The Python→Rust conversion is closed. These files are still the map of the
 running system. They carry no schedule and no work status.
 
 **Companion:** [`../PORTING.md`](../PORTING.md) is the remaining Rust workspace
-rules (edition, iOS canary, native-dep proof). This directory is the *map*.
+rules (edition, iOS cross-build, native-dep proof). This directory is the *map*.
 
 ## The files
 

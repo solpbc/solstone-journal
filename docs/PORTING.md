@@ -14,40 +14,31 @@ file starts with the two-line SPDX header in `AGENTS.md`.
 
 Do not add shims, fallback aliases, or dual Python/Rust paths.
 
-## iOS canary
+## iOS cross-build
 
-`check-rust-ios` is a native-macOS, `aarch64-apple-ios` compile canary for
-portable Rust libraries. It is engineering insurance for a later mobile-runtime
-effort, not a claim that the journal currently supports an iOS runtime. The
-desktop-first product decision keeps mobile-runtime requirements out of the
-current journal release.
+`check-rust-ios` compiles and links the whole workspace for an iOS device
+(`aarch64-apple-ios`) on a macOS host with Xcode, with default features plus
+`solstone-core/journal-mcp-endpoint`. There are no package exclusions. This is
+compilation support. Nothing is packaged, installed or run, and it is not a
+claim that the journal runs on iOS: process lifecycle, supervisor admission and
+readiness refuse on iOS in source, and every engine is still a separate program.
 
-The Makefile's `check-rust-ios` target is the executable authority for what the
-canary checks. Its current exclusions are grouped here so a green result is not
-mistaken for workspace-wide iOS coverage:
+- **Minimum iOS:** 26.0, set as `IPHONEOS_DEPLOYMENT_TARGET` for cargo's
+  children only. Exported into a shell that also builds host tools, Apple clang
+  would target iOS for those as well; the vendored FFmpeg build removes it from
+  its own configure and make environment for that reason.
+- **ONNX Runtime:** the upstream 1.25.0 iOS package (static, with the CoreML
+  provider), pinned by digest in `scripts/ios_cross_build.sh`. `make
+  ci-full-prep-ios` (part of `ci-full-prep`) acquires it into `core/ios-build`;
+  the gate itself only verifies it (`ios-onnx-runtime` prerequisite).
+- **Rust objects:** `core/target-ios`, separate from desktop CI.
 
-- desktop and journal-host entry points: `solstone-core`,
-  `solstone-core-journal-cli`, `solstone-core-sol-link`,
-  `solstone-core-generate-wire`, `solstone-core-serving`
-- journal-host HTTP and browser surfaces: `solstone-core-convey-http`,
-  `solstone-core-convey-shell`, `solstone-core-settings-web`,
-  `solstone-core-facets-web`, `solstone-core-convey-body`
-- journal-host storage, ingest, import, and rebuild paths:
-  `solstone-core-indexer-store`, `solstone-core-indexer-query`,
-  `solstone-core-entity`, `solstone-core-facets`, `solstone-core-segment`,
-  `solstone-core-ingest`, `solstone-core-entities`,
-  `solstone-core-body-rebuild`, `solstone-core-import-host`
-- confidential-service components: `solstone-core-spp-attest`,
-  `solstone-core-spp-ratls`
-- native media and model components: `solstone-core-transcribe`,
-  `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`,
-  `solstone-core-describe`, `solstone-core-observe-audio`,
-  `solstone-core-vad-analyze`
+```sh
+make ci-full-prep-ios check-rust-ios
+```
 
-An exclusion is a boundary of this canary, not evidence that the package fails
-to compile for iOS or that it is accepted into a future iOS runtime. Conversely,
-the included `solstone-core-speakers` (DSP/clustering) and
-`solstone-core-indexer` (markdown discovery) remain portability canaries.
+The simulator target is not built: FFmpeg bindings are committed for the
+device target only.
 
 ## Target evidence
 
@@ -75,11 +66,9 @@ installer's install pass on a clean Windows machine as a standard user.
 
 One more target is checked without shipping:
 
-- **iOS** (`aarch64-apple-ios`) is `check-rust-ios`, a macOS-host compile
-  canary over a large exclusion list (§ iOS canary, above) — engineering
-  insurance, not a claim of iOS runtime support. Cross-target drift evidence
-  only. **No shipped-target evidence exists for iOS** — nothing is packaged,
-  installed, or smoke-tested.
+- **iOS** (`aarch64-apple-ios`) is `check-rust-ios`, a macOS-host build and
+  link of the whole workspace (§ iOS cross-build, above). **No shipped-target
+  evidence exists for iOS** — nothing is packaged, installed, or smoke-tested.
 
 ## Native dependency proof
 

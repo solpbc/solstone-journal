@@ -949,6 +949,10 @@ fn build(mut configure: Command) -> io::Result<CapturedConfigure> {
 
     // This is the exact process invocation: capture it immediately before execution.
     let captured = captured_configure(&configure);
+    // Apple clang reads IPHONEOS_DEPLOYMENT_TARGET as the default target OS, so
+    // inheriting it would build FFmpeg's host generators for iOS. Target
+    // objects already carry their own minimum-version flag.
+    configure.env_remove("IPHONEOS_DEPLOYMENT_TARGET");
     let output = configure
         .output()
         .unwrap_or_else(|_| panic!("{:?} failed", configure));
@@ -971,6 +975,7 @@ fn build(mut configure: Command) -> io::Result<CapturedConfigure> {
 
     // run make
     if !Command::new("make")
+        .env_remove("IPHONEOS_DEPLOYMENT_TARGET")
         .arg("-j")
         .arg(num_cpus::get().to_string())
         .current_dir(source())
@@ -982,6 +987,7 @@ fn build(mut configure: Command) -> io::Result<CapturedConfigure> {
 
     // run make install
     if !Command::new("make")
+        .env_remove("IPHONEOS_DEPLOYMENT_TARGET")
         .current_dir(source())
         .arg("install")
         .status()?

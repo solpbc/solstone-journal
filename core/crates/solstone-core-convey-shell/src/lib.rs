@@ -52,9 +52,8 @@
 //! `serve` returns an error only when loopback cannot bind: local Convey is the
 //! process's reason to exist. The paired-device door is independently useful
 //! but optional, so it is always recorded as a [`DoorOutcome`] in the handle.
-//! This crate is already excluded from `check-rust-ios` (Makefile:327 and
-//! docs/PORTING.md:45,56); the `host` feature is defence in depth, not that
-//! exclusion's replacement.
+//! The `host` feature is defence in depth: `check-rust-ios` compiles this
+//! crate for iOS, which is not a promise that an iOS app hosts Convey.
 //!
 //! ## D8: paired-device admission is connection-scoped and durable
 //!

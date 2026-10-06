@@ -315,7 +315,7 @@ UV_OPTIONAL_GOALS := \
 	check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries \
 	check-rust-ci-topology ci ci-under-poison ci-full ci-full-under-poison ci-full-plan \
 	ci-contained ci-prep-ffmpeg \
-	ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
+	ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf ci-full-prep-ios check-rust-ios-ready \
 	verify test build format format-check report-rust-code-evidence \
 	check-service-legacy-evidence service-legacy-evidence-capture audit \
 	test-cov test-integration test-performance test-app test-only watch coverage
@@ -457,7 +457,7 @@ check-rust-pdf-stage:
 	@set -eu; $(REQUIRE_PDF_HOST_RUNTIME)
 	@echo "host PDFium runtime staged and verified at $(PDF_RUNTIME_HOST_LINK_DIR)"
 
-.PHONY: ci-prep-ffmpeg ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
+.PHONY: ci-prep-ffmpeg ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf ci-full-prep-ios check-rust-ios-ready
 .NOTPARALLEL: ci-full-prep
 ci ci-contained ci-under-poison ci-prep-ffmpeg: export SOLSTONE_FFMPEG_SOURCE_ARCHIVE := $(FFMPEG_SOURCE_ARCHIVE)
 ci ci-contained ci-under-poison ci-prep-ffmpeg: export SOLSTONE_DISTRIBUTION_OFFLINE := 1
@@ -472,7 +472,7 @@ ci-prep-ffmpeg:
 	@$(REQUIRE_CARGO)
 	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire ffmpeg --dest $(FFMPEG_SOURCE_ARCHIVE)
 
-ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
+ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf ci-full-prep-ios
 
 ci-full-prep-cargo: ci-prep-ffmpeg
 	@$(REQUIRE_CARGO)
@@ -484,6 +484,9 @@ ci-full-prep-cargo: ci-prep-ffmpeg
 
 ci-full-prep-onnx:
 	@$(MAKE) --no-print-directory CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 check-rust-onnx-stage
+
+ci-full-prep-ios:
+	@if [ "$$(uname -s)" = Darwin ]; then /bin/bash scripts/ios_cross_build.sh prepare "$(IOS_BUILD_DIR)"; else echo "ci-full-prep-ios: not run on $$(uname -s)"; fi
 
 ci-full-prep-pdf:
 	@$(MAKE) --no-print-directory CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 check-rust-pdf-stage
@@ -992,9 +995,13 @@ check-rust-android:
 check-rust-android-prepared:
 	/bin/bash scripts/check_android_cross_build.sh "$(ANDROID_BUILD_DIR)"
 
+# Compile and link the whole workspace for an iOS device, plus the shipped
+# journal-mcp-endpoint feature. Compilation support only: nothing is packaged,
+# installed or run, and iOS process lifecycle stays unsupported in source.
+# Inputs are prepared by ci-full-prep-ios; this gate only verifies them.
+IOS_BUILD_DIR ?= $(CURDIR)/core/ios-build
 check-rust-ios:
 	@$(REQUIRE_CARGO)
-	@# Host-only process/server crates, including Convey, are not iOS target concerns in this wave.
 	@set -eu; \
 	if [ "$$(uname -s)" != "Darwin" ]; then \
 		echo "check-rust-ios: not run on $$(uname -s); the Apple SDK is a native macOS-host gate"; \
@@ -1003,8 +1010,11 @@ check-rust-ios:
 		command -v xcrun >/dev/null 2>&1 || { echo "xcrun is required for the iOS gate; install Xcode and retry" >&2; exit 1; }; \
 		xcrun --sdk iphoneos --show-sdk-path >/dev/null || { echo "the iPhoneOS SDK is required for the iOS gate; select a complete Xcode installation and retry" >&2; exit 1; }; \
 		rustup target list --installed 2>/dev/null | grep -qx "$(IOS_TARGET)" || { echo "Rust target $(IOS_TARGET) is required for the iOS gate; run rustup target add $(IOS_TARGET)" >&2; exit 1; }; \
-		cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-journal-cli --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-push --exclude solstone-core-spp-attest --exclude solstone-core-spp-ratls --exclude solstone-core-generate-wire --exclude solstone-core-transcribe --exclude solstone-core-convey-http --exclude solstone-core-convey-shell --exclude solstone-core-settings-web --exclude solstone-core-facets-web --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --exclude solstone-core-observe-audio --exclude solstone-core-body-rebuild --exclude solstone-core-vad-analyze --exclude solstone-core-convey-body --exclude solstone-core-import-host --lib --target $(IOS_TARGET) --locked; \
+		/bin/bash scripts/ios_cross_build.sh check "$(IOS_BUILD_DIR)"; \
 	fi
+
+check-rust-ios-ready:
+	@/bin/bash scripts/ios_cross_build.sh ready "$(IOS_BUILD_DIR)"
 
 check-rust-deny:
 	@$(REQUIRE_CARGO)

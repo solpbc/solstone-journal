@@ -2,7 +2,7 @@ version = 1
 sets = ["component", "native", "differential", "race", "live", "policy", "package", "platform"]
 areas = ["audio", "backup", "body", "cognition", "commands", "core", "entities", "facets", "formats", "health", "home", "import", "indexing", "ingest", "journal", "media", "observation", "platform", "records", "repository", "retention", "services", "stats", "support", "system", "talents", "transfer", "trust", "workspace"]
 platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache", "cargo-deny", "msrv", "onnx-runtime", "pdf-runtime", "apple-sdk", "host-tools"]
+prerequisites = ["cargo-cache", "cargo-deny", "msrv", "onnx-runtime", "pdf-runtime", "apple-sdk", "ios-onnx-runtime", "host-tools"]
 # local-services serializes builders and consumers of core/target/debug/solstone-core
 # (or its CARGO_TARGET_DIR equivalent). It includes the native-runtime members
 # because shipped-binaries touches both resources; preserve both exclusions.
@@ -170,7 +170,7 @@ set = "platform"
 areas = ["platform"]
 packages = ["workspace"]
 platforms = ["macos"]
-prerequisites = ["cargo-cache", "apple-sdk"]
+prerequisites = ["cargo-cache", "apple-sdk", "ios-onnx-runtime"]
 timeout = "extended"
 default_full = true
 

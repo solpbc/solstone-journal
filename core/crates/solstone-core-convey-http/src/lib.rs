@@ -10,16 +10,13 @@
 //! `solstone-core-<domain>` name and describes the narrow server substrate
 //! without claiming ownership of the application routes.
 //!
-//! ## D1: iOS canary membership — exclude by product shape
+//! ## D1: iOS builds the crate; it promises no iOS deployment
 //!
-//! The crate is excluded from `check-rust-ios`, while remaining in the full
-//! `cargo deny` graph for all configured targets. This follows the permanent
-//! `solstone-core-sol-link` precedent: `convey` is a server run by the machine
-//! hosting the journal, and phones are remote HTTP clients rather than server
-//! hosts. Its current empty library compiling for iOS is incidental, not a
-//! supported deployment promise; future TLS and native loopback-binding work
-//! reinforces that distinction. `docs/PORTING.md` records this product-shape
-//! decision beside the `sol-link` precedent.
+//! `check-rust-ios` builds the whole workspace, this crate included, and it
+//! stays in the full `cargo deny` graph for all configured targets. `convey` is
+//! a server run by the machine hosting the journal; compiling for iOS is not a
+//! supported deployment promise, and future TLS and native loopback-binding
+//! work keeps that distinction. `docs/PORTING.md` records the iOS build scope.
 //!
 //! ## D2: crate name and shape — `solstone-core-convey-http`, library only
 //!

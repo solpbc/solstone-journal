@@ -67,7 +67,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     #[test]
-    fn only_convey_shell_depends_on_this_library_and_ios_excludes_it() {
+    fn only_convey_shell_depends_on_this_library() {
         let core = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let manifest = fs::read_to_string(core.join("Cargo.toml")).unwrap();
         let members = manifest
@@ -107,13 +107,6 @@ mod tests {
                 }
             }
         }
-
-        let makefile = fs::read_to_string(core.join("..").join("Makefile")).unwrap();
-        let ios_recipe = makefile
-            .lines()
-            .find(|line| line.contains("--target $(IOS_TARGET)"))
-            .unwrap();
-        assert!(ios_recipe.contains("--exclude solstone-core-convey-body"));
     }
 
     #[test]
