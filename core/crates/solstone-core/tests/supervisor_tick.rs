@@ -87,8 +87,8 @@ impl TempJournal {
         )
         .expect("fixture journal config");
         let cache = pins::cache_root(&self.0);
-        let pin = pins::vulkan_pin("aarch64-apple-darwin").unwrap();
-        let runtime = cache.join(format!("bin/aarch64-apple-darwin/{}", pin.release_tag));
+        let (release, _, _, _) = pins::vulkan_pin("aarch64-apple-darwin").unwrap();
+        let runtime = cache.join(format!("bin/aarch64-apple-darwin/{release}"));
         let model = cache.join("models/local__qwen3.5-4b");
         fs::create_dir_all(&runtime).expect("runtime directory");
         fs::create_dir_all(&model).expect("model directory");

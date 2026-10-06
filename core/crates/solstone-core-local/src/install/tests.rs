@@ -333,8 +333,8 @@ fn metal_target_reuses_the_shared_4b_model_and_darwin_runtime_pin() {
 fn metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit() {
     let root = temp("metal-candidate-inspect");
     let cache = pins::cache_root(&root);
-    let pin = pins::vulkan_pin("aarch64-apple-darwin").unwrap();
-    let runtime = cache.join(format!("bin/aarch64-apple-darwin/{}", pin.release_tag));
+    let (release, _, _, _) = pins::vulkan_pin("aarch64-apple-darwin").unwrap();
+    let runtime = cache.join(format!("bin/aarch64-apple-darwin/{release}"));
     let model = cache.join("models/local__qwen3.5-4b");
     fs::create_dir_all(&runtime).unwrap();
     fs::create_dir_all(&model).unwrap();
@@ -526,11 +526,7 @@ fn preflip_origin_readiness_fixture_preserves_all_pin_identities_and_proofs() {
     for row in fixture["llama_server_cuda"].as_array().unwrap() {
         let arch_key = row["arch_key"].as_str().unwrap();
         let identity = pins::cuda_identity(arch_key).unwrap();
-        if arch_key == "aarch64-unknown-linux-gnu" {
-            assert_eq!(identity, row["pin_identity"]);
-        } else {
-            assert_ne!(identity, row["pin_identity"]);
-        }
+        assert_ne!(identity, row["pin_identity"]);
         assert_manifest_proves_preflip_identity(
             &root.join(format!("cuda-{}", arch_key)),
             "llama-server-cuda",
@@ -655,11 +651,7 @@ fn preflip_fixture_preserves_paths_and_native_pins_json_fields() {
     for row in fixture["llama_server_cuda"].as_array().unwrap() {
         let arch_key = row["arch_key"].as_str().unwrap();
         let identity = pins::cuda_identity(arch_key).unwrap();
-        if arch_key == "aarch64-unknown-linux-gnu" {
-            assert_eq!(identity, row["pin_identity"]);
-        } else {
-            assert_ne!(identity, row["pin_identity"]);
-        }
+        assert_ne!(identity, row["pin_identity"]);
         let paths = pins::paths(journal, arch_key, None);
         assert_eq!(
             path_value(&paths["cuda_binary_path"]),
@@ -3370,4 +3362,390 @@ fn cancellation_does_not_overwrite_a_replacement_attempt() {
         initial.attempt_id
     );
     fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn cuda_b11429_identity_pins_toolkit_inputs_and_not_publisher_attestation() {
+    let cases = [
+        (
+            "x86_64-unknown-linux-gnu",
+            "amd64",
+            "https://updates.solstone.app/runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz",
+            "a9d8c0a4ece9f9dce7d8e634dd55f943ba39b93b339462dd645202db34aafbbd",
+            591752886u64,
+            json!([
+                {
+                    "role": "engine",
+                    "filename": "llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz",
+                    "sha256": "8082b7eaa74a714c9fecca19128f751c8e32da763ee8096b8ad1e824da7621d3",
+                    "size_bytes": 152519318,
+                    "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
+                },
+                {
+                    "role": "cudart",
+                    "filename": "cudart-llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz",
+                    "sha256": "93d18648d815b2bd624d83d82f653e1db97afb478f02064305fe3cf570040a6d",
+                    "size_bytes": 440236630,
+                    "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
+                }
+            ]),
+        ),
+        (
+            "aarch64-unknown-linux-gnu",
+            "arm64",
+            "https://updates.solstone.app/runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-arm64-sol1.tar.gz",
+            "de73a4cae3cb750170cfce090d752af95a67d97afd681154646547a7d6ddc72f",
+            699234360u64,
+            json!([
+                {
+                    "role": "engine",
+                    "filename": "llama-b11429-bin-ubuntu-cuda-13.4-arm64.tar.gz",
+                    "sha256": "9c76d072276c0faa7fc1b5cbf715b4186dd2e8d7f16acd20b67daab24c82bd22",
+                    "size_bytes": 147639003,
+                    "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
+                },
+                {
+                    "role": "cudart",
+                    "filename": "cudart-llama-b11429-bin-ubuntu-cuda-13.4-arm64.tar.gz",
+                    "sha256": "ad62e46cdc2e8636fa91e883b9e9ad779516f61cc478ece1c90e5dbc905a7d29",
+                    "size_bytes": 552521413,
+                    "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
+                }
+            ]),
+        ),
+    ];
+
+    for (key, arch, url, sha256, size, inputs) in cases {
+        let (pin_url, pin_sha256, pin_size) = pins::cuda_pin(key).expect("cuda_pin exists");
+        assert_eq!(pin_url, url);
+        assert_eq!(pin_sha256, sha256);
+        assert_eq!(pin_size, size);
+
+        let identity = pins::cuda_identity(key).expect("cuda_identity exists");
+        assert_eq!(identity["unit"], "llama-server-cuda");
+        assert_eq!(identity["artifact_key"], key);
+        assert_eq!(identity["url"], url);
+        assert_eq!(identity["sha256"], sha256);
+        assert_eq!(identity["size_bytes"], size);
+        assert_eq!(identity["release_tag"], "b11429");
+        assert_eq!(
+            identity["llama_cpp_revision"],
+            "d81235049384534c167caea52b85a694f6103d14"
+        );
+        assert_ne!(
+            identity["llama_cpp_revision"],
+            "8345f333951c661d166b00e6f9362e553768f292"
+        );
+        assert_eq!(identity["cuda_toolkit"], "13.4.1");
+        assert_eq!(identity["repack_revision"], "sol1");
+        assert_eq!(identity["arch"], arch);
+        assert_eq!(identity["binary_name"], "llama-server");
+        assert!(identity.get("upstream_image_digest").is_none());
+        assert_eq!(identity["inputs"], inputs);
+    }
+}
+
+#[test]
+fn cuda_b11429_wanted_files_match_selector_constants() {
+    let cases = [
+        (
+            "x86_64-unknown-linux-gnu",
+            "amd64",
+            pins::CUDA_AMD64_WANTED_FILES,
+        ),
+        (
+            "aarch64-unknown-linux-gnu",
+            "arm64",
+            pins::CUDA_ARM64_WANTED_FILES,
+        ),
+    ];
+    for (key, arch, specific) in cases {
+        let expected: Vec<String> = pins::CUDA_SHARED_WANTED_FILES
+            .iter()
+            .chain(specific)
+            .map(|s| (*s).to_owned())
+            .collect();
+        let wanted = pins::cuda_wanted_files(arch).expect("cuda_wanted_files exists");
+        assert_eq!(wanted, expected);
+        let identity = pins::cuda_identity(key).expect("cuda_identity exists");
+        let identity_wanted: Vec<String> = identity["wanted_files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(identity_wanted, expected);
+    }
+}
+
+#[test]
+fn cuda_b11429_qwen_identity_keeps_prechange_literal() {
+    let expected_literal = "{\"filename\":\"Qwen3.5-4B-Q4_K_M.gguf\",\"mmproj_filename\":\"mmproj-F16.gguf\",\"mmproj_sha256\":\"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864\",\"model_id\":\"local/qwen3.5-4b\",\"repo\":\"unsloth/Qwen3.5-4B-GGUF\",\"revision\":\"main\",\"sha256\":\"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4\",\"unit\":\"local-model\"}";
+    let actual = fingerprint::canonical(pins::model_identity("local/qwen3.5-4b").unwrap()).unwrap();
+    assert_eq!(actual, expected_literal);
+}
+
+#[test]
+fn cuda_b11429_closure_trusts_complete_regular_tree() {
+    let cases = [
+        ("x86_64-unknown-linux-gnu", "amd64"),
+        ("aarch64-unknown-linux-gnu", "arm64"),
+    ];
+    for (key, arch) in cases {
+        let dir = temp(&format!("cuda-trust-complete-{arch}"));
+        let wanted = pins::cuda_wanted_files(arch).expect("cuda_wanted_files");
+        for name in &wanted {
+            let path = dir.join(name);
+            if name == "llama-server" {
+                fs::write(&path, b"sm_86 sm_89 sm_120a sm_121a header content").unwrap();
+            } else {
+                fs::write(&path, name.as_bytes()).unwrap();
+            }
+        }
+        let inventory = manifest::runtime_inventory(&dir, &[]).unwrap();
+        assert!(super::verify_required_oracle(&dir, "b11429", key, true).is_ok());
+        assert_eq!(
+            super::assess_cuda_bytes(&dir, &inventory),
+            crate::ArtifactTrust::Trusted
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+}
+
+#[test]
+fn cuda_b11429_closure_rejects_omission_replacement_and_mixed_pins() {
+    let cases = [
+        ("x86_64-unknown-linux-gnu", "amd64"),
+        ("aarch64-unknown-linux-gnu", "arm64"),
+    ];
+    for (key, arch) in cases {
+        // 1. Omit libcudart.so.13
+        {
+            let dir = temp(&format!("cuda-omit-cudart-{arch}"));
+            let wanted = pins::cuda_wanted_files(arch).expect("cuda_wanted_files");
+            for name in &wanted {
+                if name == "libcudart.so.13" {
+                    continue;
+                }
+                let path = dir.join(name);
+                if name == "llama-server" {
+                    fs::write(&path, b"sm_86 sm_89 sm_120a sm_121a header content").unwrap();
+                } else {
+                    fs::write(&path, name.as_bytes()).unwrap();
+                }
+            }
+            let err = super::verify_required_oracle(&dir, "b11429", key, true).unwrap_err();
+            assert!(
+                err.contains("required cuda member"),
+                "error '{err}' must contain 'required cuda member'"
+            );
+            let _ = fs::remove_dir_all(dir);
+        }
+
+        // 2. Write full regular set, inventory once, then overwrite llama-server with different bytes that still contain all four arch strings -> assess_cuda_bytes is Integrity
+        {
+            let dir = temp(&format!("cuda-tampered-launcher-{arch}"));
+            let wanted = pins::cuda_wanted_files(arch).expect("cuda_wanted_files");
+            for name in &wanted {
+                let path = dir.join(name);
+                if name == "llama-server" {
+                    fs::write(&path, b"sm_86 sm_89 sm_120a sm_121a initial content").unwrap();
+                } else {
+                    fs::write(&path, name.as_bytes()).unwrap();
+                }
+            }
+            let inventory = manifest::runtime_inventory(&dir, &[]).unwrap();
+            fs::write(
+                dir.join("llama-server"),
+                b"sm_86 sm_89 sm_120a sm_121a modified content replacement",
+            )
+            .unwrap();
+            assert_eq!(
+                super::assess_cuda_bytes(&dir, &inventory),
+                crate::ArtifactTrust::Integrity
+            );
+            let _ = fs::remove_dir_all(dir);
+        }
+
+        // 3. assess_cuda_installation is Integrity for malformed manifest JSON (launcher exists, manifest path contains not-json)
+        {
+            let dir = temp(&format!("cuda-malformed-manifest-{arch}"));
+            fs::write(
+                dir.join("llama-server"),
+                b"sm_86 sm_89 sm_120a sm_121a header content",
+            )
+            .unwrap();
+            let manifest_path = manifest::artifact_manifest_path(&dir);
+            if let Some(parent) = manifest_path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(&manifest_path, b"not-json").unwrap();
+            assert_eq!(
+                super::assess_cuda_installation(&dir, key),
+                crate::ArtifactTrust::Integrity
+            );
+            let _ = fs::remove_dir_all(dir);
+        }
+
+        // 4. assess_cuda_installation is Integrity for missing manifest (launcher exists, no manifest file)
+        {
+            let dir = temp(&format!("cuda-missing-manifest-{arch}"));
+            fs::write(
+                dir.join("llama-server"),
+                b"sm_86 sm_89 sm_120a sm_121a header content",
+            )
+            .unwrap();
+            assert_eq!(
+                super::assess_cuda_installation(&dir, key),
+                crate::ArtifactTrust::Integrity
+            );
+            let _ = fs::remove_dir_all(dir);
+        }
+
+        // 5. Manifest whose pin_identity is the old ARM OCI object
+        {
+            let dir = temp(&format!("cuda-old-arm-oci-{arch}"));
+            fs::write(
+                dir.join("llama-server"),
+                b"sm_86 sm_89 sm_120a sm_121a header content",
+            )
+            .unwrap();
+            let old_arm_oci = json!({
+                "unit": "llama-server-cuda",
+                "artifact_key": key,
+                "url": "https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-arm64-sol1.tar.gz",
+                "sha256": "6de68319db40e8c0eb45dc4bd3a45a16971dbdc128f2b621b19bef5dae87d064",
+                "size_bytes": 654508507,
+                "release_tag": "b10068",
+                "upstream_image_digest": "sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63",
+                "llama_cpp_revision": "571d0d540df04f25298d0e159e520d9fc62ed121",
+                "repack_revision": "sol1",
+                "arch": arch,
+                "binary_name": "llama-server",
+                "wanted_files": pins::cuda_wanted_files(arch).unwrap()
+            });
+            let inv = manifest::runtime_inventory(&dir, &[]).unwrap();
+            let mf = manifest::build_manifest(
+                "local",
+                "llama-server-cuda",
+                "target",
+                json!({"pin_identity": old_arm_oci}),
+                inv,
+                None,
+                None,
+            )
+            .unwrap();
+            manifest::write_manifest(&manifest::artifact_manifest_path(&dir), &mf).unwrap();
+            assert_eq!(
+                super::assess_cuda_installation(&dir, key),
+                crate::ArtifactTrust::Integrity
+            );
+            let _ = fs::remove_dir_all(dir);
+        }
+
+        // 6. Mixed pin that is cuda_identity(key) plus upstream_image_digest
+        {
+            let dir = temp(&format!("cuda-mixed-pin-{arch}"));
+            fs::write(
+                dir.join("llama-server"),
+                b"sm_86 sm_89 sm_120a sm_121a header content",
+            )
+            .unwrap();
+            let mut mixed_pin = pins::cuda_identity(key).unwrap();
+            mixed_pin["upstream_image_digest"] =
+                json!("sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63");
+            let inv = manifest::runtime_inventory(&dir, &[]).unwrap();
+            let mf = manifest::build_manifest(
+                "local",
+                "llama-server-cuda",
+                "target",
+                json!({"pin_identity": mixed_pin}),
+                inv,
+                None,
+                None,
+            )
+            .unwrap();
+            manifest::write_manifest(&manifest::artifact_manifest_path(&dir), &mf).unwrap();
+            assert_eq!(
+                super::assess_cuda_installation(&dir, key),
+                crate::ArtifactTrust::Integrity
+            );
+            let _ = fs::remove_dir_all(dir);
+        }
+
+        // 7. For the ARM key only: cuda_identity with the engine input filename replaced by llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz
+        if key == "aarch64-unknown-linux-gnu" {
+            let dir = temp("cuda-wrong-engine-filename-arm64");
+            fs::write(
+                dir.join("llama-server"),
+                b"sm_86 sm_89 sm_120a sm_121a header content",
+            )
+            .unwrap();
+            let mut perturbed_pin = pins::cuda_identity(key).unwrap();
+            perturbed_pin["inputs"][0]["filename"] =
+                json!("llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz");
+            let inv = manifest::runtime_inventory(&dir, &[]).unwrap();
+            let mf = manifest::build_manifest(
+                "local",
+                "llama-server-cuda",
+                "target",
+                json!({"pin_identity": perturbed_pin}),
+                inv,
+                None,
+                None,
+            )
+            .unwrap();
+            manifest::write_manifest(&manifest::artifact_manifest_path(&dir), &mf).unwrap();
+            assert_eq!(
+                super::assess_cuda_installation(&dir, key),
+                crate::ArtifactTrust::Integrity
+            );
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+}
+
+#[test]
+fn cuda_b11429_covered_probe_integrity_is_blocked() {
+    let arches = [("sm_86", "8.6"), ("sm_121", "12.1")];
+    for (arch, compute_cap) in arches {
+        let probe: crate::NvidiaProbe = serde_json::from_value(json!({
+            "schema": NVIDIA_PROBE_SCHEMA,
+            "detected": true,
+            "gpu_index": 0,
+            "gpu_name": "Test GPU",
+            "compute_cap": compute_cap,
+            "arch": arch,
+            "driver_cuda_major": 13,
+            "vram_mib": 1024,
+            "unified_memory_mib": null,
+            "probe_error": null,
+        }))
+        .unwrap();
+
+        assert_eq!(
+            crate::select_local_backend(
+                &probe,
+                &crate::CUDA_EMBEDDED_ARCH_SET,
+                crate::CUDA_MIN_DRIVER_VERSION,
+                crate::ArtifactTrust::Integrity,
+                false
+            ),
+            crate::BackendSelection::IntegrityBlocked
+        );
+
+        let selected = crate::select_local_backend(
+            &probe,
+            &crate::CUDA_EMBEDDED_ARCH_SET,
+            crate::CUDA_MIN_DRIVER_VERSION,
+            crate::ArtifactTrust::Trusted,
+            false,
+        );
+        match selected {
+            crate::BackendSelection::Selected(choice) => {
+                assert_eq!(choice.backend, crate::Backend::Cuda);
+            }
+            other => panic!("expected Selected(Cuda), got {other:?}"),
+        }
+    }
 }

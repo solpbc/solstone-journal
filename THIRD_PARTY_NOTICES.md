@@ -523,20 +523,17 @@ Files: `libcudart.so.13`, `libcublas.so.13`,
 `libcublasLt.so.13`.
 
 Source:
-- linux x86_64 archive `llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz` carries CUDA Toolkit 13.4.1 components, the llama.cpp LICENSE file included in that archive, and the CUDA Toolkit 13.4.1 EULA HTML included in that archive.
-- linux arm64 stays the CUDA Toolkit 13.3 OCI closure. `licenses/NVIDIA-CUDA-EULA-13.3.txt` is that arm64 citation only.
+- linux x86_64 archive `llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz` and linux arm64 archive `llama-b11429-bin-linux-cuda13-arm64-sol1.tar.gz` each carry CUDA Toolkit 13.4.1 components. Each archive is packaged with the MIT license file `licenses/llama.cpp-LICENSE.txt` and the unmodified EULA at `licenses/NVIDIA-CUDA-EULA-13.4.1.html`. The archive root also contains `provenance.json`.
 
 License: NVIDIA CUDA Toolkit End User License Agreement, Release 13.4.1
-for linux x86_64 and Release 13.3 for linux arm64, including the CUDA Toolkit
+for linux x86_64 and linux arm64, including the CUDA Toolkit
 Supplement, Attachment A, and Attachment B.
 
 These files are proprietary NVIDIA software. They are not licensed under
 solstone's AGPL-3.0-only license or the llama.cpp MIT license. Their use and
 redistribution remain subject to the NVIDIA CUDA Toolkit EULA. A verbatim
-copy of the 13.4.1 EULA accompanies the linux x86_64 archive at
-`licenses/NVIDIA-CUDA-EULA-13.4.1.html`. The 13.3 package-accompanying EULA,
-including its third-party notices, is reproduced in
-`licenses/NVIDIA-CUDA-EULA-13.3.txt` for the linux arm64 closure. NVIDIA does not sponsor or endorse solstone.
+copy of the unmodified 13.4.1 EULA accompanies each selected linux archive at
+`licenses/NVIDIA-CUDA-EULA-13.4.1.html`. NVIDIA does not sponsor or endorse solstone.
 
 sol pbc redistributes these CUDA components from `updates.solstone.app` only as
 Attachment-A distributable portions: unmodified except for unzipping, inside

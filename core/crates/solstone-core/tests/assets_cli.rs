@@ -22,7 +22,7 @@ fn assets_command_emits_the_complete_round_trippable_catalog() {
     assert!(emitted.iter().any(|row| row["origin_key"]
         == "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz"));
     assert!(emitted.iter().any(|row| row["origin_key"]
-        == "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-arm64-sol1.tar.gz"));
+        == "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-arm64-sol1.tar.gz"));
     assert!(emitted.iter().all(|row| row["unit"] != "mlx-snapshot"));
 }
 
