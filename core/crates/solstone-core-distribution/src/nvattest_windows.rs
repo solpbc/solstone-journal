@@ -6,23 +6,84 @@
 //!
 //! Input files provide no authority, digests, destinations, or overrides.
 //! Output identity, source revision, offline tools, and notices are strictly
-//! bound to committed pins and inventory configuration.
+//! bound to committed pins and inventory configuration. The pins value is
+//! crate-private: production builds it only from the constants below.
 
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::io::{Cursor, Read};
 
 use crate::controlled_build::{ControlledBuildReceipt, decode_controlled_build_receipt};
 use crate::digest::sha256_hex;
-use crate::pe_dependencies::inspect_dependencies;
+use crate::pe_dependencies::{PeDependencies, inspect_dependencies};
 
 pub const NVATTEST_BUILD_EVIDENCE_SCHEMA_V1: &str = "solstone.nvattest-windows-build-evidence.v1";
 pub const NVATTEST_BUILD_EVIDENCE_LABEL: &str =
     "provenance/windows-x86_64/nvattest-build-evidence.json";
 pub const NVATTEST_TOOL_CENSUS_SCHEMA_V1: &str = "solstone.nvattest-windows-tool-census.v1";
+pub const NVATTEST_DRIVER_CONTROLS_SCHEMA_V1: &str = "solstone.nvattest-windows-driver-controls.v1";
 pub const NVATTEST_NOTICES_INDEX_SCHEMA_V1: &str = "solstone.nvattest-windows-notices.v1";
 pub const NVATTEST_EXE_OUTPUT_LABEL: &str = "bin/nvattest.exe";
 pub const NVATTEST_CA_BUNDLE_LABEL: &str = "share/ca/ca-bundle.pem";
 pub const NVATTEST_LICENSE_LABEL: &str = "LICENSE";
+pub const NVATTEST_RUNTIME_OUTPUT_LABELS: [&str; 3] = [
+    "bin/msvcp140.dll",
+    "bin/vcruntime140.dll",
+    "bin/vcruntime140_1.dll",
+];
+
+/// The receipt's inputs, as the recorder writes them: exactly these two, in
+/// this order, at the pinned archive identities.
+pub const NVATTEST_SOURCE_INPUT_LABEL: &str = "source.tar";
+pub const NVATTEST_BUNDLE_INPUT_LABEL: &str = "bundle.tar";
+/// The receipt's configuration, as the recorder writes it.
+pub const NVATTEST_TARGET_TRIPLE: &str = "x86_64-pc-windows-msvc";
+pub const NVATTEST_BUILD_PROFILE: &str = "Release";
+pub const NVATTEST_VALIDATION_DESCRIPTION: &str = "nvattest-windows-validation";
+
+pub const NVATTEST_NOTICES_INDEX_PATH: &str = "core/distribution/nvattest-windows-sources.json";
+pub const NVATTEST_NOTICES_BODY_PATH: &str = "core/distribution/nvattest-windows-NOTICES.md";
+const NOTICES_WINDOWS_POPULATION_MARKER: &str = "windows-link 0.2.1";
+const NOTICES_RUST_STANDARD_LIBRARY: &str = "1.97.1";
+const NOTICES_LIVE_IN: &str = "journal";
+
+const REGORUS_BUILD_REVISION_NAME: &str = "regorus-build-revision";
+const BUNDLE_MANIFEST_MEMBER: &str = "offline-manifest.json";
+
+/// Each refusal control must stop at exactly this SDK boundary message.
+pub const NVATTEST_REFUSAL_MANIFEST_BOUNDARY: &str =
+    "offline manifest does not match the caller-bound digest";
+pub const NVATTEST_REFUSAL_REUSE_BOUNDARY: &str = "offline builds cannot reuse dependencies";
+/// The driver flips one byte of this bundle member for the changed-input control.
+pub const NVATTEST_REFUSAL_CORRUPT_MEMBER: &str = "openssl-3.6.1.tar.gz";
+pub const NVATTEST_REFUSAL_CORRUPT_BOUNDARY: &str =
+    "missing or changed offline input: openssl-3.6.1.tar.gz";
+
+pub const NVATTEST_NETWORK_CONNECTED: &str = "connected";
+pub const NVATTEST_NETWORK_REFUSED: &str = "refused";
+
+/// The complete environment every SDK child receives, in ordinal order. The
+/// driver clears everything else; `NVAT_SOURCE_COMMIT` is the committed
+/// revision, `RUSTC` and the leading `PATH` entry are the selected toolchain,
+/// and `USERPROFILE`/`TEMP`/`TMP` are fresh directories under the work root.
+pub const NVATTEST_SDK_CHILD_ENVIRONMENT: &[&str] = &[
+    "ComSpec",
+    "NUMBER_OF_PROCESSORS",
+    "NVAT_SOURCE_COMMIT",
+    "PATH",
+    "PATHEXT",
+    "PROCESSOR_ARCHITECTURE",
+    "ProgramData",
+    "ProgramFiles",
+    "ProgramFiles(x86)",
+    "ProgramW6432",
+    "RUSTC",
+    "SystemDrive",
+    "SystemRoot",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "windir",
+];
 
 pub const IMPORT_ALLOWLIST: &[&str] = &[
     "advapi32.dll",
@@ -52,58 +113,168 @@ pub const IMPORT_ALLOWLIST: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Pins {
-    pub sdk_repo: &'static str,
-    pub sdk_revision: &'static str,
-    pub source_archive: ArchivePin,
-    pub bundle_archive: ArchivePin,
-    pub manifest_sha256: &'static str,
-    pub ca_bundle: FilePin,
-    pub license: FilePin,
-    pub regorus_cargo_lock: FilePin,
-    pub notices_body_sha256: &'static str,
-    pub body_assembly_revision: &'static str,
-    pub regorus_build_revision: RegorusBuildRevisionPin,
-    pub msvc_runtime: MsvcRuntimePins,
-    pub native_sources: &'static [DownloadSourcePin],
-    pub build_tools: &'static [DownloadSourcePin],
+pub(crate) struct Pins {
+    pub(crate) sdk_repo: &'static str,
+    pub(crate) sdk_revision: &'static str,
+    pub(crate) source_archive: ArchivePin,
+    pub(crate) bundle_archive: ArchivePin,
+    pub(crate) manifest_sha256: &'static str,
+    pub(crate) ca_bundle: FilePin,
+    pub(crate) license: FilePin,
+    pub(crate) regorus_cargo_lock: FilePin,
+    pub(crate) notices_body_sha256: &'static str,
+    pub(crate) body_assembly_revision: &'static str,
+    /// The SDK report's native source list, in the report's order.
+    pub(crate) native_sources: &'static [NativeSourcePin],
+    pub(crate) build_tools: &'static [DownloadSourcePin],
+    pub(crate) msvc_runtime: MsvcRuntimePins,
+    pub(crate) toolchain: ToolchainPins,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ArchivePin {
-    pub bytes: u64,
-    pub sha256: &'static str,
+pub(crate) struct ArchivePin {
+    pub(crate) bytes: u64,
+    pub(crate) sha256: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FilePin {
-    pub member: &'static str,
-    pub bytes: u64,
-    pub sha256: &'static str,
+pub(crate) struct FilePin {
+    pub(crate) member: &'static str,
+    pub(crate) bytes: u64,
+    pub(crate) sha256: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RegorusBuildRevisionPin {
-    pub revision: &'static str,
-    pub original_sha256: &'static str,
-    pub sha256: &'static str,
+pub(crate) struct MsvcRuntimePins {
+    pub(crate) msvcp140: FilePin,
+    pub(crate) vcruntime140: FilePin,
+    pub(crate) vcruntime140_1: FilePin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MsvcRuntimePins {
-    pub msvcp140: FilePin,
-    pub vcruntime140: FilePin,
-    pub vcruntime140_1: FilePin,
+pub(crate) struct DownloadSourcePin {
+    pub(crate) name: &'static str,
+    pub(crate) url: &'static str,
+    pub(crate) sha256: &'static str,
+}
+
+/// The archived build script substitution the SDK records in place of a Git
+/// revision. It has no URL and is not a bundle member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BuildRevisionPin {
+    pub(crate) revision: &'static str,
+    pub(crate) original_sha256: &'static str,
+    pub(crate) sha256: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DownloadSourcePin {
-    pub name: &'static str,
-    pub url: &'static str,
-    pub sha256: &'static str,
+pub(crate) enum NativeSourcePin {
+    Download(DownloadSourcePin),
+    BuildRevision(BuildRevisionPin),
 }
 
-pub fn production_pins() -> Pins {
+/// Version tokens are compared exactly. Executable digests are the files the
+/// build resolved: the selected toolchain's `rustc.exe`/`cargo.exe` and the
+/// `cmake.exe` inside the pinned bundle's CMake archive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ToolchainPins {
+    pub(crate) rustc_version: &'static str,
+    pub(crate) rustc_commit: &'static str,
+    pub(crate) rustc_exe_sha256: &'static str,
+    pub(crate) cargo_version: &'static str,
+    pub(crate) cargo_exe_sha256: &'static str,
+    pub(crate) cmake_version: &'static str,
+    pub(crate) cmake_exe_sha256: &'static str,
+    pub(crate) msvc_toolset: &'static str,
+    pub(crate) windows_sdk: &'static str,
+}
+
+const fn download(name: &'static str, url: &'static str, sha256: &'static str) -> NativeSourcePin {
+    NativeSourcePin::Download(DownloadSourcePin { name, url, sha256 })
+}
+
+const NATIVE_SOURCES: &[NativeSourcePin] = &[
+    download(
+        "openssl-3.6.1.tar.gz",
+        "https://github.com/openssl/openssl/releases/download/openssl-3.6.1/openssl-3.6.1.tar.gz",
+        "b1bfedcd5b289ff22aee87c9d600f515767ebf45f77168cb6d64f231f518a82e",
+    ),
+    download(
+        "libxml2-2.11.9.tar.xz",
+        "https://download.gnome.org/sources/libxml2/2.11/libxml2-2.11.9.tar.xz",
+        "780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f",
+    ),
+    download(
+        "xmlsec1-1.2.39.tar.gz",
+        "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_39/xmlsec1-1.2.39.tar.gz",
+        "15f2f55ea5968e578fcd24b3b427e553876c86c147dc7f03923e98fc2768a1fa",
+    ),
+    download(
+        "curl-7.88.1.tar.gz",
+        "https://github.com/curl/curl/releases/download/curl-7_88_1/curl-7.88.1.tar.gz",
+        "cdb38b72e36bc5d33d5b8810f8018ece1baa29a8f215b4495e495ded82bbf3c7",
+    ),
+    download(
+        "zlib-1.3.1.tar.gz",
+        "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+        "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+    ),
+    download(
+        "cli11-bfffd37e1f804ca4fae1caae106935791696b6a9.tar.gz",
+        "https://codeload.github.com/CLIUtils/CLI11/tar.gz/bfffd37e1f804ca4fae1caae106935791696b6a9",
+        "03c9b7921b8f99ca39ae660b03ebf9bd5a3f4280201f7d04bc5639b1e0496401",
+    ),
+    download(
+        "corrosion-6be991bb34c348dfb8344be22f3606288ea5c7fd.tar.gz",
+        "https://codeload.github.com/corrosion-rs/corrosion/tar.gz/6be991bb34c348dfb8344be22f3606288ea5c7fd",
+        "84d8fbc2810af9a42e250411dcd30b8e8cc59deba196c1dcd1fb44fec459a793",
+    ),
+    download(
+        "regorus-c7bf460bc160c96e38048296e5708943d2e43909.tar.gz",
+        "https://codeload.github.com/microsoft/regorus/tar.gz/c7bf460bc160c96e38048296e5708943d2e43909",
+        "188805b3b44b1cd2f9e8fd9b74a281b5f8eaa1c1b4087fd442afc88eccfef7cd",
+    ),
+    NativeSourcePin::BuildRevision(BuildRevisionPin {
+        revision: "c7bf460bc160c96e38048296e5708943d2e43909",
+        original_sha256: "7dc931d2a3cc9203b9cf63c9da29e85122f8b10ae2b1a4318494eacc178a3956",
+        sha256: "bef3c5f151c9f48f2e0bcf9a71ceb7c4d7ad9c5aec723d483076d4247ba86c15",
+    }),
+    download(
+        "jwt-cpp-e71e0c2d584baff06925bbb3aad683f677e4d498.tar.gz",
+        "https://codeload.github.com/Thalhammer/jwt-cpp/tar.gz/e71e0c2d584baff06925bbb3aad683f677e4d498",
+        "1988cbe1c930638ac4341578fb0fc0616fe39cf468a9087624b27581d81f8b51",
+    ),
+    download(
+        "fmt-e69e5f977d458f2650bb346dadf2ad30c5320281.tar.gz",
+        "https://codeload.github.com/fmtlib/fmt/tar.gz/e69e5f977d458f2650bb346dadf2ad30c5320281",
+        "1723f27eed50e751037f49dcdf73e33b17658f1178ea1c1f829a30bb02335745",
+    ),
+    download(
+        "spdlog-27cb4c76708608465c413f6d0e6b8d99a4d84302.tar.gz",
+        "https://codeload.github.com/gabime/spdlog/tar.gz/27cb4c76708608465c413f6d0e6b8d99a4d84302",
+        "7d512b37019b61646cd6fd1e48f52a3cf3e098f36b33ba9c059fe51301ff40b3",
+    ),
+    download(
+        "json-3.12.0.tar.xz",
+        "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz",
+        "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa",
+    ),
+];
+
+const BUILD_TOOLS: &[DownloadSourcePin] = &[
+    DownloadSourcePin {
+        name: "strawberry-perl-5.40.0.1-64bit-portable.zip",
+        url: "https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases/download/SP_54001_64bit_UCRT/strawberry-perl-5.40.0.1-64bit-portable.zip",
+        sha256: "754f3e2a8e473dc68d1540c7802fb166a025f35ef18960c4564a31f8b5933907",
+    },
+    DownloadSourcePin {
+        name: "cmake-3.31.12-windows-x86_64.zip",
+        url: "https://cmake.org/files/v3.31/cmake-3.31.12-windows-x86_64.zip",
+        sha256: "0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c",
+    },
+];
+
+pub(crate) const fn production_pins() -> Pins {
     Pins {
         sdk_repo: "https://github.com/solpbc/attestation-sdk",
         sdk_revision: "8fdbb0f8c10594a5f88f77fdec4766803b4e6d59",
@@ -133,11 +304,8 @@ pub fn production_pins() -> Pins {
         },
         notices_body_sha256: "36c2cec38a03bfd53b35833598ce8f4129493d036e309adb6e395a91a4acf017",
         body_assembly_revision: "7db176e058ca749f7c02a2867bbf3ca1caaf41cc",
-        regorus_build_revision: RegorusBuildRevisionPin {
-            revision: "c7bf460bc160c96e38048296e5708943d2e43909",
-            original_sha256: "7dc931d2a3cc9203b9cf63c9da29e85122f8b10ae2b1a4318494eacc178a3956",
-            sha256: "bef3c5f151c9f48f2e0bcf9a71ceb7c4d7ad9c5aec723d483076d4247ba86c15",
-        },
+        native_sources: NATIVE_SOURCES,
+        build_tools: BUILD_TOOLS,
         msvc_runtime: MsvcRuntimePins {
             msvcp140: FilePin {
                 member: "msvcp140.dll",
@@ -155,97 +323,37 @@ pub fn production_pins() -> Pins {
                 sha256: "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
             },
         },
-        native_sources: &[
-            DownloadSourcePin {
-                name: "openssl-3.6.1.tar.gz",
-                url: "https://github.com/openssl/openssl/releases/download/openssl-3.6.1/openssl-3.6.1.tar.gz",
-                sha256: "b1bfedcd5b289ff22aee87c9d600f515767ebf45f77168cb6d64f231f518a82e",
-            },
-            DownloadSourcePin {
-                name: "libxml2-2.11.9.tar.xz",
-                url: "https://download.gnome.org/sources/libxml2/2.11/libxml2-2.11.9.tar.xz",
-                sha256: "780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f",
-            },
-            DownloadSourcePin {
-                name: "xmlsec1-1.2.39.tar.gz",
-                url: "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_39/xmlsec1-1.2.39.tar.gz",
-                sha256: "15f2f55ea5968e578fcd24b3b427e553876c86c147dc7f03923e98fc2768a1fa",
-            },
-            DownloadSourcePin {
-                name: "curl-7.88.1.tar.gz",
-                url: "https://github.com/curl/curl/releases/download/curl-7_88_1/curl-7.88.1.tar.gz",
-                sha256: "cdb38b72e36bc5d33d5b8810f8018ece1baa29a8f215b4495e495ded82bbf3c7",
-            },
-            DownloadSourcePin {
-                name: "zlib-1.3.1.tar.gz",
-                url: "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
-                sha256: "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
-            },
-            DownloadSourcePin {
-                name: "cli11-bfffd37e1f804ca4fae1caae106935791696b6a9.tar.gz",
-                url: "https://codeload.github.com/CLIUtils/CLI11/tar.gz/bfffd37e1f804ca4fae1caae106935791696b6a9",
-                sha256: "03c9b7921b8f99ca39ae660b03ebf9bd5a3f4280201f7d04bc5639b1e0496401",
-            },
-            DownloadSourcePin {
-                name: "corrosion-6be991bb34c348dfb8344be22f3606288ea5c7fd.tar.gz",
-                url: "https://codeload.github.com/corrosion-rs/corrosion/tar.gz/6be991bb34c348dfb8344be22f3606288ea5c7fd",
-                sha256: "84d8fbc2810af9a42e250411dcd30b8e8cc59deba196c1dcd1fb44fec459a793",
-            },
-            DownloadSourcePin {
-                name: "regorus-c7bf460bc160c96e38048296e5708943d2e43909.tar.gz",
-                url: "https://codeload.github.com/microsoft/regorus/tar.gz/c7bf460bc160c96e38048296e5708943d2e43909",
-                sha256: "188805b3b44b1cd2f9e8fd9b74a281b5f8eaa1c1b4087fd442afc88eccfef7cd",
-            },
-            DownloadSourcePin {
-                name: "jwt-cpp-e71e0c2d584baff06925bbb3aad683f677e4d498.tar.gz",
-                url: "https://codeload.github.com/Thalhammer/jwt-cpp/tar.gz/e71e0c2d584baff06925bbb3aad683f677e4d498",
-                sha256: "1988cbe1c930638ac4341578fb0fc0616fe39cf468a9087624b27581d81f8b51",
-            },
-            DownloadSourcePin {
-                name: "fmt-e69e5f977d458f2650bb346dadf2ad30c5320281.tar.gz",
-                url: "https://codeload.github.com/fmtlib/fmt/tar.gz/e69e5f977d458f2650bb346dadf2ad30c5320281",
-                sha256: "1723f27eed50e751037f49dcdf73e33b17658f1178ea1c1f829a30bb02335745",
-            },
-            DownloadSourcePin {
-                name: "spdlog-27cb4c76708608465c413f6d0e6b8d99a4d84302.tar.gz",
-                url: "https://codeload.github.com/gabime/spdlog/tar.gz/27cb4c76708608465c413f6d0e6b8d99a4d84302",
-                sha256: "7d512b37019b61646cd6fd1e48f52a3cf3e098f36b33ba9c059fe51301ff40b3",
-            },
-            DownloadSourcePin {
-                name: "json-3.12.0.tar.xz",
-                url: "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz",
-                sha256: "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa",
-            },
-        ],
-        build_tools: &[
-            DownloadSourcePin {
-                name: "strawberry-perl-5.40.0.1-64bit-portable.zip",
-                url: "https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases/download/SP_54001_64bit_UCRT/strawberry-perl-5.40.0.1-64bit-portable.zip",
-                sha256: "754f3e2a8e473dc68d1540c7802fb166a025f35ef18960c4564a31f8b5933907",
-            },
-            DownloadSourcePin {
-                name: "cmake-3.31.12-windows-x86_64.zip",
-                url: "https://cmake.org/files/v3.31/cmake-3.31.12-windows-x86_64.zip",
-                sha256: "0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c",
-            },
-        ],
+        toolchain: ToolchainPins {
+            rustc_version: "1.97.1",
+            rustc_commit: "8bab26f4f",
+            rustc_exe_sha256: "cf79cfd77b0a144c56a0a6af6bf10bcdf095a73718cd4bf2b9d4fe2d2cbded55",
+            cargo_version: "1.97.1",
+            cargo_exe_sha256: "ddfbad20b31b918d3439d070945ec59bbfe037a6ec0ab5b584459e69c8b37d1b",
+            cmake_version: "3.31.12",
+            cmake_exe_sha256: "f3a124ad60459b56b2a5b4e312b0cd5de56d5b1fcf2921f8f602fb531b0da10d",
+            msvc_toolset: "14.44.35207",
+            windows_sdk: "10.0.26100.0",
+        },
     }
 }
 
-pub struct AdmissionBytes<'a> {
-    pub receipt: &'a [u8],
-    pub evidence: &'a [u8],
-    pub validation: &'a [u8],
-    pub notices_body: &'a [u8],
-    pub source_archive: &'a [u8],
-    pub bundle_archive: &'a [u8],
-    pub output_exe: &'a [u8],
-    pub output_license: &'a [u8],
-    pub output_msvcp140: &'a [u8],
-    pub output_vcruntime140: &'a [u8],
-    pub output_vcruntime140_1: &'a [u8],
+pub(crate) struct AdmissionBytes<'a> {
+    pub(crate) receipt: &'a [u8],
+    pub(crate) evidence: &'a [u8],
+    pub(crate) validation: &'a [u8],
+    pub(crate) notices_index: &'a [u8],
+    pub(crate) notices_body: &'a [u8],
+    pub(crate) source_archive: &'a [u8],
+    pub(crate) bundle_archive: &'a [u8],
+    pub(crate) output_exe: &'a [u8],
+    pub(crate) output_license: &'a [u8],
+    pub(crate) output_msvcp140: &'a [u8],
+    pub(crate) output_vcruntime140: &'a [u8],
+    pub(crate) output_vcruntime140_1: &'a [u8],
 }
 
+/// The payload's admitted MSVC runtime members; the verifier's build copies
+/// must equal these byte for byte.
 pub struct MsvcRuntimeBytes<'a> {
     pub msvcp140: &'a [u8],
     pub vcruntime140: &'a [u8],
@@ -253,32 +361,25 @@ pub struct MsvcRuntimeBytes<'a> {
 }
 
 #[derive(Debug)]
-pub struct AdmittedNvattest {
+pub(crate) struct AdmittedNvattest {
     receipt: ControlledBuildReceipt,
     receipt_bytes: Vec<u8>,
     evidence_bytes: Vec<u8>,
     validation_bytes: Vec<u8>,
-    outputs: BTreeMap<String, Vec<u8>>,
+    outputs: std::collections::BTreeMap<String, Vec<u8>>,
 }
 
 impl AdmittedNvattest {
-    pub fn receipt(&self) -> &ControlledBuildReceipt {
+    pub(crate) fn receipt(&self) -> &ControlledBuildReceipt {
         &self.receipt
     }
-    pub fn receipt_bytes(&self) -> &[u8] {
-        &self.receipt_bytes
-    }
-    pub fn evidence_bytes(&self) -> &[u8] {
-        &self.evidence_bytes
-    }
-    pub fn validation_bytes(&self) -> &[u8] {
-        &self.validation_bytes
-    }
-    pub fn outputs(&self) -> &BTreeMap<String, Vec<u8>> {
+
+    #[cfg(test)]
+    pub(crate) fn outputs(&self) -> &std::collections::BTreeMap<String, Vec<u8>> {
         &self.outputs
     }
 
-    pub fn into_admitted_controlled_input(
+    pub(crate) fn into_admitted_controlled_input(
         self,
     ) -> crate::produce::windows_inputs::AdmittedControlledInput {
         crate::produce::windows_inputs::AdmittedControlledInput::new(
@@ -295,8 +396,20 @@ impl AdmittedNvattest {
 #[serde(deny_unknown_fields)]
 pub struct NvattestWindowsBuildEvidence {
     pub schema: String,
+    /// The SDK's `build-report.json` exactly as written, BOM included.
     pub report_base64: String,
     pub census: NvattestToolCensus,
+    pub invocation: NvattestInvocation,
+    pub refusals: NvattestRefusals,
+    pub network: NvattestNetworkEvidence,
+    pub dumpbin_dependents: NvattestDumpbinDependents,
+}
+
+/// What the driver measured around the SDK build, handed to the recorder.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NvattestDriverControls {
+    pub schema: String,
     pub invocation: NvattestInvocation,
     pub refusals: NvattestRefusals,
     pub network: NvattestNetworkEvidence,
@@ -309,6 +422,10 @@ pub struct NvattestToolCensus {
     pub rustc: NvattestToolVersionPath,
     pub cargo: NvattestToolVersionPath,
     pub cmake: NvattestToolVersionPath,
+    pub cl: NvattestToolVersionPath,
+    pub link: NvattestToolVersionPath,
+    pub nmake: NvattestToolVersionPath,
+    pub msbuild: NvattestToolVersionPath,
     pub msvc: NvattestMsvcToolsVersion,
     pub windows_sdk: NvattestWindowsSdkVersion,
     #[serde(default)]
@@ -351,6 +468,11 @@ pub struct NvattestInvocation {
     pub offline: bool,
     pub bundle_path: String,
     pub manifest_sha256: String,
+    /// The `NVAT_SOURCE_COMMIT` value the driver set for every SDK child.
+    pub source_commit: String,
+    /// The names of every variable in the SDK children's environment.
+    pub environment: Vec<String>,
+    pub argv: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -371,9 +493,30 @@ pub struct NvattestRefusalEntry {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NvattestNetworkEvidence {
+    pub transport_peer: String,
+    pub ipv4: NvattestNetworkProbe,
+    pub ipv6: NvattestNetworkProbe,
+    pub rules_added: u32,
+    pub rules_remaining: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NvattestNetworkProbe {
+    pub target: String,
     pub positive_control: String,
     pub negative_control: String,
-    pub rules_remaining: u32,
+}
+
+/// `dumpbin /dependents` text, base64-encoded so its bytes survive JSON.
+/// Corroborating only; imports are always parsed from the admitted bytes.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NvattestDumpbinDependents {
+    pub nvattest_exe: String,
+    pub msvcp140: String,
+    pub vcruntime140: String,
+    pub vcruntime140_1: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -406,16 +549,16 @@ pub struct NvattestReportTools {
 #[serde(deny_unknown_fields)]
 pub struct NvattestReportSourceEntry {
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_sha256: Option<String>,
     pub sha256: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NvattestReportBuildToolEntry {
     pub name: String,
@@ -464,45 +607,61 @@ pub struct RegorusCargoLockEntry {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BundleManifest {
-    pub schema: u32,
-    pub files: Vec<BundleManifestFile>,
+    schema: u32,
+    files: Vec<BundleManifestFile>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BundleManifestFile {
-    pub path: String,
-    pub sha256: String,
-    pub size: u64,
+    path: String,
+    sha256: String,
+    size: u64,
 }
 
-pub fn admit(
+impl NativeSourcePin {
+    fn report_entry(&self) -> NvattestReportSourceEntry {
+        match self {
+            Self::Download(pin) => NvattestReportSourceEntry {
+                name: pin.name.into(),
+                url: Some(pin.url.into()),
+                revision: None,
+                original_sha256: None,
+                sha256: pin.sha256.into(),
+            },
+            Self::BuildRevision(pin) => NvattestReportSourceEntry {
+                name: REGORUS_BUILD_REVISION_NAME.into(),
+                url: None,
+                revision: Some(pin.revision.into()),
+                original_sha256: Some(pin.original_sha256.into()),
+                sha256: pin.sha256.into(),
+            },
+        }
+    }
+}
+
+pub(crate) fn admit(
     pins: &Pins,
-    index: &NoticesIndex,
     input: &AdmissionBytes<'_>,
     msvc: &MsvcRuntimeBytes<'_>,
 ) -> Result<AdmittedNvattest, String> {
-    // 1. Validate notices index structure and pins
-    validate_notices_index(pins, index)?;
+    // 1. The committed notices index and body bind the pins they were built for.
+    let index: NoticesIndex =
+        serde_json::from_slice(input.notices_index).map_err(|e| format!("notices-index: {e}"))?;
+    validate_notices_index(pins, &index)?;
     let notices_body_sha = sha256_hex(input.notices_body);
-    if notices_body_sha != pins.notices_body_sha256 || notices_body_sha != index.notices_body_sha256
-    {
-        return Err("notices-body: notices body SHA-256 differs from pin or index".into());
+    if notices_body_sha != pins.notices_body_sha256 {
+        return Err("notices-body: notices body SHA-256 differs from pin".into());
+    }
+    if notices_body_sha != index.notices_body_sha256 {
+        return Err("notices-body: notices body SHA-256 differs from index".into());
     }
 
-    // 2. Validate uncompressed archive sizes and SHA-256 hashes
-    if input.source_archive.len() as u64 != pins.source_archive.bytes
-        || sha256_hex(input.source_archive) != pins.source_archive.sha256
-    {
-        return Err("source-archive size or SHA-256 differs from pin".into());
-    }
-    if input.bundle_archive.len() as u64 != pins.bundle_archive.bytes
-        || sha256_hex(input.bundle_archive) != pins.bundle_archive.sha256
-    {
-        return Err("bundle-archive size or SHA-256 differs from pin".into());
-    }
+    // 2. Both archives at their pinned identities before any member is read.
+    require_archive("source-archive", input.source_archive, &pins.source_archive)?;
+    require_archive("bundle-archive", input.bundle_archive, &pins.bundle_archive)?;
 
-    // 3. Inspect PE dependencies on the output exe before receipt verification
+    // 3. The executable's own dependencies, from the admitted bytes.
     let pe = inspect_dependencies(input.output_exe)?;
     if pe.is_dll {
         return Err("pe-kind: nvattest.exe must be an executable, not a DLL".into());
@@ -513,15 +672,15 @@ pub fn admit(
         .chain(&pe.delay_imports)
         .chain(&pe.forwarders)
     {
-        let lower = import.to_ascii_lowercase();
-        if !IMPORT_ALLOWLIST.contains(&lower.as_str()) {
+        if !IMPORT_ALLOWLIST.contains(&import.to_ascii_lowercase().as_str()) {
             return Err(format!(
                 "import-allowlist: unrecognized PE import dependency: {import}"
             ));
         }
     }
 
-    // 4. Decode and validate ControlledBuildReceipt
+    // 4. The receipt binds its documents, the pinned source, inputs and
+    //    configuration, and exactly the executable presented here.
     let receipt = decode_controlled_build_receipt(input.receipt).map_err(|e| e.to_string())?;
     crate::produce::windows_inputs::verify_receipt_document_binding(
         &receipt,
@@ -529,115 +688,69 @@ pub fn admit(
         input.validation,
         NVATTEST_BUILD_EVIDENCE_LABEL,
     )?;
-
-    if !receipt.configuration.network_access_denied {
-        return Err(
-            "network-rules: receipt configuration must declare network_access_denied=true".into(),
-        );
-    }
-    if receipt.source.windows_dependency.repository != pins.sdk_repo
-        || receipt.source.windows_dependency.revision != pins.sdk_revision
-        || receipt.source.windows_dependency.content_sha256 != pins.source_archive.sha256
-    {
-        return Err("source-revision: receipt windows_dependency differs from pin".into());
-    }
-    if receipt.outputs.len() != 1 || receipt.outputs[0].label != NVATTEST_EXE_OUTPUT_LABEL {
-        return Err("native receipt has an unexpected output set".into());
-    }
-
+    validate_receipt(pins, &receipt)?;
     let output_entry = &receipt.outputs[0];
-    let output_sha256 = sha256_hex(input.output_exe);
     if input.output_exe.len() as u64 != output_entry.size
-        || output_sha256 != output_entry.pre_signing_sha256
+        || sha256_hex(input.output_exe) != output_entry.pre_signing_sha256
     {
-        return Err("report-output: output exe does not match receipt output identity".into());
+        return Err("receipt-output: output exe does not match receipt output identity".into());
     }
 
-    // 5. Decode evidence document
+    // 5. The evidence document the receipt binds.
     let evidence: NvattestWindowsBuildEvidence =
-        serde_json::from_slice(input.evidence).map_err(|e| e.to_string())?;
-
+        serde_json::from_slice(input.evidence).map_err(|e| format!("evidence: {e}"))?;
     if evidence.schema != NVATTEST_BUILD_EVIDENCE_SCHEMA_V1 {
         return Err(format!(
-            "evidence schema must be {NVATTEST_BUILD_EVIDENCE_SCHEMA_V1}"
+            "evidence: schema must be {NVATTEST_BUILD_EVIDENCE_SCHEMA_V1}"
         ));
     }
-    if !evidence.invocation.offline {
-        return Err("evidence invocation must declare offline=true".into());
-    }
-    if evidence.invocation.manifest_sha256 != pins.manifest_sha256 {
-        return Err("bundle-archive: invocation manifest_sha256 differs from pin".into());
-    }
-
-    // Validate refusals
+    validate_invocation(pins, &evidence.invocation)?;
     validate_refusals(&evidence.refusals)?;
+    validate_network(&evidence.network)?;
+    validate_dumpbin(&evidence.dumpbin_dependents, &pe)?;
 
-    // Validate network rules
-    if evidence.network.positive_control != "connected"
-        || evidence.network.negative_control != "refused"
-        || evidence.network.rules_remaining != 0
-    {
-        return Err(
-            "network-rules: positive control must connect, negative must refuse, rules_remaining must be 0".into(),
-        );
-    }
-
-    // 6. Decode report from evidence report_base64
-    let report_bytes = base64_decode_report(&evidence.report_base64)?;
+    // 6. The raw SDK report, decoded and re-parsed rather than summarized.
+    let report_bytes = base64_decode(&evidence.report_base64)?;
     let report = decode_build_report(&report_bytes)?;
-
+    if report.schema != 1 {
+        return Err("report: SDK build report schema must be 1".into());
+    }
     if report.source_commit != pins.sdk_revision {
         return Err("source-revision: report source_commit differs from pin".into());
     }
-
-    // Validate census vs report
     validate_census(pins, &evidence.census, &report)?;
+    validate_report_sources(pins, &report)?;
+    validate_report_outputs(pins, &report, output_entry)?;
+    validate_report_imports(&report, &pe)?;
 
-    // Validate report output vs receipt output
-    let exe_report_output = report
-        .outputs
-        .iter()
-        .find(|o| o.path == NVATTEST_EXE_OUTPUT_LABEL)
-        .ok_or_else(|| "report-output: report missing bin/nvattest.exe output".to_string())?;
-    if exe_report_output.bytes != output_entry.size
-        || exe_report_output.sha256 != output_entry.pre_signing_sha256
-    {
-        return Err("report-output: report exe output differs from receipt output".into());
+    // 7. Source archive members: the git archive commit, the staged LICENSE
+    //    and the regorus lock the notices index was built against.
+    let source = extract_source_tar_members(input.source_archive, pins)?;
+    if source.pax_comment.as_deref() != Some(pins.sdk_revision) {
+        return Err("source-revision: source archive pax comment differs from pin".into());
     }
-
-    // 7. Extract and validate members from source tar
-    let (source_pax_comment, source_license) = extract_source_tar_members(input.source_archive)?;
-    if source_pax_comment.as_deref() != Some(pins.sdk_revision) {
-        return Err("source-revision: source pax comment differs from pin".into());
-    }
-    if source_license.len() as u64 != pins.license.bytes
-        || sha256_hex(&source_license) != pins.license.sha256
-    {
-        return Err("source-archive: source LICENSE member differs from pin".into());
-    }
-
-    // Output license must match source archive license
-    if input.output_license != source_license.as_slice() {
+    require_file_pin("source-archive", &source.license, &pins.license)?;
+    require_file_pin(
+        "source-archive",
+        &source.regorus_lock,
+        &pins.regorus_cargo_lock,
+    )?;
+    if input.output_license != source.license.as_slice() {
         return Err("output-license: output root LICENSE differs from archive member".into());
     }
 
-    // 8. Extract and validate members from bundle tar
-    let (bundle_manifest_bytes, bundle_ca_bytes) =
-        extract_bundle_tar_members(input.bundle_archive)?;
-    if sha256_hex(&bundle_manifest_bytes) != pins.manifest_sha256 {
+    // 8. Bundle members: the caller-bound manifest and the CA that is staged.
+    let bundle = extract_bundle_tar_members(input.bundle_archive, pins)?;
+    if sha256_hex(&bundle.manifest) != pins.manifest_sha256 {
         return Err("bundle-archive: bundle offline-manifest.json differs from pin".into());
     }
-    let bundle_manifest: BundleManifest =
-        serde_json::from_slice(&bundle_manifest_bytes).map_err(|e| e.to_string())?;
+    let bundle_manifest: BundleManifest = serde_json::from_slice(&bundle.manifest)
+        .map_err(|e| format!("bundle-archive: offline manifest: {e}"))?;
     if bundle_manifest.schema != 1 {
         return Err("bundle-archive: bundle offline-manifest schema must be 1".into());
     }
-
-    // Validate CA bundle against pin and report
-    let bundle_ca_sha256 = sha256_hex(&bundle_ca_bytes);
-    if bundle_ca_bytes.len() as u64 != pins.ca_bundle.bytes
-        || bundle_ca_sha256 != pins.ca_bundle.sha256
-    {
+    let bundle_ca_sha256 = sha256_hex(&bundle.ca);
+    if bundle.ca.len() as u64 != pins.ca_bundle.bytes || bundle_ca_sha256 != pins.ca_bundle.sha256 {
         if bundle_ca_sha256 == report.ca_bundle.sha256 {
             return Err("ca-pin: bundle CA matches report but differs from pin".into());
         }
@@ -646,11 +759,9 @@ pub fn admit(
     if bundle_ca_sha256 != report.ca_bundle.sha256 {
         return Err("ca-report: bundle CA matches pin but differs from report".into());
     }
+    validate_bundle_manifest(pins, &bundle_manifest)?;
 
-    // Validate manifest files against report sources and build_tools
-    validate_manifest_and_sources(pins, &bundle_manifest, &report)?;
-
-    // 9. Validate CRT outputs against MSVC package members and pins
+    // 9. The build's runtime copies are the payload's admitted MSVC members.
     validate_crt_members(
         pins,
         msvc,
@@ -659,10 +770,11 @@ pub fn admit(
         input.output_vcruntime140_1,
     )?;
 
-    let mut outputs = BTreeMap::new();
+    let mut outputs = std::collections::BTreeMap::new();
     outputs.insert(NVATTEST_EXE_OUTPUT_LABEL.into(), input.output_exe.to_vec());
-    outputs.insert(NVATTEST_CA_BUNDLE_LABEL.into(), bundle_ca_bytes);
-    outputs.insert(NVATTEST_LICENSE_LABEL.into(), source_license);
+    // The CA bytes compared above are the bytes that are staged.
+    outputs.insert(NVATTEST_CA_BUNDLE_LABEL.into(), bundle.ca);
+    outputs.insert(NVATTEST_LICENSE_LABEL.into(), source.license);
 
     Ok(AdmittedNvattest {
         receipt,
@@ -673,444 +785,330 @@ pub fn admit(
     })
 }
 
+fn require_archive(label: &str, bytes: &[u8], pin: &ArchivePin) -> Result<(), String> {
+    if bytes.len() as u64 != pin.bytes || sha256_hex(bytes) != pin.sha256 {
+        return Err(format!("{label}: size or SHA-256 differs from pin"));
+    }
+    Ok(())
+}
+
+fn require_file_pin(label: &str, bytes: &[u8], pin: &FilePin) -> Result<(), String> {
+    if bytes.len() as u64 != pin.bytes || sha256_hex(bytes) != pin.sha256 {
+        return Err(format!(
+            "{label}: member {} size or SHA-256 differs from pin",
+            pin.member
+        ));
+    }
+    Ok(())
+}
+
 fn validate_notices_index(pins: &Pins, index: &NoticesIndex) -> Result<(), String> {
     if index.schema != NVATTEST_NOTICES_INDEX_SCHEMA_V1 {
         return Err("notices-index: schema mismatch".into());
     }
     if index.notices_body_sha256 != pins.notices_body_sha256 {
-        return Err("notices-body: notices body SHA-256 differs from pin".into());
+        return Err("notices-body: index notices body SHA-256 differs from pin".into());
     }
     if index.body_assembly_revision != pins.body_assembly_revision {
         return Err("notices-index: body assembly revision mismatch".into());
     }
     if index.admitted_sdk_revision != pins.sdk_revision {
-        return Err("notices-index: admitted SDK revision mismatch".into());
+        return Err("notices-index: admitted SDK revision differs from the revision pin".into());
     }
     if index.regorus_cargo_lock.member != pins.regorus_cargo_lock.member
         || index.regorus_cargo_lock.sha256 != pins.regorus_cargo_lock.sha256
     {
-        return Err("notices-index: regorus cargo lock pin mismatch".into());
+        return Err("notices-index: regorus Cargo.lock differs from the lock pin".into());
     }
-    if index.windows_population_marker != "windows-link 0.2.1"
-        || index.rust_standard_library != "1.97.1"
+    if index.windows_population_marker != NOTICES_WINDOWS_POPULATION_MARKER
+        || index.rust_standard_library != NOTICES_RUST_STANDARD_LIBRARY
         || !index.mozilla_ca_notice
-        || index.notices_live_in != "journal"
+        || index.notices_live_in != NOTICES_LIVE_IN
     {
         return Err("notices-index: notice markers mismatch".into());
     }
+    compare_source_list(
+        "notices-sources",
+        "notices index",
+        &index.native_sources,
+        pins,
+    )
+}
 
-    if index.native_sources.len() != pins.native_sources.len() + 1 {
-        return Err("notices-sources: native sources count mismatch".into());
-    }
-    for expected in pins.native_sources {
-        let entry = index
-            .native_sources
-            .iter()
-            .find(|s| s.name == expected.name)
-            .ok_or_else(|| {
-                format!(
-                    "notices-sources: missing source {} in notices index",
-                    expected.name
-                )
-            })?;
-        if entry.url.as_deref() != Some(expected.url) || entry.sha256 != expected.sha256 {
-            return Err(format!(
-                "notices-sources: source {} url or digest differs from pin",
-                expected.name
-            ));
-        }
-    }
-    let regorus_entry = index
+/// The list must equal the committed one exactly, entry for entry, in order.
+/// The `regorus-build-revision` entry has its own boundary so a change to it
+/// is named as such.
+fn compare_source_list(
+    boundary: &str,
+    origin: &str,
+    actual: &[NvattestReportSourceEntry],
+    pins: &Pins,
+) -> Result<(), String> {
+    let expected: Vec<NvattestReportSourceEntry> = pins
         .native_sources
         .iter()
-        .find(|s| s.name == "regorus-build-revision")
-        .ok_or_else(|| {
-            "notices-sources: missing regorus-build-revision in notices index".to_string()
-        })?;
-    if regorus_entry.url.is_some()
-        || regorus_entry.revision.as_deref() != Some(pins.regorus_build_revision.revision)
-        || regorus_entry.original_sha256.as_deref()
-            != Some(pins.regorus_build_revision.original_sha256)
-        || regorus_entry.sha256 != pins.regorus_build_revision.sha256
+        .map(NativeSourcePin::report_entry)
+        .collect();
+    for entry in expected
+        .iter()
+        .filter(|e| e.name == REGORUS_BUILD_REVISION_NAME)
     {
-        return Err("regorus-build-revision: index entry differs from pin".into());
+        let found: Vec<_> = actual.iter().filter(|a| a.name == entry.name).collect();
+        match found.as_slice() {
+            [] => {
+                return Err(format!(
+                    "regorus-build-revision: {origin} has no regorus-build-revision entry"
+                ));
+            }
+            [one] if *one == entry => {}
+            _ => {
+                return Err(format!(
+                    "regorus-build-revision: {origin} entry differs from its committed values"
+                ));
+            }
+        }
+    }
+    if actual != expected.as_slice() {
+        return Err(format!(
+            "{boundary}: {origin} native source list differs from the committed list"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_receipt(pins: &Pins, receipt: &ControlledBuildReceipt) -> Result<(), String> {
+    let dependency = &receipt.source.windows_dependency;
+    if dependency.repository != pins.sdk_repo
+        || dependency.revision != pins.sdk_revision
+        || dependency.content_sha256 != pins.source_archive.sha256
+    {
+        return Err("source-revision: receipt windows_dependency differs from pin".into());
+    }
+    let expected_inputs = [
+        (NVATTEST_SOURCE_INPUT_LABEL, &pins.source_archive),
+        (NVATTEST_BUNDLE_INPUT_LABEL, &pins.bundle_archive),
+    ];
+    if receipt.inputs.len() != expected_inputs.len()
+        || receipt
+            .inputs
+            .iter()
+            .zip(expected_inputs)
+            .any(|(input, (label, pin))| {
+                input.label != label || input.sha256 != pin.sha256 || input.size != pin.bytes
+            })
+    {
+        return Err(
+            "receipt-inputs: receipt inputs are not exactly the pinned source and bundle archives"
+                .into(),
+        );
+    }
+    let configuration = &receipt.configuration;
+    if configuration.target_triple != NVATTEST_TARGET_TRIPLE
+        || configuration.profile != NVATTEST_BUILD_PROFILE
+        || !configuration.flags.is_empty()
+        || !configuration.network_access_denied
+    {
+        return Err(
+            "receipt-configuration: receipt configuration differs from the recorder's".into(),
+        );
+    }
+    if receipt.validation.description != NVATTEST_VALIDATION_DESCRIPTION {
+        return Err(
+            "receipt-validation: validation description differs from the recorder's".into(),
+        );
+    }
+    if receipt.outputs.len() != 1 || receipt.outputs[0].label != NVATTEST_EXE_OUTPUT_LABEL {
+        return Err("receipt-output: native receipt has an unexpected output set".into());
+    }
+    Ok(())
+}
+
+fn validate_invocation(pins: &Pins, invocation: &NvattestInvocation) -> Result<(), String> {
+    if !invocation.offline {
+        return Err("invocation: evidence invocation must declare offline=true".into());
+    }
+    if invocation.manifest_sha256 != pins.manifest_sha256 {
+        return Err("invocation: caller-bound manifest digest differs from pin".into());
+    }
+    if invocation.source_commit != pins.sdk_revision {
+        return Err("invocation: NVAT_SOURCE_COMMIT differs from the revision pin".into());
+    }
+    if invocation.bundle_path.is_empty() || invocation.argv.is_empty() {
+        return Err("invocation: bundle path and argv must be recorded".into());
+    }
+    let mut actual: Vec<&str> = invocation.environment.iter().map(String::as_str).collect();
+    actual.sort_unstable();
+    let mut expected = NVATTEST_SDK_CHILD_ENVIRONMENT.to_vec();
+    expected.sort_unstable();
+    if actual != expected {
+        return Err(
+            "invocation: SDK child environment is not exactly the committed allowlist".into(),
+        );
     }
     Ok(())
 }
 
 fn validate_refusals(refusals: &NvattestRefusals) -> Result<(), String> {
-    if refusals.manifest_digest.exit_code == 0
-        || !refusals
-            .manifest_digest
-            .boundary
-            .contains("offline manifest does not match the caller-bound digest")
-    {
-        return Err("refusals: manifest_digest refusal boundary token mismatch".into());
-    }
-    if refusals.reuse_dependencies.exit_code == 0
-        || !refusals
-            .reuse_dependencies
-            .boundary
-            .contains("offline builds cannot reuse dependencies")
-    {
-        return Err("refusals: reuse_dependencies refusal boundary token mismatch".into());
-    }
-    if refusals.corrupt_member.exit_code == 0
-        || !refusals
-            .corrupt_member
-            .boundary
-            .contains("missing or changed offline input")
-    {
-        return Err("refusals: corrupt_member refusal boundary token mismatch".into());
+    for (name, entry, boundary) in [
+        (
+            "manifest_digest",
+            &refusals.manifest_digest,
+            NVATTEST_REFUSAL_MANIFEST_BOUNDARY,
+        ),
+        (
+            "reuse_dependencies",
+            &refusals.reuse_dependencies,
+            NVATTEST_REFUSAL_REUSE_BOUNDARY,
+        ),
+        (
+            "corrupt_member",
+            &refusals.corrupt_member,
+            NVATTEST_REFUSAL_CORRUPT_BOUNDARY,
+        ),
+    ] {
+        if entry.exit_code == 0 || entry.boundary != boundary {
+            return Err(format!(
+                "refusals: {name} did not refuse non-zero at its named boundary"
+            ));
+        }
     }
     Ok(())
 }
 
-fn base64_decode_report(input: &str) -> Result<Vec<u8>, String> {
-    let mut out = Vec::with_capacity(input.len() / 4 * 3);
-    let mut quartet = [0_u8; 4];
-    let mut len = 0;
-    for byte in input.bytes().filter(|byte| !byte.is_ascii_whitespace()) {
-        quartet[len] = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            b'=' => 64,
-            _ => return Err(format!("invalid base64 byte: {byte}")),
-        };
-        len += 1;
-        if len == 4 {
-            out.push((quartet[0] << 2) | (quartet[1] >> 4));
-            if quartet[2] != 64 {
-                out.push((quartet[1] << 4) | (quartet[2] >> 2));
-            }
-            if quartet[3] != 64 {
-                out.push((quartet[2] << 6) | quartet[3]);
-            }
-            len = 0;
+fn validate_network(network: &NvattestNetworkEvidence) -> Result<(), String> {
+    for (family, probe) in [("ipv4", &network.ipv4), ("ipv6", &network.ipv6)] {
+        if probe.target.is_empty()
+            || probe.positive_control != NVATTEST_NETWORK_CONNECTED
+            || probe.negative_control != NVATTEST_NETWORK_REFUSED
+        {
+            return Err(format!(
+                "network-rules: {family} positive control must connect and negative control must refuse"
+            ));
         }
     }
-    if len != 0 {
-        return Err("invalid unpadded base64 length".into());
+    if network.transport_peer.is_empty() || network.rules_added == 0 {
+        return Err("network-rules: transport peer and installed rules must be recorded".into());
+    }
+    if network.rules_remaining != 0 {
+        return Err("network-rules: firewall rules remained after the build".into());
+    }
+    Ok(())
+}
+
+/// The DLL names a `dumpbin /dependents` text lists (as the SDK's own report
+/// parses them), folded to lower case.
+fn dumpbin_dependents(text: &str) -> BTreeSet<String> {
+    text.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            (line.starts_with(char::is_whitespace)
+                && !trimmed.is_empty()
+                && !trimmed.contains(char::is_whitespace)
+                && trimmed.to_ascii_lowercase().ends_with(".dll"))
+            .then(|| trimmed.to_ascii_lowercase())
+        })
+        .collect()
+}
+
+fn validate_dumpbin(
+    dumpbin: &NvattestDumpbinDependents,
+    pe: &PeDependencies,
+) -> Result<(), String> {
+    let mut decoded = Vec::new();
+    for (name, text) in [
+        ("nvattest.exe", &dumpbin.nvattest_exe),
+        ("msvcp140.dll", &dumpbin.msvcp140),
+        ("vcruntime140.dll", &dumpbin.vcruntime140),
+        ("vcruntime140_1.dll", &dumpbin.vcruntime140_1),
+    ] {
+        let bytes = base64_decode(text)?;
+        if bytes.is_empty() {
+            return Err(format!("dumpbin: {name} dependents were not captured"));
+        }
+        decoded.push(bytes);
+    }
+    let listed = dumpbin_dependents(&String::from_utf8_lossy(&decoded[0]));
+    if listed != pe_load_dependencies(pe) {
+        return Err(
+            "dumpbin: captured nvattest.exe dependents differ from the admitted PE imports".into(),
+        );
+    }
+    Ok(())
+}
+
+fn pe_load_dependencies(pe: &PeDependencies) -> BTreeSet<String> {
+    pe.imports
+        .iter()
+        .chain(&pe.delay_imports)
+        .map(|name| name.to_ascii_lowercase())
+        .collect()
+}
+
+fn validate_report_imports(
+    report: &NvattestBuildReport,
+    pe: &PeDependencies,
+) -> Result<(), String> {
+    let listed: BTreeSet<String> = report
+        .imports
+        .iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect();
+    if let Some(name) = listed
+        .iter()
+        .find(|name| !IMPORT_ALLOWLIST.contains(&name.as_str()))
+    {
+        return Err(format!(
+            "import-allowlist: report lists an unrecognized dependency: {name}"
+        ));
+    }
+    if listed != pe_load_dependencies(pe) {
+        return Err("report-imports: report imports differ from the admitted PE imports".into());
+    }
+    Ok(())
+}
+
+pub(crate) fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    let digits: Vec<u8> = input
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
+    if !digits.len().is_multiple_of(4) {
+        return Err("base64: invalid length".into());
+    }
+    let mut out = Vec::with_capacity(digits.len() / 4 * 3);
+    let quartets = digits.len() / 4;
+    for (index, chunk) in digits.chunks(4).enumerate() {
+        let mut values = [0_u8; 4];
+        let mut padding = 0;
+        for (slot, byte) in chunk.iter().enumerate() {
+            values[slot] = match byte {
+                b'A'..=b'Z' => byte - b'A',
+                b'a'..=b'z' => byte - b'a' + 26,
+                b'0'..=b'9' => byte - b'0' + 52,
+                b'+' => 62,
+                b'/' => 63,
+                b'=' if slot >= 2 && index + 1 == quartets => {
+                    padding += 1;
+                    0
+                }
+                _ => return Err(format!("base64: invalid byte {byte}")),
+            };
+            if padding > 0 && *byte != b'=' {
+                return Err("base64: data after padding".into());
+            }
+        }
+        out.push((values[0] << 2) | (values[1] >> 4));
+        if padding < 2 {
+            out.push((values[1] << 4) | (values[2] >> 2));
+        }
+        if padding < 1 {
+            out.push((values[2] << 6) | values[3]);
+        }
     }
     Ok(out)
 }
 
-fn decode_build_report(bytes: &[u8]) -> Result<NvattestBuildReport, String> {
-    // Strip optional leading UTF-8 BOM only for JSON parsing
-    let clean_bytes = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        &bytes[3..]
-    } else {
-        bytes
-    };
-    serde_json::from_slice(clean_bytes)
-        .map_err(|e| format!("failed to parse build-report.json: {e}"))
-}
-
-fn validate_census(
-    _pins: &Pins,
-    census: &NvattestToolCensus,
-    report: &NvattestBuildReport,
-) -> Result<(), String> {
-    if census.schema != NVATTEST_TOOL_CENSUS_SCHEMA_V1 {
-        return Err("census-version: tool census schema mismatch".into());
-    }
-
-    // 1. Rustc
-    let rustc_ver = census
-        .rustc
-        .version
-        .as_deref()
-        .ok_or_else(|| "census-version: rustc version is missing or null".to_string())?;
-    validate_sha256_hex(&census.rustc.sha256, "rustc path sha256")?;
-    validate_rustc_version_token(rustc_ver)?;
-    if rustc_ver != report.tools.rustc {
-        return Err("tool-census: census rustc version differs from report".into());
-    }
-
-    // 2. Cargo
-    let cargo_ver = census
-        .cargo
-        .version
-        .as_deref()
-        .ok_or_else(|| "census-version: cargo version is missing or null".to_string())?;
-    validate_sha256_hex(&census.cargo.sha256, "cargo path sha256")?;
-    validate_cargo_version_token(cargo_ver)?;
-    if cargo_ver != report.tools.cargo {
-        return Err("tool-census: census cargo version differs from report".into());
-    }
-
-    // 3. CMake
-    let cmake_ver = census
-        .cmake
-        .version
-        .as_deref()
-        .ok_or_else(|| "census-version: cmake version is missing or null".to_string())?;
-    validate_sha256_hex(&census.cmake.sha256, "cmake path sha256")?;
-    validate_cmake_version_token(cmake_ver)?;
-    if cmake_ver != report.tools.cmake {
-        return Err("tool-census: census cmake version differs from report".into());
-    }
-
-    // 4. MSVC
-    let msvc_ver =
-        census.msvc.vc_tools_version.as_deref().ok_or_else(|| {
-            "census-version: msvc vc_tools_version is missing or null".to_string()
-        })?;
-    if msvc_ver != "14.44.35207" {
-        return Err("census-version: msvc vc_tools_version does not equal 14.44.35207".into());
-    }
-    if msvc_ver != report.tools.msvc {
-        return Err("tool-census: census msvc version differs from report".into());
-    }
-
-    // 5. Windows SDK
-    let sdk_ver = census
-        .windows_sdk
-        .version
-        .as_deref()
-        .ok_or_else(|| "census-version: windows_sdk version is missing or null".to_string())?;
-    if !sdk_ver.ends_with('\\') || sdk_ver.ends_with("\\\\") {
-        return Err(
-            "census-version: windows_sdk version must end with exactly one trailing backslash"
-                .into(),
-        );
-    }
-    let sdk_trimmed = &sdk_ver[..sdk_ver.len() - 1];
-    if sdk_trimmed != "10.0.26100.0" {
-        return Err(
-            "census-version: windows_sdk version remainder does not equal 10.0.26100.0".into(),
-        );
-    }
-    if sdk_ver != report.tools.windows_sdk {
-        return Err("tool-census: census windows_sdk version differs from report".into());
-    }
-
-    Ok(())
-}
-
-fn validate_sha256_hex(s: &str, label: &str) -> Result<(), String> {
-    if s.len() != 64 || !s.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(format!("census-version: {label} must be 64-hex: {s}"));
-    }
-    Ok(())
-}
-
-fn validate_rustc_version_token(s: &str) -> Result<(), String> {
-    // e.g. "rustc 1.97.1 (8bab26f4f 2026-07-14)"
-    let tokens: Vec<&str> = s.split_whitespace().collect();
-    if tokens.len() < 3 || tokens[0] != "rustc" || tokens[1] != "1.97.1" {
-        return Err(format!("census-version: rustc version token mismatch: {s}"));
-    }
-    let commit = tokens[2].trim_start_matches('(');
-    if commit != "8bab26f4f" {
-        return Err(format!("census-version: rustc commit token mismatch: {s}"));
-    }
-    Ok(())
-}
-
-fn validate_cargo_version_token(s: &str) -> Result<(), String> {
-    // e.g. "cargo 1.97.1 (c980f4866 2026-06-30)"
-    let tokens: Vec<&str> = s.split_whitespace().collect();
-    if tokens.len() < 2 || tokens[0] != "cargo" || tokens[1] != "1.97.1" {
-        return Err(format!("census-version: cargo version token mismatch: {s}"));
-    }
-    Ok(())
-}
-
-fn validate_cmake_version_token(s: &str) -> Result<(), String> {
-    // e.g. "cmake version 3.31.12"
-    let tokens: Vec<&str> = s.split_whitespace().collect();
-    if tokens.len() < 3 || tokens[0] != "cmake" || tokens[1] != "version" || tokens[2] != "3.31.12"
-    {
-        return Err(format!("census-version: cmake version token mismatch: {s}"));
-    }
-    Ok(())
-}
-
-fn extract_source_tar_members(archive_bytes: &[u8]) -> Result<(Option<String>, Vec<u8>), String> {
-    let mut archive = tar::Archive::new(Cursor::new(archive_bytes));
-    let mut pax_comment = None;
-    let mut license = None;
-
-    for entry in archive.entries().map_err(|e| e.to_string())?.raw(true) {
-        let mut entry = entry.map_err(|e| e.to_string())?;
-        let entry_type = entry.header().entry_type();
-        if entry_type.is_pax_global_extensions()
-            || entry_type.is_pax_local_extensions()
-            || entry_type.as_byte() == b'g'
-            || entry_type.as_byte() == b'x'
-        {
-            let mut body = Vec::new();
-            entry.read_to_end(&mut body).map_err(|e| e.to_string())?;
-            if let Some(c) = parse_pax_comment(&body) {
-                pax_comment = Some(c);
-            }
-        } else if entry_type.is_file() {
-            let path = entry.path().map_err(|e| e.to_string())?;
-            if path == std::path::Path::new("LICENSE") {
-                let mut bytes = Vec::new();
-                entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-                license = Some(bytes);
-            }
-        }
-    }
-
-    let license_bytes =
-        license.ok_or_else(|| "source-archive: missing LICENSE in source archive".to_string())?;
-    Ok((pax_comment, license_bytes))
-}
-
-fn parse_pax_comment(bytes: &[u8]) -> Option<String> {
-    // PAX format: <len> <key>=<value>\n
-    let text = std::str::from_utf8(bytes).ok()?;
-    for line in text.lines() {
-        if let Some((_len, rest)) = line.split_once(' ')
-            && let Some((key, val)) = rest.split_once('=')
-            && key == "comment"
-        {
-            return Some(val.trim().to_string());
-        }
-    }
-    None
-}
-
-fn extract_bundle_tar_members(archive_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
-    let mut archive = tar::Archive::new(Cursor::new(archive_bytes));
-    let mut manifest = None;
-    let mut ca = None;
-
-    for entry in archive.entries().map_err(|e| e.to_string())?.raw(true) {
-        let mut entry = entry.map_err(|e| e.to_string())?;
-        if entry.header().entry_type().is_file() {
-            let path = entry.path().map_err(|e| e.to_string())?;
-            if path == std::path::Path::new("offline-manifest.json") {
-                let mut bytes = Vec::new();
-                entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-                manifest = Some(bytes);
-            } else if path == std::path::Path::new("ca-bundle.pem") {
-                let mut bytes = Vec::new();
-                entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-                ca = Some(bytes);
-            }
-        }
-    }
-
-    let manifest_bytes = manifest
-        .ok_or_else(|| "bundle-archive: missing offline-manifest.json in bundle".to_string())?;
-    let ca_bytes =
-        ca.ok_or_else(|| "bundle-archive: missing ca-bundle.pem in bundle".to_string())?;
-    Ok((manifest_bytes, ca_bytes))
-}
-
-fn validate_manifest_and_sources(
-    pins: &Pins,
-    manifest: &BundleManifest,
-    report: &NvattestBuildReport,
-) -> Result<(), String> {
-    // Report sources vs manifest
-    for source in &report.sources {
-        if source.name == "regorus-build-revision" {
-            if source.revision.as_deref() != Some(pins.regorus_build_revision.revision)
-                || source.original_sha256.as_deref()
-                    != Some(pins.regorus_build_revision.original_sha256)
-                || source.sha256 != pins.regorus_build_revision.sha256
-            {
-                return Err(
-                    "regorus-build-revision: report regorus-build-revision differs from pin".into(),
-                );
-            }
-            continue;
-        }
-        let manifest_file = manifest
-            .files
-            .iter()
-            .find(|f| f.path == source.name)
-            .ok_or_else(|| {
-                format!(
-                    "bundle-archive: report source {} not found in bundle manifest",
-                    source.name
-                )
-            })?;
-        if manifest_file.sha256 != source.sha256 {
-            return Err(format!(
-                "bundle-archive: manifest SHA-256 for {} differs from report",
-                source.name
-            ));
-        }
-    }
-
-    // Report build_tools vs manifest
-    for tool in &report.build_tools {
-        let manifest_file = manifest
-            .files
-            .iter()
-            .find(|f| f.path == tool.name)
-            .ok_or_else(|| {
-                format!(
-                    "bundle-archive: report build tool {} not found in bundle manifest",
-                    tool.name
-                )
-            })?;
-        if manifest_file.sha256 != tool.sha256 {
-            return Err(format!(
-                "bundle-archive: manifest SHA-256 for {} differs from report",
-                tool.name
-            ));
-        }
-    }
-
-    if let Some(manifest_ca) = manifest.files.iter().find(|f| f.path == "ca-bundle.pem")
-        && manifest_ca.size != pins.ca_bundle.bytes
-    {
-        return Err("bundle-archive: manifest ca-bundle.pem size mismatch".into());
-    }
-
-    Ok(())
-}
-
-fn validate_crt_members(
-    pins: &Pins,
-    msvc: &MsvcRuntimeBytes<'_>,
-    out_msvcp: &[u8],
-    out_vcruntime: &[u8],
-    out_vcruntime_1: &[u8],
-) -> Result<(), String> {
-    for (name, pin, msvc_bytes, out_bytes) in [
-        (
-            "msvcp140.dll",
-            &pins.msvc_runtime.msvcp140,
-            msvc.msvcp140,
-            out_msvcp,
-        ),
-        (
-            "vcruntime140.dll",
-            &pins.msvc_runtime.vcruntime140,
-            msvc.vcruntime140,
-            out_vcruntime,
-        ),
-        (
-            "vcruntime140_1.dll",
-            &pins.msvc_runtime.vcruntime140_1,
-            msvc.vcruntime140_1,
-            out_vcruntime_1,
-        ),
-    ] {
-        if msvc_bytes.len() as u64 != pin.bytes || sha256_hex(msvc_bytes) != pin.sha256 {
-            return Err(format!("runtime-dll: msvc input {name} differs from pin"));
-        }
-        if out_bytes != msvc_bytes {
-            return Err(format!(
-                "runtime-dll: output {name} differs from msvc package member"
-            ));
-        }
-    }
-    Ok(())
-}
-
-pub fn base64_encode(input: &[u8]) -> String {
+pub(crate) fn base64_encode(input: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
@@ -1133,823 +1131,456 @@ pub fn base64_encode(input: &[u8]) -> String {
     out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::controlled_build::{
-        BuildConfiguration, BuilderIdentity, DependencySource, OutputIdentityEntry, SourceIdentity,
-        SupportingArtifactRef, ValidationReference,
-    };
-    use crate::pe;
-    use crate::provenance::Provenance;
-
-    fn make_test_pe(dll: bool, imports: &[&str]) -> Vec<u8> {
-        let import_specs: Vec<pe::ImportSpec<'_>> = imports
-            .iter()
-            .map(|name| pe::ImportSpec {
-                name,
-                symbols: &[pe::PeSymbolSpec::Named("TestSymbol")],
-            })
-            .collect();
-        let mut bytes = pe::fixture(&pe::FixtureSpec {
-            dll,
-            imports: &import_specs,
-            ..pe::FixtureSpec::default()
-        });
-        let pe_offset = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
-        let opt_offset = pe_offset + 24;
-        let headers_size = (opt_offset + 240 + 40) as u32;
-        bytes[opt_offset + 60..opt_offset + 64].copy_from_slice(&headers_size.to_le_bytes());
-        bytes
-    }
-
-    fn make_source_tar(comment: &str, license: &[u8]) -> Vec<u8> {
-        let mut builder = tar::Builder::new(Vec::new());
-        let pax_comment_str = format!("comment={comment}\n");
-        let pax_len = pax_comment_str.len() + 3 + pax_comment_str.len().to_string().len();
-        let pax_payload = format!("{pax_len} {pax_comment_str}");
-
-        let mut global_header = tar::Header::new_gnu();
-        global_header.set_entry_type(tar::EntryType::XGlobalHeader);
-        global_header.set_size(pax_payload.len() as u64);
-        global_header.set_mode(0o644);
-        global_header.set_path("pax_global_header").unwrap();
-        global_header.set_cksum();
-        builder
-            .append(&global_header, pax_payload.as_bytes())
-            .unwrap();
-
-        let mut header = tar::Header::new_gnu();
-        header.set_entry_type(tar::EntryType::Regular);
-        header.set_size(license.len() as u64);
-        header.set_mode(0o644);
-        header.set_path("LICENSE").unwrap();
-        header.set_cksum();
-        builder.append(&header, license).unwrap();
-        builder.into_inner().unwrap()
-    }
-
-    fn make_bundle_tar(manifest_json: &[u8], ca_pem: &[u8]) -> Vec<u8> {
-        let mut builder = tar::Builder::new(Vec::new());
-
-        let mut header = tar::Header::new_gnu();
-        header.set_entry_type(tar::EntryType::Regular);
-        header.set_size(manifest_json.len() as u64);
-        header.set_mode(0o644);
-        header.set_path("offline-manifest.json").unwrap();
-        header.set_cksum();
-        builder.append(&header, manifest_json).unwrap();
-
-        let mut header_ca = tar::Header::new_gnu();
-        header_ca.set_entry_type(tar::EntryType::Regular);
-        header_ca.set_size(ca_pem.len() as u64);
-        header_ca.set_mode(0o644);
-        header_ca.set_path("ca-bundle.pem").unwrap();
-        header_ca.set_cksum();
-        builder.append(&header_ca, ca_pem).unwrap();
-
-        builder.into_inner().unwrap()
-    }
-
-    struct TestFixture {
-        pins: Pins,
-        index: NoticesIndex,
-        receipt: Vec<u8>,
-        evidence: Vec<u8>,
-        validation: Vec<u8>,
-        notices_body: Vec<u8>,
-        source_archive: Vec<u8>,
-        bundle_archive: Vec<u8>,
-        output_exe: Vec<u8>,
-        output_license: Vec<u8>,
-        output_msvcp140: Vec<u8>,
-        output_vcruntime140: Vec<u8>,
-        output_vcruntime140_1: Vec<u8>,
-        msvc_msvcp140: Vec<u8>,
-        msvc_vcruntime140: Vec<u8>,
-        msvc_vcruntime140_1: Vec<u8>,
-    }
-
-    fn setup_fixture() -> TestFixture {
-        let pins = production_pins();
-        let index: NoticesIndex = serde_json::from_slice(include_bytes!(
-            "../../../distribution/nvattest-windows-sources.json"
-        ))
-        .unwrap();
-        let notices_body =
-            include_bytes!("../../../distribution/nvattest-windows-NOTICES.md").to_vec();
-
-        let license = b"NVIDIA ATTESTATION SDK LICENSE TEXT\n";
-        let ca_pem = b"-----BEGIN CERTIFICATE-----\nTEST CA\n-----END CERTIFICATE-----\n";
-
-        let mut custom_pins = pins.clone();
-        custom_pins.license.bytes = license.len() as u64;
-        custom_pins.license.sha256 = Box::leak(sha256_hex(license).into_boxed_str());
-        custom_pins.ca_bundle.bytes = ca_pem.len() as u64;
-        custom_pins.ca_bundle.sha256 = Box::leak(sha256_hex(ca_pem).into_boxed_str());
-
-        let msvcp = vec![1u8; 557728];
-        let vcruntime = vec![2u8; 124544];
-        let vcruntime_1 = vec![3u8; 49792];
-
-        custom_pins.msvc_runtime.msvcp140.sha256 = Box::leak(sha256_hex(&msvcp).into_boxed_str());
-        custom_pins.msvc_runtime.vcruntime140.sha256 =
-            Box::leak(sha256_hex(&vcruntime).into_boxed_str());
-        custom_pins.msvc_runtime.vcruntime140_1.sha256 =
-            Box::leak(sha256_hex(&vcruntime_1).into_boxed_str());
-
-        let source_archive = make_source_tar(pins.sdk_revision, license);
-        custom_pins.source_archive.bytes = source_archive.len() as u64;
-        custom_pins.source_archive.sha256 = Box::leak(sha256_hex(&source_archive).into_boxed_str());
-
-        let manifest_json = serde_json::to_vec(&serde_json::json!({
-            "schema": 1,
-            "files": pins.native_sources.iter().chain(pins.build_tools).map(|s| {
-                serde_json::json!({
-                    "path": s.name,
-                    "sha256": s.sha256,
-                    "size": 1000
-                })
-            }).chain(std::iter::once(serde_json::json!({
-                "path": "ca-bundle.pem",
-                "sha256": custom_pins.ca_bundle.sha256,
-                "size": ca_pem.len()
-            }))).collect::<Vec<_>>()
-        }))
-        .unwrap();
-
-        custom_pins.manifest_sha256 = Box::leak(sha256_hex(&manifest_json).into_boxed_str());
-
-        let bundle_archive = make_bundle_tar(&manifest_json, ca_pem);
-        custom_pins.bundle_archive.bytes = bundle_archive.len() as u64;
-        custom_pins.bundle_archive.sha256 = Box::leak(sha256_hex(&bundle_archive).into_boxed_str());
-
-        let output_exe = make_test_pe(false, &["kernel32.dll", "crypt32.dll"]);
-        let exe_census = pe::parse_pe(&output_exe).unwrap();
-
-        let validation = b"schema=solstone.nvattest-windows-validation.v1\n".to_vec();
-
-        let report = NvattestBuildReport {
-            schema: 1,
-            source_commit: pins.sdk_revision.into(),
-            source_clean: None,
-            tools: NvattestReportTools {
-                msvc: "14.44.35207".into(),
-                vs: serde_json::json!({}),
-                windows_sdk: "10.0.26100.0\\".into(),
-                cmake: "cmake version 3.31.12".into(),
-                rustc: "rustc 1.97.1 (8bab26f4f 2026-07-14)".into(),
-                cargo: "cargo 1.97.1 (c980f4866 2026-06-30)".into(),
-                crt_redist: "Microsoft.VC143.CRT".into(),
-            },
-            sources: pins
-                .native_sources
-                .iter()
-                .map(|s| NvattestReportSourceEntry {
-                    name: s.name.into(),
-                    url: Some(s.url.into()),
-                    revision: None,
-                    original_sha256: None,
-                    sha256: s.sha256.into(),
-                })
-                .chain(std::iter::once(NvattestReportSourceEntry {
-                    name: "regorus-build-revision".into(),
-                    url: None,
-                    revision: Some(pins.regorus_build_revision.revision.into()),
-                    original_sha256: Some(pins.regorus_build_revision.original_sha256.into()),
-                    sha256: pins.regorus_build_revision.sha256.into(),
-                }))
-                .collect(),
-            build_tools: pins
-                .build_tools
-                .iter()
-                .map(|s| NvattestReportBuildToolEntry {
-                    name: s.name.into(),
-                    url: s.url.into(),
-                    sha256: s.sha256.into(),
-                })
-                .collect(),
-            ca_bundle: NvattestReportCaBundle {
-                url: "https://curl.se/ca/cacert-2026-07-16.pem".into(),
-                sha256: custom_pins.ca_bundle.sha256.into(),
-            },
-            imports: vec!["kernel32.dll".into(), "crypt32.dll".into()],
-            outputs: vec![NvattestReportOutputEntry {
-                path: NVATTEST_EXE_OUTPUT_LABEL.into(),
-                bytes: output_exe.len() as u64,
-                sha256: sha256_hex(&output_exe),
-                file_version: None,
-            }],
-        };
-
-        let mut report_raw = vec![0xEF, 0xBB, 0xBF];
-        report_raw.extend(serde_json::to_vec(&report).unwrap());
-        let report_b64 = base64_encode(&report_raw);
-
-        let evidence = NvattestWindowsBuildEvidence {
-            schema: NVATTEST_BUILD_EVIDENCE_SCHEMA_V1.into(),
-            report_base64: report_b64,
-            census: NvattestToolCensus {
-                schema: NVATTEST_TOOL_CENSUS_SCHEMA_V1.into(),
-                rustc: NvattestToolVersionPath {
-                    version: Some("rustc 1.97.1 (8bab26f4f 2026-07-14)".into()),
-                    path: "C:\\rustc.exe".into(),
-                    sha256: "a".repeat(64),
-                },
-                cargo: NvattestToolVersionPath {
-                    version: Some("cargo 1.97.1 (c980f4866 2026-06-30)".into()),
-                    path: "C:\\cargo.exe".into(),
-                    sha256: "b".repeat(64),
-                },
-                cmake: NvattestToolVersionPath {
-                    version: Some("cmake version 3.31.12".into()),
-                    path: "C:\\cmake.exe".into(),
-                    sha256: "c".repeat(64),
-                },
-                msvc: NvattestMsvcToolsVersion {
-                    vc_tools_version: Some("14.44.35207".into()),
-                },
-                windows_sdk: NvattestWindowsSdkVersion {
-                    version: Some("10.0.26100.0\\".into()),
-                },
-                vs: Some(NvattestVsInfo {
-                    product_version: Some("17.14.60".into()),
-                }),
-            },
-            invocation: NvattestInvocation {
-                offline: true,
-                bundle_path: "C:\\bundle.tar".into(),
-                manifest_sha256: custom_pins.manifest_sha256.into(),
-            },
-            refusals: NvattestRefusals {
-                manifest_digest: NvattestRefusalEntry {
-                    exit_code: 1,
-                    boundary: "offline manifest does not match the caller-bound digest".into(),
-                },
-                reuse_dependencies: NvattestRefusalEntry {
-                    exit_code: 1,
-                    boundary: "offline builds cannot reuse dependencies".into(),
-                },
-                corrupt_member: NvattestRefusalEntry {
-                    exit_code: 1,
-                    boundary: "missing or changed offline input: foo".into(),
-                },
-            },
-            network: NvattestNetworkEvidence {
-                positive_control: "connected".into(),
-                negative_control: "refused".into(),
-                rules_remaining: 0,
-            },
-        };
-
-        let evidence_bytes = serde_json::to_vec(&evidence).unwrap();
-
-        let receipt = ControlledBuildReceipt {
-            schema: crate::controlled_build::CONTROLLED_BUILD_RECEIPT_SCHEMA_V1.into(),
-            source: SourceIdentity {
-                product: Provenance {
-                    commit: "0".repeat(40),
-                    lock_sha256: "0".repeat(64),
-                },
-                windows_dependency: DependencySource {
-                    repository: pins.sdk_repo.into(),
-                    revision: pins.sdk_revision.into(),
-                    content_sha256: custom_pins.source_archive.sha256.into(),
-                },
-            },
-            inputs: vec![
-                crate::controlled_build::InputIdentityEntry {
-                    label: "source.tar".into(),
-                    sha256: custom_pins.source_archive.sha256.into(),
-                    size: custom_pins.source_archive.bytes,
-                },
-                crate::controlled_build::InputIdentityEntry {
-                    label: "bundle.tar".into(),
-                    sha256: custom_pins.bundle_archive.sha256.into(),
-                    size: custom_pins.bundle_archive.bytes,
-                },
-            ],
-            builder: BuilderIdentity {
-                host: "test-builder".into(),
-                toolchain: "MSVC 14.44.35207".into(),
-            },
-            configuration: BuildConfiguration {
-                target_triple: "x86_64-pc-windows-msvc".into(),
-                profile: "Release".into(),
-                flags: vec![],
-                network_access_denied: true,
-            },
-            outputs: vec![OutputIdentityEntry {
-                pre_signing_sha256: sha256_hex(&output_exe),
-                label: NVATTEST_EXE_OUTPUT_LABEL.into(),
-                size: output_exe.len() as u64,
-                census: exe_census,
-            }],
-            supporting: vec![SupportingArtifactRef {
-                label: NVATTEST_BUILD_EVIDENCE_LABEL.into(),
-                sha256: sha256_hex(&evidence_bytes),
-            }],
-            validation: ValidationReference {
-                description: "nvattest-windows-validation".into(),
-                sha256: sha256_hex(&validation),
-            },
-        };
-
-        let receipt_bytes = serde_json::to_vec(&receipt).unwrap();
-
-        TestFixture {
-            pins: custom_pins,
-            index,
-            receipt: receipt_bytes,
-            evidence: evidence_bytes,
-            validation,
-            notices_body,
-            source_archive,
-            bundle_archive,
-            output_exe,
-            output_license: license.to_vec(),
-            output_msvcp140: msvcp.clone(),
-            output_vcruntime140: vcruntime.clone(),
-            output_vcruntime140_1: vcruntime_1.clone(),
-            msvc_msvcp140: msvcp,
-            msvc_vcruntime140: vcruntime,
-            msvc_vcruntime140_1: vcruntime_1,
-        }
-    }
-
-    fn admit_fixture(f: &TestFixture) -> Result<AdmittedNvattest, String> {
-        let input = AdmissionBytes {
-            receipt: &f.receipt,
-            evidence: &f.evidence,
-            validation: &f.validation,
-            notices_body: &f.notices_body,
-            source_archive: &f.source_archive,
-            bundle_archive: &f.bundle_archive,
-            output_exe: &f.output_exe,
-            output_license: &f.output_license,
-            output_msvcp140: &f.output_msvcp140,
-            output_vcruntime140: &f.output_vcruntime140,
-            output_vcruntime140_1: &f.output_vcruntime140_1,
-        };
-        let msvc = MsvcRuntimeBytes {
-            msvcp140: &f.msvc_msvcp140,
-            vcruntime140: &f.msvc_vcruntime140,
-            vcruntime140_1: &f.msvc_vcruntime140_1,
-        };
-        admit(&f.pins, &f.index, &input, &msvc)
-    }
-
-    #[test]
-    fn intact_synthesized_fixture_admits() {
-        let f = setup_fixture();
-        let admitted = admit_fixture(&f).unwrap();
-        assert_eq!(
-            admitted.outputs().keys().cloned().collect::<Vec<_>>(),
-            vec![
-                NVATTEST_LICENSE_LABEL,
-                NVATTEST_EXE_OUTPUT_LABEL,
-                NVATTEST_CA_BUNDLE_LABEL
-            ]
-        );
-        assert_eq!(admitted.outputs()[NVATTEST_EXE_OUTPUT_LABEL], f.output_exe);
-        assert_eq!(admitted.outputs()[NVATTEST_LICENSE_LABEL], f.output_license);
-    }
-
-    #[test]
-    fn source_revision_refuses_on_mismatch() {
-        let mut f = setup_fixture();
-        f.source_archive = make_source_tar("wrong_rev", &f.output_license);
-        f.pins.source_archive.bytes = f.source_archive.len() as u64;
-        f.pins.source_archive.sha256 = Box::leak(sha256_hex(&f.source_archive).into_boxed_str());
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("source-revision"), "{err}");
-    }
-
-    #[test]
-    fn source_archive_digest_mismatch_refuses() {
-        let mut f = setup_fixture();
-        f.pins.source_archive.sha256 = "0".repeat(64).leak();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("source-archive"), "{err}");
-    }
-
-    #[test]
-    fn bundle_archive_digest_mismatch_refuses() {
-        let mut f = setup_fixture();
-        f.pins.bundle_archive.sha256 = "0".repeat(64).leak();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("bundle-archive"), "{err}");
-    }
-
-    #[test]
-    fn unbound_evidence_refuses() {
-        let mut f = setup_fixture();
-        f.evidence[10] ^= 1;
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("unbound-evidence"), "{err}");
-    }
-
-    #[test]
-    fn report_output_sha256_mismatch_refuses() {
-        let mut f = setup_fixture();
-        f.output_exe[100] ^= 1;
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("report-output"), "{err}");
-    }
-
-    #[test]
-    fn ca_pin_mismatch_refuses() {
-        let mut f = setup_fixture();
-        f.pins.ca_bundle.sha256 = "0".repeat(64).leak();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("ca-pin"), "{err}");
-    }
-
-    #[test]
-    fn output_license_mismatch_refuses() {
-        let mut f = setup_fixture();
-        f.output_license = b"tampered license".to_vec();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("output-license"), "{err}");
-    }
-
-    #[test]
-    fn runtime_dll_mismatch_refuses() {
-        let mut f = setup_fixture();
-        f.output_msvcp140[0] ^= 1;
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("runtime-dll"), "{err}");
-    }
-
-    #[test]
-    fn import_allowlist_unrecognized_import_refuses() {
-        let mut f = setup_fixture();
-        f.output_exe = make_test_pe(false, &["kernel32.dll", "unauthorized.dll"]);
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("import-allowlist"), "{err}");
-    }
-
-    #[test]
-    fn delay_import_outside_allowlist_refuses() {
-        let mut f = setup_fixture();
-        f.output_exe = crate::pe_dependencies::tests::with_import(true);
-        let pe_offset = u32::from_le_bytes(f.output_exe[0x3c..0x40].try_into().unwrap()) as usize;
-        let mut charac = u16::from_le_bytes(
-            f.output_exe[pe_offset + 22..pe_offset + 24]
-                .try_into()
-                .unwrap(),
-        );
-        charac &= !0x2000;
-        f.output_exe[pe_offset + 22..pe_offset + 24].copy_from_slice(&charac.to_le_bytes());
-        // Change the imported DLL name to unauthorized.dll
-        f.output_exe[0x280..0x280 + 17].copy_from_slice(b"unauthorized.dll\0");
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("import-allowlist"), "{err}");
-    }
-
-    #[test]
-    fn forwarder_outside_allowlist_refuses() {
-        let mut f = setup_fixture();
-        f.output_exe = crate::pe_dependencies::tests::with_forwarder(b"unauthorized.TestFunc\0");
-        let pe_offset = u32::from_le_bytes(f.output_exe[0x3c..0x40].try_into().unwrap()) as usize;
-        let mut charac = u16::from_le_bytes(
-            f.output_exe[pe_offset + 22..pe_offset + 24]
-                .try_into()
-                .unwrap(),
-        );
-        charac &= !0x2000;
-        f.output_exe[pe_offset + 22..pe_offset + 24].copy_from_slice(&charac.to_le_bytes());
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("import-allowlist"), "{err}");
-    }
-
-    #[test]
-    fn pe_kind_dll_refuses() {
-        let mut f = setup_fixture();
-        f.output_exe = make_test_pe(true, &["kernel32.dll"]);
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("pe-kind"), "{err}");
-    }
-
-    #[test]
-    fn notices_body_mismatch_refuses() {
-        let mut f = setup_fixture();
-        f.pins.notices_body_sha256 = "0".repeat(64).leak();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("notices-body"), "{err}");
-    }
-
-    #[test]
-    fn notices_sources_mismatch_refuses() {
-        let mut f = setup_fixture();
-        f.index.native_sources.pop();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("notices-sources"), "{err}");
-    }
-
-    #[test]
-    fn notices_index_mismatch_refuses() {
-        let mut f = setup_fixture();
-        f.index.schema = "wrong.schema".into();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("notices-index"), "{err}");
-    }
-
-    #[test]
-    fn tool_census_disagreement_refuses() {
-        let mut f = setup_fixture();
-        let mut evidence: NvattestWindowsBuildEvidence =
-            serde_json::from_slice(&f.evidence).unwrap();
-        evidence.census.msvc.vc_tools_version = Some("14.44.35207".into());
-        // Modify report msvc
-        let report_bytes = base64_decode_report(&evidence.report_base64).unwrap();
-        let mut report = decode_build_report(&report_bytes).unwrap();
-        report.tools.msvc = "14.44.99999".into();
-        let mut report_raw = vec![0xEF, 0xBB, 0xBF];
-        report_raw.extend(serde_json::to_vec(&report).unwrap());
-        evidence.report_base64 = base64_encode(&report_raw);
-        f.evidence = serde_json::to_vec(&evidence).unwrap();
-        // Update receipt supporting artifact hash to match
-        let mut receipt: ControlledBuildReceipt = serde_json::from_slice(&f.receipt).unwrap();
-        receipt.supporting[0].sha256 = sha256_hex(&f.evidence);
-        f.receipt = serde_json::to_vec(&receipt).unwrap();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("tool-census"), "{err}");
-    }
-
-    #[test]
-    fn census_version_null_missing_or_token_mismatch_refuses() {
-        let mut f = setup_fixture();
-        let mut evidence: NvattestWindowsBuildEvidence =
-            serde_json::from_slice(&f.evidence).unwrap();
-        evidence.census.rustc.version = Some("rustc 1.97.10 (8bab26f4f 2026-07-14)".into());
-        f.evidence = serde_json::to_vec(&evidence).unwrap();
-        let mut receipt: ControlledBuildReceipt = serde_json::from_slice(&f.receipt).unwrap();
-        receipt.supporting[0].sha256 = sha256_hex(&f.evidence);
-        f.receipt = serde_json::to_vec(&receipt).unwrap();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("census-version"), "{err}");
-
-        // Test Windows SDK version format
-        let mut f2 = setup_fixture();
-        let mut evidence2: NvattestWindowsBuildEvidence =
-            serde_json::from_slice(&f2.evidence).unwrap();
-        evidence2.census.windows_sdk.version = Some("10.0.26100.01\\".into());
-        f2.evidence = serde_json::to_vec(&evidence2).unwrap();
-        let mut receipt2: ControlledBuildReceipt = serde_json::from_slice(&f2.receipt).unwrap();
-        receipt2.supporting[0].sha256 = sha256_hex(&f2.evidence);
-        f2.receipt = serde_json::to_vec(&receipt2).unwrap();
-        let err2 = admit_fixture(&f2).unwrap_err();
-        assert!(err2.contains("census-version"), "{err2}");
-    }
-
-    #[test]
-    fn regorus_build_revision_mismatch_refuses() {
-        let mut f = setup_fixture();
-        let mut evidence: NvattestWindowsBuildEvidence =
-            serde_json::from_slice(&f.evidence).unwrap();
-        let report_bytes = base64_decode_report(&evidence.report_base64).unwrap();
-        let mut report = decode_build_report(&report_bytes).unwrap();
-        for s in &mut report.sources {
-            if s.name == "regorus-build-revision" {
-                s.sha256 = "0".repeat(64);
-            }
-        }
-        let mut report_raw = vec![0xEF, 0xBB, 0xBF];
-        report_raw.extend(serde_json::to_vec(&report).unwrap());
-        evidence.report_base64 = base64_encode(&report_raw);
-        f.evidence = serde_json::to_vec(&evidence).unwrap();
-        let mut receipt: ControlledBuildReceipt = serde_json::from_slice(&f.receipt).unwrap();
-        receipt.supporting[0].sha256 = sha256_hex(&f.evidence);
-        f.receipt = serde_json::to_vec(&receipt).unwrap();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("regorus-build-revision"), "{err}");
-    }
-
-    #[test]
-    fn captured_fixture_import_names_admit() {
-        let mut f = setup_fixture();
-        let captured_imports = [
-            "ADVAPI32.dll",
-            "USER32.dll",
-            "bcrypt.dll",
-            "CRYPT32.dll",
-            "kernel32.dll",
-            "api-ms-win-core-synch-l1-2-0.dll",
-            "bcryptprimitives.dll",
-            "ntdll.dll",
-            "WS2_32.dll",
-            "SHELL32.dll",
-            "MSVCP140.dll",
-            "VCRUNTIME140.dll",
-            "VCRUNTIME140_1.dll",
-            "api-ms-win-crt-runtime-l1-1-0.dll",
-            "api-ms-win-crt-stdio-l1-1-0.dll",
-            "api-ms-win-crt-filesystem-l1-1-0.dll",
-            "api-ms-win-crt-heap-l1-1-0.dll",
-            "api-ms-win-crt-convert-l1-1-0.dll",
-            "api-ms-win-crt-environment-l1-1-0.dll",
-            "api-ms-win-crt-string-l1-1-0.dll",
-            "api-ms-win-crt-locale-l1-1-0.dll",
-            "api-ms-win-crt-math-l1-1-0.dll",
-            "api-ms-win-crt-time-l1-1-0.dll",
-            "api-ms-win-crt-utility-l1-1-0.dll",
-        ];
-        f.output_exe = make_test_pe(false, &captured_imports);
-        let mut receipt: ControlledBuildReceipt = serde_json::from_slice(&f.receipt).unwrap();
-        receipt.outputs[0].size = f.output_exe.len() as u64;
-        receipt.outputs[0].pre_signing_sha256 = sha256_hex(&f.output_exe);
-        receipt.outputs[0].census = pe::parse_pe(&f.output_exe).unwrap();
-        f.receipt = serde_json::to_vec(&receipt).unwrap();
-
-        let mut evidence: NvattestWindowsBuildEvidence =
-            serde_json::from_slice(&f.evidence).unwrap();
-        let report_bytes = base64_decode_report(&evidence.report_base64).unwrap();
-        let mut report = decode_build_report(&report_bytes).unwrap();
-        report.outputs[0].bytes = f.output_exe.len() as u64;
-        report.outputs[0].sha256 = sha256_hex(&f.output_exe);
-        let mut report_raw = vec![0xEF, 0xBB, 0xBF];
-        report_raw.extend(serde_json::to_vec(&report).unwrap());
-        evidence.report_base64 = base64_encode(&report_raw);
-        f.evidence = serde_json::to_vec(&evidence).unwrap();
-        let mut receipt_obj: ControlledBuildReceipt = serde_json::from_slice(&f.receipt).unwrap();
-        receipt_obj.supporting[0].sha256 = sha256_hex(&f.evidence);
-        f.receipt = serde_json::to_vec(&receipt_obj).unwrap();
-
-        assert!(admit_fixture(&f).is_ok());
-    }
-
-    #[test]
-    fn parse_test_with_real_fixture_bytes() {
-        let report_bytes = include_bytes!("../fixtures/nvattest-windows-build/build-report.json");
-        let report = decode_build_report(report_bytes).unwrap();
-        assert_eq!(
-            report.source_commit,
-            "8fdbb0f8c10594a5f88f77fdec4766803b4e6d59"
-        );
-        assert_eq!(report.tools.msvc, "14.44.35207");
-        assert_eq!(report.tools.windows_sdk, "10.0.26100.0\\");
-        assert_eq!(
-            report
-                .outputs
-                .iter()
-                .find(|o| o.path == "bin/nvattest.exe")
-                .unwrap()
-                .sha256,
-            "220849fea69d60563fc6ef0ea7c020450d842565d08e7cbd2eecfecbd41ecdc8"
-        );
-    }
-
-    #[test]
-    fn production_pins_match_committed_constants() {
-        let pins = production_pins();
-        let _ = std::env::var("NVAT_SOURCE_COMMIT");
-        let _ = std::env::var("SOLSTONE_NVATTEST_REVISION");
-        assert_eq!(
-            pins.sdk_revision,
-            "8fdbb0f8c10594a5f88f77fdec4766803b4e6d59"
-        );
-        assert_eq!(pins.source_archive.bytes, 5171200);
-        assert_eq!(pins.bundle_archive.bytes, 451225600);
-        assert_eq!(pins.ca_bundle.bytes, 186446);
-        assert_eq!(pins.license.bytes, 11348);
-    }
-
-    #[test]
-    fn pe32_output_fails_census() {
-        let mut f = setup_fixture();
-        f.output_exe = pe::fixture_pe32();
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("dependency census requires PE32+"), "{err}");
-    }
-
-    #[test]
-    fn arm64_output_fails_census() {
-        let mut f = setup_fixture();
-        f.output_exe = pe::fixture(&pe::FixtureSpec {
-            machine: pe::IMAGE_FILE_MACHINE_ARM64,
-            dll: false,
-            ..pe::FixtureSpec::default()
-        });
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(
-            err.contains("Windows payload requires AMD64 PE images"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn report_ca_mismatch_fails_ca_report() {
-        let mut f = setup_fixture();
-        let mut evidence: NvattestWindowsBuildEvidence =
-            serde_json::from_slice(&f.evidence).unwrap();
-        let report_bytes = base64_decode_report(&evidence.report_base64).unwrap();
-        let mut report = decode_build_report(&report_bytes).unwrap();
-        report.ca_bundle.sha256 = "0".repeat(64);
-        let mut report_raw = vec![0xEF, 0xBB, 0xBF];
-        report_raw.extend(serde_json::to_vec(&report).unwrap());
-        evidence.report_base64 = base64_encode(&report_raw);
-        f.evidence = serde_json::to_vec(&evidence).unwrap();
-
-        let mut receipt: ControlledBuildReceipt = serde_json::from_slice(&f.receipt).unwrap();
-        receipt.supporting[0].sha256 = sha256_hex(&f.evidence);
-        f.receipt = serde_json::to_vec(&receipt).unwrap();
-
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("ca-report"), "{err}");
-    }
-
-    #[test]
-    fn missing_or_null_census_version_fails() {
-        let mut f = setup_fixture();
-        let mut evidence: NvattestWindowsBuildEvidence =
-            serde_json::from_slice(&f.evidence).unwrap();
-        evidence.census.rustc.version = None;
-        f.evidence = serde_json::to_vec(&evidence).unwrap();
-        let mut receipt: ControlledBuildReceipt = serde_json::from_slice(&f.receipt).unwrap();
-        receipt.supporting[0].sha256 = sha256_hex(&f.evidence);
-        f.receipt = serde_json::to_vec(&receipt).unwrap();
-
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("census-version"), "{err}");
-
-        // Second case: delete version key from census rustc object in evidence JSON
-        let mut evidence_val: serde_json::Value = serde_json::from_slice(&f.evidence).unwrap();
-        evidence_val["census"]["rustc"]
-            .as_object_mut()
-            .unwrap()
-            .remove("version");
-        f.evidence = serde_json::to_vec(&evidence_val).unwrap();
-        let mut receipt2: ControlledBuildReceipt = serde_json::from_slice(&f.receipt).unwrap();
-        receipt2.supporting[0].sha256 = sha256_hex(&f.evidence);
-        f.receipt = serde_json::to_vec(&receipt2).unwrap();
-
-        let err2 = admit_fixture(&f).unwrap_err();
-        assert!(err2.contains("census-version"), "{err2}");
-    }
-
-    #[test]
-    fn flipped_notices_body_fails() {
-        let mut f = setup_fixture();
-        f.notices_body[0] ^= 0xff;
-        let err = admit_fixture(&f).unwrap_err();
-        assert!(err.contains("notices-body"), "{err}");
-    }
-
-    #[test]
-    #[ignore = "requires real retained archives SOLSTONE_NVATTEST_SOURCE_ARCHIVE, SOLSTONE_NVATTEST_BUNDLE_ARCHIVE, SOLSTONE_NVATTEST_ADMISSION_FIXTURE"]
-    fn nvattest_retained_archives_admit() {
-        let source_path = std::env::var("SOLSTONE_NVATTEST_SOURCE_ARCHIVE").unwrap();
-        let bundle_path = std::env::var("SOLSTONE_NVATTEST_BUNDLE_ARCHIVE").unwrap();
-        let fixture_path = std::env::var("SOLSTONE_NVATTEST_ADMISSION_FIXTURE").unwrap();
-        let fixture_bytes = std::fs::read(fixture_path).unwrap();
-        let values: BTreeMap<String, String> = serde_json::from_slice(&fixture_bytes).unwrap();
-
-        let receipt = std::fs::read(&values["receipt"]).unwrap();
-        let evidence = std::fs::read(&values["evidence"]).unwrap();
-        let validation = std::fs::read(&values["validation"]).unwrap();
-        let source_archive = std::fs::read(source_path).unwrap();
-        let bundle_archive = std::fs::read(bundle_path).unwrap();
-        let output_exe = std::fs::read(&values["output_exe"]).unwrap();
-        let output_license = std::fs::read(&values["output_license"]).unwrap();
-        let output_msvcp140 = std::fs::read(&values["output_msvcp140"]).unwrap();
-        let output_vcruntime140 = std::fs::read(&values["output_vcruntime140"]).unwrap();
-        let output_vcruntime140_1 = std::fs::read(&values["output_vcruntime140_1"]).unwrap();
-
-        let msvc_msvcp140 = std::fs::read(&values["msvc_msvcp140"]).unwrap();
-        let msvc_vcruntime140 = std::fs::read(&values["msvc_vcruntime140"]).unwrap();
-        let msvc_vcruntime140_1 = std::fs::read(&values["msvc_vcruntime140_1"]).unwrap();
-
-        let notices_body = std::fs::read(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../distribution/nvattest-windows-NOTICES.md"),
-        )
-        .unwrap();
-
-        let index: NoticesIndex = serde_json::from_slice(include_bytes!(
-            "../../../distribution/nvattest-windows-sources.json"
-        ))
-        .unwrap();
-
-        let input = AdmissionBytes {
-            receipt: &receipt,
-            evidence: &evidence,
-            validation: &validation,
-            notices_body: &notices_body,
-            source_archive: &source_archive,
-            bundle_archive: &bundle_archive,
-            output_exe: &output_exe,
-            output_license: &output_license,
-            output_msvcp140: &output_msvcp140,
-            output_vcruntime140: &output_vcruntime140,
-            output_vcruntime140_1: &output_vcruntime140_1,
-        };
-        let msvc = MsvcRuntimeBytes {
-            msvcp140: &msvc_msvcp140,
-            vcruntime140: &msvc_vcruntime140,
-            vcruntime140_1: &msvc_vcruntime140_1,
-        };
-
-        admit(&production_pins(), &index, &input, &msvc).unwrap();
-    }
+pub(crate) fn decode_build_report(bytes: &[u8]) -> Result<NvattestBuildReport, String> {
+    // Windows PowerShell 5.1 writes a UTF-8 BOM; the embedded bytes keep it.
+    let json = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    serde_json::from_slice(json)
+        .map_err(|e| format!("report: failed to parse build-report.json: {e}"))
 }
+
+fn validate_census(
+    pins: &Pins,
+    census: &NvattestToolCensus,
+    report: &NvattestBuildReport,
+) -> Result<(), String> {
+    if census.schema != NVATTEST_TOOL_CENSUS_SCHEMA_V1 {
+        return Err("census-version: tool census schema mismatch".into());
+    }
+    let toolchain = &pins.toolchain;
+
+    for (name, tool, expected_sha256, reported) in [
+        (
+            "rustc",
+            &census.rustc,
+            toolchain.rustc_exe_sha256,
+            &report.tools.rustc,
+        ),
+        (
+            "cargo",
+            &census.cargo,
+            toolchain.cargo_exe_sha256,
+            &report.tools.cargo,
+        ),
+        (
+            "cmake",
+            &census.cmake,
+            toolchain.cmake_exe_sha256,
+            &report.tools.cmake,
+        ),
+    ] {
+        let version = census_tool(name, tool)?;
+        match name {
+            "rustc" => require_version_tokens(
+                name,
+                version,
+                &["rustc", toolchain.rustc_version],
+                Some(toolchain.rustc_commit),
+            )?,
+            "cargo" => {
+                require_version_tokens(name, version, &["cargo", toolchain.cargo_version], None)?
+            }
+            _ => require_version_tokens(
+                name,
+                version,
+                &["cmake", "version", toolchain.cmake_version],
+                None,
+            )?,
+        }
+        if tool.sha256 != expected_sha256 {
+            return Err(format!(
+                "census-digest: {name} executable digest differs from pin"
+            ));
+        }
+        if version != reported {
+            return Err(format!(
+                "tool-census: census {name} version differs from report"
+            ));
+        }
+    }
+    // Recorded identities of the compiler and build drivers the SDK ran.
+    for (name, tool) in [
+        ("cl", &census.cl),
+        ("link", &census.link),
+        ("nmake", &census.nmake),
+        ("msbuild", &census.msbuild),
+    ] {
+        census_tool(name, tool)?;
+    }
+
+    let msvc =
+        census.msvc.vc_tools_version.as_deref().ok_or_else(|| {
+            "census-version: msvc vc_tools_version is missing or null".to_string()
+        })?;
+    if msvc != toolchain.msvc_toolset {
+        return Err(format!(
+            "census-version: msvc vc_tools_version does not equal {}",
+            toolchain.msvc_toolset
+        ));
+    }
+    if msvc != report.tools.msvc {
+        return Err("tool-census: census msvc version differs from report".into());
+    }
+
+    let sdk = census
+        .windows_sdk
+        .version
+        .as_deref()
+        .ok_or_else(|| "census-version: windows_sdk version is missing or null".to_string())?;
+    // vcvars writes exactly one trailing backslash; strip it, then match exactly.
+    let trimmed = sdk
+        .strip_suffix('\\')
+        .filter(|rest| !rest.ends_with('\\'))
+        .ok_or_else(|| {
+            "census-version: windows_sdk version must end with exactly one trailing backslash"
+                .to_string()
+        })?;
+    if trimmed != toolchain.windows_sdk {
+        return Err(format!(
+            "census-version: windows_sdk version does not equal {}",
+            toolchain.windows_sdk
+        ));
+    }
+    if sdk != report.tools.windows_sdk {
+        return Err("tool-census: census windows_sdk version differs from report".into());
+    }
+    Ok(())
+}
+
+fn census_tool<'a>(name: &str, tool: &'a NvattestToolVersionPath) -> Result<&'a str, String> {
+    let version = tool
+        .version
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+        .ok_or_else(|| format!("census-version: {name} version is missing or null"))?;
+    if tool.path.is_empty() {
+        return Err(format!("census-version: {name} path is missing"));
+    }
+    if tool.sha256.len() != 64
+        || !tool
+            .sha256
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(format!(
+            "census-version: {name} sha256 must be 64 lowercase hex digits"
+        ));
+    }
+    Ok(version)
+}
+
+/// Exact token comparison: `rustc 1.97.10` is not `rustc 1.97.1`.
+fn require_version_tokens(
+    name: &str,
+    version: &str,
+    expected: &[&str],
+    commit: Option<&str>,
+) -> Result<(), String> {
+    let tokens: Vec<&str> = version.split_whitespace().collect();
+    let prefix_ok = tokens.len() >= expected.len() && tokens[..expected.len()] == *expected;
+    let commit_ok = commit.is_none_or(|commit| {
+        tokens
+            .get(expected.len())
+            .and_then(|token| token.strip_prefix('('))
+            == Some(commit)
+    });
+    if !prefix_ok || !commit_ok {
+        return Err(format!(
+            "census-version: {name} version token mismatch: {version}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_report_sources(pins: &Pins, report: &NvattestBuildReport) -> Result<(), String> {
+    compare_source_list("report-sources", "report", &report.sources, pins)?;
+    let expected: Vec<NvattestReportBuildToolEntry> = pins
+        .build_tools
+        .iter()
+        .map(|tool| NvattestReportBuildToolEntry {
+            name: tool.name.into(),
+            url: tool.url.into(),
+            sha256: tool.sha256.into(),
+        })
+        .collect();
+    if report.build_tools != expected {
+        return Err("report-tools: report build tools differ from the committed list".into());
+    }
+    Ok(())
+}
+
+fn validate_report_outputs(
+    pins: &Pins,
+    report: &NvattestBuildReport,
+    exe: &crate::controlled_build::OutputIdentityEntry,
+) -> Result<(), String> {
+    let runtime = &pins.msvc_runtime;
+    let expected: [(&str, u64, &str); 6] = [
+        ("LICENSE", pins.license.bytes, pins.license.sha256),
+        (
+            NVATTEST_RUNTIME_OUTPUT_LABELS[0],
+            runtime.msvcp140.bytes,
+            runtime.msvcp140.sha256,
+        ),
+        (NVATTEST_EXE_OUTPUT_LABEL, exe.size, &exe.pre_signing_sha256),
+        (
+            NVATTEST_RUNTIME_OUTPUT_LABELS[1],
+            runtime.vcruntime140.bytes,
+            runtime.vcruntime140.sha256,
+        ),
+        (
+            NVATTEST_RUNTIME_OUTPUT_LABELS[2],
+            runtime.vcruntime140_1.bytes,
+            runtime.vcruntime140_1.sha256,
+        ),
+        (
+            NVATTEST_CA_BUNDLE_LABEL,
+            pins.ca_bundle.bytes,
+            pins.ca_bundle.sha256,
+        ),
+    ];
+    let paths: BTreeSet<&str> = report.outputs.iter().map(|o| o.path.as_str()).collect();
+    if paths.len() != report.outputs.len()
+        || paths != expected.iter().map(|(path, _, _)| *path).collect()
+    {
+        return Err("report-output: report output set differs from the staged layout".into());
+    }
+    for (path, bytes, sha256) in expected {
+        let output = report.outputs.iter().find(|o| o.path == path).unwrap();
+        if output.bytes != bytes || output.sha256 != sha256 {
+            return Err(format!(
+                "report-output: report {path} differs from its receipt or pin identity"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A tar member name with any leading `./` removed. Absolute names, `..`,
+/// drive or backslash spellings and empty interior components refuse.
+fn normalized_member(raw: &[u8]) -> Result<String, String> {
+    let text = std::str::from_utf8(raw).map_err(|_| "archive member name is not UTF-8")?;
+    if text.starts_with('/') || text.contains(['\\', ':', '\0']) {
+        return Err(format!("unsafe archive member name: {text:?}"));
+    }
+    let trimmed = text.strip_suffix('/').unwrap_or(text);
+    let mut normalized = Vec::new();
+    for part in trimmed.split('/').skip_while(|part| *part == ".") {
+        if part.is_empty() || part == "." || part == ".." {
+            return Err(format!("unsafe archive member name: {text:?}"));
+        }
+        normalized.push(part);
+    }
+    Ok(normalized.join("/"))
+}
+
+struct SourceMembers {
+    pax_comment: Option<String>,
+    license: Vec<u8>,
+    regorus_lock: Vec<u8>,
+}
+
+struct BundleMembers {
+    manifest: Vec<u8>,
+    ca: Vec<u8>,
+}
+
+/// Walk every member once; return the regular-file bytes for `wanted`, refusing
+/// unsafe or duplicate names and a wanted name carried by a non-file entry.
+fn read_tar_members(
+    label: &str,
+    archive_bytes: &[u8],
+    wanted: &[&str],
+    mut on_global: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<Vec<Option<Vec<u8>>>, String> {
+    let mut found: Vec<Option<Vec<u8>>> = vec![None; wanted.len()];
+    let mut seen = BTreeSet::new();
+    let mut archive = tar::Archive::new(Cursor::new(archive_bytes));
+    for entry in archive.entries().map_err(|e| format!("{label}: {e}"))? {
+        let mut entry = entry.map_err(|e| format!("{label}: {e}"))?;
+        let kind = entry.header().entry_type();
+        if kind.is_pax_global_extensions() {
+            let mut body = Vec::new();
+            entry
+                .read_to_end(&mut body)
+                .map_err(|e| format!("{label}: {e}"))?;
+            on_global(&body)?;
+            continue;
+        }
+        let name = normalized_member(&entry.path_bytes()).map_err(|e| format!("{label}: {e}"))?;
+        if name.is_empty() {
+            if kind.is_dir() {
+                continue;
+            }
+            return Err(format!("{label}: archive member has an empty name"));
+        }
+        if !seen.insert(name.clone()) {
+            return Err(format!("{label}: duplicate archive member {name}"));
+        }
+        if let Some(slot) = wanted.iter().position(|w| *w == name) {
+            if !kind.is_file() {
+                return Err(format!("{label}: {name} is not a regular file"));
+            }
+            let mut bytes = Vec::new();
+            entry
+                .read_to_end(&mut bytes)
+                .map_err(|e| format!("{label}: {e}"))?;
+            found[slot] = Some(bytes);
+        }
+    }
+    Ok(found)
+}
+
+fn extract_source_tar_members(archive_bytes: &[u8], pins: &Pins) -> Result<SourceMembers, String> {
+    let mut pax_comment = None;
+    let mut found = read_tar_members(
+        "source-archive",
+        archive_bytes,
+        &[pins.license.member, pins.regorus_cargo_lock.member],
+        |body| {
+            if let Some(comment) = parse_pax_record(body, "comment")? {
+                if pax_comment.is_some() {
+                    return Err(
+                        "source-revision: source archive has two pax commit comments".into(),
+                    );
+                }
+                pax_comment = Some(comment);
+            }
+            Ok(())
+        },
+    )?;
+    let regorus_lock = found[1]
+        .take()
+        .ok_or("source-archive: missing regorus Cargo.lock in source archive")?;
+    let license = found[0]
+        .take()
+        .ok_or("source-archive: missing LICENSE in source archive")?;
+    Ok(SourceMembers {
+        pax_comment,
+        license,
+        regorus_lock,
+    })
+}
+
+/// One pax record value by key: records are `<len> <key>=<value>\n`.
+fn parse_pax_record(body: &[u8], key: &str) -> Result<Option<String>, String> {
+    let mut rest = body;
+    let mut value = None;
+    while !rest.is_empty() {
+        let space = rest
+            .iter()
+            .position(|b| *b == b' ')
+            .ok_or("source-revision: malformed pax record")?;
+        let length: usize = std::str::from_utf8(&rest[..space])
+            .ok()
+            .and_then(|digits| digits.parse().ok())
+            .filter(|length| *length > space + 1 && *length <= rest.len())
+            .ok_or("source-revision: malformed pax record length")?;
+        let record = &rest[space + 1..length];
+        let record = record
+            .strip_suffix(b"\n")
+            .ok_or("source-revision: pax record lacks its newline")?;
+        let text =
+            std::str::from_utf8(record).map_err(|_| "source-revision: pax record is not UTF-8")?;
+        let (name, content) = text
+            .split_once('=')
+            .ok_or("source-revision: pax record lacks a key")?;
+        if name == key {
+            value = Some(content.to_string());
+        }
+        rest = &rest[length..];
+    }
+    Ok(value)
+}
+
+fn extract_bundle_tar_members(archive_bytes: &[u8], pins: &Pins) -> Result<BundleMembers, String> {
+    let mut found = read_tar_members(
+        "bundle-archive",
+        archive_bytes,
+        &[BUNDLE_MANIFEST_MEMBER, pins.ca_bundle.member],
+        |_| Ok(()),
+    )?;
+    let ca = found[1]
+        .take()
+        .ok_or("bundle-archive: missing ca-bundle.pem in bundle")?;
+    let manifest = found[0]
+        .take()
+        .ok_or("bundle-archive: missing offline-manifest.json in bundle")?;
+    Ok(BundleMembers { manifest, ca })
+}
+
+/// Every pinned download and build tool, and the CA, is a manifest member at
+/// its pinned digest. The `regorus-build-revision` entry is not a member.
+fn validate_bundle_manifest(pins: &Pins, manifest: &BundleManifest) -> Result<(), String> {
+    let lookup = |name: &str| -> Result<&BundleManifestFile, String> {
+        let matches: Vec<_> = manifest.files.iter().filter(|f| f.path == name).collect();
+        match matches.as_slice() {
+            [one] => Ok(one),
+            [] => Err(format!(
+                "bundle-manifest: pinned input {name} is not in the bundle manifest"
+            )),
+            _ => Err(format!("bundle-manifest: duplicate manifest entry {name}")),
+        }
+    };
+    let downloads = pins
+        .native_sources
+        .iter()
+        .filter_map(|source| match source {
+            NativeSourcePin::Download(pin) => Some(pin),
+            NativeSourcePin::BuildRevision(_) => None,
+        });
+    for pin in downloads.chain(pins.build_tools) {
+        if lookup(pin.name)?.sha256 != pin.sha256 {
+            return Err(format!(
+                "bundle-manifest: manifest SHA-256 for {} differs from pin",
+                pin.name
+            ));
+        }
+    }
+    let ca = lookup(pins.ca_bundle.member)?;
+    if ca.size != pins.ca_bundle.bytes || ca.sha256 != pins.ca_bundle.sha256 {
+        return Err("bundle-manifest: manifest ca-bundle.pem differs from pin".into());
+    }
+    Ok(())
+}
+
+fn validate_crt_members(
+    pins: &Pins,
+    msvc: &MsvcRuntimeBytes<'_>,
+    out_msvcp: &[u8],
+    out_vcruntime: &[u8],
+    out_vcruntime_1: &[u8],
+) -> Result<(), String> {
+    for (pin, msvc_bytes, out_bytes) in [
+        (&pins.msvc_runtime.msvcp140, msvc.msvcp140, out_msvcp),
+        (
+            &pins.msvc_runtime.vcruntime140,
+            msvc.vcruntime140,
+            out_vcruntime,
+        ),
+        (
+            &pins.msvc_runtime.vcruntime140_1,
+            msvc.vcruntime140_1,
+            out_vcruntime_1,
+        ),
+    ] {
+        if msvc_bytes.len() as u64 != pin.bytes || sha256_hex(msvc_bytes) != pin.sha256 {
+            return Err(format!(
+                "runtime-dll: msvc input {} differs from pin",
+                pin.member
+            ));
+        }
+        if out_bytes != msvc_bytes {
+            return Err(format!(
+                "runtime-dll: output {} differs from msvc package member",
+                pin.member
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) mod test_support;
+
+#[cfg(test)]
+mod tests;

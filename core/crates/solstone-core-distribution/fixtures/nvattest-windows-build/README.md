@@ -9,6 +9,8 @@ revision `8fdbb0f8c10594a5f88f77fdec4766803b4e6d59`:
 - `nvattest.exe.dumpbin.txt`: `dumpbin` headers, dependents and imports of the built
   `nvattest.exe` (SHA-256
   `220849fea69d60563fc6ef0ea7c020450d842565d08e7cbd2eecfecbd41ecdc8`).
+- `regorus-Cargo.lock`: the `sol/release/regorus-Cargo.lock` member of the
+  pinned source archive (`git archive` of that revision), byte for byte.
 - `tool-identities.json`: the build host's native tool population. It predates
   the driver's invoked-version tool census, so its shape is not the admission
   census contract.

@@ -810,11 +810,49 @@ version = "9.0.0"
 
         let mut without_nvattest = valid.clone();
         without_nvattest.as_object_mut().unwrap().remove("nvattest");
-        assert!(serde_json::from_value::<LocalInputs>(without_nvattest).is_err());
+        let error = serde_json::from_value::<LocalInputs>(without_nvattest)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("missing field `nvattest`"), "{error}");
 
         let mut with_unknown = valid.clone();
         with_unknown["unknown_field"] = serde_json::json!("forbidden");
         assert!(serde_json::from_value::<LocalInputs>(with_unknown).is_err());
+
+        // The verifier entry names paths only: no pin, digest, destination,
+        // revision or override can reach admission through the input file.
+        for field in [
+            "source_sha256",
+            "bundle_sha256",
+            "manifest_sha256",
+            "revision",
+            "pins",
+            "dest",
+            "ca_bundle",
+            "allow_imports",
+        ] {
+            let mut with_override = valid.clone();
+            with_override["nvattest"][field] = serde_json::json!("0".repeat(64));
+            let error = serde_json::from_value::<LocalInputs>(with_override)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("unknown field"), "{field}: {error}");
+        }
+        for field in [
+            "receipt",
+            "evidence",
+            "validation",
+            "source_archive",
+            "bundle_archive",
+            "output_root",
+        ] {
+            let mut relative = valid.clone();
+            relative["nvattest"][field] = serde_json::json!("relative/path");
+            assert!(
+                serde_json::from_value::<LocalInputs>(relative).is_err(),
+                "{field}"
+            );
+        }
     }
 
     #[cfg(not(windows))]
