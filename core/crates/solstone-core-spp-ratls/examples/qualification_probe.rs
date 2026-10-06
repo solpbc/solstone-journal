@@ -74,7 +74,7 @@ Options:
   --model <MODEL>         Model name for qualification chat probe (required unless --no-content)
   --credential-file <PATH> File holding the owner credential sent as the bearer (required unless --no-content)
   --nvattest-dir <DIR>    Path to nvattest directory (defaults to SPP_NVATTEST_DIR env var)
-  --no-content            Captures evidence and does not send chat or transcription
+  --request-json <PATH>   Send one custom chat JSON body after admission; save HTTP status/body (no fixed chat/audio probes)\n  --no-content            Captures evidence and does not send chat or transcription
   --offline-status-profile Stages the packaged 595.71.05 manifests and OfflineSignedAge for --pin only; requires --pcr-mode pin, never changes production admission
   --help                  Show this help message and exit
 ";
@@ -95,6 +95,7 @@ fn main() {
     let mut model: Option<String> = None;
     let mut credential_file: Option<PathBuf> = None;
     let mut nvattest_dir: Option<PathBuf> = None;
+    let mut request_json: Option<PathBuf> = None;
     let mut no_content = false;
     let mut offline_status_profile = false;
 
@@ -169,6 +170,14 @@ fn main() {
                     std::process::exit(1);
                 }
                 output_dir = Some(PathBuf::from(&args[i]));
+            }
+            "--request-json" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --request-json");
+                    std::process::exit(1);
+                }
+                request_json = Some(PathBuf::from(&args[i]));
             }
             "--model" => {
                 i += 1;
@@ -259,6 +268,17 @@ fn main() {
         std::process::exit(1);
     }
 
+    if request_json.is_some() && no_content {
+        eprintln!("error: --request-json cannot be used with --no-content");
+        std::process::exit(1);
+    }
+    let request_body = request_json.map(|path| {
+        let bytes = std::fs::read(path).expect("request JSON must be readable");
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("request must be JSON");
+        assert!(value.is_object(), "request must be a JSON object");
+        bytes
+    });
     let content = !no_content;
     if content && model.is_none() {
         eprintln!("error: --model is required unless --no-content is specified");
@@ -346,6 +366,11 @@ fn main() {
         socket_timeout: Duration::from_secs(120),
     };
 
+    if let Some(body) = request_body {
+        run_custom_request(&request, &resolved_nvattest_dir, &composite_verifier, &body)
+            .expect("custom attested request must complete");
+        return;
+    }
     match run_qualification(&request, &resolved_nvattest_dir, &composite_verifier) {
         Ok(success) => {
             if let Some(hex) = success.pcr_sha256 {
@@ -362,4 +387,74 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+// The custom body is a manual qualification input. It never changes production policy.
+fn run_custom_request(
+    request: &QualificationRequest,
+    nvattest_dir: &std::path::Path,
+    verifier: &dyn solstone_core_spp_ratls::CompositeVerifier,
+    body: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    use solstone_core_spp_ratls::{
+        AdmissionClock, AttestedIo, RatlsEndpoint, SystemAdmissionClock,
+        establish_attested_channel_with_clock, send_json_request,
+    };
+    use std::net::ToSocketAddrs;
+    let addresses = (request.host.as_str(), request.port)
+        .to_socket_addrs()?
+        .collect::<BTreeSet<_>>();
+    if addresses.len() != 1 {
+        return Err("qualification target must resolve to one address".into());
+    }
+    let clock = SystemAdmissionClock;
+    let mut channel = establish_attested_channel_with_clock(
+        &RatlsEndpoint::new(&request.host, request.port),
+        &request.owner_nonce,
+        nvattest_dir,
+        request.now,
+        None,
+        Some(&request.policy),
+        None,
+        verifier,
+        Duration::from_secs(900),
+        0,
+        &clock,
+    )?;
+    let evidence = &channel.verified.evidence;
+    for (name, bytes) in [
+        ("akpub.pem", evidence.ak_public_key_pem.as_slice()),
+        ("quote.msg", evidence.quote_message.as_slice()),
+        ("quote.sig", evidence.quote_signature.as_slice()),
+        ("quote.pcrs", evidence.quote_pcrs.as_slice()),
+        ("hcl_report.bin", evidence.hcl_report.as_slice()),
+    ] {
+        std::fs::write(request.output_dir.join(name), bytes)?;
+    }
+    let nonce: String = evidence
+        .owner_nonce
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    std::fs::write(request.output_dir.join("nonce.hex"), nonce)?;
+    if !channel.status_permits_new_request(clock.now_system(), clock.now_monotonic()) {
+        return Err("status no longer permits a new request".into());
+    }
+    channel.set_io_timeout(Some(Duration::from_secs(900)))?;
+    let response = send_json_request(
+        &mut channel,
+        &format!("{}:{}", request.host, request.port),
+        "/v1/chat/completions",
+        request.credential.as_deref(),
+        body,
+        false,
+    )?;
+    std::fs::write(
+        request.output_dir.join("http-response.json"),
+        serde_json::to_vec_pretty(
+            &serde_json::json!({"status":response.status,"body":String::from_utf8(response.body)?}),
+        )?,
+    )?;
+    println!("HTTP status: {}", response.status);
+    Ok(())
 }
