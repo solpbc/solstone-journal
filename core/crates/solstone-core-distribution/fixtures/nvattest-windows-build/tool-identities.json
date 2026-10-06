@@ -1,0 +1,82 @@
+﻿[
+    {
+        "path":  "C:\\BuildTools\\MSBuild\\Current\\Bin\\amd64\\MSBuild.exe",
+        "sha256":  "7da5f86d7dfa627c4071edc9563fda7ace7ec0aaadd8b2aaccb92d2a823535c0",
+        "version":  "17.14.60.43110"
+    },
+    {
+        "path":  "C:\\BuildTools\\MSBuild\\Current\\Bin\\MSBuild.exe",
+        "sha256":  "9fb50c5bfd8ea1de1c66151b25e60b7d4f4f56873618da98abb54090fb21aa75",
+        "version":  "17.14.60.43110"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe",
+        "sha256":  "fe251ef50a1545b1b0835ee17b1e785459712b38d79e45b5c1d3d28970a36619",
+        "version":  "19.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\link.exe",
+        "sha256":  "a364af801a8539e4324d9489313dbf001d959128451fc99a27b24676bbac058f",
+        "version":  "14.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\nmake.exe",
+        "sha256":  "ce6b50c2d8e6704b671ec116e52ce9d2fbc1d20dd28c5b895b5421adddf94ebb",
+        "version":  "14.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x86\\cl.exe",
+        "sha256":  "303bfbe5523af2e925871a1bc7fd2ec5f199a69208a3b6716724c3e6d6b6962d",
+        "version":  "19.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x86\\link.exe",
+        "sha256":  "83b11a6a9b1674472fe069a8d315a6ac6d6dfe3670d39cb55c2cda303544b1d6",
+        "version":  "14.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x86\\nmake.exe",
+        "sha256":  "6570a874519f6d22080e1de18e22447d97fed960e20b1fa4da53e300e8cde0be",
+        "version":  "14.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx86\\x64\\cl.exe",
+        "sha256":  "391e2a9c6ccf038e4bbe7520774f090b2dd48ddde514d0b8c6e48cedb2346605",
+        "version":  "19.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx86\\x64\\link.exe",
+        "sha256":  "182e92ba3f371062394386f750412a50ef508512c07a4d49418c25d1eb430361",
+        "version":  "14.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx86\\x64\\nmake.exe",
+        "sha256":  "51544799cccbe904eff96d7deee380ca688e4e5d11d06c0dafae039300974a6c",
+        "version":  "14.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx86\\x86\\cl.exe",
+        "sha256":  "fc26dcba228dd91cd09429670f298f4608833c84841a4ceca8c4955b4d495a7b",
+        "version":  "19.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx86\\x86\\link.exe",
+        "sha256":  "83d4fbff908e88be425898184d8470be1f139bf843190c24e041b019c9c69a78",
+        "version":  "14.44.35229.0"
+    },
+    {
+        "path":  "C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx86\\x86\\nmake.exe",
+        "sha256":  "c2af7e9f012af2ddd8eb67a74c627d355a4854aaf0e10ab5cba2e2e6c793bb3f",
+        "version":  "14.44.35229.0"
+    },
+    {
+        "path":  "C:\\ProgramData\\solstone\\rustup\\toolchains\\1.97.1-x86_64-pc-windows-msvc\\bin\\cargo.exe",
+        "sha256":  "ddfbad20b31b918d3439d070945ec59bbfe037a6ec0ab5b584459e69c8b37d1b",
+        "version":  null
+    },
+    {
+        "path":  "C:\\ProgramData\\solstone\\rustup\\toolchains\\1.97.1-x86_64-pc-windows-msvc\\bin\\rustc.exe",
+        "sha256":  "cf79cfd77b0a144c56a0a6af6bf10bcdf095a73718cd4bf2b9d4fe2d2cbded55",
+        "version":  "1.97.1 (8bab26f4f 2026-07-14)"
+    }
+]
