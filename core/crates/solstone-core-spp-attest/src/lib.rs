@@ -23,7 +23,7 @@ pub use pcr_appraisal::{
     ApplicationExpectations, PcrAppraisalFailure, PcrAppraisalReason, appraise_application_pcrs,
     parse_quote_pcrs,
 };
-pub use pins::{PRODUCTION_PCR_SHA256_PINS, production_policy};
+pub use pins::{PRODUCTION_ID_KEY_DIGEST_PINS, PRODUCTION_PCR_SHA256_PINS, production_policy};
 pub use snp::{
     CpuBundle, PcrMode, Policy, QuoteVerifier, TcbFloor, appraise_cpu_leg, check_pcr_fingerprint,
 };

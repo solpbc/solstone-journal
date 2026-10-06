@@ -115,6 +115,7 @@ mod tests {
     fn composite_failures_are_all_failed_not_unreachable() {
         for reason in [
             "pcr_pin_mismatch",
+            "id_key_pin_mismatch",
             "cpu_verification_failed",
             "nvattest_unavailable",
             "nvattest_integrity_failed",
