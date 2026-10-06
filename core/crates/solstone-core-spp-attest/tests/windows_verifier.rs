@@ -12,7 +12,7 @@ use solstone_core_distribution::{
     },
 };
 use solstone_core_spp_attest::{
-    GpuAppraisalReason,
+    error::GpuAppraisalReason,
     nvgpu::{appraise::run_nvattest_for_tests, build_nvattest_attest_command, locate_nvattest},
 };
 use std::{
