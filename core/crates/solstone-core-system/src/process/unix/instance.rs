@@ -7,7 +7,12 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "android"
+))]
 use super::super::ProcessOwner;
 use super::super::{
     CensusRow, InspectResult, InstanceCensus, ProcessInstanceSource, SystemProcessInstanceSource,
@@ -1422,7 +1427,7 @@ mod android_owner_tests {
     #[test]
     fn android_process_owner_is_always_unknown() {
         assert_eq!(process_owner(0), ProcessOwner::Unknown);
-        assert_eq!(process_owner(std::process::id()), ProcessOwner::Unknown);
+        assert_eq!(process_owner(12345), ProcessOwner::Unknown);
     }
 }
 

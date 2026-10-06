@@ -19,11 +19,11 @@ solstone-core-speakers.workspace = true
 solstone-core-speakers-onnx = { workspace = true, optional = true }
 
 # This admission hook dependency exists so the Unix hosted-child acknowledgement
-# typechecks on Linux, macOS, and Android (where acknowledgement still fails
+# typechecks on Linux, macOS, Android, and iOS (where mobile acknowledgement fails
 # closed). The Windows cross-check deliberately builds this crate's library to
 # verify the helper's unsupported-runtime diagnostic; do not pull the hosted
 # runtime's native dependency closure into that probe.
-[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "android"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "android", target_os = "ios"))'.dependencies]
 solstone-core-system.workspace = true
 
 [[bin]]

@@ -980,6 +980,17 @@ else
 	extro-windows-ci run --source "$(CURDIR)"
 endif
 
+# Compile/link the Android workspace with real pinned native dependencies.
+# Opt-in: requires a Linux x86_64 builder and downloads toolchain/source inputs.
+ANDROID_BUILD_DIR ?= $(CURDIR)/core/android-build
+.PHONY: check-rust-android check-rust-android-prepared
+check-rust-android:
+	python3 scripts/android_cross_build.py --work-dir "$(ANDROID_BUILD_DIR)"
+
+# Native preparation runs outside the contained Rust gate.
+check-rust-android-prepared:
+	/bin/bash scripts/check_android_cross_build.sh "$(ANDROID_BUILD_DIR)"
+
 check-rust-ios:
 	@$(REQUIRE_CARGO)
 	@# Host-only process/server crates, including Convey, are not iOS target concerns in this wave.

@@ -138,7 +138,7 @@ pub struct PreReadySupervisorLifecycle {
 }
 
 impl SupervisorBootAdmission {
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     pub fn acquire(
         _journal: impl AsRef<Path>,
         _writer_id: WriterId,
@@ -148,7 +148,7 @@ impl SupervisorBootAdmission {
         ))
     }
 
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     pub fn activate(self) -> Result<PreReadySupervisorLifecycle, LifecycleError> {
         Err(LifecycleError::Identity(
             "supervisor lifecycle is unsupported on this platform",

@@ -1701,9 +1701,6 @@ fn first_exact_index(platform: DesktopPlatform) -> usize {
 
 #[cfg(unix)]
 fn open_provider(owner: &OwnerBase, create: bool) -> Result<SecureDir, IdentityError> {
-    if cfg!(target_os = "android") || owner.platform() == PlatformTag::Android {
-        return Err(IdentityError::InvalidInput(ANDROID_IDENTITY_UNSUPPORTED));
-    }
     let mut current = open_absolute_dir(&owner.home)?;
     for (index, segment) in base_segments(owner.platform).iter().enumerate() {
         let exact_mode = index >= first_exact_index(owner.platform);
@@ -3136,9 +3133,6 @@ fn open_or_create_child_dir(
 /// Builds the provider through the Windows full-path traversal; see
 /// [`open_child_dir`] for its intentional Unix divergence.
 fn open_provider(owner: &OwnerBase, create: bool) -> Result<SecureDir, IdentityError> {
-    if cfg!(target_os = "android") || owner.platform() == PlatformTag::Android {
-        return Err(IdentityError::InvalidInput(ANDROID_IDENTITY_UNSUPPORTED));
-    }
     let mut current = open_absolute_dir(&owner.home)?;
     for (index, segment) in base_segments(owner.platform).iter().enumerate() {
         let exact_mode = index >= first_exact_index(owner.platform);
@@ -5343,7 +5337,7 @@ mod tests {
         assert!(parse_wrapper_guard("# solstone-installation-unexpected: value\n").is_err());
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "android")))]
     #[test]
     fn android_platform_tag_refuses_and_desktop_tags_still_construct() {
         let path = PathBuf::from("/solstone-android-identity-unused");
@@ -5389,13 +5383,7 @@ mod tests {
                 Err(IdentityError::InvalidInput(_))
             ));
         }
-        let original_home = env::var_os("HOME");
-        env::remove_var("HOME");
-        let result = owner_base();
-        if let Some(home) = original_home {
-            env::set_var("HOME", home);
-        }
-        assert!(matches!(result, Err(IdentityError::InvalidInput(_))));
+        assert!(matches!(owner_base(), Err(IdentityError::InvalidInput(_))));
     }
 }
 

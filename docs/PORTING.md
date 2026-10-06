@@ -83,6 +83,10 @@ One more target is checked without shipping:
 
 ## Native dependency proof
 
+[Android cross-building](ANDROID_CROSS_BUILD.md) is an opt-in compilation/link
+check for the full default-feature workspace and the MCP feature. It does not
+qualify an Android runtime or add a shipped target.
+
 A crate that adds C/C++ build steps or native linkage is not done after
 `cargo test`. Prove it still builds on every shipped target in the table
 above — the musl/gnu lane split on both Linux targets and the native lane on

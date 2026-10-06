@@ -38,6 +38,8 @@ tests/fixtures/journal/chronicle/*/health/*.jsonl
 .sandbox.journal
 build/
 core/target/
+core/target-android/
+core/android-build/
 core/crates/solstone-core-service-legacy-evidence/target/
 /dist/
 /target/

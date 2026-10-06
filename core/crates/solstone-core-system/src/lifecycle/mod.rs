@@ -105,7 +105,7 @@ pub use parent_loss_ledger::{
     ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossReaderOutcome,
     ParentLossTerminalDisposition, ParentLossUnresolvedReason, read_parent_loss_outcome,
 };
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 pub use readiness::wait_ready;
 pub use readiness::{
     ReadinessMarker, RecordedResident, START_TIME_TOLERANCE_SECONDS, recorded_live_resident,

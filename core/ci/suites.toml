@@ -14,6 +14,19 @@ quick = 120
 standard = 600
 slow = 1200
 extended = 1800
+android = 7200
+
+# Opt-in compile/link canary with acquired NDK and source-built native inputs.
+[[legs]]
+id = "android-cross-build"
+make_target = "check-rust-android-prepared"
+set = "platform"
+areas = ["platform"]
+packages = ["workspace"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache", "host-tools"]
+timeout = "android"
+default_full = false
 
 [[legs]]
 id = "fmt"
