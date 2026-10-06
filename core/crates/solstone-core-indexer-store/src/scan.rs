@@ -36,9 +36,7 @@ use crate::chunk_sources::{
     record_chunk_source, require_chunk_path_lookup,
 };
 use crate::classification::{FacetDeclarationSet, classify_source};
-use crate::classification_batch::{
-    Counts, RESCAN_CLASSIFICATION_STEP, ResumeCount, classify_one_batch,
-};
+use crate::classification_batch::{Counts, ResumeCount, classify_one_batch};
 use crate::db::{
     EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, delete_chunk_classification,
     mark_index_build_complete, open_index_admitted, prune_authored_chat_paths_admitted,
@@ -578,13 +576,7 @@ fn migrate_chunk_classifications(
     if let Some(ref state) = existing
         && state.completed
     {
-        let status = classify_one_batch(
-            conn,
-            journal,
-            ResumeCount::Preserve,
-            RESCAN_CLASSIFICATION_STEP,
-            Counts::Terminal,
-        )?;
+        let status = classify_one_batch(conn, journal, ResumeCount::Preserve, Counts::Terminal)?;
         if status.coverage_mismatch {
             return Ok(vec![format!(
                 "chunk classification coverage mismatch: {} missing rows",
@@ -601,13 +593,7 @@ fn migrate_chunk_classifications(
 
     let mut current_resume = resume_target;
     for _ in 0..CHUNK_CLASSIFICATION_BACKFILL_BUDGET {
-        let status = classify_one_batch(
-            conn,
-            journal,
-            current_resume,
-            RESCAN_CLASSIFICATION_STEP,
-            Counts::Terminal,
-        )?;
+        let status = classify_one_batch(conn, journal, current_resume, Counts::Terminal)?;
         if status.stalled {
             let err = status
                 .stalled_error
@@ -1762,7 +1748,9 @@ mod tests {
     fn classification_backfill_is_bounded_resumable_and_stall_explicit() {
         let root = temp_root("classification-backfill");
         let mut conn = open_index(&root).expect("open index");
-        for index in 0..65 {
+        let step = crate::classification_batch::CHUNK_CLASSIFICATION_BACKFILL_STEP as usize;
+        let seeded = 2 * step + 1;
+        for index in 0..seeded {
             conn.execute(
                 "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('legacy', ?1, '', '', '', '', 0, '')",
                 [format!("legacy-{index:03}.md")],
@@ -1770,7 +1758,7 @@ mod tests {
             .expect("seed legacy chunk");
         }
         crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
-        // AC20: two 32-path pages make bounded progress and leave an
+        // AC20: two step-sized pages make bounded progress and leave an
         // assertable running cursor; the resumed invocation alone increments.
         assert!(
             migrate_chunk_classifications(&mut conn, &root)
@@ -1785,7 +1773,7 @@ mod tests {
         assert_eq!(running.resume_count, 0);
         assert_eq!(
             count(&conn, "SELECT count(*) FROM chunk_classification"),
-            64
+            2 * step as i64
         );
 
         migrate_chunk_classifications(&mut conn, &root).expect("resume migration");
@@ -1797,7 +1785,7 @@ mod tests {
         assert_eq!(complete.resume_count, 1);
         assert_eq!(
             count(&conn, "SELECT count(*) FROM chunk_classification"),
-            65
+            seeded as i64
         );
         migrate_chunk_classifications(&mut conn, &root).expect("idempotent migration");
         assert_eq!(

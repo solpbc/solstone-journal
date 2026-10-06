@@ -24,11 +24,8 @@ use crate::db::{
 };
 use crate::writer_admission::{IndexAdmission, check_test_seam};
 
-/// Paths classified per explicit `--apply` batch and per drain batch.
+/// Paths classified per batch, for explicit batches, drains and ordinary rescans.
 pub const CHUNK_CLASSIFICATION_BACKFILL_STEP: i64 = 128;
-/// Paths classified per batch inside an ordinary rescan, which runs a bounded
-/// number of batches in one admission and has no lease release between them.
-pub(crate) const RESCAN_CLASSIFICATION_STEP: i64 = 32;
 
 /// How much of the status a batch counts. The `missing` count is a distinct-path
 /// join over the whole source table and dominates a batch, so batches whose
@@ -458,7 +455,6 @@ pub(crate) fn classify_one_batch(
     conn: &mut Connection,
     journal: &Path,
     resume: ResumeCount,
-    step: i64,
     counts: Counts,
 ) -> Result<ClassificationStatus, StoreError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -569,9 +565,13 @@ pub(crate) fn classify_one_batch(
     let paths = {
         let mut statement = tx.prepare(CHUNK_SOURCES_LOOKUP_PATHS)?;
         statement
-            .query_map([&state.cursor, &step.to_string()], |row| {
-                row.get::<_, String>(0)
-            })?
+            .query_map(
+                [
+                    &state.cursor,
+                    &CHUNK_CLASSIFICATION_BACKFILL_STEP.to_string(),
+                ],
+                |row| row.get::<_, String>(0),
+            )?
             .collect::<Result<Vec<_>, _>>()?
     };
 
@@ -684,13 +684,7 @@ fn apply_batch(journal: &Path, counts: Counts) -> Result<ClassificationStatus, S
         "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
     )?;
 
-    let status = classify_one_batch(
-        &mut conn,
-        journal,
-        ResumeCount::Preserve,
-        CHUNK_CLASSIFICATION_BACKFILL_STEP,
-        counts,
-    )?;
+    let status = classify_one_batch(&mut conn, journal, ResumeCount::Preserve, counts)?;
     drop(conn);
     drop(admission);
 
