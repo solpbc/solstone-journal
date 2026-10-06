@@ -95,6 +95,7 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --li
 echo === cargo test --locked (late material reaches an old or finished day) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --lib --features full-tests -- --exact daily_coverage::tests::late_raw_input_adopts_an_old_day_and_reopens_a_finished_one daily_coverage::tests::adoption_persists_closed_calendar_boundary_and_reconciles_derived_only_changes daily_coverage::tests::explicit_old_day_registration_survives_restart_and_finds_lost_wake_changes || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-local --lib --features full-tests || exit /b 1
+call :run_exact_library "solstone-core-generate-wire" "confidential::tests::nvattest_directory_refuses_config_outside_an_installed_windows_package" || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wire --lib || exit /b 1
 echo === cargo test --locked (Windows portal installer Job ownership) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install || exit /b 1

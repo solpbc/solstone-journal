@@ -1111,6 +1111,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn nvattest_directory_uses_explicit_confidential_config() {
         let journal = Path::new("/journal");
         let explicit = json!({"services": {"confidential": {"nvattest_dir": "/explicit"}}})
@@ -1120,6 +1121,29 @@ mod tests {
         assert_eq!(
             resolve_nvattest_dir(Some(&explicit), journal),
             PathBuf::from("/explicit")
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn nvattest_directory_refuses_config_outside_an_installed_windows_package() {
+        // Cargo's test process is not an installed journal in payload/bin.
+        // A journal setting must not turn that process into a helper selector.
+        assert_ne!(
+            std::env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .file_name(),
+            Some(std::ffi::OsStr::new("bin"))
+        );
+        let explicit = json!({"services": {"confidential": {"nvattest_dir": "C:\\hostile"}}})
+            .as_object()
+            .expect("config")
+            .clone();
+        assert_eq!(
+            resolve_nvattest_dir(Some(&explicit), Path::new("C:\\journal")),
+            PathBuf::new()
         );
     }
 

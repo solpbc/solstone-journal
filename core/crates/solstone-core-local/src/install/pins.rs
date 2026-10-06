@@ -42,9 +42,9 @@ pub const CUDA_ARTIFACTS: &[(&str, &str, &str, u64)] = &[
     ),
     (
         "aarch64-unknown-linux-gnu",
-        "https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-arm64-sol1.tar.gz",
-        "6de68319db40e8c0eb45dc4bd3a45a16971dbdc128f2b621b19bef5dae87d064",
-        654508507,
+        "https://updates.solstone.app/runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-arm64-sol1.tar.gz",
+        "de73a4cae3cb750170cfce090d752af95a67d97afd681154646547a7d6ddc72f",
+        699234360,
     ),
 ];
 
@@ -353,54 +353,57 @@ pub fn cuda_identity(key: &str) -> Option<Value> {
     let (url, sha256, size_bytes) = cuda_pin(key)?;
     let arch = cuda_runtime_arch(key)?;
     let wanted_files = cuda_wanted_files(arch)?;
-    if arch == "amd64" {
-        // The signed publisher revision is not the runtime source.
-        Some(json!({
-            "unit": "llama-server-cuda",
-            "artifact_key": key,
-            "url": url,
-            "sha256": sha256,
-            "size_bytes": size_bytes,
-            "release_tag": "b11429",
-            "llama_cpp_revision": "d81235049384534c167caea52b85a694f6103d14",
-            "cuda_toolkit": "13.4.1",
-            "repack_revision": "sol1",
-            "inputs": [
-                {
-                    "role": "engine",
-                    "filename": "llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz",
-                    "sha256": "8082b7eaa74a714c9fecca19128f751c8e32da763ee8096b8ad1e824da7621d3",
-                    "size_bytes": 152519318,
-                    "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
-                },
-                {
-                    "role": "cudart",
-                    "filename": "cudart-llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz",
-                    "sha256": "93d18648d815b2bd624d83d82f653e1db97afb478f02064305fe3cf570040a6d",
-                    "size_bytes": 440236630,
-                    "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
-                }
-            ],
-            "arch": arch,
-            "binary_name": "llama-server",
-            "wanted_files": wanted_files
-        }))
-    } else {
-        Some(json!({
-            "unit": "llama-server-cuda",
-            "artifact_key": key,
-            "url": url,
-            "sha256": sha256,
-            "size_bytes": size_bytes,
-            "release_tag": "b10068",
-            "upstream_image_digest": "sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63",
-            "llama_cpp_revision": "571d0d540df04f25298d0e159e520d9fc62ed121",
-            "repack_revision": "sol1",
-            "arch": arch,
-            "binary_name": "llama-server",
-            "wanted_files": wanted_files
-        }))
-    }
+    let inputs = match arch {
+        "amd64" => json!([
+            {
+                "role": "engine",
+                "filename": "llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz",
+                "sha256": "8082b7eaa74a714c9fecca19128f751c8e32da763ee8096b8ad1e824da7621d3",
+                "size_bytes": 152519318,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
+            },
+            {
+                "role": "cudart",
+                "filename": "cudart-llama-b11429-bin-ubuntu-cuda-13.4-x64.tar.gz",
+                "sha256": "93d18648d815b2bd624d83d82f653e1db97afb478f02064305fe3cf570040a6d",
+                "size_bytes": 440236630,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
+            }
+        ]),
+        "arm64" => json!([
+            {
+                "role": "engine",
+                "filename": "llama-b11429-bin-ubuntu-cuda-13.4-arm64.tar.gz",
+                "sha256": "9c76d072276c0faa7fc1b5cbf715b4186dd2e8d7f16acd20b67daab24c82bd22",
+                "size_bytes": 147639003,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
+            },
+            {
+                "role": "cudart",
+                "filename": "cudart-llama-b11429-bin-ubuntu-cuda-13.4-arm64.tar.gz",
+                "sha256": "ad62e46cdc2e8636fa91e883b9e9ad779516f61cc478ece1c90e5dbc905a7d29",
+                "size_bytes": 552521413,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11429/"
+            }
+        ]),
+        _ => return None,
+    };
+    // The signed publisher revision is not the runtime source.
+    Some(json!({
+        "unit": "llama-server-cuda",
+        "artifact_key": key,
+        "url": url,
+        "sha256": sha256,
+        "size_bytes": size_bytes,
+        "release_tag": "b11429",
+        "llama_cpp_revision": "d81235049384534c167caea52b85a694f6103d14",
+        "cuda_toolkit": "13.4.1",
+        "repack_revision": "sol1",
+        "inputs": inputs,
+        "arch": arch,
+        "binary_name": "llama-server",
+        "wanted_files": wanted_files
+    }))
 }
 pub fn model_identity(model_id: &str) -> Option<Value> {
     (model_id == "local/qwen3.5-4b").then(|| json!({"unit":"local-model","model_id":"local/qwen3.5-4b","repo":"unsloth/Qwen3.5-4B-GGUF","revision":"main","filename":"Qwen3.5-4B-Q4_K_M.gguf","sha256":"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4","mmproj_filename":"mmproj-F16.gguf","mmproj_sha256":"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864"}))

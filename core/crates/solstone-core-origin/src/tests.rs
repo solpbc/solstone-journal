@@ -425,23 +425,17 @@ fn guard_keeps_sol1_pin_history_when_all_releases_are_considered() {
 #[test]
 fn guard_names_all_pinning_releases_and_head_for_a_cuda_key() {
     let key = "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-arm64-sol1.tar.gz";
-    let mut expected = historical_origin_pins()
+    let expected = historical_origin_pins()
         .unwrap()
         .into_iter()
         .filter(|(_, pins)| pins.iter().any(|pin| pin.origin_key == key))
         .map(|(version, _)| PinOwner::Release(version))
         .collect::<Vec<_>>();
-    expected.push(PinOwner::HeadUnreleased);
-    match require_prunable(key).unwrap_err() {
-        GuardError::Refused {
-            origin_key,
-            assessment: PruneAssessment::PinnedBy { owners },
-        } => {
-            assert_eq!(origin_key, key);
-            assert_eq!(owners, expected);
-        }
-        error => panic!("expected pinned refusal, got {error:?}"),
-    }
+    assert!(!expected.is_empty());
+    assert_eq!(
+        assess_prune_with_current_support(key).unwrap(),
+        PruneAssessment::PinnedBy { owners: expected }
+    );
 }
 
 #[test]
@@ -450,12 +444,6 @@ fn guard_refusal_display_names_releases_and_head_for_operators() {
     let owners = historical_origin_pins()
         .unwrap()
         .into_keys()
-        .map(PinOwner::Release)
-        .chain(std::iter::once(PinOwner::HeadUnreleased))
-        .map(|owner| match owner {
-            PinOwner::Release(version) => version,
-            PinOwner::HeadUnreleased => "HEAD (unreleased)".to_owned(),
-        })
         .collect::<Vec<_>>()
         .join(", ");
     assert_eq!(
@@ -466,13 +454,18 @@ fn guard_refusal_display_names_releases_and_head_for_operators() {
 
 #[test]
 fn guard_candidate_cuda_key_pinned_only_by_head() {
-    let key = "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz";
-    assert_eq!(
-        assess_prune_with_current_support(key).unwrap(),
-        PruneAssessment::PinnedBy {
-            owners: vec![PinOwner::HeadUnreleased]
-        }
-    );
+    let keys = [
+        "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz",
+        "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-arm64-sol1.tar.gz",
+    ];
+    for key in keys {
+        assert_eq!(
+            assess_prune_with_current_support(key).unwrap(),
+            PruneAssessment::PinnedBy {
+                owners: vec![PinOwner::HeadUnreleased]
+            }
+        );
+    }
 }
 
 #[test]
