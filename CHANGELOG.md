@@ -17,6 +17,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when a page in your journal can't load because the connection dropped or took too long, the page now shows its own message without the browser's wording, like "Load failed". on the curation page, "show more" now says when the next suggestions didn't load. before, it went quiet.
 - if no owner is already marked, daily review marks at most one new person whose name matches your configured name as the owner.
 - the agents page now says a browser-paired agent can read for at most 30 days after pairing, or until you disconnect it, and that turning solstone.me back on reuses your certificate only while the one you have is still good.
+- when your phone lost its connection partway through sending, home said your phone "isn't reaching your journal" until something new from it went into your journal, sometimes all night. what was cut off still goes into your journal when your phone tries again, so home no longer shows that line for it.
+- `solstone journal doctor` no longer warns that a device "had requests turned away" when the last time was more than a week ago.
 
 ## [2.0.35] - 2026-10-07
 

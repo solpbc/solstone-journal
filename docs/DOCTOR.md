@@ -134,15 +134,16 @@ ls -la journal/chronicle/$(date +%Y%m%d)/health/
 
 ## Health Signals
 
-Health uses linked-device evidence: whether a paired client is still adding to
-the journal, not whether a retired local observer process recently checked in.
+Health uses linked-device evidence: whether the journal is accepting what a paired
+client sends, not whether a retired local observer process recently checked in.
 
 `solstone journal doctor` also runs the `client_ingest_health` advisory check. It warns
 when the journal has recorded an active client ingest rejection, but never
-blocks. Remediation is to update or restart the client, then confirm a valid
-upload clears the active rejection.
+blocks. An upload whose body stopped arriving before it was complete is not a
+rejection: the journal writes a log line for it and leaves the device's record alone. Remediation is to update or restart the client, then
+confirm a valid upload clears the active rejection.
 `solstone journal doctor` also runs the `client_transport_refusal` advisory check. It
-warns when the journal has turned a paired device's requests away because that
+warns when, in the last 7 days, the journal has turned a paired device's requests away because that
 device's connection was already carrying as many requests as the journal accepts
 at once. It is separate from `client_ingest_health` on purpose: a rejection
 happens after a request arrives, a refusal happens instead of one arriving, and
@@ -158,19 +159,8 @@ unrouted segment is missing from them. A journal always keeps one enabled facet
 warning points at damaged facet declarations or a Sense regression, not an empty
 journal.
 
-`solstone journal doctor` reports `capture_health` and `client_delivery_stall` from whether the solstone app on each assessed device is still adding to the journal.
-Their JSON and JSONL payloads also include registry completeness, delivery state, reach, and any parsed devices that are not yet part of that delivery assessment under `client_delivery`. Human warnings use reach only to distinguish an app that is still running but not adding from a device that appears offline and may be asleep; machine reason tokens remain in JSON and JSONL.
-
-| Signal | Healthy when | Stale when |
-|--------|--------------|------------|
-| `hear` | Status received within threshold | No status for 60+ seconds |
-| `see` | Status received within threshold | No status for 60+ seconds |
-
-Both signals track whether a paired client is reaching the journal. If capture
-is not reaching the journal, update or restart the client and then send a new
-segment.
-
-Staleness threshold: 60 seconds (configurable via `--threshold`).
+`solstone journal doctor` reports `capture_health` and `client_delivery_stall` from the journal's record of each assessed device. Both warn when the journal has rejected an upload from a device and accepted nothing from it since; the device's next accepted upload clears it. On a device with more than one source, both also warn when the journal has rejected an upload from one source and accepted nothing from that source since; that source's next accepted upload clears it. Time alone never warns: a device that is asleep or switched off reads as quiet, not as a fault.
+Their JSON and JSONL payloads also include registry completeness, delivery state, reach, and any parsed devices that are not yet part of that delivery assessment under `client_delivery`, with the machine reason tokens. Human warnings do not use reach.
 
 ### Callosum Status Events
 
@@ -196,7 +186,7 @@ within its 10-second wait ([Doctor's default timeout](../core/crates/solstone-co
 it warns that it could not confirm dispatch health. See [Sense health fields](../core/crates/solstone-core-sense/src/beacon.rs)
 and [Sense status updates](../core/crates/solstone-core-sense/src/dispatch.rs).
 
-`stale_heartbeats` in the supervisor's own status does **not** come from `observe.status` — it comes from the supervisor's own peer-heartbeat sync files (`SyncCheckResult.peer_observations`, staleness derived via `sync::native_mtime_seconds`/`HeartbeatClassification`; see `core/crates/solstone-core-system/src/lifecycle/mod.rs`'s `StaleHeartbeatGc`). `observe.status` freshness is a separate, capture-side signal (see the `hear`/`see` staleness table above).
+`stale_heartbeats` in the supervisor's own status does **not** come from `observe.status` — it comes from the supervisor's own peer-heartbeat sync files (`SyncCheckResult.peer_observations`, staleness derived via `sync::native_mtime_seconds`/`HeartbeatClassification`; see `core/crates/solstone-core-system/src/lifecycle/mod.rs`'s `StaleHeartbeatGc`). `observe.status` freshness is a separate, capture-side signal.
 
 See [CALLOSUM.md](CALLOSUM.md) Tract Registry for event schemas.
 
@@ -243,7 +233,7 @@ See [CORTEX.md](CORTEX.md) for complete event schemas and agent configuration.
 # Check sense log for errors
 solstone journal health logs --service sense --grep 'ERROR|error' -c 50
 
-# Check if sense is emitting status via observe.status (see the hear/see staleness table above)
+# Check if sense is emitting status via observe.status
 # Note: supervisor.status's stale_heartbeats reflects peer heartbeat sync files, not observe.status
 ```
 
