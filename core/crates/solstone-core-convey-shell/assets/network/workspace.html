@@ -1722,7 +1722,10 @@
     // follows the saved choice.
     let state = copy.LOCAL_NETWORK_NOT_REACHABLE;
     let note = '';
-    if (data.listening_on === 'local_network') {
+    if (data.listening_on === 'local_network' && data.windows_firewall_blocked === true) {
+      state = copy.LOCAL_NETWORK_FIREWALL_BLOCKED;
+      note = copy.LOCAL_NETWORK_FIREWALL_BLOCKED_NOTE;
+    } else if (data.listening_on === 'local_network') {
       state = copy.LOCAL_NETWORK_OPEN;
       note = [
         ...(data.agents_on_network === true

@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, the network page now tells you when Windows Firewall has kept a Block rule for journal after Cancel, and how an administrator can remove it. opening your journal to the network alone couldn't get past that rule.
 - some weeks wouldn't open, and their card on home said they couldn't be read. they open now.
 - when a page in your journal can't load because the connection dropped or took too long, the page now shows its own message without the browser's wording, like "Load failed". on the curation page, "show more" now says when the next suggestions didn't load. before, it went quiet.
 

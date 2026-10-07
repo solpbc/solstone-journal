@@ -221,7 +221,7 @@ pub(crate) fn routes(door: Arc<DoorLifecycle>) -> Router {
 }
 
 async fn status(Extension(door): Extension<Arc<DoorLifecycle>>) -> Response {
-    Json(status_body(&door, None)).into_response()
+    Json(status_body(&door, None).await).into_response()
 }
 
 async fn open(Extension(door): Extension<Arc<DoorLifecycle>>) -> Response {
@@ -266,7 +266,7 @@ async fn set_and_rebind(door: &DoorLifecycle, open: bool) -> Response {
     if door.listening_on_network().is_some_and(|have| have != want) {
         door.rebind().await;
     }
-    let mut body = status_body(door, Some(changed));
+    let mut body = status_body(door, Some(changed)).await;
     // Closing is saved, but agents on your network keeps the door open until
     // the owner turns that off in agents.
     if !open && want {
@@ -285,7 +285,7 @@ async fn set_and_rebind(door: &DoorLifecycle, open: bool) -> Response {
     Json(body).into_response()
 }
 
-fn status_body(door: &DoorLifecycle, changed: Option<bool>) -> Value {
+async fn status_body(door: &DoorLifecycle, changed: Option<bool>) -> Value {
     let state = resolve(door.journal_root());
     let bound = door.bound_addr();
     let listening_on = match bound {
@@ -300,6 +300,11 @@ fn status_body(door: &DoorLifecycle, changed: Option<bool>) -> Value {
         "port": bound.map(|address| address.port()),
         "windows_asks": cfg!(windows),
         "agents_on_network": lan_door_on(door.journal_root()),
+        "windows_firewall_blocked": if listening_on == "local_network" {
+            crate::windows_firewall::app_blocked().await
+        } else {
+            None
+        },
     });
     if let Some(changed) = changed {
         body["changed"] = Value::Bool(changed);
