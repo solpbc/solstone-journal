@@ -731,7 +731,9 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         };
         let clean_plan = clean_session.plan().clone();
         let mut protected_journals = preflight.protected_journals;
-        protected_journals.insert(clean_plan.binding.journal_token.to_path_buf());
+        for journal in &clean_plan.protected_journals {
+            protected_journals.insert(journal.to_path_buf());
+        }
         let admitted_plan = clean_plan.clone();
         let identity_executable_dir = executable_dir.clone();
         let mut clean_session = Some(clean_session);
@@ -3073,7 +3075,9 @@ mod tests {
         .unwrap();
         let plan = session.plan().clone();
         let mut protected = preflight.protected_journals;
-        protected.insert(plan.binding.journal_token.to_path_buf());
+        for journal in &plan.protected_journals {
+            protected.insert(journal.to_path_buf());
+        }
         let mut runner = Runner(VecDeque::new());
         let mut confirm = || true;
         let journal_path = journal.to_path_buf();

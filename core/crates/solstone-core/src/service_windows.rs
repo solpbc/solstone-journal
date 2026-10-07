@@ -12,9 +12,9 @@ use std::time::{Duration, Instant};
 
 use solstone_core_cli::{ServiceAction, ServiceInstallationGuardArguments};
 use solstone_core_installation_identity::{
-    ArtifactBindingEvidence, CleanUninstallRequest, CleanupSkip, CleanupTargetDecision,
-    CleanupTargetKind, GuardFields, IdentityError, OwnerBase, ProtectedJournals,
-    admit_clean_uninstall, journal_token_from_path, load_installation_binding,
+    ArtifactBindingEvidence, CleanUninstallPlan, CleanUninstallRequest, CleanupSkip,
+    CleanupTargetDecision, CleanupTargetKind, GuardFields, IdentityError, OwnerBase,
+    ProtectedJournals, admit_clean_uninstall, journal_token_from_path, load_installation_binding,
     may_remove_cleanup_target, owner_base, parse_service_guard_environment, root_token_from_path,
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
@@ -758,6 +758,17 @@ fn admitted_clean_session(
     .map_err(task_error)
 }
 
+fn admitted_protected_journals(
+    preflight: &CleanUninstallPreflight,
+    plan: &CleanUninstallPlan,
+) -> ProtectedJournals {
+    let mut protected = preflight.protected_journals.clone();
+    for journal in &plan.protected_journals {
+        protected.insert(journal.to_path_buf());
+    }
+    protected
+}
+
 fn saved_task_artifact_paths(ctx: &ServiceContext) -> Result<(PathBuf, PathBuf), ExitCode> {
     let directory = task_artifact_directory(&ctx.owner)
         .ok_or_else(|| task_error("installation provider location is unavailable"))?;
@@ -1307,6 +1318,7 @@ fn run_uninstall_action() -> ExitCode {
         Err(code) => return code,
     };
     let plan = session.plan().clone();
+    let protected_journals = admitted_protected_journals(&preflight, &plan);
     let platform = owner.platform();
     let mut results = Vec::new();
     if let Err(code) = stop_task(&ctx) {
@@ -1365,7 +1377,7 @@ fn run_uninstall_action() -> ExitCode {
             CleanupTargetKind::PerInstall,
             false,
             preflight.registry_known,
-            &preflight.protected_journals,
+            &protected_journals,
             platform,
         );
         if result.state == CleanUninstallState::Failed {
@@ -1416,7 +1428,7 @@ fn run_uninstall_action() -> ExitCode {
         CleanupTargetKind::PerInstall,
         false,
         preflight.registry_known,
-        &preflight.protected_journals,
+        &protected_journals,
         platform,
     );
     if resume_result.state == CleanUninstallState::Failed {
@@ -1438,7 +1450,7 @@ fn run_uninstall_action() -> ExitCode {
         &mut results,
         plan.remove_owner_config,
         preflight.registry_known,
-        &preflight.protected_journals,
+        &protected_journals,
         platform,
     );
     let failed = results
@@ -1774,6 +1786,7 @@ fn run_before_uninstall() -> ExitCode {
         Err(code) => return code,
     };
     let plan = session.plan().clone();
+    let protected_journals = admitted_protected_journals(&preflight, &plan);
     let deadline = match before_uninstall_deadline() {
         Ok(deadline) => deadline,
         Err(error) => {
@@ -1905,7 +1918,7 @@ fn run_before_uninstall() -> ExitCode {
             CleanupTargetKind::PerInstall,
             false,
             preflight.registry_known,
-            &preflight.protected_journals,
+            &protected_journals,
             owner.platform(),
         );
         if result.state == CleanUninstallState::Failed {
@@ -1956,7 +1969,7 @@ fn run_before_uninstall() -> ExitCode {
         CleanupTargetKind::PerInstall,
         false,
         preflight.registry_known,
-        &preflight.protected_journals,
+        &protected_journals,
         owner.platform(),
     );
     if resume_result.state == CleanUninstallState::Failed {
@@ -1980,7 +1993,7 @@ fn run_before_uninstall() -> ExitCode {
         CleanupTargetKind::Shared,
         plan.remove_owner_config,
         preflight.registry_known,
-        &preflight.protected_journals,
+        &protected_journals,
         owner.platform(),
     );
     if config_result.state == CleanUninstallState::Failed {
@@ -2002,7 +2015,7 @@ fn run_before_uninstall() -> ExitCode {
         &mut results,
         plan.remove_owner_config,
         preflight.registry_known,
-        &preflight.protected_journals,
+        &protected_journals,
         owner.platform(),
     );
     let failed = results

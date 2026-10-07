@@ -523,6 +523,7 @@ pub struct CleanUninstallPlan {
     pub binding: InstallationBinding,
     pub remove_owner_config: bool,
     pub already_tombstoned: bool,
+    pub protected_journals: Vec<JournalToken>,
 }
 
 /// Successful clean-uninstall admission. It owns the locks until it is dropped
@@ -1330,17 +1331,20 @@ pub fn admit_clean_uninstall(
         _ => {}
     }
     let marker_lock = lock_existing_marker(&namespace)?;
-    let others: Vec<&NamespaceSnapshot> = registry
-        .values()
-        .filter(|other| {
-            other.namespace != namespace_name
-                && other
-                    .record
-                    .as_ref()
-                    .is_some_and(|candidate| candidate.state == LifecycleState::Adopted)
-        })
-        .collect();
-    let remove_owner_config = others.is_empty();
+    let mut protected_journals = Vec::new();
+    let mut has_other_adopted = false;
+    for other in registry.values() {
+        let Some(candidate) = other.record.as_ref() else {
+            continue;
+        };
+        protected_journals.push(candidate.journal_token.clone());
+        if other.namespace != namespace_name && candidate.state == LifecycleState::Adopted {
+            has_other_adopted = true;
+        }
+    }
+    protected_journals.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+    protected_journals.dedup();
+    let remove_owner_config = !has_other_adopted;
     let lease = NamespaceLease {
         _owner_lock: owner_lock,
         _marker_lock: marker_lock,
@@ -1352,6 +1356,7 @@ pub fn admit_clean_uninstall(
             binding,
             remove_owner_config,
             already_tombstoned: record.state == LifecycleState::Tombstoned,
+            protected_journals,
         },
         namespace,
         _lease: lease,
@@ -5235,6 +5240,11 @@ mod tests {
         })
         .expect("uninstall A admission");
         assert!(!first.plan().remove_owner_config);
+        let expected_journals = vec![
+            JournalToken::from_raw_absolute(b"/journal/a".to_vec()).expect("journal A"),
+            JournalToken::from_raw_absolute(b"/journal/b".to_vec()).expect("journal B"),
+        ];
+        assert_eq!(first.plan().protected_journals, expected_journals);
         first.commit_tombstone().expect("tombstone A");
         let census = read_installation_journal_census(
             &fixture.owner,
@@ -5263,6 +5273,7 @@ mod tests {
         })
         .expect("uninstall B admission");
         assert!(last.plan().remove_owner_config);
+        assert_eq!(last.plan().protected_journals, expected_journals);
     }
 
     #[test]

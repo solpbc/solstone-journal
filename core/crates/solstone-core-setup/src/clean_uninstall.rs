@@ -205,7 +205,7 @@ pub fn clean_uninstall_preflight(
         Some(LifecycleState::Adopted) => CleanUninstallPreflightState::Proceed,
         Some(LifecycleState::Prepared) => unreachable!("prepared record returned above"),
         None if registry_known => CleanUninstallPreflightState::NoBinding,
-        None => CleanUninstallPreflightState::Proceed,
+        None => return Err("installation identity census is unreadable".into()),
     };
     let journal_path = root_record
         .as_ref()
@@ -349,6 +349,46 @@ pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) ->
             context.platform,
         ) == CleanupTargetDecision::Remove
     };
+    let windows_managed = if context.platform == PlatformTag::Windows {
+        let Some(task_xml) = service.as_deref() else {
+            return true;
+        };
+        let Some(service_directory) = task_xml.parent() else {
+            return true;
+        };
+        let Some(owner_directory) = service_directory.parent() else {
+            return true;
+        };
+        let namespace = context.plan.binding.namespace.to_string();
+        let after_update = task_xml.with_file_name(format!("{namespace}.after-update.json"));
+        let resume_script = owner_directory.join(format!(
+            "journal-resume-{}.vbs",
+            context.plan.binding.id.as_hex()
+        ));
+        let per_install = [&after_update, &resume_script]
+            .iter()
+            .any(|path| present(path) && policy(path, CleanupTargetKind::PerInstall, false));
+        let shared = std::env::var_os("LOCALAPPDATA").is_some_and(|local_app_data| {
+            let state_directory = PathBuf::from(local_app_data).join("solstone-journal");
+            [
+                state_directory.join("journal-app.json"),
+                state_directory.join("journal-mark.ico"),
+                state_directory.join("journal-app-webview"),
+            ]
+            .iter()
+            .any(|path| {
+                present(path)
+                    && policy(
+                        path,
+                        CleanupTargetKind::Shared,
+                        context.plan.remove_owner_config,
+                    )
+            })
+        });
+        per_install || shared
+    } else {
+        false
+    };
     service.as_ref().is_some_and(|path| {
         present(path)
             && artifact_evidence_matches_plan(context)
@@ -381,6 +421,7 @@ pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) ->
         || user_skill_paths(&context.home_dir)
             .iter()
             .any(|path| present(path) && policy(path, CleanupTargetKind::PerInstall, false))
+        || windows_managed
 }
 fn child_failure_reason(output: &crate::steps::CommandOutput) -> String {
     let mut reason = format!("service uninstall exited {}", output.exit_code);
@@ -1174,10 +1215,12 @@ mod tests {
             )
             .expect("journal"),
         };
+        let journal_token = binding.journal_token.clone();
         CleanUninstallPlan {
             binding,
             remove_owner_config: true,
             already_tombstoned: false,
+            protected_journals: vec![journal_token],
         }
     }
 
