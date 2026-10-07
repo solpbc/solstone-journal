@@ -708,6 +708,7 @@ fn generate_response(
     context: &ExecutionContext,
     generate: &OneShotClient,
     writer: &mut impl Write,
+    state: Option<&PrePostState>,
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
     let _ = prepared.config.remove(INPUT_BUDGET_KEY);
     match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
@@ -724,9 +725,16 @@ fn generate_response(
                 prepared.config.contains_key("json_schema"),
                 None,
                 |_attempt| {
-                    generate.execute(&request).map_err(|error| {
+                    let mut response = generate.execute(&request).map_err(|error| {
                         stage_error("generate", "runtime", prepared, format!("{error}"))
-                    })
+                    })?;
+                    if let (GenerateResponse::Generated(generated), Some(state)) =
+                        (&mut response, state)
+                        && matches!(state, PrePostState::MorningBriefing(_))
+                    {
+                        morning_briefing::repair_attention_overflow(generated, prepared, state)?;
+                    }
+                    Ok(response)
                 },
                 |event| emit(writer, event),
             )?;
@@ -773,7 +781,13 @@ pub(crate) fn generate_and_write(
     writer: &mut impl Write,
     stage: Option<(&'static contract::StageSpec, PrePostState)>,
 ) -> RuntimeOutcome {
-    let (response, usage, degraded) = match generate_response(prepared, context, generate, writer) {
+    let (response, usage, degraded) = match generate_response(
+        prepared,
+        context,
+        generate,
+        writer,
+        stage.as_ref().map(|(_, state)| state),
+    ) {
         Ok(response) => response,
         Err(outcome) => {
             if let Some((stage, state)) = stage

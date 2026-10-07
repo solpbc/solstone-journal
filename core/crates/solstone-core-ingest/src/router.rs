@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::extract::multipart::MultipartError;
 use axum::extract::{DefaultBodyLimit, Extension, FromRequest, Multipart, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -235,7 +236,20 @@ async fn ingest_upload(
             Err((code, status, detail)) => {
                 return refusal_with_activity(&state, &cid, code, status, detail);
             }
-            Ok(Err((code, detail))) => {
+            Ok(Err(MultipartFailure::BodyIncomplete)) => {
+                // The device's connection dropped while it was still sending.
+                // It holds the segment and sends it again, so this is no
+                // rejection: recording one would show its owner a failing
+                // device until the next upload lands. The answer is the same
+                // refusal the wire has always given; the device rarely sees it.
+                log::warn!("ingest_body_incomplete cid={cid}");
+                return refusal(
+                    ReasonCode::MultipartMalformed,
+                    StatusCode::BAD_REQUEST,
+                    "upload ended before its body was complete",
+                );
+            }
+            Ok(Err(MultipartFailure::Refused(code, detail))) => {
                 return refusal_with_activity(&state, &cid, code, StatusCode::BAD_REQUEST, detail);
             }
             Ok(Ok(parsed)) => parsed,
@@ -260,7 +274,31 @@ struct RawFile {
     bytes: Vec<u8>,
 }
 
-async fn parse_multipart(request: Request) -> Result<MultipartInput, (ReasonCode, String)> {
+/// Why a multipart body could not be read: what arrived is refused, or the
+/// body stopped arriving before it was complete.
+enum MultipartFailure {
+    Refused(ReasonCode, String),
+    BodyIncomplete,
+}
+
+impl From<(ReasonCode, String)> for MultipartFailure {
+    fn from((code, detail): (ReasonCode, String)) -> Self {
+        Self::Refused(code, detail)
+    }
+}
+
+/// axum answers 500 for a multipart read only when the request body stream
+/// itself failed for a reason other than the size limit: the bytes stopped
+/// arriving. Everything it answers 4xx for is about bytes that did arrive.
+fn multipart_read_failure(error: &MultipartError, detail: &str) -> MultipartFailure {
+    if error.status() == StatusCode::INTERNAL_SERVER_ERROR {
+        MultipartFailure::BodyIncomplete
+    } else {
+        MultipartFailure::Refused(ReasonCode::MultipartMalformed, detail.to_owned())
+    }
+}
+
+async fn parse_multipart(request: Request) -> Result<MultipartInput, MultipartFailure> {
     let mut multipart = Multipart::from_request(request, &()).await.map_err(|_| {
         (
             ReasonCode::MultipartMalformed,
@@ -270,24 +308,25 @@ async fn parse_multipart(request: Request) -> Result<MultipartInput, (ReasonCode
     let mut parts = 0usize;
     let mut envelope = None;
     let mut files = Vec::new();
-    while let Some(field) = multipart.next_field().await.map_err(|_| {
-        (
-            ReasonCode::MultipartMalformed,
-            "cannot parse multipart part".to_owned(),
-        )
-    })? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|error| multipart_read_failure(&error, "cannot parse multipart part"))?
+    {
         parts += 1;
         if parts > MAX_PARTS {
             return Err((
                 ReasonCode::MultipartTooManyParts,
                 "too many multipart parts".to_owned(),
-            ));
+            )
+                .into());
         }
         if field.headers().len() > MAX_HEADERS {
             return Err((
                 ReasonCode::MultipartTooManyHeaders,
                 "too many multipart headers".to_owned(),
-            ));
+            )
+                .into());
         }
         let name = field.name().unwrap_or_default().to_owned();
         let filename = field.file_name().map(ToOwned::to_owned);
@@ -297,13 +336,15 @@ async fn parse_multipart(request: Request) -> Result<MultipartInput, (ReasonCode
                 return Err((
                     ReasonCode::FieldDuplicate,
                     "envelope appears more than once".to_owned(),
-                ));
+                )
+                    .into());
             }
             if filename.is_some() {
                 return Err((
                     ReasonCode::MultipartMalformed,
                     "envelope must be a text field".to_owned(),
-                ));
+                )
+                    .into());
             }
             envelope = Some(String::from_utf8(bytes).map_err(|_| {
                 (
@@ -316,7 +357,8 @@ async fn parse_multipart(request: Request) -> Result<MultipartInput, (ReasonCode
                 return Err((
                     ReasonCode::MultipartTooManyFiles,
                     "too many file parts".to_owned(),
-                ));
+                )
+                    .into());
             }
             let filename = filename.ok_or_else(|| {
                 (
@@ -328,7 +370,8 @@ async fn parse_multipart(request: Request) -> Result<MultipartInput, (ReasonCode
                 return Err((
                     ReasonCode::MultipartFilenameTooLong,
                     "filename is too long".to_owned(),
-                ));
+                )
+                    .into());
             }
             files.push(RawFile { filename, bytes });
         }
@@ -336,21 +379,20 @@ async fn parse_multipart(request: Request) -> Result<MultipartInput, (ReasonCode
     let envelope =
         envelope.ok_or_else(|| (ReasonCode::FieldMissing, "envelope is required".to_owned()))?;
     if files.is_empty() {
-        return Err((ReasonCode::FieldMissing, "files are required".to_owned()));
+        return Err((ReasonCode::FieldMissing, "files are required".to_owned()).into());
     }
     Ok(MultipartInput { envelope, files })
 }
 
 async fn bounded_part(
     mut field: axum::extract::multipart::Field<'_>,
-) -> Result<Vec<u8>, (ReasonCode, String)> {
+) -> Result<Vec<u8>, MultipartFailure> {
     let mut bytes = Vec::new();
-    while let Some(chunk) = field.chunk().await.map_err(|_| {
-        (
-            ReasonCode::MultipartMalformed,
-            "cannot read multipart part".to_owned(),
-        )
-    })? {
+    while let Some(chunk) = field
+        .chunk()
+        .await
+        .map_err(|error| multipart_read_failure(&error, "cannot read multipart part"))?
+    {
         if bytes
             .len()
             .checked_add(chunk.len())
@@ -359,7 +401,8 @@ async fn bounded_part(
             return Err((
                 ReasonCode::MultipartPartTooLarge,
                 "multipart part exceeds 64 MiB".to_owned(),
-            ));
+            )
+                .into());
         }
         bytes.extend_from_slice(&chunk);
     }
@@ -1336,7 +1379,7 @@ fn record_ingest_activity(
             // never in the log stream — a rejected segment upload was invisible to anyone
             // reading convey.log, indistinguishable from an upload that was never attempted
             // at all. Every rejection now gets a visible line regardless of ledger outcome.
-            log::warn!("ingest_rejection reason={}", code.as_str());
+            log::warn!("ingest_rejection reason={} cid={cid}", code.as_str());
             (
                 "ingest_rejection",
                 ledger.record_ingest_rejection(cid, &timestamp, code.as_str(), source),
@@ -4757,6 +4800,87 @@ mod tests {
             String::from_utf8(response)
                 .unwrap()
                 .starts_with("HTTP/1.1 413")
+        );
+    }
+
+    fn recorded_rejection(root: &Path, cid: &str) -> Option<String> {
+        match read_device_activity(&root.join("link/devices.json")) {
+            DeviceActivityRead::Present(activity) => activity
+                .get(cid)
+                .and_then(|activity| activity.ingest_rejection.as_ref())
+                .map(|rejection| rejection.reason_code.clone()),
+            DeviceActivityRead::Missing => None,
+            other => panic!("device activity unreadable: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn an_upload_cut_off_mid_body_records_no_rejection() {
+        // A phone whose connection drops partway through an upload keeps the
+        // segment and sends it again. Recording that as a rejection marked the
+        // device as failing to reach the journal until its next upload landed,
+        // overnight when the phone then slept.
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        clear_activity_logs();
+        let (content_type, body) = multipart(json!({}), "audio.flac", &[7u8; 4096]);
+        let (server, mut client) = tokio::io::duplex(128 * 1024);
+        let served_root = root.clone();
+        let task = tokio::spawn(async move {
+            // The connection ends early, so serving it is allowed to fail.
+            let _ =
+                serve_connection(server, router(&served_root), basis(CID_A), &mux_builder()).await;
+        });
+        let head = format!(
+            "POST /app/devices/ingest HTTP/1.1\r\nHost: localhost\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nX-Solstone-Protocol-Version: 3\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        client.write_all(head.as_bytes()).await.unwrap();
+        client.write_all(&body[..body.len() / 2]).await.unwrap();
+        client.shutdown().await.unwrap();
+        let mut response = Vec::new();
+        let _ = client.read_to_end(&mut response).await;
+        task.await.unwrap();
+
+        assert_eq!(recorded_rejection(&root, CID_A), None);
+        assert!(
+            ACTIVITY_LOGGER
+                .messages
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|message| message == &format!("ingest_body_incomplete cid={CID_A}"))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_complete_body_with_a_truncated_multipart_is_still_a_rejection() {
+        // The negative control: every byte the device sent arrived, and what it
+        // sent is not a whole multipart body. That is a device defect the owner
+        // should see.
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let app = router(&root);
+        let (content_type, body) = multipart(json!({}), "audio.flac", &[7u8; 4096]);
+        let truncated = body[..body.len() / 2].to_vec();
+
+        let (status, refusal) = call(
+            &app,
+            "POST",
+            "/app/devices/ingest",
+            Some(content_type),
+            truncated,
+            basis(CID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(refusal["reason_code"], "multipart_malformed");
+        assert_eq!(
+            recorded_rejection(&root, CID_A).as_deref(),
+            Some("multipart_malformed")
         );
     }
 

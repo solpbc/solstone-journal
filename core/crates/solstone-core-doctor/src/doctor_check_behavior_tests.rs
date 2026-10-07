@@ -227,11 +227,14 @@ fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::V
         .get("health")
         .and_then(|health| health.get("transport_refusal"))
     {
-        let at = rfc3339(context.now.timestamp_millis());
+        let latest = refusal
+            .get("latest_ts")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_else(|| context.now.timestamp_millis());
         entry["transport_refusal"] = serde_json::json!({
             "reason_code": refusal.get("reason_code").and_then(serde_json::Value::as_str).unwrap_or("stream_limit"),
-            "first": at,
-            "latest": at,
+            "first": rfc3339(latest),
+            "latest": rfc3339(latest),
             "active_count": refusal.get("active_count").and_then(serde_json::Value::as_u64).unwrap_or(1),
         });
     }
@@ -1466,7 +1469,46 @@ fn a_journal_that_turned_nothing_away_says_so_rather_than_staying_silent() {
     let row = result("client_transport_refusal", &context);
 
     assert_eq!(row.status, Status::Ok);
-    assert_eq!(row.detail, "no devices had requests turned away");
+    assert_eq!(
+        row.detail,
+        "no devices had requests turned away in the last 7 days"
+    );
+}
+
+#[test]
+fn a_refusal_older_than_a_week_no_longer_warns() {
+    // The record is never cleared, so without a window a busy afternoon three
+    // weeks ago still warned today. A refusal inside the week still does.
+    let day_ms = 24 * 60 * 60 * 1000;
+    let context = fixture();
+    write_client_fixture(
+        &context,
+        "abcdefgh",
+        serde_json::json!({
+            "key":"abcdefgh-key", "name":"phone", "enabled":true, "created_at":1,
+            "health":{"transport_refusal":{
+                "reason_code":"stream_limit", "active_count":24,
+                "latest_ts": context.now.timestamp_millis() - 8 * day_ms
+            }}
+        }),
+    );
+    write_client_fixture(
+        &context,
+        "ijklmnop",
+        serde_json::json!({
+            "key":"ijklmnop-key", "name":"tablet", "enabled":true, "created_at":1,
+            "health":{"transport_refusal":{
+                "reason_code":"stream_limit", "active_count":3,
+                "latest_ts": context.now.timestamp_millis() - 6 * day_ms
+            }}
+        }),
+    );
+
+    let row = result("client_transport_refusal", &context);
+
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.contains("device ijklmnop"), "{}", row.detail);
+    assert!(!row.detail.contains("device abcdefgh"), "{}", row.detail);
 }
 
 #[test]
