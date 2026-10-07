@@ -648,11 +648,11 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
             0
         }
         _ if d.plan_only => {
-            if matches!(d.action, Action::Move | Action::Switch | Action::Proceed) {
-                if let Err(error) = refuse_journal_in_program_folder(&c.target_path, &c.sol_bin) {
-                    eprintln!("{error}");
-                    return 1;
-                }
+            if matches!(d.action, Action::Move | Action::Switch | Action::Proceed)
+                && let Err(error) = refuse_journal_in_program_folder(&c.target_path, &c.sol_bin)
+            {
+                eprintln!("{error}");
+                return 1;
             }
             println!("{}", plan(c, d));
             d.exit_code
