@@ -12,7 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- your morning briefing no longer needs another attempt when it lists too many open follow-ups.
+- your morning briefing no longer needs another attempt when it lists too many older open follow-ups.
 - some weeks wouldn't open, and their card on home said they couldn't be read. they open now.
 - when a page in your journal can't load because the connection dropped or took too long, the page now shows its own message without the browser's wording, like "Load failed". on the curation page, "show more" now says when the next suggestions didn't load. before, it went quiet.
 
