@@ -399,6 +399,7 @@ fn promotion_resolves_a_punctuated_identity_through_the_id_namespace() {
         "make ci",
         "The repository gate",
         &["the gate".to_owned()],
+        false,
     )
     .unwrap();
     assert_eq!(promotion.attachment.entity_id, "make_ci");
@@ -444,6 +445,7 @@ fn promotion_reuses_a_punctuated_link_already_attached_to_the_facet() {
         "make ci",
         "The repository gate",
         &[],
+        false,
     )
     .unwrap();
     assert_eq!(promotion.attachment.entity_id, "make_ci");
@@ -639,6 +641,7 @@ fn promotion_prefers_a_name_match_over_an_id_match() {
         "make ci",
         "The repository gate",
         &[],
+        false,
     )
     .unwrap();
     assert_eq!(promotion.attachment.entity_id, "other_id");
@@ -660,6 +663,7 @@ fn promotion_still_refuses_a_blocked_identity_reached_through_the_id_namespace()
         "make ci",
         "The repository gate",
         &[],
+        false,
     )
     .unwrap_err();
     assert!(error.to_string().starts_with("conflict:"), "{error}");
@@ -686,6 +690,7 @@ fn promotion_still_mints_an_identity_no_namespace_holds() {
         "Grace Hopper",
         "Engineer",
         &[],
+        false,
     )
     .unwrap();
     assert_eq!(promotion.attachment.entity_id, "grace_hopper");
@@ -739,6 +744,7 @@ fn promotion_disambiguates_a_duplicate_name_family_by_the_id_it_derives() {
         "Weekly Reflection",
         "A recurring review",
         &[],
+        false,
     )
     .unwrap();
     assert_eq!(promotion.attachment.entity_id, "weekly_reflection");
@@ -764,6 +770,7 @@ fn promotion_still_refuses_a_duplicate_name_family_no_member_can_claim() {
         "Weekly Reflection",
         "A recurring review",
         &[],
+        false,
     )
     .unwrap_err();
     assert_eq!(
@@ -798,6 +805,7 @@ fn promotion_still_refuses_a_shared_name_held_by_an_identity_map_collision_loser
         "Weekly Reflection",
         "A recurring review",
         &[],
+        false,
     )
     .unwrap_err();
     assert_eq!(
@@ -963,6 +971,7 @@ fn a_merge_landing_between_prepare_and_publish_ends_the_promotion_as_a_conflict(
         "Sunstone",
         "An earlier project name",
         &[],
+        false,
     )
     .unwrap();
     let change = promotion.identity.expect("a new identity is prepared");
@@ -1017,6 +1026,48 @@ fn a_refused_attach_of_a_new_name_leaves_no_entity_behind() {
         ))
     ));
     assert!(!temporary.path().join("entities/zed").exists());
+}
+
+#[test]
+fn attaching_a_non_person_with_an_owner_name_does_not_take_the_principal() {
+    for entity_type in ["Company", "Project", "Tool"] {
+        let temporary = TempDir::new();
+        create_test_facet(temporary.path(), "scope");
+        fs::create_dir_all(temporary.path().join("config")).unwrap();
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            serde_json::to_vec(&json!({"identity":{"name":"Jordan Rivera","preferred":"Jo"}}))
+                .unwrap(),
+        )
+        .unwrap();
+
+        let attached = attach_or_reactivate_entity(
+            temporary.path(),
+            "scope",
+            entity_type,
+            "Jordan Rivera",
+            "",
+        )
+        .unwrap();
+        let identity = solstone_core_entity::read_entity_identity(
+            temporary.path(),
+            attached.relationship["entity_id"].as_str().unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_ne!(identity.value().get("is_principal"), Some(&json!(true)));
+        assert!(!solstone_core_entity::has_journal_principal(temporary.path()).unwrap());
+
+        let person =
+            attach_or_reactivate_entity(temporary.path(), "scope", "Person", "Jo", "").unwrap();
+        let identity = solstone_core_entity::read_entity_identity(
+            temporary.path(),
+            person.relationship["entity_id"].as_str().unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(identity.value().get("is_principal"), Some(&json!(true)));
+    }
 }
 
 #[test]

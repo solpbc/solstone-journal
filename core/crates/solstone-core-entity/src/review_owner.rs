@@ -32,6 +32,8 @@ pub enum ReviewOwnerConflictKind {
     IdentityMerged,
     /// The id the plan would create was deleted after it was prepared.
     IdentityDeleted,
+    /// An unapplied new principal grant is no longer admissible.
+    PrincipalGrantRefused,
 }
 
 impl ReviewOwnerConflictKind {
@@ -57,6 +59,7 @@ impl ReviewOwnerConflictKind {
         Self::ArtifactBeforeChanged,
         Self::IdentityMerged,
         Self::IdentityDeleted,
+        Self::PrincipalGrantRefused,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -82,6 +85,7 @@ impl ReviewOwnerConflictKind {
             Self::ArtifactBeforeChanged => "artifact_before_changed",
             Self::IdentityMerged => "identity_merged",
             Self::IdentityDeleted => "identity_deleted",
+            Self::PrincipalGrantRefused => "principal_grant_refused",
         }
     }
 }

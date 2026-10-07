@@ -1035,6 +1035,143 @@ mod tests {
     }
 
     #[test]
+    fn principal_identity_with_a_lost_commit_receipt_resumes_the_exact_plan() {
+        let root = fixture();
+        let journal = root.path();
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+        )
+        .unwrap();
+        let promotion = solstone_core_facets::prepare_review_promotion(
+            journal,
+            "work",
+            "Person",
+            "Jordan Rivera",
+            "Owner",
+            &["Captain".into()],
+            false,
+        )
+        .unwrap();
+        let change = promotion.identity.unwrap();
+        assert_eq!(change.after["is_principal"], true);
+        let facet_id = solstone_core_facets::facet_write_identity(journal, "work").unwrap();
+        let action = PreparedDailyAction::Identity {
+            facet: "work".into(),
+            facet_id: facet_id.clone(),
+            change: change.clone(),
+        };
+        let action_id = format!(
+            "0:{:x}",
+            Sha256::digest(serde_json::to_vec(&action).unwrap())
+        );
+        let plan = PreparedDailyPublication {
+            actions: vec![
+                action,
+                PreparedDailyAction::Attachment {
+                    change: promotion.attachment,
+                },
+                PreparedDailyAction::Aliases {
+                    facet: "work".into(),
+                    facet_id,
+                    change: promotion.aliases.unwrap(),
+                },
+            ],
+            no_output: false,
+        };
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let context = ExecutionContext {
+            journal: journal.into(),
+        };
+        with_daily_unit_authority(journal, &identity, |authority| {
+            let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+            record.lock_token = Some("interrupted".into());
+            record.generated_result = Some(json!({"output":"retained"}));
+            record.action_plan = Some(serde_json::to_value(&plan).unwrap());
+            record.receipts.push(json!({"kind":"owner_action", "action_id":action_id, "token":"interrupted", "state":"started"}));
+            *authority.record_mut() = Some(record);
+            authority.checkpoint()
+        }).unwrap();
+        // The identity write succeeds, but the callback loses the commit receipt.
+        assert!(
+            solstone_core_entity::publish_identity_change(
+                journal,
+                &change,
+                true,
+                || Ok(()),
+                || Err("simulated lost receipt".into()),
+            )
+            .is_err()
+        );
+        let history_before =
+            solstone_core_entity::read_visible_history(journal, "jordan_rivera").unwrap();
+        assert!(!history_before.is_empty());
+        // A resumed action must recognize its exact after-state even if settings are unreadable.
+        std::fs::write(journal.join("config/journal.json"), b"not-json").unwrap();
+        with_daily_unit_authority(journal, &identity, |authority| {
+            authority.record_mut().as_mut().unwrap().lock_token = Some("replacement".into());
+            authority.checkpoint()?;
+            publish_daily_publication(authority, "replacement", &plan, &context, &mut Vec::new())
+                .unwrap();
+            let record = authority.record().unwrap();
+            assert_eq!(
+                record.action_plan.as_ref(),
+                Some(&serde_json::to_value(&plan).unwrap())
+            );
+            assert_eq!(record.receipts.len(), 3);
+            assert!(
+                record
+                    .receipts
+                    .iter()
+                    .all(|receipt| receipt["state"] == "committed")
+            );
+            assert!(!record.has_uncommitted_started_receipt());
+            Ok(())
+        })
+        .unwrap();
+        let owner = solstone_core_entity::read_entity_identity(journal, "jordan_rivera")
+            .unwrap()
+            .unwrap();
+        assert_eq!(owner.value()["is_principal"], true);
+        assert_eq!(owner.value()["aka"], json!(["Captain"]));
+        assert!(
+            solstone_core_facets::list_scoped_facet_entities(journal, "work", false, false)
+                .unwrap()
+                .iter()
+                .any(|entity| entity.entity_id == "jordan_rivera")
+        );
+        // Only the remaining alias edit added a history entry; identity replay added none.
+        let history_after =
+            solstone_core_entity::read_visible_history(journal, "jordan_rivera").unwrap();
+        assert!(history_after.starts_with(&history_before));
+        assert_eq!(history_after.len(), history_before.len() + 1);
+        let history_finished = history_after;
+        with_daily_unit_authority(journal, &identity, |authority| {
+            publish_daily_publication(authority, "replacement", &plan, &context, &mut Vec::new())
+                .unwrap();
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            solstone_core_entity::read_visible_history(journal, "jordan_rivera").unwrap(),
+            history_finished
+        );
+        // Restore settings for the real downstream owner resolver, without changing the identity.
+        std::fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+        )
+        .unwrap();
+        let resolved = crate::JournalOwner::load(journal).unwrap();
+        assert_eq!(resolved.id.as_deref(), Some("jordan_rivera"));
+        for name in ["Jordan Rivera", "Jo", "Jordy"] {
+            assert_eq!(resolved.actor(name), crate::NamedActor::Owner);
+        }
+    }
+
+    #[test]
     fn durable_start_before_owner_write_is_visibly_ambiguous_on_restart() {
         let root = fixture();
         let batch = solstone_core_facets::prepare_observation_batch(
@@ -1597,6 +1734,7 @@ mod tests {
             "Grace Hopper",
             "Engineer",
             &["Amazing Grace".into()],
+            false,
         )
         .unwrap();
         solstone_core_entity::publish_identity_change(
@@ -1653,6 +1791,7 @@ mod tests {
             "Bob",
             "A friend",
             &[],
+            false,
         )
         .unwrap();
         let create = plan.identity.as_ref().expect("a new identity");
@@ -1680,6 +1819,7 @@ mod tests {
             "Bob",
             "A friend",
             &[],
+            false,
         )
         .unwrap();
         if let Some(change) = plan.identity.as_ref() {
@@ -1974,7 +2114,7 @@ mod tests {
                 "output" => bind_output_action(root.path(), &root.path().join("facets/work/entities/20260910_review_outcome.json"), b"result".to_vec(), false).unwrap(),
                 "proposals" => PreparedDailyAction::MergeProposals { facet:"work".into(), facet_id, batch:solstone_core_entity::prepare_merge_proposals(root.path(), &[json!({"facet":"work", "day":"20260910", "source":"Ada", "source_slug":"ada", "target":"Grace", "target_slug":"grace", "summary":"Variant"})]).unwrap() },
                 _ => {
-                    let promotion = solstone_core_facets::prepare_review_promotion(root.path(), "work", "Person", "Grace Hopper", "Engineer", &["Amazing Grace".into()]).unwrap();
+                    let promotion = solstone_core_facets::prepare_review_promotion(root.path(), "work", "Person", "Grace Hopper", "Engineer", &["Amazing Grace".into()], false).unwrap();
                     match kind {
                         "identity" => PreparedDailyAction::Identity { facet:"work".into(), facet_id, change:promotion.identity.unwrap() },
                         "attachment" => PreparedDailyAction::Attachment { change:promotion.attachment },
@@ -2477,6 +2617,7 @@ mod tests {
             "Ada",
             "Engineer",
             &[],
+            false,
         )
         .unwrap();
         solstone_core_facets::publish_review_attachment(
@@ -2512,6 +2653,7 @@ mod tests {
             "Ada",
             "Engineer",
             &[],
+            false,
         )
         .unwrap_err();
         assert_eq!(
@@ -2526,6 +2668,7 @@ mod tests {
             "Ada",
             "Engineer",
             &[],
+            false,
         )
         .unwrap();
         // A journal keeps one enabled facet; the sibling lets "work" go.
@@ -2632,6 +2775,7 @@ mod tests {
             "Ada",
             "Engineer",
             &[],
+            false,
         )
         .unwrap_err();
         assert!(
@@ -2700,8 +2844,10 @@ mod tests {
             "Ada",
             "Engineer",
             &[],
+            false,
         )
         .unwrap_err();
+
         assert!(
             matches!(error, solstone_core_entity::ReviewOwnerError::Failed { .. }),
             "{error:?}"

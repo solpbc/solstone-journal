@@ -456,6 +456,7 @@ pub fn prepare_publication(
     let mut aliased = 0usize;
     let mut skipped = 0usize;
     let mut seen = BTreeSet::new();
+    let mut batch_principal_taken = false;
     for row in promotions {
         let name = row
             .get("name")
@@ -524,6 +525,7 @@ pub fn prepare_publication(
                 .ok_or("frozen candidate lacks name")?,
             description,
             &aliases,
+            batch_principal_taken,
         )?;
         // A merged or deleted entity is never created again. A name a live
         // entity carries (one the owner added again under a new id) resolves
@@ -534,6 +536,12 @@ pub fn prepare_publication(
             skipped += 1;
             continue;
         }
+        if let Some(change) = &promotion.identity
+            && change.before.is_none()
+            && change.after.get("is_principal").and_then(Value::as_bool) == Some(true)
+        {
+            batch_principal_taken = true;
+        }
         if let Some(change) = promotion.identity {
             actions.push(PreparedDailyAction::Identity {
                 facet: facet.into(),
@@ -541,6 +549,7 @@ pub fn prepare_publication(
                 change,
             });
         }
+
         actions.push(PreparedDailyAction::Attachment {
             change: promotion.attachment,
         });
@@ -1055,5 +1064,990 @@ mod tests {
         )
         .unwrap();
         assert_eq!(outcome["error"], "invalid JSON");
+    }
+
+    #[test]
+    fn retained_review_marks_the_configured_owner_including_the_preferred_name() {
+        use crate::{ExecutionContext, JournalOwner, NamedActor, PreparedTalent};
+        use serde_json::json;
+
+        for (candidate_name, promo_name) in [("Jordan Rivera", "Jordan Rivera"), ("Jo", "Jo")] {
+            let root = tempfile::tempdir().unwrap();
+            solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None)
+                .unwrap();
+            fs::create_dir_all(root.path().join("config")).unwrap();
+            fs::write(
+                root.path().join("config/journal.json"),
+                r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+            )
+            .unwrap();
+            detect(root.path(), "20260106", candidate_name);
+            detect(root.path(), "20260107", candidate_name);
+
+            let prepared = PreparedTalent {
+                name: "entities:entities_review".to_owned(),
+                config: json!({
+                    "day": "20260108",
+                    "facet": "work",
+                    "type": "generate",
+                    "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            };
+            let context = ExecutionContext {
+                journal: root.path().to_path_buf(),
+            };
+            let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
+            let (prepared, _) = crate::daily_prepare::thaw(&packet).unwrap();
+
+            let output = json!({
+                "promotions": [{
+                    "name": promo_name,
+                    "description": "Journal owner.",
+                    "promote": true,
+                    "aliases": []
+                }],
+                "merges": []
+            })
+            .to_string();
+
+            let actions =
+                prepare_publication(root.path(), &output, "work", "20260108", &prepared).unwrap();
+            for action in actions {
+                match action {
+                    crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                        solstone_core_entity::publish_identity_change(
+                            root.path(),
+                            &change,
+                            true,
+                            || Ok(()),
+                            || Ok(()),
+                        )
+                        .unwrap();
+                    }
+                    crate::writers::PreparedDailyAction::Attachment { change } => {
+                        solstone_core_facets::publish_review_attachment(
+                            root.path(),
+                            &change,
+                            true,
+                            || Ok(()),
+                            || Ok(()),
+                        )
+                        .unwrap();
+                    }
+                    _ => {}
+                }
+            }
+
+            let principals = solstone_core_entity::load_all_journal_entities(root.path())
+                .unwrap()
+                .into_iter()
+                .filter(|e| e.is_principal() && solstone_core_entity::is_admissible_person(e))
+                .collect::<Vec<_>>();
+            assert_eq!(principals.len(), 1);
+            let principal_id = &principals[0].id;
+            let owner = JournalOwner::load(root.path()).unwrap();
+            assert_eq!(owner.id.as_deref(), Some(principal_id.as_str()));
+            assert_eq!(owner.actor("Jordan Rivera"), NamedActor::Owner);
+            assert_eq!(owner.actor("Jo"), NamedActor::Owner);
+            assert_eq!(owner.actor("Jordy"), NamedActor::Owner);
+        }
+    }
+
+    fn history_count(root: &Path, entity_id: &str) -> usize {
+        let events_dir = root.join("entities").join(entity_id).join("history/events");
+        if !events_dir.exists() {
+            return 0;
+        }
+        fs::read_dir(events_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .count()
+    }
+
+    #[test]
+    fn one_publication_marks_one_of_two_owner_names_and_replay_is_exact() {
+        use crate::{ExecutionContext, JournalOwner, NamedActor, PreparedTalent};
+        use serde_json::json;
+
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+        )
+        .unwrap();
+
+        for name in ["Jordan Rivera", "Jo"] {
+            detect(root.path(), "20260106", name);
+            detect(root.path(), "20260107", name);
+        }
+
+        let prepared = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day": "20260108",
+                "facet": "work",
+                "type": "generate",
+                "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let context = ExecutionContext {
+            journal: root.path().to_path_buf(),
+        };
+        let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
+        let (prepared, _) = crate::daily_prepare::thaw(&packet).unwrap();
+
+        let output = json!({
+            "promotions": [
+                {
+                    "name": "Jordan Rivera",
+                    "description": "Owner full name.",
+                    "promote": true,
+                    "aliases": ["Captain"]
+                },
+                {
+                    "name": "Jo",
+                    "description": "Owner preferred name.",
+                    "promote": true,
+                    "aliases": ["Skipper"]
+                }
+            ],
+            "merges": []
+        })
+        .to_string();
+
+        let actions =
+            prepare_publication(root.path(), &output, "work", "20260108", &prepared).unwrap();
+
+        for action in &actions {
+            match action {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    solstone_core_entity::publish_identity_change(
+                        root.path(),
+                        change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
+                crate::writers::PreparedDailyAction::Attachment { change } => {
+                    solstone_core_facets::publish_review_attachment(
+                        root.path(),
+                        change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
+                crate::writers::PreparedDailyAction::Aliases { change, .. } => {
+                    solstone_core_facets::publish_review_aliases(
+                        root.path(),
+                        "work",
+                        change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
+                _ => {}
+            }
+        }
+
+        let principals = solstone_core_entity::load_all_journal_entities(root.path())
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.is_principal() && solstone_core_entity::is_admissible_person(e))
+            .collect::<Vec<_>>();
+        assert_eq!(principals.len(), 1);
+        assert_eq!(principals[0].id, "jordan_rivera");
+
+        let jo = solstone_core_entity::read_entity_identity(root.path(), "jo")
+            .unwrap()
+            .unwrap();
+        assert_ne!(jo.value().get("is_principal"), Some(&Value::Bool(true)));
+        assert_eq!(jo.value()["aka"], json!(["Skipper"]));
+        assert_eq!(principals[0].value["aka"], json!(["Captain"]));
+
+        let owner = JournalOwner::load(root.path()).unwrap();
+        assert_eq!(owner.id.as_deref(), Some("jordan_rivera"));
+        assert_eq!(owner.actor("Jordan Rivera"), NamedActor::Owner);
+        assert_eq!(owner.actor("Jo"), NamedActor::Owner);
+        assert_eq!(owner.actor("Jordy"), NamedActor::Owner);
+
+        let count1 = history_count(root.path(), "jordan_rivera");
+        assert!(count1 > 0);
+
+        for action in &actions {
+            if let crate::writers::PreparedDailyAction::Aliases { change, .. } = action {
+                solstone_core_facets::publish_review_aliases(
+                    root.path(),
+                    "work",
+                    change,
+                    false,
+                    || Ok(()),
+                    || Ok(()),
+                )
+                .unwrap();
+            }
+        }
+
+        let count2 = history_count(root.path(), "jordan_rivera");
+        assert_eq!(count1, count2);
+
+        let owner2 = JournalOwner::load(root.path()).unwrap();
+        assert_eq!(owner2.id.as_deref(), Some("jordan_rivera"));
+    }
+
+    #[test]
+    fn frozen_principal_grants_follow_the_prepared_plan_when_the_owner_changes() {
+        use crate::{ExecutionContext, PreparedTalent};
+        use serde_json::json;
+
+        // 1. Unapplied grant, then another entity is saved with is_principal before publish
+        let root1 = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root1.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root1.path().join("config")).unwrap();
+        fs::write(
+            root1.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
+        )
+        .unwrap();
+        detect(root1.path(), "20260106", "Jordan Rivera");
+        detect(root1.path(), "20260107", "Jordan Rivera");
+
+        let prepared1 = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day": "20260108",
+                "facet": "work",
+                "type": "generate",
+                "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let context1 = ExecutionContext {
+            journal: root1.path().to_path_buf(),
+        };
+        let packet1 = crate::daily_prepare::freeze(prepared1, &context1).unwrap();
+        let (prepared1, _) = crate::daily_prepare::thaw(&packet1).unwrap();
+
+        let output1 = json!({
+            "promotions": [{
+                "name": "Jordan Rivera",
+                "description": "Owner.",
+                "promote": true,
+                "aliases": []
+            }],
+            "merges": []
+        })
+        .to_string();
+
+        let actions1 =
+            prepare_publication(root1.path(), &output1, "work", "20260108", &prepared1).unwrap();
+        let identity_change1 = actions1
+            .iter()
+            .find_map(|a| match a {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    Some(change.clone())
+                }
+                _ => None,
+            })
+            .unwrap();
+
+        solstone_core_entity::save_entity_identity(
+            root1.path(),
+            "other_owner",
+            &json!({"id":"other_owner","name":"Other Owner","type":"Person","is_principal":true}),
+            None,
+        )
+        .unwrap();
+
+        let mut started1 = false;
+        let err1 = solstone_core_entity::publish_identity_change(
+            root1.path(),
+            &identity_change1,
+            true,
+            || {
+                started1 = true;
+                Ok(())
+            },
+            || Ok(()),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err1.kind(),
+            Some(solstone_core_entity::ReviewOwnerConflictKind::PrincipalGrantRefused)
+        );
+        assert!(!started1);
+        assert!(
+            !root1
+                .path()
+                .join("entities/jordan_rivera/entity.json")
+                .exists()
+        );
+        assert_eq!(history_count(root1.path(), "jordan_rivera"), 0);
+
+        // 2. A plan prepared while some other principal exists stays unmarked in its frozen after
+        let root2 = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root2.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root2.path().join("config")).unwrap();
+        fs::write(
+            root2.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
+        )
+        .unwrap();
+        solstone_core_entity::save_entity_identity(
+            root2.path(),
+            "alex_smith",
+            &json!({"id":"alex_smith","name":"Alex Smith","type":"Person","is_principal":true}),
+            None,
+        )
+        .unwrap();
+        detect(root2.path(), "20260106", "Jordan Rivera");
+        detect(root2.path(), "20260107", "Jordan Rivera");
+
+        let prepared2 = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day": "20260108",
+                "facet": "work",
+                "type": "generate",
+                "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let context2 = ExecutionContext {
+            journal: root2.path().to_path_buf(),
+        };
+        let packet2 = crate::daily_prepare::freeze(prepared2, &context2).unwrap();
+        let (prepared2, _) = crate::daily_prepare::thaw(&packet2).unwrap();
+
+        let actions2 =
+            prepare_publication(root2.path(), &output1, "work", "20260108", &prepared2).unwrap();
+        let identity_change2 = actions2
+            .iter()
+            .find_map(|a| match a {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    Some(change.clone())
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert_ne!(
+            identity_change2.after.get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+
+        fs::remove_dir_all(root2.path().join("entities/alex_smith")).unwrap();
+
+        solstone_core_entity::publish_identity_change(
+            root2.path(),
+            &identity_change2,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        let ent = solstone_core_entity::read_entity_identity(root2.path(), "jordan_rivera")
+            .unwrap()
+            .unwrap();
+        assert_ne!(ent.value().get("is_principal"), Some(&Value::Bool(true)));
+
+        // 3. An already-applied grant, published again, adds no history event and stays principal
+        let root3 = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root3.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root3.path().join("config")).unwrap();
+        fs::write(
+            root3.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
+        )
+        .unwrap();
+        detect(root3.path(), "20260106", "Jordan Rivera");
+        detect(root3.path(), "20260107", "Jordan Rivera");
+
+        let prepared3 = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day": "20260108",
+                "facet": "work",
+                "type": "generate",
+                "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let context3 = ExecutionContext {
+            journal: root3.path().to_path_buf(),
+        };
+        let packet3 = crate::daily_prepare::freeze(prepared3, &context3).unwrap();
+        let (prepared3, _) = crate::daily_prepare::thaw(&packet3).unwrap();
+
+        let actions3 =
+            prepare_publication(root3.path(), &output1, "work", "20260108", &prepared3).unwrap();
+        let identity_change3 = actions3
+            .iter()
+            .find_map(|a| match a {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    Some(change.clone())
+                }
+                _ => None,
+            })
+            .unwrap();
+        solstone_core_entity::publish_identity_change(
+            root3.path(),
+            &identity_change3,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        let c1 = history_count(root3.path(), "jordan_rivera");
+        solstone_core_entity::publish_identity_change(
+            root3.path(),
+            &identity_change3,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        let c2 = history_count(root3.path(), "jordan_rivera");
+        assert_eq!(c1, c2);
+        let j3 = solstone_core_entity::read_entity_identity(root3.path(), "jordan_rivera")
+            .unwrap()
+            .unwrap();
+        assert_eq!(j3.value().get("is_principal"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn an_unapplied_grant_refuses_unreadable_settings_and_applied_actions_replay() {
+        use crate::{ExecutionContext, PreparedTalent};
+        use serde_json::json;
+
+        // 1. Prepare grant while settings valid, replace with not-json, publish fails
+        let root1 = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root1.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root1.path().join("config")).unwrap();
+        fs::write(
+            root1.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
+        )
+        .unwrap();
+        detect(root1.path(), "20260106", "Jordan Rivera");
+        detect(root1.path(), "20260107", "Jordan Rivera");
+
+        let prepared1 = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day": "20260108",
+                "facet": "work",
+                "type": "generate",
+                "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let context1 = ExecutionContext {
+            journal: root1.path().to_path_buf(),
+        };
+        let packet1 = crate::daily_prepare::freeze(prepared1, &context1).unwrap();
+        let (prepared1, _) = crate::daily_prepare::thaw(&packet1).unwrap();
+
+        let output1 = json!({
+            "promotions": [{
+                "name": "Jordan Rivera",
+                "description": "Owner.",
+                "promote": true,
+                "aliases": []
+            }],
+            "merges": []
+        })
+        .to_string();
+
+        let actions1 =
+            prepare_publication(root1.path(), &output1, "work", "20260108", &prepared1).unwrap();
+        let identity_change1 = actions1
+            .iter()
+            .find_map(|a| match a {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    Some(change.clone())
+                }
+                _ => None,
+            })
+            .unwrap();
+
+        fs::write(root1.path().join("config/journal.json"), b"not-json").unwrap();
+
+        let mut started1 = false;
+        let err1 = solstone_core_entity::publish_identity_change(
+            root1.path(),
+            &identity_change1,
+            true,
+            || {
+                started1 = true;
+                Ok(())
+            },
+            || Ok(()),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err1,
+            solstone_core_entity::ReviewOwnerError::Failed { .. }
+        ));
+        assert!(!started1);
+        assert!(
+            !root1
+                .path()
+                .join("entities/jordan_rivera/entity.json")
+                .exists()
+        );
+        assert_eq!(history_count(root1.path(), "jordan_rivera"), 0);
+
+        // 2. Readable config with no owner names, and missing settings file
+        let root_no_names = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root_no_names.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        fs::create_dir_all(root_no_names.path().join("config")).unwrap();
+        fs::write(
+            root_no_names.path().join("config/journal.json"),
+            r#"{"identity":{}}"#,
+        )
+        .unwrap();
+        let promo_no_names = solstone_core_facets::prepare_review_promotion(
+            root_no_names.path(),
+            "work",
+            "Person",
+            "Jordan Rivera",
+            "Desc",
+            &[],
+            false,
+        )
+        .unwrap();
+        let change_no_names = promo_no_names.identity.unwrap();
+        assert_ne!(
+            change_no_names.after.get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+        solstone_core_entity::publish_identity_change(
+            root_no_names.path(),
+            &change_no_names,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+
+        let root_missing = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root_missing.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        let promo_missing = solstone_core_facets::prepare_review_promotion(
+            root_missing.path(),
+            "work",
+            "Person",
+            "Jordan Rivera",
+            "Desc",
+            &[],
+            false,
+        )
+        .unwrap();
+        let change_missing = promo_missing.identity.unwrap();
+        assert_ne!(
+            change_missing.after.get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+        solstone_core_entity::publish_identity_change(
+            root_missing.path(),
+            &change_missing,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+
+        // 3. After successful grant, replay with changed name, and separately corrupt file
+        let root2 = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root2.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root2.path().join("config")).unwrap();
+        fs::write(
+            root2.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
+        )
+        .unwrap();
+        detect(root2.path(), "20260106", "Jordan Rivera");
+        detect(root2.path(), "20260107", "Jordan Rivera");
+
+        let prepared2 = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day": "20260108",
+                "facet": "work",
+                "type": "generate",
+                "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let context2 = ExecutionContext {
+            journal: root2.path().to_path_buf(),
+        };
+        let packet2 = crate::daily_prepare::freeze(prepared2, &context2).unwrap();
+        let (prepared2, _) = crate::daily_prepare::thaw(&packet2).unwrap();
+
+        let actions2 =
+            prepare_publication(root2.path(), &output1, "work", "20260108", &prepared2).unwrap();
+        let identity_change2 = actions2
+            .iter()
+            .find_map(|a| match a {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    Some(change.clone())
+                }
+                _ => None,
+            })
+            .unwrap();
+        solstone_core_entity::publish_identity_change(
+            root2.path(),
+            &identity_change2,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        let count_before = history_count(root2.path(), "jordan_rivera");
+
+        fs::write(
+            root2.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Someone Else"}}"#,
+        )
+        .unwrap();
+        solstone_core_entity::publish_identity_change(
+            root2.path(),
+            &identity_change2,
+            false,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        assert_eq!(history_count(root2.path(), "jordan_rivera"), count_before);
+
+        fs::write(root2.path().join("config/journal.json"), b"not-json").unwrap();
+        solstone_core_entity::publish_identity_change(
+            root2.path(),
+            &identity_change2,
+            false,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        assert_eq!(history_count(root2.path(), "jordan_rivera"), count_before);
+
+        let j2 = solstone_core_entity::read_entity_identity(root2.path(), "jordan_rivera")
+            .unwrap()
+            .unwrap();
+        assert_eq!(j2.value().get("is_principal"), Some(&Value::Bool(true)));
+
+        // 4. Principal-preserving alias: name matches owner, alias action has is_principal on both sides
+        let root3 = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root3.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root3.path().join("config")).unwrap();
+        fs::write(
+            root3.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
+        )
+        .unwrap();
+        detect(root3.path(), "20260106", "Jordan Rivera");
+        detect(root3.path(), "20260107", "Jordan Rivera");
+
+        let prepared3 = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day": "20260108",
+                "facet": "work",
+                "type": "generate",
+                "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let context3 = ExecutionContext {
+            journal: root3.path().to_path_buf(),
+        };
+        let packet3 = crate::daily_prepare::freeze(prepared3, &context3).unwrap();
+        let (prepared3, _) = crate::daily_prepare::thaw(&packet3).unwrap();
+
+        let output_alias = json!({
+            "promotions": [{
+                "name": "Jordan Rivera",
+                "description": "Owner with alias.",
+                "promote": true,
+                "aliases": ["Skipper"]
+            }],
+            "merges": []
+        })
+        .to_string();
+
+        let actions3 =
+            prepare_publication(root3.path(), &output_alias, "work", "20260108", &prepared3)
+                .unwrap();
+        let mut id_act = None;
+        let mut att_act = None;
+        let mut ali_act = None;
+        for a in actions3 {
+            match a {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    id_act = Some(change)
+                }
+                crate::writers::PreparedDailyAction::Attachment { change } => {
+                    att_act = Some(change)
+                }
+                crate::writers::PreparedDailyAction::Aliases { change, .. } => {
+                    ali_act = Some(change)
+                }
+                _ => {}
+            }
+        }
+        let id_act = id_act.unwrap();
+        let att_act = att_act.unwrap();
+        let ali_act = ali_act.unwrap();
+
+        assert_eq!(
+            ali_act.before.as_ref().unwrap().get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+        assert_eq!(ali_act.after.get("is_principal"), Some(&Value::Bool(true)));
+
+        solstone_core_entity::publish_identity_change(
+            root3.path(),
+            &id_act,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        solstone_core_facets::publish_review_attachment(
+            root3.path(),
+            &att_act,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+
+        fs::write(root3.path().join("config/journal.json"), b"not-json").unwrap();
+
+        solstone_core_facets::publish_review_aliases(
+            root3.path(),
+            "work",
+            &ali_act,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+
+        let j3 = solstone_core_entity::read_entity_identity(root3.path(), "jordan_rivera")
+            .unwrap()
+            .unwrap();
+        assert_eq!(j3.value().get("is_principal"), Some(&Value::Bool(true)));
+        assert_eq!(j3.value()["aka"], json!(["Skipper"]));
+    }
+
+    #[test]
+    fn review_does_not_grant_principal_outside_a_new_matching_person() {
+        use crate::JournalOwner;
+        use serde_json::json;
+
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
+        )
+        .unwrap();
+
+        // 1. Company whose name is configured owner
+        let promo_co = solstone_core_facets::prepare_review_promotion(
+            root.path(),
+            "work",
+            "Company",
+            "Jordan Rivera",
+            "A company.",
+            &[],
+            false,
+        )
+        .unwrap();
+        assert_ne!(
+            promo_co
+                .identity
+                .as_ref()
+                .unwrap()
+                .after
+                .get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+
+        // 2. Person whose name does not match
+        let promo_diff = solstone_core_facets::prepare_review_promotion(
+            root.path(),
+            "work",
+            "Person",
+            "Sam Lee",
+            "A coworker.",
+            &[],
+            false,
+        )
+        .unwrap();
+        assert_ne!(
+            promo_diff
+                .identity
+                .as_ref()
+                .unwrap()
+                .after
+                .get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+
+        // 3. Person named Sam Lee with model aliases ["Jordan Rivera"]
+        let promo_alias = solstone_core_facets::prepare_review_promotion(
+            root.path(),
+            "work",
+            "Person",
+            "Sam Lee",
+            "A coworker.",
+            &["Jordan Rivera".into()],
+            false,
+        )
+        .unwrap();
+        assert_ne!(
+            promo_alias
+                .identity
+                .as_ref()
+                .unwrap()
+                .after
+                .get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+
+        // 4. An existing principal stays the only principal when owner-name person is created
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "taylor_green",
+            &json!({"id":"taylor_green","name":"Taylor Green","type":"Person","is_principal":true}),
+            None,
+        )
+        .unwrap();
+        let promo_existing_p = solstone_core_facets::prepare_review_promotion(
+            root.path(),
+            "work",
+            "Person",
+            "Jordan Rivera",
+            "Owner candidate.",
+            &[],
+            false,
+        )
+        .unwrap();
+        assert_ne!(
+            promo_existing_p
+                .identity
+                .as_ref()
+                .unwrap()
+                .after
+                .get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+
+        // 5. An existing unmarked person with owner name is not selected/merged; promotion does not add flag
+        let root2 = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root2.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root2.path().join("config")).unwrap();
+        fs::write(
+            root2.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
+        )
+        .unwrap();
+        solstone_core_entity::save_entity_identity(
+            root2.path(),
+            "jordan_rivera",
+            &json!({"id":"jordan_rivera","name":"Jordan Rivera","type":"Person"}),
+            None,
+        )
+        .unwrap();
+        let promo_unmarked = solstone_core_facets::prepare_review_promotion(
+            root2.path(),
+            "work",
+            "Person",
+            "Jordan Rivera",
+            "Adopting existing.",
+            &[],
+            false,
+        )
+        .unwrap();
+        assert!(promo_unmarked.identity.is_none());
+        let j2 = solstone_core_entity::read_entity_identity(root2.path(), "jordan_rivera")
+            .unwrap()
+            .unwrap();
+        assert_ne!(j2.value().get("is_principal"), Some(&Value::Bool(true)));
+
+        // 6. Two pre-existing principals are not rewritten. The new owner-name person is unmarked. JournalOwner.id is None
+        let root3 = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root3.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root3.path().join("config")).unwrap();
+        fs::write(
+            root3.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
+        )
+        .unwrap();
+        solstone_core_entity::save_entity_identity(
+            root3.path(),
+            "p1",
+            &json!({"id":"p1","name":"P1","type":"Person","is_principal":true}),
+            None,
+        )
+        .unwrap();
+        solstone_core_entity::save_entity_identity(
+            root3.path(),
+            "p2",
+            &json!({"id":"p2","name":"P2","type":"Person","is_principal":true}),
+            None,
+        )
+        .unwrap();
+        let promo_two_p = solstone_core_facets::prepare_review_promotion(
+            root3.path(),
+            "work",
+            "Person",
+            "Jordan Rivera",
+            "New person.",
+            &[],
+            false,
+        )
+        .unwrap();
+        assert_ne!(
+            promo_two_p
+                .identity
+                .as_ref()
+                .unwrap()
+                .after
+                .get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+        let owner3 = JournalOwner::load(root3.path()).unwrap();
+        assert!(owner3.id.is_none());
     }
 }

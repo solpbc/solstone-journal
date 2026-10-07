@@ -331,7 +331,9 @@ fn attach_or_reactivate(
         LinkDirs::for_facet(journal_root, facet_dir).check_placeable(&entity_id)?;
         let mut identity =
             json!({"id": entity_id, "name": name, "type": entity_type, "created_at": now_iso()});
-        if solstone_core_entity::becomes_journal_principal(journal_root, name, None, &[])? {
+        if entity_type == "Person"
+            && solstone_core_entity::becomes_journal_principal(journal_root, name, None, &[])?
+        {
             identity["is_principal"] = Value::Bool(true);
         }
         let saved = save_entity_identity(
@@ -550,6 +552,7 @@ pub fn prepare_review_promotion(
     name: &str,
     description: &str,
     aliases: &[String],
+    batch_principal_taken: bool,
 ) -> Result<PreparedReviewPromotion, ReviewOwnerError> {
     let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
     let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
@@ -664,12 +667,22 @@ pub fn prepare_review_promotion(
             };
             (owner.entity_id().to_owned(), owner.value().clone())
         } else {
-            (
-                slug.clone(),
-                json!({"id":slug,"name":name,"type":entity_type,"created_at":now}),
-            )
+            let mut new_identity =
+                json!({"id":slug,"name":name,"type":entity_type,"created_at":now});
+            if !batch_principal_taken
+                && entity_type == "Person"
+                && solstone_core_entity::becomes_journal_principal(root, name, None, &[])
+                    .map_err(|e| e.to_string())?
+            {
+                new_identity
+                    .as_object_mut()
+                    .ok_or("malformed promotion identity")?
+                    .insert("is_principal".into(), Value::Bool(true));
+            }
+            (slug.clone(), new_identity)
         }
     };
+
     if identity.get("blocked") == Some(&Value::Bool(true)) {
         return Err(ReviewOwnerError::conflict(
             ReviewOwnerConflictKind::PromotedEntityBlocked,
