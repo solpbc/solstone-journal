@@ -331,7 +331,9 @@ fn attach_or_reactivate(
         LinkDirs::for_facet(journal_root, facet_dir).check_placeable(&entity_id)?;
         let mut identity =
             json!({"id": entity_id, "name": name, "type": entity_type, "created_at": now_iso()});
-        if solstone_core_entity::becomes_journal_principal(journal_root, name, None, &[])? {
+        if entity_type == "Person"
+            && solstone_core_entity::becomes_journal_principal(journal_root, name, None, &[])?
+        {
             identity["is_principal"] = Value::Bool(true);
         }
         let saved = save_entity_identity(

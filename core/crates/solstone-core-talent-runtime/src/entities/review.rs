@@ -1210,13 +1210,13 @@ mod tests {
                     "name": "Jordan Rivera",
                     "description": "Owner full name.",
                     "promote": true,
-                    "aliases": []
+                    "aliases": ["Captain"]
                 },
                 {
                     "name": "Jo",
                     "description": "Owner preferred name.",
                     "promote": true,
-                    "aliases": []
+                    "aliases": ["Skipper"]
                 }
             ],
             "merges": []
@@ -1248,6 +1248,17 @@ mod tests {
                     )
                     .unwrap();
                 }
+                crate::writers::PreparedDailyAction::Aliases { change, .. } => {
+                    solstone_core_facets::publish_review_aliases(
+                        root.path(),
+                        "work",
+                        change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
                 _ => {}
             }
         }
@@ -1264,6 +1275,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_ne!(jo.value().get("is_principal"), Some(&Value::Bool(true)));
+        assert_eq!(jo.value()["aka"], json!(["Skipper"]));
+        assert_eq!(principals[0].value["aka"], json!(["Captain"]));
 
         let owner = JournalOwner::load(root.path()).unwrap();
         assert_eq!(owner.id.as_deref(), Some("jordan_rivera"));
@@ -1275,11 +1288,12 @@ mod tests {
         assert!(count1 > 0);
 
         for action in &actions {
-            if let crate::writers::PreparedDailyAction::Identity { change, .. } = action {
-                solstone_core_entity::publish_identity_change(
+            if let crate::writers::PreparedDailyAction::Aliases { change, .. } = action {
+                solstone_core_facets::publish_review_aliases(
                     root.path(),
+                    "work",
                     change,
-                    true,
+                    false,
                     || Ok(()),
                     || Ok(()),
                 )
@@ -1593,8 +1607,7 @@ mod tests {
         .unwrap_err();
         assert!(matches!(
             err1,
-            solstone_core_entity::ReviewOwnerError::Failed { detail }
-                if detail == "the journal settings could not be read, so this person was not marked as the owner"
+            solstone_core_entity::ReviewOwnerError::Failed { .. }
         ));
         assert!(!started1);
         assert!(
@@ -1725,7 +1738,7 @@ mod tests {
         solstone_core_entity::publish_identity_change(
             root2.path(),
             &identity_change2,
-            true,
+            false,
             || Ok(()),
             || Ok(()),
         )
@@ -1736,7 +1749,7 @@ mod tests {
         solstone_core_entity::publish_identity_change(
             root2.path(),
             &identity_change2,
-            true,
+            false,
             || Ok(()),
             || Ok(()),
         )

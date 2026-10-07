@@ -1029,6 +1029,48 @@ fn a_refused_attach_of_a_new_name_leaves_no_entity_behind() {
 }
 
 #[test]
+fn attaching_a_non_person_with_an_owner_name_does_not_take_the_principal() {
+    for entity_type in ["Company", "Project", "Tool"] {
+        let temporary = TempDir::new();
+        create_test_facet(temporary.path(), "scope");
+        fs::create_dir_all(temporary.path().join("config")).unwrap();
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            serde_json::to_vec(&json!({"identity":{"name":"Jordan Rivera","preferred":"Jo"}}))
+                .unwrap(),
+        )
+        .unwrap();
+
+        let attached = attach_or_reactivate_entity(
+            temporary.path(),
+            "scope",
+            entity_type,
+            "Jordan Rivera",
+            "",
+        )
+        .unwrap();
+        let identity = solstone_core_entity::read_entity_identity(
+            temporary.path(),
+            attached.relationship["entity_id"].as_str().unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_ne!(identity.value().get("is_principal"), Some(&json!(true)));
+        assert!(!solstone_core_entity::has_journal_principal(temporary.path()).unwrap());
+
+        let person =
+            attach_or_reactivate_entity(temporary.path(), "scope", "Person", "Jo", "").unwrap();
+        let identity = solstone_core_entity::read_entity_identity(
+            temporary.path(),
+            person.relationship["entity_id"].as_str().unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(identity.value().get("is_principal"), Some(&json!(true)));
+    }
+}
+
+#[test]
 fn attaching_the_configured_owner_by_name_marks_the_principal() {
     let temporary = TempDir::new();
     create_test_facet(temporary.path(), "scope");
