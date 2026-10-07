@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - some weeks wouldn't open, and their card on home said they couldn't be read. they open now.
 - when a page in your journal can't load because the connection dropped or took too long, the page now shows its own message without the browser's wording, like "Load failed". on the curation page, "show more" now says when the next suggestions didn't load. before, it went quiet.
 - a person daily review adds, whose name matches the journal owner's configured name, is marked as the owner. only one person is marked.
+- the agents page now says a browser-paired agent can read for at most 30 days after pairing, or until you disconnect it, and that turning solstone.me back on reuses your certificate only while the one you have is still good.
 
 ## [2.0.35] - 2026-10-07
 

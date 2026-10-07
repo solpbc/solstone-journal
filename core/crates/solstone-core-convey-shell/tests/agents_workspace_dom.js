@@ -338,7 +338,7 @@ async function test(name, body) {
     has(view, 'data-disclosure="relay-detail"', 'the detail behind it must be one tap away');
     await click({action: 'me-off'});
     has(view, 'agents on this computer keep working.');
-    has(view, 'the address and your agents are kept: turning back on uses the same address, with no new certificate');
+    has(view, 'the address and your agents are kept: turning back on uses the same address, with no new certificate while the one you have is still good');
     await click({action: 'turn-off'});
     const put = calls.find(call => call.url === '/app/agents/api/capability');
     assert(put && put.body.enabled === false);
