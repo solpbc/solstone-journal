@@ -3060,7 +3060,7 @@ mod tests {
         use crate::clean_uninstall::{CleanUninstallContext, IdentityHold, run_clean_uninstall};
         use crate::identity_evidence::gather_artifact_evidence;
         use solstone_core_installation_identity::{
-            ArtifactBindingEvidence, CleanUninstallRequest, admit_clean_uninstall, namespace_name,
+            CleanUninstallRequest, admit_clean_uninstall, namespace_name,
         };
 
         let root = root_token_from_path(executable_dir).unwrap();
@@ -3427,8 +3427,6 @@ mod tests {
     #[cfg(all(test, feature = "full-tests", unix))]
     #[test]
     fn journal_overlapping_identity_base_refuses_before_identity_writes() {
-        use std::os::unix::fs::PermissionsExt;
-
         for use_parent in [false, true] {
             let root = root(if use_parent {
                 "clean-identity-parent"

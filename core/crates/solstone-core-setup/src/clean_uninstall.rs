@@ -369,21 +369,10 @@ pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) ->
             .iter()
             .any(|path| present(path) && policy(path, CleanupTargetKind::PerInstall, false));
         let shared = std::env::var_os("LOCALAPPDATA").is_some_and(|local_app_data| {
-            let state_directory = PathBuf::from(local_app_data).join("solstone-journal");
-            [
-                state_directory.join("journal-app.json"),
-                state_directory.join("journal-mark.ico"),
-                state_directory.join("journal-app-webview"),
-            ]
-            .iter()
-            .any(|path| {
-                present(path)
-                    && policy(
-                        path,
-                        CleanupTargetKind::Shared,
-                        context.plan.remove_owner_config,
-                    )
-            })
+            has_removable_windows_app_state(
+                &PathBuf::from(local_app_data).join("solstone-journal"),
+                context,
+            )
         });
         per_install || shared
     } else {
@@ -422,6 +411,31 @@ pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) ->
             .iter()
             .any(|path| present(path) && policy(path, CleanupTargetKind::PerInstall, false))
         || windows_managed
+}
+
+fn has_removable_windows_app_state(
+    state_directory: &Path,
+    context: &CleanUninstallContext<'_>,
+) -> bool {
+    [
+        "journal-app.json",
+        "journal-app.json.tmp",
+        "journal-mark.ico",
+        "journal-app-webview",
+    ]
+    .iter()
+    .any(|name| {
+        let path = state_directory.join(name);
+        present(&path)
+            && may_remove_cleanup_target(
+                &path,
+                CleanupTargetKind::Shared,
+                context.plan.remove_owner_config,
+                context.registry_known,
+                &context.protected_journals,
+                context.platform,
+            ) == CleanupTargetDecision::Remove
+    })
 }
 fn child_failure_reason(output: &crate::steps::CommandOutput) -> String {
     let mut reason = format!("service uninstall exited {}", output.exit_code);
@@ -1398,6 +1412,35 @@ mod tests {
             runner,
             identity_hold,
         }
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn temporary_preferences_alone_are_managed_only_when_removable() {
+        let path = std::env::temp_dir().join(format!(
+            "solstone-clean-temp-preferences-{}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).unwrap();
+        let root = TestRoot(path);
+        let state = root.join("state");
+        fs::create_dir(&state).unwrap();
+        let temp = state.join("journal-app.json.tmp");
+        fs::write(&temp, "temporary preferences").unwrap();
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut runner = RecordingRunner(events, 0);
+        let mut confirm = || true;
+        let mut hold = |_| Ok(());
+        let mut context = held_context(&root, &mut runner, &mut confirm, &mut hold);
+        context.platform = PlatformTag::Windows;
+        context.protected_journals = ProtectedJournals::new(PlatformTag::Windows);
+        assert!(has_removable_windows_app_state(&state, &context));
+        context.plan.remove_owner_config = false;
+        assert!(!has_removable_windows_app_state(&state, &context));
+        context.plan.remove_owner_config = true;
+        context.protected_journals.insert(state.clone());
+        assert!(!has_removable_windows_app_state(&state, &context));
+        assert_eq!(fs::read_to_string(temp).unwrap(), "temporary preferences");
     }
 
     // The Windows service child reloads the binding under the identity locks: the parent

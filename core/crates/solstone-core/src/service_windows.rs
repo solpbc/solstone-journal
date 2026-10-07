@@ -786,12 +786,13 @@ fn task_artifact_directory(owner: &OwnerBase) -> Option<PathBuf> {
         .map(|parent| parent.join("journal-service"))
 }
 
-fn journal_app_paths() -> Option<[PathBuf; 3]> {
+fn journal_app_paths() -> Option<[PathBuf; 4]> {
     let state_dir = PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("solstone-journal");
     Some([
         state_dir.join("journal-app.json"),
         state_dir.join("journal-mark.ico"),
         state_dir.join("journal-app-webview"),
+        state_dir.join("journal-app.json.tmp"),
     ])
 }
 
@@ -1011,6 +1012,7 @@ fn no_binding_hook_results(home: &Path) -> Vec<CleanUninstallStepResult> {
                     "journal-app-prefs",
                     "journal-app-icon",
                     "journal-app-webview",
+                    "journal-app-prefs-temp",
                 ][index],
                 CleanUninstallState::Preserved,
                 Some(path),
@@ -1024,6 +1026,7 @@ fn no_binding_hook_results(home: &Path) -> Vec<CleanUninstallStepResult> {
                 "journal-app-prefs",
                 "journal-app-icon",
                 "journal-app-webview",
+                "journal-app-prefs-temp",
             ]
             .into_iter()
             .map(|name| {
@@ -1107,12 +1110,14 @@ fn hook_cleanup_inventory(
             ("journal-app-prefs", Some(paths[0].clone())),
             ("journal-app-icon", Some(paths[1].clone())),
             ("journal-app-webview", Some(paths[2].clone())),
+            ("journal-app-prefs-temp", Some(paths[3].clone())),
         ]);
     } else {
         steps.extend([
             ("journal-app-prefs", None),
             ("journal-app-icon", None),
             ("journal-app-webview", None),
+            ("journal-app-prefs-temp", None),
         ]);
     }
     steps
@@ -1170,6 +1175,7 @@ fn remove_app_paths(
                 "journal-app-prefs",
                 "journal-app-icon",
                 "journal-app-webview",
+                "journal-app-prefs-temp",
             ]
             .into_iter()
             .map(|name| {
@@ -1188,6 +1194,7 @@ fn remove_app_paths(
         ("journal-app-prefs", paths[0].clone()),
         ("journal-app-icon", paths[1].clone()),
         ("journal-app-webview", paths[2].clone()),
+        ("journal-app-prefs-temp", paths[3].clone()),
     ]
     .into_iter()
     .enumerate()
@@ -1219,6 +1226,7 @@ fn remove_app_paths(
                 ("journal-app-prefs", Some(paths[0].clone())),
                 ("journal-app-icon", Some(paths[1].clone())),
                 ("journal-app-webview", Some(paths[2].clone())),
+                ("journal-app-prefs-temp", Some(paths[3].clone())),
             ]
             .into_iter()
             .skip(index + 1)
