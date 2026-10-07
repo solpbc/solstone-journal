@@ -553,6 +553,41 @@ pub fn publish_identity_change(
         )
     });
     if needs_identity_write || needs_history_apply {
+        let is_new_principal_grant = needs_identity_write
+            && change.before.is_none()
+            && change
+                .after
+                .get("is_principal")
+                .is_some_and(super::lifecycle::value_is_truthy)
+            && change.after.get("type").and_then(Value::as_str) == Some("Person");
+        if is_new_principal_grant {
+            let names = super::create::read_owner_names_for_principal_grant(root).map_err(
+                |_err| {
+                    ReviewOwnerError::failed(
+                        "the journal settings could not be read, so this person was not marked as the owner",
+                    )
+                },
+            )?;
+            let name = change
+                .after
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !super::derived::entity_matches_identity_name(name, None, &names) {
+                return Err(ReviewOwnerError::conflict(
+                    ReviewOwnerConflictKind::PrincipalGrantRefused,
+                    "conflict: the configured owner name no longer matches this person",
+                ));
+            }
+            if super::lifecycle::has_journal_principal(root)
+                .map_err(|e| ReviewOwnerError::failed(e.to_string()))?
+            {
+                return Err(ReviewOwnerError::conflict(
+                    ReviewOwnerConflictKind::PrincipalGrantRefused,
+                    "conflict: a journal owner already exists, so this person is not marked",
+                ));
+            }
+        }
         start().map_err(ReviewOwnerError::failed)?;
         apply_prepared_history_plan(root, &change.entity_dir, planned)
             .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
