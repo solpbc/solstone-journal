@@ -8,7 +8,7 @@
 //! the network, and it asks the moment a program first listens on one. So on
 //! Windows the door listens only on this computer until the owner chooses
 //! something that needs the network: pairing a device over the network, or the
-//! LAN agent door (founder, 2026-09-30). Same-computer pairing and the relay
+//! LAN agent door. Same-computer pairing and the relay
 //! both reach the door over loopback, so neither needs the network.
 //!
 //! The choice is `pairing.local_network` in `config/journal.json`. Without one,
@@ -18,8 +18,8 @@
 //! carried-over answer is saved the first time the door starts, so nothing
 //! flips later when the ledger changes.
 //!
-//! Agents on your network (the LAN agent door) is the founder's other reason
-//! to open, so while it is on the door counts as open too, whatever is saved;
+//! The LAN agent door also needs the door open, so while it is on the door
+//! counts as open too, whatever is saved;
 //! a watcher rebinds the door when either changes.
 //!
 //! These routes sit on the loopback listener alone. Opening the network raises

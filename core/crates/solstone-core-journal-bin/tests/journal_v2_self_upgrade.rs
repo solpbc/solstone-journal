@@ -123,7 +123,7 @@ fn v2_self_upgrade_repoints_wrapper_after_a_same_version_respin() {
     );
 
     // A mac never gets a PATH wrapper: the journal app's admin terminal
-    // provides the commands (records/decisions 260927, founder). There the
+    // provides the commands. There the
     // respin proof is the re-admission above plus no wrapper appearing.
     if cfg!(target_os = "macos") {
         assert!(

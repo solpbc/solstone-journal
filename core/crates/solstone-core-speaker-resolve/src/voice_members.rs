@@ -28,7 +28,7 @@ use crate::identify_operations::MemberProvenance;
 use crate::voice_tags::build_index;
 
 /// The least a recording's voice must match the pool voice's centroid for
-/// "everywhere this voice appears" to write the name into it. The founder's
+/// "everywhere this voice appears" to write the name into it. A
 /// blinded listening test (2026-10-05, 88 pairs) judged pool recordings at or
 /// above .80 the same person 11 of 12 times, and cross-day ones between .72
 /// and .80 only 2 of 4. Below it, a recording keeps its voice tag unnamed.

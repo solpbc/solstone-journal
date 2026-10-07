@@ -449,9 +449,8 @@ pub fn phase_retro_tracker(
         });
     };
     if plan.voice_mode {
-        // The names are already written, and under the founder's one-way rule
-        // they are the source of truth. Confirming the pool voice is a best
-        // effort checked and written under one pool lock: a voice merged away,
+        // The names are already written and are the source of truth. Confirming
+        // the pool voice is a best effort checked and written under one pool lock: a voice merged away,
         // rejected, or confirmed as someone else since planning is left as is.
         let expected_before = plan
             .candidate_before
