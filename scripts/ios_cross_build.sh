@@ -18,7 +18,8 @@ ort_url=https://download.onnxruntime.ai/pod-archive-onnxruntime-c-1.25.0.zip
 ort_zip=pod-archive-onnxruntime-c-1.25.0.zip
 ort_zip_sha256=1d9414be5ed36d9198a6f51dda25c515e809e99e83a8581830a8b2075ed7dd1d
 ort_member=onnxruntime.xcframework/ios-arm64/onnxruntime.framework/onnxruntime
-ort_lib_sha256=4eb86d500c6994fea07f834c1fa632f1953302d30776195dc6b8e5a95800c3e3
+# The thinned library digest is pinned in the Makefile (IOS_ONNX_RUNTIME_LIB_DIGEST).
+ort_lib_sha256=${IOS_ONNX_RUNTIME_LIB_DIGEST:?IOS_ONNX_RUNTIME_LIB_DIGEST is required; run through make}
 deployment_target=26.0
 target=aarch64-apple-ios
 

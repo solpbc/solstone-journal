@@ -486,7 +486,7 @@ ci-full-prep-onnx:
 	@$(MAKE) --no-print-directory CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 check-rust-onnx-stage
 
 ci-full-prep-ios:
-	@if [ "$$(uname -s)" = Darwin ]; then /bin/bash scripts/ios_cross_build.sh prepare "$(IOS_BUILD_DIR)"; else echo "ci-full-prep-ios: not run on $$(uname -s)"; fi
+	@if [ "$$(uname -s)" = Darwin ]; then $(IOS_CROSS_BUILD) prepare "$(IOS_BUILD_DIR)"; else echo "ci-full-prep-ios: not run on $$(uname -s)"; fi
 
 ci-full-prep-pdf:
 	@$(MAKE) --no-print-directory CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 check-rust-pdf-stage
@@ -1000,6 +1000,8 @@ check-rust-android-prepared:
 # installed or run, and iOS process lifecycle stays unsupported in source.
 # Inputs are prepared by ci-full-prep-ios; this gate only verifies them.
 IOS_BUILD_DIR ?= $(CURDIR)/core/ios-build
+override IOS_ONNX_RUNTIME_LIB_DIGEST := 4eb86d500c6994fea07f834c1fa632f1953302d30776195dc6b8e5a95800c3e3
+IOS_CROSS_BUILD = IOS_ONNX_RUNTIME_LIB_DIGEST=$(IOS_ONNX_RUNTIME_LIB_DIGEST) /bin/bash scripts/ios_cross_build.sh
 check-rust-ios:
 	@$(REQUIRE_CARGO)
 	@set -eu; \
@@ -1010,11 +1012,11 @@ check-rust-ios:
 		command -v xcrun >/dev/null 2>&1 || { echo "xcrun is required for the iOS gate; install Xcode and retry" >&2; exit 1; }; \
 		xcrun --sdk iphoneos --show-sdk-path >/dev/null || { echo "the iPhoneOS SDK is required for the iOS gate; select a complete Xcode installation and retry" >&2; exit 1; }; \
 		rustup target list --installed 2>/dev/null | grep -qx "$(IOS_TARGET)" || { echo "Rust target $(IOS_TARGET) is required for the iOS gate; run rustup target add $(IOS_TARGET)" >&2; exit 1; }; \
-		/bin/bash scripts/ios_cross_build.sh check "$(IOS_BUILD_DIR)"; \
+		$(IOS_CROSS_BUILD) check "$(IOS_BUILD_DIR)"; \
 	fi
 
 check-rust-ios-ready:
-	@/bin/bash scripts/ios_cross_build.sh ready "$(IOS_BUILD_DIR)"
+	@$(IOS_CROSS_BUILD) ready "$(IOS_BUILD_DIR)"
 
 check-rust-deny:
 	@$(REQUIRE_CARGO)

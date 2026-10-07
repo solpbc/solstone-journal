@@ -195,7 +195,24 @@ fn write_host_makefile(root: &Path, system: &str, arch: &str) {
             "override ONNX_RUNTIME_HOST_HASH_ARGS :=",
         );
     }
+    // The iOS prep step verifies a prepared library against this pin; the
+    // fixture seeds an empty one so the step never reaches the network.
+    replace_once(
+        &mut makefile,
+        "override IOS_ONNX_RUNTIME_LIB_DIGEST := ",
+        &format!("override IOS_ONNX_RUNTIME_LIB_DIGEST := {EMPTY_SHA256}#"),
+    );
     fs::write(root.join("Makefile"), makefile).expect("write host Makefile fixture");
+    let ios_script = root.join("scripts/ios_cross_build.sh");
+    fs::create_dir_all(ios_script.parent().expect("iOS script parent"))
+        .expect("create iOS script parent");
+    write_executable(
+        &ios_script,
+        include_str!("../../../../../scripts/ios_cross_build.sh"),
+    );
+    let ios_lib = root.join("core/ios-build/lib");
+    fs::create_dir_all(&ios_lib).expect("create iOS runtime fixture directory");
+    fs::write(ios_lib.join("libonnxruntime.a"), []).expect("write iOS runtime fixture");
     let live_use_script = root.join("scripts/check_rust_target_live_use.sh");
     fs::create_dir_all(live_use_script.parent().expect("live-use script parent"))
         .expect("create live-use script parent");
