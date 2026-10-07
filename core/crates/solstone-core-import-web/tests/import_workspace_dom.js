@@ -2622,6 +2622,7 @@ function runLoadErrorsAreShown() {
   const context = vm.createContext({ console, Error, Promise });
   context.window = {
     CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },
+    SurfaceState: { serverMessageFrom: (err) => err?.serverMessage || err?.message || '' },
     apiJson: () => Promise.reject(new Error('network unavailable')),
   };
   context.document = {
