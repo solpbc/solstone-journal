@@ -18,7 +18,7 @@ use solstone_core_brain::bundled_runtime_desired_fingerprint;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::{
     metal_candidate, pins,
-    readiness::{inspect_local, inspect_local_present},
+    readiness::{inspect_local, inspect_local_present, inspect_local_present_with_package},
 };
 use solstone_core_local::nvidia::{
     ArtifactTrust, CUDA_EMBEDDED_ARCH_SET, CUDA_MIN_DRIVER_VERSION, NvidiaProbe, probe_nvidia_gpu,
@@ -490,6 +490,8 @@ impl LocalTruthSeam {
 
     /// Start the owner's own installer when a release has moved the pins of a
     /// local provider the owner already installed (see `local_follow`).
+    /// Linux and macOS launch the installer process. Windows posts to this
+    /// journal's convey Thinking installer. The shared follow rule is the same.
     #[must_use]
     pub fn with_installer(mut self, launcher: LocalInstallerLauncher) -> Self {
         self.follow = Some(Arc::new(LocalFollow::new(launcher)));
@@ -613,7 +615,7 @@ fn observe_truth(
                 );
             }
         };
-        let readiness = inspect_local_present(Map::from_iter([
+        let readiness_input = Map::from_iter([
             (
                 "journal".into(),
                 Value::String(config.journal_path.display().to_string()),
@@ -624,7 +626,19 @@ fn observe_truth(
                 "artifact_key".into(),
                 Value::String("x86_64-windows".into()),
             ),
-        ]));
+        ]);
+        let readiness = if let Some(pkg) = config.windows_package.clone() {
+            inspect_local_present_with_package(readiness_input, Some(pkg))
+        } else {
+            inspect_local_present(readiness_input)
+        };
+        if let Some(follow) = follow {
+            follow.observe(
+                &config.journal_path,
+                config_present.then_some(&journal_config),
+                &readiness,
+            );
+        }
         let Some(object) = readiness.as_object() else {
             return truth_unavailable();
         };

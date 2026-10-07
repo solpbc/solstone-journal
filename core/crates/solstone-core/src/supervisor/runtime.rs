@@ -962,6 +962,231 @@ fn launch_local_installer(journal: &Path) -> Result<(), String> {
         .map_err(|_| "installer launch unavailable".to_owned())?
 }
 
+#[allow(dead_code)]
+fn launch_windows_local_installer(journal: &Path) -> Result<(), String> {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::{Duration, Instant};
+
+    const TOTAL_DEADLINE: Duration = Duration::from_secs(70);
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+    const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+    const MAX_HEADER_BYTES: usize = 65536;
+    const MAX_BODY_BYTES: usize = 65536;
+
+    let start = Instant::now();
+
+    let port_text = std::fs::read_to_string(journal.join("health/convey.port"))
+        .map_err(|error| format!("convey port unavailable: {error}"))?;
+    let trimmed = port_text.trim();
+    if trimmed.is_empty() {
+        return Err("convey port empty".into());
+    }
+    let port = trimmed
+        .parse::<u16>()
+        .map_err(|error| format!("convey port invalid: {error}"))?;
+
+    let elapsed = start.elapsed();
+    if elapsed >= TOTAL_DEADLINE {
+        return Err("connection deadline elapsed".into());
+    }
+    let remaining = TOTAL_DEADLINE - elapsed;
+    let connect_timeout = CONNECT_TIMEOUT.min(remaining);
+
+    let mut stream =
+        TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], port)), connect_timeout)
+            .map_err(|error| format!("connect failed: {error}"))?;
+
+    stream
+        .set_write_timeout(Some(WRITE_TIMEOUT))
+        .map_err(|error| format!("set write timeout failed: {error}"))?;
+
+    let request = format!(
+        "POST /app/thinking/api/local/bootstrap?model=local/qwen3.5-4b&automatic=1 HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Content-Length: 0\r\n\
+         Connection: close\r\n\r\n"
+    );
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|error| format!("write request failed: {error}"))?;
+
+    // Read response with dynamic read timeouts bound by TOTAL_DEADLINE
+    let mut response_bytes = Vec::new();
+    let mut header_end_pos = None;
+    let mut buf = [0u8; 4096];
+
+    while header_end_pos.is_none() {
+        let elapsed = start.elapsed();
+        if elapsed >= TOTAL_DEADLINE {
+            return Err("overall deadline elapsed while reading headers".into());
+        }
+        let read_timeout = TOTAL_DEADLINE - elapsed;
+        stream
+            .set_read_timeout(Some(read_timeout))
+            .map_err(|error| format!("set read timeout failed: {error}"))?;
+
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                response_bytes.extend_from_slice(&buf[..n]);
+                if let Some(pos) = response_bytes
+                    .windows(4)
+                    .position(|window| window == b"\r\n\r\n")
+                {
+                    header_end_pos = Some(pos);
+                } else if response_bytes.len() > MAX_HEADER_BYTES {
+                    return Err("header ceiling exceeded".into());
+                }
+            }
+            Err(error) => return Err(format!("read error: {error}")),
+        }
+    }
+
+    let Some(header_split) = header_end_pos else {
+        return Err("incomplete response headers".into());
+    };
+
+    let header_bytes = &response_bytes[..header_split];
+    let header_str = std::str::from_utf8(header_bytes)
+        .map_err(|_| "response headers not valid utf-8".to_string())?;
+
+    let mut lines = header_str.lines();
+    let status_line = lines.next().ok_or("missing status line")?;
+    let mut status_parts = status_line.split_whitespace();
+    let _http_version = status_parts.next().ok_or("missing http version")?;
+    let status_code_str = status_parts.next().ok_or("missing status code")?;
+    let status_code: u16 = status_code_str.parse().map_err(|_| "invalid status code")?;
+
+    if (300..400).contains(&status_code) {
+        return Err(format!("unexpected redirect status {status_code}"));
+    }
+
+    let mut content_length: Option<usize> = None;
+    let mut is_chunked = false;
+
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            let name = name.trim().to_ascii_lowercase();
+            let value = value.trim();
+            if name == "content-length" {
+                if let Ok(len) = value.parse::<usize>() {
+                    content_length = Some(len);
+                }
+            } else if name == "transfer-encoding" && value.to_ascii_lowercase().contains("chunked")
+            {
+                is_chunked = true;
+            }
+        }
+    }
+
+    if let Some(len) = content_length
+        && len > MAX_BODY_BYTES
+    {
+        return Err("content length exceeds body ceiling".into());
+    }
+
+    let initial_body = response_bytes[header_split + 4..].to_vec();
+    if initial_body.len() > MAX_BODY_BYTES {
+        return Err("body ceiling exceeded".into());
+    }
+
+    let mut raw_body = initial_body;
+    let expected_len = content_length;
+
+    while expected_len.is_none_or(|len| raw_body.len() < len) {
+        let elapsed = start.elapsed();
+        if elapsed >= TOTAL_DEADLINE {
+            return Err("overall deadline elapsed while reading body".into());
+        }
+        let read_timeout = TOTAL_DEADLINE - elapsed;
+        stream
+            .set_read_timeout(Some(read_timeout))
+            .map_err(|error| format!("set read timeout failed: {error}"))?;
+
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                if raw_body.len() + n > MAX_BODY_BYTES {
+                    return Err("body ceiling exceeded".into());
+                }
+                raw_body.extend_from_slice(&buf[..n]);
+            }
+            Err(error) => return Err(format!("read body error: {error}")),
+        }
+    }
+
+    if let Some(len) = expected_len
+        && raw_body.len() < len
+    {
+        return Err("body shorter than content length".into());
+    }
+
+    let body_bytes = if is_chunked {
+        decode_chunked(&raw_body)?
+    } else {
+        raw_body
+    };
+
+    if !(200..300).contains(&status_code) {
+        return Err(format!("http status {status_code}"));
+    }
+
+    let value: serde_json::Value = serde_json::from_slice(&body_bytes)
+        .map_err(|error| format!("invalid json body: {error}"))?;
+
+    let install_state = value
+        .get("install_state")
+        .and_then(|v| v.as_str())
+        .ok_or("missing install_state")?;
+
+    match install_state {
+        "installed" => Ok(()),
+        "resolving" | "downloading" | "verifying" | "installing" => {
+            let attempt_id = value
+                .get("attempt_id")
+                .and_then(|v| v.as_str())
+                .filter(|id| !id.is_empty())
+                .ok_or("in-flight state requires non-empty attempt_id")?;
+            let _ = attempt_id;
+            Ok(())
+        }
+        "failed" | "idle" | "unavailable" => Err(format!("refused install_state: {install_state}")),
+        unknown => Err(format!("unknown install_state: {unknown}")),
+    }
+}
+
+#[allow(dead_code)]
+fn decode_chunked(raw: &[u8]) -> Result<Vec<u8>, String> {
+    let mut decoded = Vec::new();
+    let mut cursor = 0;
+    while cursor < raw.len() {
+        let rest = &raw[cursor..];
+        let Some(newline_pos) = rest.windows(2).position(|w| w == b"\r\n") else {
+            break;
+        };
+        let line =
+            std::str::from_utf8(&rest[..newline_pos]).map_err(|_| "invalid chunk size line")?;
+        let size_str = line.split(';').next().unwrap_or("").trim();
+        let chunk_size =
+            usize::from_str_radix(size_str, 16).map_err(|_| "invalid hex chunk size")?;
+        cursor += newline_pos + 2;
+        if chunk_size == 0 {
+            break;
+        }
+        if cursor + chunk_size > raw.len() {
+            return Err("truncated chunk data".into());
+        }
+        decoded.extend_from_slice(&raw[cursor..cursor + chunk_size]);
+        cursor += chunk_size;
+        if cursor + 2 <= raw.len() && &raw[cursor..cursor + 2] == b"\r\n" {
+            cursor += 2;
+        }
+    }
+    Ok(decoded)
+}
+
 fn resolve_journal_binary_from(exe_dir: &Path) -> PathBuf {
     let name = if cfg!(windows) {
         "solstone.exe"
@@ -1646,9 +1871,12 @@ pub(crate) async fn boot_and_tick(
         )
     } else {
         let seam = LocalTruthSeam::new(local_shared.clone(), journal.clone());
-        // Windows ships the local runtime in its package and is not followed here.
+        // Linux and macOS launch the installer process. Windows follows a moved
+        // model pin by posting to this journal's convey Thinking installer.
         #[cfg(not(windows))]
         let seam = seam.with_installer(Arc::new(launch_local_installer));
+        #[cfg(windows)]
+        let seam = seam.with_installer(Arc::new(launch_windows_local_installer));
         seam
     };
     let local = LocalProvider {
@@ -2520,5 +2748,212 @@ mod tests {
             Some(7),
             "a failed cleanup remains retryable instead of consuming authority"
         );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn spawn_mock_convey(
+        handler: impl FnOnce(std::net::TcpStream) + Send + 'static,
+    ) -> (tempfile::TempDir, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let port = listener.local_addr().expect("local addr").port();
+        let journal = tempfile::tempdir().expect("tempdir");
+        let health = journal.path().join("health");
+        std::fs::create_dir_all(&health).expect("health dir");
+        std::fs::write(health.join("convey.port"), format!("{port}\n")).expect("write port file");
+
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept connection");
+            handler(stream);
+        });
+
+        (journal, handle)
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_local_follow_request_format_and_redirect_refusal() {
+        use std::io::{Read, Write};
+        let (journal, handle) = spawn_mock_convey(|mut stream| {
+            let mut buf = [0u8; 1024];
+            let n = stream.read(&mut buf).expect("read request");
+            let req = String::from_utf8_lossy(&buf[..n]);
+            assert!(req.starts_with("POST /app/thinking/api/local/bootstrap?model=local/qwen3.5-4b&automatic=1 HTTP/1.1\r\n"));
+            assert!(req.contains(&format!(
+                "Host: 127.0.0.1:{}\r\n",
+                stream.local_addr().unwrap().port()
+            )));
+            assert!(!req.to_lowercase().contains("origin:"));
+            assert!(!req.to_lowercase().contains("sec-fetch-site:"));
+
+            stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: /init\r\nConnection: close\r\nContent-Length: 0\r\n\r\n").expect("write response");
+        });
+
+        let err = super::launch_windows_local_installer(journal.path()).expect_err("302 must fail");
+        assert!(err.contains("unexpected redirect status 302"));
+        handle.join().unwrap();
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_local_follow_http_status_errors() {
+        use std::io::{Read, Write};
+        let (journal, handle) = spawn_mock_convey(|mut stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\nContent-Length: 0\r\n\r\n").expect("write response");
+        });
+
+        let err = super::launch_windows_local_installer(journal.path()).expect_err("500 must fail");
+        assert!(err.contains("http status 500"));
+        handle.join().unwrap();
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_local_follow_port_file_validation() {
+        let journal = tempfile::tempdir().expect("tempdir");
+        let health = journal.path().join("health");
+        std::fs::create_dir_all(&health).expect("health dir");
+
+        // Missing
+        let err =
+            super::launch_windows_local_installer(journal.path()).expect_err("missing port file");
+        assert!(err.contains("convey port unavailable"));
+
+        // Blank
+        std::fs::write(health.join("convey.port"), "   \n").expect("write blank");
+        let err =
+            super::launch_windows_local_installer(journal.path()).expect_err("blank port file");
+        assert!(err.contains("convey port empty"));
+
+        // Non-numeric
+        std::fs::write(health.join("convey.port"), "not-a-port\n").expect("write invalid");
+        let err =
+            super::launch_windows_local_installer(journal.path()).expect_err("invalid port file");
+        assert!(err.contains("convey port invalid"));
+
+        // Closed port
+        let closed_port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+            listener.local_addr().expect("addr").port()
+        };
+        std::fs::write(health.join("convey.port"), format!("{closed_port}\n"))
+            .expect("write closed port");
+        let err = super::launch_windows_local_installer(journal.path()).expect_err("closed port");
+        assert!(err.contains("connect failed"));
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_local_follow_response_body_validation() {
+        use std::io::{Read, Write};
+
+        let cases: &[(&[u8], bool)] = &[
+            (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 0\r\n\r\n", false),
+            (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 4\r\n\r\nnope", false),
+            (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 26\r\n\r\n{\"install_state\":\"failed\"}", false),
+            (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 24\r\n\r\n{\"install_state\":\"nope\"}", false),
+            (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 31\r\n\r\n{\"install_state\":\"downloading\"}", false),
+            (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 29\r\n\r\n{\"install_state\":\"installed\"}", true),
+            (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 55\r\n\r\n{\"install_state\":\"downloading\",\"attempt_id\":\"attempt-1\"}", true),
+        ];
+
+        for (response_bytes, expected_ok) in cases {
+            let resp = response_bytes.to_vec();
+            let (journal, handle) = spawn_mock_convey(move |mut stream| {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                stream.write_all(&resp).expect("write response");
+            });
+
+            let res = super::launch_windows_local_installer(journal.path());
+            if *expected_ok {
+                assert!(res.is_ok(), "expected Ok, got {res:?}");
+            } else {
+                assert!(res.is_err(), "expected Err, got {res:?}");
+            }
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_local_follow_drip_ceiling_and_large_content_length() {
+        use std::io::{Read, Write};
+
+        // Content-Length > 65536 fails fast without reading body
+        let (journal, handle) = spawn_mock_convey(|mut stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 70000\r\n\r\n")
+                .expect("write");
+        });
+        let start = std::time::Instant::now();
+        let err = super::launch_windows_local_installer(journal.path())
+            .expect_err("large content length");
+        assert!(err.contains("content length exceeds body ceiling"));
+        assert!(start.elapsed() < std::time::Duration::from_secs(15));
+        handle.join().unwrap();
+
+        // Drip > 65536 body bytes fails ceiling
+        let (journal, handle) = spawn_mock_convey(|mut stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
+                .expect("write header");
+            let chunk = [b'a'; 4096];
+            for _ in 0..17 {
+                let _ = stream.write_all(&chunk);
+            }
+        });
+        let start = std::time::Instant::now();
+        let err = super::launch_windows_local_installer(journal.path()).expect_err("drip ceiling");
+        assert!(err.contains("body ceiling exceeded"));
+        assert!(start.elapsed() < std::time::Duration::from_secs(15));
+        handle.join().unwrap();
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_local_follow_valid_slow_admission() {
+        use std::io::{Read, Write};
+        let (journal, handle) = spawn_mock_convey(|mut stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 29\r\n\r\n{\"install_state\":\"installed\"}").expect("write response");
+        });
+
+        let start = std::time::Instant::now();
+        let res = super::launch_windows_local_installer(journal.path());
+        assert!(res.is_ok(), "slow admission should succeed: {res:?}");
+        assert!(start.elapsed() >= std::time::Duration::from_secs(59));
+        handle.join().unwrap();
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_local_follow_stall_fails_at_overall_deadline() {
+        use std::io::Read;
+        let (journal, handle) = spawn_mock_convey(|mut stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            // Peer accepts and sends nothing, keeping stream open
+            std::thread::sleep(std::time::Duration::from_secs(80));
+        });
+
+        let start = std::time::Instant::now();
+        let err = super::launch_windows_local_installer(journal.path())
+            .expect_err("stall should fail at 70s");
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= std::time::Duration::from_secs(60)
+                && elapsed <= std::time::Duration::from_secs(80),
+            "elapsed duration was {elapsed:?}"
+        );
+        let _ = err;
+        drop(handle);
     }
 }

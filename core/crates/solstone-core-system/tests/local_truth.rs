@@ -563,6 +563,357 @@ fn follow_launches_any_phase(root: &Path) -> Vec<PathBuf> {
     let state = ProviderRuntimeState::new(ProviderName::Local);
     let fence = fence(1);
     seam.dispatch_truth(&state, &fence);
-    let _ = shared.wait_for_truth_result(&fence);
     launched.lock().unwrap().clone()
+}
+
+fn windows_test_package() -> solstone_core_local::install::windows_engine::WindowsLlamaPackage {
+    solstone_core_local::install::windows_engine::WindowsLlamaPackage {
+        package_root: PathBuf::from(r"C:\test\package"),
+        engine: PathBuf::from(r"C:\test\package\bin\llama-server.exe"),
+        loader: PathBuf::from(r"C:\test\package\bin\vulkan-1.dll"),
+        probe: PathBuf::from(r"C:\test\package\bin\solstone-vulkan-probe.exe"),
+        engine_sha256: "0".repeat(64),
+        loader_sha256: "1".repeat(64),
+        probe_sha256: "2".repeat(64),
+    }
+}
+
+fn write_stale_model(root: &Path) {
+    let model = pins::cache_root(root).join("models/local__qwen3.5-4b");
+    std::fs::create_dir_all(&model).expect("model directory");
+    std::fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").expect("model");
+    std::fs::write(model.join("mmproj-F16.gguf"), b"projector").expect("projector");
+    let mut identity = pins::model_identity("local/qwen3.5-4b").expect("model pin");
+    if let Some(obj) = identity.as_object_mut() {
+        obj.insert(
+            "filename".into(),
+            serde_json::Value::String("other.gguf".into()),
+        );
+    }
+    let model_manifest = manifest::build_manifest(
+        "local",
+        "local-model",
+        "test",
+        json!({ "pin_identity": identity }),
+        manifest::inventory_for_tree(&model, "model").unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    manifest::write_manifest(&manifest::artifact_manifest_path(&model), &model_manifest).unwrap();
+}
+
+fn write_install_status(root: &Path, status: &solstone_core_local::install::status::InstallStatus) {
+    let path = solstone_core_local::install::status::status_path(root, "local");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("status parent directory");
+    }
+    let bytes = serde_json::to_vec_pretty(status).expect("serialize status");
+    std::fs::write(path, bytes).expect("write status");
+}
+
+fn old_test_status() -> solstone_core_local::install::status::InstallStatus {
+    solstone_core_local::install::status::InstallStatus {
+        schema_version: 1,
+        provider: "local".into(),
+        revision: 1,
+        install_state: "failed".into(),
+        attempt_id: Some("attempt-old".into()),
+        target_fingerprint_json: None,
+        target_fingerprint_sha256: None,
+        started_at: Some("2026-09-01T00:00:00Z".into()),
+        last_transition_at: Some("2026-09-01T00:00:00Z".into()),
+        last_progress_at: Some("2026-09-01T00:00:00Z".into()),
+        completed_at: Some("2026-09-01T00:00:00Z".into()),
+        progress_bytes_received: None,
+        progress_bytes_total: None,
+        install_error: Some("old failure".into()),
+        error_code: Some("download_failed".into()),
+        owner: None,
+    }
+}
+
+fn setup_windows_follow_fixture(root: &Path) {
+    write_stale_model(root);
+    write_config(
+        root,
+        json!({ "providers": { "active": { "provider": "local" } } }),
+    );
+    write_install_status(root, &old_test_status());
+}
+
+#[test]
+fn windows_follow_launches_once_when_the_model_pin_moves() {
+    let root = var_tmp("windows-follow-pin-move");
+    setup_windows_follow_fixture(&root);
+    let pkg = windows_test_package();
+
+    let readiness = solstone_core_local::install::readiness::inspect_local_present_with_package(
+        serde_json::Map::from_iter([
+            (
+                "journal".into(),
+                serde_json::Value::String(root.display().to_string()),
+            ),
+            (
+                "model_id".into(),
+                serde_json::Value::String("local/qwen3.5-4b".into()),
+            ),
+            ("backend".into(), serde_json::Value::String("vulkan".into())),
+            (
+                "artifact_key".into(),
+                serde_json::Value::String("x86_64-windows".into()),
+            ),
+        ]),
+        Some(pkg.clone()),
+    );
+    assert_eq!(readiness["proof"]["binary"]["status"], "ready");
+    assert_eq!(readiness["proof"]["binary"]["reason_code"], "ready");
+    assert_eq!(
+        readiness["proof"]["model"]["status"],
+        "missing-or-mismatched"
+    );
+    assert_eq!(
+        readiness["proof"]["model"]["reason_code"],
+        "manifest_pin_mismatch"
+    );
+
+    let launched = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorder = launched.clone();
+    let shared = Arc::new(LocalRuntimeShared::default());
+    let mut seam = LocalTruthSeam::with_config(
+        shared.clone(),
+        LocalTruthConfig {
+            windows_package: Some(pkg),
+            journal_path: root.clone(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(undetected_probe()),
+            vulkan: VulkanObservation {
+                devices: vec![VulkanDevice {
+                    index: 0,
+                    name: "Integrated GPU".into(),
+                    device_type: Some(1),
+                    vram_mib: 4096,
+                }],
+                succeeded: true,
+            },
+        },
+    )
+    .with_installer(Arc::new(move |journal: &Path| {
+        recorder.lock().unwrap().push(journal.to_path_buf());
+        Ok(())
+    }));
+
+    let state = ProviderRuntimeState::new(ProviderName::Local);
+    for attempt in 1..=2 {
+        let fence = fence(attempt);
+        seam.dispatch_truth(&state, &fence);
+        let obs = shared.wait_for_truth_result(&fence);
+        assert_eq!(obs.phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("artifact-stale")
+        );
+    }
+
+    assert_eq!(launched.lock().unwrap().len(), 1);
+    assert_eq!(launched.lock().unwrap()[0], root);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn windows_follow_launches_once_for_an_abandoned_install() {
+    let root = var_tmp("windows-follow-abandoned");
+    setup_windows_follow_fixture(&root);
+    let mut status = old_test_status();
+    status.install_state = "downloading".into();
+    status.attempt_id = Some("attempt-old".into());
+    status.error_code = None;
+    write_install_status(&root, &status);
+
+    let pkg = windows_test_package();
+    let launched = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorder = launched.clone();
+    let shared = Arc::new(LocalRuntimeShared::default());
+    let mut seam = LocalTruthSeam::with_config(
+        shared.clone(),
+        LocalTruthConfig {
+            windows_package: Some(pkg),
+            journal_path: root.clone(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(undetected_probe()),
+            vulkan: VulkanObservation {
+                devices: vec![VulkanDevice {
+                    index: 0,
+                    name: "Integrated GPU".into(),
+                    device_type: Some(1),
+                    vram_mib: 4096,
+                }],
+                succeeded: true,
+            },
+        },
+    )
+    .with_installer(Arc::new(move |journal: &Path| {
+        recorder.lock().unwrap().push(journal.to_path_buf());
+        Ok(())
+    }));
+
+    let state = ProviderRuntimeState::new(ProviderName::Local);
+    let fence = fence(1);
+    seam.dispatch_truth(&state, &fence);
+    let obs = shared.wait_for_truth_result(&fence);
+    assert_eq!(obs.phase, RuntimePhase::ArtifactNotReady);
+    assert_eq!(
+        obs.reason_code.as_ref().map(ReasonCode::as_str),
+        Some("install-in-progress")
+    );
+    assert_eq!(launched.lock().unwrap().len(), 1);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn windows_follow_does_not_launch() {
+    fn run_case(case_name: &str, modify: impl FnOnce(&Path, &mut LocalTruthConfig)) {
+        let root = var_tmp(&format!("win-follow-hold-{case_name}"));
+        setup_windows_follow_fixture(&root);
+        let pkg = windows_test_package();
+
+        let mut config = LocalTruthConfig {
+            windows_package: Some(pkg),
+            journal_path: root.clone(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(undetected_probe()),
+            vulkan: VulkanObservation {
+                devices: vec![VulkanDevice {
+                    index: 0,
+                    name: "Integrated GPU".into(),
+                    device_type: Some(1),
+                    vram_mib: 4096,
+                }],
+                succeeded: true,
+            },
+        };
+        modify(&root, &mut config);
+
+        let launched = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorder = launched.clone();
+        let shared = Arc::new(LocalRuntimeShared::default());
+        let mut seam = LocalTruthSeam::with_config(shared.clone(), config).with_installer(
+            Arc::new(move |journal: &Path| {
+                recorder.lock().unwrap().push(journal.to_path_buf());
+                Ok(())
+            }),
+        );
+
+        let state = ProviderRuntimeState::new(ProviderName::Local);
+        let fence = fence(1);
+        seam.dispatch_truth(&state, &fence);
+        let _ = shared.wait_for_truth_result(&fence);
+
+        assert!(
+            launched.lock().unwrap().is_empty(),
+            "case '{case_name}' unexpectedly launched installer: {:?}",
+            launched.lock().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // Cancelled status
+    run_case("cancelled-status", |root, _| {
+        let mut status = old_test_status();
+        status.install_state = "failed".into();
+        status.error_code = Some("install_cancelled".into());
+        write_install_status(root, &status);
+    });
+
+    // Cancelled status with fresh seam
+    run_case("cancelled-status-fresh-seam", |root, _| {
+        let mut status = old_test_status();
+        status.install_state = "failed".into();
+        status.error_code = Some("install_cancelled".into());
+        write_install_status(root, &status);
+    });
+
+    // Held lease
+    run_case("held-lease", |root, _| {
+        let guard =
+            solstone_core_local::install::lease::acquire(root, "local").expect("acquire lease");
+        std::mem::forget(guard); // keep lease held across observation
+    });
+
+    // Activity inside floor
+    run_case("recent-activity", |root, _| {
+        let mut status = old_test_status();
+        let now = chrono::Utc::now().to_rfc3339();
+        status.last_progress_at = Some(now.clone());
+        status.last_transition_at = Some(now);
+        write_install_status(root, &status);
+    });
+
+    // No model manifest file
+    run_case("no-model-manifest", |root, _| {
+        let manifest_path = manifest::artifact_manifest_path(
+            &pins::cache_root(root).join("models/local__qwen3.5-4b"),
+        );
+        let _ = std::fs::remove_file(manifest_path);
+    });
+
+    // Active provider not local
+    run_case("active-provider-openai", |root, _| {
+        write_config(
+            root,
+            json!({ "providers": { "active": { "provider": "openai" } } }),
+        );
+    });
+
+    // BYO endpoint
+    run_case("byo-endpoint", |root, _| {
+        write_config(
+            root,
+            json!({
+                "providers": {
+                    "active": { "provider": "local" },
+                    "local": {
+                        "endpoint_url": "http://127.0.0.1:9999",
+                        "served_model_id": "custom-model"
+                    }
+                }
+            }),
+        );
+    });
+
+    // Damaged manifest
+    run_case("damaged-manifest", |root, _| {
+        let manifest_path = manifest::artifact_manifest_path(
+            &pins::cache_root(root).join("models/local__qwen3.5-4b"),
+        );
+        std::fs::write(manifest_path, b"[]").expect("write malformed manifest");
+    });
+
+    // Unreadable manifest
+    run_case("unreadable-manifest", |root, _| {
+        use std::os::unix::fs::PermissionsExt;
+        let manifest_path = manifest::artifact_manifest_path(
+            &pins::cache_root(root).join("models/local__qwen3.5-4b"),
+        );
+        std::fs::set_permissions(manifest_path, std::fs::Permissions::from_mode(0o000))
+            .expect("set mode 0000");
+    });
+
+    // Host blocked: bad arch
+    run_case("bad-arch", |_, config| {
+        config.arch = "aarch64";
+    });
+
+    // Host blocked: empty vulkan
+    run_case("empty-vulkan", |_, config| {
+        config.vulkan.devices.clear();
+    });
+
+    // Host blocked: windows_package None
+    run_case("missing-package", |_, config| {
+        config.windows_package = None;
+    });
 }

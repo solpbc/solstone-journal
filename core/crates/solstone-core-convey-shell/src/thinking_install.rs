@@ -38,6 +38,14 @@ const INSTALLER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const INSTALLER_STARTUP_TIMEOUT: Duration = ADMISSION_TIMEOUT;
 
 pub(crate) fn start(journal: &Path, model: &str) -> Result<Value, String> {
+    admit(journal, model, false)
+}
+
+pub(crate) fn start_automatic(journal: &Path, model: &str) -> Result<Value, String> {
+    admit(journal, model, true)
+}
+
+fn admit(journal: &Path, model: &str, automatic: bool) -> Result<Value, String> {
     let _guard = ADMISSION
         .lock()
         .map_err(|_| "installer admission unavailable")?;
@@ -53,6 +61,9 @@ pub(crate) fn start(journal: &Path, model: &str) -> Result<Value, String> {
             ));
         }
         return Err("installer lease is busy".into());
+    }
+    if automatic && current.error_code.as_deref() == Some("install_cancelled") {
+        return Err("install_cancelled".into());
     }
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let parent = executable
@@ -657,5 +668,69 @@ mod tests {
             SystemProcessInstanceSource.inspect(pid),
             InspectResult::Absent
         );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn automatic_follow_honors_a_committed_cancel() {
+        let journal = tempfile::tempdir().unwrap();
+        let in_flight = status::InstallStatus {
+            schema_version: 1,
+            provider: "local".into(),
+            revision: 1,
+            install_state: "downloading".into(),
+            attempt_id: Some("attempt-old".into()),
+            target_fingerprint_json: None,
+            target_fingerprint_sha256: None,
+            started_at: Some("2026-09-01T00:00:00Z".into()),
+            last_transition_at: Some("2026-09-01T00:00:00Z".into()),
+            last_progress_at: Some("2026-09-01T00:00:00Z".into()),
+            completed_at: None,
+            progress_bytes_received: Some(100),
+            progress_bytes_total: Some(1000),
+            install_error: None,
+            error_code: None,
+            owner: None,
+        };
+        let status_path = status::status_path(journal.path(), "local");
+        std::fs::create_dir_all(status_path.parent().unwrap()).unwrap();
+        std::fs::write(&status_path, serde_json::to_vec_pretty(&in_flight).unwrap()).unwrap();
+
+        let cancel_res = cancel(journal.path(), "attempt-old");
+        assert!(cancel_res.is_ok(), "cancel failed: {cancel_res:?}");
+        let current = status::read_status(journal.path(), "local").unwrap();
+        assert_eq!(current.install_state, "failed");
+        assert_eq!(current.error_code.as_deref(), Some("install_cancelled"));
+        assert_eq!(current.attempt_id.as_deref(), Some("attempt-old"));
+
+        let auto_res = start_automatic(journal.path(), "local/qwen3.5-4b");
+        assert_eq!(auto_res.unwrap_err(), "install_cancelled");
+        let current_after_auto = status::read_status(journal.path(), "local").unwrap();
+        assert_eq!(
+            current_after_auto.attempt_id.as_deref(),
+            Some("attempt-old")
+        );
+        assert!(!lease::is_held(journal.path(), "local").unwrap());
+
+        let explicit_res = start(journal.path(), "local/qwen3.5-4b");
+        match explicit_res {
+            Err(err) => {
+                assert_ne!(err, "install_cancelled");
+                let current_after_explicit = status::read_status(journal.path(), "local").unwrap();
+                assert_eq!(
+                    current_after_explicit.attempt_id.as_deref(),
+                    Some("attempt-old")
+                );
+                assert!(!lease::is_held(journal.path(), "local").unwrap());
+            }
+            Ok(_) => {
+                if let Ok(st) = status::read_status(journal.path(), "local") {
+                    if let Some(att) = st.attempt_id {
+                        let _ = cancel(journal.path(), &att);
+                    }
+                }
+                panic!("explicit start unexpectedly succeeded without sibling binary");
+            }
+        }
     }
 }

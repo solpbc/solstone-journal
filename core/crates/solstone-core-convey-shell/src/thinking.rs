@@ -508,6 +508,7 @@ async fn start_local_bootstrap(
         Ok(config) => config,
         Err(response) => return *response,
     };
+    let automatic = query.get("automatic").map(String::as_str) == Some("1");
     match solstone_core_thinking::local::start_bootstrap(&journal.0, &config, model) {
         solstone_core_thinking::local::BootstrapResponse::Installed => {
             json_response(json!({"install_state":"installed"}))
@@ -530,8 +531,14 @@ async fn start_local_bootstrap(
         ),
         solstone_core_thinking::local::BootstrapResponse::Start => {
             let root = journal.0.clone();
-            match tokio::task::spawn_blocking(move || crate::thinking_install::start(&root, model))
-                .await
+            match tokio::task::spawn_blocking(move || {
+                if automatic {
+                    crate::thinking_install::start_automatic(&root, model)
+                } else {
+                    crate::thinking_install::start(&root, model)
+                }
+            })
+            .await
             {
                 Ok(Ok(payload)) => json_response(payload),
                 Ok(Err(error)) => thinking_failure_with_detail(error),

@@ -11,6 +11,9 @@
 //! starts the same installer the Thinking app starts, so the update brings the
 //! newly pinned artifacts with it.
 //!
+//! Windows truth follows a moved model pin through convey; the Windows binary
+//! proof is the signed package. Linux and macOS still follow runtime and model pin moves.
+//!
 //! The decision is made on every local truth observation and reads only
 //! durable state: the journal config, the presence-mode readiness the
 //! observation already computed, the install status record and the install
@@ -92,7 +95,8 @@ impl LocalFollow {
         }
     }
 
-    /// Called with each non-Windows local readiness observation.
+    /// Called with each local readiness observation, including Windows after
+    /// the signed package and model proofs are known.
     pub(crate) fn observe(
         &self,
         journal: &Path,

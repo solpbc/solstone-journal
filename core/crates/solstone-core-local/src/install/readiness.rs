@@ -15,15 +15,25 @@ pub fn inspect_local(input: Map<String, Value>) -> Value {
     )
 }
 
-/// Cheap installation candidate for read paths. Launch and installation use
-/// `inspect_local`, which verifies the artifact bytes.
-pub fn inspect_local_present(input: Map<String, Value>) -> Value {
+pub fn inspect_local_present_with_package(
+    input: Map<String, Value>,
+    package: Option<super::windows_engine::WindowsLlamaPackage>,
+) -> Value {
     inspect_local_with(
         input,
         manifest::inspect_manifest_required,
         local_backend_choice_present,
-        super::windows_engine::verified_windows_llama_package,
+        || match package {
+            Some(pkg) => Ok(pkg),
+            None => super::windows_engine::verified_windows_llama_package(),
+        },
     )
+}
+
+/// Cheap installation candidate for read paths. Launch and installation use
+/// `inspect_local`, which verifies the artifact bytes.
+pub fn inspect_local_present(input: Map<String, Value>) -> Value {
+    inspect_local_present_with_package(input, None)
 }
 
 fn inspect_local_with(
