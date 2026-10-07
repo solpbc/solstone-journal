@@ -1047,6 +1047,9 @@ fn launch_windows_local_installer(journal: &Path) -> Result<(), String> {
     let Some(header_split) = header_end_pos else {
         return Err("incomplete response headers".into());
     };
+    if header_split > MAX_HEADER_BYTES {
+        return Err("header ceiling exceeded".into());
+    }
 
     let header_bytes = &response_bytes[..header_split];
     let header_str = std::str::from_utf8(header_bytes)
@@ -1055,7 +1058,10 @@ fn launch_windows_local_installer(journal: &Path) -> Result<(), String> {
     let mut lines = header_str.lines();
     let status_line = lines.next().ok_or("missing status line")?;
     let mut status_parts = status_line.split_whitespace();
-    let _http_version = status_parts.next().ok_or("missing http version")?;
+    let http_version = status_parts.next().ok_or("missing http version")?;
+    if !matches!(http_version, "HTTP/1.0" | "HTTP/1.1") {
+        return Err("invalid http version".into());
+    }
     let status_code_str = status_parts.next().ok_or("missing status code")?;
     let status_code: u16 = status_code_str.parse().map_err(|_| "invalid status code")?;
 
@@ -1071,14 +1077,20 @@ fn launch_windows_local_installer(journal: &Path) -> Result<(), String> {
             let name = name.trim().to_ascii_lowercase();
             let value = value.trim();
             if name == "content-length" {
-                if let Ok(len) = value.parse::<usize>() {
-                    content_length = Some(len);
+                if content_length.is_some() {
+                    return Err("duplicate content length".into());
                 }
-            } else if name == "transfer-encoding" && value.to_ascii_lowercase().contains("chunked")
-            {
+                content_length = Some(value.parse().map_err(|_| "invalid content length")?);
+            } else if name == "transfer-encoding" {
+                if is_chunked || !value.eq_ignore_ascii_case("chunked") {
+                    return Err("unsupported transfer encoding".into());
+                }
                 is_chunked = true;
             }
         }
+    }
+    if is_chunked && content_length.is_some() {
+        return Err("ambiguous response framing".into());
     }
 
     if let Some(len) = content_length
@@ -1118,9 +1130,9 @@ fn launch_windows_local_installer(journal: &Path) -> Result<(), String> {
     }
 
     if let Some(len) = expected_len
-        && raw_body.len() < len
+        && raw_body.len() != len
     {
-        return Err("body shorter than content length".into());
+        return Err("body does not match content length".into());
     }
 
     let body_bytes = if is_chunked {
@@ -1163,9 +1175,10 @@ fn decode_chunked(raw: &[u8]) -> Result<Vec<u8>, String> {
     let mut cursor = 0;
     while cursor < raw.len() {
         let rest = &raw[cursor..];
-        let Some(newline_pos) = rest.windows(2).position(|w| w == b"\r\n") else {
-            break;
-        };
+        let newline_pos = rest
+            .windows(2)
+            .position(|w| w == b"\r\n")
+            .ok_or("incomplete chunk size line")?;
         let line =
             std::str::from_utf8(&rest[..newline_pos]).map_err(|_| "invalid chunk size line")?;
         let size_str = line.split(';').next().unwrap_or("").trim();
@@ -1173,18 +1186,28 @@ fn decode_chunked(raw: &[u8]) -> Result<Vec<u8>, String> {
             usize::from_str_radix(size_str, 16).map_err(|_| "invalid hex chunk size")?;
         cursor += newline_pos + 2;
         if chunk_size == 0 {
-            break;
+            // This endpoint emits no trailers. Require the closing empty line,
+            // so a truncated JSON chunk cannot masquerade as an accepted launch.
+            return if raw.get(cursor..) == Some(&b"\r\n"[..]) {
+                Ok(decoded)
+            } else {
+                Err("incomplete chunk terminator".into())
+            };
         }
-        if cursor + chunk_size > raw.len() {
+        let end = cursor
+            .checked_add(chunk_size)
+            .ok_or("chunk size overflow")?;
+        if end > raw.len() {
             return Err("truncated chunk data".into());
         }
-        decoded.extend_from_slice(&raw[cursor..cursor + chunk_size]);
-        cursor += chunk_size;
-        if cursor + 2 <= raw.len() && &raw[cursor..cursor + 2] == b"\r\n" {
-            cursor += 2;
+        decoded.extend_from_slice(&raw[cursor..end]);
+        cursor = end;
+        if raw.get(cursor..cursor.saturating_add(2)) != Some(&b"\r\n"[..]) {
+            return Err("missing chunk delimiter".into());
         }
+        cursor += 2;
     }
-    Ok(decoded)
+    Err("missing final chunk".into())
 }
 
 fn resolve_journal_binary_from(exe_dir: &Path) -> PathBuf {
@@ -2794,6 +2817,22 @@ mod tests {
     }
 
     #[test]
+    fn windows_local_follow_chunk_framing_is_complete_and_bounded() {
+        assert_eq!(
+            super::decode_chunked(b"2\r\n{}\r\n0\r\n\r\n").unwrap(),
+            b"{}"
+        );
+        for malformed in [
+            &b"2\r\n{}\r\n"[..],
+            &b"2\r\n{}0\r\n\r\n"[..],
+            &b"2\r\n{}\r\n0\r\n"[..],
+            &b"ffffffffffffffff\r\nx"[..],
+        ] {
+            assert!(super::decode_chunked(malformed).is_err());
+        }
+    }
+
+    #[test]
     #[cfg(all(test, feature = "full-tests"))]
     fn windows_local_follow_http_status_errors() {
         use std::io::{Read, Write};
@@ -2855,7 +2894,7 @@ mod tests {
             (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 24\r\n\r\n{\"install_state\":\"nope\"}", false),
             (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 31\r\n\r\n{\"install_state\":\"downloading\"}", false),
             (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 29\r\n\r\n{\"install_state\":\"installed\"}", true),
-            (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 55\r\n\r\n{\"install_state\":\"downloading\",\"attempt_id\":\"attempt-1\"}", true),
+            (b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 56\r\n\r\n{\"install_state\":\"downloading\",\"attempt_id\":\"attempt-1\"}", true),
         ];
 
         for (response_bytes, expected_ok) in cases {

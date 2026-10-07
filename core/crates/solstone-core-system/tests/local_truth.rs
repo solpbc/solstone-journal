@@ -563,6 +563,7 @@ fn follow_launches_any_phase(root: &Path) -> Vec<PathBuf> {
     let state = ProviderRuntimeState::new(ProviderName::Local);
     let fence = fence(1);
     seam.dispatch_truth(&state, &fence);
+    let _ = shared.wait_for_truth_result(&fence);
     launched.lock().unwrap().clone()
 }
 
@@ -812,10 +813,11 @@ fn windows_follow_does_not_launch() {
         seam.dispatch_truth(&state, &fence);
         let _ = shared.wait_for_truth_result(&fence);
 
+        let launches = launched.lock().unwrap().clone();
         assert!(
-            launched.lock().unwrap().is_empty(),
+            launches.is_empty(),
             "case '{case_name}' unexpectedly launched installer: {:?}",
-            launched.lock().unwrap()
+            launches
         );
         let _ = std::fs::remove_dir_all(root);
     }
@@ -837,11 +839,12 @@ fn windows_follow_does_not_launch() {
     });
 
     // Held lease
+    let mut held_lease = None;
     run_case("held-lease", |root, _| {
-        let guard =
+        held_lease =
             solstone_core_local::install::lease::acquire(root, "local").expect("acquire lease");
-        std::mem::forget(guard); // keep lease held across observation
     });
+    drop(held_lease);
 
     // Activity inside floor
     run_case("recent-activity", |root, _| {
