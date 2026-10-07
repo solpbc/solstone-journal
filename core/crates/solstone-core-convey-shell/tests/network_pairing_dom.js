@@ -72,6 +72,27 @@ function renderEmptyStateHTML(workspace, copy) {
   return context.emptyStateHTML();
 }
 
+function localNetworkEnvironment(workspace, copy) {
+  const start = workspace.indexOf('function renderLocalNetwork(data) {');
+  const end = workspace.indexOf('async function refreshLocalNetwork()', start);
+  assert.notStrictEqual(start, -1);
+  assert.notStrictEqual(end, -1);
+  const nodes = new Map();
+  const context = vm.createContext({
+    window: { LinkCopy: copy },
+    document: { getElementById(id) {
+      if (!nodes.has(id)) nodes.set(id, { hidden: false, textContent: '' });
+      return nodes.get(id);
+    } },
+    localNetworkClosed: false,
+    localNetworkOpen: false,
+    applyLocalNetworkToReach() {},
+    refreshStatus() {},
+  });
+  vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-local-network.js' });
+  return { nodes, render: context.renderLocalNetwork };
+}
+
 class ClassList {
   constructor(element) {
     this.element = element;
@@ -499,6 +520,21 @@ async function main() {
   const manifestDir = process.argv[2];
   if (!manifestDir) throw new Error('manifest directory required');
   const workspace = fs.readFileSync(path.join(manifestDir, 'assets/network/workspace.html'), 'utf8');
+  await testCase('a retained Windows Block rule replaces the open-network claim and clears after recovery', async () => {
+    const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
+    const env = localNetworkEnvironment(workspace, copy);
+    const status = { open: true, listening_on: 'local_network', windows_asks: true, windows_firewall_blocked: true };
+    env.render(status);
+    assert.strictEqual(env.nodes.get('link-local-network-state').textContent, copy.LOCAL_NETWORK_FIREWALL_BLOCKED);
+    assert.strictEqual(env.nodes.get('link-local-network-note').textContent, copy.LOCAL_NETWORK_FIREWALL_BLOCKED_NOTE);
+    assert.strictEqual(env.nodes.get('link-local-network-toggle').textContent, copy.LOCAL_NETWORK_CLOSE_CTA);
+    env.render({ ...status, agents_on_network: true });
+    assert.strictEqual(env.nodes.get('link-local-network-toggle').hidden, true);
+    env.render({ ...status, windows_firewall_blocked: false });
+    assert.strictEqual(env.nodes.get('link-local-network-state').textContent, copy.LOCAL_NETWORK_OPEN);
+    env.render({ ...status, windows_firewall_blocked: null });
+    assert.strictEqual(env.nodes.get('link-local-network-state').textContent, copy.LOCAL_NETWORK_OPEN);
+  });
   const activeAsset = path.join(manifestDir, 'assets/network/network.js');
   const retiredAsset = path.join(manifestDir, '../solstone-core-sol-link/assets/init.html');
 

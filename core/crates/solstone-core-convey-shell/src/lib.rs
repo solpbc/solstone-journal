@@ -184,6 +184,8 @@ mod thinking_sol_reads_contract;
 #[cfg(feature = "host")]
 mod weekly_heads_up;
 #[cfg(feature = "host")]
+mod windows_firewall;
+#[cfg(feature = "host")]
 pub use agents_enable::{SmeOperationsOverride, SmePoll, SmePollOutcome, SmeRuntimeOverride};
 #[cfg(feature = "host")]
 pub use network_writes::{

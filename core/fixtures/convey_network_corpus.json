@@ -172,6 +172,8 @@
             "LOCAL_NETWORK_CLOSE_CONFIRM": "close your journal to devices on your network? any device connected over your network now will disconnect.",
             "LOCAL_NETWORK_CLOSE_CTA": "close to devices on your network",
             "LOCAL_NETWORK_FAILED": "couldn't change whether your journal is open to devices on your network. try again.",
+            "LOCAL_NETWORK_FIREWALL_BLOCKED": "windows is blocking devices on your network from reaching your journal.",
+            "LOCAL_NETWORK_FIREWALL_BLOCKED_NOTE": "windows has an inbound Block rule for journal, which can remain after choosing Cancel. an administrator needs to open Windows Defender Firewall with Advanced Security \u203a Inbound Rules and remove the Block rules for this journal's solstone-core.exe, then allow journal through the firewall. after that, reload this page.",
             "LOCAL_NETWORK_FIREWALL_NOTE": "if windows didn't ask and a device still can't reach your journal, an earlier choice in windows may be blocking journal. an administrator can allow it in Windows Security, under Firewall & network protection \u203a Allow an app through firewall.",
             "LOCAL_NETWORK_NOT_REACHABLE": "devices can't reach your journal right now.",
             "LOCAL_NETWORK_OPEN": "open to devices on your network",

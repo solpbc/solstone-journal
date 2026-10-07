@@ -122,6 +122,7 @@ call :run_exact_library "solstone-core-convey-shell" "thinking::tests::no_hardwa
 call :run_exact_library "solstone-core-convey-shell" "thinking::tests::a_confidential_lane_turned_on_before_still_turns_off" "full-tests" || exit /b 1
 echo === cargo test --locked (Windows paired-device door listens on this computer by default) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests local_network || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests windows_firewall || exit /b 1
 :: solstone-core legs build with the features every shipped journal carries
 :: (core\distribution\shipped-core-features.txt), so they test what owners run
 :: and share one dependency build with the agent-connector build below.
