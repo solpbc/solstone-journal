@@ -54,9 +54,9 @@ pub const NVATTEST_REFUSAL_MANIFEST_BOUNDARY: &str =
     "offline manifest does not match the caller-bound digest";
 pub const NVATTEST_REFUSAL_REUSE_BOUNDARY: &str = "offline builds cannot reuse dependencies";
 /// The driver flips one byte of this bundle member for the changed-input control.
-pub const NVATTEST_REFUSAL_CORRUPT_MEMBER: &str = "openssl-3.6.1.tar.gz";
+pub const NVATTEST_REFUSAL_CORRUPT_MEMBER: &str = "openssl-3.6.4.tar.gz";
 pub const NVATTEST_REFUSAL_CORRUPT_BOUNDARY: &str =
-    "missing or changed offline input: openssl-3.6.1.tar.gz";
+    "missing or changed offline input: openssl-3.6.4.tar.gz";
 
 pub const NVATTEST_NETWORK_CONNECTED: &str = "connected";
 pub const NVATTEST_NETWORK_REFUSED: &str = "refused";
@@ -198,9 +198,9 @@ const fn download(name: &'static str, url: &'static str, sha256: &'static str) -
 
 const NATIVE_SOURCES: &[NativeSourcePin] = &[
     download(
-        "openssl-3.6.1.tar.gz",
-        "https://github.com/openssl/openssl/releases/download/openssl-3.6.1/openssl-3.6.1.tar.gz",
-        "b1bfedcd5b289ff22aee87c9d600f515767ebf45f77168cb6d64f231f518a82e",
+        "openssl-3.6.4.tar.gz",
+        "https://github.com/openssl/openssl/releases/download/openssl-3.6.4/openssl-3.6.4.tar.gz",
+        "9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef",
     ),
     download(
         "libxml2-2.11.9.tar.xz",
@@ -213,9 +213,9 @@ const NATIVE_SOURCES: &[NativeSourcePin] = &[
         "15f2f55ea5968e578fcd24b3b427e553876c86c147dc7f03923e98fc2768a1fa",
     ),
     download(
-        "curl-7.88.1.tar.gz",
-        "https://github.com/curl/curl/releases/download/curl-7_88_1/curl-7.88.1.tar.gz",
-        "cdb38b72e36bc5d33d5b8810f8018ece1baa29a8f215b4495e495ded82bbf3c7",
+        "curl-8.22.0.tar.gz",
+        "https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz",
+        "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1",
     ),
     download(
         "zlib-1.3.1.tar.gz",
@@ -280,16 +280,16 @@ const BUILD_TOOLS: &[DownloadSourcePin] = &[
 pub(crate) const fn production_pins() -> Pins {
     Pins {
         sdk_repo: "https://github.com/solpbc/attestation-sdk",
-        sdk_revision: "8fdbb0f8c10594a5f88f77fdec4766803b4e6d59",
+        sdk_revision: "fdc3c39958f12ba1055ae5beebc182577f7430b3",
         source_archive: ArchivePin {
-            bytes: 5171200,
-            sha256: "8cfac3ecbdf370a9bc383690909d2489cfe0e9adc27c8dd403dde91aa7378d58",
+            bytes: 5191680,
+            sha256: "8c51e670b8daee905b902658608571cfab72ffcef20142929d6eb1321594bd98",
         },
         bundle_archive: ArchivePin {
-            bytes: 451225600,
-            sha256: "fda9ddc90ead6a20e928d42c04a1eb1bb687f14bf484ff475ba4f11ba4cbddf2",
+            bytes: 451399680,
+            sha256: "551bf2064bd73aa3c14b80c95d9f21633d709e47b31f110caf00f176d93d860a",
         },
-        manifest_sha256: "6fe151b377b80c894135b4b42e65d4bdbfdcd4e170fea9c197b16fdaa833921f",
+        manifest_sha256: "72e44754363ed30ad30efddfe82d9af4c3ff68ca88dedb832d9a6f753828cd84",
         ca_bundle: FilePin {
             member: "ca-bundle.pem",
             bytes: 186446,
@@ -305,8 +305,8 @@ pub(crate) const fn production_pins() -> Pins {
             bytes: 45645,
             sha256: "b8352c80ef609b602bfd25e393ad774f74894bab1ab60a9afbeb61d6aae3c910",
         },
-        notices_body_sha256: "36c2cec38a03bfd53b35833598ce8f4129493d036e309adb6e395a91a4acf017",
-        body_assembly_revision: "7db176e058ca749f7c02a2867bbf3ca1caaf41cc",
+        notices_body_sha256: "51f2ae4af1af443f8a753d47157006459dcfafd9a1652919b32ac0d25eb53946",
+        body_assembly_revision: "fdc3c39958f12ba1055ae5beebc182577f7430b3",
         native_sources: NATIVE_SOURCES,
         build_tools: BUILD_TOOLS,
         msvc_runtime: MsvcRuntimePins {

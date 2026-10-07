@@ -39,15 +39,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## curl_external
 
-Source: https://github.com/curl/curl/releases/download/curl-7_88_1/curl-7.88.1.tar.gz
-Pin: cdb38b72e36bc5d33d5b8810f8018ece1baa29a8f215b4495e495ded82bbf3c7
+Source: https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz
+Pin: d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1
 
 ### curl_external.txt
 
 ~~~~~~~~text
 COPYRIGHT AND PERMISSION NOTICE
 
-Copyright (c) 1996 - 2023, Daniel Stenberg, <daniel@haxx.se>, and many
+Copyright (c) 1996 - 2026, Daniel Stenberg, <daniel@haxx.se>, and many
 contributors, see the THANKS file.
 
 All rights reserved.
@@ -269,8 +269,8 @@ THE SOFTWARE.
 
 ## openssl_external
 
-Source: https://github.com/openssl/openssl/releases/download/openssl-3.6.1/openssl-3.6.1.tar.gz
-Pin: b1bfedcd5b289ff22aee87c9d600f515767ebf45f77168cb6d64f231f518a82e
+Source: https://github.com/openssl/openssl/releases/download/openssl-3.6.4/openssl-3.6.4.tar.gz
+Pin: 9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef
 
 ### openssl_external.txt
 

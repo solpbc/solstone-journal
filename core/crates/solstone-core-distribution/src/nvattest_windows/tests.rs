@@ -414,7 +414,7 @@ fn report_source_list_must_equal_the_committed_list_exactly() {
     refuses(&fixture, "report-sources");
 
     let mut fixture = Fixture::new();
-    fixture.report.sources[0].url = Some("https://example.invalid/openssl-3.6.1.tar.gz".into());
+    fixture.report.sources[0].url = Some("https://example.invalid/openssl-3.6.4.tar.gz".into());
     refuses(&fixture, "report-sources");
 
     let mut fixture = Fixture::new();
@@ -926,10 +926,10 @@ fn production_pins_carry_the_committed_toolchain_and_archive_identities() {
     let pins = production_pins();
     assert_eq!(
         pins.sdk_revision,
-        "8fdbb0f8c10594a5f88f77fdec4766803b4e6d59"
+        "fdc3c39958f12ba1055ae5beebc182577f7430b3"
     );
-    assert_eq!(pins.source_archive.bytes, 5171200);
-    assert_eq!(pins.bundle_archive.bytes, 451225600);
+    assert_eq!(pins.source_archive.bytes, 5191680);
+    assert_eq!(pins.bundle_archive.bytes, 451399680);
     assert_eq!(pins.native_sources.len(), 13);
     assert_eq!(
         pins.native_sources

@@ -1,8 +1,8 @@
 {
   "schema": "solstone.nvattest-windows-notices.v1",
-  "notices_body_sha256": "36c2cec38a03bfd53b35833598ce8f4129493d036e309adb6e395a91a4acf017",
-  "body_assembly_revision": "7db176e058ca749f7c02a2867bbf3ca1caaf41cc",
-  "admitted_sdk_revision": "8fdbb0f8c10594a5f88f77fdec4766803b4e6d59",
+  "notices_body_sha256": "51f2ae4af1af443f8a753d47157006459dcfafd9a1652919b32ac0d25eb53946",
+  "body_assembly_revision": "fdc3c39958f12ba1055ae5beebc182577f7430b3",
+  "admitted_sdk_revision": "fdc3c39958f12ba1055ae5beebc182577f7430b3",
   "regorus_cargo_lock": {
     "member": "sol/release/regorus-Cargo.lock",
     "sha256": "b8352c80ef609b602bfd25e393ad774f74894bab1ab60a9afbeb61d6aae3c910"
@@ -13,9 +13,9 @@
   "notices_live_in": "journal",
   "native_sources": [
     {
-      "name": "openssl-3.6.1.tar.gz",
-      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.6.1/openssl-3.6.1.tar.gz",
-      "sha256": "b1bfedcd5b289ff22aee87c9d600f515767ebf45f77168cb6d64f231f518a82e"
+      "name": "openssl-3.6.4.tar.gz",
+      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.6.4/openssl-3.6.4.tar.gz",
+      "sha256": "9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef"
     },
     {
       "name": "libxml2-2.11.9.tar.xz",
@@ -28,9 +28,9 @@
       "sha256": "15f2f55ea5968e578fcd24b3b427e553876c86c147dc7f03923e98fc2768a1fa"
     },
     {
-      "name": "curl-7.88.1.tar.gz",
-      "url": "https://github.com/curl/curl/releases/download/curl-7_88_1/curl-7.88.1.tar.gz",
-      "sha256": "cdb38b72e36bc5d33d5b8810f8018ece1baa29a8f215b4495e495ded82bbf3c7"
+      "name": "curl-8.22.0.tar.gz",
+      "url": "https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz",
+      "sha256": "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1"
     },
     {
       "name": "zlib-1.3.1.tar.gz",
