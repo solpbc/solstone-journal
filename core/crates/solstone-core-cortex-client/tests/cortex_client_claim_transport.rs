@@ -39,11 +39,15 @@ fn write_use(journal: &Path, use_id: &str, active: bool, body: &[u8]) {
 
 /// Read one request through the sender's EOF within `IO_DEADLINE`.
 ///
-/// A stream accepted from a nonblocking listener may itself be nonblocking
-/// (Darwin inherits `O_NONBLOCK`), and Darwin refuses `SO_RCVTIMEO` with
-/// `EINVAL` once the sender has already closed, so the deadline is polled here
-/// rather than set as a socket read timeout.
+/// Whether an accepted stream inherits the listener's `O_NONBLOCK` differs by
+/// platform (Darwin does, Linux does not), and Darwin refuses `SO_RCVTIMEO`
+/// with `EINVAL` once the sender has already closed. So the stream is made
+/// nonblocking here on every platform and the deadline is polled, rather than
+/// set as a socket read timeout.
 fn read_request_to_eof(stream: &mut UnixStream) -> Vec<u8> {
+    stream
+        .set_nonblocking(true)
+        .expect("poll the request read against its deadline");
     let mut bytes = Vec::new();
     let deadline = Instant::now() + IO_DEADLINE;
     let mut buffer = [0_u8; 256];
