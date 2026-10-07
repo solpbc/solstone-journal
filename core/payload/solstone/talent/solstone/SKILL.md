@@ -20,13 +20,22 @@ solstone project context.
 
 ## Prerequisites
 
-The `solstone` CLI must be on PATH. Quick check:
+The `solstone` CLI must be on PATH (on a mac, see below). Quick check:
 
 ```bash
 solstone help
 ```
 
-If this fails, solstone is not installed. Install it from https://solstone.app.
+If this fails on a mac, check for `/Applications/journal.app`. If it is there,
+solstone is installed and the journal app keeps its commands off PATH. Call its
+copy by full path wherever these instructions say `solstone`:
+`/Applications/journal.app/Contents/Resources/solstone-runtime/bin/solstone`.
+Or ask the owner to start you from the journal app's "open admin terminal"
+window. If it is not there, ask the owner where the journal app is, or whether
+it is installed.
+
+On linux, if this fails, solstone is not installed or is not yet on PATH in this
+shell. The owner can install it from https://solstone.app.
 
 ## Capabilities
 
@@ -161,9 +170,10 @@ solstone project context using solstone's internal skills.
 
 If `solstone` is not found on PATH or returns an error:
 
-- `"command not found: solstone"` — solstone is not installed. The owner can install
-  it from https://solstone.app.
+- `"command not found: solstone"` — on a mac, see Prerequisites. On linux,
+  solstone is not installed or is not yet on PATH in this shell. The owner can
+  install it from https://solstone.app.
 - `"journal not found"` or empty output — the journal directory doesn't exist or
   has no data yet. solstone may be installed but not initialized.
-Do not retry failed commands. Report the error clearly so the owner can
+Do not retry a failed command the same way. Report the error clearly so the owner can
 investigate.

@@ -927,9 +927,13 @@ mod tests {
 
     #[test]
     fn attention_overflow_is_rendered_without_hiding_other_schema_errors() {
-        let schema: Value = serde_json::from_str(include_str!(
-            "../../../payload/solstone/talent/morning_briefing.schema.json"
-        ))
+        let schema: Value = serde_json::from_str(
+            &fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../payload/solstone/talent/morning_briefing.schema.json"),
+            )
+            .unwrap(),
+        )
         .unwrap();
         let prepared = PreparedTalent {
             name: "morning_briefing".into(),
