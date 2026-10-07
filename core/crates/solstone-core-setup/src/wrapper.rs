@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use nix::fcntl::{Flock, FlockArg};
 use solstone_core_installation_identity::{
-    CleanupTargetDecision, CleanupTargetKind, GuardFields, InstallationBinding, PlatformTag,
-    ProtectedJournals, may_remove_cleanup_target, parse_wrapper_guard, wrapper_guard_lines,
+    CleanupTargetDecision, CleanupTargetKind, GuardFields, InstallationBinding, ProtectedJournals,
+    may_remove_cleanup_target, parse_wrapper_guard, wrapper_guard_lines,
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 
@@ -1087,6 +1087,7 @@ pub fn ensure_user_bin_on_path(home_dir: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solstone_core_installation_identity::PlatformTag;
     use std::ffi::OsString;
     use std::ops::Deref;
     use std::os::unix::ffi::OsStringExt;
