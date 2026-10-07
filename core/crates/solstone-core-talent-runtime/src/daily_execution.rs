@@ -2196,4 +2196,483 @@ mod tests {
             "started receipt keeps frozen packet"
         );
     }
+
+    #[test]
+    fn a_second_prepared_grant_conflicts_before_write_and_the_runner_keeps_the_plan() {
+        let root = tempfile::tempdir().unwrap();
+        let journal = root.path().join("journal");
+        let context = ExecutionContext {
+            journal: journal.clone(),
+        };
+        fs::create_dir_all(&journal).unwrap();
+        solstone_core_facets::create_facet(&journal, "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+        )
+        .unwrap();
+
+        for (day, name) in [
+            ("20260106", "Jordan Rivera"),
+            ("20260107", "Jordan Rivera"),
+            ("20260106", "Sam Lee"),
+            ("20260107", "Sam Lee"),
+            ("20260106", "Jo"),
+            ("20260107", "Jo"),
+        ] {
+            solstone_core_facets::upsert_detection_segment(
+                &journal,
+                "work",
+                day,
+                "090000_300",
+                &[solstone_core_facets::DetectedEntityInput {
+                    entity_type: "Person".to_owned(),
+                    name: name.to_owned(),
+                    description: "Collaborator.".to_owned(),
+                }],
+            )
+            .unwrap();
+        }
+
+        // Plan A: new Person Jordan Rivera (the grant)
+        let prep_a = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
+                "prompt":"review", "model":"test-model", "provider":"test",
+                "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let packet_a = crate::daily_prepare::freeze(prep_a, &context).unwrap();
+        let (thawed_prep_a, thawed_stage_a) = crate::daily_prepare::thaw(&packet_a).unwrap();
+        let (spec_a, state_a) = thawed_stage_a.unwrap();
+        let commit_a = spec_a.commit.unwrap();
+        let parsed_a = (commit_a.parse)(
+            &json!({
+                "promotions": [{
+                    "name": "Jordan Rivera",
+                    "description": "Owner full name.",
+                    "promote": true,
+                    "aliases": []
+                }],
+                "merges": []
+            })
+            .to_string(),
+            &thawed_prep_a,
+            &state_a,
+        )
+        .unwrap();
+        let plan_a = (commit_a.commit)(parsed_a, &thawed_prep_a, &state_a).unwrap();
+        let pub_plan_a =
+            crate::writers::prepare_daily_publication(plan_a, &thawed_prep_a, &context).unwrap();
+
+        // Plan B: Sam Lee, then Jo (whose frozen identity after has is_principal)
+        let prep_b = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
+                "prompt":"review", "model":"test-model", "provider":"test",
+                "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let packet_b = crate::daily_prepare::freeze(prep_b, &context).unwrap();
+        let (thawed_prep_b, thawed_stage_b) = crate::daily_prepare::thaw(&packet_b).unwrap();
+        let (spec_b, state_b) = thawed_stage_b.unwrap();
+        let commit_b = spec_b.commit.unwrap();
+        let parsed_b = (commit_b.parse)(
+            &json!({
+                "promotions": [
+                    {
+                        "name": "Sam Lee",
+                        "description": "Coworker.",
+                        "promote": true,
+                        "aliases": []
+                    },
+                    {
+                        "name": "Jo",
+                        "description": "Owner preferred name.",
+                        "promote": true,
+                        "aliases": []
+                    }
+                ],
+                "merges": []
+            })
+            .to_string(),
+            &thawed_prep_b,
+            &state_b,
+        )
+        .unwrap();
+        let plan_b = (commit_b.commit)(parsed_b, &thawed_prep_b, &state_b).unwrap();
+        let pub_plan_b =
+            crate::writers::prepare_daily_publication(plan_b, &thawed_prep_b, &context).unwrap();
+        let frozen_plan_b = serde_json::to_value(&pub_plan_b).unwrap();
+
+        let jo_identity_action = frozen_plan_b["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| {
+                a.get("owner").and_then(Value::as_str) == Some("identity")
+                    && a.get("change")
+                        .and_then(|c| c.get("entity_id"))
+                        .and_then(Value::as_str)
+                        == Some("jo")
+            })
+            .expect("frozen plan B must contain jo identity action");
+        assert!(jo_identity_action["change"]["before"].is_null());
+        assert_eq!(
+            jo_identity_action["change"]["after"]["is_principal"],
+            json!(true)
+        );
+
+        // Publish plan A through publish_identity_change / the attachment publisher
+        for action in &pub_plan_a.actions {
+            match action {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    solstone_core_entity::publish_identity_change(
+                        &journal,
+                        change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
+                crate::writers::PreparedDailyAction::Attachment { change } => {
+                    solstone_core_facets::publish_review_attachment(
+                        &journal,
+                        change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
+                _ => {}
+            }
+        }
+
+        // Store plan B as the daily unit's action_plan with generated_result and the frozen packet
+        let identity_b =
+            DailyUnitIdentity::new("20260108", "entities:entities_review", Some("work".into()));
+        let mut record_b = DailyUnitRecord::new(identity_b.clone(), "E", "C");
+        record_b.lock_token = Some("attempt-b".to_owned());
+        record_b.packet_digest = Some(crate::daily_prepare::packet_digest(&packet_b));
+        record_b.frozen_packet = Some(packet_b);
+        record_b.generated_result = Some(json!({"response":"{}"}));
+        record_b.action_plan = Some(frozen_plan_b.clone());
+        save_daily_unit_record(&journal, &record_b).unwrap();
+
+        let outcome = execute(
+            json!({"name":"entities:entities_review","day":"20260108","facet":"work","lock_token":"attempt-b"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &context,
+            &OneShotClient::at_path(root.path().join("no-model")),
+            &mut Vec::new(),
+        );
+
+        let RuntimeOutcome::StageFailed(err) = outcome else {
+            panic!("expected StageFailed, got {outcome:?}");
+        };
+        assert_eq!(err.phase, "conflict");
+        assert_eq!(err.reason_code(), "daily_owner_conflict");
+        assert_eq!(err.owner_conflict_kind(), Some("principal_grant_refused"));
+
+        assert!(!journal.join("entities/jo/entity.json").exists());
+        assert!(!journal.join("entities/jo/history").exists());
+
+        let loaded_b = load_daily_unit_record(&journal, &identity_b)
+            .unwrap()
+            .unwrap();
+        assert!(!loaded_b.has_uncommitted_started_receipt());
+
+        // Sam Lee's owner-action receipt is committed, Sam is not principal, Sam has 1 history event
+        let sam_receipt = loaded_b.receipts.iter().find(|r| {
+            r.get("kind") == Some(&Value::String("owner_action".into()))
+                && r.get("state") == Some(&Value::String("committed".into()))
+        });
+        assert!(sam_receipt.is_some());
+        let sam_identity = solstone_core_entity::read_entity_identity(&journal, "sam_lee")
+            .unwrap()
+            .unwrap();
+        assert_ne!(
+            sam_identity.value().get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+        let sam_events = journal.join("entities/sam_lee/history/events");
+        let sam_history_count = fs::read_dir(sam_events)
+            .unwrap()
+            .filter_map(Result::ok)
+            .count();
+        assert_eq!(sam_history_count, 1);
+
+        assert_eq!(loaded_b.action_plan, Some(frozen_plan_b.clone()));
+        assert!(loaded_b.generated_result.is_some());
+        assert!(loaded_b.frozen_packet.is_some());
+
+        let principals = solstone_core_entity::load_all_journal_entities(&journal)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.is_principal() && solstone_core_entity::is_admissible_person(e))
+            .collect::<Vec<_>>();
+        assert_eq!(principals.len(), 1);
+        assert_eq!(principals[0].id, "jordan_rivera");
+
+        // Call execute again
+        let outcome2 = execute(
+            json!({"name":"entities:entities_review","day":"20260108","facet":"work","lock_token":"attempt-b"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &context,
+            &OneShotClient::at_path(root.path().join("no-model")),
+            &mut Vec::new(),
+        );
+        assert!(matches!(outcome2, RuntimeOutcome::StageFailed(_)));
+        let sam_history_count2 = fs::read_dir(journal.join("entities/sam_lee/history/events"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .count();
+        assert_eq!(sam_history_count2, 1);
+        assert!(!journal.join("entities/jo/entity.json").exists());
+        let principals2 = solstone_core_entity::load_all_journal_entities(&journal)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.is_principal() && solstone_core_entity::is_admissible_person(e))
+            .collect::<Vec<_>>();
+        assert_eq!(principals2.len(), 1);
+        let loaded_b2 = load_daily_unit_record(&journal, &identity_b)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded_b2.action_plan, Some(frozen_plan_b));
+    }
+
+    #[test]
+    fn a_new_preparation_after_that_conflict_creates_the_other_owner_unmarked() {
+        let root = tempfile::tempdir().unwrap();
+        let journal = root.path().join("journal");
+        let context = ExecutionContext {
+            journal: journal.clone(),
+        };
+        fs::create_dir_all(&journal).unwrap();
+        solstone_core_facets::create_facet(&journal, "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+        )
+        .unwrap();
+
+        for (day, name) in [
+            ("20260106", "Jordan Rivera"),
+            ("20260107", "Jordan Rivera"),
+            ("20260106", "Jo"),
+            ("20260107", "Jo"),
+        ] {
+            solstone_core_facets::upsert_detection_segment(
+                &journal,
+                "work",
+                day,
+                "090000_300",
+                &[solstone_core_facets::DetectedEntityInput {
+                    entity_type: "Person".to_owned(),
+                    name: name.to_owned(),
+                    description: "Collaborator.".to_owned(),
+                }],
+            )
+            .unwrap();
+        }
+
+        // Before creating any person, prepare a Jo-only promotion
+        let prep_orig = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
+                "prompt":"review", "model":"test-model", "provider":"test",
+                "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let packet_orig = crate::daily_prepare::freeze(prep_orig, &context).unwrap();
+        let (thawed_prep_orig, thawed_stage_orig) =
+            crate::daily_prepare::thaw(&packet_orig).unwrap();
+        let (spec_orig, state_orig) = thawed_stage_orig.unwrap();
+        let commit_orig = spec_orig.commit.unwrap();
+        let parsed_orig = (commit_orig.parse)(
+            &json!({
+                "promotions": [{
+                    "name": "Jo",
+                    "description": "Owner preferred name.",
+                    "promote": true,
+                    "aliases": []
+                }],
+                "merges": []
+            })
+            .to_string(),
+            &thawed_prep_orig,
+            &state_orig,
+        )
+        .unwrap();
+        let plan_orig = (commit_orig.commit)(parsed_orig, &thawed_prep_orig, &state_orig).unwrap();
+        let pub_plan_orig =
+            crate::writers::prepare_daily_publication(plan_orig, &thawed_prep_orig, &context)
+                .unwrap();
+
+        let jo_id_action = pub_plan_orig
+            .actions
+            .iter()
+            .find_map(|a| match a {
+                crate::writers::PreparedDailyAction::Identity { change, .. }
+                    if change.entity_id == "jo" =>
+                {
+                    Some(change)
+                }
+                _ => None,
+            })
+            .expect("original plan must contain jo identity action");
+        assert!(jo_id_action.before.is_none());
+        assert_eq!(
+            jo_id_action.after.get("is_principal"),
+            Some(&Value::Bool(true))
+        );
+
+        let frozen_plan = serde_json::to_value(&pub_plan_orig).unwrap();
+
+        // Save it on the daily-unit record
+        let identity =
+            DailyUnitIdentity::new("20260108", "entities:entities_review", Some("work".into()));
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.lock_token = Some("attempt-conflicted".to_owned());
+        record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet_orig));
+        record.frozen_packet = Some(packet_orig);
+        record.generated_result = Some(json!({"response":"{}"}));
+        record.action_plan = Some(frozen_plan.clone());
+        save_daily_unit_record(&journal, &record).unwrap();
+
+        // Only after that plan is saved, create Jordan Rivera so Jordan is the principal
+        solstone_core_facets::attach_or_reactivate_entity_for_owner(
+            &journal,
+            "work",
+            "Person",
+            "Jordan Rivera",
+            "Owner.",
+        )
+        .unwrap();
+
+        // Call execute once
+        let outcome = execute(
+            json!({"name":"entities:entities_review","day":"20260108","facet":"work","lock_token":"attempt-conflicted"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &context,
+            &OneShotClient::at_path(root.path().join("no-model")),
+            &mut Vec::new(),
+        );
+
+        let RuntimeOutcome::StageFailed(err) = outcome else {
+            panic!("expected StageFailed, got {outcome:?}");
+        };
+        assert_eq!(err.phase, "conflict");
+        assert_eq!(err.reason_code(), "daily_owner_conflict");
+        assert_eq!(err.owner_conflict_kind(), Some("principal_grant_refused"));
+        assert!(!journal.join("entities/jo/entity.json").exists());
+
+        let loaded_rec1 = load_daily_unit_record(&journal, &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded_rec1.action_plan, Some(frozen_plan.clone()));
+
+        // Separate freeze / thaw / parse / commit / prepare_daily_publication for Jo only
+        let prep_new = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
+                "prompt":"review", "model":"test-model", "provider":"test",
+                "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let packet_new = crate::daily_prepare::freeze(prep_new, &context).unwrap();
+        let (thawed_prep_new, thawed_stage_new) = crate::daily_prepare::thaw(&packet_new).unwrap();
+        let (spec_new, state_new) = thawed_stage_new.unwrap();
+        let commit_new = spec_new.commit.unwrap();
+        let parsed_new = (commit_new.parse)(
+            &json!({
+                "promotions": [{
+                    "name": "Jo",
+                    "description": "Owner preferred name.",
+                    "promote": true,
+                    "aliases": []
+                }],
+                "merges": []
+            })
+            .to_string(),
+            &thawed_prep_new,
+            &state_new,
+        )
+        .unwrap();
+        let plan_new = (commit_new.commit)(parsed_new, &thawed_prep_new, &state_new).unwrap();
+        let pub_plan_new =
+            crate::writers::prepare_daily_publication(plan_new, &thawed_prep_new, &context)
+                .unwrap();
+
+        for action in &pub_plan_new.actions {
+            match action {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    assert_ne!(change.after.get("is_principal"), Some(&Value::Bool(true)));
+                    solstone_core_entity::publish_identity_change(
+                        &journal,
+                        change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
+                crate::writers::PreparedDailyAction::Attachment { change } => {
+                    solstone_core_facets::publish_review_attachment(
+                        &journal,
+                        change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
+                _ => {}
+            }
+        }
+
+        let jo = solstone_core_entity::read_entity_identity(&journal, "jo")
+            .unwrap()
+            .unwrap();
+        assert_ne!(jo.value().get("is_principal"), Some(&Value::Bool(true)));
+
+        let principals = solstone_core_entity::load_all_journal_entities(&journal)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.is_principal() && solstone_core_entity::is_admissible_person(e))
+            .collect::<Vec<_>>();
+        assert_eq!(principals.len(), 1);
+        assert_eq!(principals[0].id, "jordan_rivera");
+
+        let loaded_rec2 = load_daily_unit_record(&journal, &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded_rec2.action_plan, Some(frozen_plan));
+    }
 }

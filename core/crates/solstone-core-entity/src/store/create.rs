@@ -93,14 +93,8 @@ pub fn becomes_journal_principal(
         && !has_journal_principal(journal_root)?)
 }
 
-/// The owner's configured names: preferred name, full name, then aliases,
-/// without blanks or repeats. Empty when the config is absent or unreadable.
-pub fn journal_identity_names(journal_root: &Path) -> Vec<String> {
-    let config = solstone_core_journal_config::read_journal_config(journal_root)
-        .ok()
-        .and_then(|read| read.config);
+fn extract_identity_names(config: Option<&Map<String, Value>>) -> Vec<String> {
     let Some(identity) = config
-        .as_ref()
         .and_then(|config| config.get("identity"))
         .and_then(Value::as_object)
     else {
@@ -129,4 +123,20 @@ pub fn journal_identity_names(journal_root: &Path) -> Vec<String> {
         }
     }
     names
+}
+
+/// The owner's configured names: preferred name, full name, then aliases,
+/// without blanks or repeats. Empty when the config is absent or unreadable.
+pub fn journal_identity_names(journal_root: &Path) -> Vec<String> {
+    let config = solstone_core_journal_config::read_journal_config(journal_root)
+        .ok()
+        .and_then(|read| read.config);
+    extract_identity_names(config.as_ref())
+}
+
+pub(crate) fn read_owner_names_for_principal_grant(
+    journal_root: &Path,
+) -> Result<Vec<String>, solstone_core_journal_config::ConfigLoadError> {
+    let read = solstone_core_journal_config::read_journal_config(journal_root)?;
+    Ok(extract_identity_names(read.config.as_ref()))
 }
