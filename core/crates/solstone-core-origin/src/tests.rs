@@ -118,6 +118,7 @@ fn current_key_names_release_and_head_owners() {
                 PinOwner::Release("2.0.32".to_owned()),
                 PinOwner::Release("2.0.33".to_owned()),
                 PinOwner::Release("2.0.34".to_owned()),
+                PinOwner::Release("2.0.35".to_owned()),
                 PinOwner::Release("2.0.4".to_owned()),
                 PinOwner::Release("2.0.5".to_owned()),
                 PinOwner::Release("2.0.6".to_owned()),
@@ -520,6 +521,7 @@ fn guard_current_vulkan_keys_pinned_by_their_releases_and_head() {
     let candidate_keys = [
         "assets/llama-server-vulkan/b11429/llama-b11429-bin-ubuntu-vulkan-x64.tar.gz",
         "assets/llama-server-vulkan/b11429/llama-b11429-bin-macos-arm64.tar.gz",
+        "assets/llama-server-vulkan/b11429/llama-b11429-bin-ubuntu-vulkan-arm64.tar.gz",
     ];
     for key in candidate_keys {
         let mut owners = historical_origin_pins()
@@ -535,17 +537,6 @@ fn guard_current_vulkan_keys_pinned_by_their_releases_and_head() {
             PruneAssessment::PinnedBy { owners }
         );
     }
-}
-
-#[test]
-fn guard_candidate_vulkan_arm64_key_pinned_only_by_head() {
-    let key = "assets/llama-server-vulkan/b11429/llama-b11429-bin-ubuntu-vulkan-arm64.tar.gz";
-    assert_eq!(
-        assess_prune_with_current_support(key).unwrap(),
-        PruneAssessment::PinnedBy {
-            owners: vec![PinOwner::HeadUnreleased]
-        }
-    );
 }
 
 #[test]
