@@ -926,9 +926,9 @@ fn production_pins_carry_the_committed_toolchain_and_archive_identities() {
     let pins = production_pins();
     assert_eq!(
         pins.sdk_revision,
-        "fdc3c39958f12ba1055ae5beebc182577f7430b3"
+        "ff957aa1012781d18b68973e370a0188b8ef502d"
     );
-    assert_eq!(pins.source_archive.bytes, 5191680);
+    assert_eq!(pins.source_archive.bytes, 5201920);
     assert_eq!(pins.bundle_archive.bytes, 451399680);
     assert_eq!(pins.native_sources.len(), 13);
     assert_eq!(

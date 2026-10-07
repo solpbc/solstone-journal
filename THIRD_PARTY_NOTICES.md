@@ -688,7 +688,7 @@ Attribution: NVIDIA Corporation. sol pbc's changes are marked in the source.
 Source:
 
 - Verifier: https://github.com/solpbc/attestation-sdk, revision
-  fdc3c39958f12ba1055ae5beebc182577f7430b3, built from source. The build
+  ff957aa1012781d18b68973e370a0188b8ef502d, built from source. The build
   receipt is at share/provenance/nvattest/receipt.json.
 - CA bundle: https://curl.se/ca/cacert-2026-07-16.pem
   (SHA-256 3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91)

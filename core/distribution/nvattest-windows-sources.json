@@ -1,8 +1,8 @@
 {
   "schema": "solstone.nvattest-windows-notices.v1",
   "notices_body_sha256": "51f2ae4af1af443f8a753d47157006459dcfafd9a1652919b32ac0d25eb53946",
-  "body_assembly_revision": "fdc3c39958f12ba1055ae5beebc182577f7430b3",
-  "admitted_sdk_revision": "fdc3c39958f12ba1055ae5beebc182577f7430b3",
+  "body_assembly_revision": "ff957aa1012781d18b68973e370a0188b8ef502d",
+  "admitted_sdk_revision": "ff957aa1012781d18b68973e370a0188b8ef502d",
   "regorus_cargo_lock": {
     "member": "sol/release/regorus-Cargo.lock",
     "sha256": "b8352c80ef609b602bfd25e393ad774f74894bab1ab60a9afbeb61d6aae3c910"

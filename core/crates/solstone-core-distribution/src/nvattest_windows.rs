@@ -93,6 +93,7 @@ pub const IMPORT_ALLOWLIST: &[&str] = &[
     "bcrypt.dll",
     "bcryptprimitives.dll",
     "crypt32.dll",
+    "iphlpapi.dll",
     "kernel32.dll",
     "ntdll.dll",
     "shell32.dll",
@@ -280,10 +281,10 @@ const BUILD_TOOLS: &[DownloadSourcePin] = &[
 pub(crate) const fn production_pins() -> Pins {
     Pins {
         sdk_repo: "https://github.com/solpbc/attestation-sdk",
-        sdk_revision: "fdc3c39958f12ba1055ae5beebc182577f7430b3",
+        sdk_revision: "ff957aa1012781d18b68973e370a0188b8ef502d",
         source_archive: ArchivePin {
-            bytes: 5191680,
-            sha256: "8c51e670b8daee905b902658608571cfab72ffcef20142929d6eb1321594bd98",
+            bytes: 5201920,
+            sha256: "3ddd77f2af4bb2c149a6de9aa24b38c98786b81af0fe5ef874936e34fb6e13f9",
         },
         bundle_archive: ArchivePin {
             bytes: 451399680,
@@ -306,7 +307,7 @@ pub(crate) const fn production_pins() -> Pins {
             sha256: "b8352c80ef609b602bfd25e393ad774f74894bab1ab60a9afbeb61d6aae3c910",
         },
         notices_body_sha256: "51f2ae4af1af443f8a753d47157006459dcfafd9a1652919b32ac0d25eb53946",
-        body_assembly_revision: "fdc3c39958f12ba1055ae5beebc182577f7430b3",
+        body_assembly_revision: "ff957aa1012781d18b68973e370a0188b8ef502d",
         native_sources: NATIVE_SOURCES,
         build_tools: BUILD_TOOLS,
         msvc_runtime: MsvcRuntimePins {

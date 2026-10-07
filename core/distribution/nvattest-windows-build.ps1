@@ -36,9 +36,9 @@ $ProgressPreference = 'SilentlyContinue'
 
 # Committed pins. The recorder holds the same values in Rust and refuses any
 # difference; these only let the driver refuse early and name its inputs.
-$PinnedSdkRevision = 'fdc3c39958f12ba1055ae5beebc182577f7430b3'
-$PinnedSourceSha256 = '8c51e670b8daee905b902658608571cfab72ffcef20142929d6eb1321594bd98'
-$PinnedSourceSize = 5191680
+$PinnedSdkRevision = 'ff957aa1012781d18b68973e370a0188b8ef502d'
+$PinnedSourceSha256 = '3ddd77f2af4bb2c149a6de9aa24b38c98786b81af0fe5ef874936e34fb6e13f9'
+$PinnedSourceSize = 5201920
 $PinnedBundleSha256 = '551bf2064bd73aa3c14b80c95d9f21633d709e47b31f110caf00f176d93d860a'
 $PinnedBundleSize = 451399680
 $PinnedManifestSha256 = '72e44754363ed30ad30efddfe82d9af4c3ff68ca88dedb832d9a6f753828cd84'
