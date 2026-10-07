@@ -2215,122 +2215,67 @@ fn native_receipt_scenarios() -> Vec<NativeReceiptScenario> {
             expected_diagnostic_key: None,
         },
     ];
-    for (short, key, diagnostic_key, wrong_value) in [
+    // One scenario per distinct refusal path in the driver's receipt
+    // validator, not one per key: every native receipt goes through the same
+    // `require_native_receipt`, and the cortex namespace receipts through the
+    // same loop over it. Exhausting every key against every mutation ran 153
+    // driver passes (~28k processes, minutes on macOS) to re-prove one
+    // function; the valid stream above already proves the full set is
+    // accepted.
+    let ntfs_oplog = "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY";
+    let ntfs_oplog_filesystem = "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM";
+    let (cortex_namespace, _) = VALID_CORTEX_NAMESPACE_RECEIPTS[0];
+    for (name, key, diagnostic_key, mutation) in [
         (
-            "runtime-components",
+            "receipt-runtime-components-omit",
             "JOURNAL_WIN_CI_RUNTIME_COMPONENTS",
             "runtime component",
-            "fixture-invalid",
+            ReceiptMutation::Omit,
         ),
         (
-            "ntfs-execution",
-            "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
-            "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
-            "fixture-invalid",
+            "receipt-runtime-components-post",
+            "JOURNAL_WIN_CI_RUNTIME_COMPONENTS",
+            "runtime component",
+            ReceiptMutation::MoveAfterAcknowledgement,
         ),
         (
-            "ntfs-filesystem",
-            "JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM",
-            "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
-            "ReFS",
+            "receipt-native-omit",
+            ntfs_oplog,
+            ntfs_oplog,
+            ReceiptMutation::Omit,
         ),
         (
-            "refs-execution",
-            "JOURNAL_WIN_CI_CORTEX_USE_REFS",
-            "JOURNAL_WIN_CI_CORTEX_USE_REFS",
-            "fixture-invalid",
+            "receipt-native-duplicate",
+            ntfs_oplog,
+            ntfs_oplog,
+            ReceiptMutation::Duplicate,
         ),
         (
-            "refs-filesystem",
-            "JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM",
-            "JOURNAL_WIN_CI_CORTEX_USE_REFS",
-            "NTFS",
+            "receipt-native-wrong-value",
+            ntfs_oplog,
+            ntfs_oplog,
+            ReceiptMutation::Replace("fixture-invalid"),
         ),
         (
-            "oplog-ntfs-execution",
-            "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY",
-            "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY",
-            "fixture-invalid",
+            "receipt-native-wrong-filesystem",
+            ntfs_oplog_filesystem,
+            ntfs_oplog,
+            ReceiptMutation::Replace("ReFS"),
         ),
         (
-            "oplog-ntfs-filesystem",
-            "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM",
-            "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY",
-            "ReFS",
+            "receipt-native-post",
+            ntfs_oplog,
+            ntfs_oplog,
+            ReceiptMutation::MoveAfterAcknowledgement,
         ),
         (
-            "oplog-refs-execution",
-            "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY",
-            "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY",
-            "fixture-invalid",
-        ),
-        (
-            "oplog-refs-filesystem",
-            "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM",
-            "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY",
-            "NTFS",
+            "receipt-cortex-namespace-omit",
+            cortex_namespace,
+            cortex_namespace,
+            ReceiptMutation::Omit,
         ),
     ] {
-        scenarios.extend([
-            receipt_scenario(
-                &format!("receipt-{short}-omit"),
-                key,
-                diagnostic_key,
-                ReceiptMutation::Omit,
-            ),
-            receipt_scenario(
-                &format!("receipt-{short}-duplicate"),
-                key,
-                diagnostic_key,
-                ReceiptMutation::Duplicate,
-            ),
-            receipt_scenario(
-                &format!("receipt-{short}-wrong-value"),
-                key,
-                diagnostic_key,
-                ReceiptMutation::Replace(wrong_value),
-            ),
-            receipt_scenario(
-                &format!("receipt-{short}-post"),
-                key,
-                diagnostic_key,
-                ReceiptMutation::MoveAfterAcknowledgement,
-            ),
-        ]);
-    }
-    for (index, (key, value)) in VALID_CORTEX_NAMESPACE_RECEIPTS.into_iter().enumerate() {
-        let diagnostic_key = key.strip_suffix("_FILESYSTEM").unwrap_or(key);
-        let wrong_value = match value {
-            "NTFS" => "ReFS",
-            "ReFS" => "NTFS",
-            _ => "fixture-invalid",
-        };
-        scenarios.extend([
-            receipt_scenario(
-                &format!("cortex-namespace-{index}-omit"),
-                key,
-                diagnostic_key,
-                ReceiptMutation::Omit,
-            ),
-            receipt_scenario(
-                &format!("cortex-namespace-{index}-duplicate"),
-                key,
-                diagnostic_key,
-                ReceiptMutation::Duplicate,
-            ),
-            receipt_scenario(
-                &format!("cortex-namespace-{index}-wrong-value"),
-                key,
-                diagnostic_key,
-                ReceiptMutation::Replace(wrong_value),
-            ),
-            receipt_scenario(
-                &format!("cortex-namespace-{index}-post"),
-                key,
-                diagnostic_key,
-                ReceiptMutation::MoveAfterAcknowledgement,
-            ),
-        ]);
+        scenarios.push(receipt_scenario(name, key, diagnostic_key, mutation));
     }
     scenarios
 }
