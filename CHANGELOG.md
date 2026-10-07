@@ -6,14 +6,16 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.35] - 2026-10-07
+
 ### Changed
 
 - your journal's pages now arrive compressed, so they load faster when you open your journal from another device. a large curation list, for example, arrives at about a tenth of its size.
+- your journal now sends newer Gemini models the thinking setting Google asks for, and your saved thinking choice stays as it was.
 
 ### Fixed
 
 - the curation page now loads its long lists 50 suggestions at a time, with "show more" for the next 50, so it no longer waits on thousands of suggestions. if your journal stops answering while it loads, the page now stops after a minute and offers "try again" instead of loading forever.
-- your journal now works with Gemini models that require the newer thinking settings, while keeping your saved thinking choice.
 - if you couldn't find the developer mode setting the agents app told you to turn on for ChatGPT, the connect steps now say to add your journal's address as a custom MCP server.
 - your morning briefing now includes what you owe and what you're waiting on, with how long older items have been open. since 2.0.33, the briefing your journal makes on its own each morning could leave them out or list them without their age.
 - on windows, `solstone journal setup --clean-uninstall` now finishes and removes your journal's background task. before, it stopped responding and left the background task running. your journal itself is never removed.
