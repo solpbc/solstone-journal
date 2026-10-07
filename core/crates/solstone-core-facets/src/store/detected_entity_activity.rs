@@ -579,10 +579,10 @@ mod suppression_tests {
                 metadata.level() <= log::Level::Warn
             }
             fn log(&self, record: &log::Record) {
-                if record.level() == log::Level::Warn {
-                    if let Ok(mut msgs) = WARN_MESSAGES.lock() {
-                        msgs.push(record.args().to_string());
-                    }
+                if record.level() == log::Level::Warn
+                    && let Ok(mut msgs) = WARN_MESSAGES.lock()
+                {
+                    msgs.push(record.args().to_string());
                 }
             }
             fn flush(&self) {}
