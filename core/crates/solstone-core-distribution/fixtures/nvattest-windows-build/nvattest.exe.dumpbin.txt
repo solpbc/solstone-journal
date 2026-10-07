@@ -1,5 +1,5 @@
 
-Dump of file C:\nvc5\build\dist\nvattest\bin\nvattest.exe
+Dump of file C:\no3\bin\nvattest.exe
 
 PE signature found
 
@@ -8,7 +8,7 @@ File Type: EXECUTABLE IMAGE
 FILE HEADER VALUES
             8664 machine (x64)
                6 number of sections
-        6AC4793F time date stamp Tue Oct  6 04:29:51 2026
+        6AC69209 time date stamp Wed Oct  7 18:40:09 2026
                0 file pointer to symbol table
                0 number of symbols
               F0 size of optional header
@@ -19,19 +19,19 @@ FILE HEADER VALUES
 OPTIONAL HEADER VALUES
              20B magic # (PE32+)
            14.44 linker version
-          919E00 size of code
-          4F1200 size of initialized data
+          945400 size of code
+          4FF400 size of initialized data
                0 size of uninitialized data
-          8DD3E8 entry point (00000001408DD3E8)
+          909198 entry point (0000000140909198)
             1000 base of code
-       140000000 image base (0000000140000000 to 0000000140E0DFFF)
+       140000000 image base (0000000140000000 to 0000000140E48FFF)
             1000 section alignment
              200 file alignment
             6.00 operating system version
             0.00 image version
             6.00 subsystem version
                0 Win32 version
-          E0E000 size of image
+          E49000 size of image
              400 size of headers
                0 checksum
                3 subsystem (Windows CUI)
@@ -47,18 +47,18 @@ OPTIONAL HEADER VALUES
                0 loader flags
               10 number of directories
                0 [       0] RVA [size] of Export Directory
-          D62144 [     208] RVA [size] of Import Directory
-          DE6000 [     1E0] RVA [size] of Resource Directory
-          D80000 [   65B98] RVA [size] of Exception Directory
+          D989E4 [     208] RVA [size] of Import Directory
+          E21000 [     1E0] RVA [size] of Resource Directory
+          DB8000 [   68F88] RVA [size] of Exception Directory
                0 [       0] RVA [size] of Certificates Directory
-          DE7000 [   26818] RVA [size] of Base Relocation Directory
-          C6D430 [      1C] RVA [size] of Debug Directory
+          E22000 [   26B10] RVA [size] of Base Relocation Directory
+          CA03B0 [      1C] RVA [size] of Debug Directory
                0 [       0] RVA [size] of Architecture Directory
                0 [       0] RVA [size] of Global Pointer Directory
-          C6D480 [      28] RVA [size] of Thread Storage Directory
-          C6D2F0 [     140] RVA [size] of Load Configuration Directory
+          CA0400 [      28] RVA [size] of Thread Storage Directory
+          CA0270 [     140] RVA [size] of Load Configuration Directory
                0 [       0] RVA [size] of Bound Import Directory
-          91B000 [    1000] RVA [size] of Import Address Table Directory
+          947000 [     FE8] RVA [size] of Import Address Table Directory
                0 [       0] RVA [size] of Delay Import Directory
                0 [       0] RVA [size] of COM Descriptor Directory
                0 [       0] RVA [size] of Reserved Directory
@@ -66,10 +66,10 @@ OPTIONAL HEADER VALUES
 
 SECTION HEADER #1
    .text name
-  919C3F virtual size
-    1000 virtual address (0000000140001000 to 000000014091AC3E)
-  919E00 size of raw data
-     400 file pointer to raw data (00000400 to 0091A1FF)
+  9452EF virtual size
+    1000 virtual address (0000000140001000 to 00000001409462EE)
+  945400 size of raw data
+     400 file pointer to raw data (00000400 to 009457FF)
        0 file pointer to relocation table
        0 file pointer to line numbers
        0 number of relocations
@@ -80,10 +80,10 @@ SECTION HEADER #1
 
 SECTION HEADER #2
   .rdata name
-  44B866 virtual size
-  91B000 virtual address (000000014091B000 to 0000000140D66865)
-  44BA00 size of raw data
-  91A200 file pointer to raw data (0091A200 to 00D65BFF)
+  4560F0 virtual size
+  947000 virtual address (0000000140947000 to 0000000140D9D0EF)
+  456200 size of raw data
+  945800 file pointer to raw data (00945800 to 00D9B9FF)
        0 file pointer to relocation table
        0 file pointer to line numbers
        0 number of relocations
@@ -96,13 +96,13 @@ SECTION HEADER #2
 
         Time Type        Size      RVA  Pointer
     -------- ------- -------- -------- --------
-    6AC4793F coffgrp      41C 00C7995C   C78B5C
+    6AC69209 coffgrp      41C 00CAC93C   CAB13C
 
   Image has the following dependencies:
 
     ADVAPI32.dll
     USER32.dll
-    bcrypt.dll
+    IPHLPAPI.DLL
     CRYPT32.dll
     kernel32.dll
     api-ms-win-core-synch-l1-2-0.dll
@@ -129,17 +129,13 @@ SECTION HEADER #2
   Section contains the following imports:
 
     ADVAPI32.dll
-             14091B000 Import Address Table
-             140D62388 Import Name Table
+             140947000 Import Address Table
+             140D98C28 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
                           C2 CryptAcquireContextW
                           DC CryptReleaseContext
-                          D5 CryptGetHashParam
-                          C4 CryptCreateHash
-                          D9 CryptHashData
-                          C7 CryptDestroyHash
                           D2 CryptGenRandom
                           ED DeregisterEventSource
                          2A8 RegisterEventSourceW
@@ -149,54 +145,55 @@ SECTION HEADER #2
                          293 RegQueryValueExW
 
     USER32.dll
-             14091B878 Import Address Table
-             140D62C00 Import Name Table
+             140947888 Import Address Table
+             140D994B0 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                         1E6 GetUserObjectInformationW
                          299 MessageBoxW
+                         1E6 GetUserObjectInformationW
                          1BC GetProcessWindowStation
 
-    bcrypt.dll
-             14091BF88 Import Address Table
-             140D63310 Import Name Table
+    IPHLPAPI.DLL
+             140947098 Import Address Table
+             140D98CC0 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          1F BCryptGenRandom
+                         137 if_nametoindex
 
     CRYPT32.dll
-             14091B070 Import Address Table
-             140D623F8 Import Name Table
+             140947050 Import Address Table
+             140D98C78 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          12 CertCloseStore
-                          35 CertFindCertificateInStore
                           5B CertOpenSystemStoreW
+                          35 CertFindCertificateInStore
+                          5A CertOpenSystemStoreA
+                          2C CertEnumCertificatesInStore
                           48 CertGetIntendedKeyUsage
                           47 CertGetEnhancedKeyUsage
                           40 CertFreeCertificateContext
-                          2C CertEnumCertificatesInStore
+                          12 CertCloseStore
 
     kernel32.dll
-             14091BFA8 Import Address Table
-             140D63330 Import Name Table
+             140947F90 Import Address Table
+             140D99BB8 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                           0 GetLastError
-                           0 GetProcAddress
-                           0 SystemTimeToFileTime
-                           0 GetModuleHandleA
-                           0 CloseHandle
-                           0 Sleep
                            0 GetTimeZoneInformationForYear
+                           0 GetModuleHandleA
+                           0 SystemTimeToFileTime
+                           0 CloseHandle
+                           0 GetProcAddress
+                           0 Sleep
+                           0 GetLastError
 
     api-ms-win-core-synch-l1-2-0.dll
-             14091BAB0 Import Address Table
-             140D62E38 Import Name Table
+             140947AB0 Import Address Table
+             140D996D8 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
@@ -205,23 +202,23 @@ SECTION HEADER #2
                            0 WaitOnAddress
 
     bcryptprimitives.dll
-             14091BF98 Import Address Table
-             140D63320 Import Name Table
+             140947F80 Import Address Table
+             140D99BA8 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
                            0 ProcessPrng
 
     KERNEL32.dll
-             14091B0B0 Import Address Table
-             140D62438 Import Name Table
+             1409470A8 Import Address Table
+             140D98CD0 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
                          5FB UnhandledExceptionFilter
-                         5B8 SetUnhandledExceptionFilter
                          3B8 IsProcessorFeaturePresent
                          3B0 IsDebuggerPresent
+                         5B8 SetUnhandledExceptionFilter
                          62D WakeAllConditionVariable
                          38F InitOnceComplete
                          38E InitOnceBeginInitialize
@@ -243,34 +240,43 @@ SECTION HEADER #2
                          423 MultiByteToWideChar
                          2A1 GetModuleFileNameW
                          64C WideCharToMultiByte
-                         578 SetLastError
-                         1D0 FormatMessageW
                          4EA ReleaseSRWLockExclusive
                            0 AcquireSRWLockExclusive
-                         481 QueryPerformanceCounter
-                         33C GetTickCount
+                         5CB SleepEx
                          157 EnterCriticalSection
                          3F0 LeaveCriticalSection
                          397 InitializeCriticalSectionEx
                          12F DeleteCriticalSection
+                         481 QueryPerformanceCounter
                          482 QueryPerformanceFrequency
-                         311 GetSystemDirectoryW
-                         1D4 FreeLibrary
-                         2A5 GetModuleHandleW
-                         3F7 LoadLibraryW
+                          E6 CreateFileW
+                         1A8 FindFirstFileW
+                         285 GetFullPathNameW
                          41C MoveFileExW
-                         626 WaitForSingleObjectEx
+                         263 GetEnvironmentVariableA
+                         392 InitializeConditionVariable
                           AF CompareFileTime
                          31A GetSystemTimeAsFileTime
-                         263 GetEnvironmentVariableA
+                         60F VerSetConditionMask
+                         2A5 GetModuleHandleW
+                         613 VerifyVersionInfoW
+                         19D FindClose
+                         1B4 FindNextFileW
                          27A GetFileType
                          4A9 ReadFile
                          454 PeekNamedPipe
                          623 WaitForMultipleObjects
-                         5CB SleepEx
-                         60F VerSetConditionMask
-                         613 VerifyVersionInfoW
+                         578 SetLastError
+                         62E WakeConditionVariable
+                         5C9 SleepConditionVariableCS
+                         626 WaitForSingleObjectEx
+                         10F CreateThread
+                         1CF FormatMessageA
                          2A4 GetModuleHandleExW
+                         264 GetEnvironmentVariableW
+                         53F SetConsoleMode
+                         49C ReadConsoleA
+                         4A6 ReadConsoleW
                          39B InitializeSRWLock
                          4EB ReleaseSRWLockShared
                            1 AcquireSRWLockShared
@@ -283,28 +289,21 @@ SECTION HEADER #2
                          130 DeleteFiber
                           DB CreateFiberEx
                          318 GetSystemTime
-                         19D FindClose
-                         1A8 FindFirstFileW
-                         1B4 FindNextFileW
                          310 GetSystemDirectoryA
+                         1D4 FreeLibrary
                          3F4 LoadLibraryA
-                         1CF FormatMessageA
                          395 InitializeCriticalSection
                          4EC ReleaseSemaphore
                          625 WaitForSingleObject
                          268 GetExitCodeThread
                          106 CreateSemaphoreA
-                         264 GetEnvironmentVariableW
                          1DB GetACP
                           B9 ConvertFiberToThread
                           BD ConvertThreadToFiberEx
-                         53F SetConsoleMode
-                         49C ReadConsoleA
-                         4A6 ReadConsoleW
+                         3F7 LoadLibraryW
                          14F DuplicateHandle
                          241 GetCurrentProcess
                          245 GetCurrentThread
-                          E6 CreateFileW
                          2E4 GetProcessHeap
                          380 HeapFree
                          383 HeapReAlloc
@@ -321,55 +320,53 @@ SECTION HEADER #2
                          37C HeapAlloc
                          65F WriteConsoleW
                          229 GetConsoleOutputCP
+                         1D0 FormatMessageW
 
     ntdll.dll
-             14091BFE8 Import Address Table
-             140D63370 Import Name Table
+             140947FD0 Import Address Table
+             140D99BF8 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                         52C RtlNtStatusToDosError
                          2A7 NtWriteFile
+                         52C RtlNtStatusToDosError
 
     WS2_32.dll
-             14091B948 Import Address Table
-             140D62CD0 Import Name Table
+             140947958 Import Address Table
+             140D99580 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                             Ordinal   151
-                          B7 inet_pton
-                             Ordinal    23
+                             Ordinal    15
                              Ordinal     9
-                          3B WSAIoctl
-                             Ordinal    21
+                             Ordinal     6
+                             Ordinal     5
+                             Ordinal     4
+                             Ordinal     3
+                             Ordinal     2
+                             Ordinal    16
                              Ordinal   116
                              Ordinal   115
-                          B6 inet_ntop
-                             Ordinal   112
-                             Ordinal    15
-                             Ordinal    18
-                             Ordinal     3
+                             Ordinal   111
                           5E WSAWaitForMultipleEvents
                           4D WSAResetEvent
-                          2F WSAEventSelect
+                             Ordinal    21
                           2C WSAEnumNetworkEvents
                           25 WSACreateEvent
                           20 WSACloseEvent
                              Ordinal    19
                              Ordinal     7
-                             Ordinal     1
-                             Ordinal     2
-                             Ordinal     4
-                             Ordinal     6
-                             Ordinal     8
-                             Ordinal    13
-                             Ordinal    16
+                             Ordinal    23
+                             Ordinal   112
+                          3B WSAIoctl
+                             Ordinal   151
+                             Ordinal    18
                           A6 getaddrinfo
                           A5 freeaddrinfo
+                             Ordinal     8
+                             Ordinal    13
                              Ordinal    17
                              Ordinal    20
-                             Ordinal     5
                              Ordinal    10
                              Ordinal    57
                           57 WSASocketA
@@ -380,25 +377,26 @@ SECTION HEADER #2
                              Ordinal    56
                              Ordinal    55
                              Ordinal    22
-                             Ordinal   111
+                             Ordinal     1
+                          2F WSAEventSelect
 
     SHELL32.dll
-             14091B868 Import Address Table
-             140D62BF0 Import Name Table
+             140947878 Import Address Table
+             140D994A0 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
                            9 CommandLineToArgvW
 
     MSVCP140.dll
-             14091B3F0 Import Address Table
-             140D62778 Import Name Table
+             140947400 Import Address Table
+             140D99028 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                         28D ?_Xinvalid_argument@std@@YAXPEBD@Z
                           FE ??6?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAAAEAV01@G@Z
                          3C3 ?getloc@ios_base@std@@QEBA?AVlocale@2@XZ
+                         28D ?_Xinvalid_argument@std@@YAXPEBD@Z
                          10B ??6?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAAAEAV01@_J@Z
                          101 ??6?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAAAEAV01@J@Z
                          25D ?_Random_device@std@@YAIXZ
@@ -457,8 +455,6 @@ SECTION HEADER #2
                           25 ??0?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@PEAV?$basic_streambuf@DU?$char_traits@D@std@@@1@_N@Z
                            C ??0?$basic_ios@DU?$char_traits@D@std@@@std@@IEAA@XZ
                          534 ?widen@?$basic_ios@DU?$char_traits@D@std@@@std@@QEBADD@Z
-                         361 ?fill@?$basic_ios@DU?$char_traits@D@std@@@std@@QEBADXZ
-                         487 ?rdbuf@?$basic_ios@DU?$char_traits@D@std@@@std@@QEBAPEAV?$basic_streambuf@DU?$char_traits@D@std@@@2@XZ
                           6D ??0_Lockit@std@@QEAA@H@Z
                           A5 ??1_Lockit@std@@QEAA@XZ
                          28B ?_Xbad_alloc@std@@YAXXZ
@@ -507,7 +503,7 @@ SECTION HEADER #2
                          44A ?precision@ios_base@std@@QEAA_J_J@Z
                          53E ?width@ios_base@std@@QEBA_JXZ
                          53D ?width@ios_base@std@@QEAA_J_J@Z
-                         50A ?tie@?$basic_ios@DU?$char_traits@D@std@@@std@@QEBAPEAV?$basic_ostream@DU?$char_traits@D@std@@@2@XZ
+                         361 ?fill@?$basic_ios@DU?$char_traits@D@std@@@std@@QEBADXZ
                           2F ??0?$basic_streambuf@DU?$char_traits@D@std@@@std@@IEAA@XZ
                           89 ??1?$basic_streambuf@DU?$char_traits@D@std@@@std@@UEAA@XZ
                          3C0 ?getloc@?$basic_streambuf@DU?$char_traits@D@std@@@std@@QEBA?AVlocale@2@XZ
@@ -538,264 +534,265 @@ SECTION HEADER #2
                          546 ?xsputn@?$basic_streambuf@DU?$char_traits@D@std@@@std@@MEAA_JPEBD_J@Z
                           7D ??1?$basic_ios@DU?$char_traits@D@std@@@std@@UEAA@XZ
                          4C5 ?setstate@?$basic_ios@DU?$char_traits@D@std@@@std@@QEAAXH_N@Z
+                         50A ?tie@?$basic_ios@DU?$char_traits@D@std@@@std@@QEBAPEAV?$basic_ostream@DU?$char_traits@D@std@@@2@XZ
+                         487 ?rdbuf@?$basic_ios@DU?$char_traits@D@std@@@std@@QEBAPEAV?$basic_streambuf@DU?$char_traits@D@std@@@2@XZ
 
     VCRUNTIME140.dll
-             14091B898 Import Address Table
-             140D62C20 Import Name Table
+             1409478A8 Import Address Table
+             140D994D0 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          46 wcsstr
-                          42 strstr
-                          41 strrchr
-                          40 strchr
-                          24 __std_type_info_compare
                           3E memset
-                           E __CxxFrameHandler3
+                          3D memmove
                           3C memcpy
                           3B memcmp
                           3A memchr
+                          40 strchr
                            1 _CxxThrowException
                           22 __std_exception_destroy
                           21 __std_exception_copy
                           23 __std_terminate
                           36 _purecall
+                          41 strrchr
                           1B __current_exception
                           1C __current_exception_context
                            8 __C_specific_handler
-                          3D memmove
+                          42 strstr
+                          46 wcsstr
+                          24 __std_type_info_compare
+                           E __CxxFrameHandler3
 
     VCRUNTIME140_1.dll
-             14091B938 Import Address Table
-             140D62CC0 Import Name Table
+             140947948 Import Address Table
+             140D99570 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
                            0 __CxxFrameHandler4
 
     api-ms-win-crt-runtime-l1-1-0.dll
-             14091BC40 Import Address Table
-             140D62FC8 Import Name Table
+             140947C40 Import Address Table
+             140D99868 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          54 abort
-                          21 _errno
-                          1E _crt_atexit
-                          34 _initialize_onexit_table
-                          33 _initialize_narrow_environment
-                          18 _configure_narrow_argv
-                          16 _cexit
-                           C __sys_errlist
-                           D __sys_nerr
-                          40 _seh_filter_exe
-                          42 _set_app_type
-                          28 _get_initial_narrow_environment
                           36 _initterm
-                          3A _invoke_watson
+                          28 _get_initial_narrow_environment
                           37 _initterm_e
-                          1F _endthread
+                          65 strerror_s
+                          54 abort
                           13 _beginthread
+                          55 exit
                           67 terminate
                            4 __p___argc
+                          42 _set_app_type
                            5 __p___argv
-                          15 _c_exit
-                          3D _register_thread_local_exe_atexit_callback
-                          55 exit
-                          63 signal
+                          40 _seh_filter_exe
+                          16 _cexit
                           61 raise
-                          65 strerror_s
-                          3C _register_onexit_function
-                          14 _beginthreadex
+                          15 _c_exit
                           23 _exit
+                          14 _beginthreadex
+                          3A _invoke_watson
+                          63 signal
+                          1E _crt_atexit
+                          18 _configure_narrow_argv
+                          21 _errno
+                          33 _initialize_narrow_environment
+                          3D _register_thread_local_exe_atexit_callback
+                          1F _endthread
+                          34 _initialize_onexit_table
+                          3C _register_onexit_function
 
     api-ms-win-crt-stdio-l1-1-0.dll
-             14091BD30 Import Address Table
-             140D630B8 Import Name Table
+             140947D20 Import Address Table
+             140D99948 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          46 _lseeki64
-                           0 __acrt_iob_func
-                          77 fflush
-                          26 _fileno
-                          57 _setmode
                           7A fgets
-                           3 __stdio_common_vfprintf
-                          54 _set_fmode
-                           F __stdio_common_vsprintf_s
-                          62 _wfopen
                           17 _close
-                          45 _lseek
-                          52 _read
                           6B _write
-                           D __stdio_common_vsprintf
-                          9D ungetc
-                          11 __stdio_common_vswprintf
-                          69 _wopen
-                          98 setvbuf
+                          46 _lseeki64
+                          54 _set_fmode
+                          78 fgetc
+                          66 _wfsopen
+                          6E _wsopen_s
+                          37 _get_osfhandle
+                          57 _setmode
                           7D fopen
+                           D __stdio_common_vsprintf
+                          89 ftell
+                          87 fseek
+                           1 __p__commode
+                           F __stdio_common_vsprintf_s
+                          77 fflush
+                          74 fclose
+                          45 _lseek
+                          80 fputs
+                          11 __stdio_common_vswprintf
+                          39 _get_stream_buffer_pointers
+                          76 ferror
+                          62 _wfopen
+                          10 __stdio_common_vsscanf
+                          75 feof
+                           3 __stdio_common_vfprintf
+                           0 __acrt_iob_func
+                          3B _getcwd
+                          83 fread
                           79 fgetpos
+                          7F fputc
+                          9D ungetc
+                          52 _read
+                          98 setvbuf
                           8A fwrite
                           2F _fseeki64
-                          7F fputc
                           88 fsetpos
-                          89 ftell
-                          3B _getcwd
-                          74 fclose
-                          39 _get_stream_buffer_pointers
-                           1 __p__commode
-                          10 __stdio_common_vsscanf
-                          80 fputs
-                          78 fgetc
-                          87 fseek
-                          75 feof
-                          83 fread
-                          76 ferror
+                          26 _fileno
 
     api-ms-win-crt-filesystem-l1-1-0.dll
-             14091BB38 Import Address Table
-             140D62EC0 Import Name Table
+             140947B30 Import Address Table
+             140D99758 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          16 _lock_file
-                          24 _unlock_file
+                          12 _fullpath
                           10 _fstat64
-                          20 _stat64i32
-                          3D _wstat64i32
-                          23 _unlink
                           25 _waccess
+                          24 _unlock_file
+                          20 _stat64i32
+                          23 _unlink
+                          3D _wstat64i32
+                          16 _lock_file
                           3C _wstat64
 
     api-ms-win-crt-heap-l1-1-0.dll
-             14091BB80 Import Address Table
-             140D62F08 Import Name Table
+             140947B80 Import Address Table
+             140D997A8 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                           8 _callnewh
-                          19 malloc
                           1A realloc
                           17 calloc
                           18 free
                           16 _set_new_mode
+                           8 _callnewh
+                          19 malloc
 
     api-ms-win-crt-convert-l1-1-0.dll
-             14091BAD0 Import Address Table
-             140D62E58 Import Name Table
+             140947AD0 Import Address Table
+             140D996F8 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
                           50 atoi
-                          71 wcstombs
-                          63 strtoll
-                          62 strtold
-                          5E strtod
-                          65 strtoull
-                          64 strtoul
                           61 strtol
+                          65 strtoull
+                          5E strtod
+                          62 strtold
+                          63 strtoll
+                          64 strtoul
 
     api-ms-win-crt-environment-l1-1-0.dll
-             14091BB18 Import Address Table
-             140D62EA0 Import Name Table
+             140947B10 Import Address Table
+             140D99738 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                           4 _putenv_s
                            2 _dupenv_s
+                           4 _putenv_s
                           10 getenv
 
     api-ms-win-crt-string-l1-1-0.dll
-             14091BE60 Import Address Table
-             140D631E8 Import Name Table
+             140947E60 Import Address Table
+             140D99A88 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          8E strncmp
-                          8A strcspn
-                          49 _wcsdup
-                          8F strncpy
-                          86 strcmp
-                          89 strcpy_s
-                          88 strcpy
-                          AA wcspbrk
-                          7E isxdigit
-                          A0 wcscpy
-                          98 toupper
-                          97 tolower
-                          6E isspace
-                          29 _strdup
-                          68 isdigit
                           90 strncpy_s
                           85 strcat_s
-                          93 strspn
-                          A3 wcslen
-                          8B strlen
-                          6C isprint
+                          8F strncpy
+                          88 strcpy
                           92 strpbrk
+                          93 strspn
+                          A6 wcsncmp
+                          A8 wcsncpy_s
+                          A1 wcscpy_s
+                          8E strncmp
+                          8A strcspn
+                          29 _strdup
+                          6E isspace
+                          6C isprint
+                          A3 wcslen
+                          86 strcmp
+                          89 strcpy_s
+                          97 tolower
+                          7E isxdigit
+                          98 toupper
+                          8B strlen
+                          68 isdigit
 
     api-ms-win-crt-locale-l1-1-0.dll
-             14091BBB8 Import Address Table
-             140D62F40 Import Name Table
+             140947BB8 Import Address Table
+             140D997E0 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                           8 _configthreadlocale
                           12 localeconv
+                           8 _configthreadlocale
 
     api-ms-win-crt-math-l1-1-0.dll
-             14091BBD0 Import Address Table
-             140D62F58 Import Name Table
+             140947BD0 Import Address Table
+             140D997F8 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          10 _dclass
-                          17 _dsign
+                          BE floor
+                          21 _fdopen
                           7D ceilf
+                          7C ceil
                           DB log10
                           C9 fmod
-                          BE floor
-                           9 __setusermatherr
-                          7C ceil
-                          E0 log2
-                         11F trunc
+                          10 _dclass
                           FE pow
+                         11F trunc
+                          E0 log2
+                          17 _dsign
                          109 round
-                          21 _fdopen
+                           9 __setusermatherr
 
     api-ms-win-crt-time-l1-1-0.dll
-             14091BF18 Import Address Table
-             140D632A0 Import Name Table
+             140947F18 Import Address Table
+             140D99B40 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          1F _gmtime64
                           24 _localtime64_s
-                          11 _difftime64
-                          20 _gmtime64_s
                           46 strftime
-                          28 _mktime64
-                          1A _get_timezone
                           30 _time64
+                          28 _mktime64
+                          11 _difftime64
+                          1A _get_timezone
+                          20 _gmtime64_s
 
     api-ms-win-crt-utility-l1-1-0.dll
-             14091BF60 Import Address Table
-             140D632E8 Import Name Table
+             140947F58 Import Address Table
+             140D99B80 Import Name Table
                      0 time date stamp
                      0 Index of first forwarder reference
 
-                          19 qsort
-                          1B rand
-                          1D srand
                           10 bsearch
+                          19 qsort
+                          1D srand
+                          1B rand
 
 SECTION HEADER #3
    .data name
-   18F78 virtual size
-  D67000 virtual address (0000000140D67000 to 0000000140D7FF77)
-   12A00 size of raw data
-  D65C00 file pointer to raw data (00D65C00 to 00D785FF)
+   192D8 virtual size
+  D9E000 virtual address (0000000140D9E000 to 0000000140DB72D7)
+   12E00 size of raw data
+  D9BA00 file pointer to raw data (00D9BA00 to 00DAE7FF)
        0 file pointer to relocation table
        0 file pointer to line numbers
        0 number of relocations
@@ -806,10 +803,10 @@ C0000040 flags
 
 SECTION HEADER #4
   .pdata name
-   65B98 virtual size
-  D80000 virtual address (0000000140D80000 to 0000000140DE5B97)
-   65C00 size of raw data
-  D78600 file pointer to raw data (00D78600 to 00DDE1FF)
+   68F88 virtual size
+  DB8000 virtual address (0000000140DB8000 to 0000000140E20F87)
+   69000 size of raw data
+  DAE800 file pointer to raw data (00DAE800 to 00E177FF)
        0 file pointer to relocation table
        0 file pointer to line numbers
        0 number of relocations
@@ -821,9 +818,9 @@ SECTION HEADER #4
 SECTION HEADER #5
    .rsrc name
      1E0 virtual size
-  DE6000 virtual address (0000000140DE6000 to 0000000140DE61DF)
+  E21000 virtual address (0000000140E21000 to 0000000140E211DF)
      200 size of raw data
-  DDE200 file pointer to raw data (00DDE200 to 00DDE3FF)
+  E17800 file pointer to raw data (00E17800 to 00E179FF)
        0 file pointer to relocation table
        0 file pointer to line numbers
        0 number of relocations
@@ -834,10 +831,10 @@ SECTION HEADER #5
 
 SECTION HEADER #6
   .reloc name
-   26818 virtual size
-  DE7000 virtual address (0000000140DE7000 to 0000000140E0D817)
-   26A00 size of raw data
-  DDE400 file pointer to raw data (00DDE400 to 00E04DFF)
+   26B10 virtual size
+  E22000 virtual address (0000000140E22000 to 0000000140E48B0F)
+   26C00 size of raw data
+  E17A00 file pointer to raw data (00E17A00 to 00E3E5FF)
        0 file pointer to relocation table
        0 file pointer to line numbers
        0 number of relocations
@@ -849,9 +846,9 @@ SECTION HEADER #6
 
   Summary
 
-       19000 .data
-       66000 .pdata
-      44C000 .rdata
+       1A000 .data
+       69000 .pdata
+      457000 .rdata
        27000 .reloc
         1000 .rsrc
-      91A000 .text
+      946000 .text
