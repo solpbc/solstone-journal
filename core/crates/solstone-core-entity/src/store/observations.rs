@@ -374,7 +374,7 @@ pub struct ObservationSummary {
     pub latest_observed_at: Option<i64>,
     /// The latest journal-local day the live observations are about.
     pub latest_day: Option<String>,
-    /// Latest parseable source day, normalized to `YYYYMMDD`, not the day the row was written, independent of `latest_day`.
+    /// Latest parseable source day on or before today in the owner zone, normalized to `YYYYMMDD`, not the day the row was written, independent of `latest_day`.
     pub latest_source_day: Option<String>,
 }
 
@@ -1061,11 +1061,14 @@ pub fn observation_summary(
         .iter()
         .filter_map(|r| observation_day(r, zone))
         .max();
+    // A day still to come has not been lived yet, so it never hides an earlier one.
+    let today = chrono::Utc::now().with_timezone(&zone).date_naive();
     let latest_source_day = live_rows
         .iter()
         .filter_map(|r| r.source_day.as_deref().and_then(normalize_day))
-        .map(|day| day.format("%Y%m%d").to_string())
-        .max();
+        .filter(|day| *day <= today)
+        .max()
+        .map(|day| day.format("%Y%m%d").to_string());
 
     Ok(ObservationSummary {
         count,

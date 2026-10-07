@@ -3678,9 +3678,34 @@ async fn last_mentioned_drops_a_future_day_before_the_detected_scan() {
         b"{\"id\":\"future_last_seen\",\"name\":\"Future Last Seen\",\"type\":\"Person\"}\n",
     );
 
+    // Link 3: a future observation beside an earlier one
+    write(
+        root,
+        "entities/future_beside_past/entity.json",
+        json!({"id": "future_beside_past", "name": "Future Beside Past", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/future_beside_past/entity.json",
+        json!({"entity_id": "future_beside_past"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/future_beside_past/observations.jsonl",
+        format!(
+            "{{\"id\":1,\"content\":\"a\",\"source_day\":\"{future_day}\"}}\n{{\"id\":2,\"content\":\"b\",\"source_day\":\"{past_day}\"}}\n"
+        )
+        .as_bytes(),
+    );
+
     let (status, facet) = call(root, "/app/entities/api/work").await;
     assert_eq!(status, 200);
     let attached = facet["attached"].as_array().unwrap();
+    let l3 = attached
+        .iter()
+        .find(|c| c["id"] == "future_beside_past")
+        .unwrap();
+    assert_eq!(l3["last_active_day"], past_day);
     let l1 = attached.iter().find(|c| c["id"] == "future_only").unwrap();
     assert!(l1["last_active_ts"].is_null());
     assert!(l1["last_active_day"].is_null());
