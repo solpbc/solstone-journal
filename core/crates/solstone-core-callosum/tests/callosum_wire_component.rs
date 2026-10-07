@@ -310,8 +310,33 @@ async fn observed_connected_client(
     (listener, client, peer, permissions, polled)
 }
 
+/// How the peer fails the client's next outgoing write while the client's
+/// incoming frame is still incomplete. Neither closes the peer's write half,
+/// so the client never reads an ordinary EOF.
+#[derive(Clone, Copy)]
+enum WriteFailure {
+    /// The peer shuts down reading, and the write fails with `EPIPE`. Darwin
+    /// accepts writes to a socket whose peer shut down reading, so this
+    /// provocation exists only on Linux.
+    #[cfg(target_os = "linux")]
+    PeerShutRead,
+    /// The peer stops reading and the write is larger than the socket can
+    /// buffer, so it cannot finish within the client's send timeout.
+    PeerStalled,
+}
+
+#[cfg(target_os = "linux")]
 #[tokio::test(flavor = "current_thread")]
 async fn reconnect_discards_partial_frame_from_failed_socket() {
+    reconnect_discards_partial_frame_after(WriteFailure::PeerShutRead).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn reconnect_discards_partial_frame_from_stalled_socket() {
+    reconnect_discards_partial_frame_after(WriteFailure::PeerStalled).await;
+}
+
+async fn reconnect_discards_partial_frame_after(failure: WriteFailure) {
     let socket = TempSocket::new("partial-before-reconnect");
     let (listener, mut client, mut peer, permissions, mut polled) =
         observed_connected_client(&socket).await;
@@ -323,11 +348,17 @@ async fn reconnect_discards_partial_frame_from_failed_socket() {
         .await
         .unwrap()
         .unwrap();
-    // Fail the client's next outgoing write while its incoming frame is still
-    // incomplete; keep our write half open so this is not an ordinary EOF.
+    // The old peer is never read and stays open until the end of the test.
     let peer = peer.into_std().unwrap();
-    peer.shutdown(std::net::Shutdown::Read).unwrap();
-    assert!(client.emit("trigger", "write-failure", Map::new()));
+    let trigger = match failure {
+        #[cfg(target_os = "linux")]
+        WriteFailure::PeerShutRead => {
+            peer.shutdown(std::net::Shutdown::Read).unwrap();
+            Map::new()
+        }
+        WriteFailure::PeerStalled => fields([("padding", json!("y".repeat(8 * 1024 * 1024)))]),
+    };
+    assert!(client.emit("trigger", "write-failure", trigger));
     assert!(matches!(
         next_event(&mut client).await,
         CallosumReceiveEvent::Continuity {
@@ -369,6 +400,7 @@ async fn reconnect_discards_partial_frame_from_failed_socket() {
     );
     assert_eq!(client.malformed_frame_drops(), 0);
     client.stop().await;
+    drop(peer);
 }
 
 #[tokio::test(flavor = "current_thread")]
