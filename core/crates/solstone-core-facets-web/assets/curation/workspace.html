@@ -772,9 +772,44 @@ window.CUR_COPY = CUR_COPY;
   }
 
   const openReviewGroups = new Set();
+  // A journal can hold thousands of suggestions; the state arrives one page per
+  // group (`?limit=`), with each group's full size under `totals`. The rest
+  // loads on request from `?group=&offset=`, where the offset is what this page
+  // still shows, so suggestions already reviewed here are not skipped.
+  const CURATION_PAGE_SIZE = 50;
+  const CURATION_STATE_PATH = `/app/curation/api/state?limit=${CURATION_PAGE_SIZE}`;
+  // A request that never answers (a dropped relay mid-body) would otherwise
+  // leave the spinner up for good; past this it falls through to "try again".
+  const CURATION_LOAD_TIMEOUT_MS = 60000;
+  function curationRequestOptions() {
+    return typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+      ? {signal: AbortSignal.timeout(CURATION_LOAD_TIMEOUT_MS)}
+      : undefined;
+  }
+  const PAGED_GROUP_FOR_REVIEW_GROUP = {merge: 'entity', ambiguity: 'ambiguity', set_aside: 'set_aside', pair: 'pair'};
+  let curationTotals = {};
+
+  function unloadedCount(reviewGroupKey, loaded) {
+    const paged = PAGED_GROUP_FOR_REVIEW_GROUP[reviewGroupKey];
+    const total = paged ? Number(curationTotals[paged]) : NaN;
+    return Number.isFinite(total) ? Math.max(0, total - loaded) : 0;
+  }
+
+  function loadMoreLabel() {
+    return 'show more';
+  }
+
+  function loadMoreHtml(reviewGroupKey, loaded) {
+    const unloaded = unloadedCount(reviewGroupKey, loaded);
+    return unloaded
+      ? `<button class="curation-button curation-button-link" type="button" data-action="curation-load-more">${escapeHtml(loadMoreLabel())}</button>`
+      : '';
+  }
+
   function reviewGroup(key, label, items, renderItem, toolbar = '') {
     if (!items.length) return '';
-    return `<details class="curation-group" data-review-group="${key}" ${openReviewGroups.has(key) ? 'open' : ''}><summary>${label} <span data-group-count>(${items.length})</span></summary><div class="curation-group-items">${toolbar}${items.map(renderItem).join('')}</div></details>`;
+    const unloaded = unloadedCount(key, items.length);
+    return `<details class="curation-group" data-review-group="${key}" data-group-unloaded="${unloaded}" ${openReviewGroups.has(key) ? 'open' : ''}><summary>${label} <span data-group-count>(${items.length + unloaded})</span></summary><div class="curation-group-items">${toolbar}${items.map(renderItem).join('')}${loadMoreHtml(key, items.length)}</div></details>`;
   }
 
   // G2-40: the duplicate-entity group is the one that shows up with
@@ -788,17 +823,18 @@ window.CUR_COPY = CUR_COPY;
   const CURATION_ENTITY_BATCH_SIZE = 10;
   function entityMergeGroupHtml(entityGroups) {
     if (!entityGroups.length) return '';
-    const total = entityGroups.length;
+    const unloaded = unloadedCount('merge', entityGroups.length);
+    const total = entityGroups.length + unloaded;
     const visible = entityGroups.slice(0, CURATION_ENTITY_BATCH_SIZE);
     const rest = entityGroups.slice(CURATION_ENTITY_BATCH_SIZE);
     const lede = rest.length
       ? `<p class="curation-group-lede">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_GROUP_LEDE, {count: visible.length}))}</p>`
       : '';
     const showRest = rest.length
-      ? `<div class="curation-group-more" data-group-more hidden>${rest.map(entityItemHtml).join('')}</div>
+      ? `<div class="curation-group-more" data-group-more hidden>${rest.map(entityItemHtml).join('')}${loadMoreHtml('merge', entityGroups.length)}</div>
          <button class="curation-button curation-button-link" type="button" data-action="curation-show-rest">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_SHOW_REST_ACTION, {count: rest.length}))}</button>`
       : '';
-    return `<details class="curation-group" data-review-group="merge" data-group-total="${total}" ${openReviewGroups.has('merge') ? 'open' : ''}>
+    return `<details class="curation-group" data-review-group="merge" data-group-total="${total}" data-group-unloaded="${unloaded}" ${openReviewGroups.has('merge') ? 'open' : ''}>
       <summary>possible duplicate entities <span data-group-count>(${total})</span></summary>
       <div class="curation-group-items">
         ${lede}
@@ -815,7 +851,8 @@ window.CUR_COPY = CUR_COPY;
 
   function refreshGroupCounts() {
     root.querySelectorAll('[data-review-group]').forEach(group => {
-      const remaining = group.querySelectorAll('[data-curation-item], [data-review-history]').length;
+      const remaining = group.querySelectorAll('[data-curation-item], [data-review-history]').length
+        + Number(group.dataset.groupUnloaded || 0);
       group.querySelector('[data-group-count]').textContent = `(${remaining})`;
       const progress = group.querySelector('[data-group-progress]');
       if (progress) {
@@ -827,7 +864,10 @@ window.CUR_COPY = CUR_COPY;
       }
     });
     const count = root.querySelector('[data-review-total]');
-    const total = root.querySelectorAll('[data-curation-item]').length;
+    const unloaded = Array.from(root.querySelectorAll('[data-review-group]'))
+      .filter((group) => group.dataset.reviewGroup !== 'set_aside')
+      .reduce((sum, group) => sum + Number(group.dataset.groupUnloaded || 0), 0);
+    const total = root.querySelectorAll('[data-curation-item]').length + unloaded;
     if (count) count.textContent = total ? `${total.toLocaleString()} suggestions to review. choose a group to begin.` : '';
   }
   function renderState(payload, preserveOutcomes = false) {
@@ -837,6 +877,7 @@ window.CUR_COPY = CUR_COPY;
     CUR_COPY = payload.copy || {};
     window.CUR_COPY = CUR_COPY;
     curationFacetTitles = payload.facet_titles || {};
+    curationTotals = payload.totals || {};
     const facetItems = groupFacetItems(payload.facet_items || []);
     const entityItems = payload.entity_items || [];
     const entityGroups = groupEntityItems(entityItems);
@@ -875,19 +916,61 @@ window.CUR_COPY = CUR_COPY;
   }
 
   async function refreshCurationState() {
-    renderState(await window.apiJson('/app/curation/api/state'), true);
+    renderState(await window.apiJson(CURATION_STATE_PATH, curationRequestOptions()), true);
   }
 
   async function loadInitialState() {
     renderLoading();
     try {
-      renderState(await window.apiJson('/app/curation/api/state'));
+      renderState(await window.apiJson(CURATION_STATE_PATH, curationRequestOptions()));
     } catch (err) {
       renderError(err, loadInitialState);
     }
   }
 
   loadInitialState();
+
+  async function loadMoreInto(button) {
+    const group = button.closest('[data-review-group]');
+    const reviewGroupKey = group?.dataset.reviewGroup;
+    const paged = PAGED_GROUP_FOR_REVIEW_GROUP[reviewGroupKey];
+    if (!group || !paged) return;
+    const shown = reviewGroupKey === 'merge'
+      ? group.querySelectorAll('[data-curation-item][data-kind="entity_merge"]').length
+      : group.querySelectorAll('[data-curation-item], [data-review-history]').length;
+    setBusy(button, true);
+    let page;
+    try {
+      page = await window.apiJson(`/app/curation/api/state?group=${paged}&offset=${shown}&limit=${CURATION_PAGE_SIZE}`, curationRequestOptions());
+    } catch (err) {
+      setBusy(button, false);
+      return;
+    }
+    const items = Array.isArray(page?.items) ? page.items : [];
+    let html;
+    if (reviewGroupKey === 'merge') {
+      const present = new Set(Array.from(group.querySelectorAll('[data-kind="entity_merge"]'))
+        .map((node) => `${node.dataset.sourceSlug}|${node.dataset.targetSlug}`));
+      html = groupEntityItems(items)
+        .filter((pair) => !present.has(`${pair.source_slug}|${pair.target_slug}`))
+        .map(entityItemHtml).join('');
+    } else {
+      const render = {ambiguity: ambiguityGroupHtml, set_aside: setAsideItemHtml, pair: speakerCandidatePairItemHtml}[reviewGroupKey];
+      html = items.map(render).join('');
+    }
+    button.insertAdjacentHTML('beforebegin', html);
+    const loaded = reviewGroupKey === 'merge' ? groupEntityItems(items).length : items.length;
+    const unloaded = Math.max(0, Number(page?.total || 0) - shown - loaded);
+    group.dataset.groupUnloaded = String(unloaded);
+    if (unloaded && loaded) {
+      setBusy(button, false);
+    } else {
+      group.dataset.groupUnloaded = '0';
+      button.remove();
+    }
+    refreshGroupCounts();
+    refreshToolbar();
+  }
 
   function setBusy(button, busy) {
     if (!button) return;
@@ -1171,6 +1254,11 @@ window.CUR_COPY = CUR_COPY;
     if (!button) return;
     const item = itemFor(button);
     const action = button.dataset.action;
+
+    if (action === 'curation-load-more') {
+      loadMoreInto(button);
+      return;
+    }
 
     // G2-40: reveal the rest of a batched group in place, no re-fetch.
     if (action === 'curation-show-rest') {

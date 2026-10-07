@@ -8,11 +8,12 @@ use std::path::{Path, PathBuf};
 use axum::{
     Json, Router,
     body::Bytes,
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
     EncoderIdentity, EntityMergeError, EntityMergeOptions, EntityReviewCandidateError,
@@ -71,12 +72,44 @@ pub fn routes(root: PathBuf) -> Router {
         .with_state(root)
 }
 
-async fn state(State(root): State<PathBuf>) -> Response {
+/// Upper bound on one page, so a caller cannot ask for the unpaged state by
+/// passing a huge limit.
+const STATE_PAGE_MAX: usize = 200;
+
+/// The lists a curation page pages through, keyed as the page names its groups.
+/// Facet and speaker-name suggestions stay whole: they are few, and the page
+/// merges facet rows by name before it renders them.
+const PAGED_LISTS: [(&str, &str); 4] = [
+    ("entity", "entity_items"),
+    ("ambiguity", "ambiguity_groups"),
+    ("set_aside", "set_aside_items"),
+    ("pair", "speaker_candidate_pair_items"),
+];
+
+#[derive(Debug, Default, Deserialize)]
+struct StateQuery {
+    limit: Option<usize>,
+    group: Option<String>,
+    offset: Option<usize>,
+}
+
+async fn state(State(root): State<PathBuf>, Query(query): Query<StateQuery>) -> Response {
     if let Some(response) = corrupt_config(&root) {
         return response;
     }
-    match load_state(&root) {
+    let value = load_state(&root).and_then(|value| match (&query.group, query.limit) {
+        (None, None) => Ok(value),
+        (None, Some(limit)) => Ok(first_pages(value, Some(limit))),
+        (Some(group), limit) => group_page(value, group, query.offset.unwrap_or(0), limit),
+    });
+    match value {
         Ok(value) => Json(value).into_response(),
+        Err(error) if error.starts_with(UNKNOWN_GROUP) => http::error(
+            "unknown_group",
+            "that list isn't one curation pages through.",
+            error,
+            StatusCode::BAD_REQUEST,
+        ),
         Err(error) => http::error(
             "entity_operation_failed",
             "that entity operation couldn't be completed.",
@@ -84,6 +117,89 @@ async fn state(State(root): State<PathBuf>) -> Response {
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
+}
+
+const UNKNOWN_GROUP: &str = "unknown curation group";
+
+fn page_limit(limit: Option<usize>) -> usize {
+    limit.unwrap_or(STATE_PAGE_MAX).clamp(1, STATE_PAGE_MAX)
+}
+
+/// One page of a list, plus how many the whole list holds. Entity rows page by
+/// suggested pair, because the page shows one suggestion per pair and gathers
+/// that pair's facets from every row it has; a pair is never split across pages.
+fn page_of(list: &str, items: &[Value], offset: usize, limit: usize) -> (Vec<Value>, usize) {
+    if list != "entity_items" {
+        let page = items.iter().skip(offset).take(limit).cloned().collect();
+        return (page, items.len());
+    }
+    let pair = |item: &Value| {
+        (
+            item.get("source_slug")
+                .map(Value::to_string)
+                .unwrap_or_default(),
+            item.get("target_slug")
+                .map(Value::to_string)
+                .unwrap_or_default(),
+        )
+    };
+    let mut order = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for item in items {
+        let key = pair(item);
+        if seen.insert(key.clone()) {
+            order.push(key);
+        }
+    }
+    let total = order.len();
+    let chosen: std::collections::HashSet<_> = order.into_iter().skip(offset).take(limit).collect();
+    let page = items
+        .iter()
+        .filter(|item| chosen.contains(&pair(item)))
+        .cloned()
+        .collect();
+    (page, total)
+}
+
+/// The state with every paged list cut to its first page, and each list's full
+/// size under `totals`. `ambiguity_items` is left out: the page reads the groups.
+fn first_pages(mut state: Value, limit: Option<usize>) -> Value {
+    let limit = page_limit(limit);
+    let mut totals = Map::new();
+    if let Some(object) = state.as_object_mut() {
+        for (group, list) in PAGED_LISTS {
+            let items = object
+                .get(list)
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let (page, total) = page_of(list, &items, 0, limit);
+            object.insert(list.to_owned(), Value::Array(page));
+            totals.insert(group.to_owned(), json!(total));
+        }
+        object.insert("ambiguity_items".to_owned(), json!([]));
+        object.insert("totals".to_owned(), Value::Object(totals));
+        object.insert("limit".to_owned(), json!(limit));
+    }
+    state
+}
+
+fn group_page(
+    state: Value,
+    group: &str,
+    offset: usize,
+    limit: Option<usize>,
+) -> Result<Value, String> {
+    let Some((_, list)) = PAGED_LISTS.iter().find(|(name, _)| *name == group) else {
+        return Err(format!("{UNKNOWN_GROUP}: {group}"));
+    };
+    let items = state
+        .get(*list)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let (page, total) = page_of(list, &items, offset, page_limit(limit));
+    Ok(json!({"group": group, "items": page, "total": total, "offset": offset}))
 }
 
 fn is_row_suppressed(row: &Value) -> bool {
@@ -1362,6 +1478,101 @@ mod tests {
         let items = body["facet_items"].as_array().expect("facet_items array");
         assert!(!items.is_empty(), "{body}");
     }
+    // Falsified by paging entity rows one by one: a pair whose facets arrive on
+    // two rows would show on one page with half its facets, and accepting it
+    // would leave the other facet's suggestion behind.
+    #[test]
+    fn entity_pages_never_split_a_pair_and_count_pairs() {
+        let row = |source: &str, target: &str, facet: &str| json!({"source_slug": source, "target_slug": target, "facet": facet});
+        let items = vec![
+            row("a", "b", "work"),
+            row("c", "d", "work"),
+            row("a", "b", "home"),
+            row("e", "f", "work"),
+        ];
+        let (first, total) = page_of("entity_items", &items, 0, 1);
+        assert_eq!(total, 3);
+        assert_eq!(first, vec![items[0].clone(), items[2].clone()]);
+        let (second, _) = page_of("entity_items", &items, 1, 2);
+        assert_eq!(second, vec![items[1].clone(), items[3].clone()]);
+        let (past_end, _) = page_of("entity_items", &items, 3, 2);
+        assert!(past_end.is_empty());
+    }
+
+    #[test]
+    fn first_pages_cut_each_paged_list_and_report_its_full_size() {
+        let many = |n: usize| (0..n).map(|i| json!({"key": i})).collect::<Vec<_>>();
+        let state = json!({
+            "facet_items": many(3),
+            "entity_items": [],
+            "ambiguity_items": many(5),
+            "ambiguity_groups": many(5),
+            "set_aside_items": many(7),
+            "speaker_items": many(3),
+            "speaker_candidate_pair_items": many(1),
+        });
+        let paged = first_pages(state.clone(), Some(2));
+        assert_eq!(paged["facet_items"], state["facet_items"]);
+        assert_eq!(paged["speaker_items"], state["speaker_items"]);
+        assert_eq!(paged["ambiguity_groups"].as_array().unwrap().len(), 2);
+        assert_eq!(paged["set_aside_items"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            paged["speaker_candidate_pair_items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(paged["ambiguity_items"], json!([]));
+        assert_eq!(
+            paged["totals"],
+            json!({"entity": 0, "ambiguity": 5, "set_aside": 7, "pair": 1})
+        );
+        assert_eq!(paged["limit"], json!(2));
+        assert_eq!(
+            first_pages(state.clone(), Some(100_000))["limit"],
+            json!(STATE_PAGE_MAX)
+        );
+
+        let more = group_page(state.clone(), "set_aside", 2, Some(4)).expect("group page");
+        assert_eq!(more["items"], json!(many(7)[2..6]));
+        assert_eq!(more["total"], json!(7));
+        assert!(group_page(state, "facet", 0, None).is_err());
+    }
+
+    #[tokio::test]
+    async fn unpaged_state_is_unchanged_and_paged_state_is_opt_in() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/journal");
+        let copy = tempfile::tempdir().expect("temporary journal");
+        copy_tree(&source, copy.path());
+        let get = |uri: &'static str| {
+            let router = routes(copy.path().to_path_buf());
+            async move {
+                let response = router
+                    .oneshot(Request::get(uri).body(Body::empty()).expect("request"))
+                    .await
+                    .expect("response");
+                let status = response.status();
+                let body: Value = serde_json::from_slice(
+                    &to_bytes(response.into_body(), usize::MAX)
+                        .await
+                        .expect("body"),
+                )
+                .expect("JSON");
+                (status, body)
+            }
+        };
+        let (status, full) = get("/app/curation/api/state").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(full.get("totals").is_none());
+        let (status, paged) = get("/app/curation/api/state?limit=1").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(paged["limit"], json!(1));
+        assert_eq!(paged["facet_items"], full["facet_items"]);
+        let (status, _) = get("/app/curation/api/state?group=facet").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
     #[test]
     fn entity_evidence_uses_the_degraded_no_neighborhood_branch() {
         let row = json!({"facet":"work","source_slug":"a","target_slug":"b","evidence":{"detection_count":3}});

@@ -3,13 +3,15 @@
 
 use axum::Router;
 use axum::extract::Extension;
-use axum::http::HeaderValue;
-use axum::http::header::{CONTENT_SECURITY_POLICY, X_FRAME_OPTIONS};
+use axum::http::header::{CONTENT_SECURITY_POLICY, CONTENT_TYPE, X_FRAME_OPTIONS};
+use axum::http::{Extensions, HeaderMap, HeaderValue, StatusCode, Version};
 use axum::response::Response;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tower_http::compression::CompressionLayer;
+use tower_http::compression::predicate::{Predicate, SizeAbove};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::identity::AccessBasis;
@@ -32,6 +34,40 @@ pub const MAX_BUFFER_SIZE: usize = 64 * 1024;
 /// owner's clicks. All fetches default to this origin. The shell's inline
 /// scripts and styles and local blob media require narrow exceptions.
 pub const CONVEY_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; form-action 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
+
+/// Responses smaller than this are sent as they are; gzip framing outweighs the
+/// saving below about a kilobyte.
+pub const COMPRESSION_MIN_BYTES: u16 = 1024;
+
+/// Whether a response's content type is text that gzip shrinks. An allowlist,
+/// so media, archives and anything streamed byte-for-byte never get re-encoded;
+/// event streams stay uncompressed so each event reaches the client at once.
+pub fn compressible_content_type(headers: &HeaderMap) -> bool {
+    let Some(content_type) = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    let essence = content_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    match essence.as_str() {
+        "text/event-stream" => false,
+        "application/json"
+        | "application/javascript"
+        | "application/manifest+json"
+        | "image/svg+xml" => true,
+        other => other.starts_with("text/") || other.ends_with("+json"),
+    }
+}
+
+fn compressible(_: StatusCode, _: Version, headers: &HeaderMap, _: &Extensions) -> bool {
+    compressible_content_type(headers)
+}
 
 /// Construct the HTTP/1 settings for a TCP connection.
 pub fn tcp_builder() -> http1::Builder {
@@ -69,6 +105,16 @@ where
 {
     let router = router
         .layer(axum::middleware::map_response(refuse_framing))
+        // Every convey page and API answer crosses the relay as-is otherwise; a
+        // journal-sized JSON state is ten times smaller gzipped. Only clients
+        // that ask (Accept-Encoding) get it, and range responses never do.
+        .layer(
+            CompressionLayer::new()
+                .no_br()
+                .no_deflate()
+                .no_zstd()
+                .compress_when(SizeAbove::new(COMPRESSION_MIN_BYTES).and(compressible)),
+        )
         .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
         .layer(Extension(identity));
     let service = TowerToHyperService::new(router);
@@ -235,5 +281,85 @@ mod tests {
         )
         .await;
         assert!(buffer_response.starts_with("HTTP/1.1 431"));
+    }
+
+    async fn compression_exchange(path: &str, accept_gzip: bool) -> String {
+        use axum::http::header::CONTENT_TYPE;
+        use axum::routing::get;
+
+        let big = "x".repeat(4096);
+        let small = "{}".to_owned();
+        let router = axum::Router::new()
+            .route(
+                "/json",
+                get({
+                    let big = big.clone();
+                    move || async move { ([(CONTENT_TYPE, "application/json")], big) }
+                }),
+            )
+            .route(
+                "/html",
+                get({
+                    let big = big.clone();
+                    move || async move { ([(CONTENT_TYPE, "text/html; charset=utf-8")], big) }
+                }),
+            )
+            .route(
+                "/audio",
+                get({
+                    let big = big.clone();
+                    move || async move { ([(CONTENT_TYPE, "audio/mp4")], big) }
+                }),
+            )
+            .route(
+                "/events",
+                get({
+                    let big = big.clone();
+                    move || async move { ([(CONTENT_TYPE, "text/event-stream")], big) }
+                }),
+            )
+            .route(
+                "/small",
+                get(move || async move { ([(CONTENT_TYPE, "application/json")], small) }),
+            );
+        let accept = if accept_gzip {
+            "Accept-Encoding: gzip, deflate, br\r\n"
+        } else {
+            ""
+        };
+        let request =
+            format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n{accept}Connection: close\r\n\r\n");
+
+        let (server, mut client) = tokio::io::duplex(128 * 1024);
+        let builder = mux_builder();
+        let serve = serve_connection(server, router, AccessBasis::Localhost, &builder);
+        let exchange = async {
+            client.write_all(request.as_bytes()).await.unwrap();
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).await.unwrap();
+            let head_end = bytes.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+            String::from_utf8(bytes[..head_end].to_vec())
+                .unwrap()
+                .to_ascii_lowercase()
+        };
+        let (_, head) = tokio::join!(serve, exchange);
+        head
+    }
+
+    // Falsified by removing the compression layer: a journal-sized JSON state then
+    // crosses the relay at full size. Media, event streams, small answers and
+    // clients that did not ask keep their bytes as they are.
+    #[tokio::test]
+    async fn text_answers_are_gzipped_only_for_clients_that_ask() {
+        for path in ["/json", "/html"] {
+            let head = compression_exchange(path, true).await;
+            assert!(head.contains("content-encoding: gzip"), "{path}: {head}");
+            let head = compression_exchange(path, false).await;
+            assert!(!head.contains("content-encoding"), "{path}: {head}");
+        }
+        for path in ["/audio", "/events", "/small"] {
+            let head = compression_exchange(path, true).await;
+            assert!(!head.contains("content-encoding"), "{path}: {head}");
+        }
     }
 }
