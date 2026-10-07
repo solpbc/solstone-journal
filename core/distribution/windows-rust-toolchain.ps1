@@ -21,6 +21,36 @@ function Select-WindowsRustToolchain([string]$SourceRoot, [string]$ReportRoot) {
     $rustup = (Get-Command rustup.exe -CommandType Application -ErrorAction Stop).Source
     Require-File $rustup
     Add-Deny $rustup
+    # Every target and component the source pins must already be installed.
+    # Otherwise the first rustup call below reaches for the network to finish
+    # the toolchain, which these drivers have already denied, and fails with a
+    # download error instead of naming what is missing. The build image is
+    # older than the source whenever rust-toolchain.toml gains an entry.
+    $configurationText = [IO.File]::ReadAllText($configuration)
+    $wanted = @()
+    foreach ($key in @('targets','components')) {
+        $list = [regex]::Match($configurationText, "(?ms)^$key\s*=\s*\[(.*?)\]")
+        if ($list.Success) {
+            foreach ($item in [regex]::Matches($list.Groups[1].Value, '"([^"]+)"')) {
+                $wanted += [pscustomobject]@{kind=$key.TrimEnd('s'); name=$item.Groups[1].Value}
+            }
+        }
+    }
+    Invoke-Native 'rust-installed-targets' $rustup @('target','list','--installed','--toolchain',$channel) $ReportRoot 30
+    Invoke-Native 'rust-installed-components' $rustup @('component','list','--installed','--toolchain',$channel) $ReportRoot 30
+    $installedTargets = @((Log-Text 'rust-installed-targets') -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $installedComponents = @((Log-Text 'rust-installed-components') -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $missing = @(foreach ($item in $wanted) {
+        if ($item.kind -eq 'target') {
+            if ($installedTargets -notcontains $item.name) { "target $($item.name)" }
+        } elseif (-not @($installedComponents | Where-Object { $_ -eq $item.name -or $_.StartsWith("$($item.name)-") }).Count) {
+            "component $($item.name)"
+        }
+    })
+    if ($missing.Count -gt 0) {
+        throw ("Rust toolchain $channel lacks $($missing -join ', ') from rust-toolchain.toml; " +
+            "run 'rustup toolchain install' in the source checkout while the network is open, then rerun")
+    }
     $selected = [ordered]@{}
     foreach ($tool in @('cargo','rustc')) {
         # `which` without --install only reads the installed selection. Compare
