@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use nix::fcntl::{Flock, FlockArg};
 use solstone_core_installation_identity::{
-    GuardFields, InstallationBinding, parse_wrapper_guard, wrapper_guard_lines,
+    CleanupTargetDecision, CleanupTargetKind, GuardFields, InstallationBinding, PlatformTag,
+    ProtectedJournals, may_remove_cleanup_target, parse_wrapper_guard, wrapper_guard_lines,
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 
@@ -954,6 +955,7 @@ pub fn provision_wrappers(
 /// Remove only aliases this runtime owns.  Refusal state is returned intact for callers.
 pub fn uninstall_wrappers(
     environment: &WrapperEnvironment,
+    protected_journals: &ProtectedJournals,
 ) -> Result<(), (AliasState, Option<PathBuf>)> {
     let states = [
         check_alias(environment, "solstone").map_err(|_| (AliasState::Foreign, None))?,
@@ -978,6 +980,17 @@ pub fn uninstall_wrappers(
     }
     let paths = wrapper_paths(&environment.home_dir);
     for path in [&paths.solstone, &paths.journal] {
+        if may_remove_cleanup_target(
+            path,
+            CleanupTargetKind::PerInstall,
+            false,
+            true,
+            protected_journals,
+            protected_journals.platform(),
+        ) != CleanupTargetDecision::Remove
+        {
+            continue;
+        }
         if path.exists() || path.is_symlink() {
             fs::remove_file(path).map_err(|_| (AliasState::Foreign, None))?;
         }
@@ -1677,7 +1690,7 @@ mod tests {
             "macos-app-owned-or-foreign"
         );
         assert!(wrapper_paths(&env.home_dir).solstone.exists());
-        uninstall_wrappers(&env).unwrap();
+        uninstall_wrappers(&env, &ProtectedJournals::new(PlatformTag::Linux)).unwrap();
         assert_eq!(
             fs::read_to_string(&leftover).unwrap(),
             "macos-app-owned-or-foreign"

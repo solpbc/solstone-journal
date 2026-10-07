@@ -46,6 +46,14 @@ use nix::sys::stat::{FchmodatFlags, Mode, SFlag, fchmod, fchmodat, fstat, mkdira
 use nix::unistd::{Uid, UnlinkatFlags, linkat, unlinkat};
 use sha2::{Digest, Sha256};
 
+mod cleanup;
+pub use cleanup::{
+    CleanupSkip, CleanupTargetDecision, CleanupTargetKind, InstallationJournalCensus,
+    InstallationJournalRecord, ProtectedJournals, cleanup_target_overlaps_journal,
+    identity_writes_overlap, may_remove_cleanup_target, read_installation_journal_census,
+    same_protected_place,
+};
+
 #[cfg(windows)]
 use std::ffi::OsStr;
 #[cfg(windows)]
@@ -514,7 +522,6 @@ pub struct CleanUninstallRequest {
 pub struct CleanUninstallPlan {
     pub binding: InstallationBinding,
     pub remove_owner_config: bool,
-    pub remove_journal_manifest: bool,
     pub already_tombstoned: bool,
 }
 
@@ -1334,12 +1341,6 @@ pub fn admit_clean_uninstall(
         })
         .collect();
     let remove_owner_config = others.is_empty();
-    let remove_journal_manifest = !others.iter().any(|other| {
-        other
-            .record
-            .as_ref()
-            .is_some_and(|candidate| candidate.journal_token == record.journal_token)
-    });
     let lease = NamespaceLease {
         _owner_lock: owner_lock,
         _marker_lock: marker_lock,
@@ -1350,7 +1351,6 @@ pub fn admit_clean_uninstall(
         plan: CleanUninstallPlan {
             binding,
             remove_owner_config,
-            remove_journal_manifest,
             already_tombstoned: record.state == LifecycleState::Tombstoned,
         },
         namespace,
@@ -5235,8 +5235,26 @@ mod tests {
         })
         .expect("uninstall A admission");
         assert!(!first.plan().remove_owner_config);
-        assert!(first.plan().remove_journal_manifest);
         first.commit_tombstone().expect("tombstone A");
+        let census = read_installation_journal_census(
+            &fixture.owner,
+            &RootToken::from_raw_absolute(b"/install/a".to_vec()).expect("root A"),
+            true,
+        )
+        .expect("census tombstoned record");
+        assert_eq!(
+            census.root_record.as_ref().map(|record| record.lifecycle),
+            Some(LifecycleState::Tombstoned)
+        );
+        assert_eq!(
+            census
+                .root_record
+                .as_ref()
+                .unwrap()
+                .journal_token
+                .to_path_buf(),
+            PathBuf::from("/journal/a")
+        );
         let root_b = RootToken::from_raw_absolute(b"/install/b".to_vec()).expect("root B");
         let last = admit_clean_uninstall(CleanUninstallRequest {
             owner: fixture.owner.clone(),
@@ -5245,11 +5263,10 @@ mod tests {
         })
         .expect("uninstall B admission");
         assert!(last.plan().remove_owner_config);
-        assert!(last.plan().remove_journal_manifest);
     }
 
     #[test]
-    fn clean_uninstall_preserves_a_shared_journal_manifest_until_the_last_root() {
+    fn clean_uninstall_last_root_still_removes_only_shared_config() {
         let _serial = serial();
         clear_control();
         let fixture = TestRoot::new();
@@ -5262,7 +5279,6 @@ mod tests {
         })
         .expect("uninstall A admission");
         assert!(!first.plan().remove_owner_config);
-        assert!(!first.plan().remove_journal_manifest);
         first.commit_tombstone().expect("tombstone A");
         let last = admit_clean_uninstall(CleanUninstallRequest {
             owner: fixture.owner.clone(),
@@ -5271,7 +5287,6 @@ mod tests {
         })
         .expect("uninstall B admission");
         assert!(last.plan().remove_owner_config);
-        assert!(last.plan().remove_journal_manifest);
     }
 
     #[test]

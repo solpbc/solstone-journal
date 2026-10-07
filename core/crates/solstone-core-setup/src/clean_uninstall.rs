@@ -7,19 +7,32 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use solstone_core_installation_identity::{
-    ArtifactBindingEvidence, CleanUninstallPlan, GuardFields,
+    ArtifactBindingEvidence, CleanUninstallPlan, CleanupSkip, CleanupTargetDecision,
+    CleanupTargetKind, GuardFields, InstallationJournalRecord, LifecycleState, OwnerBase,
+    PlatformTag, ProtectedJournals, RootToken, identity_writes_overlap, may_remove_cleanup_target,
+    read_installation_journal_census, same_protected_place,
 };
 
 use crate::args::SetupArgs;
 use crate::steps::{CommandRequest, CommandRunner, service_artifact_path, solstone_executable};
 use crate::wrapper::{AliasState, WrapperEnvironment, uninstall_wrappers, wrapper_paths};
 
-pub const CLEAN_UNINSTALL_STEP_NAMES: [&str; 4] = ["service", "wrapper", "config", "manifest"];
+pub const CLEAN_UNINSTALL_STEP_NAMES: [&str; 8] = [
+    "service",
+    "wrapper",
+    "config",
+    "manifest",
+    "rclone",
+    "package-receipt",
+    "setup-backups",
+    "user-skill",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CleanUninstallState {
     Removed,
     AlreadyAbsent,
+    Preserved,
     Skipped,
     Failed,
 }
@@ -30,8 +43,35 @@ impl CleanUninstallState {
         match self {
             Self::Removed => "removed",
             Self::AlreadyAbsent => "already-absent",
+            Self::Preserved => "preserved",
             Self::Skipped => "skipped",
             Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CleanUninstallMark {
+    None,
+    ProtectedJournal,
+    NoOwnedPath,
+    AnotherInstallation,
+    RegistryUnreadable,
+    Foreign,
+    NotRun,
+}
+
+impl CleanUninstallMark {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "None",
+            Self::ProtectedJournal => "ProtectedJournal",
+            Self::NoOwnedPath => "NoOwnedPath",
+            Self::AnotherInstallation => "AnotherInstallation",
+            Self::RegistryUnreadable => "RegistryUnreadable",
+            Self::Foreign => "Foreign",
+            Self::NotRun => "NotRun",
         }
     }
 }
@@ -51,6 +91,7 @@ pub struct CleanUninstallStepResult {
     pub state: CleanUninstallState,
     pub path: Option<PathBuf>,
     pub reason: Option<String>,
+    pub mark: CleanUninstallMark,
 }
 
 pub struct CleanUninstallContext<'a> {
@@ -59,6 +100,10 @@ pub struct CleanUninstallContext<'a> {
     pub config_path: PathBuf,
     pub manifest_path: PathBuf,
     pub plan: CleanUninstallPlan,
+    pub protected_journals: ProtectedJournals,
+    pub registry_known: bool,
+    pub platform: PlatformTag,
+    pub bundled_user_skill: PathBuf,
     pub artifact_evidence: ArtifactBindingEvidence,
     pub curdir: PathBuf,
     pub executable_dir: PathBuf,
@@ -77,6 +122,102 @@ pub struct CleanUninstallOutcome {
     pub exit_code: i32,
     pub message: String,
     pub results: Vec<CleanUninstallStepResult>,
+    pub journal_path: Option<PathBuf>,
+    pub already_complete: bool,
+}
+
+impl CleanUninstallOutcome {
+    #[must_use]
+    pub fn already_complete(journal_path: Option<PathBuf>, platform: PlatformTag) -> Self {
+        Self {
+            exit_code: 0,
+            message: "clean uninstall is already complete".into(),
+            results: macos_preserved_results(platform),
+            journal_path,
+            already_complete: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CleanUninstallPreflightState {
+    Proceed,
+    NoBinding,
+    AlreadyComplete,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CleanUninstallPreflight {
+    pub state: CleanUninstallPreflightState,
+    pub protected_journals: ProtectedJournals,
+    pub registry_known: bool,
+    pub journal_path: Option<PathBuf>,
+    pub root_record: Option<InstallationJournalRecord>,
+}
+
+/// Read the config and identity registry without creating owner storage.
+pub fn clean_uninstall_preflight(
+    owner: &OwnerBase,
+    root: &RootToken,
+    config_file: &Path,
+) -> Result<CleanUninstallPreflight, String> {
+    let config_journal =
+        crate::user_config::read_cleanup_journal(config_file).map_err(|error| error.to_string())?;
+    let mut protected_journals = ProtectedJournals::new(owner.platform());
+    if let Some(path) = &config_journal {
+        protected_journals.insert(path.clone());
+    }
+    if identity_writes_overlap(&owner.path(), &protected_journals, owner.platform()) {
+        return Err("identity storage overlaps a protected journal".into());
+    }
+    let census = read_installation_journal_census(owner, root, true)
+        .map_err(|error| format!("installation identity census is unreadable: {error}"))?;
+    let registry_known = census.registry_known;
+    let records = census.records;
+    let root_record = census.root_record;
+    for record in &records {
+        protected_journals.insert(record.journal_token.to_path_buf());
+    }
+    if let Some(record) = &root_record {
+        let record_journal = record.journal_token.to_path_buf();
+        if let Some(config_journal) = &config_journal
+            && !same_protected_place(
+                &record_journal,
+                config_journal,
+                owner.platform() == PlatformTag::Windows,
+            )
+        {
+            return Err("config journal does not match the installation identity".into());
+        }
+        protected_journals.insert(record_journal);
+    }
+    if identity_writes_overlap(&owner.path(), &protected_journals, owner.platform()) {
+        return Err("identity storage overlaps a protected journal".into());
+    }
+    if root_record
+        .as_ref()
+        .is_some_and(|record| record.lifecycle == LifecycleState::Prepared)
+    {
+        return Err("installation identity is prepared".into());
+    }
+    let state = match root_record.as_ref().map(|record| record.lifecycle) {
+        Some(LifecycleState::Tombstoned) => CleanUninstallPreflightState::AlreadyComplete,
+        Some(LifecycleState::Adopted) => CleanUninstallPreflightState::Proceed,
+        Some(LifecycleState::Prepared) => unreachable!("prepared record returned above"),
+        None if registry_known => CleanUninstallPreflightState::NoBinding,
+        None => CleanUninstallPreflightState::Proceed,
+    };
+    let journal_path = root_record
+        .as_ref()
+        .map(|record| record.journal_token.to_path_buf())
+        .or(config_journal);
+    Ok(CleanUninstallPreflight {
+        state,
+        protected_journals,
+        registry_known,
+        journal_path,
+        root_record,
+    })
 }
 
 #[must_use]
@@ -176,12 +317,7 @@ pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -
             context.config_path.display()
         ),
         format!(
-            "  [{:<7}] manifest: {}",
-            if context.plan.remove_journal_manifest {
-                marker(&context.manifest_path)
-            } else {
-                "retain"
-            },
+            "  [retain ] journal manifest: {}",
             context.manifest_path.display()
         ),
         String::new(),
@@ -203,22 +339,48 @@ pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) ->
         Ok(service) => service,
         Err(_) => return true, // Run must report this failure rather than claim nothing needs removal.
     };
-    [
-        service,
-        Some(wrappers.solstone),
-        Some(wrappers.journal),
-        context
-            .plan
-            .remove_owner_config
-            .then(|| context.config_path.clone()),
-        context
-            .plan
-            .remove_journal_manifest
-            .then(|| context.manifest_path.clone()),
-    ]
-    .iter()
-    .flatten()
-    .any(|path| present(path))
+    let policy = |path: &Path, kind, last| {
+        may_remove_cleanup_target(
+            path,
+            kind,
+            last,
+            context.registry_known,
+            &context.protected_journals,
+            context.platform,
+        ) == CleanupTargetDecision::Remove
+    };
+    service.as_ref().is_some_and(|path| {
+        present(path)
+            && artifact_evidence_matches_plan(context)
+            && policy(path, CleanupTargetKind::PerInstall, false)
+    }) || [wrappers.solstone, wrappers.journal]
+        .iter()
+        .any(|path| present(path) && policy(path, CleanupTargetKind::PerInstall, false))
+        || (context.plan.remove_owner_config
+            && present(&context.config_path)
+            && policy(&context.config_path, CleanupTargetKind::Shared, true))
+        || (context.platform == PlatformTag::Linux && {
+            let path = context.home_dir.join(".cache/solstone/rclone");
+            present(&path) && policy(&path, CleanupTargetKind::Shared, true)
+        })
+        || {
+            let path = crate::package_install_receipt_path(&context.home_dir);
+            present(&path) && policy(&path, CleanupTargetKind::Shared, true)
+        }
+        || {
+            let path = WrapperEnvironment {
+                home_dir: context.home_dir.clone(),
+                curdir: context.curdir.clone(),
+                executable_dir: context.executable_dir.clone(),
+                backup_dir: None,
+                legacy_replacement: false,
+            }
+            .backup_dir();
+            present(&path) && policy(&path, CleanupTargetKind::Shared, true)
+        }
+        || user_skill_paths(&context.home_dir)
+            .iter()
+            .any(|path| present(path) && policy(path, CleanupTargetKind::PerInstall, false))
 }
 fn child_failure_reason(output: &crate::steps::CommandOutput) -> String {
     let mut reason = format!("service uninstall exited {}", output.exit_code);
@@ -248,7 +410,54 @@ fn result(
         state,
         path,
         reason,
+        mark: CleanUninstallMark::None,
     }
+}
+
+fn marked_result(
+    name: &'static str,
+    state: CleanUninstallState,
+    path: Option<PathBuf>,
+    reason: Option<String>,
+    mark: CleanUninstallMark,
+) -> CleanUninstallStepResult {
+    CleanUninstallStepResult {
+        name,
+        state,
+        path,
+        reason,
+        mark,
+    }
+}
+
+fn mark_for_decision(decision: CleanupTargetDecision) -> Option<CleanUninstallMark> {
+    match decision {
+        CleanupTargetDecision::Remove => None,
+        CleanupTargetDecision::Skip(CleanupSkip::ProtectedJournal) => {
+            Some(CleanUninstallMark::ProtectedJournal)
+        }
+        CleanupTargetDecision::Skip(CleanupSkip::AnotherInstallation) => {
+            Some(CleanUninstallMark::AnotherInstallation)
+        }
+        CleanupTargetDecision::Skip(CleanupSkip::RegistryUnreadable) => {
+            Some(CleanUninstallMark::RegistryUnreadable)
+        }
+    }
+}
+
+fn preserve_for_decision(
+    name: &'static str,
+    path: PathBuf,
+    decision: CleanupTargetDecision,
+) -> CleanUninstallStepResult {
+    let mark = mark_for_decision(decision).unwrap_or(CleanUninstallMark::None);
+    marked_result(
+        name,
+        CleanUninstallState::Preserved,
+        Some(path),
+        Some(format!("preserved: {mark:?}")),
+        mark,
+    )
 }
 
 fn remove_path(name: &'static str, path: PathBuf) -> CleanUninstallStepResult {
@@ -305,6 +514,18 @@ fn remove_service(
     if !existed {
         return result("service", CleanUninstallState::AlreadyAbsent, path, None);
     }
+    let path_ref = path.as_ref().expect("existing service path");
+    let decision = may_remove_cleanup_target(
+        path_ref,
+        CleanupTargetKind::PerInstall,
+        false,
+        context.registry_known,
+        &context.protected_journals,
+        context.platform,
+    );
+    if decision != CleanupTargetDecision::Remove {
+        return preserve_for_decision("service", path.expect("existing service path"), decision);
+    }
     match path.as_ref().map(fs::remove_file) {
         Some(Ok(())) => result("service", CleanUninstallState::Removed, path, None),
         Some(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -337,7 +558,20 @@ fn remove_wrappers(
         ArtifactBindingEvidence::Guarded(_)
     ) {
         let existed = present(&paths.0) || present(&paths.1);
+        let mut protected = None;
         for path in [&paths.0, &paths.1] {
+            let decision = may_remove_cleanup_target(
+                path,
+                CleanupTargetKind::PerInstall,
+                false,
+                context.registry_known,
+                &context.protected_journals,
+                context.platform,
+            );
+            if decision != CleanupTargetDecision::Remove {
+                protected.get_or_insert_with(|| (path.clone(), decision));
+                continue;
+            }
             if present(path)
                 && let Err(error) = fs::remove_file(path)
             {
@@ -348,6 +582,9 @@ fn remove_wrappers(
                     Some(error.to_string()),
                 );
             }
+        }
+        if let Some((path, decision)) = protected {
+            return preserve_for_decision("wrapper", path, decision);
         }
         return result(
             "wrapper",
@@ -360,7 +597,6 @@ fn remove_wrappers(
             None,
         );
     }
-    let existed = present(&paths.0) || present(&paths.1);
     let environment = WrapperEnvironment {
         home_dir: context.home_dir.clone(),
         curdir: context.curdir.clone(),
@@ -368,17 +604,46 @@ fn remove_wrappers(
         backup_dir: None,
         legacy_replacement: false,
     };
-    match uninstall_wrappers(&environment) {
-        Ok(()) => result(
-            "wrapper",
-            if existed {
-                CleanUninstallState::Removed
-            } else {
-                CleanUninstallState::AlreadyAbsent
-            },
-            Some(paths.0.clone()),
-            None,
-        ),
+    let existed = present(&paths.0) || present(&paths.1);
+    let protected = [&paths.0, &paths.1]
+        .iter()
+        .find(|path| {
+            may_remove_cleanup_target(
+                path,
+                CleanupTargetKind::PerInstall,
+                false,
+                context.registry_known,
+                &context.protected_journals,
+                context.platform,
+            ) != CleanupTargetDecision::Remove
+        })
+        .copied()
+        .cloned();
+    match uninstall_wrappers(&environment, &context.protected_journals) {
+        Ok(()) => match protected {
+            Some(path) => preserve_for_decision(
+                "wrapper",
+                path.clone(),
+                may_remove_cleanup_target(
+                    &path,
+                    CleanupTargetKind::PerInstall,
+                    false,
+                    context.registry_known,
+                    &context.protected_journals,
+                    context.platform,
+                ),
+            ),
+            None => result(
+                "wrapper",
+                if existed {
+                    CleanUninstallState::Removed
+                } else {
+                    CleanUninstallState::AlreadyAbsent
+                },
+                Some(paths.0.clone()),
+                None,
+            ),
+        },
         Err((AliasState::Worktree, _)) => result(
             "wrapper",
             CleanUninstallState::Skipped,
@@ -431,95 +696,426 @@ fn artifact_evidence_matches_plan(context: &CleanUninstallContext<'_>) -> bool {
     }
 }
 
-fn remove_if_last(name: &'static str, path: PathBuf, remove: bool) -> CleanUninstallStepResult {
-    if remove {
-        remove_path(name, path)
-    } else {
-        result(
-            name,
-            CleanUninstallState::Skipped,
-            Some(path),
-            Some("retained for another adopted installation".into()),
-        )
+fn remove_file_target(
+    name: &'static str,
+    path: PathBuf,
+    kind: CleanupTargetKind,
+    last_installation: bool,
+    context: &CleanUninstallContext<'_>,
+) -> CleanUninstallStepResult {
+    if !present(&path) {
+        return result(name, CleanUninstallState::AlreadyAbsent, Some(path), None);
     }
+    let decision = may_remove_cleanup_target(
+        &path,
+        kind,
+        last_installation,
+        context.registry_known,
+        &context.protected_journals,
+        context.platform,
+    );
+    if decision != CleanupTargetDecision::Remove {
+        return preserve_for_decision(name, path, decision);
+    }
+    remove_path(name, path)
+}
+
+fn remove_shared_directory(
+    name: &'static str,
+    path: PathBuf,
+    context: &CleanUninstallContext<'_>,
+) -> CleanUninstallStepResult {
+    if !present(&path) {
+        return result(name, CleanUninstallState::AlreadyAbsent, Some(path), None);
+    }
+    let decision = may_remove_cleanup_target(
+        &path,
+        CleanupTargetKind::Shared,
+        context.plan.remove_owner_config,
+        context.registry_known,
+        &context.protected_journals,
+        context.platform,
+    );
+    if decision != CleanupTargetDecision::Remove {
+        return preserve_for_decision(name, path, decision);
+    }
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => marked_result(
+            name,
+            CleanUninstallState::Preserved,
+            Some(path),
+            Some("preserved symlink".into()),
+            CleanUninstallMark::Foreign,
+        ),
+        Ok(metadata) if metadata.is_dir() => match fs::remove_dir_all(&path) {
+            Ok(()) => result(name, CleanUninstallState::Removed, Some(path), None),
+            Err(error) => result(
+                name,
+                CleanUninstallState::Failed,
+                Some(path),
+                Some(error.to_string()),
+            ),
+        },
+        Ok(_) => marked_result(
+            name,
+            CleanUninstallState::Preserved,
+            Some(path),
+            Some("preserved non-directory target".into()),
+            CleanUninstallMark::Foreign,
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            result(name, CleanUninstallState::AlreadyAbsent, Some(path), None)
+        }
+        Err(error) => result(
+            name,
+            CleanUninstallState::Failed,
+            Some(path),
+            Some(error.to_string()),
+        ),
+    }
+}
+
+fn remove_manifest(context: &CleanUninstallContext<'_>) -> CleanUninstallStepResult {
+    marked_result(
+        "manifest",
+        CleanUninstallState::Preserved,
+        Some(context.manifest_path.clone()),
+        Some("journal manifest is preserved".into()),
+        CleanUninstallMark::ProtectedJournal,
+    )
+}
+
+fn user_skill_paths(home: &Path) -> [PathBuf; 3] {
+    [
+        home.join(".claude/skills/solstone"),
+        home.join(".codex/skills/solstone"),
+        home.join(".gemini/skills/solstone"),
+    ]
+}
+
+fn remove_user_skill(
+    path: PathBuf,
+    context: &CleanUninstallContext<'_>,
+) -> CleanUninstallStepResult {
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return result(
+                "user-skill",
+                CleanUninstallState::AlreadyAbsent,
+                Some(path),
+                None,
+            );
+        }
+        Err(error) => {
+            return result(
+                "user-skill",
+                CleanUninstallState::Failed,
+                Some(path),
+                Some(error.to_string()),
+            );
+        }
+    };
+    if !metadata.file_type().is_symlink() {
+        return marked_result(
+            "user-skill",
+            CleanUninstallState::Preserved,
+            Some(path),
+            Some("user-authored skill content is preserved".into()),
+            CleanUninstallMark::Foreign,
+        );
+    }
+    let link_target = match fs::read_link(&path) {
+        Ok(target) if target.is_absolute() => target,
+        Ok(target) => path.parent().unwrap_or_else(|| Path::new(".")).join(target),
+        Err(error) => {
+            return result(
+                "user-skill",
+                CleanUninstallState::Failed,
+                Some(path),
+                Some(error.to_string()),
+            );
+        }
+    };
+    if !same_protected_place(
+        &link_target,
+        &context.bundled_user_skill,
+        context.platform == PlatformTag::Windows,
+    ) {
+        return marked_result(
+            "user-skill",
+            CleanUninstallState::Preserved,
+            Some(path),
+            Some("symlink target is foreign".into()),
+            CleanUninstallMark::Foreign,
+        );
+    }
+    let decision = may_remove_cleanup_target(
+        &path,
+        CleanupTargetKind::PerInstall,
+        false,
+        context.registry_known,
+        &context.protected_journals,
+        context.platform,
+    );
+    if decision != CleanupTargetDecision::Remove {
+        return preserve_for_decision("user-skill", path, decision);
+    }
+    match fs::remove_file(&path) {
+        Ok(()) => result("user-skill", CleanUninstallState::Removed, Some(path), None),
+        Err(error) => result(
+            "user-skill",
+            CleanUninstallState::Failed,
+            Some(path),
+            Some(error.to_string()),
+        ),
+    }
+}
+
+fn skipped_result(name: &'static str, path: Option<PathBuf>) -> CleanUninstallStepResult {
+    marked_result(
+        name,
+        CleanUninstallState::Skipped,
+        path,
+        Some("step was not run after an earlier failure".into()),
+        CleanUninstallMark::NotRun,
+    )
+}
+
+fn outcome(
+    context: &CleanUninstallContext<'_>,
+    exit_code: i32,
+    message: String,
+    results: Vec<CleanUninstallStepResult>,
+    already_complete: bool,
+) -> CleanUninstallOutcome {
+    CleanUninstallOutcome {
+        exit_code,
+        message,
+        results,
+        journal_path: Some(context.journal_path.clone()),
+        already_complete,
+    }
+}
+
+#[must_use]
+pub fn macos_preserved_results(platform: PlatformTag) -> Vec<CleanUninstallStepResult> {
+    if platform != PlatformTag::Macos {
+        return Vec::new();
+    }
+    [
+        "journal-preferences",
+        "journal-handoff",
+        "journal-app-support",
+    ]
+    .into_iter()
+    .map(|name| {
+        marked_result(
+            name,
+            CleanUninstallState::Preserved,
+            None,
+            Some("no owned path is known".into()),
+            CleanUninstallMark::NoOwnedPath,
+        )
+    })
+    .collect()
+}
+
+fn cleanup_step_inventory(
+    context: &CleanUninstallContext<'_>,
+    service_path: Option<PathBuf>,
+) -> Vec<(&'static str, Option<PathBuf>)> {
+    let wrappers = wrapper_paths(&context.home_dir);
+    let backup_dir = WrapperEnvironment {
+        home_dir: context.home_dir.clone(),
+        curdir: context.curdir.clone(),
+        executable_dir: context.executable_dir.clone(),
+        backup_dir: None,
+        legacy_replacement: false,
+    }
+    .backup_dir();
+    vec![
+        ("service", service_path),
+        ("wrapper", Some(wrappers.solstone)),
+        ("config", Some(context.config_path.clone())),
+        ("manifest", Some(context.manifest_path.clone())),
+        (
+            "rclone",
+            (context.platform == PlatformTag::Linux)
+                .then(|| context.home_dir.join(".cache/solstone/rclone")),
+        ),
+        (
+            "package-receipt",
+            Some(crate::package_install_receipt_path(&context.home_dir)),
+        ),
+        ("setup-backups", Some(backup_dir)),
+        (
+            "user-skill",
+            Some(user_skill_paths(&context.home_dir)[0].clone()),
+        ),
+        (
+            "user-skill",
+            Some(user_skill_paths(&context.home_dir)[1].clone()),
+        ),
+        (
+            "user-skill",
+            Some(user_skill_paths(&context.home_dir)[2].clone()),
+        ),
+    ]
+}
+
+fn stop_after_failed_step(
+    context: &CleanUninstallContext<'_>,
+    mut results: Vec<CleanUninstallStepResult>,
+    failed_step_index: usize,
+    service_path: Option<PathBuf>,
+) -> CleanUninstallOutcome {
+    results.extend(
+        cleanup_step_inventory(context, service_path)
+            .into_iter()
+            .skip(failed_step_index + 1)
+            .map(|(name, path)| skipped_result(name, path)),
+    );
+    outcome(
+        context,
+        1,
+        "clean uninstall stopped after a failed step".into(),
+        results,
+        false,
+    )
 }
 
 pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUninstallOutcome {
     let service = match service_artifact_path(&context.home_dir) {
         Ok(service) => service,
         Err(error) => {
-            return CleanUninstallOutcome {
-                exit_code: 1,
-                message: format!("service location unavailable: {error}"),
-                results: Vec::new(),
-            };
+            let results = vec![result(
+                "service",
+                CleanUninstallState::Failed,
+                None,
+                Some(error.to_string()),
+            )];
+            let mut failed = stop_after_failed_step(context, results, 0, None);
+            failed.message = format!("service location unavailable: {error}");
+            return failed;
         }
     };
     let wrappers = wrapper_paths(&context.home_dir);
     if !clean_uninstall_has_managed_paths(context) {
-        return CleanUninstallOutcome {
-            exit_code: 0,
-            message: "nothing to remove (all paths already absent)".into(),
-            results: Vec::new(),
-        };
+        let mut results = macos_preserved_results(context.platform);
+        return outcome(
+            context,
+            0,
+            "nothing to remove (all paths already absent)".into(),
+            std::mem::take(&mut results),
+            false,
+        );
     }
     if !context.yes && !context.stdin_is_tty {
-        return CleanUninstallOutcome {
-            exit_code: 2,
-            message: "not a tty; rerun with --yes to proceed non-interactively (cancelled)".into(),
-            results: Vec::new(),
-        };
+        return outcome(
+            context,
+            2,
+            "not a tty; rerun with --yes to proceed non-interactively (cancelled)".into(),
+            Vec::new(),
+            false,
+        );
     }
     if !context.yes && !(context.confirm)() {
-        return CleanUninstallOutcome {
-            exit_code: 1,
-            message: "cancelled".into(),
-            results: Vec::new(),
-        };
+        return outcome(context, 1, "cancelled".into(), Vec::new(), false);
     }
-    let service_result = remove_service(context, service);
-    if service_result.state == CleanUninstallState::Failed {
-        let leftover = "not run because service uninstall failed";
-        return CleanUninstallOutcome {
-            exit_code: 1,
-            message: "clean uninstall stopped: service uninstall failed; wrappers, config, and manifest were left in place".into(),
-            results: vec![
-                service_result,
-                result(
-                    "wrapper",
-                    CleanUninstallState::Skipped,
-                    Some(wrappers.solstone),
-                    Some(leftover.into()),
-                ),
-                result(
-                    "config",
-                    CleanUninstallState::Skipped,
-                    Some(context.config_path.clone()),
-                    Some(leftover.into()),
-                ),
-                result(
-                    "manifest",
-                    CleanUninstallState::Skipped,
-                    Some(context.manifest_path.clone()),
-                    Some(leftover.into()),
-                ),
-            ],
-        };
+    let service_result = remove_service(context, service.clone());
+    let service_failed = service_result.state == CleanUninstallState::Failed;
+    let mut results = vec![service_result];
+    if service_failed {
+        return stop_after_failed_step(context, results, 0, service);
     }
-    let results = vec![
-        service_result,
-        remove_wrappers(context, &(wrappers.solstone, wrappers.journal)),
-        remove_if_last(
-            "config",
-            context.config_path.clone(),
-            context.plan.remove_owner_config,
-        ),
-        remove_if_last(
-            "manifest",
-            context.manifest_path.clone(),
-            context.plan.remove_journal_manifest,
-        ),
-    ];
+    let wrapper_result = remove_wrappers(
+        context,
+        &(wrappers.solstone.clone(), wrappers.journal.clone()),
+    );
+    let wrapper_failed = wrapper_result.state == CleanUninstallState::Failed;
+    results.push(wrapper_result);
+    if wrapper_failed {
+        return stop_after_failed_step(context, results, 1, service);
+    }
+    let config_result = remove_file_target(
+        "config",
+        context.config_path.clone(),
+        CleanupTargetKind::Shared,
+        context.plan.remove_owner_config,
+        context,
+    );
+    let config_failed = config_result.state == CleanUninstallState::Failed;
+    results.push(config_result);
+    if config_failed {
+        return stop_after_failed_step(context, results, 2, service);
+    }
+    let manifest_result = remove_manifest(context);
+    let manifest_failed = manifest_result.state == CleanUninstallState::Failed;
+    results.push(manifest_result);
+    if manifest_failed {
+        return stop_after_failed_step(context, results, 3, service);
+    }
+    if context.platform == PlatformTag::Linux {
+        let rclone_result = remove_shared_directory(
+            "rclone",
+            context.home_dir.join(".cache/solstone/rclone"),
+            context,
+        );
+        let rclone_failed = rclone_result.state == CleanUninstallState::Failed;
+        results.push(rclone_result);
+        if rclone_failed {
+            return stop_after_failed_step(context, results, 4, service);
+        }
+    } else {
+        results.push(marked_result(
+            "rclone",
+            CleanUninstallState::Preserved,
+            None,
+            Some("no owned path on this platform".into()),
+            CleanUninstallMark::NoOwnedPath,
+        ));
+    }
+    let package_result = remove_file_target(
+        "package-receipt",
+        crate::package_install_receipt_path(&context.home_dir),
+        CleanupTargetKind::Shared,
+        context.plan.remove_owner_config,
+        context,
+    );
+    let package_failed = package_result.state == CleanUninstallState::Failed;
+    results.push(package_result);
+    if package_failed {
+        return stop_after_failed_step(context, results, 5, service);
+    }
+    let backup_dir = WrapperEnvironment {
+        home_dir: context.home_dir.clone(),
+        curdir: context.curdir.clone(),
+        executable_dir: context.executable_dir.clone(),
+        backup_dir: None,
+        legacy_replacement: false,
+    }
+    .backup_dir();
+    let backups_result = remove_shared_directory("setup-backups", backup_dir, context);
+    let backups_failed = backups_result.state == CleanUninstallState::Failed;
+    results.push(backups_result);
+    if backups_failed {
+        return stop_after_failed_step(context, results, 6, service);
+    }
+    for (index, path) in user_skill_paths(&context.home_dir).into_iter().enumerate() {
+        let skill_result = remove_user_skill(path, context);
+        let skill_failed = skill_result.state == CleanUninstallState::Failed;
+        results.push(skill_result);
+        if skill_failed {
+            return stop_after_failed_step(context, results, 7 + index, service);
+        }
+    }
+    let failed = results
+        .iter()
+        .any(|result| result.state == CleanUninstallState::Failed);
+    if !failed {
+        results.extend(macos_preserved_results(context.platform));
+    }
     let counts = |state| {
         results
             .iter()
@@ -527,21 +1123,14 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
             .count()
     };
     let message = format!(
-        "clean uninstall complete: {} removed, {} already-absent, {} skipped, {} failed",
+        "clean uninstall complete: {} removed, {} already-absent, {} preserved, {} skipped, {} failed",
         counts(CleanUninstallState::Removed),
         counts(CleanUninstallState::AlreadyAbsent),
+        counts(CleanUninstallState::Preserved),
         counts(CleanUninstallState::Skipped),
         counts(CleanUninstallState::Failed)
     );
-    CleanUninstallOutcome {
-        exit_code: if counts(CleanUninstallState::Failed) == 0 {
-            0
-        } else {
-            1
-        },
-        message,
-        results,
-    }
+    outcome(context, i32::from(failed), message, results, false)
 }
 
 #[cfg(test)]
@@ -588,7 +1177,6 @@ mod tests {
         CleanUninstallPlan {
             binding,
             remove_owner_config: true,
-            remove_journal_manifest: true,
             already_tombstoned: false,
         }
     }
@@ -669,6 +1257,10 @@ mod tests {
             config_path: root.join("config.toml"),
             manifest_path: root.join("journal/health/setup-state.json"),
             plan: plan(),
+            protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+            registry_known: true,
+            platform: PlatformTag::Linux,
+            bundled_user_skill: PathBuf::from("/bundled/solstone/talent/solstone"),
             artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: root.join("bin"),
@@ -706,6 +1298,10 @@ mod tests {
             config_path: root.join("config.toml"),
             manifest_path: root.join("journal/health/setup-state.json"),
             plan: plan(),
+            protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+            registry_known: true,
+            platform: PlatformTag::Linux,
+            bundled_user_skill: PathBuf::from("/bundled/solstone/talent/solstone"),
             artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: root.join("bin"),
@@ -746,6 +1342,10 @@ mod tests {
             config_path: root.join("config.toml"),
             manifest_path: root.join("journal/health/setup-state.json"),
             plan: plan(),
+            protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+            registry_known: true,
+            platform: PlatformTag::Linux,
+            bundled_user_skill: PathBuf::from("/bundled/solstone/talent/solstone"),
             artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: root.join("bin"),
@@ -845,6 +1445,10 @@ mod tests {
             config_path: root.join("config.toml"),
             manifest_path: root.join("journal/health/setup-state.json"),
             plan: plan(),
+            protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+            registry_known: true,
+            platform: PlatformTag::Linux,
+            bundled_user_skill: PathBuf::from("/bundled/solstone/talent/solstone"),
             artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: root.join("bin"),
@@ -926,6 +1530,10 @@ mod tests {
             config_path: config.clone(),
             manifest_path: manifest.clone(),
             plan: plan(),
+            protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+            registry_known: true,
+            platform: PlatformTag::Linux,
+            bundled_user_skill: PathBuf::from("/bundled/solstone/talent/solstone"),
             artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: runtime,
@@ -943,7 +1551,18 @@ mod tests {
                 .iter()
                 .map(|result| result.name)
                 .collect::<Vec<_>>(),
-            CLEAN_UNINSTALL_STEP_NAMES
+            [
+                "service",
+                "wrapper",
+                "config",
+                "manifest",
+                "rclone",
+                "package-receipt",
+                "setup-backups",
+                "user-skill",
+                "user-skill",
+                "user-skill",
+            ]
         );
         assert_eq!(
             outcome
@@ -956,7 +1575,18 @@ mod tests {
                 CleanUninstallState::Skipped,
                 CleanUninstallState::Skipped,
                 CleanUninstallState::Skipped,
+                CleanUninstallState::Skipped,
+                CleanUninstallState::Skipped,
+                CleanUninstallState::Skipped,
+                CleanUninstallState::Skipped,
+                CleanUninstallState::Skipped,
+                CleanUninstallState::Skipped,
             ]
+        );
+        assert!(
+            outcome.results[1..]
+                .iter()
+                .all(|result| result.mark == CleanUninstallMark::NotRun)
         );
         assert_eq!(
             outcome.results[0].reason.as_deref(),
@@ -964,15 +1594,79 @@ mod tests {
                 "service uninstall exited 7: error: launchd accepted the unload request, but the service is still present"
             )
         );
-        assert!(
-            outcome.message.contains("left in place"),
-            "{}",
-            outcome.message
-        );
         assert!(home.join(".local/bin/solstone").exists());
         assert!(home.join(".local/bin/journal").exists());
         assert!(config.exists());
         assert!(manifest.exists());
+    }
+
+    #[test]
+    fn later_failure_stops_before_every_remaining_cleanup_step() {
+        use std::os::unix::fs::symlink;
+
+        let root = root("later-failure");
+        let home = root.join("home");
+        let runtime = root.join("bin");
+        fs::create_dir_all(&runtime).unwrap();
+        let config = root.join("config.toml");
+        fs::create_dir(&config).unwrap();
+        let package_receipt = crate::package_install_receipt_path(&home);
+        fs::create_dir_all(package_receipt.parent().unwrap()).unwrap();
+        fs::write(&package_receipt, "receipt").unwrap();
+        let backups = home.join(".local/share/solstone/setup-backups");
+        fs::create_dir_all(&backups).unwrap();
+        let backup_canary = backups.join("canary");
+        fs::write(&backup_canary, "backup").unwrap();
+        let bundled = root.join("install/solstone/talent/solstone");
+        fs::create_dir_all(&bundled).unwrap();
+        let skill = home.join(".claude/skills/solstone");
+        fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        symlink(&bundled, &skill).unwrap();
+
+        let mut runner = RunnerWithOutput {
+            exits: VecDeque::from([0]),
+            stderr: String::new(),
+        };
+        let mut confirm = || true;
+        let mut context = CleanUninstallContext {
+            journal_path: root.join("journal"),
+            home_dir: home,
+            config_path: config.clone(),
+            manifest_path: root.join("journal/health/setup-state.json"),
+            plan: plan(),
+            protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+            registry_known: true,
+            platform: PlatformTag::Linux,
+            bundled_user_skill: bundled,
+            artifact_evidence: ArtifactBindingEvidence::Fresh,
+            curdir: root.join("repo"),
+            executable_dir: runtime,
+            yes: true,
+            stdin_is_tty: false,
+            confirm: &mut confirm,
+            runner: &mut runner,
+            identity_hold: &mut |_| Ok(()),
+        };
+
+        let outcome = run_clean_uninstall(&mut context);
+        assert_eq!(outcome.exit_code, 1);
+        let config_index = outcome
+            .results
+            .iter()
+            .position(|result| result.name == "config")
+            .unwrap();
+        assert_eq!(
+            outcome.results[config_index].state,
+            CleanUninstallState::Failed
+        );
+        assert!(outcome.results[config_index + 1..].iter().all(|result| {
+            result.state == CleanUninstallState::Skipped
+                && result.mark == CleanUninstallMark::NotRun
+        }));
+        assert!(config.is_dir());
+        assert!(package_receipt.exists());
+        assert!(backup_canary.exists());
+        assert!(skill.is_symlink());
     }
 
     #[test]
@@ -1007,6 +1701,10 @@ mod tests {
             config_path: root.join("config.toml"),
             manifest_path: root.join("journal/health/setup-state.json"),
             plan: plan(),
+            protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+            registry_known: true,
+            platform: PlatformTag::Linux,
+            bundled_user_skill: PathBuf::from("/bundled/solstone/talent/solstone"),
             artifact_evidence: ArtifactBindingEvidence::Guarded(guard),
             curdir: root.join("repo"),
             executable_dir: runtime,
@@ -1052,6 +1750,10 @@ mod tests {
             home_dir: home.to_path_buf(),
             config_path: config_path(home),
             plan,
+            protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+            registry_known: true,
+            platform: PlatformTag::Linux,
+            bundled_user_skill: PathBuf::from("/bundled/solstone/talent/solstone"),
             artifact_evidence,
             curdir: root.to_path_buf(),
             executable_dir: root.join("bin"),
@@ -1146,7 +1848,6 @@ mod tests {
             .expect("an unambiguous guard for the other root is preserved, not refused");
             let first_plan = first_session.plan().clone();
             assert!(!first_plan.remove_owner_config);
-            assert_eq!(first_plan.remove_journal_manifest, !same_journal);
             let mut first_runner = Runner(VecDeque::new());
             let mut confirm = || true;
             let first_outcome = run_clean_uninstall(&mut clean_context(
@@ -1171,7 +1872,7 @@ mod tests {
                 second_manifest.exists(),
                 "the other root's manifest must survive"
             );
-            assert_eq!(first_manifest.exists(), same_journal);
+            assert!(first_manifest.exists());
 
             let second_evidence = gather_artifact_evidence(&home, &second.namespace);
             assert_eq!(
@@ -1186,7 +1887,6 @@ mod tests {
             .expect("remaining root admission");
             let second_plan = second_session.plan().clone();
             assert!(second_plan.remove_owner_config);
-            assert!(second_plan.remove_journal_manifest);
             let mut second_runner = Runner(VecDeque::from([0]));
             let mut confirm = || true;
             let second_outcome = run_clean_uninstall(&mut clean_context(
@@ -1203,8 +1903,8 @@ mod tests {
             assert!(!paths.solstone.exists());
             assert!(!paths.journal.exists());
             assert!(!config_path(&home).exists());
-            assert!(!manifest_b.exists());
-            assert!(!manifest_a.exists());
+            assert!(manifest_b.exists());
+            assert!(manifest_a.exists());
 
             let retry = admit_clean_uninstall(CleanUninstallRequest {
                 owner,
@@ -1244,12 +1944,16 @@ mod tests {
         fs::write(&config, "journal = \"x\"\n").unwrap();
         let mut runner = Runner(VecDeque::new());
         let mut confirm = || true;
-        let context = CleanUninstallContext {
+        let mut context = CleanUninstallContext {
             journal_path: root.join("journal"),
             home_dir: home.clone(),
             config_path: config.clone(),
             manifest_path: manifest.clone(),
             plan: plan(),
+            protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+            registry_known: true,
+            platform: PlatformTag::Linux,
+            bundled_user_skill: PathBuf::from("/bundled/solstone/talent/solstone"),
             artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: root.join("bin"),
@@ -1259,14 +1963,18 @@ mod tests {
             runner: &mut runner,
             identity_hold: &mut |_| Ok(()),
         };
-        let lines = clean_uninstall_confirmation_lines(&context).join("\n");
-        assert!(lines.contains("[present] wrapper: "));
-        assert!(lines.contains(&format!("[present] config: {}", config.display())));
-        assert!(lines.contains(&format!("[absent ] manifest: {}", manifest.display())));
-        assert!(lines.contains(&format!(
-            "  - journal directory: {}",
-            context.journal_path.display()
-        )));
-        assert!(lines.contains("  - a leftover pip, uv or pipx journal install"));
+        let _ = clean_uninstall_confirmation_lines(&context);
+        assert!(clean_uninstall_has_managed_paths(&context));
+        fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        fs::write(&manifest, "manifest").unwrap();
+        let outcome = run_clean_uninstall(&mut context);
+        assert_eq!(outcome.journal_path, Some(context.journal_path.clone()));
+        assert!(outcome.results.iter().any(|result| {
+            result.name == "manifest"
+                && result.state == CleanUninstallState::Preserved
+                && result.mark == CleanUninstallMark::ProtectedJournal
+                && result.path.as_deref() == Some(manifest.as_path())
+        }));
+        assert!(manifest.exists());
     }
 }

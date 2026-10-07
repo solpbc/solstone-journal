@@ -32,8 +32,9 @@ pub mod wrapper;
 
 use args::{ResolutionContext, SetupArgs, resolve_mode, resolve_setup};
 use clean_uninstall::{
-    CleanUninstallContext, IdentityHold, clean_uninstall_confirmation_lines,
-    clean_uninstall_has_managed_paths, clean_uninstall_refusal, run_clean_uninstall,
+    CleanUninstallContext, CleanUninstallOutcome, CleanUninstallPreflightState, IdentityHold,
+    clean_uninstall_confirmation_lines, clean_uninstall_has_managed_paths,
+    clean_uninstall_preflight, clean_uninstall_refusal, run_clean_uninstall,
 };
 use events::{EventSink, JsonlEmitter, StepName};
 use identity_evidence::{
@@ -660,6 +661,59 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             let _ = writeln!(stderr, "{message}");
             return ExitCode::from(2);
         }
+        let identity_root = resolve_identity_root(&executable_dir, &project_root);
+        let root_token = match root_token_from_path(&identity_root) {
+            Ok(token) => token,
+            Err(error) => {
+                let _ = writeln!(stderr, "clean uninstall preflight failed: {error}");
+                return ExitCode::from(1);
+            }
+        };
+        let owner = match OwnerBase::at_home(home_dir.clone(), PlatformTag::current()) {
+            Ok(owner) => owner,
+            Err(error) => {
+                let _ = writeln!(stderr, "clean uninstall preflight failed: {error}");
+                return ExitCode::from(1);
+            }
+        };
+        let preflight =
+            match clean_uninstall_preflight(&owner, &root_token, &config_path(&home_dir)) {
+                Ok(preflight) => preflight,
+                Err(reason) => {
+                    let _ = writeln!(stderr, "clean uninstall refused: {reason}");
+                    return ExitCode::from(1);
+                }
+            };
+        if preflight.state == CleanUninstallPreflightState::AlreadyComplete {
+            let outcome =
+                CleanUninstallOutcome::already_complete(preflight.journal_path, owner.platform());
+            if let Some(journal) = &outcome.journal_path {
+                let _ = writeln!(stdout, "journal: {}", journal.display());
+            }
+            for result in &outcome.results {
+                let path = result.path.as_deref().map_or_else(
+                    || "<no owned path>".to_owned(),
+                    |path| path.display().to_string(),
+                );
+                let _ = writeln!(
+                    stdout,
+                    "{} {} [{}] {}",
+                    result.state.as_str(),
+                    result.name,
+                    result.mark.as_str(),
+                    path
+                );
+            }
+            let _ = writeln!(stdout, "{}", outcome.message);
+            return ExitCode::SUCCESS;
+        }
+        if preflight.state == CleanUninstallPreflightState::NoBinding {
+            let _ = writeln!(
+                stderr,
+                "clean uninstall refused: no adopted installation identity"
+            );
+            return ExitCode::from(1);
+        }
         // Computed before `executable_dir` moves into the clean-uninstall context below.
         let clean_namespace = setup_identity_namespace(&executable_dir, &project_root);
         let clean_session = match admit_clean_identity(&home_dir, &executable_dir, &project_root) {
@@ -676,6 +730,8 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             }
         };
         let clean_plan = clean_session.plan().clone();
+        let mut protected_journals = preflight.protected_journals;
+        protected_journals.insert(clean_plan.binding.journal_token.to_path_buf());
         let admitted_plan = clean_plan.clone();
         let identity_executable_dir = executable_dir.clone();
         let mut clean_session = Some(clean_session);
@@ -717,6 +773,10 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             config_path: config_path(&home_dir),
             manifest_path: manifest_path(&journal),
             plan: clean_plan,
+            protected_journals,
+            registry_known: preflight.registry_known,
+            platform: PlatformTag::current(),
+            bundled_user_skill: project_root.join("solstone/talent/solstone"),
             artifact_evidence,
             curdir: current_dir,
             executable_dir,
@@ -732,12 +792,10 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             }
         }
         let outcome = run_clean_uninstall(&mut clean);
-        // This is the one irreversible path in the verb: it removes the
-        // service unit, both managed wrappers, the owner's user config and the
-        // manifest inside their journal. A bare count tells an owner that
-        // something was skipped or failed without telling them WHICH artifact
-        // or WHERE -- and the skip is the case that matters most, because it
-        // is how an owner-authored alias survives. Narrate each step.
+        // Report each structured cleanup result, including preserved targets.
+        if let Some(journal) = &outcome.journal_path {
+            let _ = writeln!(stdout, "journal: {}", journal.display());
+        }
         let total = outcome.results.len();
         for (index, result) in outcome.results.iter().enumerate() {
             let step = index + 1;
@@ -754,22 +812,28 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             if detail.is_empty() {
                 let _ = writeln!(
                     stdout,
-                    "[step {step}/{total}] {} {}",
+                    "[step {step}/{total}] {} {} [{}]",
                     result.state.as_str(),
-                    result.name
+                    result.name,
+                    result.mark.as_str()
                 );
             } else {
                 let _ = writeln!(
                     stdout,
-                    "[step {step}/{total}] {} {}: {detail}",
+                    "[step {step}/{total}] {} {} [{}]: {detail}",
                     result.state.as_str(),
-                    result.name
+                    result.name,
+                    result.mark.as_str()
                 );
             }
         }
         let _ = writeln!(stdout, "{}", outcome.message);
         drop(clean);
         if outcome.exit_code == 0
+            && !outcome
+                .results
+                .iter()
+                .any(|result| result.state == clean_uninstall::CleanUninstallState::Failed)
             && let Err(error) = clean_session
                 .take()
                 .expect("a successful clean uninstall holds its identity admission")
@@ -1490,10 +1554,8 @@ mod tests {
         assert!(!home.join(".local/bin/journal").exists());
     }
 
-    /// Clean-uninstall is the one irreversible path in the verb, and a bare
-    /// count cannot tell an owner WHICH artifact was skipped or failed. The
-    /// skip line in particular is how an owner-authored alias announces that
-    /// it survived, so it is the one that must reach them.
+    /// Missing identity is refused before setup creates owner storage or runs
+    /// the child service command.
     #[test]
     fn clean_uninstall_refuses_before_destructive_steps_without_an_identity() {
         let root = root("clean-narration");
@@ -1509,7 +1571,7 @@ mod tests {
         // environment variable: `set_var` is process-global and racy under the
         // default test runner, and this assertion is about narration, not
         // about which journal was chosen.
-        let _ = run_owner_setup_with_io(
+        let exit = run_owner_setup_with_io(
             args,
             home.clone(),
             executable_dir,
@@ -1525,15 +1587,17 @@ mod tests {
             &mut stdout,
             &mut stderr,
         );
+        assert_eq!(exit, ExitCode::from(1));
         assert!(stdout.is_empty());
-        assert!(
-            String::from_utf8(stderr)
-                .expect("stderr")
-                .contains("this installation couldn't be verified")
-        );
+        assert!(!stderr.is_empty());
         assert!(
             home.join(".local/bin/solstone").exists(),
             "an owner-authored alias must never be removed"
+        );
+        assert!(
+            !home
+                .join(".local/share/solstone/installation-identity")
+                .exists()
         );
     }
 
@@ -2928,5 +2992,549 @@ mod tests {
             "solstone-journal: /opt/journal\n",
             "/usr/bin/journal"
         ));
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    fn full_install(
+        home: &Path,
+        executable_dir: &Path,
+        journal: &Path,
+    ) -> (
+        OwnerBase,
+        solstone_core_installation_identity::InstallationBinding,
+    ) {
+        fs::create_dir_all(home).unwrap();
+        fs::create_dir_all(executable_dir).unwrap();
+        fs::create_dir_all(journal).unwrap();
+        let owner = OwnerBase::at_home(home.to_path_buf(), PlatformTag::current()).unwrap();
+        let admission = admit_setup(SetupAdmissionRequest {
+            owner: owner.clone(),
+            root_token: root_token_from_path(executable_dir).unwrap(),
+            journal_token: journal_token_from_path(journal).unwrap(),
+            journal_is_explicit: true,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .unwrap();
+        let binding = admission.binding().clone();
+        drop(admission);
+        user_config::write_user_config(&config_path(home), &journal.to_string_lossy()).unwrap();
+        (owner, binding)
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    fn run_clean_entry(
+        home: &Path,
+        executable_dir: &Path,
+        cwd: &Path,
+    ) -> (ExitCode, Vec<u8>, Vec<u8>) {
+        let args = parsed(&["--clean-uninstall".into(), "--yes".into()], cwd);
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let exit = run_owner_setup_with_io_with_resolution_env(
+            args,
+            home.to_path_buf(),
+            executable_dir.to_path_buf(),
+            cwd.to_path_buf(),
+            None,
+            None,
+            false,
+            false,
+            seams(Vec::new()),
+            &mut stdout,
+            &mut stderr,
+        );
+        (exit, stdout, stderr)
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    fn run_admitted_clean_cleanup(
+        home: &Path,
+        executable_dir: &Path,
+        cwd: &Path,
+        journal: &Path,
+        owner: &OwnerBase,
+        binding: &solstone_core_installation_identity::InstallationBinding,
+    ) -> crate::clean_uninstall::CleanUninstallOutcome {
+        use crate::clean_uninstall::{CleanUninstallContext, IdentityHold, run_clean_uninstall};
+        use crate::identity_evidence::gather_artifact_evidence;
+        use solstone_core_installation_identity::{
+            ArtifactBindingEvidence, CleanUninstallRequest, admit_clean_uninstall, namespace_name,
+        };
+
+        let root = root_token_from_path(executable_dir).unwrap();
+        let preflight =
+            crate::clean_uninstall::clean_uninstall_preflight(owner, &root, &config_path(home))
+                .unwrap();
+        let session = admit_clean_uninstall(CleanUninstallRequest {
+            owner: owner.clone(),
+            root_token: root,
+            artifacts: gather_artifact_evidence(home, &binding.namespace),
+        })
+        .unwrap();
+        let plan = session.plan().clone();
+        let mut protected = preflight.protected_journals;
+        protected.insert(plan.binding.journal_token.to_path_buf());
+        let mut runner = Runner(VecDeque::new());
+        let mut confirm = || true;
+        let journal_path = journal.to_path_buf();
+        let mut hold = |_hold: IdentityHold| Ok(());
+        let mut context = CleanUninstallContext {
+            manifest_path: crate::manifest::manifest_path(&journal_path),
+            journal_path,
+            home_dir: home.to_path_buf(),
+            config_path: config_path(home),
+            plan,
+            protected_journals: protected,
+            registry_known: preflight.registry_known,
+            platform: owner.platform(),
+            bundled_user_skill: executable_dir.join("solstone/talent/solstone"),
+            artifact_evidence: gather_artifact_evidence(
+                home,
+                &namespace_name(
+                    owner.platform(),
+                    &root_token_from_path(executable_dir).unwrap(),
+                ),
+            ),
+            curdir: cwd.to_path_buf(),
+            executable_dir: executable_dir.to_path_buf(),
+            yes: true,
+            stdin_is_tty: false,
+            confirm: &mut confirm,
+            runner: &mut runner,
+            identity_hold: &mut hold,
+        };
+        let outcome = run_clean_uninstall(&mut context);
+        drop(context);
+        if outcome.exit_code == 0
+            && !outcome
+                .results
+                .iter()
+                .any(|result| result.state == crate::clean_uninstall::CleanUninstallState::Failed)
+        {
+            session.commit_tombstone().unwrap();
+        }
+        outcome
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    fn identity_snapshot(path: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+        fn visit(path: &Path, entries: &mut Vec<(PathBuf, Option<Vec<u8>>)>) {
+            let metadata = fs::symlink_metadata(path).unwrap();
+            if metadata.is_dir() {
+                entries.push((path.to_path_buf(), None));
+                for child in fs::read_dir(path).unwrap() {
+                    visit(&child.unwrap().path(), entries);
+                }
+            } else if metadata.file_type().is_symlink() {
+                entries.push((path.to_path_buf(), None));
+            } else {
+                entries.push((path.to_path_buf(), Some(fs::read(path).unwrap())));
+            }
+        }
+        let mut entries = Vec::new();
+        visit(path, &mut entries);
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        entries
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    fn create_private_nested_dir(home: &Path, path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let relative = path.strip_prefix(home).unwrap();
+        let mut current = home.to_path_buf();
+        for component in relative.components() {
+            current.push(component);
+            match fs::create_dir(&current) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => panic!("create {}: {error}", current.display()),
+            }
+            fs::set_permissions(&current, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    fn census_generation(
+        owner: &OwnerBase,
+        executable_dir: &Path,
+    ) -> solstone_core_installation_identity::Generation {
+        solstone_core_installation_identity::read_installation_journal_census(
+            owner,
+            &root_token_from_path(executable_dir).unwrap(),
+            true,
+        )
+        .unwrap()
+        .root_record
+        .unwrap()
+        .generation
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn clean_uninstall_preserves_manifest_and_second_run_is_generation_stable() {
+        let root = root("clean-journal-idempotent");
+        let home = root.join("home");
+        let executable_dir = root.join("install/bin");
+        let journal = root.join("journal");
+        let (owner, _binding) = full_install(&home, &executable_dir, &journal);
+        let manifest = manifest::manifest_path(&journal);
+        fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        fs::write(&manifest, "manifest canary").unwrap();
+        let unrelated = journal.join("unrelated-canary");
+        fs::write(&unrelated, "journal data").unwrap();
+        let generation = census_generation(&owner, &executable_dir);
+
+        let (exit, _, stderr) = run_clean_entry(&home, &executable_dir, &root);
+        assert_eq!(
+            exit,
+            ExitCode::SUCCESS,
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        assert_eq!(
+            solstone_core_installation_identity::read_installation_journal_census(
+                &owner,
+                &root_token_from_path(&executable_dir).unwrap(),
+                true,
+            )
+            .unwrap()
+            .root_record
+            .unwrap()
+            .lifecycle,
+            LifecycleState::Tombstoned
+        );
+        assert!(manifest.exists());
+        assert!(unrelated.exists());
+
+        let preflight = crate::clean_uninstall::clean_uninstall_preflight(
+            &owner,
+            &root_token_from_path(&executable_dir).unwrap(),
+            &config_path(&home),
+        )
+        .unwrap();
+        assert_eq!(
+            preflight.state,
+            crate::clean_uninstall::CleanUninstallPreflightState::AlreadyComplete
+        );
+        let outcome = CleanUninstallOutcome::already_complete(
+            preflight.journal_path.clone(),
+            owner.platform(),
+        );
+        assert!(outcome.already_complete);
+        assert_eq!(outcome.journal_path.as_deref(), Some(journal.as_path()));
+        let (second_exit, _, second_stderr) = run_clean_entry(&home, &executable_dir, &root);
+        assert_eq!(
+            second_exit,
+            ExitCode::SUCCESS,
+            "{}",
+            String::from_utf8_lossy(&second_stderr)
+        );
+        assert_eq!(census_generation(&owner, &executable_dir), generation);
+        assert!(manifest.exists());
+        assert!(unrelated.exists());
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn clean_uninstall_preserves_journal_nested_in_or_equal_to_rclone_target() {
+        for equal in [false, true] {
+            let root = root(if equal {
+                "clean-rclone-equal"
+            } else {
+                "clean-rclone-child"
+            });
+            let home = root.join("home");
+            let executable_dir = root.join("install/bin");
+            let rclone = home.join(".cache/solstone/rclone");
+            let journal = if equal {
+                rclone.clone()
+            } else {
+                rclone.join("journal")
+            };
+            let (owner, binding) = full_install(&home, &executable_dir, &journal);
+            let manifest = manifest::manifest_path(&journal);
+            fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+            fs::write(&manifest, "manifest canary").unwrap();
+            let canary = journal.join("journal-canary");
+            fs::write(&canary, "journal data").unwrap();
+
+            let outcome = run_admitted_clean_cleanup(
+                &home,
+                &executable_dir,
+                &root,
+                &journal,
+                &owner,
+                &binding,
+            );
+            assert_eq!(outcome.exit_code, 0, "{outcome:?}");
+            assert!(outcome.results.iter().any(|result| {
+                result.name == "rclone"
+                    && result.state == crate::clean_uninstall::CleanUninstallState::Preserved
+                    && result.mark == crate::clean_uninstall::CleanUninstallMark::ProtectedJournal
+            }));
+            assert!(manifest.exists());
+            assert!(canary.exists());
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn tombstoned_rclone_journal_is_preserved_when_last_adopted_root_uninstalls() {
+        let root = root("clean-rclone-tombstone");
+        let home = root.join("home");
+        let install_a = root.join("install-a/bin");
+        let install_b = root.join("install-b/bin");
+        let journal_a = home.join(".cache/solstone/rclone/old-journal");
+        let journal_b = root.join("journal-b");
+        let (owner, binding_a) = full_install(&home, &install_a, &journal_a);
+        let manifest_a = manifest::manifest_path(&journal_a);
+        fs::create_dir_all(manifest_a.parent().unwrap()).unwrap();
+        fs::write(&manifest_a, "old manifest").unwrap();
+        let session_a = solstone_core_installation_identity::admit_clean_uninstall(
+            solstone_core_installation_identity::CleanUninstallRequest {
+                owner: owner.clone(),
+                root_token: root_token_from_path(&install_a).unwrap(),
+                artifacts: ArtifactBindingEvidence::Fresh,
+            },
+        )
+        .unwrap();
+        session_a.commit_tombstone().unwrap();
+        let (_same_owner, binding_b) = full_install(&home, &install_b, &journal_b);
+        let manifest_b = manifest::manifest_path(&journal_b);
+        fs::create_dir_all(manifest_b.parent().unwrap()).unwrap();
+        fs::write(&manifest_b, "current manifest").unwrap();
+
+        let outcome =
+            run_admitted_clean_cleanup(&home, &install_b, &root, &journal_b, &owner, &binding_b);
+        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
+        assert!(outcome.results.iter().any(|result| {
+            result.name == "rclone"
+                && result.state == crate::clean_uninstall::CleanUninstallState::Preserved
+                && result.mark == crate::clean_uninstall::CleanUninstallMark::ProtectedJournal
+        }));
+        assert!(manifest_a.exists());
+        assert!(manifest_b.exists());
+        assert!(!config_path(&home).exists());
+        assert_ne!(binding_a.namespace, binding_b.namespace);
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn invalid_config_refuses_clean_uninstall_without_mutation() {
+        let root = root("clean-invalid-config");
+        let home = root.join("home");
+        let executable_dir = root.join("install/bin");
+        let journal = root.join("journal");
+        let (owner, binding) = full_install(&home, &executable_dir, &journal);
+        let config = config_path(&home);
+        fs::write(&config, b"journal = [").unwrap();
+        let record_path = owner
+            .path()
+            .join("namespaces")
+            .join(binding.namespace.to_string())
+            .join("record");
+        let record = fs::read(&record_path).unwrap();
+        let lock_path = owner.path().join("owner.lock");
+        let lock = fs::read(&lock_path).unwrap();
+        let config_bytes = fs::read(&config).unwrap();
+        let canary = journal.join("canary");
+        fs::write(&canary, "journal data").unwrap();
+
+        let (exit, _, _) = run_clean_entry(&home, &executable_dir, &root);
+        assert_eq!(exit, ExitCode::from(1));
+        assert_eq!(fs::read(&record_path).unwrap(), record);
+        assert_eq!(fs::read(&lock_path).unwrap(), lock);
+        assert_eq!(fs::read(&config).unwrap(), config_bytes);
+        assert!(canary.exists());
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn unreadable_identity_census_refuses_without_creating_or_mutating() {
+        let root = root("clean-unreadable-census");
+        let home = root.join("home");
+        let executable_dir = root.join("install/bin");
+        let journal = root.join("journal");
+        let (owner, binding) = full_install(&home, &executable_dir, &journal);
+        let manifest = manifest::manifest_path(&journal);
+        fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        fs::write(&manifest, "manifest canary").unwrap();
+        let unrelated = journal.join("unrelated-canary");
+        fs::write(&unrelated, "journal data").unwrap();
+
+        let lock_path = owner.path().join("owner.lock");
+        fs::remove_file(&lock_path).unwrap();
+        let identity_before = identity_snapshot(&owner.path());
+        let config = config_path(&home);
+        let config_before = fs::read(&config).unwrap();
+        let manifest_before = fs::read(&manifest).unwrap();
+        let unrelated_before = fs::read(&unrelated).unwrap();
+
+        let (exit, _, stderr) = run_clean_entry(&home, &executable_dir, &root);
+        assert_ne!(
+            exit,
+            ExitCode::SUCCESS,
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        assert!(!lock_path.exists());
+        assert_eq!(identity_snapshot(&owner.path()), identity_before);
+        assert_eq!(fs::read(&config).unwrap(), config_before);
+        assert_eq!(fs::read(&manifest).unwrap(), manifest_before);
+        assert_eq!(fs::read(&unrelated).unwrap(), unrelated_before);
+        let record_path = owner
+            .path()
+            .join("namespaces")
+            .join(binding.namespace.to_string())
+            .join("record");
+        let record = decode_record(&fs::read(record_path).unwrap()).unwrap();
+        assert_eq!(record.state, LifecycleState::Adopted);
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn disagreeing_config_journal_refuses_clean_uninstall_without_mutation() {
+        let root = root("clean-disagreeing-config");
+        let home = root.join("home");
+        let executable_dir = root.join("install/bin");
+        let journal = root.join("journal");
+        let (owner, binding) = full_install(&home, &executable_dir, &journal);
+        let config = config_path(&home);
+        let other_journal = root.join("other-journal");
+        user_config::write_user_config(&config, &other_journal.to_string_lossy()).unwrap();
+        let record_path = owner
+            .path()
+            .join("namespaces")
+            .join(binding.namespace.to_string())
+            .join("record");
+        let record = fs::read(&record_path).unwrap();
+        let config_bytes = fs::read(&config).unwrap();
+        let canary = journal.join("canary");
+        fs::write(&canary, "journal data").unwrap();
+
+        let (exit, _, _) = run_clean_entry(&home, &executable_dir, &root);
+        assert_eq!(exit, ExitCode::from(1));
+        assert_eq!(fs::read(&record_path).unwrap(), record);
+        assert_eq!(fs::read(&config).unwrap(), config_bytes);
+        assert!(canary.exists());
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn journal_overlapping_identity_base_refuses_before_identity_writes() {
+        use std::os::unix::fs::PermissionsExt;
+
+        for use_parent in [false, true] {
+            let root = root(if use_parent {
+                "clean-identity-parent"
+            } else {
+                "clean-identity-base"
+            });
+            let home = root.join("home");
+            let executable_dir = root.join("install/bin");
+            fs::create_dir_all(&home).unwrap();
+            fs::create_dir_all(&executable_dir).unwrap();
+            let owner = OwnerBase::at_home(home.clone(), PlatformTag::current()).unwrap();
+            let journal = if use_parent {
+                owner.path().ancestors().nth(2).unwrap().to_path_buf()
+            } else {
+                owner.path()
+            };
+            create_private_nested_dir(&home, &journal);
+            let (owner, binding) = full_install(&home, &executable_dir, &journal);
+            let config = config_path(&home);
+            let config_bytes = fs::read(&config).unwrap();
+            let record_path = owner
+                .path()
+                .join("namespaces")
+                .join(binding.namespace.to_string())
+                .join("record");
+            let record = fs::read(&record_path).unwrap();
+            let canary = journal.join("canary");
+            fs::write(&canary, "journal data").unwrap();
+            let identity_before = identity_snapshot(&owner.path());
+
+            let (exit, _, _) = run_clean_entry(&home, &executable_dir, &root);
+            assert_eq!(exit, ExitCode::from(1));
+            assert_eq!(fs::read(&record_path).unwrap(), record);
+            assert_eq!(fs::read(&config).unwrap(), config_bytes);
+            assert_eq!(identity_snapshot(&owner.path()), identity_before);
+            assert!(canary.exists());
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn clean_uninstall_removes_only_bundled_user_skill_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = root("clean-user-skill");
+        let home = root.join("home");
+        let executable_dir = root.join("install/bin");
+        let journal = root.join("journal");
+        let (owner, binding) = full_install(&home, &executable_dir, &journal);
+        let bundled = executable_dir.join("solstone/talent/solstone");
+        fs::create_dir_all(&bundled).unwrap();
+        let claude = home.join(".claude/skills/solstone");
+        let codex = home.join(".codex/skills/solstone");
+        let gemini = home.join(".gemini/skills/solstone");
+        fs::create_dir_all(claude.parent().unwrap()).unwrap();
+        fs::create_dir_all(codex.parent().unwrap()).unwrap();
+        fs::create_dir_all(gemini.parent().unwrap()).unwrap();
+        symlink(&bundled, &claude).unwrap();
+        fs::create_dir(&codex).unwrap();
+        fs::write(codex.join("owner.md"), "owner content").unwrap();
+        let foreign = root.join("foreign-skill");
+        fs::create_dir_all(&foreign).unwrap();
+        symlink(&foreign, &gemini).unwrap();
+
+        let outcome =
+            run_admitted_clean_cleanup(&home, &executable_dir, &root, &journal, &owner, &binding);
+        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
+        assert!(!claude.exists() && !claude.is_symlink());
+        assert!(codex.is_dir());
+        assert_eq!(
+            fs::read_to_string(codex.join("owner.md")).unwrap(),
+            "owner content"
+        );
+        assert!(gemini.is_symlink());
+        assert!(outcome.results.iter().any(|result| {
+            result.name == "user-skill"
+                && result.path.as_deref() == Some(codex.as_path())
+                && result.mark == crate::clean_uninstall::CleanUninstallMark::Foreign
+        }));
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn clean_uninstall_preserves_symlinked_shared_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = root("clean-rclone-symlink");
+        let home = root.join("home");
+        let executable_dir = root.join("install/bin");
+        let journal = root.join("journal");
+        let (owner, binding) = full_install(&home, &executable_dir, &journal);
+        let manifest = manifest::manifest_path(&journal);
+        fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        fs::write(&manifest, "manifest canary").unwrap();
+        let canary = journal.join("canary");
+        fs::write(&canary, "journal data").unwrap();
+        let rclone = home.join(".cache/solstone/rclone");
+        fs::create_dir_all(rclone.parent().unwrap()).unwrap();
+        symlink(&journal, &rclone).unwrap();
+
+        let outcome =
+            run_admitted_clean_cleanup(&home, &executable_dir, &root, &journal, &owner, &binding);
+        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
+        assert!(outcome.results.iter().any(|result| {
+            result.name == "rclone"
+                && result.state == crate::clean_uninstall::CleanUninstallState::Preserved
+                && result.mark == crate::clean_uninstall::CleanUninstallMark::ProtectedJournal
+        }));
+        assert!(rclone.is_symlink());
+        assert!(manifest.exists());
+        assert!(canary.exists());
     }
 }

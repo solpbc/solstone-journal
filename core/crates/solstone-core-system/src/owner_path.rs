@@ -80,12 +80,11 @@ pub fn add_commands_to_owner_path() {
 
 /// Remove the installed commands from the owner's `Path` (the uninstall hook).
 #[cfg(windows)]
-pub fn remove_commands_from_owner_path() {
-    if let Some(dir) = installed_commands_dir() {
-        if let Err(error) = registry::update(|path| without_entry(path, &dir)) {
-            eprintln!("journal commands were not removed from PATH: {error}");
-        }
-    }
+pub fn remove_commands_from_owner_path() -> Result<(), String> {
+    let Some(dir) = installed_commands_dir() else {
+        return Ok(());
+    };
+    registry::update(|path| without_entry(path, &dir))
 }
 
 #[cfg(windows)]

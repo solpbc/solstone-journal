@@ -11,6 +11,57 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use toml_edit::{DocumentMut, Item};
 
+#[derive(Debug)]
+pub enum CleanupConfigError {
+    Io(io::Error),
+    InvalidToml,
+    MissingJournal,
+    JournalNotString,
+    JournalNotAbsolute,
+}
+
+impl std::fmt::Display for CleanupConfigError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => write!(formatter, "could not read config: {error}"),
+            Self::InvalidToml => formatter.write_str("config is not valid TOML"),
+            Self::MissingJournal => formatter.write_str("config has no journal key"),
+            Self::JournalNotString => formatter.write_str("config journal value is not a string"),
+            Self::JournalNotAbsolute => formatter.write_str("config journal path is not absolute"),
+        }
+    }
+}
+
+impl std::error::Error for CleanupConfigError {}
+
+/// Strictly parse the journal pointer used by clean-uninstall preflight.
+pub fn cleanup_journal_from_toml(content: &str) -> Result<PathBuf, CleanupConfigError> {
+    let document = content
+        .parse::<DocumentMut>()
+        .map_err(|_| CleanupConfigError::InvalidToml)?;
+    let item = document
+        .get("journal")
+        .ok_or(CleanupConfigError::MissingJournal)?;
+    let value = item
+        .as_value()
+        .and_then(|value| value.as_str())
+        .ok_or(CleanupConfigError::JournalNotString)?;
+    let path = PathBuf::from(value);
+    if !path.is_absolute() {
+        return Err(CleanupConfigError::JournalNotAbsolute);
+    }
+    Ok(path)
+}
+
+/// Read the strict clean-uninstall journal pointer without creating or repairing config.
+pub fn read_cleanup_journal(path: &Path) -> Result<Option<PathBuf>, CleanupConfigError> {
+    match fs::read_to_string(path) {
+        Ok(content) => cleanup_journal_from_toml(&content).map(Some),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(CleanupConfigError::Io(error)),
+    }
+}
+
 static TEMP_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
 /// Return the user configuration path below an explicit home directory.
@@ -94,6 +145,36 @@ mod tests {
     use super::{config_path, default_journal, read_user_config, write_user_config};
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn cleanup_journal_from_toml_requires_an_absolute_string() {
+        use super::{CleanupConfigError, cleanup_journal_from_toml};
+
+        assert!(matches!(
+            cleanup_journal_from_toml("journal = ["),
+            Err(CleanupConfigError::InvalidToml)
+        ));
+        assert!(matches!(
+            cleanup_journal_from_toml("other = true"),
+            Err(CleanupConfigError::MissingJournal)
+        ));
+        assert!(matches!(
+            cleanup_journal_from_toml("journal = 42"),
+            Err(CleanupConfigError::JournalNotString)
+        ));
+        assert!(matches!(
+            cleanup_journal_from_toml("journal = \"relative\""),
+            Err(CleanupConfigError::JournalNotAbsolute)
+        ));
+        assert_eq!(
+            cleanup_journal_from_toml("journal = \"/journal\"").unwrap(),
+            PathBuf::from("/journal")
+        );
+        assert_eq!(
+            cleanup_journal_from_toml("journal = \"/journal\"\nextra = true").unwrap(),
+            PathBuf::from("/journal")
+        );
+    }
 
     fn temp_root(name: &str) -> PathBuf {
         let path =

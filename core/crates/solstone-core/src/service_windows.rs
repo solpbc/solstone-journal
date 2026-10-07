@@ -12,8 +12,10 @@ use std::time::{Duration, Instant};
 
 use solstone_core_cli::{ServiceAction, ServiceInstallationGuardArguments};
 use solstone_core_installation_identity::{
-    GuardFields, IdentityError, OwnerBase, journal_token_from_path, load_installation_binding,
-    owner_base, parse_service_guard_environment, root_token_from_path,
+    ArtifactBindingEvidence, CleanUninstallRequest, CleanupSkip, CleanupTargetDecision,
+    CleanupTargetKind, GuardFields, IdentityError, OwnerBase, ProtectedJournals,
+    admit_clean_uninstall, journal_token_from_path, load_installation_binding,
+    may_remove_cleanup_target, owner_base, parse_service_guard_environment, root_token_from_path,
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 use solstone_core_service_unit::{
@@ -21,13 +23,18 @@ use solstone_core_service_unit::{
     encode_windows_task_xml, parse_windows_task_xml, render_windows_task_xml,
     windows_service_update_plan,
 };
+use solstone_core_setup::clean_uninstall::{
+    CleanUninstallMark, CleanUninstallPreflight, CleanUninstallPreflightState, CleanUninstallState,
+    CleanUninstallStepResult, clean_uninstall_preflight,
+};
+use solstone_core_setup::user_config::config_path;
 use solstone_core_system::lifecycle::wait_ready;
 mod native_process;
 mod sign_in_resume;
 mod task_scheduler;
 use task_scheduler::{Operation, Snapshot, TaskInstance};
 
-use crate::resolve_process_journal_path;
+use crate::{discover_binary_home, resolve_process_journal_path};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
 /// A public stop waits out the supervisor's own worst-case standard shutdown
@@ -385,12 +392,8 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
     // the trigger principal as an account name, and the strict profile parser
     // that later reads this artifact (setup evidence) performs no native
     // normalization, so a raw artifact refuses every later setup as malformed.
-    let provider = ctx.owner.path();
-    let directory = provider
-        .ancestors()
-        .nth(2)
-        .ok_or_else(|| task_error("installation provider location is unavailable"))?
-        .join("journal-service");
+    let directory = task_artifact_directory(&ctx.owner)
+        .ok_or_else(|| task_error("installation provider location is unavailable"))?;
     fs::create_dir_all(&directory).map_err(task_error)?;
     fs::write(
         directory.join(format!("{}.xml", ctx.guard.namespace)),
@@ -718,6 +721,510 @@ fn delete_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
     Ok(())
 }
 
+const BEFORE_UNINSTALL_FALLBACK_TIMEOUT: Duration = Duration::from_secs(20);
+
+fn clean_hook_preflight() -> Result<
+    (
+        PathBuf,
+        OwnerBase,
+        solstone_core_installation_identity::RootToken,
+        CleanUninstallPreflight,
+    ),
+    ExitCode,
+> {
+    let home =
+        discover_binary_home().map_err(|error| task_error(format!("service home: {error:?}")))?;
+    let owner = owner_base().map_err(task_error)?;
+    let executable = std::env::current_exe().map_err(task_error)?;
+    let executable_dir = executable.parent().unwrap_or_else(|| Path::new("."));
+    let root = resolve_identity_root_from_executable_dir(executable_dir)
+        .unwrap_or_else(|| executable_dir.to_path_buf());
+    let root_token = root_token_from_path(&root).map_err(task_error)?;
+    let preflight = clean_uninstall_preflight(&owner, &root_token, &config_path(&home))
+        .map_err(|error| task_error(format!("clean uninstall refused: {error}")))?;
+    Ok((home, owner, root_token, preflight))
+}
+
+fn admitted_clean_session(
+    owner: &OwnerBase,
+    root_token: &solstone_core_installation_identity::RootToken,
+    ctx: &ServiceContext,
+) -> Result<solstone_core_installation_identity::CleanUninstallSession, ExitCode> {
+    admit_clean_uninstall(CleanUninstallRequest {
+        owner: owner.clone(),
+        root_token: root_token.clone(),
+        artifacts: ArtifactBindingEvidence::Guarded(ctx.guard.clone()),
+    })
+    .map_err(task_error)
+}
+
+fn saved_task_artifact_paths(ctx: &ServiceContext) -> Result<(PathBuf, PathBuf), ExitCode> {
+    let directory = task_artifact_directory(&ctx.owner)
+        .ok_or_else(|| task_error("installation provider location is unavailable"))?;
+    Ok((
+        directory.join(format!("{}.xml", ctx.guard.namespace)),
+        directory.join(format!("{}.after-update.json", ctx.guard.namespace)),
+    ))
+}
+
+fn task_artifact_directory(owner: &OwnerBase) -> Option<PathBuf> {
+    owner
+        .path()
+        .ancestors()
+        .nth(2)
+        .map(|parent| parent.join("journal-service"))
+}
+
+fn journal_app_paths() -> Option<[PathBuf; 3]> {
+    let state_dir = PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("solstone-journal");
+    Some([
+        state_dir.join("journal-app.json"),
+        state_dir.join("journal-mark.ico"),
+        state_dir.join("journal-app-webview"),
+    ])
+}
+
+fn decision_mark(decision: CleanupTargetDecision) -> CleanUninstallMark {
+    match decision {
+        CleanupTargetDecision::Remove => CleanUninstallMark::None,
+        CleanupTargetDecision::Skip(CleanupSkip::ProtectedJournal) => {
+            CleanUninstallMark::ProtectedJournal
+        }
+        CleanupTargetDecision::Skip(CleanupSkip::AnotherInstallation) => {
+            CleanUninstallMark::AnotherInstallation
+        }
+        CleanupTargetDecision::Skip(CleanupSkip::RegistryUnreadable) => {
+            CleanUninstallMark::RegistryUnreadable
+        }
+    }
+}
+
+fn hook_step(
+    name: &'static str,
+    state: CleanUninstallState,
+    path: Option<PathBuf>,
+    mark: CleanUninstallMark,
+    reason: Option<String>,
+) -> CleanUninstallStepResult {
+    CleanUninstallStepResult {
+        name,
+        state,
+        path,
+        reason,
+        mark,
+    }
+}
+
+fn remove_hook_file(
+    name: &'static str,
+    path: PathBuf,
+    kind: CleanupTargetKind,
+    last_installation: bool,
+    registry_known: bool,
+    protected: &ProtectedJournals,
+    platform: PlatformTag,
+) -> CleanUninstallStepResult {
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return hook_step(
+                name,
+                CleanUninstallState::AlreadyAbsent,
+                Some(path),
+                CleanUninstallMark::None,
+                None,
+            );
+        }
+        Err(error) => {
+            return hook_step(
+                name,
+                CleanUninstallState::Failed,
+                Some(path),
+                CleanUninstallMark::None,
+                Some(error.to_string()),
+            );
+        }
+        Ok(_) => {}
+    }
+    let decision = may_remove_cleanup_target(
+        &path,
+        kind,
+        last_installation,
+        registry_known,
+        protected,
+        platform,
+    );
+    if let CleanupTargetDecision::Skip(skip) = decision {
+        return hook_step(
+            name,
+            CleanUninstallState::Preserved,
+            Some(path),
+            decision_mark(CleanupTargetDecision::Skip(skip)),
+            Some(format!("{skip:?}")),
+        );
+    }
+    match fs::remove_file(&path) {
+        Ok(()) => hook_step(
+            name,
+            CleanUninstallState::Removed,
+            Some(path),
+            CleanUninstallMark::None,
+            None,
+        ),
+        Err(error) => hook_step(
+            name,
+            CleanUninstallState::Failed,
+            Some(path),
+            CleanUninstallMark::None,
+            Some(error.to_string()),
+        ),
+    }
+}
+
+fn remove_hook_directory(
+    name: &'static str,
+    path: PathBuf,
+    last_installation: bool,
+    registry_known: bool,
+    protected: &ProtectedJournals,
+    platform: PlatformTag,
+) -> CleanUninstallStepResult {
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return hook_step(
+                name,
+                CleanUninstallState::AlreadyAbsent,
+                Some(path),
+                CleanUninstallMark::None,
+                None,
+            );
+        }
+        Err(error) => {
+            return hook_step(
+                name,
+                CleanUninstallState::Failed,
+                Some(path),
+                CleanUninstallMark::None,
+                Some(error.to_string()),
+            );
+        }
+        Ok(_) => {}
+    }
+    let decision = may_remove_cleanup_target(
+        &path,
+        CleanupTargetKind::Shared,
+        last_installation,
+        registry_known,
+        protected,
+        platform,
+    );
+    if let CleanupTargetDecision::Skip(skip) = decision {
+        return hook_step(
+            name,
+            CleanUninstallState::Preserved,
+            Some(path),
+            decision_mark(CleanupTargetDecision::Skip(skip)),
+            Some(format!("{skip:?}")),
+        );
+    }
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => hook_step(
+            name,
+            CleanUninstallState::AlreadyAbsent,
+            Some(path),
+            CleanUninstallMark::None,
+            None,
+        ),
+        Err(error) => hook_step(
+            name,
+            CleanUninstallState::Failed,
+            Some(path),
+            CleanUninstallMark::None,
+            Some(error.to_string()),
+        ),
+        Ok(metadata) if metadata.file_type().is_symlink() => hook_step(
+            name,
+            CleanUninstallState::Preserved,
+            Some(path),
+            CleanUninstallMark::Foreign,
+            Some("Foreign".into()),
+        ),
+        Ok(metadata) if !metadata.is_dir() => hook_step(
+            name,
+            CleanUninstallState::Preserved,
+            Some(path),
+            CleanUninstallMark::Foreign,
+            Some("Foreign".into()),
+        ),
+        Ok(_) => match fs::remove_dir_all(&path) {
+            Ok(()) => hook_step(
+                name,
+                CleanUninstallState::Removed,
+                Some(path),
+                CleanUninstallMark::None,
+                None,
+            ),
+            Err(error) => hook_step(
+                name,
+                CleanUninstallState::Failed,
+                Some(path),
+                CleanUninstallMark::None,
+                Some(error.to_string()),
+            ),
+        },
+    }
+}
+
+fn no_binding_hook_results(home: &Path) -> Vec<CleanUninstallStepResult> {
+    let mut results = vec![
+        ("task", None),
+        ("task-xml", None),
+        ("after-update-receipt", None),
+        ("config", Some(config_path(home))),
+        ("resume-script", None),
+    ]
+    .into_iter()
+    .map(|(name, path)| {
+        hook_step(
+            name,
+            CleanUninstallState::Preserved,
+            path,
+            CleanUninstallMark::Foreign,
+            Some("NoAdoptedBinding".into()),
+        )
+    })
+    .collect::<Vec<_>>();
+    if let Some(paths) = journal_app_paths() {
+        results.extend(paths.into_iter().enumerate().map(|(index, path)| {
+            hook_step(
+                [
+                    "journal-app-prefs",
+                    "journal-app-icon",
+                    "journal-app-webview",
+                ][index],
+                CleanUninstallState::Preserved,
+                Some(path),
+                CleanUninstallMark::Foreign,
+                Some("NoAdoptedBinding".into()),
+            )
+        }));
+    } else {
+        results.extend(
+            [
+                "journal-app-prefs",
+                "journal-app-icon",
+                "journal-app-webview",
+            ]
+            .into_iter()
+            .map(|name| {
+                hook_step(
+                    name,
+                    CleanUninstallState::Preserved,
+                    None,
+                    CleanUninstallMark::NoOwnedPath,
+                    Some("NoAdoptedBinding".into()),
+                )
+            }),
+        );
+    }
+    results
+}
+
+fn print_uninstall_report(
+    journal: Option<&Path>,
+    status: &str,
+    results: &[CleanUninstallStepResult],
+) {
+    if let Some(journal) = journal {
+        eprintln!("journal: {}", journal.display());
+    }
+    eprintln!("before-uninstall: {status}");
+    for result in results {
+        let path = result.path.as_deref().map_or_else(
+            || "<no owned path>".to_owned(),
+            |path| path.display().to_string(),
+        );
+        eprintln!(
+            "{}: {} [{}] {}",
+            result.name,
+            result.state.as_str(),
+            result.mark.as_str(),
+            path
+        );
+    }
+}
+
+fn before_uninstall_deadline() -> Result<Instant, String> {
+    let Some(value) = std::env::var_os("SOLSTONE_BEFORE_UNINSTALL_DEADLINE_UNIX_MS") else {
+        return Ok(Instant::now() + BEFORE_UNINSTALL_FALLBACK_TIMEOUT);
+    };
+    let unix_millis = value
+        .to_str()
+        .ok_or("before-uninstall deadline is not Unicode")?
+        .parse::<u64>()
+        .map_err(|_| "before-uninstall deadline is invalid")?;
+    let wall_deadline = std::time::UNIX_EPOCH
+        .checked_add(Duration::from_millis(unix_millis))
+        .ok_or("before-uninstall deadline is out of range")?;
+    let remaining = wall_deadline
+        .duration_since(std::time::SystemTime::now())
+        .unwrap_or_default();
+    Instant::now()
+        .checked_add(remaining)
+        .ok_or_else(|| "before-uninstall deadline is out of range".to_owned())
+}
+
+fn hook_cleanup_inventory(
+    ctx: &ServiceContext,
+    home: &Path,
+    include_config: bool,
+) -> Vec<(&'static str, Option<PathBuf>)> {
+    let (task_xml, after_update) = saved_task_artifact_paths(ctx)
+        .map(|(task_xml, receipt)| (Some(task_xml), Some(receipt)))
+        .unwrap_or((None, None));
+    let resume =
+        sign_in_resume::cleanup_script_path(&ctx.owner.path(), &ctx.guard.id.as_hex()).ok();
+    let mut steps = vec![
+        ("task-xml", task_xml),
+        ("after-update-receipt", after_update),
+        ("resume-script", resume),
+    ];
+    if include_config {
+        steps.push(("config", Some(config_path(home))));
+    }
+    if let Some(paths) = journal_app_paths() {
+        steps.extend([
+            ("journal-app-prefs", Some(paths[0].clone())),
+            ("journal-app-icon", Some(paths[1].clone())),
+            ("journal-app-webview", Some(paths[2].clone())),
+        ]);
+    } else {
+        steps.extend([
+            ("journal-app-prefs", None),
+            ("journal-app-icon", None),
+            ("journal-app-webview", None),
+        ]);
+    }
+    steps
+}
+
+fn stop_after_failed_cleanup_step(
+    journal: Option<&Path>,
+    mut results: Vec<CleanUninstallStepResult>,
+    name: &'static str,
+    path: Option<PathBuf>,
+    reason: impl std::fmt::Display,
+    ctx: &ServiceContext,
+    home: &Path,
+    include_config: bool,
+) -> ExitCode {
+    results.push(hook_step(
+        name,
+        CleanUninstallState::Failed,
+        path,
+        CleanUninstallMark::None,
+        Some(reason.to_string()),
+    ));
+    let steps = hook_cleanup_inventory(ctx, home, include_config);
+    let skip_from = if name == "task" {
+        0
+    } else {
+        steps
+            .iter()
+            .position(|(step_name, _)| *step_name == name)
+            .map_or(steps.len(), |index| index + 1)
+    };
+    results.extend(steps.into_iter().skip(skip_from).map(|(name, path)| {
+        hook_step(
+            name,
+            CleanUninstallState::Skipped,
+            path,
+            CleanUninstallMark::NotRun,
+            Some("NotRun".into()),
+        )
+    }));
+    print_uninstall_report(journal, "failed", &results);
+    ExitCode::from(1)
+}
+
+fn remove_app_paths(
+    results: &mut Vec<CleanUninstallStepResult>,
+    last_installation: bool,
+    registry_known: bool,
+    protected: &ProtectedJournals,
+    platform: PlatformTag,
+) {
+    let Some(paths) = journal_app_paths() else {
+        results.extend(
+            [
+                "journal-app-prefs",
+                "journal-app-icon",
+                "journal-app-webview",
+            ]
+            .into_iter()
+            .map(|name| {
+                hook_step(
+                    name,
+                    CleanUninstallState::Preserved,
+                    None,
+                    CleanUninstallMark::NoOwnedPath,
+                    Some("NoOwnedPath".into()),
+                )
+            }),
+        );
+        return;
+    };
+    for (index, (name, path)) in [
+        ("journal-app-prefs", paths[0].clone()),
+        ("journal-app-icon", paths[1].clone()),
+        ("journal-app-webview", paths[2].clone()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let result = if index == 2 {
+            remove_hook_directory(
+                name,
+                path,
+                last_installation,
+                registry_known,
+                protected,
+                platform,
+            )
+        } else {
+            remove_hook_file(
+                name,
+                path,
+                CleanupTargetKind::Shared,
+                last_installation,
+                registry_known,
+                protected,
+                platform,
+            )
+        };
+        let failed = result.state == CleanUninstallState::Failed;
+        results.push(result);
+        if failed {
+            for (name, path) in [
+                ("journal-app-prefs", Some(paths[0].clone())),
+                ("journal-app-icon", Some(paths[1].clone())),
+                ("journal-app-webview", Some(paths[2].clone())),
+            ]
+            .into_iter()
+            .skip(index + 1)
+            {
+                results.push(hook_step(
+                    name,
+                    CleanUninstallState::Skipped,
+                    path,
+                    CleanUninstallMark::NotRun,
+                    Some("NotRun".into()),
+                ));
+            }
+            return;
+        }
+    }
+}
+
 fn run_install_action(
     port: Option<String>,
     supplied: Option<ServiceInstallationGuardArguments>,
@@ -776,19 +1283,177 @@ fn run_install_action(
 }
 
 fn run_uninstall_action() -> ExitCode {
-    let ctx = match resolve_context() {
-        Ok(ctx) => ctx,
+    let (home, owner, root_token, preflight) = match clean_hook_preflight() {
+        Ok(value) => value,
         Err(code) => return code,
     };
+    if preflight.state == CleanUninstallPreflightState::AlreadyComplete {
+        print_uninstall_report(preflight.journal_path.as_deref(), "already complete", &[]);
+        return ExitCode::SUCCESS;
+    }
+    if preflight.state == CleanUninstallPreflightState::NoBinding || preflight.root_record.is_none()
+    {
+        return task_error("clean uninstall requires an adopted installation identity");
+    }
+    let Some(journal) = preflight.journal_path.as_deref() else {
+        return task_error("adopted installation has no journal path");
+    };
+    let ctx = match context_for_journal(journal.to_path_buf()) {
+        Ok(ctx) => ctx,
+        Err(error) => return task_error(error),
+    };
+    let session = match admitted_clean_session(&owner, &root_token, &ctx) {
+        Ok(session) => session,
+        Err(code) => return code,
+    };
+    let plan = session.plan().clone();
+    let platform = owner.platform();
+    let mut results = Vec::new();
     if let Err(code) = stop_task(&ctx) {
-        return code;
+        return stop_after_failed_cleanup_step(
+            Some(journal),
+            results,
+            "task",
+            None,
+            format!("TaskStopFailed: {code:?}"),
+            &ctx,
+            &home,
+            false,
+        );
     }
-    match delete_task(&ctx).and_then(|()| {
-        sign_in_resume::clear(&ctx.owner.path(), &ctx.guard.id.as_hex()).map_err(task_error)
-    }) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(code) => code,
+    if let Err(code) = delete_task(&ctx) {
+        return stop_after_failed_cleanup_step(
+            Some(journal),
+            results,
+            "task",
+            None,
+            format!("TaskDeleteFailed: {code:?}"),
+            &ctx,
+            &home,
+            false,
+        );
     }
+    results.push(hook_step(
+        "task",
+        CleanUninstallState::Removed,
+        None,
+        CleanUninstallMark::None,
+        None,
+    ));
+    let (task_xml, after_update) = match saved_task_artifact_paths(&ctx) {
+        Ok(paths) => paths,
+        Err(code) => {
+            return stop_after_failed_cleanup_step(
+                Some(journal),
+                results,
+                "task-xml",
+                None,
+                format!("TaskArtifactPathsUnavailable: {code:?}"),
+                &ctx,
+                &home,
+                false,
+            );
+        }
+    };
+    for (name, path) in [
+        ("task-xml", task_xml),
+        ("after-update-receipt", after_update),
+    ] {
+        let result = remove_hook_file(
+            name,
+            path,
+            CleanupTargetKind::PerInstall,
+            false,
+            preflight.registry_known,
+            &preflight.protected_journals,
+            platform,
+        );
+        if result.state == CleanUninstallState::Failed {
+            return stop_after_failed_cleanup_step(
+                Some(journal),
+                results,
+                result.name,
+                result.path,
+                result.reason.unwrap_or_else(|| "CleanupFailed".into()),
+                &ctx,
+                &home,
+                false,
+            );
+        }
+        results.push(result);
+    }
+    let id = ctx.guard.id.as_hex();
+    let resume_path = match sign_in_resume::cleanup_script_path(&ctx.owner.path(), &id) {
+        Ok(path) => path,
+        Err(error) => {
+            return stop_after_failed_cleanup_step(
+                Some(journal),
+                results,
+                "resume-script",
+                None,
+                error,
+                &ctx,
+                &home,
+                false,
+            );
+        }
+    };
+    if let Err(error) = sign_in_resume::clear_run_value(&id) {
+        return stop_after_failed_cleanup_step(
+            Some(journal),
+            results,
+            "resume-script",
+            Some(resume_path),
+            format!("RunValueClearFailed: {error}"),
+            &ctx,
+            &home,
+            false,
+        );
+    }
+    let resume_result = remove_hook_file(
+        "resume-script",
+        resume_path,
+        CleanupTargetKind::PerInstall,
+        false,
+        preflight.registry_known,
+        &preflight.protected_journals,
+        platform,
+    );
+    if resume_result.state == CleanUninstallState::Failed {
+        return stop_after_failed_cleanup_step(
+            Some(journal),
+            results,
+            resume_result.name,
+            resume_result.path,
+            resume_result
+                .reason
+                .unwrap_or_else(|| "CleanupFailed".into()),
+            &ctx,
+            &home,
+            false,
+        );
+    }
+    results.push(resume_result);
+    remove_app_paths(
+        &mut results,
+        plan.remove_owner_config,
+        preflight.registry_known,
+        &preflight.protected_journals,
+        platform,
+    );
+    let failed = results
+        .iter()
+        .any(|result| result.state == CleanUninstallState::Failed);
+    print_uninstall_report(
+        Some(journal),
+        if failed { "failed" } else { "complete" },
+        &results,
+    );
+    if failed {
+        return ExitCode::from(1);
+    }
+    drop(session);
+    ExitCode::SUCCESS
 }
 
 fn run_start_action() -> ExitCode {
@@ -1077,23 +1742,93 @@ fn set_sign_in(ctx: &ServiceContext, on: bool) -> Result<(), ExitCode> {
 /// root and stops that process itself. This removes the recovery trigger before
 /// the files it points at disappear, without waiting for a full service stop.
 fn run_before_uninstall() -> ExitCode {
-    match installation_binding_absent() {
-        Ok(true) => return ExitCode::SUCCESS,
-        Ok(false) => {}
-        Err(code) => return code,
-    }
-    let ctx = match resolve_context() {
-        Ok(ctx) => ctx,
+    let (home, owner, root_token, preflight) = match clean_hook_preflight() {
+        Ok(value) => value,
         Err(code) => return code,
     };
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let journal = preflight.journal_path.clone();
+    match preflight.state {
+        CleanUninstallPreflightState::AlreadyComplete => {
+            print_uninstall_report(journal.as_deref(), "already complete", &[]);
+            return ExitCode::SUCCESS;
+        }
+        CleanUninstallPreflightState::NoBinding => {
+            let results = no_binding_hook_results(&home);
+            print_uninstall_report(journal.as_deref(), "NoAdoptedBinding", &results);
+            return ExitCode::SUCCESS;
+        }
+        CleanUninstallPreflightState::Proceed => {}
+    }
+    if preflight.root_record.is_none() {
+        return task_error("installation identity census is unreadable");
+    }
+    let Some(journal_path) = journal.as_deref() else {
+        return task_error("adopted installation has no journal path");
+    };
+    let ctx = match context_for_journal(journal_path.to_path_buf()) {
+        Ok(ctx) => ctx,
+        Err(error) => return task_error(error),
+    };
+    let session = match admitted_clean_session(&owner, &root_token, &ctx) {
+        Ok(session) => session,
+        Err(code) => return code,
+    };
+    let plan = session.plan().clone();
+    let deadline = match before_uninstall_deadline() {
+        Ok(deadline) => deadline,
+        Err(error) => {
+            return stop_after_failed_cleanup_step(
+                journal.as_deref(),
+                Vec::new(),
+                "task",
+                None,
+                error,
+                &ctx,
+                &home,
+                true,
+            );
+        }
+    };
+    if Instant::now() >= deadline {
+        return stop_after_failed_cleanup_step(
+            journal.as_deref(),
+            Vec::new(),
+            "task",
+            None,
+            "DeadlineElapsed",
+            &ctx,
+            &home,
+            true,
+        );
+    }
+    let mut results = Vec::new();
     let before = match inspect_task(&ctx, deadline) {
         Ok(before) => before,
-        Err(code) => return code,
+        Err(code) => {
+            return stop_after_failed_cleanup_step(
+                journal.as_deref(),
+                results,
+                "task",
+                None,
+                format!("TaskInspectFailed: {code:?}"),
+                &ctx,
+                &home,
+                true,
+            );
+        }
     };
     if before.present {
         if let Err(code) = validate_task(&ctx, &before) {
-            return code;
+            return stop_after_failed_cleanup_step(
+                journal.as_deref(),
+                results,
+                "task",
+                None,
+                format!("TaskGuardMismatch: {code:?}"),
+                &ctx,
+                &home,
+                true,
+            );
         }
         let after = match task_scheduler::execute_until(
             &ctx.scheduler,
@@ -1103,13 +1838,185 @@ fn run_before_uninstall() -> ExitCode {
             deadline,
         ) {
             Ok(after) => after,
-            Err(error) => return task_error(error),
+            Err(error) => {
+                return stop_after_failed_cleanup_step(
+                    journal.as_deref(),
+                    results,
+                    "task",
+                    None,
+                    error,
+                    &ctx,
+                    &home,
+                    true,
+                );
+            }
         };
         if after.present {
-            return task_error("service task remained registered during uninstall");
+            return stop_after_failed_cleanup_step(
+                journal.as_deref(),
+                results,
+                "task",
+                None,
+                "TaskRemainedRegistered",
+                &ctx,
+                &home,
+                true,
+            );
         }
+        results.push(hook_step(
+            "task",
+            CleanUninstallState::Removed,
+            None,
+            CleanUninstallMark::None,
+            None,
+        ));
+    } else {
+        results.push(hook_step(
+            "task",
+            CleanUninstallState::AlreadyAbsent,
+            None,
+            CleanUninstallMark::None,
+            None,
+        ));
     }
-    match sign_in_resume::clear(&ctx.owner.path(), &ctx.guard.id.as_hex()) {
+
+    let (task_xml, after_update) = match saved_task_artifact_paths(&ctx) {
+        Ok(paths) => paths,
+        Err(code) => {
+            return stop_after_failed_cleanup_step(
+                journal.as_deref(),
+                results,
+                "task-xml",
+                None,
+                format!("TaskArtifactPathsUnavailable: {code:?}"),
+                &ctx,
+                &home,
+                true,
+            );
+        }
+    };
+    for (name, path) in [
+        ("task-xml", task_xml),
+        ("after-update-receipt", after_update),
+    ] {
+        let result = remove_hook_file(
+            name,
+            path,
+            CleanupTargetKind::PerInstall,
+            false,
+            preflight.registry_known,
+            &preflight.protected_journals,
+            owner.platform(),
+        );
+        if result.state == CleanUninstallState::Failed {
+            return stop_after_failed_cleanup_step(
+                journal.as_deref(),
+                results,
+                result.name,
+                result.path,
+                result.reason.unwrap_or_else(|| "CleanupFailed".into()),
+                &ctx,
+                &home,
+                true,
+            );
+        }
+        results.push(result);
+    }
+    let id = ctx.guard.id.as_hex();
+    let resume_path = match sign_in_resume::cleanup_script_path(&ctx.owner.path(), &id) {
+        Ok(path) => path,
+        Err(error) => {
+            return stop_after_failed_cleanup_step(
+                journal.as_deref(),
+                results,
+                "resume-script",
+                None,
+                error,
+                &ctx,
+                &home,
+                true,
+            );
+        }
+    };
+    if let Err(error) = sign_in_resume::clear_run_value(&id) {
+        return stop_after_failed_cleanup_step(
+            journal.as_deref(),
+            results,
+            "resume-script",
+            Some(resume_path),
+            format!("RunValueClearFailed: {error}"),
+            &ctx,
+            &home,
+            true,
+        );
+    }
+    let resume_result = remove_hook_file(
+        "resume-script",
+        resume_path,
+        CleanupTargetKind::PerInstall,
+        false,
+        preflight.registry_known,
+        &preflight.protected_journals,
+        owner.platform(),
+    );
+    if resume_result.state == CleanUninstallState::Failed {
+        return stop_after_failed_cleanup_step(
+            journal.as_deref(),
+            results,
+            resume_result.name,
+            resume_result.path,
+            resume_result
+                .reason
+                .unwrap_or_else(|| "CleanupFailed".into()),
+            &ctx,
+            &home,
+            true,
+        );
+    }
+    results.push(resume_result);
+    let config_result = remove_hook_file(
+        "config",
+        config_path(&home),
+        CleanupTargetKind::Shared,
+        plan.remove_owner_config,
+        preflight.registry_known,
+        &preflight.protected_journals,
+        owner.platform(),
+    );
+    if config_result.state == CleanUninstallState::Failed {
+        return stop_after_failed_cleanup_step(
+            journal.as_deref(),
+            results,
+            config_result.name,
+            config_result.path,
+            config_result
+                .reason
+                .unwrap_or_else(|| "CleanupFailed".into()),
+            &ctx,
+            &home,
+            true,
+        );
+    }
+    results.push(config_result);
+    remove_app_paths(
+        &mut results,
+        plan.remove_owner_config,
+        preflight.registry_known,
+        &preflight.protected_journals,
+        owner.platform(),
+    );
+    let failed = results
+        .iter()
+        .any(|result| result.state == CleanUninstallState::Failed);
+    print_uninstall_report(
+        journal.as_deref(),
+        if failed { "failed" } else { "complete" },
+        &results,
+    );
+    if failed {
+        return ExitCode::from(1);
+    }
+    match session.commit_tombstone() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => task_error(error),
     }
@@ -1179,8 +2086,7 @@ fn resume_after_update(ctx: &ServiceContext) -> Result<&'static str, ExitCode> {
 /// Nobody reads a detached hook's output, so its outcome is kept beside the
 /// saved task profile, where support and the Windows proofs can find it.
 fn record_after_update(ctx: &ServiceContext, outcome: &str) {
-    let provider = ctx.owner.path();
-    let Some(directory) = provider.ancestors().nth(2) else {
+    let Some(directory) = task_artifact_directory(&ctx.owner) else {
         return;
     };
     let at = std::time::SystemTime::now()
@@ -1193,9 +2099,7 @@ fn record_after_update(ctx: &ServiceContext, outcome: &str) {
         "version": env!("CARGO_PKG_VERSION"),
     });
     let _ = fs::write(
-        directory
-            .join("journal-service")
-            .join(format!("{}.after-update.json", ctx.guard.namespace)),
+        directory.join(format!("{}.after-update.json", ctx.guard.namespace)),
         record.to_string(),
     );
 }

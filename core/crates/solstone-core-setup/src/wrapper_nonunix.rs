@@ -12,7 +12,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use solstone_core_installation_identity::{
-    GuardFields, InstallationBinding, parse_wrapper_guard, wrapper_guard_lines,
+    GuardFields, InstallationBinding, ProtectedJournals, parse_wrapper_guard, wrapper_guard_lines,
 };
 
 pub const WRAPPER_MARKER: &str = "# managed-version: 8";
@@ -281,8 +281,15 @@ pub fn provision_wrappers(
 
 pub fn uninstall_wrappers(
     environment: &WrapperEnvironment,
+    protected_journals: &ProtectedJournals,
 ) -> Result<(), (AliasState, Option<PathBuf>)> {
     let paths = wrapper_paths(&environment.home_dir);
+    if [&paths.solstone, &paths.journal]
+        .iter()
+        .all(|path| protected_journals.overlaps(path))
+    {
+        return Ok(());
+    }
     if [&paths.solstone, &paths.journal]
         .iter()
         .any(|path| path.exists() || path.is_symlink())

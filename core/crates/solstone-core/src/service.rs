@@ -17,8 +17,9 @@ use std::time::{Duration, Instant};
 use solstone_core::installation_context::installation_recovery_copy;
 use solstone_core_cli::{ServiceAction, ServiceInstallationGuardArguments};
 use solstone_core_installation_identity::{
-    GuardFields, OwnerBase, PlatformTag, load_installation_binding,
-    parse_service_guard_environment, root_token_from_path,
+    CleanupTargetKind, GuardFields, OwnerBase, PlatformTag, ProtectedJournals,
+    load_installation_binding, may_remove_cleanup_target, parse_service_guard_environment,
+    read_installation_journal_census, root_token_from_path,
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 use solstone_core_journal_io::{
@@ -544,6 +545,10 @@ fn uninstall(platform: Platform, home: &Path) -> Result<u8, String> {
         Platform::Darwin => {}
     }
     verify_snapshot(platform, &target, &snapshot)?;
+    if !service_unit_may_be_removed(home, &target, platform) {
+        println!("preserved service unit {}", path_display(&target));
+        return Ok(0);
+    }
     fs::remove_file(&target).map_err(|error| format!("remove service unit: {error}"))?;
     if platform == Platform::Linux {
         require_success(
@@ -553,6 +558,44 @@ fn uninstall(platform: Platform, home: &Path) -> Result<u8, String> {
     }
     println!("removed {}", path_display(&target));
     Ok(0)
+}
+
+/// The setup parent holds the identity lock while this Unix service child runs,
+/// so this census intentionally reads without taking `owner.lock`.
+fn service_unit_may_be_removed(home: &Path, target: &Path, platform: Platform) -> bool {
+    let Ok(owner) = OwnerBase::at_home(
+        home.to_path_buf(),
+        match platform {
+            Platform::Linux => PlatformTag::Linux,
+            Platform::Darwin => PlatformTag::Macos,
+        },
+    ) else {
+        return false;
+    };
+    let Ok(executable) = std::env::current_exe() else {
+        return false;
+    };
+    let executable_dir = executable.parent().unwrap_or_else(|| Path::new("."));
+    let root = resolve_identity_root_from_executable_dir(executable_dir)
+        .unwrap_or_else(|| executable_dir.to_path_buf());
+    let Ok(root_token) = root_token_from_path(&root) else {
+        return false;
+    };
+    let Ok(census) = read_installation_journal_census(&owner, &root_token, false) else {
+        return false;
+    };
+    let mut protected = ProtectedJournals::new(owner.platform());
+    for record in census.records {
+        protected.insert(record.journal_token.to_path_buf());
+    }
+    may_remove_cleanup_target(
+        target,
+        CleanupTargetKind::PerInstall,
+        false,
+        census.registry_known,
+        &protected,
+        owner.platform(),
+    ) == solstone_core_installation_identity::CleanupTargetDecision::Remove
 }
 
 fn remove_runtime_registration(platform: Platform, target: &Path) -> Result<(), String> {

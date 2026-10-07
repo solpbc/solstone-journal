@@ -35,6 +35,10 @@ fn script_path(owner_base: &Path, id: &str) -> Result<PathBuf, String> {
     Ok(solstone.join(format!("journal-resume-{id}.vbs")))
 }
 
+pub(super) fn cleanup_script_path(owner_base: &Path, id: &str) -> Result<PathBuf, String> {
+    script_path(owner_base, id)
+}
+
 fn script(task_path: &str, value_name: &str) -> String {
     let quote = |value: &str| format!("\"{}\"", value.replace('"', "\"\""));
     [
@@ -222,6 +226,10 @@ pub(super) fn clear(owner_base: &Path, id: &str) -> Result<(), String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!("could not clear Windows sign-in resume: {error}")),
     }
+}
+
+pub(super) fn clear_run_value(id: &str) -> Result<(), String> {
+    delete_entry(id)
 }
 
 #[cfg(test)]

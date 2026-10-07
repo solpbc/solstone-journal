@@ -118,21 +118,36 @@ mod windows_lifecycle {
                     solstone_core_journal_cli::resume_service_after_update();
                 })
                 .on_before_uninstall_fast_callback(|_| {
-                    solstone_core_journal_cli::remove_commands_from_owner_path();
-                    remove_service_before_uninstall();
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                    if let Err(error) = solstone_core_journal_cli::remove_commands_from_owner_path()
+                    {
+                        eprintln!("journal commands were not removed from PATH: {error}");
+                        std::process::exit(1);
+                    }
+                    remove_service_before_uninstall(deadline);
                 })
                 .run();
         }
     }
 
-    fn remove_service_before_uninstall() {
+    fn remove_service_before_uninstall(deadline: std::time::Instant) {
         use std::os::windows::process::CommandExt;
 
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let unix_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .saturating_add(deadline.saturating_duration_since(std::time::Instant::now()))
+            .as_millis()
+            .min(u64::MAX as u128) as u64;
         let result = std::env::current_exe().and_then(|journal| {
             let core = journal.with_file_name("solstone-core.exe");
             std::process::Command::new(core)
                 .args(["service", "__before-uninstall"])
+                .env(
+                    "SOLSTONE_BEFORE_UNINSTALL_DEADLINE_UNIX_MS",
+                    unix_millis.to_string(),
+                )
                 .creation_flags(CREATE_NO_WINDOW)
                 .output()
         });
