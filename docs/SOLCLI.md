@@ -292,7 +292,7 @@ mcp token revoke --label <label>` to disable a credential immediately.
 Local pairing and OAuth client registration are documented in
 [MCP OAuth](MCP_OAUTH.md) (`solstone journal mcp pairing` and `solstone journal mcp oauth`).
 `solstone journal mcp permission {show,set,clear}` manages connection read permissions
-for bearer tokens (`--token --label LABEL`) and OAuth clients (`--oauth --client-id CLIENT_ID`).
+for bearer tokens (`--token LABEL`) and OAuth clients (`--oauth CLIENT_ID`).
 `solstone journal mcp probe` runs one permissioned tool call locally without starting a listener.
 `solstone journal mcp status` reports the compiled capability, the current journal
 configuration result, whether the local and LAN doors are set on, and the token
