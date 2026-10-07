@@ -25,6 +25,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use solstone_core_system::process::{
@@ -35,6 +36,10 @@ use solstone_core_system::process::{
 /// What `journal` returns when it could not run the native binary at all.
 const LAUNCH_FAILURE_EXIT: i32 = 70;
 const RUN_TIMEOUT: Duration = Duration::from_secs(120);
+
+// Keep fixture Cargo builds from overlapping this harness's native pipe drains.
+// Production's accepted handle-inheritance residual and drain deadlines stay unchanged.
+static FIXTURE_LIFETIME: Mutex<()> = Mutex::new(());
 
 struct Case {
     token: &'static str,
@@ -183,6 +188,9 @@ fn hosted(install: &Install, case: &Case) -> Output {
 
 #[test]
 fn hosted_journal_returns_the_native_exit_code() {
+    let _fixture = FIXTURE_LIFETIME
+        .lock()
+        .expect("exclusive native-exit fixture");
     let install = install();
     for case in CASES {
         let control = unhosted(&install, case);
@@ -218,6 +226,9 @@ fn hosted_journal_returns_the_native_exit_code() {
 
 #[test]
 fn unhosted_journal_brain_owner_dispatches_to_native_binary() {
+    let _fixture = FIXTURE_LIFETIME
+        .lock()
+        .expect("exclusive native-exit fixture");
     let install = install();
     let core_binary = build_binary("solstone-core", "solstone-core");
     let core_dest = install.root.join("bin/solstone-core.exe");
