@@ -2312,14 +2312,34 @@ async function unpairClient(cid, button) {
   }
 }
 
+// #devices is where every add-a-device link lands. The section is inside
+// content revealed only once the network state loads, and the cards above it
+// fill in after that, so keep it in view while the page settles. Stop as soon
+// as the owner scrolls or acts, and after a few seconds regardless.
+function landOnDevices() {
+  const devices = document.getElementById('devices');
+  if (location.hash !== '#devices' || !devices?.isConnected) return;
+  const interrupts = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+  let settled = false;
+  const place = () => {
+    if (settled || !devices.getClientRects().length) return;
+    devices.scrollIntoView({block: 'start'});
+  };
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null;
+  const stop = () => {
+    settled = true;
+    observer?.disconnect();
+    interrupts.forEach(type => window.removeEventListener(type, stop, true));
+  };
+  observer?.observe(document.body);
+  interrupts.forEach(type => window.addEventListener(type, stop, {capture: true, passive: true}));
+  devices.focus({preventScroll: true});
+  place();
+  setTimeout(stop, 3000);
+}
+
 function initClients() {
-  loadClients().then(() => {
-    const devices = document.getElementById('devices');
-    if (location.hash === '#devices' && devices?.isConnected) {
-      devices.focus({preventScroll: true});
-      devices.scrollIntoView({block: 'start'});
-    }
-  });
+  loadClients().then(landOnDevices);
 
   setInterval(loadClients, 30000);
 }

@@ -92,6 +92,20 @@ impl Serialize for CopyValue {
 
 pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
     ("heading", CopyValue::String("thinking")),
+    // Shown only while the journal lists no paired device. The link goes to
+    // the network page's devices section, the one place a device is added.
+    (
+        "devices_invite",
+        CopyValue::Object(&[
+            (
+                "text",
+                CopyValue::String(
+                    "thinking works on what goes into your journal, and no device is paired to add to it yet.",
+                ),
+            ),
+            ("link", CopyValue::String("pair a device")),
+        ]),
+    ),
     (
         "active_lane_labels",
         CopyValue::Object(&[

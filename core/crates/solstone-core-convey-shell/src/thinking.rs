@@ -2061,6 +2061,8 @@ mod tests {
         // A journal with no hardware check says so in place of turning it on.
         expected_copy["confidential"]["attestation_states"]["not_on_platform"] =
             json!(solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM);
+        // The pair-a-device invitation joined the copy after the capture.
+        expected_copy["devices_invite"] = live["devices_invite"].clone();
         assert_eq!(body["copy"], expected_copy);
         let _ = fs::remove_dir_all(root);
     }

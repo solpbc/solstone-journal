@@ -188,6 +188,17 @@ fn corpus() -> Value {
                 case["body_sha256_basis"] = json!("normalized-json");
                 projected = true;
             }
+            // The pair-a-device invitation joined the copy after the capture.
+            if let Some(copy) = case
+                .pointer_mut("/json/copy")
+                .and_then(Value::as_object_mut)
+            {
+                let live =
+                    serde_json::to_value(solstone_core_thinking_copy::thinking_copy_payload())
+                        .expect("copy serializes");
+                copy.insert("devices_invite".into(), live["devices_invite"].clone());
+                projected = true;
+            }
             if let Some(labels) = case
                 .pointer_mut("/json/copy/provider_labels")
                 .and_then(Value::as_object_mut)

@@ -812,10 +812,14 @@ mod tests {
             expected_pulse.pointer("/health_glance/cta/href"),
             Some(&json!("/app/network/"))
         );
+        // The reference predates the link landing on the devices section.
         assert_eq!(
             payload.pointer("/health_glance/cta/href"),
-            Some(&json!("/app/network/"))
+            Some(&json!("/app/network/#devices"))
         );
+        *expected_pulse
+            .pointer_mut("/health_glance/cta/href")
+            .unwrap() = json!("/app/network/#devices");
         assert_eq!(
             expected_pulse.pointer("/health_glance/verdict"),
             Some(&json!("ok"))
@@ -1321,7 +1325,7 @@ mod tests {
         );
         assert_eq!(
             pulse_payload(&context)["health_glance"]["cta"]["href"],
-            "/app/network/"
+            "/app/network/#devices"
         );
     }
 
