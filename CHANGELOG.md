@@ -6,8 +6,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- your week now shows things you said, word for word, under "said by you": up to three a day, taken only from conversations where your journal recognized your voice, each with a link to where you said it. you can leave one out of the page, as with a memory.
+
 ### Fixed
 
+- some weeks wouldn't open, and their card on home said they couldn't be read. they open now.
 - when a page in your journal can't load because the connection dropped or took too long, the page now shows its own message without the browser's wording, like "Load failed". on the curation page, "show more" now says when the next suggestions didn't load. before, it went quiet.
 
 ## [2.0.35] - 2026-10-07

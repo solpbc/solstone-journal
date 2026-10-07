@@ -24,13 +24,14 @@ if (!modelsPath || !fs.existsSync(modelsPath)) {
 }
 const realModels = JSON.parse(fs.readFileSync(modelsPath, 'utf8'));
 
-if (!realModels.primary || !realModels.left_out || !realModels.all_states) {
-  throw new Error('models.json missing required models: primary, left_out, all_states');
+if (!realModels.primary || !realModels.left_out || !realModels.all_states || !realModels.said) {
+  throw new Error('models.json missing required models: primary, left_out, all_states, said');
 }
 
 const primaryModel = realModels.primary;
 const leftOutModel = realModels.left_out;
 const allStatesModel = realModels.all_states;
+const saidModel = realModels.said;
 
 class ClassList {
   constructor(element) {
@@ -1155,6 +1156,171 @@ async function runTests() {
     assert.ok(apiCalls2.some((u) => u.includes('/app/home/api/pulse')), 'pulse requested on /app/home');
     assert.ok(apiCalls2.some((u) => u.includes('/app/home/api/removals')), 'removals requested on /app/home');
     assert.ok(envHome.doc.querySelector('[data-removals-card]'), 'removals card mounted on /app/home');
+  }
+
+  function render(model) {
+    const { doc, sandbox } = createEnvironment();
+    const surface = doc.createElement('div');
+    surface.setAttribute('data-pulse-surface', '');
+    doc.body.appendChild(surface);
+    sandbox.window.renderWeekPage(surface, model);
+    return { doc, sandbox, surface };
+  }
+
+  function quoteTwin(intro) {
+    const markup = '<b>x</b> [y](z)';
+    return {
+      day: '20260308',
+      title: 'week of march 8',
+      intro: intro,
+      cells: [],
+      legend: [],
+      from_line: null,
+      rows: [{
+        key: 'mem',
+        text: markup,
+        day_label: 'sun 8',
+        source_href: '/source?ref=mem',
+        peek_href: '/source?ref=mem',
+        peek_label: 'open it',
+        peek_caption: 'from the morning',
+        menu_href: '/source?ref=mem',
+        left_out: false
+      }],
+      said: {
+        heading: 'heading',
+        leave_out_hint: 'hint',
+        days: [{
+          day_label: 'mon 9',
+          rows: [{
+            key: 'quote-key',
+            quote: markup,
+            href: '/source?ref=quote',
+            link_label: 'open the quote',
+            left_out: false
+          }]
+        }]
+      },
+      end_line: "that's the week."
+    };
+  }
+
+  // Said section from a real page model sits after memory rows and before the end line.
+  {
+    caseCount++;
+    const { surface } = render(saidModel);
+    const dash = surface.querySelector('.week-dashboard').children;
+    const rowsIdx = dash.findIndex((child) => child.classList.contains('week-rows'));
+    const saidIdx = dash.findIndex((child) => child.classList.contains('week-said'));
+    const endIdx = dash.findIndex((child) => child.classList.contains('week-end-line'));
+    assert.ok(rowsIdx !== -1 && saidIdx !== -1 && endIdx !== -1 && rowsIdx < saidIdx && saidIdx < endIdx);
+    const heading = surface.querySelector('.week-said-heading');
+    assert.strictEqual(heading.tagName, 'H2');
+    assert.strictEqual(heading.textContent, saidModel.said.heading);
+    const shown = surface.querySelector('[data-memory-key="said-mon"]');
+    const quote = shown.querySelector('.week-said-quote');
+    assert.strictEqual(quote.querySelector('a'), null);
+    assert.strictEqual(quote.querySelector('b'), null);
+    assert.ok(quote.textContent.includes(saidModel.said.days[0].rows[0].quote));
+    const link = shown.querySelector('.week-said-link');
+    assert.strictEqual(link.getAttribute('href'), saidModel.said.days[0].rows[0].href);
+    assert.strictEqual(link.textContent, saidModel.said.days[0].rows[0].link_label);
+    assert.strictEqual(quote.querySelector('.week-said-link'), null);
+    const menu = shown.querySelector('.week-menu-btn');
+    assert.strictEqual(menu.getAttribute('aria-label'), 'more for ' + saidModel.said.days[0].day_label);
+    const hint = shown.querySelector('.week-leave-out-btn .week-menu-hint');
+    assert.strictEqual(hint.textContent, saidModel.said.leave_out_hint);
+    const hidden = surface.querySelector('[data-memory-key="said-tue"]');
+    assert.ok(hidden.classList.contains('week-row--left-out'));
+    assert.ok(hidden.querySelector('[data-action="undo"]'));
+  }
+
+  // No said section when the model has none, and one intro when intro is a string.
+  {
+    caseCount++;
+    const { surface } = render(primaryModel);
+    assert.strictEqual(surface.querySelector('.week-said'), null);
+    assert.strictEqual(surface.querySelector('.week-said-unreadable'), null);
+    assert.strictEqual(surface.querySelectorAll('.week-intro').length, 1);
+  }
+
+  // Quote text stays literal. The same text in a memory row is markdown. Null intro emits no paragraph.
+  {
+    caseCount++;
+    const markup = '<b>x</b> [y](z)';
+    const { surface } = render(quoteTwin(null));
+    assert.strictEqual(surface.querySelectorAll('.week-intro').length, 0);
+    const quote = surface.querySelector('.week-said-quote');
+    assert.strictEqual(quote.querySelector('a'), null);
+    assert.strictEqual(quote.querySelector('b'), null);
+    assert.ok(quote.textContent.includes(markup));
+    assert.ok(quote.children.every((child) => child.nodeType === 3));
+    const memory = surface.querySelector('.week-row-text');
+    assert.ok(memory.querySelector('a'), 'memory row renders the link');
+    const { surface: withIntro } = render(quoteTwin('intro line'));
+    assert.strictEqual(withIntro.querySelectorAll('.week-intro').length, 1);
+  }
+
+  // Leave-out and undo on a quote row move focus the same way a memory row does.
+  {
+    caseCount++;
+    const shown = JSON.parse(JSON.stringify(saidModel));
+    const hidden = JSON.parse(JSON.stringify(saidModel));
+    hidden.said.days[0].rows[0] = { left_out: true, key: 'said-mon' };
+    const { doc, sandbox, surface } = render(shown);
+    sandbox.fetch = (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      const next = body.undo ? shown : hidden;
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(next) });
+    };
+    const leaveOutBtn = surface.querySelector('[data-memory-key="said-mon"] .week-leave-out-btn');
+    leaveOutBtn.click();
+    await new Promise((r) => setTimeout(r, 10));
+    const undoBtn = surface.querySelector('[data-action="undo"][data-key="said-mon"]');
+    assert.ok(undoBtn);
+    assert.strictEqual(doc.activeElement, undoBtn);
+    undoBtn.click();
+    await new Promise((r) => setTimeout(r, 10));
+    const menuBtn = surface.querySelector('[data-memory-key="said-mon"] .week-menu-btn');
+    assert.ok(menuBtn);
+    assert.strictEqual(doc.activeElement, menuBtn);
+  }
+
+  // A failed leave-out whose re-read already left the quote out re-renders without the unchanged line.
+  {
+    caseCount++;
+    const shown = quoteTwin(null);
+    const hidden = quoteTwin(null);
+    hidden.said.days[0].rows[0] = { left_out: true, key: 'quote-key' };
+    const { doc, sandbox, surface } = render(shown);
+    sandbox.fetch = (_url, opts) => {
+      if (opts && opts.method === 'POST') return Promise.reject(new Error('POST failed'));
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(hidden) });
+    };
+    surface.querySelector('[data-memory-key="quote-key"] .week-leave-out-btn').click();
+    await new Promise((r) => setTimeout(r, 10));
+    const undoBtn = surface.querySelector('[data-action="undo"][data-key="quote-key"]');
+    assert.ok(undoBtn);
+    assert.strictEqual(doc.activeElement, undoBtn);
+    assert.ok(!surface.innerHTML.includes('nothing changed'));
+  }
+
+  // A failed leave-out whose re-read is unchanged puts the error on that quote row and returns focus.
+  {
+    caseCount++;
+    const shown = quoteTwin('kept');
+    const { doc, sandbox, surface } = render(shown);
+    sandbox.fetch = (_url, opts) => {
+      if (opts && opts.method === 'POST') return Promise.reject(new Error('POST failed'));
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(shown) });
+    };
+    const leaveOutBtn = surface.querySelector('[data-memory-key="quote-key"] .week-leave-out-btn');
+    leaveOutBtn.focus();
+    leaveOutBtn.click();
+    await new Promise((r) => setTimeout(r, 10));
+    const err = surface.querySelector('[data-memory-key="quote-key"] .week-row-error');
+    assert.ok(err);
+    assert.strictEqual(doc.activeElement, leaveOutBtn);
   }
 
   console.log(`DOM CASES: ${caseCount} passed`);

@@ -1109,7 +1109,7 @@
   align-items: center;
   gap: 0.5rem;
 }
-.week-from-line, .week-left-out-notice {
+.week-from-line, .week-left-out-notice, .week-said-unreadable {
   font-size: 0.95rem;
   color: var(--ink-soft);
   margin: 0;
@@ -1149,14 +1149,14 @@
   align-items: center;
   gap: 0.75rem;
 }
-.week-row-source, .week-row-peek a, .week-nav a, .week-prev-repeat a {
+.week-row-source, .week-row-peek a, .week-nav a, .week-prev-repeat a, .week-said-link {
   color: var(--orange-text-aa);
   text-decoration: none;
 }
-.week-row-source:hover, .week-row-peek a:hover, .week-nav a:hover, .week-prev-repeat a:hover {
+.week-row-source:hover, .week-row-peek a:hover, .week-nav a:hover, .week-prev-repeat a:hover, .week-said-link:hover {
   text-decoration: underline;
 }
-.week-row-source:focus-visible, .week-row-peek a:focus-visible, .week-nav a:focus-visible, .week-prev-repeat a:focus-visible,
+.week-row-source:focus-visible, .week-row-peek a:focus-visible, .week-nav a:focus-visible, .week-prev-repeat a:focus-visible, .week-said-link:focus-visible,
 .week-undo-btn:focus-visible, .week-menu-btn:focus-visible, .week-menu-item:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -1247,6 +1247,40 @@
   color: var(--warn-ink, #b00);
   font-size: 0.85rem;
   margin: 0.5rem 0 0;
+}
+.week-said, .week-said-day {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+.week-said-heading {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-faint);
+  margin: 0;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--hairline);
+  text-transform: none;
+  letter-spacing: 0.06em;
+}
+.week-said-day-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin: 0;
+}
+.week-said .week-row-header {
+  justify-content: flex-end;
+}
+.week-said-quote {
+  font-size: 1rem;
+  line-height: 1.5;
+  margin: 0 0 0.75rem;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.week-said .week-row {
+  min-width: 0;
 }
 </style>
 

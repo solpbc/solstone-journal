@@ -1002,6 +1002,127 @@ async fn week_api_uses_owner_local_year_for_title() {
     assert_eq!(model["title"], "week of december 28");
 }
 
+fn said_week_json() -> String {
+    r#"{
+        "version": 1,
+        "days": [
+            {"day":"20260308","state":"memory","memory_id":"m0"},
+            {"day":"20260309","state":"nothing_shared"},
+            {"day":"20260310","state":"nothing_shared"},
+            {"day":"20260311","state":"nothing_shared"},
+            {"day":"20260312","state":"nothing_shared"},
+            {"day":"20260313","state":"nothing_shared"},
+            {"day":"20260314","state":"nothing_shared"}
+        ],
+        "memories": [{
+            "id": "m0",
+            "key": "memory-key",
+            "day": "20260308",
+            "text": "A memory.",
+            "source": {"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing"}
+        }],
+        "said": [{
+            "id": "s-20260309-0",
+            "key": "said-key",
+            "day": "20260309",
+            "quote": "I'll get you the deck",
+            "source": {"kind":"activity","uri":"sol://facets/work/activities/20260309#meeting_1"}
+        }]
+    }"#
+    .to_owned()
+}
+
+#[tokio::test]
+async fn week_leave_out_accepts_a_said_key_and_refuses_the_others() {
+    let journal = TempDir::new().unwrap();
+    let weekly = journal.path().join("reflections/weekly");
+    fs::create_dir_all(&weekly).unwrap();
+    fs::write(weekly.join("20260308.json"), said_week_json()).unwrap();
+    let router = test_router(journal.path());
+
+    let (status, _, body) = post(
+        router.clone(),
+        "/app/home/api/week/20260308/leave-out",
+        json!({ "key": "neither", "undo": false }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let refused: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        refused["error"],
+        "couldn't leave this out. nothing changed."
+    );
+
+    let (status, _, body) = post(
+        router.clone(),
+        "/app/home/api/week/20260308/leave-out",
+        json!({ "key": "said-key", "undo": false }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let updated: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(updated["said"]["days"][0]["rows"][0]["left_out"], true);
+    assert_eq!(updated["said"]["days"][0]["rows"][0]["key"], "said-key");
+
+    fs::write(
+        weekly.join("20260308.json"),
+        r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"memory","memory_id":"m0"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": [{
+                "id": "m0",
+                "key": "memory-key",
+                "day": "20260308",
+                "text": "A memory.",
+                "source": {"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing"}
+            }],
+            "said": null
+        }"#,
+    )
+    .unwrap();
+    let (status, _, body) = post(
+        router.clone(),
+        "/app/home/api/week/20260308/leave-out",
+        json!({ "key": "said-key", "undo": false }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let unreadable: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        unreadable["error"],
+        "couldn't leave this out. nothing changed."
+    );
+
+    let health = journal.path().join("health");
+    fs::create_dir_all(&health).unwrap();
+    fs::write(health.join("week-left-out.json"), r#"{"keys":["ghost"]}"#).unwrap();
+    let (status, _, _) = post(
+        router,
+        "/app/home/api/week/20260308/leave-out",
+        json!({ "key": "ghost", "undo": true }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let stored: Value =
+        serde_json::from_str(&fs::read_to_string(health.join("week-left-out.json")).unwrap())
+            .unwrap();
+    assert!(
+        stored["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|key| key != "ghost")
+    );
+}
+
 #[test]
 fn week_dom_contract() {
     match Command::new("node").arg("--version").output() {
@@ -1088,10 +1209,51 @@ fn week_dom_contract() {
             }
         ]
     }"#;
+    let week_said = r#"{
+        "version": 1,
+        "days": [
+            {"day": "20260329", "state": "memory", "memory_id": "m_said"},
+            {"day": "20260330", "state": "nothing_shared"},
+            {"day": "20260331", "state": "nothing_shared"},
+            {"day": "20260401", "state": "nothing_shared"},
+            {"day": "20260402", "state": "nothing_shared"},
+            {"day": "20260403", "state": "nothing_shared"},
+            {"day": "20260404", "state": "nothing_shared"}
+        ],
+        "memories": [{
+            "id": "m_said",
+            "key": "k_said_memory",
+            "day": "20260329",
+            "text": "A memory beside the quotes.",
+            "source": {
+                "kind": "briefing",
+                "uri": "sol://chronicle/20260329/talents/morning_briefing",
+                "briefing_day": "20260329",
+                "refs": []
+            }
+        }],
+        "said": [
+            {
+                "id": "s-20260330-0",
+                "key": "said-mon",
+                "day": "20260330",
+                "quote": "I'll get you the deck",
+                "source": {"kind": "activity", "uri": "sol://facets/work/activities/20260330#meeting_1"}
+            },
+            {
+                "id": "s-20260331-0",
+                "key": "said-tue",
+                "day": "20260331",
+                "quote": "let's go with blue then",
+                "source": {"kind": "activity", "uri": "sol://facets/work/activities/20260331#meeting_1"}
+            }
+        ]
+    }"#;
     fs::write(weekly_dir.join("20260301.json"), week_0301).unwrap();
     fs::write(weekly_dir.join("20260308.json"), fixture_json).unwrap();
     fs::write(weekly_dir.join("20260315.json"), week_0315).unwrap();
     fs::write(weekly_dir.join("20260322.json"), week_all_states).unwrap();
+    fs::write(weekly_dir.join("20260329.json"), week_said).unwrap();
 
     let model_primary = solstone_core_home::weekly::page_model(
         root,
@@ -1104,6 +1266,7 @@ fn week_dom_contract() {
     let mut left_out_keys = std::collections::BTreeSet::new();
     left_out_keys.insert("b359922341f75193".to_string());
     left_out_keys.insert("k_left_out".to_string());
+    left_out_keys.insert("said-tue".to_string());
     fs::create_dir_all(root.join("health")).unwrap();
     fs::write(
         root.join("health/week-left-out.json"),
@@ -1124,11 +1287,19 @@ fn week_dom_contract() {
         &solstone_core_convey_shell::source_link::reference_is_moment,
     )
     .unwrap();
+    let model_said = solstone_core_home::weekly::page_model(
+        root,
+        "20260329",
+        2026,
+        &solstone_core_convey_shell::source_link::reference_is_moment,
+    )
+    .unwrap();
 
     let models = json!({
         "primary": model_primary,
         "left_out": model_left_out,
         "all_states": model_all_states,
+        "said": model_said,
     });
 
     let models_path = root.join("models.json");

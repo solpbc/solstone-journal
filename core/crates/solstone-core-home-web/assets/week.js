@@ -45,6 +45,59 @@
     }
   });
 
+  function rowForKey(model, key) {
+    const memoryRow = (model.rows || []).find(function (row) { return row.key === key; });
+    if (memoryRow) return memoryRow;
+    const days = model.said && model.said.days ? model.said.days : [];
+    for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+      const rows = days[dayIndex].rows || [];
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        if (rows[rowIndex].key === key) return rows[rowIndex];
+      }
+    }
+    return null;
+  }
+
+  function renderSaidHtml(said) {
+    if (!said) return '';
+    if (said.unreadable) {
+      return '<p class="week-said-unreadable">' + esc(said.unreadable) + '</p>';
+    }
+    let html = '<section class="week-said">';
+    html += '<h2 class="week-said-heading">' + esc(said.heading) + '</h2>';
+    (said.days || []).forEach(function (day) {
+      html += '<div class="week-said-day">';
+      html += '<p class="week-said-day-label">' + esc(day.day_label) + '</p>';
+      (day.rows || []).forEach(function (row) {
+        if (row.left_out) {
+          html += '<div class="week-row week-row--left-out" data-memory-key="' + esc(row.key) + '">';
+          html += '<span class="week-left-out-text">left out of this week · </span>';
+          html += '<button type="button" class="week-undo-btn" data-action="undo" data-key="' + esc(row.key) + '">undo</button>';
+          html += '</div>';
+        } else {
+          html += '<div class="week-row" data-memory-key="' + esc(row.key) + '">';
+          html += '<div class="week-row-header">';
+          html += '<div class="week-row-actions">';
+          html += '<div class="week-menu-wrapper">';
+          html += '<button type="button" class="week-menu-btn" aria-expanded="false" aria-label="more for ' + esc(day.day_label) + '">···</button>';
+          html += '<div class="week-menu-dropdown" hidden style="display:none;">';
+          html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(row.key) + '"><span class="week-menu-item-label">leave out of this week</span><span class="week-menu-hint">' + esc(said.leave_out_hint) + '</span></button>';
+          html += '<a class="week-menu-item" href="' + esc(row.href) + '"><span class="week-menu-item-label">this isn\'t right</span><span class="week-menu-hint">opens where it came from, so you can check it.</span></a>';
+          html += '</div>';
+          html += '</div>';
+          html += '</div>';
+          html += '</div>';
+          html += '<p class="week-said-quote">"' + esc(row.quote) + '"</p>';
+          html += '<a class="week-said-link" href="' + esc(row.href) + '">' + esc(row.link_label) + '</a>';
+          html += '</div>';
+        }
+      });
+      html += '</div>';
+    });
+    html += '</section>';
+    return html;
+  }
+
   function renderWeekHtml(model) {
     let html = '<div class="week-dashboard" data-week-day="' + esc(model.day) + '">';
 
@@ -63,7 +116,9 @@
     // Header
     html += '<div class="week-header">';
     html += '<h1 class="week-title">' + esc(model.title) + '</h1>';
-    html += '<p class="week-intro">' + esc(model.intro) + '</p>';
+    if (model.intro !== null) {
+      html += '<p class="week-intro">' + esc(model.intro) + '</p>';
+    }
     html += '</div>';
 
     // Grid
@@ -129,6 +184,8 @@
       }
     });
     html += '</div>'; // week-rows
+
+    html += renderSaidHtml(model.said);
 
     html += '<p class="week-end-line">' + esc(model.end_line || "that's the week.") + '</p>';
 
@@ -209,7 +266,7 @@
               return res.json();
             })
             .then(function (freshModel) {
-              const matchingRow = (freshModel.rows || []).find(function (r) { return r.key === key; });
+              const matchingRow = rowForKey(freshModel, key);
               const expectedLeftOut = !undo;
               if (matchingRow && matchingRow.left_out === expectedLeftOut) {
                 // State changed on disk despite error response

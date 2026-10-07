@@ -35,6 +35,9 @@ pub mod speaker_attribution;
 pub mod story;
 mod transcript;
 pub mod weekly_reflection;
+
+#[cfg(test)]
+mod weekly_reader_tie;
 pub mod writers;
 
 #[cfg(test)]
