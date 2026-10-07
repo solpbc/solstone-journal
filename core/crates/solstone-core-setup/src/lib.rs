@@ -32,8 +32,8 @@ pub mod wrapper;
 
 use args::{ResolutionContext, SetupArgs, resolve_mode, resolve_setup};
 use clean_uninstall::{
-    CleanUninstallContext, clean_uninstall_confirmation_lines, clean_uninstall_has_managed_paths,
-    clean_uninstall_refusal, run_clean_uninstall,
+    CleanUninstallContext, IdentityHold, clean_uninstall_confirmation_lines,
+    clean_uninstall_has_managed_paths, clean_uninstall_refusal, run_clean_uninstall,
 };
 use events::{EventSink, JsonlEmitter, StepName};
 use identity_evidence::{
@@ -676,6 +676,39 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             }
         };
         let clean_plan = clean_session.plan().clone();
+        let admitted_plan = clean_plan.clone();
+        let identity_executable_dir = executable_dir.clone();
+        let mut clean_session = Some(clean_session);
+        // Windows service commands reload the binding under the identity locks, so the
+        // service child would wait on this process until its timeout. Release the hold
+        // for the child, then re-admit and require the same plan before removing more.
+        let mut identity_hold = |hold: IdentityHold| -> Result<(), String> {
+            if !cfg!(windows) {
+                return Ok(());
+            }
+            match hold {
+                IdentityHold::Release => {
+                    clean_session = None;
+                    Ok(())
+                }
+                IdentityHold::Reacquire => {
+                    let session =
+                        admit_clean_identity(&home_dir, &identity_executable_dir, &project_root)
+                            .map_err(|error| {
+                                format!(
+                                    "could not admit the installation again after removing its service: {error}"
+                                )
+                            })?;
+                    if session.plan() != &admitted_plan {
+                        return Err(
+                            "the installation changed while its service was being removed".into(),
+                        );
+                    }
+                    clean_session = Some(session);
+                    Ok(())
+                }
+            }
+        };
         let journal = clean_plan.binding.journal_token.to_path_buf();
         let artifact_evidence = gather_artifact_evidence(&home_dir, &clean_plan.binding.namespace);
         let mut clean = CleanUninstallContext {
@@ -691,6 +724,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             stdin_is_tty,
             confirm: seams.confirm_clean_uninstall.as_mut(),
             runner: seams.runner.as_mut(),
+            identity_hold: &mut identity_hold,
         };
         if !clean.yes && clean.stdin_is_tty && clean_uninstall_has_managed_paths(&clean) {
             for line in clean_uninstall_confirmation_lines(&clean) {
@@ -734,8 +768,12 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             }
         }
         let _ = writeln!(stdout, "{}", outcome.message);
+        drop(clean);
         if outcome.exit_code == 0
-            && let Err(error) = clean_session.commit_tombstone()
+            && let Err(error) = clean_session
+                .take()
+                .expect("a successful clean uninstall holds its identity admission")
+                .commit_tombstone()
         {
             return report_identity_failure(
                 false,
