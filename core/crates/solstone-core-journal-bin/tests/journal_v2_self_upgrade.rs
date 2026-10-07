@@ -122,6 +122,18 @@ fn v2_self_upgrade_repoints_wrapper_after_a_same_version_respin() {
         String::from_utf8_lossy(&output.stderr)
     );
 
+    // A mac never gets a PATH wrapper: the journal app's admin terminal
+    // provides the commands (records/decisions 260927, founder). There the
+    // respin proof is the re-admission above plus no wrapper appearing.
+    if cfg!(target_os = "macos") {
+        assert!(
+            fs::symlink_metadata(home.join(".local/bin/journal")).is_err(),
+            "setup wrote a PATH wrapper on a mac"
+        );
+        let _ = fs::remove_dir_all(&root);
+        return;
+    }
+
     let wrapper = fs::read_to_string(home.join(".local/bin/journal")).expect("read wrapper");
     let sol_bin_line = wrapper
         .lines()

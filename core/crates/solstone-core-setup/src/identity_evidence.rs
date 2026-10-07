@@ -743,6 +743,10 @@ mod tests {
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        // The recognizer requires the wrapper's literal target under the
+        // canonical home; macOS's temp dir is a /var -> /private/var alias.
+        let root = fs::canonicalize(&root).unwrap();
         let home = root.join("home");
         let generation =
             home.join("Library/Application Support/sol/runtime/0.6.24_py20260510_bbd54541379bee6d");

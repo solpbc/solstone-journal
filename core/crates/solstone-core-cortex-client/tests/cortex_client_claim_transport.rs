@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::io::{self, Read};
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -37,29 +37,39 @@ fn write_use(journal: &Path, use_id: &str, active: bool, body: &[u8]) {
     fs::write(path, body).expect("write durable use file");
 }
 
+/// Read one request through the sender's EOF within `IO_DEADLINE`.
+///
+/// A stream accepted from a nonblocking listener may itself be nonblocking
+/// (Darwin inherits `O_NONBLOCK`), and Darwin refuses `SO_RCVTIMEO` with
+/// `EINVAL` once the sender has already closed, so the deadline is polled here
+/// rather than set as a socket read timeout.
+fn read_request_to_eof(stream: &mut UnixStream) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let deadline = Instant::now() + IO_DEADLINE;
+    let mut buffer = [0_u8; 256];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => return bytes,
+            Ok(count) => bytes.extend_from_slice(&buffer[..count]),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                assert!(
+                    Instant::now() < deadline,
+                    "request sender did not close before the I/O deadline"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("read request through sender EOF: {error}"),
+        }
+    }
+}
+
 fn accept_lines(listener: &UnixListener, expected_count: usize, use_id: &str) {
     listener
         .set_nonblocking(true)
         .expect("make queued accepts bounded");
     for _ in 0..expected_count {
         let (mut stream, _) = listener.accept().expect("accept queued claim request");
-        let mut bytes = Vec::new();
-        let deadline = Instant::now() + IO_DEADLINE;
-        let mut buffer = [0_u8; 256];
-        loop {
-            match stream.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(count) => bytes.extend_from_slice(&buffer[..count]),
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    assert!(
-                        Instant::now() < deadline,
-                        "request sender did not close before the I/O deadline"
-                    );
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                Err(error) => panic!("read request through sender EOF: {error}"),
-            }
-        }
+        let bytes = read_request_to_eof(&mut stream);
         assert_eq!(
             bytes,
             format!(
@@ -218,9 +228,7 @@ fn independent_clients_at_the_same_clock_keep_durable_outcomes_separate() {
                     Err(error) => panic!("accept: {error}"),
                 }
             };
-            stream.set_read_timeout(Some(IO_DEADLINE)).unwrap();
-            let mut body = String::new();
-            stream.read_to_string(&mut body).unwrap();
+            let mut body = String::from_utf8(read_request_to_eof(&mut stream)).unwrap();
             let request: serde_json::Value = serde_json::from_str(&body).unwrap();
             let name = request["name"].as_str().unwrap();
             let id = request["use_id"].as_str().unwrap();

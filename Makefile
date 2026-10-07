@@ -562,8 +562,8 @@ check-rust-pdf-ready:
 check-rust-onnx-test:
 	@$(REQUIRE_CARGO)
 	@set -eu; \
-	if [ "$$(uname -s)" != "Linux" ]; then \
-		echo "ONNX-linked crate tests: not run on $$(uname -s); these helpers ship on Linux"; \
+	if [ "$(HOST_SYSTEM)" != "Linux" ]; then \
+		echo "ONNX-linked crate tests: not run on $(HOST_SYSTEM); these helpers ship on Linux"; \
 		exit 0; \
 	fi; \
 	$(REQUIRE_ONNX_HOST_RUNTIME); \

@@ -558,7 +558,8 @@ fn reserved_ids_isolate_cancellation_finalization_and_recovery() {
             Disposition::IndependentBoundedHelper {
                 timeout: Duration::from_secs(2),
             },
-            || std::process::Command::new("/bin/true").spawn(),
+            // /usr/bin/true exists on macOS and Linux; /bin/true is Linux-only.
+            || std::process::Command::new("/usr/bin/true").spawn(),
             Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
         )
         .unwrap();

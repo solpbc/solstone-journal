@@ -171,7 +171,10 @@ struct TestSeamSlot {
 #[cfg(all(test, feature = "full-tests"))]
 struct TestHoldSync {
     recorded: std::sync::Mutex<Vec<Vec<String>>>,
-    cvar: std::sync::Condvar,
+    // A Condvar may only ever wait with one Mutex; macOS pthread condvars
+    // panic on the second. Each guarded value gets its own.
+    recorded_cvar: std::sync::Condvar,
+    released_cvar: std::sync::Condvar,
     released_batches: std::sync::Mutex<usize>,
 }
 
@@ -201,7 +204,7 @@ impl Drop for TestSeamGuard {
                 .released_batches
                 .lock()
                 .expect("release abandoned hold") = usize::MAX;
-            hold.cvar.notify_all();
+            hold.released_cvar.notify_all();
         }
     }
 }
@@ -228,7 +231,7 @@ impl HoldController {
         let rec = self.sync.recorded.lock().expect("lock recorded");
         let (rec, timeout) = self
             .sync
-            .cvar
+            .recorded_cvar
             .wait_timeout_while(rec, std::time::Duration::from_secs(10), |rec| {
                 rec.len() <= batch_index
             })
@@ -244,7 +247,7 @@ impl HoldController {
             .lock()
             .expect("lock released_batches");
         *rel += 1;
-        self.sync.cvar.notify_all();
+        self.sync.released_cvar.notify_all();
     }
 }
 
@@ -253,7 +256,8 @@ pub(crate) fn arm_hold_before_commit(journal: &Path) -> HoldController {
     let owner = TEST_SEAM_OWNER.lock().expect("own test seam");
     let sync = std::sync::Arc::new(TestHoldSync {
         recorded: std::sync::Mutex::new(Vec::new()),
-        cvar: std::sync::Condvar::new(),
+        recorded_cvar: std::sync::Condvar::new(),
+        released_cvar: std::sync::Condvar::new(),
         released_batches: std::sync::Mutex::new(0),
     });
     let mut seam = TEST_SEAM.lock().expect("lock test seam");
@@ -590,12 +594,12 @@ pub(crate) fn classify_one_batch(
                 let mut rec = hold.recorded.lock().expect("lock recorded");
                 let idx = rec.len();
                 rec.push(paths.clone());
-                hold.cvar.notify_all();
+                hold.recorded_cvar.notify_all();
                 idx
             };
             let rel = hold.released_batches.lock().expect("lock released_batches");
             let (_released, timeout) = hold
-                .cvar
+                .released_cvar
                 .wait_timeout_while(rel, std::time::Duration::from_secs(10), |rel| {
                     *rel <= batch_index
                 })

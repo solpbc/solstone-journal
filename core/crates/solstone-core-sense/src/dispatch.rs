@@ -1690,7 +1690,8 @@ mod tests {
             false,
             false,
             outbound,
-            PathBuf::from("/bin/false"),
+            // /usr/bin/false exists on macOS and Linux; /bin/false is Linux-only.
+            PathBuf::from("/usr/bin/false"),
         );
         let mut message = observing("one", "120000_1");
         message.extra.insert("files".into(), json!(["audio.flac"]));
