@@ -36,6 +36,15 @@ impl CleanUninstallState {
     }
 }
 
+/// What the parent does with its installation-identity hold around the service child.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityHold {
+    /// Just before the service child starts.
+    Release,
+    /// Once the service child has succeeded, before anything else is removed.
+    Reacquire,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CleanUninstallStepResult {
     pub name: &'static str,
@@ -57,6 +66,10 @@ pub struct CleanUninstallContext<'a> {
     pub stdin_is_tty: bool,
     pub confirm: &'a mut dyn FnMut() -> bool,
     pub runner: &'a mut dyn CommandRunner,
+    /// Windows service commands reload the binding under the identity locks, so a parent
+    /// that kept holding them would wait on its own child until the child timed out.
+    /// A failed reacquire stops the uninstall before the wrappers, config and manifest.
+    pub identity_hold: &'a mut dyn FnMut(IdentityHold) -> Result<(), String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -266,33 +279,44 @@ fn remove_service(
         );
     }
     let existed = path.as_ref().is_some_and(|path| present(path));
+    if let Err(reason) = (context.identity_hold)(IdentityHold::Release) {
+        return result("service", CleanUninstallState::Failed, path, Some(reason));
+    }
     let output = context.runner.run(&CommandRequest {
         program: solstone_executable(&context.executable_dir),
         args: vec!["journal".into(), "service".into(), "uninstall".into()],
         timeout_seconds: None,
     });
     match output {
-        Err(error) => result("service", CleanUninstallState::Failed, path, Some(error)),
-        Ok(output) if output.exit_code != 0 => result(
-            "service",
-            CleanUninstallState::Failed,
-            path,
-            Some(child_failure_reason(&output)),
-        ),
-        Ok(_) if existed => match path.as_ref().map(fs::remove_file) {
-            Some(Ok(())) => result("service", CleanUninstallState::Removed, path, None),
-            Some(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-                result("service", CleanUninstallState::Removed, path, None)
-            }
-            Some(Err(error)) => result(
+        Err(error) => return result("service", CleanUninstallState::Failed, path, Some(error)),
+        Ok(output) if output.exit_code != 0 => {
+            return result(
                 "service",
                 CleanUninstallState::Failed,
                 path,
-                Some(error.to_string()),
-            ),
-            None => unreachable!(),
-        },
-        Ok(_) => result("service", CleanUninstallState::AlreadyAbsent, path, None),
+                Some(child_failure_reason(&output)),
+            );
+        }
+        Ok(_) => {}
+    }
+    if let Err(reason) = (context.identity_hold)(IdentityHold::Reacquire) {
+        return result("service", CleanUninstallState::Failed, path, Some(reason));
+    }
+    if !existed {
+        return result("service", CleanUninstallState::AlreadyAbsent, path, None);
+    }
+    match path.as_ref().map(fs::remove_file) {
+        Some(Ok(())) => result("service", CleanUninstallState::Removed, path, None),
+        Some(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            result("service", CleanUninstallState::Removed, path, None)
+        }
+        Some(Err(error)) => result(
+            "service",
+            CleanUninstallState::Failed,
+            path,
+            Some(error.to_string()),
+        ),
+        None => unreachable!(),
     }
 }
 
@@ -533,9 +557,11 @@ mod tests {
         SetupAdmissionRequest, admit_clean_uninstall, admit_setup, journal_token_from_path,
         root_token_from_path,
     };
+    use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::ffi::OsString;
     use std::ops::Deref;
+    use std::rc::Rc;
 
     fn plan() -> CleanUninstallPlan {
         let binding = solstone_core_installation_identity::InstallationBinding {
@@ -650,6 +676,7 @@ mod tests {
             stdin_is_tty: false,
             confirm: &mut confirm,
             runner: &mut runner,
+            identity_hold: &mut |_| Ok(()),
         };
         assert_eq!(
             run_clean_uninstall(&mut context).message,
@@ -686,12 +713,124 @@ mod tests {
             stdin_is_tty: true,
             confirm: &mut confirm,
             runner: &mut runner,
+            identity_hold: &mut |_| Ok(()),
         };
         let outcome = run_clean_uninstall(&mut context);
         assert_eq!(outcome.exit_code, 1);
         assert_eq!(outcome.message, "cancelled");
         assert!(outcome.results.is_empty());
     }
+    struct RecordingRunner(Rc<RefCell<Vec<&'static str>>>, i32);
+    impl CommandRunner for RecordingRunner {
+        fn run(&mut self, request: &CommandRequest) -> Result<crate::steps::CommandOutput, String> {
+            assert_eq!(request.args, ["journal", "service", "uninstall"]);
+            self.0.borrow_mut().push("child");
+            Ok(crate::steps::CommandOutput {
+                exit_code: self.1,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            })
+        }
+    }
+
+    fn held_context<'a>(
+        root: &Path,
+        runner: &'a mut RecordingRunner,
+        confirm: &'a mut dyn FnMut() -> bool,
+        identity_hold: &'a mut dyn FnMut(IdentityHold) -> Result<(), String>,
+    ) -> CleanUninstallContext<'a> {
+        CleanUninstallContext {
+            journal_path: root.join("journal"),
+            home_dir: root.join("home"),
+            config_path: root.join("config.toml"),
+            manifest_path: root.join("journal/health/setup-state.json"),
+            plan: plan(),
+            artifact_evidence: ArtifactBindingEvidence::Fresh,
+            curdir: root.join("repo"),
+            executable_dir: root.join("bin"),
+            yes: true,
+            stdin_is_tty: false,
+            confirm,
+            runner,
+            identity_hold,
+        }
+    }
+
+    // The Windows service child reloads the binding under the identity locks: the parent
+    // must not hold them while it waits, and must hold them again before removing more.
+    #[test]
+    fn the_service_child_runs_while_the_identity_hold_is_released() {
+        let root = root("hold-order");
+        fs::write(root.join("config.toml"), "journal = \"x\"\n").unwrap();
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut runner = RecordingRunner(events.clone(), 0);
+        let mut confirm = || true;
+        let held = events.clone();
+        let mut hold = move |hold: IdentityHold| {
+            held.borrow_mut().push(match hold {
+                IdentityHold::Release => "release",
+                IdentityHold::Reacquire => "reacquire",
+            });
+            Ok(())
+        };
+        let outcome = run_clean_uninstall(&mut held_context(
+            &root,
+            &mut runner,
+            &mut confirm,
+            &mut hold,
+        ));
+        assert_eq!(*events.borrow(), ["release", "child", "reacquire"]);
+        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
+        assert!(!root.join("config.toml").exists());
+    }
+
+    #[test]
+    fn a_refused_reacquire_or_a_failed_child_removes_nothing_more() {
+        for (child_exit, refuse) in [(0, true), (1, false)] {
+            let root = root(&format!("hold-refused-{child_exit}"));
+            fs::write(root.join("config.toml"), "journal = \"x\"\n").unwrap();
+            let events = Rc::new(RefCell::new(Vec::new()));
+            let mut runner = RecordingRunner(events.clone(), child_exit);
+            let mut confirm = || true;
+            let held = events.clone();
+            let mut hold = move |hold: IdentityHold| match hold {
+                IdentityHold::Release => {
+                    held.borrow_mut().push("release");
+                    Ok(())
+                }
+                IdentityHold::Reacquire => {
+                    held.borrow_mut().push("reacquire");
+                    if refuse {
+                        Err("installation changed while its service was being removed".into())
+                    } else {
+                        Ok(())
+                    }
+                }
+            };
+            let outcome = run_clean_uninstall(&mut held_context(
+                &root,
+                &mut runner,
+                &mut confirm,
+                &mut hold,
+            ));
+            assert_eq!(outcome.exit_code, 1);
+            assert_eq!(outcome.results[0].state, CleanUninstallState::Failed);
+            assert!(
+                outcome.results[1..]
+                    .iter()
+                    .all(|result| result.state == CleanUninstallState::Skipped)
+            );
+            assert!(root.join("config.toml").exists());
+            let expected: &[&str] = if refuse {
+                &["release", "child", "reacquire"]
+            } else {
+                &["release", "child"]
+            };
+            assert_eq!(*events.borrow(), expected);
+        }
+    }
+
     #[test]
     fn foreign_wrapper_is_skipped_with_the_measured_reason() {
         let root = root("foreign");
@@ -713,6 +852,7 @@ mod tests {
             stdin_is_tty: false,
             confirm: &mut confirm,
             runner: &mut runner,
+            identity_hold: &mut |_| Ok(()),
         };
         let outcome = run_clean_uninstall(&mut context);
         assert_eq!(
@@ -793,6 +933,7 @@ mod tests {
             stdin_is_tty: false,
             confirm: &mut confirm,
             runner: &mut runner,
+            identity_hold: &mut |_| Ok(()),
         };
         let outcome = run_clean_uninstall(&mut context);
         assert_eq!(outcome.exit_code, 1);
@@ -873,6 +1014,7 @@ mod tests {
             stdin_is_tty: false,
             confirm: &mut confirm,
             runner: &mut runner,
+            identity_hold: &mut |_| Ok(()),
         };
         let outcome = run_clean_uninstall(&mut context);
         assert_eq!(outcome.exit_code, 0);
@@ -917,6 +1059,7 @@ mod tests {
             stdin_is_tty: false,
             confirm,
             runner,
+            identity_hold: Box::leak(Box::new(|_| Ok(()))),
         }
     }
 
@@ -1114,6 +1257,7 @@ mod tests {
             stdin_is_tty: true,
             confirm: &mut confirm,
             runner: &mut runner,
+            identity_hold: &mut |_| Ok(()),
         };
         let lines = clean_uninstall_confirmation_lines(&context).join("\n");
         assert!(lines.contains("[present] wrapper: "));
