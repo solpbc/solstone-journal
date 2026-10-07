@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 /// A frame after PTS and pre-hash filtering, ready for winnowing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HashedFrame {
@@ -106,7 +109,7 @@ pub fn winnow(
 
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
-    use super::{HashedFrame, WinnowConfig, WinnowVerdict, winnow};
+    use super::{HashedFrame, WinnowConfig, WinnowState, WinnowVerdict, winnow};
 
     fn config() -> WinnowConfig {
         WinnowConfig {
@@ -114,6 +117,26 @@ mod tests {
             scene_cut_threshold: 8,
             min_stride_seconds: 5.0,
         }
+    }
+
+    #[test]
+    fn static_frames_do_not_gain_a_heartbeat_after_hours() {
+        let mut state = WinnowState::new(WinnowConfig::default());
+        for second in 0..10_800 {
+            let verdict = state.decide(HashedFrame {
+                timestamp: f64::from(second),
+                hash: 0x0123_4567_89ab_cdef,
+            });
+            assert_eq!(
+                verdict,
+                if second == 0 {
+                    WinnowVerdict::Kept
+                } else {
+                    WinnowVerdict::BelowThreshold
+                }
+            );
+        }
+        assert_eq!(state.counters().kept, 1);
     }
 
     #[test]

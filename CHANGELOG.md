@@ -13,6 +13,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when your screen stayed the same at the start of a stretch but changed later, your journal could skip writing about that stretch. it now uses those later changes too.
+- choosing the same screen twice no longer uses up your journal's allowance for screen details. if it has to choose screens on its own, it fills unused slots while respecting your category preferences.
 - a link to the devices section of the network page now opens the page at that section. before, it could open at the top.
 - on windows, the network page now tells you when Windows Firewall has kept a Block rule for journal after Cancel, and how an administrator can remove it. opening your journal to the network alone couldn't get past that rule.
 - if your journal thinks on this computer, on mac or linux, it now installs the local model again on its own when an update needs it. since 2.0.34, an update could stop your journal's thinking, and home said "processing needs a setup" until you installed the local model again. you can cancel the download on the thinking page, and it stays cancelled until you install again.

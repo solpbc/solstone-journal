@@ -88,7 +88,8 @@ pub fn select(
     let selected = match response {
         GenerateResponse::Generated(generated) => {
             parse_selected_ids(&generated.text, frames, max_extractions)
-                .unwrap_or_else(|| fallback_select_frames(frames, max_extractions))
+                .map(|selected| finalize_selection(selected, frames, overrides))
+                .unwrap_or_else(|| fallback_with_category_caps(frames, max_extractions, overrides))
         }
         GenerateResponse::Refused(refusal) => {
             if refusal.reason == RefusalReason::NoEngineConfigured
@@ -100,10 +101,10 @@ pub fn select(
                     provider: refusal.provider,
                 });
             }
-            fallback_select_frames(frames, max_extractions)
+            fallback_with_category_caps(frames, max_extractions, overrides)
         }
     };
-    Ok(finalize_selection(selected, frames, overrides))
+    Ok(selected)
 }
 
 pub fn request(
@@ -160,10 +161,12 @@ pub fn parse_selected_ids(
         _ => return None,
     };
     let valid: HashSet<u64> = frames.iter().map(|frame| frame.frame_id).collect();
+    let mut seen = HashSet::new();
     Some(
         ids.iter()
             .filter_map(Value::as_u64)
             .filter(|id| valid.contains(id))
+            .filter(|id| seen.insert(*id))
             .take(usize::try_from(max_extractions.saturating_mul(2)).unwrap_or(usize::MAX))
             .collect(),
     )
@@ -211,6 +214,69 @@ pub fn fallback_select_frames(frames: &[CategorizedFrame], max_extractions: u32)
     selected.into_iter().map(|(frame_id, _)| frame_id).collect()
 }
 
+fn fallback_with_category_caps(
+    frames: &[CategorizedFrame],
+    max_extractions: u32,
+    overrides: &BTreeMap<String, CategoryOverride>,
+) -> Vec<u64> {
+    let baseline = finalize_selection(
+        fallback_select_frames(frames, max_extractions),
+        frames,
+        overrides,
+    );
+    let mut selected = frames
+        .iter()
+        .filter(|frame| baseline.contains(&frame.frame_id))
+        .collect::<Vec<_>>();
+    // Keep the existing fallback's choices and first-frame anchor. Refill only
+    // slots removed by category caps, using its same farthest-in-time rule.
+    while selected.len() < usize::try_from(max_extractions).unwrap_or(usize::MAX) {
+        let candidate = frames
+            .iter()
+            .filter(|frame| {
+                !selected
+                    .iter()
+                    .any(|chosen| chosen.frame_id == frame.frame_id)
+            })
+            .filter(|frame| {
+                let category = frame.analysis.get("primary").and_then(Value::as_str);
+                match resolved_importance(category, overrides) {
+                    Importance::Ignore => false,
+                    Importance::Low => {
+                        selected
+                            .iter()
+                            .filter(|chosen| {
+                                chosen.analysis.get("primary").and_then(Value::as_str) == category
+                            })
+                            .count()
+                            < 2
+                    }
+                    Importance::Normal | Importance::High => true,
+                }
+            })
+            .map(|frame| {
+                let min_distance = selected
+                    .iter()
+                    .map(|chosen| (frame.timestamp - chosen.timestamp).abs())
+                    .fold(f64::INFINITY, f64::min);
+                (frame, (min_distance, std::cmp::Reverse(frame.frame_id)))
+            })
+            .max_by(|(_, left), (_, right)| {
+                left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        let Some((frame, _)) = candidate else {
+            break;
+        };
+        selected.push(frame);
+    }
+    let mut ids = selected
+        .into_iter()
+        .map(|frame| frame.frame_id)
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
+}
+
 fn resolved_importance(
     category: Option<&str>,
     overrides: &BTreeMap<String, CategoryOverride>,
@@ -252,6 +318,7 @@ pub fn apply_category_caps(
         .collect::<BTreeMap<_, _>>();
     let mut selected_ids = selected_ids;
     selected_ids.sort_unstable();
+    selected_ids.dedup();
     let mut counts = BTreeMap::<Option<String>, u32>::new();
     selected_ids
         .into_iter()
@@ -369,13 +436,20 @@ fn extraction_guidance(overrides: &BTreeMap<String, CategoryOverride>) -> String
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::collections::BTreeMap;
+    use std::time::Duration;
 
+    use crate::session::DescribeSession;
     use serde::Deserialize;
     use serde_json::json;
+    use solstone_core_generate::{
+        GenerateRequest, GenerateResponse, GeneratedResponse, RefusalReason, RefusedResponse,
+        SessionCloseError, SessionCompletion, SessionReceiveError, SessionSubmitError,
+    };
 
     use super::{
-        CategorizedFrame, CategoryOverride, Importance, apply_category_caps, extraction_guidance,
-        fallback_select_frames, finalize_selection, parse_selected_ids,
+        CategorizedFrame, CategoryOverride, Importance, SelectionError, apply_category_caps,
+        extraction_guidance, fallback_select_frames, finalize_selection, parse_selected_ids,
+        select,
     };
 
     #[derive(Deserialize)]
@@ -401,6 +475,51 @@ mod tests {
             .collect()
     }
 
+    struct Reply(GenerateResponse);
+
+    impl DescribeSession for Reply {
+        fn submit(&self, _: GenerateRequest) -> Result<(), SessionSubmitError> {
+            Ok(())
+        }
+
+        fn recv_timeout(&self, _: Duration) -> Result<SessionCompletion, SessionReceiveError> {
+            Ok(SessionCompletion::Response(self.0.clone()))
+        }
+
+        fn close(&self) -> Result<(), SessionCloseError> {
+            Ok(())
+        }
+    }
+
+    fn generated(text: &str) -> Reply {
+        Reply(GenerateResponse::Generated(Box::new(GeneratedResponse {
+            id: Some(super::REQUEST_ID.to_owned()),
+            text: text.to_owned(),
+            model: "test".to_owned(),
+            usage: json!({}),
+            finish_reason: "stop".to_owned(),
+            thinking: None,
+            schema_validation: None,
+            input_budget: None,
+            request_budget: None,
+            inference: None,
+            hints_applied: Vec::new(),
+        })))
+    }
+
+    fn refused(reason: RefusalReason, blocking: bool) -> Reply {
+        Reply(GenerateResponse::Refused(RefusedResponse {
+            id: Some(super::REQUEST_ID.to_owned()),
+            reason,
+            reason_code: None,
+            retryable: false,
+            blocking,
+            reset_at_ms: None,
+            provider: None,
+            detail: String::new(),
+        }))
+    }
+
     #[test]
     fn accepts_wrapped_and_bare_selection_responses() {
         let frames = frames(&[(1, 0.0, "code"), (2, 1.0, "code")]);
@@ -418,6 +537,147 @@ mod tests {
             parse_selected_ids(r#"{"frame_ids":[999,3,1,2]}"#, &frames, 1),
             Some(vec![3, 1])
         );
+    }
+
+    #[test]
+    fn duplicate_ids_do_not_consume_response_or_category_limits() {
+        let categorized = frames(&[
+            (1, 0.0, "terminal"),
+            (2, 1.0, "terminal"),
+            (3, 2.0, "terminal"),
+        ]);
+        for response in ["[1,1,2,3]", r#"{"frame_ids":[1,1,2,3]}"#] {
+            let selected = parse_selected_ids(response, &categorized, 1).unwrap();
+            assert_eq!(selected, vec![1, 2]);
+            assert_eq!(
+                finalize_selection(selected, &categorized, &BTreeMap::new()),
+                vec![1, 2]
+            );
+        }
+        assert_eq!(
+            apply_category_caps(vec![1, 1, 2, 3], &categorized, &BTreeMap::new()),
+            vec![1, 2],
+        );
+    }
+
+    #[test]
+    fn fallback_refills_capped_slots_without_replacing_existing_choices() {
+        let categorized = frames(&[
+            (1, 0.0, "gaming"),
+            (2, 1.0, "messaging"),
+            (3, 2.0, "gaming"),
+            (4, 3.0, "reading"),
+            (5, 4.0, "gaming"),
+            (6, 5.0, "messaging"),
+            (7, 6.0, "reading"),
+            (8, 7.0, "messaging"),
+            (9, 8.0, "gaming"),
+        ]);
+        let overrides = BTreeMap::new();
+        let baseline = finalize_selection(
+            fallback_select_frames(&categorized, 5),
+            &categorized,
+            &overrides,
+        );
+        assert_eq!(baseline, vec![1, 7]);
+        for reply in [
+            generated("invalid JSON"),
+            refused(RefusalReason::IncompleteJson, false),
+        ] {
+            let chosen = select(&reply, &categorized, 5, &overrides).unwrap();
+            assert_eq!(chosen, vec![1, 2, 4, 6, 7]);
+            assert!(baseline.iter().all(|id| chosen.contains(id)));
+        }
+
+        let overrides = BTreeMap::from([(
+            "gaming".to_owned(),
+            CategoryOverride {
+                importance: Some(Importance::Low),
+                extraction: None,
+            },
+        )]);
+        assert_eq!(
+            select(&generated("invalid JSON"), &categorized, 5, &overrides).unwrap(),
+            vec![1, 2, 3, 4, 7],
+            "refill counts the Low anchor toward the two-frame category quota"
+        );
+    }
+
+    #[test]
+    fn valid_model_selection_is_not_refilled_and_preserves_the_anchor_exception() {
+        let categorized = frames(&[
+            (1, 0.0, "code"),
+            (2, 1.0, "reading"),
+            (3, 2.0, "code"),
+            (4, 3.0, "reading"),
+            (5, 4.0, "code"),
+        ]);
+        for (response, expected) in [
+            ("[4]", vec![1, 4]),
+            ("[]", vec![1]),
+            (r#"{"frame_ids":[]}"#, vec![1]),
+            ("{}", vec![1]),
+            ("[3,5]", vec![1, 3, 5]),
+        ] {
+            assert_eq!(
+                select(&generated(response), &categorized, 5, &BTreeMap::new()).unwrap(),
+                expected,
+                "{response}"
+            );
+        }
+    }
+
+    #[test]
+    fn fallback_returns_fewer_when_preferences_exhaust_eligible_frames() {
+        let categorized = frames(&[
+            (1, 0.0, "code"),
+            (2, 1.0, "code"),
+            (3, 2.0, "code"),
+            (4, 3.0, "code"),
+        ]);
+        assert_eq!(
+            select(
+                &generated("invalid JSON"),
+                &categorized,
+                5,
+                &BTreeMap::new()
+            )
+            .unwrap(),
+            vec![1, 2]
+        );
+        let overrides = BTreeMap::from([(
+            "code".to_owned(),
+            CategoryOverride {
+                importance: Some(Importance::Ignore),
+                extraction: None,
+            },
+        )]);
+        assert_eq!(
+            select(&generated("invalid JSON"), &categorized, 5, &overrides).unwrap(),
+            vec![1]
+        );
+        assert_eq!(
+            select(&generated("invalid JSON"), &[], 5, &overrides).unwrap(),
+            Vec::<u64>::new()
+        );
+        assert_eq!(
+            select(&generated("invalid JSON"), &categorized, 0, &overrides).unwrap(),
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn blocked_refusals_do_not_fall_back() {
+        let categorized = frames(&[(1, 0.0, "reading"), (2, 1.0, "reading")]);
+        for reply in [
+            refused(RefusalReason::NoEngineConfigured, false),
+            refused(RefusalReason::AttestationStale, true),
+        ] {
+            assert!(matches!(
+                select(&reply, &categorized, 5, &BTreeMap::new()),
+                Err(SelectionError::Blocked { .. })
+            ));
+        }
     }
 
     #[test]

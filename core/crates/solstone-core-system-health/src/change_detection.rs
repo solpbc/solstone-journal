@@ -132,6 +132,16 @@ pub(crate) fn compare_screen(previous: &Value, current: &Value) -> Value {
     if previous.keys().collect::<BTreeSet<_>>() != current.keys().collect::<BTreeSet<_>>() {
         return json!({"present": true, "changed": true});
     }
+    // The decoder always keeps the first frame. Additional qualified frames
+    // mean activity within this segment, even if its boundary hashes match.
+    if current.values().any(|monitor| {
+        monitor
+            .get("qualified_count")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 1)
+    }) {
+        return json!({"present": true, "changed": true});
+    }
     for key in current.keys() {
         let before = previous
             .get(key)
@@ -574,6 +584,48 @@ mod tests {
         assert_eq!(
             classify(&json!({"screen":{"present":true,"changed":false}})).0,
             "redundant"
+        );
+    }
+
+    #[test]
+    fn screen_changes_inside_a_segment_survive_matching_boundary_hashes() {
+        let previous = json!({"monitors":{"main":{"last_hash":"0000000000000000"}}});
+        for (last_hash, qualified_count) in [("00000000000000ff", 2), ("0000000000000000", 3)] {
+            let current = json!({"monitors":{"main":{
+                "first_hash":"0000000000000000", "last_hash":last_hash,
+                "qualified_count":qualified_count
+            }}});
+            let screen = compare_screen(&previous, &current);
+            assert_eq!(screen, json!({"present":true, "changed":true}));
+            assert_eq!(classify(&json!({"screen":screen})).0, "active");
+        }
+    }
+
+    #[test]
+    fn hours_of_static_segments_remain_redundant() {
+        let mut previous = json!({"monitors":{"main":{
+            "first_hash":"0123456789abcdef", "last_hash":"0123456789abcdef", "qualified_count":1
+        }}});
+        // Three hours of five-minute segments, each with only the opening frame.
+        for _ in 0..36 {
+            let current = previous.clone();
+            let screen = compare_screen(&previous, &current);
+            assert_eq!(screen, json!({"present":true,"changed":false}));
+            assert_eq!(classify(&json!({"screen":screen})).0, "redundant");
+            previous = current;
+        }
+    }
+
+    #[test]
+    fn internal_screen_change_on_a_secondary_monitor_is_active() {
+        let previous = json!({"monitors":{"main":{"last_hash":0},"other":{"last_hash":0}}});
+        let current = json!({"monitors":{
+            "main":{"first_hash":0,"last_hash":0,"qualified_count":1},
+            "other":{"first_hash":0,"last_hash":0,"qualified_count":3}
+        }});
+        assert_eq!(
+            compare_screen(&previous, &current),
+            json!({"present":true,"changed":true})
         );
     }
 
