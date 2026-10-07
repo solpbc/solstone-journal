@@ -587,6 +587,10 @@ impl TestServer {
                 let plan = plan.clone();
 
                 thread::spawn(move || {
+                    // Darwin hands back a stream that inherits the listener's
+                    // O_NONBLOCK; Linux never does. The server is blocking.
+                    tcp.set_nonblocking(false)
+                        .expect("blocking accepted stream");
                     let _ = tcp.set_read_timeout(Some(Duration::from_secs(30)));
                     let _ = tcp.set_write_timeout(Some(Duration::from_secs(30)));
 
