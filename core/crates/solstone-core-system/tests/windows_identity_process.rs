@@ -257,6 +257,7 @@ fn windows_identity_interprocess_receipt() {
                         root_token: root.clone(),
                         journal_token: binding.journal_token.clone(),
                         journal_is_explicit: true,
+                        accept_prepared_retarget: false,
                         legacy_manifest: LegacyManifestEvidence::Absent,
                         artifacts: ArtifactBindingEvidence::Fresh,
                     })

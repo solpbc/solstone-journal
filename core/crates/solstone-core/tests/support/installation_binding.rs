@@ -27,6 +27,7 @@ pub fn admit_for(journal: &Path) -> PathBuf {
         root_token: root_token_from_path(&root).expect("root token"),
         journal_token: journal_token_from_path(journal).expect("journal token"),
         journal_is_explicit: true,
+        accept_prepared_retarget: false,
         legacy_manifest: LegacyManifestEvidence::Absent,
         artifacts: ArtifactBindingEvidence::Fresh,
     })

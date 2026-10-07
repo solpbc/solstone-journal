@@ -11,8 +11,8 @@ use std::process::{Command, ExitCode};
 
 use solstone_core_cli::{ConfigAction, ConfigCommand, ConfigJournalOptions};
 use solstone_core_installation_identity::{
-    OwnerBase, PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path,
-    namespace_name, root_token_from_path,
+    OwnerBase, PlatformTag, SetupAdmissionRequest, admit_setup_with_effective_journal_validator,
+    journal_token_from_path, namespace_name, root_token_from_path,
 };
 use solstone_core_journal::{
     Source, detect_checkout_root, read_config_journal, resolve_journal_path,
@@ -20,6 +20,7 @@ use solstone_core_journal::{
 use solstone_core_setup::{
     identity_evidence::gather_wrapper_artifact_evidence,
     manifest::{legacy_manifest_evidence, manifest_path},
+    refuse_journal_in_program_folder,
     wrapper::{
         WrapperCommand, parse_wrapper, render_wrapper, validate_wrapper_inputs, wrapper_lock,
         wrapper_paths, write_wrappers_atomically,
@@ -558,24 +559,28 @@ fn rewrite_preflighted(
         ))
     })?;
     let namespace = namespace_name(PlatformTag::current(), &root_token);
-    let admission = admit_setup(SetupAdmissionRequest {
-        owner: OwnerBase::at_home(change.home_dir.clone(), PlatformTag::current()).map_err(
-            |error| {
+    let admission = admit_setup_with_effective_journal_validator(
+        SetupAdmissionRequest {
+            owner: OwnerBase::at_home(change.home_dir.clone(), PlatformTag::current()).map_err(
+                |error| {
+                    RewriteError::Refusal(format!(
+                        "solstone journal config: identity owner refused: {error}"
+                    ))
+                },
+            )?,
+            root_token,
+            journal_token: journal_token_from_path(&change.target_path).map_err(|error| {
                 RewriteError::Refusal(format!(
-                    "solstone journal config: identity owner refused: {error}"
+                    "solstone journal config: journal path refused: {error}"
                 ))
-            },
-        )?,
-        root_token,
-        journal_token: journal_token_from_path(&change.target_path).map_err(|error| {
-            RewriteError::Refusal(format!(
-                "solstone journal config: journal path refused: {error}"
-            ))
-        })?,
-        journal_is_explicit: true,
-        legacy_manifest: legacy_manifest_for_rewrite(change),
-        artifacts: gather_wrapper_artifact_evidence(&change.home_dir, &namespace),
-    })
+            })?,
+            journal_is_explicit: true,
+            accept_prepared_retarget: false,
+            legacy_manifest: legacy_manifest_for_rewrite(change),
+            artifacts: gather_wrapper_artifact_evidence(&change.home_dir, &namespace),
+        },
+        &|token| refuse_journal_in_program_folder(&token.to_path_buf(), &change.sol_bin),
+    )
     .map_err(|error| {
         RewriteError::Refusal(format!(
             "solstone journal config: identity admission refused: {error}"
@@ -643,6 +648,12 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
             0
         }
         _ if d.plan_only => {
+            if matches!(d.action, Action::Move | Action::Switch | Action::Proceed) {
+                if let Err(error) = refuse_journal_in_program_folder(&c.target_path, &c.sol_bin) {
+                    eprintln!("{error}");
+                    return 1;
+                }
+            }
             println!("{}", plan(c, d));
             d.exit_code
         }
@@ -651,6 +662,10 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
     }
 }
 fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
+    if let Err(error) = refuse_journal_in_program_folder(&c.target_path, &c.sol_bin) {
+        eprintln!("{error}");
+        return 1;
+    }
     let _wrapper_lock = match wrapper_lock(&c.home_dir) {
         Ok(lock) => lock,
         Err(error) => {
@@ -751,6 +766,10 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
     }
     if c.same_filesystem == Some(false) {
         eprintln!("{}", cross_filesystem(c));
+        return 1;
+    }
+    if let Err(error) = refuse_journal_in_program_folder(&c.target_path, &c.sol_bin) {
+        eprintln!("{error}");
         return 1;
     }
     let _wrapper_lock = match wrapper_lock(&c.home_dir) {
@@ -1322,6 +1341,26 @@ mod tests {
         let root = test_root("unsafe-wrapper-preflight");
         let mut c = move_change(&root);
         c.target_path = root.join("bad}journal");
+        let service = FakeServiceRunner::new([]);
+        let decision = decision(Action::Move, 0);
+        assert_eq!(execute(&c, &decision, &service), 1);
+        assert!(c.current_path.exists());
+        assert!(!c.target_path.exists());
+        assert!(service.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn program_folder_move_refuses_before_rename() {
+        let root = test_root("program-folder-move");
+        let mut c = move_change(&root);
+        let program_root = root.join("program");
+        let app_dir = program_root.join("current");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::write(program_root.join("Update.exe"), b"exe").unwrap();
+        let target_in_root = program_root.join("nested/journal");
+        fs::create_dir_all(target_in_root.parent().unwrap()).unwrap();
+        c.sol_bin = app_dir.join("solstone.exe");
+        c.target_path = target_in_root;
         let service = FakeServiceRunner::new([]);
         let decision = decision(Action::Move, 0);
         assert_eq!(execute(&c, &decision, &service), 1);

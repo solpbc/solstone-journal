@@ -462,6 +462,7 @@ pub struct SetupAdmissionRequest {
     pub journal_token: JournalToken,
     /// Only an explicit CLI/environment journal selection may update an existing record.
     pub journal_is_explicit: bool,
+    pub accept_prepared_retarget: bool,
     pub legacy_manifest: LegacyManifestEvidence,
     pub artifacts: ArtifactBindingEvidence,
 }
@@ -622,6 +623,9 @@ pub const FOREIGN_ARTIFACTS_REFUSAL: &str =
 /// The refusal when artifact ownership cannot be established from the local evidence.
 /// Callers must not suggest removing artifacts on this branch.
 pub const UNCERTAIN_ARTIFACTS_REFUSAL: &str = "artifact binding is malformed or ambiguous";
+
+/// The refusal when the journal is located inside a Velopack program folder.
+pub const PROGRAM_FOLDER_JOURNAL_REFUSAL: &str = "Uninstall removes this program folder. Choose a journal location outside it. If a journal is already inside the program folder, stop it and move that folder before uninstalling.";
 
 /// Provider failures, including unsafe storage states that require repair.
 #[derive(Debug)]
@@ -1139,7 +1143,7 @@ pub fn admit_installation_binding(
 /// reacquires the owner lock before it creates the marker, adopts, and returns
 /// this session.
 pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, IdentityError> {
-    admit_setup_with_effective_journal_validator(request, |_| Ok(()))
+    admit_setup_with_effective_journal_validator(request, &|_| Ok(()))
 }
 
 /// Admits setup after validating the journal that this invocation would make
@@ -1150,7 +1154,7 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
 /// without teaching the identity provider about that artifact's encoding.
 pub fn admit_setup_with_effective_journal_validator(
     request: SetupAdmissionRequest,
-    validate_effective_journal: fn(&JournalToken) -> Result<(), IdentityError>,
+    validate_effective_journal: &dyn Fn(&JournalToken) -> Result<(), IdentityError>,
 ) -> Result<SetupAdmission, IdentityError> {
     validate_effective_journal(&request.journal_token)?;
     validate_setup_evidence(&request.artifacts, request.legacy_manifest)?;
@@ -1225,7 +1229,7 @@ fn admit_setup_linux(
     namespace_name: NamespaceName,
     provider: SecureDir,
     owner_admission: OwnerAdmissionLease,
-    validate_effective_journal: fn(&JournalToken) -> Result<(), IdentityError>,
+    validate_effective_journal: &dyn Fn(&JournalToken) -> Result<(), IdentityError>,
 ) -> Result<SetupAdmission, IdentityError> {
     loop {
         let owner_lock = lock_owner(&provider)?;
@@ -2075,6 +2079,21 @@ fn enumerate_registry(
     Ok(registry)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PathPresence {
+    Absent,
+    Present,
+    Uncertain,
+}
+
+fn path_presence(path: &Path) -> PathPresence {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => PathPresence::Present,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => PathPresence::Absent,
+        Err(_) => PathPresence::Uncertain,
+    }
+}
+
 fn admit_existing_setup(
     request: SetupAdmissionRequest,
     namespace_name: NamespaceName,
@@ -2082,7 +2101,7 @@ fn admit_existing_setup(
     snapshot: NamespaceSnapshot,
     owner_admission: OwnerAdmissionLease,
     owner_lock: IdentityLock,
-    validate_effective_journal: fn(&JournalToken) -> Result<(), IdentityError>,
+    validate_effective_journal: &dyn Fn(&JournalToken) -> Result<(), IdentityError>,
 ) -> Result<SetupAdmission, IdentityError> {
     let mut record = snapshot
         .record
@@ -2094,6 +2113,17 @@ fn admit_existing_setup(
     }
     let mut binding = InstallationBinding::from_record(namespace_name, &record);
     validate_existing_evidence(&request.artifacts, &binding)?;
+    if record.state == LifecycleState::Prepared
+        && request.accept_prepared_retarget
+        && request.journal_is_explicit
+        && record.journal_token != request.journal_token
+        && path_presence(&record.journal_token.to_path_buf()) == PathPresence::Absent
+        && path_presence(&request.journal_token.to_path_buf()) == PathPresence::Present
+        && validate_effective_journal(&request.journal_token).is_ok()
+    {
+        record.journal_token = request.journal_token.clone();
+        replace_record(&namespace, &record, StageKind::Prepared)?;
+    }
     let effective_journal = match record.state {
         LifecycleState::Prepared => &record.journal_token,
         LifecycleState::Adopted if request.journal_is_explicit => &request.journal_token,
@@ -3952,6 +3982,7 @@ mod tests {
                 journal_token: JournalToken::from_raw_absolute(journal.to_vec())
                     .expect("journal token"),
                 journal_is_explicit: true,
+                accept_prepared_retarget: false,
                 legacy_manifest: LegacyManifestEvidence::Absent,
                 artifacts: ArtifactBindingEvidence::Fresh,
             }
@@ -5326,6 +5357,449 @@ mod tests {
     }
 
     #[test]
+    fn program_folder_fresh_refusal_publishes_no_record() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/fresh-refusal";
+        let journal = fixture.root.join("journal");
+        let request = fixture.request(root, journal.to_str().unwrap().as_bytes());
+        let result = admit_setup_with_effective_journal_validator(request, &|_| {
+            Err(IdentityError::AdmissionRefused(
+                PROGRAM_FOLDER_JOURNAL_REFUSAL,
+            ))
+        });
+        assert!(matches!(
+            result,
+            Err(IdentityError::AdmissionRefused(msg)) if msg == PROGRAM_FOLDER_JOURNAL_REFUSAL
+        ));
+        assert!(!fixture.namespace_path(root).join("record").exists());
+    }
+
+    #[test]
+    fn program_folder_prepared_resume_adopts_allowed_recorded_journal() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/prepared-resume";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+        fs::create_dir_all(&journal_a).unwrap();
+        fs::create_dir_all(&journal_b).unwrap();
+        let initial_request = fixture.request(root, journal_a.to_str().unwrap().as_bytes());
+        fail_at(FaultPoint::MarkerCreation);
+        assert!(admit_setup(initial_request).is_err());
+        clear_control();
+
+        let record_before = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_before.state, LifecycleState::Prepared);
+        assert_eq!(record_before.journal_token.to_path_buf(), journal_a);
+
+        let mut resume_request = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        resume_request.accept_prepared_retarget = false;
+        let token_a =
+            JournalToken::from_raw_absolute(journal_a.to_str().unwrap().as_bytes().to_vec())
+                .unwrap();
+        let token_b =
+            JournalToken::from_raw_absolute(journal_b.to_str().unwrap().as_bytes().to_vec())
+                .unwrap();
+        let admission = admit_setup_with_effective_journal_validator(resume_request, &|token| {
+            if token == &token_a || token == &token_b {
+                Ok(())
+            } else {
+                Err(IdentityError::AdmissionRefused(
+                    PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                ))
+            }
+        })
+        .expect("resume must adopt recorded journal");
+        assert_eq!(admission.binding().journal_token, token_a);
+        assert_eq!(admission.binding().id, record_before.id);
+        assert_eq!(admission.binding().generation, record_before.generation);
+
+        let record_after = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_after.state, LifecycleState::Adopted);
+        assert_eq!(record_after.journal_token, token_a);
+    }
+
+    #[test]
+    fn program_folder_prepared_recovery_adopts_moved_journal() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/prepared-recovery";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+        let initial_request = fixture.request(root, journal_a.to_str().unwrap().as_bytes());
+        fail_at(FaultPoint::MarkerCreation);
+        assert!(admit_setup(initial_request).is_err());
+        clear_control();
+
+        let record_before = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_before.state, LifecycleState::Prepared);
+
+        fs::create_dir_all(&journal_b).unwrap();
+        let mut recovery_request = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        recovery_request.accept_prepared_retarget = true;
+        recovery_request.journal_is_explicit = true;
+
+        let token_b =
+            JournalToken::from_raw_absolute(journal_b.to_str().unwrap().as_bytes().to_vec())
+                .unwrap();
+        let admission = admit_setup_with_effective_journal_validator(recovery_request, &|token| {
+            if token == &token_b {
+                Ok(())
+            } else {
+                Err(IdentityError::AdmissionRefused(
+                    PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                ))
+            }
+        })
+        .expect("recovery adopts moved journal");
+        assert_eq!(admission.binding().journal_token, token_b);
+        assert_eq!(admission.binding().id, record_before.id);
+        assert_eq!(admission.binding().generation, record_before.generation);
+
+        let record_after = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_after.state, LifecycleState::Adopted);
+        assert_eq!(record_after.journal_token, token_b);
+        assert_eq!(record_after.id, record_before.id);
+        assert_eq!(record_after.generation, record_before.generation);
+    }
+
+    #[test]
+    fn program_folder_prepared_recovery_old_path_present_leaves_record() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/prepared-old-present";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+        fs::create_dir_all(&journal_a).unwrap();
+        fs::create_dir_all(&journal_b).unwrap();
+
+        let initial_request = fixture.request(root, journal_a.to_str().unwrap().as_bytes());
+        fail_at(FaultPoint::MarkerCreation);
+        assert!(admit_setup(initial_request).is_err());
+        clear_control();
+
+        let record_before = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_before.state, LifecycleState::Prepared);
+
+        let mut req = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        req.accept_prepared_retarget = true;
+        req.journal_is_explicit = true;
+
+        let token_a =
+            JournalToken::from_raw_absolute(journal_a.to_str().unwrap().as_bytes().to_vec())
+                .unwrap();
+        let result = admit_setup_with_effective_journal_validator(req, &|token| {
+            if token == &token_a {
+                Err(IdentityError::AdmissionRefused(
+                    PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                ))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(matches!(
+            result,
+            Err(IdentityError::AdmissionRefused(msg)) if msg == PROGRAM_FOLDER_JOURNAL_REFUSAL
+        ));
+
+        let record_after = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_after.state, LifecycleState::Prepared);
+        assert_eq!(record_after.journal_token, record_before.journal_token);
+    }
+
+    #[test]
+    fn program_folder_prepared_recovery_new_path_absent_leaves_record() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/prepared-new-absent";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+        let initial_request = fixture.request(root, journal_a.to_str().unwrap().as_bytes());
+        fail_at(FaultPoint::MarkerCreation);
+        assert!(admit_setup(initial_request).is_err());
+        clear_control();
+
+        let record_before = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_before.state, LifecycleState::Prepared);
+
+        let mut req = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        req.accept_prepared_retarget = true;
+        req.journal_is_explicit = true;
+
+        let token_a =
+            JournalToken::from_raw_absolute(journal_a.to_str().unwrap().as_bytes().to_vec())
+                .unwrap();
+        let result = admit_setup_with_effective_journal_validator(req, &|token| {
+            if token == &token_a {
+                Err(IdentityError::AdmissionRefused(
+                    PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                ))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(matches!(
+            result,
+            Err(IdentityError::AdmissionRefused(msg)) if msg == PROGRAM_FOLDER_JOURNAL_REFUSAL
+        ));
+
+        let record_after = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_after.state, LifecycleState::Prepared);
+        assert_eq!(record_after.journal_token, record_before.journal_token);
+    }
+
+    #[test]
+    fn program_folder_prepared_recovery_without_consent_leaves_record() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/prepared-no-consent";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+        fs::create_dir_all(&journal_b).unwrap();
+
+        let initial_request = fixture.request(root, journal_a.to_str().unwrap().as_bytes());
+        fail_at(FaultPoint::MarkerCreation);
+        assert!(admit_setup(initial_request).is_err());
+        clear_control();
+
+        let record_before = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_before.state, LifecycleState::Prepared);
+
+        let mut req = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        req.accept_prepared_retarget = false;
+        req.journal_is_explicit = true;
+
+        let token_a =
+            JournalToken::from_raw_absolute(journal_a.to_str().unwrap().as_bytes().to_vec())
+                .unwrap();
+        let result = admit_setup_with_effective_journal_validator(req, &|token| {
+            if token == &token_a {
+                Err(IdentityError::AdmissionRefused(
+                    PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                ))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(matches!(
+            result,
+            Err(IdentityError::AdmissionRefused(msg)) if msg == PROGRAM_FOLDER_JOURNAL_REFUSAL
+        ));
+
+        let record_after = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_after.state, LifecycleState::Prepared);
+        assert_eq!(record_after.journal_token, record_before.journal_token);
+    }
+
+    #[test]
+    fn program_folder_prepared_recovery_rejected_request_leaves_record() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/prepared-rejected-req";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+        fs::create_dir_all(&journal_b).unwrap();
+
+        let initial_request = fixture.request(root, journal_a.to_str().unwrap().as_bytes());
+        fail_at(FaultPoint::MarkerCreation);
+        assert!(admit_setup(initial_request).is_err());
+        clear_control();
+
+        let record_before = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_before.state, LifecycleState::Prepared);
+
+        let mut req = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        req.accept_prepared_retarget = true;
+        req.journal_is_explicit = true;
+
+        let result = admit_setup_with_effective_journal_validator(req, &|_| {
+            Err(IdentityError::AdmissionRefused(
+                PROGRAM_FOLDER_JOURNAL_REFUSAL,
+            ))
+        });
+        assert!(matches!(
+            result,
+            Err(IdentityError::AdmissionRefused(msg)) if msg == PROGRAM_FOLDER_JOURNAL_REFUSAL
+        ));
+
+        let record_after = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_after.state, LifecycleState::Prepared);
+        assert_eq!(record_after.journal_token, record_before.journal_token);
+    }
+
+    #[test]
+    fn program_folder_adopted_implicit_refusal_leaves_record() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/adopted-implicit";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+
+        let admission =
+            admit_setup(fixture.request(root, journal_a.to_str().unwrap().as_bytes())).unwrap();
+        let original_id = admission.binding().id.clone();
+        drop(admission);
+
+        let record_before = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_before.state, LifecycleState::Adopted);
+
+        let mut req = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        req.journal_is_explicit = false;
+
+        let token_a =
+            JournalToken::from_raw_absolute(journal_a.to_str().unwrap().as_bytes().to_vec())
+                .unwrap();
+        let result = admit_setup_with_effective_journal_validator(req, &|token| {
+            if token == &token_a {
+                Err(IdentityError::AdmissionRefused(
+                    PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                ))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(matches!(
+            result,
+            Err(IdentityError::AdmissionRefused(msg)) if msg == PROGRAM_FOLDER_JOURNAL_REFUSAL
+        ));
+
+        let record_after = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_after.state, LifecycleState::Adopted);
+        assert_eq!(record_after.id, original_id);
+        assert_eq!(record_after.generation, record_before.generation);
+        assert_eq!(record_after.journal_token, record_before.journal_token);
+    }
+
+    #[test]
+    fn program_folder_adopted_explicit_refusal_leaves_record() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/adopted-explicit";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+
+        let admission =
+            admit_setup(fixture.request(root, journal_a.to_str().unwrap().as_bytes())).unwrap();
+        let original_id = admission.binding().id.clone();
+        drop(admission);
+
+        let record_before = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_before.state, LifecycleState::Adopted);
+
+        let mut req = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        req.journal_is_explicit = true;
+
+        let token_b =
+            JournalToken::from_raw_absolute(journal_b.to_str().unwrap().as_bytes().to_vec())
+                .unwrap();
+        let result = admit_setup_with_effective_journal_validator(req, &|token| {
+            if token == &token_b {
+                Err(IdentityError::AdmissionRefused(
+                    PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                ))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(matches!(
+            result,
+            Err(IdentityError::AdmissionRefused(msg)) if msg == PROGRAM_FOLDER_JOURNAL_REFUSAL
+        ));
+
+        let record_after = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_after.state, LifecycleState::Adopted);
+        assert_eq!(record_after.id, original_id);
+        assert_eq!(record_after.generation, record_before.generation);
+        assert_eq!(record_after.journal_token, record_before.journal_token);
+    }
+
+    #[test]
+    fn program_folder_adopted_explicit_update_keeps_id() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/adopted-update";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+
+        let admission =
+            admit_setup(fixture.request(root, journal_a.to_str().unwrap().as_bytes())).unwrap();
+        let original_id = admission.binding().id.clone();
+        let original_generation = admission.binding().generation;
+        drop(admission);
+
+        let mut req = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        req.journal_is_explicit = true;
+        let token_b =
+            JournalToken::from_raw_absolute(journal_b.to_str().unwrap().as_bytes().to_vec())
+                .unwrap();
+
+        let updated = admit_setup_with_effective_journal_validator(req, &|token| {
+            if token == &token_b {
+                Ok(())
+            } else {
+                Err(IdentityError::AdmissionRefused(
+                    PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                ))
+            }
+        })
+        .expect("explicit update succeeds");
+
+        assert_eq!(updated.binding().id, original_id);
+        assert_eq!(updated.binding().journal_token, token_b);
+        assert_eq!(updated.binding().generation, original_generation);
+
+        let record_after = read_record(&fixture.namespace_path(root).join("record"));
+        assert_eq!(record_after.state, LifecycleState::Adopted);
+        assert_eq!(record_after.id, original_id);
+        assert_eq!(record_after.journal_token, token_b);
+    }
+
+    #[test]
+    fn program_folder_load_and_cleanup_keep_adopted_journal() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root_bytes = b"/install/load-cleanup";
+        let journal = fixture.root.join("journal");
+        let root_token = RootToken::from_raw_absolute(root_bytes.to_vec()).unwrap();
+        let journal_token =
+            JournalToken::from_raw_absolute(journal.to_str().unwrap().as_bytes().to_vec()).unwrap();
+
+        let admission =
+            admit_setup(fixture.request(root_bytes, journal.to_str().unwrap().as_bytes())).unwrap();
+        drop(admission);
+
+        let loaded =
+            load_installation_binding(&fixture.owner, &root_token).expect("load adopted binding");
+        assert_eq!(loaded.journal_token, journal_token);
+
+        let clean_session = admit_clean_uninstall(CleanUninstallRequest {
+            owner: fixture.owner.clone(),
+            root_token,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .expect("clean uninstall admission");
+
+        assert!(
+            clean_session
+                .plan()
+                .protected_journals
+                .contains(&journal_token)
+        );
+    }
+
+    #[test]
     fn wrapper_and_service_guards_round_trip_without_parallel_formats() {
         let _serial = serial();
         let binding = InstallationBinding {
@@ -5471,6 +5945,7 @@ mod windows_tests {
                 journal_token: JournalToken::from_raw_absolute(token_bytes(journal))
                     .expect("journal token"),
                 journal_is_explicit: true,
+                accept_prepared_retarget: false,
                 legacy_manifest: LegacyManifestEvidence::Absent,
                 artifacts: ArtifactBindingEvidence::Fresh,
             }

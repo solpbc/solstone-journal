@@ -101,6 +101,7 @@ impl Fixture {
             root_token,
             journal_token,
             journal_is_explicit: true,
+            accept_prepared_retarget: false,
             legacy_manifest: LegacyManifestEvidence::Absent,
             artifacts: ArtifactBindingEvidence::Fresh,
         })

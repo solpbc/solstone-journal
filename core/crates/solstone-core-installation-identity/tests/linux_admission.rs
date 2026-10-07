@@ -60,6 +60,7 @@ fn request(home: &Path, journal: &str) -> SetupAdmissionRequest {
         journal_token: JournalToken::from_raw_absolute(journal.as_bytes().to_vec())
             .expect("journal token"),
         journal_is_explicit: true,
+        accept_prepared_retarget: false,
         legacy_manifest: LegacyManifestEvidence::Absent,
         artifacts: ArtifactBindingEvidence::Fresh,
     }

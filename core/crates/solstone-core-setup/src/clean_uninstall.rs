@@ -1816,6 +1816,7 @@ mod tests {
             root_token: root_token_from_path(install_root).expect("root token"),
             journal_token: journal_token_from_path(journal).expect("journal token"),
             journal_is_explicit: true,
+            accept_prepared_retarget: false,
             legacy_manifest: LegacyManifestEvidence::Absent,
             artifacts: ArtifactBindingEvidence::Fresh,
         }

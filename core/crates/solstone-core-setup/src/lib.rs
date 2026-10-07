@@ -22,6 +22,7 @@ mod legacy_launcher;
 #[path = "legacy_launcher_nonunix.rs"]
 mod legacy_launcher;
 pub mod manifest;
+pub mod program_folder;
 pub mod steps;
 pub mod user_config;
 #[cfg(unix)]
@@ -29,6 +30,8 @@ pub mod wrapper;
 #[cfg(not(unix))]
 #[path = "wrapper_nonunix.rs"]
 pub mod wrapper;
+
+pub use program_folder::refuse_journal_in_program_folder;
 
 use args::{ResolutionContext, SetupArgs, resolve_mode, resolve_setup};
 use clean_uninstall::{
@@ -43,8 +46,9 @@ use identity_evidence::{
 use manifest::{legacy_manifest_evidence, manifest_path};
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, CleanUninstallRequest, CleanUninstallSession,
-    FOREIGN_ARTIFACTS_REFUSAL, IdentityError, JournalToken, OwnerBase, PlatformTag, SetupAdmission,
-    SetupAdmissionRequest, UNCERTAIN_ARTIFACTS_REFUSAL, admit_clean_uninstall, admit_setup,
+    FOREIGN_ARTIFACTS_REFUSAL, IdentityError, JournalToken, OwnerBase,
+    PROGRAM_FOLDER_JOURNAL_REFUSAL, PlatformTag, SetupAdmission, SetupAdmissionRequest,
+    UNCERTAIN_ARTIFACTS_REFUSAL, admit_clean_uninstall,
     admit_setup_with_effective_journal_validator, journal_token_from_path,
     load_installation_binding, namespace_name, root_token_from_path,
 };
@@ -343,7 +347,11 @@ fn report_identity_failure<W: Write>(
         error,
         IdentityError::AdmissionRefused(reason) if *reason == UNCERTAIN_ARTIFACTS_REFUSAL
     );
-    let (recovery, recovery_error) = if foreign || uncertain {
+    let program_folder = matches!(
+        error,
+        IdentityError::AdmissionRefused(reason) if *reason == PROGRAM_FOLDER_JOURNAL_REFUSAL
+    );
+    let (recovery, recovery_error) = if foreign || uncertain || program_folder {
         (Vec::new(), None)
     } else {
         match identity_recovery_paths(home_dir, namespace) {
@@ -388,6 +396,8 @@ fn report_identity_failure<W: Write>(
         message = format!(
             "this installation couldn't be verified.\n\ndetails: {error}\n\nsetup couldn't tell which installation the command-line tools or background support belong to. leave them in place and include these details in a support request."
         );
+    } else if program_folder {
+        message = error.to_string();
     } else if cfg!(windows) {
         let commands = recovery
             .iter()
@@ -470,6 +480,7 @@ fn admit_setup_identity(
     project_root: &std::path::Path,
     resolved: &args::ResolvedSetup,
     validate_wrapper_journal: bool,
+    accept_prepared_retarget: bool,
 ) -> Result<SetupIdentityAdmission, IdentityError> {
     let root = resolve_identity_root(executable_dir, project_root);
     let root_token = root_token_from_path(&root)?;
@@ -516,14 +527,17 @@ fn admit_setup_identity(
         root_token,
         journal_token: journal_token_from_path(&resolved.journal_path)?,
         journal_is_explicit: matches!(resolved.journal_source.as_str(), "cli" | "env"),
+        accept_prepared_retarget,
         legacy_manifest: manifest,
         artifacts: artifacts.artifacts().clone(),
     };
-    let admission = if validate_wrapper_journal {
-        admit_setup_with_effective_journal_validator(request, validate_effective_wrapper_journal)?
-    } else {
-        admit_setup(request)?
-    };
+    let admission = admit_setup_with_effective_journal_validator(request, &|token| {
+        refuse_journal_in_program_folder(&token.to_path_buf(), executable_dir)?;
+        if validate_wrapper_journal {
+            validate_effective_wrapper_journal(token)?;
+        }
+        Ok(())
+    })?;
     let mut repair_steps = artifacts.repair_steps(admission.binding());
     if wrapper_targets_drifted(home_dir, executable_dir) {
         // A version swap since the last setup run: the wrapper's own
@@ -876,6 +890,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             &project_root,
             &resolved,
             !args.skip_wrapper,
+            args.accept_existing_journal,
         ) {
             Ok(admission) => admission,
             Err(error) => {
@@ -916,6 +931,20 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             identity_admission.legacy_replacement,
         )
     };
+    if resolved.should_short_circuit() {
+        if let Err(error) =
+            refuse_journal_in_program_folder(&resolved.journal_path, &executable_dir)
+        {
+            return report_identity_failure(
+                args.jsonl,
+                stdout,
+                stderr,
+                &error,
+                &home_dir,
+                setup_identity_namespace(&executable_dir, &project_root).as_deref(),
+            );
+        }
+    }
     if !args.jsonl && resolved.should_short_circuit() {
         let plan_context = SetupContext {
             args: &args,
@@ -1887,6 +1916,7 @@ mod tests {
             root_token,
             journal_token: journal_token_from_path(&safe_journal).unwrap(),
             journal_is_explicit: true,
+            accept_prepared_retarget: false,
             legacy_manifest: LegacyManifestEvidence::Absent,
             artifacts: ArtifactBindingEvidence::Fresh,
         })
@@ -1942,6 +1972,110 @@ mod tests {
         );
         assert_eq!(fs::read(&record_path).unwrap(), record_before);
         assert!(!marker_path.exists());
+    }
+
+    #[test]
+    fn program_folder_skip_wrapper_refuses_before_service() {
+        let root = root("program-folder-skip-wrapper");
+        let home = root.join("home");
+        let program_root = root.join("program");
+        let executable_dir = program_root.join("current");
+        let journal = program_root.join("journal");
+        fs::create_dir_all(&executable_dir).unwrap();
+        fs::write(program_root.join("Update.exe"), b"exe").unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let args = parsed(
+            &[
+                "--yes".into(),
+                "--skip-wrapper".into(),
+                "--journal".into(),
+                journal.display().to_string(),
+            ],
+            &root,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = run_owner_setup_with_io(
+            args,
+            home.clone(),
+            executable_dir.clone(),
+            root.to_path_buf(),
+            false,
+            false,
+            Seams {
+                runner: Box::new(CountingRunner(calls.clone())),
+                service_ops: Box::new(Service),
+                check_report_builder: Box::new(Check),
+                already_keeps_journal_probe: no_probe,
+                prompt: Box::new(Prompt),
+                confirm_clean_uninstall: Box::new(|| true),
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+        assert_eq!(exit, ExitCode::from(2));
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        let root_token = root_token_from_path(&executable_dir).unwrap();
+        let namespace = namespace_name(PlatformTag::current(), &root_token);
+        let owner = OwnerBase::at_home(home, PlatformTag::current()).unwrap();
+        let record_path = owner
+            .path()
+            .join("namespaces")
+            .join(namespace.as_hex())
+            .join("record");
+        assert!(!record_path.exists());
+    }
+
+    #[test]
+    fn program_folder_dry_run_refuses_without_writing() {
+        let root = root("program-folder-dry-run");
+        let home = root.join("home");
+        let program_root = root.join("program");
+        let executable_dir = program_root.join("current");
+        let journal = program_root.join("journal");
+        fs::create_dir_all(&executable_dir).unwrap();
+        fs::write(program_root.join("Update.exe"), b"exe").unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let args = parsed(
+            &[
+                "--dry-run".into(),
+                "--journal".into(),
+                journal.display().to_string(),
+            ],
+            &root,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = run_owner_setup_with_io(
+            args,
+            home.clone(),
+            executable_dir.clone(),
+            root.to_path_buf(),
+            false,
+            false,
+            Seams {
+                runner: Box::new(CountingRunner(calls.clone())),
+                service_ops: Box::new(Service),
+                check_report_builder: Box::new(Check),
+                already_keeps_journal_probe: no_probe,
+                prompt: Box::new(Prompt),
+                confirm_clean_uninstall: Box::new(|| true),
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+        assert_ne!(exit, ExitCode::SUCCESS);
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        let root_token = root_token_from_path(&executable_dir).unwrap();
+        let namespace = namespace_name(PlatformTag::current(), &root_token);
+        let owner = OwnerBase::at_home(home, PlatformTag::current()).unwrap();
+        let record_path = owner
+            .path()
+            .join("namespaces")
+            .join(namespace.as_hex())
+            .join("record");
+        assert!(!record_path.exists());
+        assert!(!journal.exists());
     }
 
     /// Negative twin for the version-swap fix: a wrapper that is
@@ -2280,6 +2414,34 @@ mod tests {
         let message = failed["error"]["message"].as_str().unwrap();
         assert!(message.contains("leave them in place"), "{message}");
         assert!(!message.contains("rm "), "{message}");
+        assert!(stderr.is_empty());
+    }
+
+    #[test]
+    fn program_folder_jsonl_refusal_is_not_artifact_deletion() {
+        let home = std::env::temp_dir().join("setup program folder owner");
+        let namespace = "c".repeat(64);
+        let mut stdout: Vec<u8> = Vec::new();
+        let mut stderr: Vec<u8> = Vec::new();
+        let exit = report_identity_failure(
+            true,
+            &mut stdout,
+            &mut stderr,
+            &IdentityError::AdmissionRefused(PROGRAM_FOLDER_JOURNAL_REFUSAL),
+            &home,
+            Some(namespace.as_str()),
+        );
+        assert_eq!(exit, ExitCode::from(2));
+        let failed: serde_json::Value = String::from_utf8(stdout)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|event| event["event"] == "step.failed")
+            .expect("a step.failed event");
+        assert_eq!(failed["error"]["remedy"], serde_json::json!([]));
+        let message = failed["error"]["message"].as_str().unwrap();
+        assert!(!message.contains("rm "));
+        assert!(!message.contains("Remove-Item"));
         assert!(stderr.is_empty());
     }
 
@@ -2666,6 +2828,7 @@ mod tests {
             root_token: root_token.clone(),
             journal_token: journal_token_from_path(&journal_two).expect("second journal token"),
             journal_is_explicit: true,
+            accept_prepared_retarget: false,
             legacy_manifest: LegacyManifestEvidence::Absent,
             artifacts: gather_wrapper_artifact_evidence(&home, &namespace),
         })
@@ -2772,6 +2935,7 @@ mod tests {
             root_token: root_token.clone(),
             journal_token: journal_token_from_path(&journal_one).expect("first journal token"),
             journal_is_explicit: true,
+            accept_prepared_retarget: false,
             legacy_manifest: LegacyManifestEvidence::Absent,
             artifacts: ArtifactBindingEvidence::Fresh,
         })
@@ -2785,6 +2949,7 @@ mod tests {
             root_token: root_token.clone(),
             journal_token: journal_token_from_path(&journal_two).expect("second journal token"),
             journal_is_explicit: true,
+            accept_prepared_retarget: false,
             legacy_manifest: LegacyManifestEvidence::Absent,
             artifacts: gather_wrapper_artifact_evidence(&home, &namespace),
         })
@@ -2828,6 +2993,7 @@ mod tests {
             root_token,
             journal_token: journal_token_from_path(&journal_two).expect("retry journal token"),
             journal_is_explicit: true,
+            accept_prepared_retarget: false,
             legacy_manifest: LegacyManifestEvidence::Absent,
             artifacts: gather_wrapper_artifact_evidence(&home, &namespace),
         })
@@ -3014,6 +3180,7 @@ mod tests {
             root_token: root_token_from_path(executable_dir).unwrap(),
             journal_token: journal_token_from_path(journal).unwrap(),
             journal_is_explicit: true,
+            accept_prepared_retarget: false,
             legacy_manifest: LegacyManifestEvidence::Absent,
             artifacts: ArtifactBindingEvidence::Fresh,
         })

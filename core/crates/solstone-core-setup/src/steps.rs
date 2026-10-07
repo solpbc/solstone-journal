@@ -2774,6 +2774,7 @@ mod tests {
                         journal_token: journal_token_from_path(&resolved.journal_path)
                             .expect("journal token"),
                         journal_is_explicit: true,
+                        accept_prepared_retarget: false,
                         legacy_manifest: LegacyManifestEvidence::Absent,
                         artifacts: ArtifactBindingEvidence::Fresh,
                     })
