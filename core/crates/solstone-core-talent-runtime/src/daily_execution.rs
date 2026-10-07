@@ -221,7 +221,13 @@ pub(crate) fn execute(
                 format!("unsupported talent type: {talent_type}"),
             ));
         }
-        match crate::generate_response(&mut prepared, context, generate, writer) {
+        match crate::generate_response(
+            &mut prepared,
+            context,
+            generate,
+            writer,
+            stage.as_ref().map(|(_, state)| state),
+        ) {
             Ok((response, usage, degraded)) => match stage.as_ref() {
                 // A scheduled briefing renders its open loops before the result is
                 // retained, so the checked, retained and saved bytes are the same.
@@ -1151,6 +1157,73 @@ mod tests {
             .map(|row| row["source_id"].as_str().unwrap())
             .collect::<Vec<_>>();
         assert_eq!(sources, ["sol://owed/1", "sol://waiting/1"]);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn scheduled_briefing_caps_attention_before_schema_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let (context, identity, request) = fixture(root.path(), false);
+        let mut record = load_daily_unit_record(&context.journal, &identity)
+            .unwrap()
+            .unwrap();
+        let mut packet = record.frozen_packet.take().unwrap();
+        let schema = json!({"type":"object","required":["needs_attention"],"properties":{
+            "needs_attention":{"type":"array","maxItems":12,"items":{"type":"object",
+                "required":["text","source_id"],"properties":{"text":{"type":"string"},"source_id":{"type":"string"}}}}
+        }});
+        packet["prepared"]["config"]["json_schema"] = schema.clone();
+        packet["state"]["MorningBriefing"]["values"] = json!({"briefing_open_loop_rows":[
+            {"owed":true,"voice":false,"row":{"text":"still open for 90 days","source_id":"sol://owed/1"}},
+            {"owed":false,"voice":false,"row":{"text":"still open for 40 days","source_id":"sol://waiting/1"}}
+        ]});
+        record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
+        record.frozen_packet = Some(packet);
+        save_daily_unit_record(&context.journal, &record).unwrap();
+        let raw = json!({"needs_attention":vec![json!({"text":"older task","source_id":"sol://owed/1"});13]}).to_string();
+        let validation =
+            solstone_core_generate_wire::validate_schema_with_annotations(&raw, &schema);
+        assert_eq!(validation.validation["valid"], false);
+        let stub = crate::test_support::one_shot_stub_with_schema_validation(
+            root.path(),
+            &raw,
+            validation.validation,
+        );
+        let mut events = Vec::new();
+        let outcome = execute(
+            request,
+            &context,
+            &OneShotClient::at_path(stub),
+            &mut events,
+        );
+        let RuntimeOutcome::Finished { output, .. } = outcome else {
+            panic!("expected bounded publication without retry: {outcome:?}")
+        };
+        let attempts = std::str::from_utf8(&events)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .filter(|event| event["event"] == "generate_attempt")
+            .collect::<Vec<_>>();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0]["status"], "success");
+        assert_eq!(attempts[0]["retry"], false);
+        let accepted = load_daily_unit_record(&context.journal, &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(accepted.generated_result.unwrap()["response"], output);
+        assert_eq!(
+            fs::read_to_string(
+                context
+                    .journal
+                    .join("chronicle/20260101/talents/morning_briefing.md")
+            )
+            .unwrap(),
+            output
+        );
+        let saved: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(saved["needs_attention"].as_array().unwrap().len(), 2);
+        assert_eq!(saved["needs_attention"][1]["source_id"], "sol://waiting/1");
     }
 
     #[cfg(all(test, feature = "full-tests"))]

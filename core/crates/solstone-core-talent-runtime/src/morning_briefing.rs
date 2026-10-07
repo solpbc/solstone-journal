@@ -88,6 +88,43 @@ pub fn apply_prompt_override(
     Ok(())
 }
 
+/// Apply the existing render before retrying an attention-count-only rejection.
+/// Validate every raw row first so trimming cannot hide malformed discarded rows.
+pub(crate) fn repair_attention_overflow(
+    response: &mut solstone_core_generate::GeneratedResponse,
+    prepared: &PreparedTalent,
+    state: &PrePostState,
+) -> Result<(), StageError> {
+    if !crate::schema_validation_failed(response.schema_validation.as_ref()) {
+        return Ok(());
+    }
+    let Some(schema) = prepared.config.get("json_schema") else {
+        return Ok(());
+    };
+    let mut raw_schema = schema.clone();
+    let Some(attention) = raw_schema
+        .pointer_mut("/properties/needs_attention")
+        .and_then(Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    if attention.remove("maxItems").is_none() {
+        return Ok(());
+    }
+    let raw =
+        solstone_core_generate_wire::validate_schema_with_annotations(&response.text, &raw_schema);
+    if raw.validation["valid"] != true {
+        return Ok(());
+    }
+    let rendered = preserve_open_loops(&response.text, prepared, state)?;
+    let checked = solstone_core_generate_wire::validate_schema_with_annotations(&rendered, schema);
+    if checked.validation["valid"] == true {
+        response.text = rendered;
+        response.schema_validation = Some(checked.validation);
+    }
+    Ok(())
+}
+
 /// Keep the two open-loop directions visible even when synthesis omits them.
 /// Model-selected loop sources retain their order, but their text comes from the fold.
 pub(crate) fn preserve_open_loops(
@@ -887,6 +924,116 @@ fn string_or(value: Option<&Value>, fallback: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attention_overflow_is_rendered_without_hiding_other_schema_errors() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../payload/solstone/talent/morning_briefing.schema.json"
+        ))
+        .unwrap();
+        let prepared = PreparedTalent {
+            name: "morning_briefing".into(),
+            config: Map::from_iter([("json_schema".into(), schema.clone())]),
+        };
+        let loops = (0..20)
+            .map(|n| {
+                json!({"owed":n < 10,"voice":n == 0,"row":{
+                    "text":format!("still open for {} days", n + 1),
+                    "source_id":format!("sol://older/{n}")
+                }})
+            })
+            .collect::<Vec<_>>();
+        let state = PrePostState::MorningBriefing(MorningBriefingPreState {
+            values: Map::from_iter([("briefing_open_loop_rows".into(), json!(loops))]),
+        });
+        let base = json!({
+            "metadata":{"generated":"2026-10-07T00:00:00Z","model":"test",
+                "sources":{"segments":0,"anticipated_activities":0,"facet_newsletters":0,"followups":20},
+                "gaps":[],"coverage_preamble":""},
+            "your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]
+        });
+        let decode = |body: &Value| {
+            let text = body.to_string();
+            let checked =
+                solstone_core_generate_wire::validate_schema_with_annotations(&text, &schema);
+            let crate::GenerateResponse::Generated(response) =
+                solstone_core_generate::decode_one_shot_response(
+                    &crate::test_support::generated_response_value(&text, checked.validation)
+                        .to_string(),
+                )
+                .unwrap()
+            else {
+                panic!("expected generated response")
+            };
+            response
+        };
+        for count in [13, 20] {
+            let mut body = base.clone();
+            body["needs_attention"] = json!(
+                loops
+                    .iter()
+                    .take(count)
+                    .map(|item| item["row"].clone())
+                    .collect::<Vec<_>>()
+            );
+            let mut response = decode(&body);
+            assert!(crate::schema_validation_failed(
+                response.schema_validation.as_ref()
+            ));
+            repair_attention_overflow(&mut response, &prepared, &state).unwrap();
+            assert!(!crate::schema_validation_failed(
+                response.schema_validation.as_ref()
+            ));
+            let rendered: Value = serde_json::from_str(&response.text).unwrap();
+            assert_eq!(rendered["needs_attention"].as_array().unwrap().len(), 4);
+            assert_eq!(rendered["needs_attention"][0]["source_id"], "sol://older/0");
+            assert_eq!(
+                rendered["needs_attention"][2]["source_id"],
+                "sol://older/10"
+            );
+        }
+
+        let mut crowded = base.clone();
+        crowded["needs_attention"] = json!(
+            (0..13)
+                .map(|n| json!({"text":"day task","source_id":format!("sol://day/{n}")}))
+                .collect::<Vec<_>>()
+        );
+        let mut response = decode(&crowded);
+        repair_attention_overflow(&mut response, &prepared, &state).unwrap();
+        let rendered: Value = serde_json::from_str(&response.text).unwrap();
+        assert_eq!(rendered["needs_attention"].as_array().unwrap().len(), 12);
+
+        let mut malformed_tail = crowded.clone();
+        malformed_tail["needs_attention"][12]["text"] = json!(17);
+        let mut malformed_loop = crowded.clone();
+        malformed_loop["needs_attention"][0] = json!({"text":17,"source_id":"sol://older/0"});
+        let mut missing_metadata = crowded.clone();
+        missing_metadata.as_object_mut().unwrap().remove("metadata");
+        let mut other_overflow = crowded.clone();
+        other_overflow["yesterday"] = json!(vec!["day"; 11]);
+        for invalid in [
+            malformed_tail,
+            malformed_loop,
+            missing_metadata,
+            other_overflow,
+            json!([]),
+        ] {
+            let mut response = decode(&invalid);
+            repair_attention_overflow(&mut response, &prepared, &state).unwrap();
+            assert_eq!(response.text, invalid.to_string());
+            assert!(crate::schema_validation_failed(
+                response.schema_validation.as_ref()
+            ));
+        }
+        let empty_state =
+            PrePostState::MorningBriefing(MorningBriefingPreState { values: Map::new() });
+        let mut response = decode(&crowded);
+        repair_attention_overflow(&mut response, &prepared, &empty_state).unwrap();
+        assert!(crate::schema_validation_failed(
+            response.schema_validation.as_ref()
+        ));
+    }
     use std::fs;
 
     #[test]
