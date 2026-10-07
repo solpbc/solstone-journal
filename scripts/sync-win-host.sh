@@ -59,8 +59,10 @@ is_lower_hex() {
   candidate=$1
   expected_length=$2
   [ "${#candidate}" -eq "$expected_length" ] || return 1
+  # Spelled out: a bracket range such as a-f follows the locale's collation
+  # order and can admit uppercase letters.
   case "$candidate" in
-    *[!0-9a-f]*) return 1 ;;
+    *[!0123456789abcdef]*) return 1 ;;
   esac
 }
 
