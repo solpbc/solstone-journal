@@ -709,6 +709,35 @@ fn a_new_entity_named_as_the_configured_owner_becomes_the_principal() {
 }
 
 #[test]
+fn creating_a_non_person_with_an_owner_name_does_not_take_the_principal() {
+    for entity_type in ["Company", "Project", "Tool"] {
+        let journal = TempDir::new();
+        write_identity_config(
+            journal.path(),
+            json!({"name": "Jordan Rivera", "preferred": "Jo"}),
+        );
+        create_journal_entity(
+            journal.path(),
+            "named_non_person",
+            "Jordan Rivera",
+            entity_type,
+            None,
+            None,
+            &[],
+            false,
+            None,
+        )
+        .unwrap();
+        assert_ne!(
+            principal_flag(journal.path(), "named_non_person"),
+            Some(Value::Bool(true))
+        );
+        assert!(!has_journal_principal(journal.path()).unwrap());
+        assert!(created_is_principal(journal.path(), "jo", "Jo", false));
+    }
+}
+
+#[test]
 fn configured_owner_names_come_preferred_then_full_then_aliases() {
     let journal = TempDir::new();
     write_identity_config(

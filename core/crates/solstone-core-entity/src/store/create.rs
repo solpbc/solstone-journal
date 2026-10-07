@@ -64,7 +64,10 @@ pub fn create_journal_entity(
             ),
         );
     }
-    if !skip_principal && becomes_journal_principal(journal_root, name, aka, identity_names)? {
+    if entity_type == "Person"
+        && !skip_principal
+        && becomes_journal_principal(journal_root, name, aka, identity_names)?
+    {
         identity.insert("is_principal".to_owned(), Value::Bool(true));
     }
 

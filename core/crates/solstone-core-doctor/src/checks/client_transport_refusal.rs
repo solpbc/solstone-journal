@@ -8,6 +8,18 @@ use crate::{
 
 use solstone_core_sol_link::ledger::TransportRefusal;
 
+/// How long a refusal stays worth mentioning. The record is never cleared, so
+/// without a window one busy afternoon warns for as long as the device stays
+/// paired.
+const RECENT_DAYS: i64 = 7;
+
+fn is_recent(refusal: &TransportRefusal, now: chrono::DateTime<chrono::Utc>) -> bool {
+    chrono::DateTime::parse_from_rfc3339(&refusal.latest)
+        .map(|latest| now.signed_duration_since(latest) <= chrono::Duration::days(RECENT_DAYS))
+        // An unreadable date is shown rather than hidden.
+        .unwrap_or(true)
+}
+
 fn refusal_date(refusal: &TransportRefusal) -> String {
     chrono::DateTime::parse_from_rfc3339(&refusal.latest)
         .ok()
@@ -46,22 +58,26 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let refused = records
         .iter()
         .filter_map(|record| {
-            record.transport_refusal.as_ref().map(|refusal| {
-                format!(
-                    "device {} had requests turned away: {}, {}x through {}",
-                    record.cid,
-                    refusal.reason_code,
-                    refusal.active_count,
-                    refusal_date(refusal)
-                )
-            })
+            record
+                .transport_refusal
+                .as_ref()
+                .filter(|refusal| is_recent(refusal, context.now))
+                .map(|refusal| {
+                    format!(
+                        "device {} had requests turned away: {}, {}x through {}",
+                        record.cid,
+                        refusal.reason_code,
+                        refusal.active_count,
+                        refusal_date(refusal)
+                    )
+                })
         })
         .collect::<Vec<_>>();
     if refused.is_empty() {
         Ok(make_result(
             check,
             Status::Ok,
-            "no devices had requests turned away",
+            "no devices had requests turned away in the last 7 days",
             None::<String>,
         ))
     } else {
