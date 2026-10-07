@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::cant_open_response;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
-use solstone_core_home::weekly::{LeftOut, WeekJudgment, judge, page_model, week_day};
+use solstone_core_home::weekly::{LeftOut, Said, WeekJudgment, judge, page_model, week_day};
 
 use crate::Clock;
 
@@ -136,6 +136,16 @@ pub async fn week_leave_out(
     }
 }
 
+fn leave_out_key_trusted(trusted: &solstone_core_home::weekly::TrustedWeek, key: &str) -> bool {
+    if trusted.memories.iter().any(|memory| memory.key == key) {
+        return true;
+    }
+    match &trusted.said {
+        Said::Entries(entries) => entries.iter().any(|entry| entry.key == key),
+        Said::Unreadable => false,
+    }
+}
+
 pub fn save_left_out(
     journal_root: &Path,
     week: &str,
@@ -154,7 +164,7 @@ pub fn save_left_out(
         _ => return Err((StatusCode::BAD_REQUEST, fail_msg)),
     };
 
-    if !req.undo && !trusted.memories.iter().any(|m| m.key == req.key) {
+    if !req.undo && !leave_out_key_trusted(&trusted, &req.key) {
         return Err((StatusCode::BAD_REQUEST, fail_msg));
     }
 

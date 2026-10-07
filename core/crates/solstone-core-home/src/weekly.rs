@@ -26,6 +26,24 @@ pub struct TrustedWeek {
     pub end_day: String,
     pub days: Vec<TrustedDay>,
     pub memories: Vec<TrustedMemory>,
+    pub said: Said,
+}
+
+/// Voice-backed quotes the page may show. A malformed list is unreadable and
+/// does not change the week's judgment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Said {
+    Entries(Vec<TrustedSaid>),
+    Unreadable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustedSaid {
+    pub id: String,
+    pub key: String,
+    pub day: String,
+    pub quote: String,
+    pub uri: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -232,7 +250,7 @@ pub fn judge(journal: &Path, day: &str) -> WeekJudgment {
                     return WeekJudgment::CouldntCheck;
                 }
             }
-            "nothing_shared" | "unreadable" | "not_ready" => {}
+            "nothing_shared" | "unreadable" | "not_ready" | "not_on_page" => {}
             _ => return WeekJudgment::CouldntCheck,
         }
 
@@ -256,12 +274,117 @@ pub fn judge(journal: &Path, day: &str) -> WeekJudgment {
         .unwrap_or(day)
         .to_string();
 
+    let said = read_said(&value, &trusted_days, &trusted_memories);
+
     WeekJudgment::Page(TrustedWeek {
         start_day,
         end_day,
         days: trusted_days,
         memories: trusted_memories,
+        said,
     })
+}
+
+fn non_empty_str(value: Option<&Value>) -> Option<&str> {
+    value
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+}
+
+fn read_said(value: &Value, days: &[TrustedDay], memories: &[TrustedMemory]) -> Said {
+    let Some(said_value) = value.get("said") else {
+        return Said::Entries(Vec::new());
+    };
+    let Some(items) = said_value.as_array() else {
+        return Said::Unreadable;
+    };
+
+    let mut entries = Vec::new();
+    let mut seen_ids = BTreeSet::new();
+    let mut seen_keys = BTreeSet::new();
+    for item in items {
+        if let Some(kind) = item
+            .get("source")
+            .and_then(Value::as_object)
+            .and_then(|source| source.get("kind"))
+            .and_then(Value::as_str)
+            && kind != "activity"
+        {
+            continue;
+        }
+        let Some(entry) = activity_said(item, days, memories, &mut seen_ids, &mut seen_keys) else {
+            return Said::Unreadable;
+        };
+        entries.push(entry);
+    }
+    Said::Entries(entries)
+}
+
+fn activity_said(
+    item: &Value,
+    days: &[TrustedDay],
+    memories: &[TrustedMemory],
+    seen_ids: &mut BTreeSet<String>,
+    seen_keys: &mut BTreeSet<String>,
+) -> Option<TrustedSaid> {
+    let obj = item.as_object()?;
+    let id = non_empty_str(obj.get("id"))?;
+    let key = non_empty_str(obj.get("key"))?;
+    let day = non_empty_str(obj.get("day"))?;
+    let quote = non_empty_str(obj.get("quote"))?;
+    let source = obj.get("source").and_then(Value::as_object)?;
+    let kind = source.get("kind").and_then(Value::as_str)?;
+    if kind != "activity" {
+        return None;
+    }
+    let uri = source.get("uri").and_then(Value::as_str)?;
+    if !days.iter().any(|trusted| trusted.day == day) {
+        return None;
+    }
+    if !seen_ids.insert(id.to_string()) || !seen_keys.insert(key.to_string()) {
+        return None;
+    }
+    if memories.iter().any(|memory| memory.key == key) {
+        return None;
+    }
+    if !activity_said_uri(uri, day) {
+        return None;
+    }
+    Some(TrustedSaid {
+        id: id.to_string(),
+        key: key.to_string(),
+        day: day.to_string(),
+        quote: quote.to_string(),
+        uri: uri.to_string(),
+    })
+}
+
+fn is_plain_name(component: &str) -> bool {
+    !component.is_empty()
+        && component != "."
+        && component != ".."
+        && component.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'_' || byte == b'-'
+        })
+}
+
+fn activity_said_uri(uri: &str, day: &str) -> bool {
+    let Some(rest) = uri.strip_prefix("sol://facets/") else {
+        return false;
+    };
+    let Some((facet, after_facet)) = rest.split_once('/') else {
+        return false;
+    };
+    if !is_plain_name(facet) || facet.contains('.') {
+        return false;
+    }
+    let Some(after_activities) = after_facet.strip_prefix("activities/") else {
+        return false;
+    };
+    let Some((uri_day, id)) = after_activities.split_once('#') else {
+        return false;
+    };
+    uri_day == day && is_plain_name(id)
 }
 
 pub fn has_page(journal: &Path, day: &str) -> bool {
@@ -382,6 +505,68 @@ fn encode_uri_ref(uri: &str) -> String {
     encoded
 }
 
+const SAID_HEADING: &str = "said by you";
+const SAID_LINK_LABEL: &str = "open where you said it →";
+const SAID_LEAVE_OUT_HINT: &str = "only this week changes. what you said stays in your journal.";
+const SAID_UNREADABLE_LINE: &str = "the \"said by you\" list couldn't be read.";
+const NOT_ON_PAGE_LABEL: &str = "in your journal, no memory on this page";
+
+fn shown_quote_count(said: &Said, left_out_keys: &BTreeSet<String>) -> usize {
+    match said {
+        Said::Unreadable => 0,
+        Said::Entries(entries) => entries
+            .iter()
+            .filter(|entry| !left_out_keys.contains(&entry.key))
+            .count(),
+    }
+}
+
+fn said_model(said: &Said, left_out_keys: &BTreeSet<String>, start_date: NaiveDate) -> Value {
+    match said {
+        Said::Entries(entries) if entries.is_empty() => Value::Null,
+        Said::Unreadable => json!({ "unreadable": SAID_UNREADABLE_LINE }),
+        Said::Entries(entries) => {
+            let mut groups: Vec<(&str, Vec<Value>)> = Vec::new();
+            for entry in entries {
+                let row = if left_out_keys.contains(&entry.key) {
+                    json!({
+                        "left_out": true,
+                        "key": entry.key,
+                    })
+                } else {
+                    json!({
+                        "key": entry.key,
+                        "quote": entry.quote,
+                        "href": format!("/source?ref={}", encode_uri_ref(&entry.uri)),
+                        "link_label": SAID_LINK_LABEL,
+                        "left_out": false,
+                    })
+                };
+                if let Some(group) = groups.iter_mut().find(|(day, _)| *day == entry.day) {
+                    group.1.push(row);
+                } else {
+                    groups.push((entry.day.as_str(), vec![row]));
+                }
+            }
+            let days = groups
+                .into_iter()
+                .map(|(day, rows)| {
+                    let date = week_day(day).unwrap_or(start_date);
+                    json!({
+                        "day_label": format!("{} {}", short_weekday(date), date.day()),
+                        "rows": rows,
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "heading": SAID_HEADING,
+                "leave_out_hint": SAID_LEAVE_OUT_HINT,
+                "days": days,
+            })
+        }
+    }
+}
+
 pub fn page_model(
     journal: &Path,
     day: &str,
@@ -475,11 +660,19 @@ pub fn page_model(
         }
     }
 
-    let intro = match shown_count {
-        0 => "nothing from this week is on this page.".to_string(),
-        1 => "your week, a memory from one day.".to_string(),
-        n => format!("your week, a memory from each of {n} days."),
+    let shown_quotes = shown_quote_count(&trusted.said, left_out_keys);
+    let intro = if shown_count == 0 && shown_quotes == 0 {
+        Value::String("nothing from this week is on this page.".to_string())
+    } else if shown_count == 0 {
+        Value::Null
+    } else if shown_count == 1 {
+        Value::String("your week, a memory from one day.".to_string())
+    } else {
+        Value::String(format!(
+            "your week, a memory from each of {shown_count} days."
+        ))
     };
+    let said_model = said_model(&trusted.said, left_out_keys, start_date);
 
     let mut present_states = BTreeSet::new();
     let mut cells = Vec::with_capacity(7);
@@ -510,7 +703,7 @@ pub fn page_model(
                 memory_day_names.push(weekday);
                 "a memory from this day"
             }
-            "not_on_page" => "in your journal, not on this page",
+            "not_on_page" => NOT_ON_PAGE_LABEL,
             "nothing_shared" => "nothing in your journal",
             "unreadable" => {
                 unreadable_day_names.push(weekday);
@@ -535,7 +728,7 @@ pub fn page_model(
     let mut legend = Vec::new();
     for (state, label) in [
         ("memory", "a memory from this day"),
-        ("not_on_page", "in your journal, not on this page"),
+        ("not_on_page", NOT_ON_PAGE_LABEL),
         ("nothing_shared", "nothing in your journal"),
         ("unreadable", "couldn't be read"),
         ("not_ready", "wasn't ready in time"),
@@ -629,6 +822,7 @@ pub fn page_model(
         "legend": legend,
         "from_line": from_line,
         "rows": rows,
+        "said": said_model,
         "left_out_notice": left_out_notice,
         "prev_label": prev_label,
         "prev_href": prev_href,
@@ -718,10 +912,12 @@ pub fn card(context: &HomeContext) -> Value {
                         break;
                     }
                 }
+                let quote_showing = shown_quote_count(&trusted.said, left_out_keys) > 0;
                 let (memory, empty) = match left_out {
                     LeftOut::Unreadable => (Value::Null, Value::Null),
                     _ => match first_shown {
                         Some(text) => (Value::String(text), Value::Null),
+                        None if quote_showing => (Value::Null, Value::Null),
                         None => (
                             Value::Null,
                             Value::String("nothing from this week is showing.".to_string()),
@@ -1075,7 +1271,7 @@ mod tests {
         assert_eq!(model["cells"][0]["state"], "not_on_page");
         assert_eq!(
             model["cells"][0]["accessible_name"],
-            "sunday 8, in your journal, not on this page"
+            "sunday 8, in your journal, no memory on this page"
         );
         assert_eq!(model["from_line"], "from monday and tuesday.");
 
@@ -1615,5 +1811,375 @@ mod tests {
         }"#;
         write(root.path(), "reflections/weekly/20260308.json", dup_id_json);
         assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
+    }
+
+    fn activity_said(id: &str, key: &str, day: &str, quote: &str, uri: &str) -> String {
+        format!(
+            r#"{{"id":"{id}","key":"{key}","day":"{day}","quote":"{quote}","source":{{"kind":"activity","uri":"{uri}"}}}}"#
+        )
+    }
+
+    fn week_with_said(said: &str) -> String {
+        format!(
+            r#"{{
+                "version": 1,
+                "days": [
+                    {{"day":"20260308","state":"memory","memory_id":"m0"}},
+                    {{"day":"20260309","state":"nothing_shared"}},
+                    {{"day":"20260310","state":"nothing_shared"}},
+                    {{"day":"20260311","state":"nothing_shared"}},
+                    {{"day":"20260312","state":"nothing_shared"}},
+                    {{"day":"20260313","state":"nothing_shared"}},
+                    {{"day":"20260314","state":"nothing_shared"}}
+                ],
+                "memories": [{{
+                    "id": "m0",
+                    "key": "memory-key",
+                    "day": "20260308",
+                    "text": "A memory.",
+                    "source": {{"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing"}}
+                }}],
+                "said": {said}
+            }}"#
+        )
+    }
+
+    fn judged_page(root: &Path, body: &str) -> TrustedWeek {
+        write(root, "reflections/weekly/20260308.json", body);
+        match judge(root, "20260308") {
+            WeekJudgment::Page(week) => week,
+            other => panic!("expected a page, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn not_on_page_keeps_the_week_and_its_neighbors() {
+        let root = TempDir::new().unwrap();
+        let body = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"not_on_page","memory_id":"m-not-checked"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": []
+        }"#;
+        let week = judged_page(root.path(), body);
+        assert_eq!(week.days[0].state, "not_on_page");
+        assert_eq!(week.days[0].memory_id.as_deref(), Some("m-not-checked"));
+        assert_eq!(week.said, Said::Entries(Vec::new()));
+        assert!(has_page(root.path(), "20260308"));
+
+        write(
+            root.path(),
+            "reflections/weekly/20260315.json",
+            &valid_week_json("20260315"),
+        );
+        let later = page_model(root.path(), "20260315", 2026, &|_| false).unwrap();
+        assert_eq!(later["prev_href"], "/app/home/week/20260308");
+        let model = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert!(model["said"].is_null());
+    }
+
+    #[test]
+    fn said_shapes_stay_on_the_page() {
+        let root = TempDir::new().unwrap();
+        let valid = activity_said(
+            "s-20260309-0",
+            "said-key",
+            "20260309",
+            "I'll get you the deck",
+            "sol://facets/work/activities/20260309#meeting_1",
+        );
+        let second = activity_said(
+            "s-20260310-0",
+            "said-key-2",
+            "20260310",
+            "let's go with blue then",
+            "sol://facets/work/activities/20260310#meeting_1",
+        );
+
+        let missing = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"nothing_shared"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": []
+        }"#;
+        assert_eq!(
+            judged_page(root.path(), missing).said,
+            Said::Entries(Vec::new())
+        );
+
+        let empty = judged_page(root.path(), &week_with_said("[]"));
+        assert_eq!(empty.said, Said::Entries(Vec::new()));
+
+        let skipped = format!(r#"[{{"source":{{"kind":"note"}},"id":1,"quote":""}},{valid}]"#);
+        match judged_page(root.path(), &week_with_said(&skipped)).said {
+            Said::Entries(entries) => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].id, "s-20260309-0");
+                assert_eq!(entries[0].key, "said-key");
+                assert_eq!(entries[0].quote, "I'll get you the deck");
+                assert_eq!(
+                    entries[0].uri,
+                    "sol://facets/work/activities/20260309#meeting_1"
+                );
+            }
+            Said::Unreadable => panic!("unknown kind refused the list"),
+        }
+
+        let same_id_as_skipped = format!(
+            r#"[{{"id":"s-20260309-0","key":"said-key","source":{{"kind":"note"}}}},{valid}]"#
+        );
+        match judged_page(root.path(), &week_with_said(&same_id_as_skipped)).said {
+            Said::Entries(entries) => assert_eq!(entries.len(), 1),
+            Said::Unreadable => panic!("skipped kind counted as a duplicate"),
+        }
+
+        let no_hash = activity_said(
+            "s-20260309-0",
+            "said-key",
+            "20260309",
+            "I'll get you the deck",
+            "sol://facets/work/activities/20260309",
+        );
+        assert_eq!(
+            judged_page(root.path(), &week_with_said(&format!("[{no_hash}]"))).said,
+            Said::Unreadable
+        );
+
+        let empty_id = activity_said(
+            "",
+            "said-key",
+            "20260309",
+            "I'll get you the deck",
+            "sol://facets/work/activities/20260309#meeting_1",
+        );
+        assert_eq!(
+            judged_page(root.path(), &week_with_said(&format!("[{empty_id}]"))).said,
+            Said::Unreadable
+        );
+
+        let repeated_key = activity_said(
+            "s-20260309-1",
+            "said-key",
+            "20260309",
+            "a second quote",
+            "sol://facets/work/activities/20260309#meeting_2",
+        );
+        assert_eq!(
+            judged_page(
+                root.path(),
+                &week_with_said(&format!("[{valid},{repeated_key}]"))
+            )
+            .said,
+            Said::Unreadable
+        );
+
+        let memory_key = activity_said(
+            "s-20260309-0",
+            "memory-key",
+            "20260309",
+            "I'll get you the deck",
+            "sol://facets/work/activities/20260309#meeting_1",
+        );
+        assert_eq!(
+            judged_page(root.path(), &week_with_said(&format!("[{memory_key}]"))).said,
+            Said::Unreadable
+        );
+
+        assert_eq!(
+            judged_page(root.path(), &week_with_said("null")).said,
+            Said::Unreadable
+        );
+        let spaced = activity_said(
+            "s-20260309-0",
+            "said-key",
+            "20260309",
+            "  ",
+            "sol://facets/work/activities/20260309#meeting_1",
+        );
+        match judged_page(root.path(), &week_with_said(&format!("[{spaced}]"))).said {
+            Said::Entries(entries) => assert_eq!(entries[0].quote, "  "),
+            Said::Unreadable => panic!("quote was trimmed"),
+        }
+
+        match judged_page(root.path(), &week_with_said(&format!("[{valid},{second}]"))).said {
+            Said::Entries(entries) => {
+                assert_eq!(entries[0].day, "20260309");
+                assert_eq!(entries[1].day, "20260310");
+            }
+            Said::Unreadable => panic!("two valid quotes refused the week"),
+        }
+    }
+
+    #[test]
+    fn said_section_order_intro_and_card() {
+        let root = TempDir::new().unwrap();
+        let said = format!(
+            "[{},{},{},{}]",
+            activity_said(
+                "s-20260310-0",
+                "ka",
+                "20260310",
+                "q-tue-a",
+                "sol://facets/work/activities/20260310#meeting_1"
+            ),
+            activity_said(
+                "s-20260308-0",
+                "kb",
+                "20260308",
+                "q-sun",
+                "sol://facets/work/activities/20260308#meeting_1"
+            ),
+            activity_said(
+                "s-20260310-1",
+                "kc",
+                "20260310",
+                "q-tue-b",
+                "sol://facets/work/activities/20260310#meeting_2"
+            ),
+            activity_said(
+                "s-20260311-0",
+                "kd",
+                "20260311",
+                "q-wed",
+                "sol://facets/work/activities/20260311#meeting_1"
+            ),
+        );
+        let days = r#"[
+            {"day":"20260308","state":"nothing_shared"},
+            {"day":"20260309","state":"nothing_shared"},
+            {"day":"20260310","state":"nothing_shared"},
+            {"day":"20260311","state":"nothing_shared"},
+            {"day":"20260312","state":"nothing_shared"},
+            {"day":"20260313","state":"nothing_shared"},
+            {"day":"20260314","state":"nothing_shared"}
+        ]"#;
+        let body = format!(r#"{{"version":1,"days":{days},"memories":[],"said":{said}}}"#);
+        write(root.path(), "reflections/weekly/20260308.json", &body);
+        let open = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert!(open["said"].is_object());
+        assert!(open["intro"].is_null());
+        assert!(open["rows"].as_array().unwrap().is_empty());
+        let groups = open["said"]["days"].as_array().unwrap();
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0]["day_label"], "tue 10");
+        assert_eq!(groups[0]["rows"][0]["quote"], "q-tue-a");
+        assert_eq!(groups[0]["rows"][0]["left_out"], false);
+        assert!(
+            groups[0]["rows"][0]["href"]
+                .as_str()
+                .unwrap()
+                .starts_with("/source?ref=")
+        );
+        assert_eq!(groups[0]["rows"][1]["quote"], "q-tue-b");
+        assert_eq!(groups[1]["day_label"], "sun 8");
+        assert_eq!(groups[1]["rows"][0]["quote"], "q-sun");
+        assert_eq!(groups[2]["rows"][0]["quote"], "q-wed");
+
+        let mut keys = BTreeSet::new();
+        keys.insert("kc".to_string());
+        keys.insert("kd".to_string());
+        write(
+            root.path(),
+            "health/week-left-out.json",
+            &String::from_utf8(left_out_bytes(&keys)).unwrap(),
+        );
+        let partial = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert!(partial["intro"].is_null());
+        let left_out_row = &partial["said"]["days"][0]["rows"][1];
+        assert_eq!(left_out_row["left_out"], true);
+        assert_eq!(left_out_row["key"], "kc");
+        assert!(left_out_row.get("quote").is_none());
+        assert_eq!(partial["said"]["days"][2]["rows"][0]["left_out"], true);
+        assert_eq!(partial["said"]["days"][2]["rows"][0]["key"], "kd");
+        assert!(partial["said"]["days"][2]["rows"][0].get("quote").is_none());
+
+        keys.insert("ka".to_string());
+        keys.insert("kb".to_string());
+        write(
+            root.path(),
+            "health/week-left-out.json",
+            &String::from_utf8(left_out_bytes(&keys)).unwrap(),
+        );
+        let none_showing = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(
+            none_showing["intro"],
+            "nothing from this week is on this page."
+        );
+        assert_eq!(none_showing["said"]["days"].as_array().unwrap().len(), 3);
+
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            &format!(r#"{{"version":1,"days":{days},"memories":[],"said":null}}"#),
+        );
+        fs::remove_file(root.path().join("health/week-left-out.json")).unwrap();
+        let unreadable = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(
+            unreadable["intro"],
+            "nothing from this week is on this page."
+        );
+        assert!(unreadable["said"].get("days").is_none());
+        assert!(unreadable["said"].get("heading").is_none());
+        assert!(unreadable["said"]["unreadable"].as_str().unwrap().len() > 1);
+
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            &format!(r#"{{"version":1,"days":{days},"memories":[]}}"#),
+        );
+        let absent = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert!(absent["said"].is_null());
+
+        let now = Utc.with_ymd_and_hms(2026, 3, 16, 12, 0, 0).unwrap();
+        let quotes_only = format!(
+            r#"{{"version":1,"days":{days},"memories":[],"said":[{}]}}"#,
+            activity_said(
+                "s-20260309-0",
+                "said-key",
+                "20260309",
+                "I'll get you the deck",
+                "sol://facets/work/activities/20260309#meeting_1"
+            )
+        );
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            &quotes_only,
+        );
+        let ctx = HomeContext::with_zone(root.path(), now, chrono_tz::Tz::UTC);
+        let card_quotes = card(&ctx);
+        assert_eq!(card_quotes["state"], "week");
+        assert!(card_quotes["memory"].is_null());
+        assert!(card_quotes["empty"].is_null());
+
+        let mut hidden = BTreeSet::new();
+        hidden.insert("said-key".to_string());
+        write(
+            root.path(),
+            "health/week-left-out.json",
+            &String::from_utf8(left_out_bytes(&hidden)).unwrap(),
+        );
+        let card_hidden = card(&ctx);
+        assert!(card_hidden["memory"].is_null());
+        assert_eq!(card_hidden["empty"], "nothing from this week is showing.");
+
+        write(root.path(), "health/week-left-out.json", "garbage bytes");
+        let card_unreadable = card(&ctx);
+        assert!(card_unreadable["memory"].is_null());
+        assert!(card_unreadable["empty"].is_null());
     }
 }
