@@ -8,12 +8,12 @@ use crate::snp::{PcrMode, Policy};
 // The current engine stays admitted during the sealed-appliance overlap.
 // Its fingerprint was captured live on 2026-07-24 and matched across two
 // fresh RA-TLS sessions. The sealed image's two fingerprints were qualified
-// on 2026-10-03/04, one per Azure firmware state, with reboot-identical quotes.
+// on 2026-10-06, one per Azure firmware state, with reboot-identical quotes.
 // Each pin's authenticated manifests and status mode live in nvgpu/rims.rs.
 pub const PRODUCTION_PCR_SHA256_PINS: &[&str] = &[
     "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3",
-    "78d2cb684535a82591ef69490542ee9f1501b463675523ac76c834413e616180",
-    "96e66fc57838c29daa2b2f3b9301f5aeed3a9285fea2b4439053a7c7c7908952",
+    "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
+    "0486d5a350467cfa28dea41076659debee9c2fea8c6423828efb53270cbb4641",
 ];
 
 // The key that signs Azure's confidential-VM firmware (the paravisor that

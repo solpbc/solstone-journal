@@ -108,12 +108,12 @@ const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[
         StatusMode::OnlineNonce,
     ),
     (
-        "78d2cb684535a82591ef69490542ee9f1501b463675523ac76c834413e616180",
+        "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
         ManifestSet::QUALIFIED_595_71_05,
         StatusMode::OfflineSignedAge,
     ),
     (
-        "96e66fc57838c29daa2b2f3b9301f5aeed3a9285fea2b4439053a7c7c7908952",
+        "0486d5a350467cfa28dea41076659debee9c2fea8c6423828efb53270cbb4641",
         ManifestSet::QUALIFIED_595_71_05,
         StatusMode::OfflineSignedAge,
     ),
