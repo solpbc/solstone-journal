@@ -48,10 +48,10 @@ fn velopack_program_root(executable_or_dir: &Path) -> Result<Option<PathBuf>, Id
         return Ok(Some(exe_dir));
     }
 
-    if let Some(candidate) = find_current_ancestor_candidate(executable_or_dir) {
-        if is_update_exe_file(&candidate.join("Update.exe"))? {
-            return Ok(Some(candidate));
-        }
+    if let Some(candidate) = find_current_ancestor_candidate(executable_or_dir)
+        && is_update_exe_file(&candidate.join("Update.exe"))?
+    {
+        return Ok(Some(candidate));
     }
 
     Ok(None)

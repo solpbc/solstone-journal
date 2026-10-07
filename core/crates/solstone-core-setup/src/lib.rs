@@ -931,19 +931,18 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             identity_admission.legacy_replacement,
         )
     };
-    if resolved.should_short_circuit() {
-        if let Err(error) =
+    if resolved.should_short_circuit()
+        && let Err(error) =
             refuse_journal_in_program_folder(&resolved.journal_path, &executable_dir)
-        {
-            return report_identity_failure(
-                args.jsonl,
-                stdout,
-                stderr,
-                &error,
-                &home_dir,
-                setup_identity_namespace(&executable_dir, &project_root).as_deref(),
-            );
-        }
+    {
+        return report_identity_failure(
+            args.jsonl,
+            stdout,
+            stderr,
+            &error,
+            &home_dir,
+            setup_identity_namespace(&executable_dir, &project_root).as_deref(),
+        );
     }
     if !args.jsonl && resolved.should_short_circuit() {
         let plan_context = SetupContext {
