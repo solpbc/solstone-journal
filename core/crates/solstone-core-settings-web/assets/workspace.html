@@ -3671,7 +3671,7 @@ function saveField(el, section, key, value) {
         applyEnvSaveEffects(el, key, result);
         showFieldStatus(el, 'saved');
       } catch (err) {
-        const message = err?.serverMessage || err?.message || 'Save failed';
+        const message = window.SurfaceState.serverMessageFrom(err) || 'Save failed';
         if (errorHost) {
           errorHost.innerHTML = `<span data-control-save-error class="control-save-error">${escapeHtml(message)}</span>`;
         }

@@ -1321,7 +1321,7 @@ async function loadImports() {
     window.SurfaceState.replaceLoading('importListContent', window.SurfaceState.error({
       heading: 'couldn\'t load your import history',
       desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage || err?.message || '',
+      serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
     }));
   }
@@ -1340,7 +1340,7 @@ function renderLoadMoreError(err) {
     errorEl.className = 'surface-state-refresh-error';
   }
 
-  const serverMessage = err?.serverMessage || err?.message || '';
+  const serverMessage = window.SurfaceState.serverMessageFrom(err);
   errorEl.innerHTML = `<strong>couldn&#39;t load more imports.</strong> ${window.CONVEY_COPY.RELOAD_HINT}${serverMessage ? ` ${escapeHtml(serverMessage)}` : ''}`;
 
   const loadMoreContainer = document.getElementById('importLoadMore');
@@ -3085,7 +3085,7 @@ function loadImportDetail() {
       }
     })
     .catch(err => {
-      const serverMessage = err?.serverMessage || err?.message || '';
+      const serverMessage = window.SurfaceState.serverMessageFrom(err);
       const escapedMessage = window.AppServices.escapeHtml(serverMessage);
       document.getElementById('importMeta').innerHTML = `<div class="surface-state-refresh-error">couldn&#39;t load import details.${escapedMessage ? ` ${escapedMessage}` : ''}</div>`;
       document.getElementById('overviewContent').innerHTML = '<div class="no-data">overview unavailable</div>';

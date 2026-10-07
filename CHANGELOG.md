@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- when a page in your journal can't load because the connection dropped or took too long, the page now shows its own message without the browser's wording, like "Load failed". on the curation page, "show more" now says when the next suggestions didn't load. before, it went quiet.
+
 ## [2.0.35] - 2026-10-07
 
 ### Changed

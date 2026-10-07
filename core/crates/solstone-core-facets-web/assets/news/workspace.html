@@ -490,7 +490,7 @@
     content.innerHTML = window.SurfaceState
       ? window.SurfaceState.error({
           retry: true,
-          serverMessage: err?.serverMessage || err?.message || '',
+          serverMessage: window.SurfaceState.serverMessageFrom(err),
           detail: err
         })
       : '<p>could not load newsletters.</p><button type="button" class="surface-state-retry">try again</button>';

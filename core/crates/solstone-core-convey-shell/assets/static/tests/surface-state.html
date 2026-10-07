@@ -66,6 +66,15 @@
     const withServer = window.SurfaceState.error({ serverMessage: 'Bad <payload>' });
     assert('error escapes server message', withServer.includes('&lt;payload&gt;'));
 
+    const fromError = window.SurfaceState.serverMessageFrom;
+    assert('server message comes from an ApiError', fromError({ name: 'ApiError', serverMessage: 'disk full', message: 'disk full' }) === 'disk full');
+    assert('server message keeps a caller-built Error', fromError(new Error('entity not found')) === 'entity not found');
+    assert('dropped connection shows no browser text', fromError(new TypeError('Load failed')) === '');
+    assert('timeout shows no browser text', fromError(new DOMException('signal timed out', 'TimeoutError')) === '');
+    assert('abort shows no browser text', fromError(new DOMException('The operation was aborted.', 'AbortError')) === '');
+    assert('unreadable body shows no browser text', fromError(new SyntaxError('Unexpected token <')) === '');
+    assert('missing error shows nothing', fromError(undefined) === '');
+
     const retry = parse(window.SurfaceState.error({ retry: true, retryLabel: 'try again' }));
     let retryCount = 0;
     retry.querySelector('.surface-state-retry').onclick = () => { retryCount += 1; };

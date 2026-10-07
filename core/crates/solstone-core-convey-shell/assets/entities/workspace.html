@@ -3785,7 +3785,7 @@ function showFacetDetailView(entityId) {
         container.innerHTML = window.SurfaceState.error({
           heading: "this entity couldn't be loaded",
           desc: window.CONVEY_COPY.RELOAD_HINT,
-          serverMessage: error?.message,
+          serverMessage: window.SurfaceState.serverMessageFrom(error),
           detail: error,
         });
       }
@@ -3930,7 +3930,7 @@ function showJournalDetailView(entityId) {
         container.innerHTML = window.SurfaceState.error({
           heading: "this entity couldn't be loaded",
           desc: window.CONVEY_COPY.RELOAD_HINT,
-          serverMessage: error?.message,
+          serverMessage: window.SurfaceState.serverMessageFrom(error),
           detail: error,
         });
       }
@@ -4181,7 +4181,7 @@ function entityTrustErrorMessage(err, fallback) {
       remediation: err.payload.safe_remediation || ''
     }).trim();
   }
-  return err?.rawDetail || err?.serverMessage || err?.message || fallback;
+  return err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || fallback;
 }
 
 function entityTrustIdentitySummary(identity) {
@@ -4380,7 +4380,7 @@ async function loadJournalTrustDetails(entityId) {
     if (currentDetailEntity?.id !== entityId) return;
     showInlineError(
       'journal-detail-trust-error',
-      err.serverMessage || err.message || ENT_COPY.ENT_TRUST_LOAD_FAILED
+      window.SurfaceState.serverMessageFrom(err) || ENT_COPY.ENT_TRUST_LOAD_FAILED
     );
     document.getElementById('journal-detail-suggestions').textContent = ENT_COPY.ENT_TRUST_LOAD_FAILED || '';
     document.getElementById('journal-detail-history').textContent = ENT_COPY.ENT_TRUST_LOAD_FAILED || '';
@@ -4478,7 +4478,7 @@ async function previewJournalEntityMerge(sourceId, targetId) {
   } catch (err) {
     showInlineError(
       'journal-detail-trust-error',
-      err.serverMessage || err.message || ENT_COPY.ENT_TRUST_ACTION_FAILED
+      window.SurfaceState.serverMessageFrom(err) || ENT_COPY.ENT_TRUST_ACTION_FAILED
     );
   } finally {
     if (currentDetailEntity?.id === sourceId) button.disabled = false;
@@ -4554,7 +4554,7 @@ async function restoreJournalEntityVersion(entityId, versionId, button) {
     button.disabled = false;
     showInlineError(
       'journal-detail-trust-error',
-      err.serverMessage || err.message || ENT_COPY.ENT_TRUST_ACTION_FAILED
+      window.SurfaceState.serverMessageFrom(err) || ENT_COPY.ENT_TRUST_ACTION_FAILED
     );
   }
 }

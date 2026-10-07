@@ -84,7 +84,7 @@
         heading,
         desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
         retry: true,
-        serverMessage: error?.serverMessage || error?.message || '',
+        serverMessage: window.SurfaceState.serverMessageFrom(error),
         detail: error
       });
     }
@@ -182,7 +182,7 @@
       + window.SurfaceState.error({
         heading,
         desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
-        serverMessage: error?.serverMessage || error?.message || '',
+        serverMessage: window.SurfaceState.serverMessageFrom(error),
         detail: error
       })
       + '</div>'

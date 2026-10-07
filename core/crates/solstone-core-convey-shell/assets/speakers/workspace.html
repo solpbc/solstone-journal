@@ -1614,7 +1614,7 @@
     const errorHtml = window.SurfaceState.error({
       heading: "couldn't load speakers",
       desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage || err?.message || '',
+      serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
       retry: true,
     });
@@ -4591,7 +4591,7 @@
         qualityPanel.innerHTML = window.SurfaceState.error({
           heading: COPY.SPK_OVERVIEW_QUALITY_ERROR_HEADING,
           desc: window.CONVEY_COPY.RELOAD_HINT,
-          serverMessage: err?.serverMessage || err?.message || '',
+          serverMessage: window.SurfaceState.serverMessageFrom(err),
           detail: err,
         });
         if (throwOnError) throw err;
@@ -4693,7 +4693,7 @@
         knownContainer.innerHTML = window.SurfaceState.error({
           heading: KNOWN_LOAD_ERROR,
           desc: window.CONVEY_COPY.RELOAD_HINT,
-          serverMessage: err?.serverMessage || err?.message || '',
+          serverMessage: window.SurfaceState.serverMessageFrom(err),
           detail: err,
         });
         sortSelect.hidden = true;
@@ -5201,7 +5201,7 @@
     ownerPanel.innerHTML = window.SurfaceState.error({
       heading: "couldn't load speakers",
       desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage || err?.message || '',
+      serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
       retry: true,
     });

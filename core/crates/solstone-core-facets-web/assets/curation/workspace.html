@@ -370,7 +370,7 @@ window.CUR_COPY = CUR_COPY;
     root.innerHTML = window.SurfaceState
       ? window.SurfaceState.error({
           retry: true,
-          serverMessage: err?.serverMessage || err?.message || '',
+          serverMessage: window.SurfaceState.serverMessageFrom(err),
           detail: err
         })
       : '<p>could not load suggestions.</p><button type="button" class="surface-state-retry">try again</button>';
@@ -939,11 +939,14 @@ window.CUR_COPY = CUR_COPY;
       ? group.querySelectorAll('[data-curation-item][data-kind="entity_merge"]').length
       : group.querySelectorAll('[data-curation-item], [data-review-history]').length;
     setBusy(button, true);
+    clearLoadMoreError(button);
     let page;
     try {
       page = await window.apiJson(`/app/curation/api/state?group=${paged}&offset=${shown}&limit=${CURATION_PAGE_SIZE}`, curationRequestOptions());
     } catch (err) {
+      window.logError?.(err, {context: 'curation-load-more'});
       setBusy(button, false);
+      showLoadMoreError(button);
       return;
     }
     const items = Array.isArray(page?.items) ? page.items : [];
@@ -977,6 +980,22 @@ window.CUR_COPY = CUR_COPY;
     button.disabled = busy;
   }
 
+  // A page that fails to load leaves the button for another try and says so
+  // beside it, rather than just re-enabling.
+  function showLoadMoreError(button) {
+    const note = document.createElement('p');
+    note.className = 'curation-item-error';
+    note.setAttribute('data-load-more-error', '');
+    note.setAttribute('role', 'alert');
+    note.textContent = CUR_COPY.CUR_ACTION_FAILED;
+    button.insertAdjacentElement('afterend', note);
+  }
+
+  function clearLoadMoreError(button) {
+    const note = button.nextElementSibling;
+    if (note?.hasAttribute('data-load-more-error')) note.remove();
+  }
+
   function itemFor(node) {
     return node ? node.closest('[data-curation-item], [data-review-history]') : null;
   }
@@ -999,7 +1018,7 @@ window.CUR_COPY = CUR_COPY;
       case 'entity_operation_failed':
         return "couldn't save that change. try again.";
       default:
-        return err?.serverMessage || err?.message;
+        return window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED;
     }
   }
 
@@ -1014,7 +1033,7 @@ window.CUR_COPY = CUR_COPY;
         remediation: err.payload.safe_remediation || ''
       }).trim();
     }
-    return err?.rawDetail || err?.serverMessage || err?.message || fallback;
+    return err?.rawDetail || window.SurfaceState?.serverMessageFrom(err) || fallback;
   }
 
   function showMutationError(item, button, err, fallback) {
@@ -1341,7 +1360,7 @@ window.CUR_COPY = CUR_COPY;
         })
         .catch((err) => {
           setBusy(button, false);
-          showError(item, err.serverMessage || err.message);
+          showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
         });
       return;
     }
@@ -1393,7 +1412,7 @@ window.CUR_COPY = CUR_COPY;
         .then(() => removeItem(item))
         .catch((err) => {
           setBusy(button, false);
-          showError(item, err.serverMessage || err.message);
+          showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
         });
       return;
     }
@@ -1408,7 +1427,7 @@ window.CUR_COPY = CUR_COPY;
         })
         .catch((err) => {
           setBusy(button, false);
-          showError(item, err.serverMessage || err.message);
+          showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
         });
       return;
     }
@@ -1429,7 +1448,7 @@ window.CUR_COPY = CUR_COPY;
             showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
           } else {
             setBusy(button, false);
-            showError(item, err.serverMessage || err.message);
+            showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
           }
         });
       return;
@@ -1451,7 +1470,7 @@ window.CUR_COPY = CUR_COPY;
             showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
           } else {
             setBusy(button, false);
-            showError(item, err.serverMessage || err.message);
+            showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
           }
         });
       return;
@@ -1605,7 +1624,7 @@ window.CUR_COPY = CUR_COPY;
         })
         .catch((err) => {
           setBusy(button, false);
-          showError(item, err.serverMessage || err.message);
+          showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
         });
       return;
     }
@@ -1635,7 +1654,7 @@ window.CUR_COPY = CUR_COPY;
             showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
           } else {
             setBusy(button, false);
-            showError(item, err.serverMessage || err.message);
+            showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
           }
         });
       return;
@@ -1657,7 +1676,7 @@ window.CUR_COPY = CUR_COPY;
             showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
           } else {
             setBusy(button, false);
-            showError(item, err.serverMessage || err.message);
+            showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
           }
         });
     }

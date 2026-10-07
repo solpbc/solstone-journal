@@ -74,6 +74,9 @@ window.SurfaceState = (() => {
   // a comma, per surface. The class accepts every separator the copy sweep can
   // leave behind, so a first-paint error never leaks refresh-only language.
   const STRIP_LAST_KNOWN = /\s*[—.,:-]\s*showing last known state\.?\s*$/i;
+  // The browser's own wording for a dropped connection ("Load failed"), a
+  // timeout, an abort or an unreadable body is not something to show an owner.
+  const BROWSER_ERROR_NAMES = new Set(['TypeError', 'AbortError', 'TimeoutError', 'NetworkError', 'SyntaxError']);
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -245,6 +248,24 @@ window.SurfaceState = (() => {
   }
 
   return {
+    /**
+     * The line an error surface may show under its heading: the server's own
+     * message, or the text of an Error a caller built from the server's
+     * answer. A browser-raised error yields '' so only the heading shows.
+     */
+    serverMessageFrom(err) {
+      if (!err) {
+        return '';
+      }
+      if (hasValue(err.serverMessage)) {
+        return String(err.serverMessage);
+      }
+      if (BROWSER_ERROR_NAMES.has(err.name)) {
+        return '';
+      }
+      return hasValue(err.message) ? String(err.message) : '';
+    },
+
     loading({ text = '' } = {}) {
       return `<div class="surface-state surface-state--loading" role="status" aria-busy="true">`
         + `<div class="surface-state-spinner" aria-hidden="true"></div>`

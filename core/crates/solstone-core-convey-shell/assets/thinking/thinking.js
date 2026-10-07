@@ -894,7 +894,7 @@
     loading.innerHTML = window.SurfaceState.error({
       heading: "Couldn't load thinking settings",
       desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage || err?.message || '',
+      serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
       retry: true,
     });

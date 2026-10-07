@@ -1265,7 +1265,7 @@
         restoreHomeCandidatesFromStatus();
       }
     } catch (err) {
-      showHomeCandidateWriteError(err?.rawDetail || err?.serverMessage || err?.message || '');
+      showHomeCandidateWriteError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
       restoreHomeCandidatesFromStatus();
       window.logError?.(err, { context: 'link: home candidate select failed' });
     } finally {
@@ -1419,7 +1419,7 @@
     try {
       await submitHostAddress(hostAddressInput.value);
     } catch (err) {
-      setHostAddressError(err?.rawDetail || err?.serverMessage || err?.message || '');
+      setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
       window.logError?.(err, { context: 'link: host address override failed' });
     } finally {
       hostAddressApply.disabled = false;
@@ -1432,7 +1432,7 @@
     try {
       await submitHostAddress(null);
     } catch (err) {
-      setHostAddressError(err?.rawDetail || err?.serverMessage || err?.message || '');
+      setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
       window.logError?.(err, { context: 'link: host address clear failed' });
     } finally {
       hostAddressClear.disabled = false;
@@ -1592,7 +1592,7 @@
     } catch (err) {
       setPrivateLinkOperation(
         window.LinkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.",
-        err?.rawDetail || err?.serverMessage || err?.message || '',
+        err?.rawDetail || window.SurfaceState.serverMessageFrom(err),
         { retryAction: startPrivateLinkSetup },
       );
       window.logError?.(err, { context: 'link: private link setup failed' });
@@ -1620,7 +1620,7 @@
     } catch (err) {
       setPrivateLinkOperation(
         window.LinkCopy.PRIVATE_LINK_DISABLE_FAILED || "couldn't turn off your private network.",
-        err?.rawDetail || err?.serverMessage || err?.message || '',
+        err?.rawDetail || window.SurfaceState.serverMessageFrom(err),
         { retryAction: disablePrivateLink },
       );
       window.logError?.(err, { context: 'link: private link disable failed' });
@@ -2208,7 +2208,7 @@ async function loadClients() {
     window.SurfaceState.replaceLoading('clientsList', window.SurfaceState.error({
       heading: 'your devices couldn\'t be loaded.',
       desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage || err?.message || '',
+      serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
     }));
   }
