@@ -906,6 +906,62 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
     fresh
 }
 
+/// Start `install-provider local`, the same request the Thinking app's install
+/// button makes, as a bounded helper of this supervisor. The installer reports
+/// through its own lease and status record. Linux arms the child's parent-death
+/// signal against the forking thread, so one dedicated thread forks and reaps.
+#[cfg(not(windows))]
+fn launch_local_installer(journal: &Path) -> Result<(), String> {
+    use solstone_core_system::process::{
+        Disposition, ManagedLaunchRequest, SpawnOptions, launch_managed_request,
+    };
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let parent = executable
+        .parent()
+        .ok_or("installer directory unavailable")?;
+    let binary = validate_journal_binary(parent.join("solstone-core"))
+        .map_err(|error| format!("installer binary unavailable: {error:?}"))?;
+    let request = ManagedLaunchRequest {
+        command: vec![
+            binary.to_string_lossy().into_owned(),
+            "install-provider".into(),
+            "local".into(),
+        ],
+        options: SpawnOptions {
+            journal_root: journal.to_owned(),
+            reference: "local-install".into(),
+            day: None,
+            sink: None,
+            // This supervisor is the running journal the installer would otherwise
+            // wait for; it may still be starting its other services.
+            environment: [("SOL_SKIP_SUPERVISOR_CHECK".into(), "1".into())].into(),
+        },
+    };
+    let (started, outcome) = std::sync::mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("local-install".into())
+        .spawn(move || {
+            match launch_managed_request(
+                Disposition::IndependentBoundedHelper {
+                    timeout: Duration::from_secs(2),
+                },
+                request,
+            ) {
+                Ok(mut child) => {
+                    let _ = started.send(Ok(()));
+                    let _ = child.wait();
+                }
+                Err(error) => {
+                    let _ = started.send(Err(error.to_string()));
+                }
+            }
+        })
+        .map_err(|error| error.to_string())?;
+    outcome
+        .recv()
+        .map_err(|_| "installer launch unavailable".to_owned())?
+}
+
 fn resolve_journal_binary_from(exe_dir: &Path) -> PathBuf {
     let name = if cfg!(windows) {
         "solstone.exe"
@@ -1589,7 +1645,11 @@ pub(crate) async fn boot_and_tick(
             },
         )
     } else {
-        LocalTruthSeam::new(local_shared.clone(), journal.clone())
+        let seam = LocalTruthSeam::new(local_shared.clone(), journal.clone());
+        // Windows ships the local runtime in its package and is not followed here.
+        #[cfg(not(windows))]
+        let seam = seam.with_installer(Arc::new(launch_local_installer));
+        seam
     };
     let local = LocalProvider {
         coordinator: ProviderRuntimeCoordinator::new(),

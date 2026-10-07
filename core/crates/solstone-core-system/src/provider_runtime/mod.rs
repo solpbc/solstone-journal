@@ -7,6 +7,7 @@ mod admission;
 mod events;
 mod gate;
 mod launch;
+mod local_follow;
 mod model;
 mod parakeet;
 mod parakeet_truth;
@@ -30,6 +31,7 @@ pub use launch::{
     LocalHost, LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam, LocalProbeSeam,
     LocalTruthConfig, LocalTruthSeam, ReservedPort,
 };
+pub use local_follow::LocalInstallerLauncher;
 pub use model::*;
 pub use parakeet::{
     PARAKEET_SERVER_PROCESS_NAME, ParakeetLaunchConfig, ParakeetLifecycleSeam, ParakeetPlacement,
