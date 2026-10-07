@@ -876,7 +876,7 @@ fn remove_user_skill(
             "user-skill",
             CleanUninstallState::Preserved,
             Some(path),
-            Some("user-authored skill content is preserved".into()),
+            Some("your own skill content is preserved".into()),
             CleanUninstallMark::Foreign,
         );
     }
@@ -1061,7 +1061,7 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
         return outcome(
             context,
             0,
-            "nothing to remove (all paths already absent)".into(),
+            "no eligible setup files to remove".into(),
             std::mem::take(&mut results),
             false,
         );
@@ -1329,7 +1329,7 @@ mod tests {
         };
         assert_eq!(
             run_clean_uninstall(&mut context).message,
-            "nothing to remove (all paths already absent)"
+            "no eligible setup files to remove"
         );
         fs::create_dir_all(context.home_dir.join(".local/bin")).unwrap();
         fs::write(context.home_dir.join(".local/bin/solstone"), "foreign").unwrap();
