@@ -38,7 +38,7 @@ fn producer_week_opens_in_the_reader() {
     let places = classification_places();
     let mut assigned = places.clone();
     let filler = places[0];
-    while assigned.len() % 7 != 0 {
+    while !assigned.len().is_multiple_of(7) {
         assigned.push(filler);
     }
 

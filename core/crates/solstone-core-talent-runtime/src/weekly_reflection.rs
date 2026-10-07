@@ -689,6 +689,11 @@ fn said_on_day(journal: &Path, facets: &[String], day: &str) -> Vec<Said> {
             else {
                 continue;
             };
+            // The words rest on the conversation's segments; once the owner has
+            // deleted every one of them, the weekly does not bring the words back.
+            if !keeps_a_segment(journal, day, &record) {
+                continue;
+            }
             for group in ["commitments", "decisions", "closures"] {
                 let rows = record
                     .get(group)
@@ -729,6 +734,30 @@ fn said_on_day(journal: &Path, facets: &[String], day: &str) -> Vec<Said> {
     }
     said.truncate(SAID_PER_DAY);
     said
+}
+
+/// Whether any segment the activity names is still in the journal, looked up
+/// the way the Story writer found its audio.
+fn keeps_a_segment(journal: &Path, day: &str, record: &Map<String, Value>) -> bool {
+    let day_dir = journal.join("chronicle").join(day);
+    let stream = record.get("stream").and_then(Value::as_str);
+    let streams = fs::read_dir(&day_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| stream.is_none_or(|stream| entry.file_name() == stream))
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    record
+        .get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .any(|segment| {
+            streams.iter().any(|dir| dir.join(segment).is_dir())
+                || (stream.is_none() && day_dir.join(segment).is_dir())
+        })
 }
 
 /// One line, with one wrapping pair of quotation marks removed: every surface
@@ -1761,14 +1790,16 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let voice = |action: &str, quote: &str| json!({"owner":"you","action":action,"quote":quote,"owner_evidence":"voice"});
         let rows = [
-            json!({"id":"meeting_1","activity":"meeting",
+            json!({"id":"meeting_1","activity":"meeting","stream":"phone","segments":["090000_300"],
                 "commitments":[
                     voice("send the deck", "I'll get you the deck by friday"),
                     {"owner":"Pat","action":"book the room","quote":"I can book the room"},
                     {"owner":"you","action":"call back","owner_evidence":"voice"}
                 ],
                 "decisions":[voice("go with the deck", "I'll get you the deck, by Friday!")]}),
-            json!({"id":"meeting_2","activity":"meeting",
+            json!({"id":"gone","activity":"meeting","segments":["100000_300"],
+                "commitments":[voice("never shown", "words from a deleted conversation")]}),
+            json!({"id":"meeting_2","activity":"meeting","segments":["110000_300"],
                 "closures":[voice("closed it", "\u{201c}that one is\n done now\u{201d}")],
                 "decisions":[voice("pick blue", "let's go with blue then")],
                 "commitments":[voice("write it up", "I will write it up")]}),
@@ -1780,14 +1811,26 @@ mod tests {
                 .collect::<String>(),
         )
         .unwrap();
+        let day_dir = root.path().join("chronicle/20260309");
+        fs::create_dir_all(day_dir.join("phone/090000_300")).unwrap();
+        fs::create_dir_all(day_dir.join("default/110000_300")).unwrap();
+        // The same key under another stream does not keep a stream-bound record.
+        fs::create_dir_all(day_dir.join("default/100000_300")).unwrap();
+        let mut bound: Map<String, Value> =
+            serde_json::from_value(json!({"stream":"phone","segments":["100000_300"]})).unwrap();
+        assert!(!keeps_a_segment(root.path(), "20260309", &bound));
+        bound.remove("stream");
+        assert!(keeps_a_segment(root.path(), "20260309", &bound));
+        fs::remove_dir_all(day_dir.join("default/100000_300")).unwrap();
 
         let said = said_on_day(root.path(), &["work".to_owned()], "20260309");
         let quotes = said
             .iter()
             .map(|item| item.quote.as_str())
             .collect::<Vec<_>>();
-        // A quote without the voice mark, a voice mark without a quote and a
-        // repeat of the same words are left out; the day keeps its first three.
+        // A quote without the voice mark, a voice mark without a quote, a
+        // conversation whose segments are all deleted and a repeat of the same
+        // words are left out; the day keeps its first three.
         assert_eq!(
             quotes,
             [
