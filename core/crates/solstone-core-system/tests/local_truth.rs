@@ -433,3 +433,136 @@ fn windows_host_reports_gpu_or_package_status() {
     }
     let _ = std::fs::remove_dir_all(root);
 }
+
+fn write_current_model(root: &Path) {
+    let model = pins::cache_root(root).join("models/local__qwen3.5-4b");
+    std::fs::create_dir_all(&model).expect("model directory");
+    std::fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").expect("model");
+    std::fs::write(model.join("mmproj-F16.gguf"), b"projector").expect("projector");
+    let model_manifest = manifest::build_manifest(
+        "local",
+        "local-model",
+        "test",
+        json!({"pin_identity":pins::model_identity("local/qwen3.5-4b").unwrap()}),
+        manifest::inventory_for_tree(&model, "model").unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    manifest::write_manifest(&manifest::artifact_manifest_path(&model), &model_manifest).unwrap();
+}
+
+fn write_config(root: &Path, config: serde_json::Value) {
+    std::fs::create_dir_all(root.join("config")).expect("config directory");
+    std::fs::write(root.join("config/journal.json"), config.to_string()).expect("config");
+}
+
+/// Observes truth `observations` times through one seam whose installer only
+/// records the journals it was asked to install into.
+fn follow_launches(root: &Path, platform: LocalHost, observations: u32) -> Vec<PathBuf> {
+    let launched = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorder = launched.clone();
+    let shared = Arc::new(LocalRuntimeShared::default());
+    let mut seam = LocalTruthSeam::with_config(
+        shared.clone(),
+        LocalTruthConfig {
+            windows_package: None,
+            journal_path: root.into(),
+            platform,
+            arch: "x86_64",
+            nvidia_probe: Some(undetected_probe()),
+            vulkan: VulkanObservation {
+                devices: Vec::new(),
+                succeeded: true,
+            },
+        },
+    )
+    .with_installer(Arc::new(move |journal: &Path| {
+        recorder.lock().unwrap().push(journal.to_path_buf());
+        Ok(())
+    }));
+    let state = ProviderRuntimeState::new(ProviderName::Local);
+    for attempt in 1..=observations {
+        let fence = fence(attempt);
+        seam.dispatch_truth(&state, &fence);
+        let observation = shared.wait_for_truth_result(&fence);
+        assert_eq!(observation.phase, RuntimePhase::ArtifactNotReady);
+    }
+    launched.lock().unwrap().clone()
+}
+
+#[test]
+fn an_installed_model_with_its_runtime_behind_the_pin_starts_the_installer_once() {
+    for (name, platform) in [
+        ("follow-linux", LocalHost::Linux),
+        ("follow-darwin", LocalHost::Darwin),
+    ] {
+        let root = var_tmp(name);
+        write_current_model(&root);
+        write_config(&root, json!({"providers":{"active":{"provider":"local"}}}));
+        assert_eq!(
+            follow_launches(&root, platform, 2),
+            vec![root.clone()],
+            "{name}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn the_installer_is_not_started_for_an_owner_who_does_not_think_locally() {
+    for (name, config) in [
+        ("follow-no-config", None),
+        (
+            "follow-cloud-active",
+            Some(json!({"providers":{"active":{"provider":"openai"}}})),
+        ),
+        (
+            "follow-own-endpoint",
+            Some(json!({"providers":{"active":{"provider":"local"},
+                "local":{"endpoint_url":"http://127.0.0.1:9","served_model_id":"m"}}})),
+        ),
+    ] {
+        let root = var_tmp(name);
+        write_current_model(&root);
+        if let Some(config) = config {
+            write_config(&root, config);
+        }
+        let launched = follow_launches_any_phase(&root);
+        assert!(launched.is_empty(), "{name}: {launched:?}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+    let root = var_tmp("follow-never-installed");
+    write_config(&root, json!({"providers":{"active":{"provider":"local"}}}));
+    assert!(follow_launches(&root, LocalHost::Linux, 1).is_empty());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn follow_launches_any_phase(root: &Path) -> Vec<PathBuf> {
+    let launched = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorder = launched.clone();
+    let shared = Arc::new(LocalRuntimeShared::default());
+    let mut seam = LocalTruthSeam::with_config(
+        shared.clone(),
+        LocalTruthConfig {
+            windows_package: None,
+            journal_path: root.into(),
+            platform: LocalHost::Linux,
+            arch: "x86_64",
+            nvidia_probe: Some(undetected_probe()),
+            vulkan: VulkanObservation {
+                devices: Vec::new(),
+                succeeded: true,
+            },
+        },
+    )
+    .with_installer(Arc::new(move |journal: &Path| {
+        recorder.lock().unwrap().push(journal.to_path_buf());
+        Ok(())
+    }));
+    let state = ProviderRuntimeState::new(ProviderName::Local);
+    let fence = fence(1);
+    seam.dispatch_truth(&state, &fence);
+    let _ = shared.wait_for_truth_result(&fence);
+    launched.lock().unwrap().clone()
+}

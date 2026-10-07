@@ -31,6 +31,7 @@ use solstone_core_local::{ConnectInput, ConnectOutcome, LoopbackAddr, connect};
 use crate::process::apply_parent_death_kill;
 use crate::process::{Disposition, LaunchError, SERVICE_SHUTDOWN_TIMEOUT};
 
+use super::local_follow::{LocalFollow, LocalInstallerLauncher};
 use super::model::ManagedProcess;
 use super::model::{
     LaunchOutcomeStatus, ProviderFence, ProviderLaunchOutcome, ProviderProbeOutcome,
@@ -455,6 +456,7 @@ pub struct LocalTruthConfig {
 pub struct LocalTruthSeam {
     shared: Arc<LocalRuntimeShared>,
     config: LocalTruthConfig,
+    follow: Option<Arc<LocalFollow>>,
 }
 
 impl LocalTruthSeam {
@@ -479,7 +481,19 @@ impl LocalTruthSeam {
     }
 
     pub fn with_config(shared: Arc<LocalRuntimeShared>, config: LocalTruthConfig) -> Self {
-        Self { shared, config }
+        Self {
+            shared,
+            config,
+            follow: None,
+        }
+    }
+
+    /// Start the owner's own installer when a release has moved the pins of a
+    /// local provider the owner already installed (see `local_follow`).
+    #[must_use]
+    pub fn with_installer(mut self, launcher: LocalInstallerLauncher) -> Self {
+        self.follow = Some(Arc::new(LocalFollow::new(launcher)));
+        self
     }
 }
 
@@ -487,9 +501,10 @@ impl TruthObservationSeam for LocalTruthSeam {
     fn dispatch_truth(&mut self, _: &ProviderRuntimeState, fence: &ProviderFence) {
         let shared = Arc::clone(&self.shared);
         let config = self.config.clone();
+        let follow = self.follow.clone();
         let fence = fence.clone();
         thread::spawn(move || {
-            let outcome = observe_truth(&shared, &config);
+            let outcome = observe_truth(&shared, &config, follow.as_deref());
             shared.record_truth_result(&fence, outcome);
         });
     }
@@ -498,13 +513,17 @@ impl TruthObservationSeam for LocalTruthSeam {
 fn observe_truth(
     shared: &LocalRuntimeShared,
     config: &LocalTruthConfig,
+    follow: Option<&LocalFollow>,
 ) -> super::model::ProviderTruthObservation {
     if !config.journal_path.is_dir() {
         return truth_unavailable();
     }
-    let journal_config =
+    let (journal_config, config_present) =
         match solstone_core_journal_config::read_journal_config(&config.journal_path) {
-            Ok(read) => read.config.unwrap_or_default(),
+            Ok(read) => {
+                let present = read.config.is_some();
+                (read.config.unwrap_or_default(), present)
+            }
             Err(_) => return truth_unavailable(),
         };
     if matches!(
@@ -756,6 +775,13 @@ fn observe_truth(
         }
         LocalHost::Windows => unreachable!(),
     };
+    if let Some(follow) = follow {
+        follow.observe(
+            &config.journal_path,
+            config_present.then_some(&journal_config),
+            &readiness,
+        );
+    }
     let Some(object) = readiness.as_object() else {
         return truth_unavailable();
     };
@@ -2358,7 +2384,7 @@ mod tests {
                 vulkan: obs,
                 windows_package: None,
             };
-            let observation = observe_truth(&shared, &config);
+            let observation = observe_truth(&shared, &config, None);
             assert_eq!(observation.phase, RuntimePhase::HostBlocked);
             assert_eq!(
                 observation.reason_code.as_ref().map(ReasonCode::as_str),
@@ -2383,7 +2409,7 @@ mod tests {
             },
             windows_package: None,
         };
-        let observation = observe_truth(&shared, &config);
+        let observation = observe_truth(&shared, &config, None);
         assert_eq!(observation.phase, RuntimePhase::HostBlocked);
         assert_eq!(
             observation.reason_code.as_ref().map(ReasonCode::as_str),
