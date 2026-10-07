@@ -262,7 +262,11 @@ fn failure_sample(rows: &[CheckResult], name: &str) -> u64 {
 
 #[test]
 fn actual_doctor_entry_shares_only_within_each_call() {
-    let staged = context();
+    let mut staged = context();
+    // This whole-battery test checks sharing, not expiry. Native journal
+    // checks can outlast the helper's one-second budget on a loaded host.
+    // Match the production budget; expiry has its own bounded test below.
+    staged.context.service_status_timeout = Duration::from_secs(10);
     let bus = Bus::start(&staged.callosum_socket_path, Duration::from_millis(80));
     bus.unhealthy.store(true, Ordering::SeqCst);
     let args = DoctorArgs {
