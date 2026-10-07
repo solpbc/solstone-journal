@@ -1502,7 +1502,7 @@ uv tool uninstall solstone && uv tool install solstone-journal && uv tool instal
 ### Fixed
 - upgrading over an older install no longer stops because the `sol` or `journal` shortcut in your shell points somewhere stale. setup now repairs the shortcuts it owns and keeps going, whether solstone came from the macos app or from the terminal.
 - sol's background thinking can ask the journal for identity, routines, health, and talent context again. those approved journal tools were being turned away before sol could use them; now they work without widening what sol is allowed to run.
-- fresh installs from PyPI resolve cleanly when pip chooses the dependencies. solstone now pins the matching telemetry packages used by sol's thinking runtime, so install no longer lands on an incompatible mix.
+- fresh installs from PyPI resolve cleanly when pip chooses the dependencies. the journal now pins matching versions of a few libraries its thinking depends on, so install no longer lands on an incompatible mix.
 
 ## [0.4.6] - 2026-05-31
 
