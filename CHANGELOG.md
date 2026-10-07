@@ -8,10 +8,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- until a device is paired, the thinking page links to where you pair one. setup ends on that page, so you see the link as soon as your journal is set up.
 - your week now shows things you said, word for word, under "said by you": up to three a day, taken only from conversations where your journal recognized your voice, each with a link to where you said it. you can leave one out of the page, as with a memory.
 
 ### Fixed
 
+- a link to the devices section of the network page now opens the page at that section. before, it could open at the top.
 - on windows, the network page now tells you when Windows Firewall has kept a Block rule for journal after Cancel, and how an administrator can remove it. opening your journal to the network alone couldn't get past that rule.
 - if your journal thinks on this computer, on mac or linux, it now installs the local model again on its own when an update needs it. since 2.0.34, an update could stop your journal's thinking, and home said "processing needs a setup" until you installed the local model again. you can cancel the download on the thinking page, and it stays cancelled until you install again.
 - the date on each card on the entities page is now the last day its name came up in your journal. before, a card could show the day it was added to your journal or last changed, so after an import every card could say "Today".

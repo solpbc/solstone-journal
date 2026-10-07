@@ -212,7 +212,7 @@ fn calm_json(kind: CalmKind) -> Value {
             "severity": "neutral",
             "headline": EMPTY_REGISTRY_HEADLINE,
             "last_observation": null,
-            "cta": {"text": "set one up →", "href": "/app/network/"},
+            "cta": {"text": "set one up →", "href": "/app/network/#devices"},
             "issues": [],
         }),
         CalmKind::AwaitingFirst => json!({
@@ -634,7 +634,7 @@ mod tests {
         let g = glance(&empty);
         assert_eq!(g["verdict"], "calm");
         assert_eq!(g["severity"], "neutral");
-        assert_eq!(g["cta"]["href"], "/app/network/");
+        assert_eq!(g["cta"]["href"], "/app/network/#devices");
         assert_eq!(g["issues"].as_array().unwrap().len(), 0);
         assert!(g["headline"].as_str().unwrap().contains("set one up"));
 

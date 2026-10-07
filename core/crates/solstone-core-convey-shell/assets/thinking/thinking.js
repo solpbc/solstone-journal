@@ -5018,6 +5018,7 @@
           state.chatgpt.pollTimer = null;
         }
       } else if (document.visibilityState === 'visible') {
+        if (!$('thinkingDevicesInvite')?.hidden) refreshDevicesInvite();
         if (
           state.chatgpt.screen === 'pending' &&
           state.chatgpt.attempt?.id &&
@@ -5072,6 +5073,27 @@
     window.addEventListener('hashchange', () => routeThinkingHash('history'));
   }
 
+  // A journal with no paired device has nothing to think about. Point at the
+  // network page's devices section, where a device is added. A failed read
+  // leaves the line hidden: it is an invitation, not a status.
+  async function refreshDevicesInvite() {
+    const invite = $('thinkingDevicesInvite');
+    if (!invite) return;
+    let none = false;
+    try {
+      const payload = await window.apiJson('/app/network/api/clients', {noAuthRedirect: true});
+      none = Array.isArray(payload?.clients) && payload.clients.length === 0;
+    } catch (_err) {
+      none = false;
+    }
+    const text = copy.devices_invite?.text;
+    const link = copy.devices_invite?.link;
+    invite.hidden = !(none && text && link);
+    if (invite.hidden) return;
+    setText('thinkingDevicesInviteText', text);
+    setText('thinkingDevicesInviteLink', `${link} →`);
+  }
+
   async function init() {
     const loaded = await loadInitialState();
     if (!loaded) return;
@@ -5084,6 +5106,7 @@
 
     renderAll();
     routeThinkingHash('reload');
+    refreshDevicesInvite();
     try {
       await refreshLocalModels();
       await refreshInstallStatus({autoResume: true});

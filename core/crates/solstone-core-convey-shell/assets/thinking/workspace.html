@@ -606,6 +606,35 @@
       gap: 14px;
     }
 
+    .thinking-workspace .devices-invite {
+      align-items: baseline;
+      border-top: 1px dashed var(--hairline);
+      color: var(--ink-soft);
+      display: flex;
+      font-size: 0.93rem;
+      gap: 0.55rem;
+      line-height: 1.45;
+      margin: 0;
+      padding-top: 12px;
+    }
+
+    .thinking-workspace .devices-invite-ring {
+      border: 1.5px solid var(--ink-faint);
+      border-radius: 50%;
+      flex-shrink: 0;
+      height: 8px;
+      position: relative;
+      top: 1px;
+      width: 8px;
+    }
+
+    /* Vertical padding on an inline link widens the tap target without
+       changing the line box, so the sentence wraps as plain text. */
+    .thinking-workspace .devices-invite .textlink {
+      padding: 12px 0;
+      white-space: nowrap;
+    }
+
     .thinking-workspace .thinking-runs-tabs {
       display: flex;
       gap: 8px;
@@ -1066,6 +1095,10 @@
         <button type="button" class="thinking-runs-tab" id="thinkingRunsTab" role="tab" aria-selected="false" aria-controls="thinkingRunsPanel" tabindex="-1">runs</button>
       </div>
       <p class="intro" id="thinkingIntro">loading your processing setup…</p>
+      <p class="devices-invite" id="thinkingDevicesInvite" hidden>
+        <span class="devices-invite-ring" aria-hidden="true"></span>
+        <span><span id="thinkingDevicesInviteText"></span> <a class="textlink" id="thinkingDevicesInviteLink" href="/app/network/#devices"></a></span>
+      </p>
     </header>
 
     <section class="view" data-view="main" id="thinkingSetupPanel" role="tabpanel" aria-labelledby="thinkingSetupTab">
