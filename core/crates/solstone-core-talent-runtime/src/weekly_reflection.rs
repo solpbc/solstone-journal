@@ -30,6 +30,11 @@
 //! `apply_prompt_override` inserts the packet JSON as `transcript` and
 //! removes `prompt`. It does not call `apply_template_vars`, so the packet
 //! stays unsubstituted.
+//!
+//! `said` is built by code alone, never by the model: the owner's own words
+//! from Story rows that carry `owner_evidence: "voice"`. The Story writer sets
+//! that mark only when the row's quote is the owner's recognized-voice speech,
+//! so the page shows the quote and never the row's model-written action.
 
 #[cfg(test)]
 use std::cell::Cell;
@@ -43,6 +48,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_facets::load_activity_records;
+use solstone_core_home::{HomeContext, readers::enabled_facet_names};
 use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
 use solstone_core_journal_io::iter_segments;
 
@@ -116,6 +123,20 @@ pub struct DayReport {
     pub classification: DayClassification,
 }
 
+/// Something the owner said, by their recognized voice, on one of the week's days.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Said {
+    pub day: String,
+    pub facet: String,
+    pub record_id: String,
+    pub group: &'static str,
+    pub index: usize,
+    pub quote: String,
+}
+
+/// The most `said` entries one day contributes.
+const SAID_PER_DAY: usize = 3;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct WeeklyReflectionState {
     pub start_day: String,
@@ -125,6 +146,7 @@ pub struct WeeklyReflectionState {
     pub day_reports: Vec<DayReport>,
     pub slots: Vec<Slot>,
     pub all_candidates: Vec<(String, Candidate)>, // (memory_id, candidate)
+    pub said: Vec<Said>,
 }
 
 pub fn build(
@@ -174,13 +196,16 @@ pub fn build(
     let mut day_reports = Vec::new();
     let mut slots = Vec::new();
     let mut all_candidates = Vec::new();
+    let mut said = Vec::new();
     let mut slot_counter = 0usize;
     let mut memory_counter = 0usize;
+    let facets = enabled_facet_names(&HomeContext::new(&context.journal, utc));
 
     let mut curr = start_date;
     while curr <= end_date {
         let curr_str = curr.format("%Y%m%d").to_string();
         let (classif, candidates) = assess_day(&context.journal, &curr_str);
+        said.extend(said_on_day(&context.journal, &facets, &curr_str));
         day_reports.push(DayReport {
             day: curr_str.clone(),
             classification: classif,
@@ -222,6 +247,7 @@ pub fn build(
         day_reports,
         slots,
         all_candidates,
+        said,
     };
 
     Ok(PrePostState::WeeklyReflection(state))
@@ -601,6 +627,21 @@ struct JsonDayItem<'a> {
 }
 
 #[derive(Serialize)]
+struct JsonSaidSource {
+    kind: &'static str,
+    uri: String,
+}
+
+#[derive(Serialize)]
+struct JsonSaidItem<'a> {
+    id: String,
+    key: String,
+    day: &'a str,
+    quote: &'a str,
+    source: JsonSaidSource,
+}
+
+#[derive(Serialize)]
 struct JsonDocument<'a> {
     version: u64,
     week: JsonWeek<'a>,
@@ -609,6 +650,7 @@ struct JsonDocument<'a> {
     intro: Vec<JsonIntroItem<'a>>,
     memories: Vec<JsonMemoryItem<'a>>,
     days: Vec<JsonDayItem<'a>>,
+    said: Vec<JsonSaidItem<'a>>,
 }
 
 pub fn compute_memory_key(day: &str, position: usize, text: &str) -> String {
@@ -616,6 +658,98 @@ pub fn compute_memory_key(day: &str, position: usize, text: &str) -> String {
     let digest = Sha256::digest(input.as_bytes());
     let hex = format!("{digest:x}");
     hex[..16].to_owned()
+}
+
+/// A key for a `said` entry that holds across reruns while its source row is
+/// unchanged. The `said` prefix keeps it apart from every memory key.
+pub fn compute_said_key(said: &Said) -> String {
+    let input = format!(
+        "said\n{}\n{}\n{}\n{}\n{}\n{}",
+        said.day, said.facet, said.record_id, said.group, said.index, said.quote
+    );
+    let digest = Sha256::digest(input.as_bytes());
+    let hex = format!("{digest:x}");
+    hex[..16].to_owned()
+}
+
+/// The owner's voice-backed Story quotes on one day, in record order, then
+/// group, then position; a repeated quote is kept once and the day is capped.
+fn said_on_day(journal: &Path, facets: &[String], day: &str) -> Vec<Said> {
+    let mut said = Vec::new();
+    let mut seen = BTreeSet::new();
+    for facet in facets {
+        let Ok(records) = load_activity_records(journal, facet, day, false) else {
+            continue;
+        };
+        for record in records {
+            let Some(record_id) = record
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+            else {
+                continue;
+            };
+            for group in ["commitments", "decisions", "closures"] {
+                let rows = record
+                    .get(group)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten();
+                for (index, row) in rows.enumerate() {
+                    if row.get("owner_evidence").and_then(Value::as_str) != Some("voice") {
+                        continue;
+                    }
+                    let Some(quote) = row
+                        .get("quote")
+                        .and_then(Value::as_str)
+                        .filter(|quote| !quote.trim().is_empty())
+                    else {
+                        continue;
+                    };
+                    let words = quote
+                        .to_lowercase()
+                        .split(|c: char| !c.is_alphanumeric())
+                        .filter(|word| !word.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if !seen.insert(words) {
+                        continue;
+                    }
+                    said.push(Said {
+                        day: day.to_owned(),
+                        facet: facet.clone(),
+                        record_id: record_id.to_owned(),
+                        group,
+                        index,
+                        quote: plain_quote(quote),
+                    });
+                }
+            }
+        }
+    }
+    said.truncate(SAID_PER_DAY);
+    said
+}
+
+/// One line, with one wrapping pair of quotation marks removed: every surface
+/// adds its own marks. The words are untouched.
+fn plain_quote(quote: &str) -> String {
+    let line = quote.split_whitespace().collect::<Vec<_>>().join(" ");
+    for (open, close) in [
+        ('"', '"'),
+        ('\u{201c}', '\u{201d}'),
+        ('\u{2018}', '\u{2019}'),
+    ] {
+        if let Some(inner) = line
+            .strip_prefix(open)
+            .and_then(|rest| rest.strip_suffix(close))
+            .map(str::trim)
+            .filter(|inner| !inner.is_empty())
+        {
+            return inner.to_owned();
+        }
+    }
+    line
 }
 
 pub fn extract_refs(text: &str) -> Vec<String> {
@@ -813,6 +947,27 @@ pub fn assemble_reflection(
         }
     }
 
+    let mut said_items = Vec::new();
+    let mut said_day = "";
+    let mut said_n = 0usize;
+    for said in &state.said {
+        if said.day != said_day {
+            said_day = &said.day;
+            said_n = 0;
+        }
+        said_items.push(JsonSaidItem {
+            id: format!("s-{}-{said_n}", said.day),
+            key: compute_said_key(said),
+            day: &said.day,
+            quote: &said.quote,
+            source: JsonSaidSource {
+                kind: "activity",
+                uri: said_uri(said),
+            },
+        });
+        said_n += 1;
+    }
+
     let doc = JsonDocument {
         version: 1,
         week: JsonWeek {
@@ -827,6 +982,7 @@ pub fn assemble_reflection(
         intro,
         memories: memory_items,
         days: day_items,
+        said: said_items,
     };
 
     let document_str = serde_json::to_string(&doc).map_err(|e| {
@@ -838,8 +994,10 @@ pub fn assemble_reflection(
         )
     })?;
 
-    let markdown_str = if n == 0 {
+    let mut markdown_str = if n == 0 && state.said.is_empty() {
         "nothing from this week is on this page.\n".to_owned()
+    } else if n == 0 {
+        String::new()
     } else {
         let mut md = String::new();
         if let Some(intro_item) = doc.intro.first() {
@@ -863,7 +1021,37 @@ pub fn assemble_reflection(
         md
     };
 
+    if !state.said.is_empty() {
+        if !markdown_str.is_empty() {
+            markdown_str.push('\n');
+        }
+        markdown_str.push_str("said by you");
+        let mut heading_day = "";
+        for said in &state.said {
+            if said.day != heading_day {
+                heading_day = &said.day;
+                let date = NaiveDate::parse_from_str(&said.day, "%Y%m%d").unwrap_or(state.today);
+                markdown_str.push_str(&format!(
+                    "\n\n{}, {} {}",
+                    english_weekday(date.weekday()),
+                    english_month(date.month()),
+                    date.day()
+                ));
+            }
+            let quote = normalize_markdown_text(&format!("\"{}\"", said.quote));
+            markdown_str.push_str(&format!("\n{quote}\n[source]({})", said_uri(said)));
+        }
+        markdown_str.push('\n');
+    }
+
     Ok((markdown_str, document_str))
+}
+
+fn said_uri(said: &Said) -> String {
+    format!(
+        "sol://facets/{}/activities/{}#{}",
+        said.facet, said.day, said.record_id
+    )
 }
 
 pub fn write_page(
@@ -1510,6 +1698,7 @@ mod tests {
             day_reports: vec![],
             slots: vec![],
             all_candidates: vec![],
+            said: vec![],
         };
 
         let (md0, doc0_str) = assemble_reflection(&state, "none", None, &[]).unwrap();
@@ -1561,6 +1750,134 @@ mod tests {
                 "sentence": "your week, a memory from each of 3 days.",
                 "ids": ["m-20260308-0", "m-20260309-0", "m-20260310-0"]
             })
+        );
+    }
+
+    #[test]
+    fn said_keeps_only_the_owners_voice_backed_quotes() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let path = root.path().join("facets/work/activities/20260309.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let voice = |action: &str, quote: &str| json!({"owner":"you","action":action,"quote":quote,"owner_evidence":"voice"});
+        let rows = [
+            json!({"id":"meeting_1","activity":"meeting",
+                "commitments":[
+                    voice("send the deck", "I'll get you the deck by friday"),
+                    {"owner":"Pat","action":"book the room","quote":"I can book the room"},
+                    {"owner":"you","action":"call back","owner_evidence":"voice"}
+                ],
+                "decisions":[voice("go with the deck", "I'll get you the deck, by Friday!")]}),
+            json!({"id":"meeting_2","activity":"meeting",
+                "closures":[voice("closed it", "\u{201c}that one is\n done now\u{201d}")],
+                "decisions":[voice("pick blue", "let's go with blue then")],
+                "commitments":[voice("write it up", "I will write it up")]}),
+        ];
+        fs::write(
+            &path,
+            rows.iter()
+                .map(|row| format!("{row}\n"))
+                .collect::<String>(),
+        )
+        .unwrap();
+
+        let said = said_on_day(root.path(), &["work".to_owned()], "20260309");
+        let quotes = said
+            .iter()
+            .map(|item| item.quote.as_str())
+            .collect::<Vec<_>>();
+        // A quote without the voice mark, a voice mark without a quote and a
+        // repeat of the same words are left out; the day keeps its first three.
+        assert_eq!(
+            quotes,
+            [
+                "I'll get you the deck by friday",
+                "I will write it up",
+                "let's go with blue then"
+            ]
+        );
+        assert_eq!(plain_quote("\"we ship it\nfriday\""), "we ship it friday");
+        assert_eq!(plain_quote("she said \"no\""), "she said \"no\"");
+        assert_eq!(plain_quote("\"\""), "\"\"");
+        assert_eq!(said[1].group, "commitments");
+        assert_eq!(said[2].group, "decisions");
+        assert!(said_on_day(root.path(), &["work".to_owned()], "20260310").is_empty());
+    }
+
+    #[test]
+    fn said_renders_the_quote_and_never_the_action() {
+        let mut state = WeeklyReflectionState {
+            start_day: "20260308".to_owned(),
+            end_day: "20260314".to_owned(),
+            today: NaiveDate::from_ymd_opt(2026, 3, 16).unwrap(),
+            generated_at: "2026-03-15T18:00:00Z".to_owned(),
+            day_reports: vec![],
+            slots: vec![],
+            all_candidates: vec![],
+            said: vec![Said {
+                day: "20260309".to_owned(),
+                facet: "work".to_owned(),
+                record_id: "meeting_1".to_owned(),
+                group: "commitments",
+                index: 0,
+                quote: "I'll get you the deck by friday".to_owned(),
+            }],
+        };
+
+        let (md, doc) = assemble_reflection(&state, "none", None, &[]).unwrap();
+        assert_eq!(
+            md,
+            "said by you\n\nmonday, march 9\n\"I'll get you the deck by friday\"\n[source](sol://facets/work/activities/20260309#meeting_1)\n"
+        );
+        let mut two = state.clone();
+        two.said.push(Said {
+            index: 1,
+            quote: "let's go with blue then".to_owned(),
+            ..state.said[0].clone()
+        });
+        let (md_two, doc_two) = assemble_reflection(&two, "none", None, &[]).unwrap();
+        // One heading per day, with that day's quotes under it.
+        assert_eq!(md_two.matches("monday, march 9").count(), 1);
+        assert!(md_two.ends_with("#meeting_1)\n\"let's go with blue then\"\n[source](sol://facets/work/activities/20260309#meeting_1)\n"));
+        let doc_two: Value = serde_json::from_str(&doc_two).unwrap();
+        assert_eq!(doc_two["said"][1]["id"], "s-20260309-1");
+        assert_ne!(doc_two["said"][0]["key"], doc_two["said"][1]["key"]);
+        let doc: Value = serde_json::from_str(&doc).unwrap();
+        assert_eq!(doc["version"], 1);
+        assert_eq!(doc["intro"], json!([]));
+        let entry = &doc["said"][0];
+        assert_eq!(entry["id"], "s-20260309-0");
+        assert_eq!(entry["quote"], "I'll get you the deck by friday");
+        assert_eq!(entry["source"]["kind"], "activity");
+        assert_eq!(
+            entry["source"]["uri"],
+            "sol://facets/work/activities/20260309#meeting_1"
+        );
+        assert_eq!(entry["key"], compute_said_key(&state.said[0]));
+        assert!(entry.get("action").is_none());
+
+        let memory = Candidate {
+            day: "20260308".to_owned(),
+            position: 0,
+            text: "A memory".to_owned(),
+            placeholder: false,
+            word_count: 2,
+        };
+        let (md, _) = assemble_reflection(
+            &state,
+            "model",
+            Some("model"),
+            std::slice::from_ref(&memory),
+        )
+        .unwrap();
+        assert!(md.starts_with("your week, a memory from one day.\n\nsunday, march 8\nA memory\n[source](sol://chronicle/20260308/talents/morning_briefing)\n\nsaid by you\n\nmonday, march 9\n"));
+
+        state.said.clear();
+        let (md, doc) = assemble_reflection(&state, "none", None, &[]).unwrap();
+        assert_eq!(md, "nothing from this week is on this page.\n");
+        assert_eq!(
+            serde_json::from_str::<Value>(&doc).unwrap()["said"],
+            json!([])
         );
     }
 
