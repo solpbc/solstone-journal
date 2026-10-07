@@ -2472,7 +2472,34 @@ function formatDateShort(dateStr) {
   return short;
 }
 
-// Get display date for entity using server-derived journal-local day (YYYYMMDD)
+function formatMentionedDate(day) {
+  const date = parseYYYYMMDD(day);
+  if (!date) {
+    return null;
+  }
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function fillLastMentionedDate(element, day) {
+  const absolute = formatMentionedDate(day);
+  const short = formatDateShort(day);
+  if (absolute) {
+    element.title = `Last mentioned: ${absolute}`;
+  }
+  element.innerHTML = '';
+  if (absolute) {
+    const hiddenSpan = document.createElement('span');
+    hiddenSpan.className = 'visually-hidden';
+    hiddenSpan.textContent = `Last mentioned: ${absolute}`;
+    element.appendChild(hiddenSpan);
+  }
+  const visibleSpan = document.createElement('span');
+  visibleSpan.setAttribute('aria-hidden', 'true');
+  visibleSpan.textContent = short || '';
+  element.appendChild(visibleSpan);
+}
+
+// Get display date for entity using server-derived journal-local source day (YYYYMMDD)
 function getEntityDisplayDate(entity) {
   if (entity.last_active_ts) {
     return formatDateShort(entity.last_active_day);
@@ -4029,7 +4056,7 @@ function renderJournalDetailView(entity) {
   const indicators = [];
   const displayDate = getEntityDisplayDate(entity);
   if (displayDate) {
-    indicators.push(`Last active: ${displayDate}`);
+    indicators.push(`Last mentioned: ${displayDate}`);
   }
   if (entity.total_observation_count > 0) {
     indicators.push(`${groupedCount(entity.total_observation_count)} mention${entity.total_observation_count !== 1 ? 's' : ''}`);
@@ -4138,7 +4165,7 @@ function renderJournalDetailView(entity) {
 
       if (facet.last_active_ts) {
         const date = document.createElement('span');
-        date.textContent = formatDateShort(facet.last_active_day);
+        fillLastMentionedDate(date, facet.last_active_day);
         meta.appendChild(date);
       }
 
@@ -5064,7 +5091,7 @@ function renderDetailView(entity, observations, detailData) {
   const indicators = [];
   const displayDate = getEntityDisplayDate(entity);
   if (displayDate) {
-    indicators.push(`Last active: ${displayDate}`);
+    indicators.push(`Last mentioned: ${displayDate}`);
   }
   if (entity.has_voiceprint) {
     indicators.push(`<span class="voiceprint-icon" aria-hidden="true">${(window.ConveyIcons?.svg('mic-vocal') || '')}</span> Has voiceprint`);
@@ -5979,12 +6006,11 @@ function createJournalEntityCard(entity) {
   nameEl.textContent = entity.name;
   card.appendChild(nameEl);
 
-  // Last active date
-  const displayDate = getEntityDisplayDate(entity);
-  if (displayDate) {
+  // Last-mentioned date
+  if (entity.last_active_ts) {
     const dateEl = document.createElement('div');
     dateEl.className = 'entity-card-date';
-    dateEl.textContent = displayDate;
+    fillLastMentionedDate(dateEl, entity.last_active_day);
     card.appendChild(dateEl);
   }
 
@@ -6128,11 +6154,10 @@ function createEntityCard(entity) {
   const meta = document.createElement('div');
   meta.className = 'entity-card-meta';
 
-  // Last-active day, derived by the server; absent when the journal has none
-  const displayDate = getEntityDisplayDate(entity);
-  if (displayDate) {
+  // Last-mentioned day, derived by the server; absent when the journal has none
+  if (entity.last_active_ts) {
     const textSpan = document.createElement('span');
-    textSpan.textContent = displayDate;
+    fillLastMentionedDate(textSpan, entity.last_active_day);
     meta.appendChild(textSpan);
   }
 

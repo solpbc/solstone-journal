@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the date on each card on the entities page is now the last day its name came up in your journal. before, a card could show the day it was added to your journal or last changed, so after an import every card could say "Today".
 - your morning briefing no longer needs another attempt when it lists too many older open follow-ups.
 - on a mac where the journal app is set up for the first time on this version or later, the solstone skill points your agent at the `solstone` command inside the journal app. before, the skill told your agent solstone wasn't installed. on a mac that's already set up, run `solstone skills install --agent all` in the journal app's "open admin terminal" window to update the skill.
 - some weeks wouldn't open, and their card on home said they couldn't be read. they open now.

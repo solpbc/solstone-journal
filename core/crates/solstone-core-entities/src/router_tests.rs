@@ -2130,13 +2130,7 @@ async fn journal_summary_carries_card_fields_without_facet_descriptions() {
     // The detached `personal` relationship keeps its dot but stays out of the
     // badge count, exactly as the full read computes it.
     assert_eq!(ada["total_observation_count"], 2);
-    assert_eq!(
-        ada["last_active_day"],
-        json!(solstone_core_entity::last_active_day_for_ts(
-            1_769_000_000_000,
-            solstone_core_journal_config::owner_zone(journal.path()),
-        ))
-    );
+    assert_eq!(ada["last_active_day"], json!("20260115"));
     // The whole point of the summary read: no facet description text rides along.
     let serialized = serde_json::to_string(&summary).expect("summary serializes");
     assert!(
@@ -2373,14 +2367,14 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
         }
     }
 
-    // Activity is the latest real signal: a link's `last_seen` day or stored
-    // timestamps, or the day its observations are about. With none, it is
-    // unknown rather than a stand-in date.
+    // Activity is the latest source day: a link's `last_seen` day or the
+    // day its observations are about. With none, it is unknown rather than
+    // a stand-in date.
     let zone = solstone_core_journal_config::owner_zone(journal.path());
     let day_start = |day| solstone_core_entity::journal_day_start_ms(day, zone).unwrap();
     let jan_1 = day_start("20260101");
+    let jan_15 = day_start("20260115");
     let jun_1 = day_start("20260601");
-    let ada_work_updated = 1_769_000_000_000i64;
     for (
         id,
         name,
@@ -2400,7 +2394,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
             false,
             false,
             2,
-            Some(ada_work_updated),
+            Some(jan_15),
             3,
         ),
         (
@@ -2529,7 +2523,8 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
     assert_eq!(work["emoji"], "");
     assert_eq!(work["description"], "");
     assert_eq!(work["last_seen"], "20260115");
-    assert_eq!(work["last_active_ts"], ada_work_updated);
+    assert_eq!(work["last_active_ts"], jan_15);
+    assert_eq!(work["last_active_day"], "20260115");
     assert_eq!(work["attached_at"], "2026-07-01");
     assert_eq!(work["updated_at"], 1_769_000_000_000i64);
     assert_eq!(work["observation_count"], 2);
@@ -3544,31 +3539,774 @@ async fn create_entity_returns_created_relationship() {
 }
 
 #[tokio::test]
-async fn a_newly_created_entity_is_last_active_today() {
+async fn a_newly_created_entity_has_null_activity_and_sorts_after_dated_entity() {
     let j = Journal::new();
-    write(j.path(), "facets/work/facet.json", json!({"title":"Work"}));
+    let root = j.path();
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
     let (status, _) = post(
-        j.path(),
+        root,
         "/app/entities/api/work",
-        json!({"type":"Person","name":"Alice"}),
+        json!({"type": "Person", "name": "Alice"}),
     )
     .await;
     assert_eq!(status, 201);
-    let today = chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(j.path()))
+
+    write(
+        root,
+        "entities/zara/entity.json",
+        json!({"id": "zara", "name": "Zara", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/zara/entity.json",
+        json!({"entity_id": "zara", "last_seen": "20260101"}),
+    );
+
+    // 1. Facet list attached card
+    let (status, facet) = call(root, "/app/entities/api/work").await;
+    assert_eq!(status, 200);
+    let card = facet["attached"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "Alice")
+        .expect("Alice card");
+    assert!(card["last_active_ts"].is_null());
+    assert!(card["last_active_day"].is_null());
+
+    // 2. Facet detail
+    let (status, detail) = call(root, "/app/entities/api/work/entity/alice").await;
+    assert_eq!(status, 200);
+    assert!(detail["entity"]["last_active_ts"].is_null());
+    assert!(detail["entity"]["last_active_day"].is_null());
+
+    // 3. Summary item
+    let (status, summary) = call(root, "/app/entities/api/journal/summary").await;
+    assert_eq!(status, 200);
+    let items = summary["items"].as_array().unwrap();
+    let alice_item = items
+        .iter()
+        .find(|i| i["name"] == "Alice")
+        .expect("Alice summary item");
+    assert!(alice_item["last_active_ts"].is_null());
+    assert!(alice_item["last_active_day"].is_null());
+    assert_eq!(items[0]["name"], "Zara");
+    assert_eq!(items[1]["name"], "Alice");
+
+    // 4. Journal record and its work facet row
+    let (status, journal) = call(root, "/app/entities/api/journal").await;
+    assert_eq!(status, 200);
+    let record = journal_record(journal["entities"].as_array().unwrap(), "alice");
+    assert!(record["last_active_ts"].is_null());
+    assert!(record["last_active_day"].is_null());
+    let work_facet = journal_facet(record, "work");
+    assert!(work_facet["last_active_ts"].is_null());
+    assert!(work_facet["last_active_day"].is_null());
+}
+
+#[tokio::test]
+async fn last_mentioned_normalizes_source_day_before_comparing() {
+    let j = Journal::new();
+    let root = j.path();
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        root,
+        "entities/ida/entity.json",
+        json!({"id": "ida", "name": "Ida", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/ida/entity.json",
+        json!({"entity_id": "ida"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/ida/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260925\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"2026-09-30\"}\n",
+    );
+    let (status, facet) = call(root, "/app/entities/api/work").await;
+    assert_eq!(status, 200);
+    assert_eq!(facet["attached"][0]["last_active_day"], "20260930");
+}
+
+#[tokio::test]
+async fn last_mentioned_drops_a_future_day_before_the_detected_scan() {
+    let j = Journal::new();
+    let root = j.path();
+    let zone = solstone_core_journal_config::owner_zone(root);
+    let now = chrono::Utc::now().with_timezone(&zone);
+    let future_day = (now.date_naive() + chrono::Duration::days(30))
+        .format("%Y%m%d")
+        .to_string();
+    let past_day = (now.date_naive() - chrono::Duration::days(10))
         .format("%Y%m%d")
         .to_string();
 
-    let (_, facet) = call(j.path(), "/app/entities/api/work").await;
-    let card = &facet["attached"][0];
-    assert_eq!(card["name"], "Alice");
-    assert!(card["last_active_ts"].as_i64().is_some());
-    assert_eq!(card["last_active_day"], today);
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
 
-    let (_, journal) = call(j.path(), "/app/entities/api/journal").await;
-    let record = journal_record(journal["entities"].as_array().unwrap(), "alice");
-    assert_eq!(record["last_active_day"], today);
-    assert_eq!(journal_facet(record, "work")["last_active_day"], today);
+    // Link 1: source_day = future_day alone
+    write(
+        root,
+        "entities/future_only/entity.json",
+        json!({"id": "future_only", "name": "Future Only", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/future_only/entity.json",
+        json!({"entity_id": "future_only"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/future_only/observations.jsonl",
+        format!("{{\"id\":1,\"content\":\"a\",\"source_day\":\"{future_day}\"}}\n").as_bytes(),
+    );
+
+    // Link 2: last_seen = future_day, but detected file past_day
+    write(
+        root,
+        "entities/future_last_seen/entity.json",
+        json!({"id": "future_last_seen", "name": "Future Last Seen", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/future_last_seen/entity.json",
+        json!({"entity_id": "future_last_seen", "last_seen": future_day}),
+    );
+    write_raw(
+        root,
+        &format!("facets/work/entities/{past_day}.jsonl"),
+        b"{\"id\":\"future_last_seen\",\"name\":\"Future Last Seen\",\"type\":\"Person\"}\n",
+    );
+
+    let (status, facet) = call(root, "/app/entities/api/work").await;
+    assert_eq!(status, 200);
+    let attached = facet["attached"].as_array().unwrap();
+    let l1 = attached.iter().find(|c| c["id"] == "future_only").unwrap();
+    assert!(l1["last_active_ts"].is_null());
+    assert!(l1["last_active_day"].is_null());
+
+    let l2 = attached
+        .iter()
+        .find(|c| c["id"] == "future_last_seen")
+        .unwrap();
+    assert_eq!(l2["last_active_day"], past_day);
+}
+
+#[tokio::test]
+async fn last_mentioned_uses_the_later_detected_file_and_three_id_equalities() {
+    let j = Journal::new();
+    let root = j.path();
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+
+    // Link 1: dir_one / entity dir: dir_one / entity id: ident_one
+    write(
+        root,
+        "entities/dir_one/entity.json",
+        json!({"id": "ident_one", "name": "One", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/rel_one/entity.json",
+        json!({"entity_id": "ident_one"}),
+    );
+
+    // Link 2: dir_two / entity dir: dir_two / entity id: ident_two
+    write(
+        root,
+        "entities/dir_two/entity.json",
+        json!({"id": "ident_two", "name": "Two", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/rel_two/entity.json",
+        json!({"entity_id": "ident_two"}),
+    );
+
+    // Link 3: dir_three / entity dir: dir_three / entity id: ident_three
+    write(
+        root,
+        "entities/dir_three/entity.json",
+        json!({"id": "ident_three", "name": "Three", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/rel_three/entity.json",
+        json!({"entity_id": "ident_three"}),
+    );
+
+    // Day files:
+    // 20260105 (earlier for link 1 - row id matches rel_one)
+    write_raw(
+        root,
+        "facets/work/entities/20260105.jsonl",
+        b"{\"id\":\"rel_one\",\"name\":\"One\",\"type\":\"Person\"}\n",
+    );
+    // 20260110 (later for link 1 - row id matches rel_one, with type Company)
+    write_raw(
+        root,
+        "facets/work/entities/20260110.jsonl",
+        b"{\"id\":\"rel_one\",\"name\":\"One\",\"type\":\"Company\"}\n",
+    );
+    // 20260115 (for link 2 - row id matches entity_dir "dir_two")
+    write_raw(
+        root,
+        "facets/work/entities/20260115.jsonl",
+        b"{\"id\":\"dir_two\",\"name\":\"Two\",\"type\":\"Person\"}\n",
+    );
+    // 20260120 (for link 3 - row id matches entity_id "ident_three")
+    write_raw(
+        root,
+        "facets/work/entities/20260120.jsonl",
+        b"{\"id\":\"ident_three\",\"name\":\"Three\",\"type\":\"Person\"}\n",
+    );
+    // 20260125 (newer file, matches nothing)
+    write_raw(
+        root,
+        "facets/work/entities/20260125.jsonl",
+        b"{\"id\":\"unrelated\",\"name\":\"Unrelated\",\"type\":\"Person\"}\n",
+    );
+
+    let (status, facet) = call(root, "/app/entities/api/work").await;
+    assert_eq!(status, 200);
+    let attached = facet["attached"].as_array().unwrap();
+
+    let l1 = attached.iter().find(|c| c["name"] == "One").unwrap();
+    assert_eq!(l1["last_active_day"], "20260110");
+
+    let l2 = attached.iter().find(|c| c["name"] == "Two").unwrap();
+    assert_eq!(l2["last_active_day"], "20260115");
+
+    let l3 = attached.iter().find(|c| c["name"] == "Three").unwrap();
+    assert_eq!(l3["last_active_day"], "20260120");
+}
+
+#[tokio::test]
+async fn last_mentioned_does_not_cross_facets() {
+    let j = Journal::new();
+    let root = j.path();
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        root,
+        "facets/personal/facet.json",
+        json!({"title": "Personal"}),
+    );
+
+    // Entity 1: e1 attached in work and personal. Detected in work on 20260501.
+    write(
+        root,
+        "entities/e1/entity.json",
+        json!({"id": "e1", "name": "E One", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/e1/entity.json",
+        json!({"entity_id": "e1"}),
+    );
+    write(
+        root,
+        "facets/personal/entities/e1/entity.json",
+        json!({"entity_id": "e1"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/20260501.jsonl",
+        b"{\"id\":\"e1\",\"name\":\"E One\",\"type\":\"Person\"}\n",
+    );
+
+    // Entity 2: e2 identity last_seen 20260901, work obs source_day 20260801, personal no sources
+    write(
+        root,
+        "entities/e2/entity.json",
+        json!({"id": "e2", "name": "E Two", "type": "Person", "last_seen": "20260901"}),
+    );
+    write(
+        root,
+        "facets/work/entities/e2/entity.json",
+        json!({"entity_id": "e2"}),
+    );
+    write(
+        root,
+        "facets/personal/entities/e2/entity.json",
+        json!({"entity_id": "e2"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/e2/observations.jsonl",
+        b"{\"id\":1,\"content\":\"seen\",\"source_day\":\"20260801\"}\n",
+    );
+
+    let (status, journal) = call(root, "/app/entities/api/journal").await;
+    assert_eq!(status, 200);
+    let records = journal["entities"].as_array().unwrap();
+
+    let r1 = journal_record(records, "e1");
+    assert_eq!(r1["last_active_day"], "20260501");
+    assert_eq!(journal_facet(r1, "work")["last_active_day"], "20260501");
+    assert!(journal_facet(r1, "personal")["last_active_day"].is_null());
+
+    let r2 = journal_record(records, "e2");
+    assert_eq!(r2["last_active_day"], "20260901");
+    assert_eq!(journal_facet(r2, "work")["last_active_day"], "20260801");
+    assert!(journal_facet(r2, "personal")["last_active_day"].is_null());
+}
+
+#[tokio::test]
+async fn last_mentioned_dates_a_detached_row_without_the_journal_record() {
+    let j = Journal::new();
+    let root = j.path();
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        root,
+        "entities/e1/entity.json",
+        json!({"id": "e1", "name": "E One", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/e1/entity.json",
+        json!({"entity_id": "e1", "detached": true, "last_seen": "20260101"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/20260301.jsonl",
+        b"{\"id\":\"e1\",\"name\":\"E One\",\"type\":\"Person\"}\n",
+    );
+
+    let (status, journal) = call(root, "/app/entities/api/journal").await;
+    assert_eq!(status, 200);
+    let records = journal["entities"].as_array().unwrap();
+    let r1 = journal_record(records, "e1");
+    assert!(r1["last_active_ts"].is_null());
+    assert!(r1["last_active_day"].is_null());
+    let work = journal_facet(r1, "work");
+    assert_eq!(work["last_active_day"], "20260301");
+}
+
+#[tokio::test]
+async fn last_mentioned_counts_a_slug_id_only_when_the_row_has_no_id() {
+    let j = Journal::new();
+    let root = j.path();
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        root,
+        "entities/juliet/entity.json",
+        json!({"id": "juliet", "name": "Juliet", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/juliet/entity.json",
+        json!({"entity_id": "juliet"}),
+    );
+
+    // Newer file has id "someone_else" and name "Juliet" -> must NOT match juliet
+    write_raw(
+        root,
+        "facets/work/entities/20260510.jsonl",
+        b"{\"id\":\"someone_else\",\"name\":\"Juliet\",\"type\":\"Person\"}\n",
+    );
+    // Older file has no id and name "Juliet" -> reader produces slug "juliet" -> matches juliet
+    write_raw(
+        root,
+        "facets/work/entities/20260501.jsonl",
+        b"{\"name\":\"Juliet\",\"type\":\"Person\"}\n",
+    );
+
+    let (status, facet) = call(root, "/app/entities/api/work").await;
+    assert_eq!(status, 200);
+    let card = &facet["attached"][0];
+    assert_eq!(card["last_active_day"], "20260501");
+}
+
+#[tokio::test]
+async fn last_mentioned_picks_the_latest_of_the_three_sources() {
+    let j = Journal::new();
+    let root = j.path();
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+
+    // Link 1: last_seen wins (20260601 vs obs 20260401 vs detected 20260201)
+    write(
+        root,
+        "entities/e1/entity.json",
+        json!({"id": "e1", "name": "E One", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/e1/entity.json",
+        json!({"entity_id": "e1", "last_seen": "20260601"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/e1/observations.jsonl",
+        b"{\"id\":1,\"content\":\"seen\",\"source_day\":\"20260401\"}\n",
+    );
+
+    // Link 2: observation source_day wins (obs 20260701 vs last_seen 20260301 vs detected 20260201)
+    write(
+        root,
+        "entities/e2/entity.json",
+        json!({"id": "e2", "name": "E Two", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/e2/entity.json",
+        json!({"entity_id": "e2", "last_seen": "20260301"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/e2/observations.jsonl",
+        b"{\"id\":1,\"content\":\"seen\",\"source_day\":\"20260701\"}\n",
+    );
+
+    // Link 3: detected day wins (detected 20260801 vs last_seen 20260301 vs obs 20260401)
+    write(
+        root,
+        "entities/e3/entity.json",
+        json!({"id": "e3", "name": "E Three", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/e3/entity.json",
+        json!({"entity_id": "e3", "last_seen": "20260301"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/e3/observations.jsonl",
+        b"{\"id\":1,\"content\":\"seen\",\"source_day\":\"20260401\"}\n",
+    );
+
+    // Detected day files
+    write_raw(
+        root,
+        "facets/work/entities/20260201.jsonl",
+        b"{\"id\":\"e1\",\"name\":\"E One\",\"type\":\"Person\"}\n{\"id\":\"e2\",\"name\":\"E Two\",\"type\":\"Person\"}\n",
+    );
+    write_raw(
+        root,
+        "facets/work/entities/20260801.jsonl",
+        b"{\"id\":\"e3\",\"name\":\"E Three\",\"type\":\"Person\"}\n",
+    );
+
+    let (status, facet) = call(root, "/app/entities/api/work").await;
+    assert_eq!(status, 200);
+    let attached = facet["attached"].as_array().unwrap();
+
+    let l1 = attached.iter().find(|c| c["id"] == "e1").unwrap();
+    assert_eq!(l1["last_active_day"], "20260601");
+
+    let l2 = attached.iter().find(|c| c["id"] == "e2").unwrap();
+    assert_eq!(l2["last_active_day"], "20260701");
+
+    let l3 = attached.iter().find(|c| c["id"] == "e3").unwrap();
+    assert_eq!(l3["last_active_day"], "20260801");
+}
+
+#[tokio::test]
+async fn last_mentioned_skips_an_unreadable_day_file_outside_the_review_window() {
+    let j = Journal::new();
+    let root = j.path();
+    let zone = solstone_core_journal_config::owner_zone(root);
+    let now = chrono::Utc::now().with_timezone(&zone);
+    let bad_day = (now.date_naive() - chrono::Duration::days(35))
+        .format("%Y%m%d")
+        .to_string();
+    let good_day = (now.date_naive() - chrono::Duration::days(40))
+        .format("%Y%m%d")
+        .to_string();
+    let obs_day = (now.date_naive() - chrono::Duration::days(50))
+        .format("%Y%m%d")
+        .to_string();
+    let last_seen_day = (now.date_naive() - chrono::Duration::days(60))
+        .format("%Y%m%d")
+        .to_string();
+
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+
+    // Link 1: only in detected files
+    write(
+        root,
+        "entities/e1/entity.json",
+        json!({"id": "e1", "name": "E One", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/e1/entity.json",
+        json!({"entity_id": "e1"}),
+    );
+
+    // Link 2: observation source_day
+    write(
+        root,
+        "entities/e2/entity.json",
+        json!({"id": "e2", "name": "E Two", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/e2/entity.json",
+        json!({"entity_id": "e2"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/e2/observations.jsonl",
+        format!("{{\"id\":1,\"content\":\"seen\",\"source_day\":\"{obs_day}\"}}\n").as_bytes(),
+    );
+
+    // Link 3: last_seen
+    write(
+        root,
+        "entities/e3/entity.json",
+        json!({"id": "e3", "name": "E Three", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/e3/entity.json",
+        json!({"entity_id": "e3", "last_seen": last_seen_day.clone()}),
+    );
+
+    // Detected day files: bad_day is unreadable UTF-8
+    write_raw(
+        root,
+        &format!("facets/work/entities/{bad_day}.jsonl"),
+        &[0xff, 0xfe],
+    );
+    write_raw(
+        root,
+        &format!("facets/work/entities/{good_day}.jsonl"),
+        b"{\"id\":\"e1\",\"name\":\"E One\",\"type\":\"Person\"}\n",
+    );
+
+    // Facet list
+    let (status, facet) = call(root, "/app/entities/api/work").await;
+    assert_eq!(status, 200);
+    let attached = facet["attached"].as_array().unwrap();
+    assert_eq!(
+        attached.iter().find(|c| c["id"] == "e1").unwrap()["last_active_day"],
+        good_day
+    );
+    assert_eq!(
+        attached.iter().find(|c| c["id"] == "e2").unwrap()["last_active_day"],
+        obs_day
+    );
+    assert_eq!(
+        attached.iter().find(|c| c["id"] == "e3").unwrap()["last_active_day"],
+        last_seen_day
+    );
+
+    // Facet detail for e1
+    let (status, detail) = call(root, "/app/entities/api/work/entity/e1").await;
+    assert_eq!(status, 200);
+    assert_eq!(detail["entity"]["last_active_day"], good_day);
+
+    // Summary
+    let (status, summary) = call(root, "/app/entities/api/journal/summary").await;
+    assert_eq!(status, 200);
+    let items = summary["items"].as_array().unwrap();
+    assert_eq!(
+        items.iter().find(|i| i["id"] == "e1").unwrap()["last_active_day"],
+        good_day
+    );
+}
+
+#[tokio::test]
+async fn last_mentioned_uses_the_source_day_when_record_timestamps_are_today() {
+    let j = Journal::new();
+    let root = j.path();
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+
+    let now = chrono::Utc::now();
+    let now_ms = now.timestamp_millis();
+    let zone = solstone_core_journal_config::owner_zone(root);
+    let five_days_ago = (now.with_timezone(&zone).date_naive() - chrono::Duration::days(5))
+        .format("%Y%m%d")
+        .to_string();
+
+    write(
+        root,
+        "entities/ida/entity.json",
+        json!({"id": "ida", "name": "Ida", "type": "Person", "created_at": now_ms}),
+    );
+    write(
+        root,
+        "facets/work/entities/ida/entity.json",
+        json!({"entity_id": "ida", "attached_at": now_ms, "updated_at": now_ms}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/ida/observations.jsonl",
+        format!("{{\"id\":1,\"content\":\"seen\",\"source_day\":\"{five_days_ago}\"}}\n")
+            .as_bytes(),
+    );
+
+    // 1. GET /app/entities/api/work -> attached card
+    let (status, facet) = call(root, "/app/entities/api/work").await;
+    assert_eq!(status, 200);
+    let card = &facet["attached"][0];
+    assert_eq!(card["name"], "Ida");
+    assert_eq!(card["last_active_day"], five_days_ago);
+
+    // 2. GET /app/entities/api/work/entity/ida -> entity
+    let (status, detail) = call(root, "/app/entities/api/work/entity/ida").await;
+    assert_eq!(status, 200);
+    assert_eq!(detail["entity"]["last_active_day"], five_days_ago);
+
+    // 3. GET /app/entities/api/journal/summary -> summary item
+    let (status, summary) = call(root, "/app/entities/api/journal/summary").await;
+    assert_eq!(status, 200);
+    assert_eq!(summary["items"][0]["last_active_day"], five_days_ago);
+
+    // 4. GET /app/entities/api/journal -> record and work facet row
+    let (status, journal) = call(root, "/app/entities/api/journal").await;
+    assert_eq!(status, 200);
+    let record = journal_record(journal["entities"].as_array().unwrap(), "ida");
+    assert_eq!(record["last_active_day"], five_days_ago);
+    assert_eq!(
+        journal_facet(record, "work")["last_active_day"],
+        five_days_ago
+    );
+
+    // 5. GET /app/entities/api/journal/entity/ida -> entity and work facet row
+    let (status, journal_entity) = call(root, "/app/entities/api/journal/entity/ida").await;
+    assert_eq!(status, 200);
+    let entity = &journal_entity["entity"];
+    assert_eq!(entity["last_active_day"], five_days_ago);
+    assert_eq!(
+        journal_facet(entity, "work")["last_active_day"],
+        five_days_ago
+    );
+}
+
+#[tokio::test]
+async fn last_mentioned_is_null_when_the_observation_has_no_source_day() {
+    let j = Journal::new();
+    let root = j.path();
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+
+    write(
+        root,
+        "entities/nora/entity.json",
+        json!({"id": "nora", "name": "Nora", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/nora/entity.json",
+        json!({"entity_id": "nora"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/nora/observations.jsonl",
+        format!("{{\"id\":1,\"content\":\"seen\",\"observed_at\":{now_ms}}}\n").as_bytes(),
+    );
+
+    write(
+        root,
+        "entities/gus/entity.json",
+        json!({"id": "gus", "name": "Gus", "type": "Person"}),
+    );
+    write(
+        root,
+        "facets/work/entities/gus/entity.json",
+        json!({"entity_id": "gus"}),
+    );
+    write_raw(
+        root,
+        "facets/work/entities/gus/observations.jsonl",
+        format!("{{\"id\":1,\"content\":\"seen\",\"source_day\":\"garbage\",\"observed_at\":{now_ms}}}\n").as_bytes(),
+    );
+
+    for id in ["nora", "gus"] {
+        // 1. GET /app/entities/api/work -> attached card
+        let (status, facet) = call(root, "/app/entities/api/work").await;
+        assert_eq!(status, 200);
+        let card = facet["attached"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == id)
+            .unwrap_or_else(|| panic!("missing attached card {id}"));
+        assert!(
+            card["last_active_ts"].is_null(),
+            "card last_active_ts for {id}"
+        );
+        assert!(
+            card["last_active_day"].is_null(),
+            "card last_active_day for {id}"
+        );
+
+        // 2. GET /app/entities/api/work/entity/<id> -> entity
+        let (status, detail) = call(root, &format!("/app/entities/api/work/entity/{id}")).await;
+        assert_eq!(status, 200);
+        assert!(
+            detail["entity"]["last_active_ts"].is_null(),
+            "detail last_active_ts for {id}"
+        );
+        assert!(
+            detail["entity"]["last_active_day"].is_null(),
+            "detail last_active_day for {id}"
+        );
+
+        // 3. GET /app/entities/api/journal/summary -> summary item
+        let (status, summary) = call(root, "/app/entities/api/journal/summary").await;
+        assert_eq!(status, 200);
+        let item = summary["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["id"] == id)
+            .unwrap_or_else(|| panic!("missing summary item {id}"));
+        assert!(
+            item["last_active_ts"].is_null(),
+            "summary last_active_ts for {id}"
+        );
+        assert!(
+            item["last_active_day"].is_null(),
+            "summary last_active_day for {id}"
+        );
+
+        // 4. GET /app/entities/api/journal -> record and work facet row
+        let (status, journal) = call(root, "/app/entities/api/journal").await;
+        assert_eq!(status, 200);
+        let record = journal_record(journal["entities"].as_array().unwrap(), id);
+        assert!(
+            record["last_active_ts"].is_null(),
+            "journal record last_active_ts for {id}"
+        );
+        assert!(
+            record["last_active_day"].is_null(),
+            "journal record last_active_day for {id}"
+        );
+        let work_facet = journal_facet(record, "work");
+        assert!(
+            work_facet["last_active_ts"].is_null(),
+            "journal facet last_active_ts for {id}"
+        );
+        assert!(
+            work_facet["last_active_day"].is_null(),
+            "journal facet last_active_day for {id}"
+        );
+
+        // 5. GET /app/entities/api/journal/entity/<id> -> entity and work facet row
+        let (status, journal_entity) =
+            call(root, &format!("/app/entities/api/journal/entity/{id}")).await;
+        assert_eq!(status, 200);
+        let entity = &journal_entity["entity"];
+        assert!(
+            entity["last_active_ts"].is_null(),
+            "journal entity last_active_ts for {id}"
+        );
+        assert!(
+            entity["last_active_day"].is_null(),
+            "journal entity last_active_day for {id}"
+        );
+        let work_facet = journal_facet(entity, "work");
+        assert!(
+            work_facet["last_active_ts"].is_null(),
+            "journal entity work facet last_active_ts for {id}"
+        );
+        assert!(
+            work_facet["last_active_day"].is_null(),
+            "journal entity work facet last_active_day for {id}"
+        );
+    }
 }
 
 #[tokio::test]

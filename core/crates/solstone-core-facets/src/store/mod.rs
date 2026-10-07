@@ -59,12 +59,12 @@ pub use detected_entities::{
     read_detected_entities_strict, save_detected_entity, update_detected_entity,
     upsert_detection_segment,
 };
+pub use detected_entity_activity::{
+    DetectedLinkRef, iter_detected_entity_names_since, iter_detected_entity_names_since_strict,
+    load_detected_entities_recent, load_detected_link_days, read_detected_entity_names_strict,
+};
 #[cfg(all(test, feature = "full-tests"))]
 pub(crate) use detected_entity_activity::{cutoff_day, exclusion_tier};
-pub use detected_entity_activity::{
-    iter_detected_entity_names_since, iter_detected_entity_names_since_strict,
-    load_detected_entities_recent, read_detected_entity_names_strict,
-};
 pub use error::{
     FacetEntityWriteError, FacetIdError, FacetIdResolveError, FacetStoreError, FacetWriteError,
 };

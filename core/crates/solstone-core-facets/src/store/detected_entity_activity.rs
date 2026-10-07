@@ -356,6 +356,76 @@ pub(crate) fn detected_days(
     Ok(days)
 }
 
+/// Reference to an entity link in a facet for detected activity lookup.
+pub struct DetectedLinkRef<'a> {
+    pub relationship_dir: &'a str,
+    pub entity_dir: &'a str,
+    pub entity_id: &'a str,
+    /// Best YYYYMMDD already known from last_seen and source_day.
+    /// Caller has already dropped days later than today.
+    pub established_day: Option<&'a str>,
+}
+
+/// Look up detected activity days for entity links in one facet.
+pub fn load_detected_link_days(
+    journal_root: &Path,
+    facet_dir: &str,
+    links: &[DetectedLinkRef<'_>],
+    today: &str,
+) -> Result<HashMap<String, String>, FacetEntityWriteError> {
+    if links.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let days = detected_days(journal_root, facet_dir)?;
+    if days.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut detected: HashMap<String, String> = HashMap::new();
+
+    for stem in days.iter().rev() {
+        if stem.as_str() > today {
+            continue;
+        }
+
+        let all_resolved = links.iter().all(|link| {
+            detected.contains_key(link.relationship_dir)
+                || link.established_day.is_some_and(|est| est >= stem.as_str())
+        });
+        if all_resolved {
+            break;
+        }
+
+        let rows = match read_detected_entities(journal_root, facet_dir, stem) {
+            Ok(rows) => rows,
+            Err(error) => {
+                log::warn!(
+                    "skipped unreadable detected-entity day file facet={facet_dir} day={stem}: {error}"
+                );
+                continue;
+            }
+        };
+
+        for row in &rows {
+            let Some(id) = row.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            for link in links {
+                if !detected.contains_key(link.relationship_dir)
+                    && (id == link.relationship_dir
+                        || id == link.entity_dir
+                        || id == link.entity_id)
+                {
+                    detected.insert(link.relationship_dir.to_owned(), stem.clone());
+                }
+            }
+        }
+    }
+
+    Ok(detected)
+}
+
 fn string_values(value: Option<&Value>) -> Vec<String> {
     value
         .and_then(Value::as_array)
@@ -493,5 +563,72 @@ mod suppression_tests {
     #[test]
     fn no_match_does_not_suppress() {
         assert!(!suppresses_detection(&EntityNameMatchOutcome::NoMatch));
+    }
+
+    #[test]
+    fn load_detected_link_days_warns_once_for_an_unreadable_file() {
+        use std::sync::Mutex;
+        use std::sync::Once;
+
+        static WARN_MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+        static INIT: Once = Once::new();
+
+        struct TestLogger;
+        impl log::Log for TestLogger {
+            fn enabled(&self, metadata: &log::Metadata) -> bool {
+                metadata.level() <= log::Level::Warn
+            }
+            fn log(&self, record: &log::Record) {
+                if record.level() == log::Level::Warn {
+                    if let Ok(mut msgs) = WARN_MESSAGES.lock() {
+                        msgs.push(record.args().to_string());
+                    }
+                }
+            }
+            fn flush(&self) {}
+        }
+
+        INIT.call_once(|| {
+            let _ = log::set_logger(&TestLogger);
+            log::set_max_level(log::LevelFilter::Warn);
+        });
+
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        let facet = "work";
+        let entities_dir = root.join(format!("facets/{facet}/entities"));
+        std::fs::create_dir_all(&entities_dir).unwrap();
+
+        let bad_day = "20260920";
+        let good_day = "20260910";
+        let today = "20260930";
+
+        std::fs::write(entities_dir.join(format!("{bad_day}.jsonl")), [0xff, 0xfe]).unwrap();
+        std::fs::write(
+            entities_dir.join(format!("{good_day}.jsonl")),
+            b"{\"id\":\"ida\",\"name\":\"Ida\",\"type\":\"Person\"}\n",
+        )
+        .unwrap();
+
+        let links = [super::DetectedLinkRef {
+            relationship_dir: "ida",
+            entity_dir: "ida",
+            entity_id: "ida",
+            established_day: None,
+        }];
+
+        if let Ok(mut msgs) = WARN_MESSAGES.lock() {
+            msgs.clear();
+        }
+
+        let result = super::load_detected_link_days(root, facet, &links, today).unwrap();
+        assert_eq!(result.get("ida").map(String::as_str), Some(good_day));
+
+        let msgs = WARN_MESSAGES.lock().unwrap();
+        let matching_warns = msgs
+            .iter()
+            .filter(|msg| msg.contains(facet) && msg.contains(bad_day))
+            .count();
+        assert_eq!(matching_warns, 1);
     }
 }

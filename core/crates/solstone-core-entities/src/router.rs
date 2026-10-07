@@ -65,23 +65,37 @@ fn has_voiceprint_in_entity_dir(journal_root: &Path, entity_dir: &str) -> bool {
         .is_ok_and(|path| path.exists())
 }
 
-/// When an entity was last active in one facet: the later of its facet link's
-/// own activity and the latest day its observations there are about, else
-/// its identity record's.
+fn valid_last_seen_day(relationship: &Value) -> Option<&str> {
+    let last_seen = relationship.get("last_seen")?.as_str()?;
+    (last_seen.len() == 8 && chrono::NaiveDate::parse_from_str(last_seen, "%Y%m%d").is_ok())
+        .then_some(last_seen)
+}
+
+fn link_established_day<'a>(
+    relationship: &'a Value,
+    observations: Option<&'a solstone_core_facets::ObservationSummary>,
+    today: &str,
+) -> Option<&'a str> {
+    let last_seen = valid_last_seen_day(relationship).filter(|&day| day <= today);
+    let source_day = observations
+        .and_then(|summary| summary.latest_source_day.as_deref())
+        .filter(|&day| day <= today);
+    last_seen.into_iter().chain(source_day).max()
+}
+
+/// When an entity was last active in one facet: the latest source day its name
+/// came up in your journal (via last seen, observation source day, or detected
+/// mentions on or before today), not a record timestamp.
 fn scoped_activity_ts(
     relationship: &Value,
     observations: Option<&solstone_core_facets::ObservationSummary>,
-    identity: &Value,
+    detected_day: Option<&str>,
+    today: &str,
     zone: chrono_tz::Tz,
 ) -> Option<i64> {
-    let observed = observations
-        .and_then(|summary| summary.latest_day.as_deref())
-        .and_then(|day| solstone_core_entity::journal_day_start_ms(day, zone));
-    solstone_core_entity::entity_last_active_ts(relationship, zone)
-        .into_iter()
-        .chain(observed)
-        .max()
-        .or_else(|| solstone_core_entity::entity_last_active_ts(identity, zone))
+    let established = link_established_day(relationship, observations, today);
+    let best_day = established.into_iter().chain(detected_day).max()?;
+    solstone_core_entity::journal_day_start_ms(best_day, zone)
 }
 
 /// Fields a facet link holds about its entity in that facet.
@@ -105,7 +119,7 @@ fn insert_link_fields(object: &mut serde_json::Map<String, Value>, relationship:
 }
 
 /// Record an activity timestamp and its journal-local day, both `null` when
-/// the journal has no activity for the entity.
+/// the journal has no source day for the entity on or before today.
 fn insert_activity(
     object: &mut serde_json::Map<String, Value>,
     activity_ts: Option<i64>,
@@ -1091,15 +1105,43 @@ async fn facet_route(
     let k = q.include_blocked.as_deref() == Some("true");
     match solstone_core_serving::seam::run_blocking(move || {
         let entities = solstone_core_facets::list_scoped_facet_entities(&root, &f, d, k)?;
-        let mut attached = Vec::new();
         let zone = solstone_core_journal_config::owner_zone(&root);
-        for entity in entities {
-            let summary =
-                solstone_core_facets::observation_summary(&root, &f, &entity.relationship_dir).ok();
+        let today = chrono::Utc::now()
+            .with_timezone(&zone)
+            .format("%Y%m%d")
+            .to_string();
+        let summaries: Vec<_> = entities
+            .iter()
+            .map(|entity| {
+                solstone_core_facets::observation_summary(&root, &f, &entity.relationship_dir).ok()
+            })
+            .collect();
+        let link_refs: Vec<_> = entities
+            .iter()
+            .zip(&summaries)
+            .map(|(entity, summary)| {
+                let established_day =
+                    link_established_day(&entity.relationship, summary.as_ref(), &today);
+                solstone_core_facets::DetectedLinkRef {
+                    relationship_dir: &entity.relationship_dir,
+                    entity_dir: &entity.entity_dir,
+                    entity_id: &entity.entity_id,
+                    established_day,
+                }
+            })
+            .collect();
+        let detected_days =
+            solstone_core_facets::load_detected_link_days(&root, &f, &link_refs, &today)?;
+        let mut attached = Vec::new();
+        for (entity, summary) in entities.into_iter().zip(summaries) {
+            let detected_day = detected_days
+                .get(&entity.relationship_dir)
+                .map(String::as_str);
             let activity_ts = scoped_activity_ts(
                 &entity.relationship,
                 summary.as_ref(),
-                &entity.identity,
+                detected_day,
+                &today,
                 zone,
             );
             let voiceprint = has_voiceprint_in_entity_dir(&root, &entity.entity_dir);
@@ -2069,6 +2111,10 @@ fn assemble_journal_entity_records(
     let groups = solstone_core_entity::read_identity_group_map(root)?;
     let mut records = Vec::new();
     let zone = solstone_core_journal_config::owner_zone(root);
+    let today = chrono::Utc::now()
+        .with_timezone(&zone)
+        .format("%Y%m%d")
+        .to_string();
     for entity_dir in groups.groups.into_values().flatten() {
         if only.is_some_and(|requested| requested != entity_dir.as_str()) {
             continue;
@@ -2078,6 +2124,9 @@ fn assemble_journal_entity_records(
             Ok(None) | Err(_) => continue,
         };
         let value = identity.value();
+        let identity_last_seen_ts = valid_last_seen_day(value)
+            .filter(|&day| day <= today.as_str())
+            .and_then(|day| solstone_core_entity::journal_day_start_ms(day, zone));
         records.push(json!({
             "id": entity_dir,
             "name": value.get("name").cloned().unwrap_or_else(|| json!("")),
@@ -2087,7 +2136,7 @@ fn assemble_journal_entity_records(
             "blocked": value.get("blocked").cloned().unwrap_or_else(|| json!(false)),
             "facets": [],
             "total_observation_count": 0,
-            "last_active_ts": solstone_core_entity::entity_last_active_ts(value, zone),
+            "last_active_ts": identity_last_seen_ts,
         }));
     }
 
@@ -2120,22 +2169,47 @@ fn assemble_journal_entity_records(
             .get("emoji")
             .and_then(Value::as_str)
             .unwrap_or("");
-        for scoped in
-            solstone_core_facets::list_scoped_facet_entities_tolerant(root, &facet_dir, true, true)?
-        {
+        let scoped_entities = solstone_core_facets::list_scoped_facet_entities_tolerant(
+            root, &facet_dir, true, true,
+        )?;
+        let summaries: Vec<_> = scoped_entities
+            .iter()
+            .map(|scoped| {
+                solstone_core_facets::observation_summary(
+                    root,
+                    &facet_dir,
+                    &scoped.relationship_dir,
+                )
+                .ok()
+            })
+            .collect();
+        let link_refs: Vec<_> = scoped_entities
+            .iter()
+            .zip(&summaries)
+            .map(|(scoped, summary)| {
+                let established_day =
+                    link_established_day(&scoped.relationship, summary.as_ref(), &today);
+                solstone_core_facets::DetectedLinkRef {
+                    relationship_dir: &scoped.relationship_dir,
+                    entity_dir: &scoped.entity_dir,
+                    entity_id: &scoped.entity_id,
+                    established_day,
+                }
+            })
+            .collect();
+        let detected_days =
+            solstone_core_facets::load_detected_link_days(root, &facet_dir, &link_refs, &today)?;
+        for (scoped, summary) in scoped_entities.into_iter().zip(summaries) {
             let Some(&record_index) = record_indexes.get(&scoped.entity_dir) else {
                 continue;
             };
-            let summary = solstone_core_facets::observation_summary(
-                root,
-                &facet_dir,
-                &scoped.relationship_dir,
-            )
-            .ok();
             let observation_count = json!(summary.as_ref().map(|summary| summary.count));
             let relationship = &scoped.relationship;
+            let detected_day = detected_days
+                .get(&scoped.relationship_dir)
+                .map(String::as_str);
             let activity_ts =
-                scoped_activity_ts(relationship, summary.as_ref(), &scoped.identity, zone);
+                scoped_activity_ts(relationship, summary.as_ref(), detected_day, &today, zone);
             let mut facet = json!({
                 "name": facet_dir,
                 "title": title,
@@ -2181,7 +2255,11 @@ fn assemble_journal_entity_records(
             .get(entity_dir)
             .copied()
             .unwrap_or((0, false, None));
-        let activity_ts = facet_activity_ts.or_else(|| record["last_active_ts"].as_i64());
+        let identity_last_seen_ts = record["last_active_ts"].as_i64();
+        let activity_ts = facet_activity_ts
+            .into_iter()
+            .chain(identity_last_seen_ts)
+            .max();
         let facets = record["facets"]
             .as_array_mut()
             .expect("entity record has facets");
@@ -4680,9 +4758,35 @@ async fn entity_detail_route(
                 },
             );
             let zone = solstone_core_journal_config::owner_zone(&root);
+            let today = chrono::Utc::now()
+                .with_timezone(&zone)
+                .format("%Y%m%d")
+                .to_string();
             let summary =
                 solstone_core_facets::observation_summary(&root, &facet, &row.relationship_dir).ok();
-            let activity_ts = scoped_activity_ts(&row.relationship, summary.as_ref(), &row.identity, zone);
+            let established_day =
+                link_established_day(&row.relationship, summary.as_ref(), &today);
+            let link_ref = solstone_core_facets::DetectedLinkRef {
+                relationship_dir: &row.relationship_dir,
+                entity_dir: &row.entity_dir,
+                entity_id: &row.entity_id,
+                established_day,
+            };
+            let detected_days = solstone_core_facets::load_detected_link_days(
+                &root,
+                &facet,
+                &[link_ref],
+                &today,
+            )
+            .map_err(|error| error.to_string())?;
+            let detected_day = detected_days.get(&row.relationship_dir).map(String::as_str);
+            let activity_ts = scoped_activity_ts(
+                &row.relationship,
+                summary.as_ref(),
+                detected_day,
+                &today,
+                zone,
+            );
             let mut entity = row.identity;
             let voiceprint = has_voiceprint_in_entity_dir(&root, &row.entity_dir);
             let object = entity.as_object_mut().expect("identity reader returns objects");
