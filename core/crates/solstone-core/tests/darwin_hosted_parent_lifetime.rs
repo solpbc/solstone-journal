@@ -28,6 +28,8 @@ use solstone_core_system::process::{
 
 #[path = "support/installation_binding.rs"]
 mod installation_binding;
+#[path = "support/speakers_analyze_stub.rs"]
+mod speakers_analyze_stub;
 
 const DEADLINE: Duration = Duration::from_secs(15);
 
@@ -268,7 +270,8 @@ fn start_hosted_supervisor(
     let outcome = journal.health("darwin-hosted-supervisor.outcome");
     let convey_ready = journal.health("darwin-convey.ready");
     let convey_argv = format!("ready-sleep {} {convey_port}", convey_ready.display());
-    let launcher = Command::new(fixture_binary())
+    let mut command = Command::new(fixture_binary());
+    command
         .arg("launcher")
         .arg(journal.path())
         .arg(&supervisor_pid)
@@ -289,9 +292,11 @@ fn start_hosted_supervisor(
         .env(
             "SOLSTONE_DARWIN_PARENT_LIFETIME_MODE",
             mode.environment_value(),
-        )
-        .spawn()
-        .expect("hosted supervisor launcher");
+        );
+    // The hosted supervisor admits only a valid speakers-analyze installation
+    // (since the generation owner landed); this fixture never transcribes.
+    speakers_analyze_stub::apply(&mut command);
+    let launcher = command.spawn().expect("hosted supervisor launcher");
     (launcher, supervisor_pid)
 }
 
