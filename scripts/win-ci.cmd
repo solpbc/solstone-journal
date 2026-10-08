@@ -115,7 +115,7 @@ call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "expor
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exact_spprat1_preface_nonce_and_exporter_request_establish_channel" "test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_rejection_writes_no_exporter_http_payload_and_closes" "test-hooks" || exit /b 1
 call :run_exact_library "solstone-core-brain" "presentation::tests::a_platform_with_no_hardware_check_says_so_on_every_brain_surface" || exit /b 1
-call :run_exact_library "solstone-core-thinking" "brain::tests::this_platform_offers_confidential_processing_everywhere_but_windows" || exit /b 1
+call :run_exact_library "solstone-core-thinking" "brain::tests::this_platform_offers_confidential_processing" || exit /b 1
 call :run_exact_library "solstone-core-thinking" "brain::tests::with_no_hardware_check_confidential_processing_reads_not_on_platform" || exit /b 1
 call :run_exact_library "solstone-core-convey-shell" "thinking::tests::no_hardware_check_refuses_confidential_turn_on" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-convey-shell" "thinking::tests::a_confidential_lane_turned_on_before_still_turns_off" "full-tests" || exit /b 1
