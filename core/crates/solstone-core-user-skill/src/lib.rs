@@ -729,7 +729,7 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_frontmatter_is_preserved_at_the_mutation_seam() {
+    fn ambiguous_skill_header_is_preserved_at_the_mutation_seam() {
         let (temp, home, target, source, _staging) = replacement_fixture();
         let guard = guard_user_skill_mutation(&home, &temp.path().join("journal")).unwrap();
         for header in [

@@ -124,6 +124,7 @@ impl CurrentClientManager {
         )
     }
 
+    #[cfg(any(test, feature = "host"))]
     pub fn swap(&self, new_client: Option<Arc<TransportClient>>) -> u64 {
         let mut state = self.inner.lock().expect("client manager lock");
         if self.retired.load(Ordering::SeqCst) {
@@ -955,6 +956,7 @@ struct StatusTrackerState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApplyOutcome {
+    #[cfg(any(test, feature = "host"))]
     StaleGeneration,
     FetchFailed,
     UpdatedNoPersist,
@@ -1028,11 +1030,6 @@ impl StatusTracker {
 
     pub fn set_scheduler(&self, scheduler: Arc<OptionalJobScheduler>) {
         *self.scheduler.lock().expect("scheduler lock") = Some(scheduler);
-    }
-
-    pub fn set_persist_uncertain(&self, uncertain: bool) {
-        let mut state = self.inner.lock().expect("status tracker lock");
-        state.persist_uncertain = uncertain;
     }
 
     pub fn set_bound_port(self: &Arc<Self>, port: u16) {
@@ -1202,6 +1199,7 @@ impl StatusTracker {
         }
     }
 
+    #[cfg(any(test, feature = "host"))]
     pub fn apply_fetch_result(
         &self,
         target_generation: u64,
@@ -1324,6 +1322,7 @@ pub struct OptionalJobScheduler {
     ca_fp_prefix: Vec<u8>,
 }
 
+#[cfg(any(test, feature = "host"))]
 pub struct JobSchedulerTestParams {
     pub tracker: Arc<StatusTracker>,
     pub client_manager: Arc<CurrentClientManager>,
@@ -1344,6 +1343,7 @@ struct JobSchedulerState {
 }
 
 impl OptionalJobScheduler {
+    #[cfg(any(test, feature = "host"))]
     pub fn new_for_test(params: JobSchedulerTestParams) -> Self {
         Self {
             inner: Mutex::new(JobSchedulerState::default()),

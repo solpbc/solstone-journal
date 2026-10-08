@@ -2,12 +2,12 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-# Re-derived on 2026-10-05 from release source 59bc30b1 with:
+# Re-derived on 2026-10-07 from the agent-skill refresh source with:
 # cargo metadata --manifest-path core/Cargo.toml --locked --no-deps --format-version 1
 # Count workspace_members joined to packages, then packages with any target
-# whose kind includes `lib`. Memory-original adds one member and one library.
-workspace_packages = 131
-library_packages = 124
+# whose kind includes `lib`. User-skill adds one member and one library.
+workspace_packages = 132
+library_packages = 125
 
 [[exclusions]]
 package = "ring"

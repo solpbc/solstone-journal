@@ -175,6 +175,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         include_str!("../../../solstone-core/src/supervisor/tick.rs"),
     ),
     (
+        "supervisor",
+        "user_skill_refresh",
+        include_str!("../../../solstone-core/src/supervisor/user_skill_refresh.rs"),
+    ),
+    (
         "cortex",
         "process",
         include_str!("../../../solstone-core-cortex/src/process.rs"),
@@ -650,6 +655,9 @@ const RAW_BYPASS_EXEMPT_SOURCES: &[(&str, &str)] = &[
     ("core", "service"),
     ("core", "service_logs"),
     ("core", "warm"),
+    // This entire module is a full-tests startup subprocess fixture. Its
+    // test-only declaration is checked below before exempting raw launches.
+    ("supervisor", "user_skill_refresh"),
     // The one-shot Sense memory helper is explicitly outside the service-like
     // generation boundary; it remains enumerated so new modules cannot evade
     // the inventory check.
@@ -721,6 +729,9 @@ fn scan_covers_every_declared_hosted_launch_module() {
 
 #[test]
 fn hosted_service_sources_reject_raw_process_launches() {
+    assert!(SUPERVISOR_MOD.contains(
+        "#[cfg(all(test, feature = \"full-tests\"))]\n#[cfg(unix)]\nmod user_skill_refresh;"
+    ));
     assert!(raw_launch_surface(production_source(CORE_MAIN)).is_none());
     for (owner, module, source) in SCANNED_MODULE_SOURCES {
         if raw_bypass_exempt(owner, module) {
