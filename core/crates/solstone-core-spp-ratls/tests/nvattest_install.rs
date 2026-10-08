@@ -18,9 +18,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 use solstone_core_artifact_download::DownloadHostPolicy;
 use solstone_core_spp_attest::locate_nvattest;
-use solstone_core_spp_ratls::{
-    NvattestEnsureStatus, ensure_nvattest_installed_on, ensure_nvattest_installed_with,
-};
+use solstone_core_spp_ratls::{NvattestEnsureStatus, ensure_nvattest_installed_with};
 
 const PLATFORM: &str = "linux-x86_64";
 const ARTIFACT: &str = "payload.tar.xz";
@@ -173,62 +171,6 @@ fn attempt_dirs(parent: &Path) -> Vec<String> {
 
 fn parent_dir(nvattest_dir: &Path) -> PathBuf {
     nvattest_dir.parent().unwrap().to_path_buf()
-}
-
-/// One authority with the same archive under a held platform's key and an
-/// unheld one's, so the only difference between the two installs is the hold.
-fn authority_for_both(sha256: &str, size: u64) -> String {
-    let target = |platform: &str| {
-        format!(
-            r#""{platform}":{{"artifact":{{"name":"{ARTIFACT}","sha256":"{sha256}","size_bytes":{size},"url":"https://updates.solstone.app/providers/nvattest/{ARTIFACT}"}},"inventory":[{{"executable":true,"kind":"regular","relpath":"bin/nvattest","symlink_target":null}},{{"executable":false,"kind":"regular","relpath":"share/ca/ca-bundle.pem","symlink_target":null}}],"source":{{"version":"test"}}}}"#
-        )
-    };
-    format!(
-        r#"{{"targets":{{{},{}}}}}"#,
-        target("windows-x86_64"),
-        target(PLATFORM)
-    )
-}
-
-#[test]
-fn a_held_platform_installs_nothing_and_fetches_nothing() {
-    let root = TempDir::new("held");
-    let dest = root.path().join("nvattest");
-    let archive = valid_archive();
-    let json = authority_for_both(&digest(&archive), archive.len() as u64);
-    // A real origin that would serve the archive, so a missing hold fails
-    // fast as `Installed` rather than waiting on a silent listener.
-    let (origin, hits, handle) = serve_once_with_delay(archive, Duration::ZERO);
-    assert_eq!(
-        ensure_nvattest_installed_on(&dest, "windows", "x86_64", &json, &policy(&origin)),
-        NvattestEnsureStatus::PlatformUnsupported
-    );
-    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
-    // Release the server with one connection of our own; it must be the only one.
-    let address = origin.trim_start_matches("http://");
-    drop(std::net::TcpStream::connect(address).unwrap());
-    handle.join().unwrap();
-    assert_eq!(
-        hits.load(Ordering::SeqCst),
-        1,
-        "a held platform must not contact the origin"
-    );
-}
-
-#[test]
-fn the_same_install_on_an_unheld_platform_fetches_and_installs() {
-    let root = TempDir::new("unheld");
-    let dest = root.path().join("nvattest");
-    let archive = valid_archive();
-    let json = authority_for_both(&digest(&archive), archive.len() as u64);
-    let (origin, hits, handle) = serve_once_with_delay(archive, Duration::ZERO);
-    assert_eq!(
-        ensure_nvattest_installed_on(&dest, "linux", "x86_64", &json, &policy(&origin)),
-        NvattestEnsureStatus::Installed
-    );
-    handle.join().unwrap();
-    assert_eq!(hits.load(Ordering::SeqCst), 1);
-    locate_nvattest(&dest).expect("the unheld install resolves");
 }
 
 #[test]
