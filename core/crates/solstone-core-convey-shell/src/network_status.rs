@@ -4,7 +4,7 @@
 //! Native network status, identity, and local-endpoint read routes.
 
 use std::fs;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
 use axum::Json;
@@ -363,7 +363,44 @@ pub(crate) async fn local_endpoints(
     let Ok(port) = read_direct_door_port(&root.0) else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
-    Json(build_local_endpoints_body(&snapshot, port)).into_response()
+    Json(build_local_endpoints_body(
+        device_direct_endpoints(&root.0, &snapshot, port),
+        port,
+    ))
+    .into_response()
+}
+
+/// The direct addresses a paired device may dial, as `/local-endpoints` and the
+/// pairing reply both carry them: the configured home first, then every
+/// classified IPv4 address the door listens on. A device replaces its saved
+/// set with this list, so the home has to be in it. Empty while the door
+/// listens on this computer only.
+pub(crate) fn device_direct_endpoints(
+    journal_root: &std::path::Path,
+    snapshot: &PairingSnapshot,
+    port: u16,
+) -> Vec<(Ipv4Addr, &'static str)> {
+    if !crate::local_network::resolve(journal_root).open {
+        return Vec::new();
+    }
+    let mut endpoints = snapshot
+        .endpoints
+        .iter()
+        .filter_map(|endpoint| match endpoint.ip {
+            IpAddr::V4(ip) => Some((ip, endpoint_scope_name(endpoint.scope))),
+            IpAddr::V6(_) => None,
+        })
+        .collect::<Vec<_>>();
+    if let Some(home) = configured_home_address(read_config(journal_root).as_ref())
+        .and_then(|address| parse_usable_home_address(&address, port))
+    {
+        let scope = endpoints
+            .iter()
+            .position(|(ip, _)| *ip == home)
+            .map_or("lan", |index| endpoints.remove(index).1);
+        endpoints.insert(0, (home, scope));
+    }
+    endpoints
 }
 
 fn derive_spl_service_state(posture: LinkPosture, token_present: bool) -> SplServiceState {
@@ -495,8 +532,8 @@ pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> Result<StatusBody, 
     } else {
         None
     };
-    // The classified endpoints a device learns from `/local-endpoints`. A
-    // configured home outside this set is already shown as the home address.
+    // The classified endpoints a device learns from `/local-endpoints`. Devices
+    // also learn the configured home, which this page shows as the home address.
     let device_addresses = snapshot
         .as_ref()
         .map(|snapshot| {
@@ -699,17 +736,18 @@ fn build_private_link_body(
     }
 }
 
-fn build_local_endpoints_body(snapshot: &PairingSnapshot, port: u16) -> LocalEndpointsBody {
+fn build_local_endpoints_body(
+    endpoints: Vec<(Ipv4Addr, &'static str)>,
+    port: u16,
+) -> LocalEndpointsBody {
     LocalEndpointsBody {
         v: 1,
-        endpoints: snapshot
-            .endpoints
-            .iter()
-            .filter(|endpoint| endpoint.ip.is_ipv4())
-            .map(|endpoint| LocalEndpointBody {
-                ip: endpoint.ip.to_string(),
+        endpoints: endpoints
+            .into_iter()
+            .map(|(ip, scope)| LocalEndpointBody {
+                ip: ip.to_string(),
                 port,
-                scope: endpoint_scope_name(endpoint.scope),
+                scope,
             })
             .collect(),
         ttl_s: 3600,
@@ -1444,6 +1482,8 @@ mod tests {
 
     #[test]
     fn local_endpoint_announcements_match_the_ipv4_door() {
+        let temporary = TempDir::new();
+        write_pairing_config(temporary.path(), json!({"local_network": true}));
         let mut snapshot = PairingSnapshot {
             endpoints: vec![LocalEndpoint {
                 ip: "fd00::1".parse().expect("ULA"),
@@ -1451,18 +1491,73 @@ mod tests {
             }],
             route_ipv4: None,
         };
-        assert!(
-            build_local_endpoints_body(&snapshot, 7657)
-                .endpoints
-                .is_empty()
-        );
+        assert!(device_direct_endpoints(temporary.path(), &snapshot, 7657).is_empty());
         snapshot.endpoints.push(LocalEndpoint {
             ip: "192.168.1.20".parse().expect("IPv4"),
             scope: EndpointScope::Lan,
         });
-        let body = build_local_endpoints_body(&snapshot, 7657);
+        let body = build_local_endpoints_body(
+            device_direct_endpoints(temporary.path(), &snapshot, 7657),
+            7657,
+        );
         assert_eq!(body.endpoints.len(), 1);
         assert_eq!(body.endpoints[0].ip, "192.168.1.20");
+    }
+
+    #[test]
+    fn devices_learn_the_configured_home_first_and_nothing_while_the_door_is_closed() {
+        let temporary = TempDir::new();
+        let snapshot = snapshot(vec![
+            (Ipv4Addr::new(192, 168, 1, 20), EndpointScope::Lan),
+            (Ipv4Addr::new(10, 8, 0, 2), EndpointScope::Vpn),
+        ]);
+        let lan = (Ipv4Addr::new(192, 168, 1, 20), "lan");
+        let vpn = (Ipv4Addr::new(10, 8, 0, 2), "vpn");
+
+        write_pairing_config(
+            temporary.path(),
+            json!({"local_network": true, "home_address": "203.0.113.7:7657"}),
+        );
+        assert_eq!(
+            device_direct_endpoints(temporary.path(), &snapshot, 7657),
+            vec![(Ipv4Addr::new(203, 0, 113, 7), "lan"), lan, vpn]
+        );
+
+        write_pairing_config(
+            temporary.path(),
+            json!({"local_network": true, "home_address": "10.8.0.2:7657"}),
+        );
+        assert_eq!(
+            device_direct_endpoints(temporary.path(), &snapshot, 7657),
+            vec![vpn, lan],
+            "a home the journal already lists moves first and keeps its scope"
+        );
+
+        write_pairing_config(
+            temporary.path(),
+            json!({"local_network": true, "home_address": "203.0.113.7:9000"}),
+        );
+        assert_eq!(
+            device_direct_endpoints(temporary.path(), &snapshot, 7657),
+            vec![lan, vpn],
+            "a home on another port is not the door"
+        );
+
+        write_pairing_config(
+            temporary.path(),
+            json!({"local_network": false, "home_address": "203.0.113.7:7657"}),
+        );
+        assert!(device_direct_endpoints(temporary.path(), &snapshot, 7657).is_empty());
+    }
+
+    fn write_pairing_config(root: &std::path::Path, pairing: Value) {
+        std::fs::create_dir_all(root.join("config")).expect("config directory");
+        std::fs::write(
+            root.join("config/journal.json"),
+            serde_json::to_vec(&json!({"setup": {"completed_at": 1}, "pairing": pairing}))
+                .expect("config JSON"),
+        )
+        .expect("config");
     }
 
     #[test]
@@ -1713,7 +1808,7 @@ mod tests {
         std::fs::create_dir_all(temporary.path().join("config")).expect("config directory");
         std::fs::write(
             temporary.path().join("config/journal.json"),
-            br#"{"setup":{"completed_at":1}}"#,
+            br#"{"setup":{"completed_at":1},"pairing":{"local_network":true}}"#,
         )
         .expect("established config");
         let root = Arc::new(JournalRoot(temporary.path().to_owned()));
