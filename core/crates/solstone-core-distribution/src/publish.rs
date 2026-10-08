@@ -586,6 +586,13 @@ fi
                 ("FAKE_CURL_ORIGIN", OsString::from(ORIGIN)),
                 ("SOLSTONE_UNAME_S", OsString::from("Linux")),
                 ("SOLSTONE_UNAME_M", OsString::from("x86_64")),
+                ("SOLSTONE_LIBC_VERSION", OsString::from("2.35")),
+                (
+                    "SOLSTONE_LIBSTDCXX_GLIBCXX",
+                    OsString::from("GLIBCXX_3.4.29 GLIBCXX_3.4.30"),
+                ),
+                ("SOLSTONE_LIBGOMP", OsString::from("present")),
+                ("SOLSTONE_LIBGCC_S", OsString::from("present")),
             ],
         )
     }
@@ -829,6 +836,13 @@ fi
                         ("TMPDIR", root.path().as_os_str().to_os_string()),
                         ("SOLSTONE_UNAME_S", OsString::from("Linux")),
                         ("SOLSTONE_UNAME_M", OsString::from("x86_64")),
+                        ("SOLSTONE_LIBC_VERSION", OsString::from("2.35")),
+                        (
+                            "SOLSTONE_LIBSTDCXX_GLIBCXX",
+                            OsString::from("GLIBCXX_3.4.29 GLIBCXX_3.4.30"),
+                        ),
+                        ("SOLSTONE_LIBGOMP", OsString::from("present")),
+                        ("SOLSTONE_LIBGCC_S", OsString::from("present")),
                     ],
                 );
                 assert!(!output.status.success(), "{origin} {extra:?}");
