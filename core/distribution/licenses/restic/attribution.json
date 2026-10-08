@@ -1,0 +1,2849 @@
+{
+  "tool": "restic",
+  "main_module": {
+    "module": "github.com/restic/restic",
+    "version": "v0.19.0",
+    "h1": "h1:IQugM6uMG9/lL00O0HM30P12usLmhHeeQhooPRQY/VI=",
+    "origin": {
+      "VCS": "git",
+      "URL": "https://github.com/restic/restic",
+      "Hash": "12875cc48ed34111f71fe94a24a47ad11660f3a4",
+      "Ref": "refs/tags/v0.19.0"
+    },
+    "files": [
+      {
+        "path": "LICENSE",
+        "upstream_path": "LICENSE",
+        "detected": [
+          "BSD-2-Clause"
+        ]
+      }
+    ],
+    "notes": [
+      "internal/fs/ea_windows.go (windows target only) embeds code copied from github.com/microsoft/go-winio pipe.go under MIT, with the MIT text inline in the source; same holder and license as deps/github.com__Microsoft__go-winio@v0.6.2/LICENSE.",
+      "restic's build info reports main module version '(devel)' with no vcs stamp; the module set was reconciled by `go list -deps` on the v0.19.0 tag source (commit in origin.Hash) and matched all 4 targets exactly."
+    ]
+  },
+  "go_toolchain": {
+    "version": "go1.26.4",
+    "files": [
+      "go/LICENSE",
+      "go/PATENTS"
+    ],
+    "spdx": "BSD-3-Clause",
+    "source": "https://go.dev/dl/go1.26.4.linux-amd64.tar.gz (go/LICENSE, go/PATENTS)"
+  },
+  "targets": {
+    "darwin_arm64": {
+      "go": "go1.26.4",
+      "main": [
+        "github.com/restic/restic",
+        "(devel)",
+        ""
+      ],
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-ldflags": "\"-s -w\"",
+        "-tags": "selfupdate,disable_grpc_modules",
+        "CGO_ENABLED": "0",
+        "DefaultGODEBUG": "cryptocustomrand=1,tlssecpmlkem=0,urlstrictcolons=0,winsymlink=0",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOOS": "darwin"
+      }
+    },
+    "linux_amd64": {
+      "go": "go1.26.4",
+      "main": [
+        "github.com/restic/restic",
+        "(devel)",
+        ""
+      ],
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-ldflags": "\"-s -w\"",
+        "-tags": "selfupdate,disable_grpc_modules",
+        "CGO_ENABLED": "0",
+        "DefaultGODEBUG": "cryptocustomrand=1,tlssecpmlkem=0,urlstrictcolons=0,winsymlink=0",
+        "GOAMD64": "v1",
+        "GOARCH": "amd64",
+        "GOOS": "linux"
+      }
+    },
+    "linux_arm64": {
+      "go": "go1.26.4",
+      "main": [
+        "github.com/restic/restic",
+        "(devel)",
+        ""
+      ],
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-ldflags": "\"-s -w\"",
+        "-tags": "selfupdate,disable_grpc_modules",
+        "CGO_ENABLED": "0",
+        "DefaultGODEBUG": "cryptocustomrand=1,tlssecpmlkem=0,urlstrictcolons=0,winsymlink=0",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOOS": "linux"
+      }
+    },
+    "windows_amd64": {
+      "go": "go1.26.4",
+      "main": [
+        "github.com/restic/restic",
+        "(devel)",
+        ""
+      ],
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-ldflags": "\"-s -w\"",
+        "-tags": "selfupdate,disable_grpc_modules",
+        "CGO_ENABLED": "0",
+        "DefaultGODEBUG": "cryptocustomrand=1,tlssecpmlkem=0,urlstrictcolons=0,winsymlink=0",
+        "GOAMD64": "v1",
+        "GOARCH": "amd64",
+        "GOOS": "windows"
+      }
+    }
+  },
+  "supplied_texts": [
+    {
+      "path": "supplied/Apache-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "source": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+    }
+  ],
+  "module_count": 82,
+  "modules": [
+    {
+      "module": "cloud.google.com/go",
+      "version": "v0.123.0",
+      "h1": "h1:2NAUJwPR47q+E35uaJeYoNhuNEM9kM8SjgRgdeOJUSE=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/cloud.google.com__go@v0.123.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/cloud.google.com__go@v0.123.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "cloud.google.com/go/auth",
+      "version": "v0.20.0",
+      "h1": "h1:kXTssoVb4azsVDoUiF8KvxAqrsQcQtB53DcSgta74CA=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/cloud.google.com__go__auth@v0.20.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/cloud.google.com__go__auth@v0.20.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "cloud.google.com/go/auth/oauth2adapt",
+      "version": "v0.2.8",
+      "h1": "h1:keo8NaayQZ6wimpNSmW5OPc283g65QNIiLpZnkHRbnc=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/cloud.google.com__go__auth__oauth2adapt@v0.2.8/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/cloud.google.com__go__auth__oauth2adapt@v0.2.8/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "cloud.google.com/go/compute/metadata",
+      "version": "v0.9.0",
+      "h1": "h1:pDUj4QMoPejqq20dK0Pg2N4yG9zIkYGdBtwLoEkH9Zs=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/cloud.google.com__go__compute__metadata@v0.9.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/cloud.google.com__go__compute__metadata@v0.9.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "cloud.google.com/go/iam",
+      "version": "v1.7.0",
+      "h1": "h1:JD3zh0C6LHl16aCn5Akff0+GELdp1+4hmh6ndoFLl8U=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/cloud.google.com__go__iam@v1.7.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/cloud.google.com__go__iam@v1.7.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "cloud.google.com/go/monitoring",
+      "version": "v1.24.3",
+      "h1": "h1:dde+gMNc0UhPZD1Azu6at2e79bfdztVDS5lvhOdsgaE=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/cloud.google.com__go__monitoring@v1.24.3/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/cloud.google.com__go__monitoring@v1.24.3/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "cloud.google.com/go/storage",
+      "version": "v1.62.2",
+      "h1": "h1:WgR4U9n7bIzXkkVnwPKKE8bkaKUNsHG+0MAAlh9DGU4=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/cloud.google.com__go__storage@v1.62.2/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/cloud.google.com__go__storage@v1.62.2/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
+      "version": "v1.21.1",
+      "h1": "h1:jHb/wfvRikGdxMXYV3QG/SzUOPYN9KEUUuC0Yd0/vC0=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__Azure__azure-sdk-for-go__sdk__azcore@v1.21.1/LICENSE.txt"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__Azure__azure-sdk-for-go__sdk__azcore@v1.21.1/LICENSE.txt",
+          "upstream_path": "LICENSE.txt",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/Azure/azure-sdk-for-go/sdk/azidentity",
+      "version": "v1.13.1",
+      "h1": "h1:Hk5QBxZQC1jb2Fwj6mpzme37xbCDdNTxU7O9eb5+LB4=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__Azure__azure-sdk-for-go__sdk__azidentity@v1.13.1/LICENSE.txt"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__Azure__azure-sdk-for-go__sdk__azidentity@v1.13.1/LICENSE.txt",
+          "upstream_path": "LICENSE.txt",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/Azure/azure-sdk-for-go/sdk/internal",
+      "version": "v1.12.0",
+      "h1": "h1:fhqpLE3UEXi9lPaBRpQ6XuRW0nU7hgg4zlmZZa+a9q4=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__Azure__azure-sdk-for-go__sdk__internal@v1.12.0/LICENSE.txt"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__Azure__azure-sdk-for-go__sdk__internal@v1.12.0/LICENSE.txt",
+          "upstream_path": "LICENSE.txt",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob",
+      "version": "v1.7.0",
+      "h1": "h1:BM85pSYlVYQHdq00nxyPoOkyLF5NArJG3bOsrmbwr4k=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__Azure__azure-sdk-for-go__sdk__storage__azblob@v1.7.0/LICENSE.txt"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__Azure__azure-sdk-for-go__sdk__storage__azblob@v1.7.0/LICENSE.txt",
+          "upstream_path": "LICENSE.txt",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/AzureAD/microsoft-authentication-library-for-go",
+      "version": "v1.7.2",
+      "h1": "h1:RHK7bS+HQMslb1sZpAokUt+zTVmue0hKSs2C791hhzU=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__AzureAD__microsoft-authentication-library-for-go@v1.7.2/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__AzureAD__microsoft-authentication-library-for-go@v1.7.2/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/Backblaze/blazer",
+      "version": "v0.7.2",
+      "h1": "h1:UWNHMLB+Nf+UmbO2qkVvgriODLEMz4kIyr2Hm+DVXQM=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__Backblaze__blazer@v0.7.2/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/github.com__Backblaze__blazer@v0.7.2/AUTHORS"
+      ],
+      "detected_licenses": [],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "LICENSE is only the standard Apache-2.0 notice header; the module ships no full Apache-2.0 text, so a canonical copy is supplied at supplied/Apache-2.0.txt",
+      "files": [
+        {
+          "path": "deps/github.com__Backblaze__blazer@v0.7.2/AUTHORS",
+          "upstream_path": "AUTHORS",
+          "kind": "authors"
+        },
+        {
+          "path": "deps/github.com__Backblaze__blazer@v0.7.2/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": []
+        }
+      ]
+    },
+    {
+      "module": "github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp",
+      "version": "v1.31.0",
+      "h1": "h1:DHa2U07rk8syqvCge0QIGMCE1WxGj9njT44GH7zNJLQ=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__GoogleCloudPlatform__opentelemetry-operations-go__detectors__gcp@v1.31.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__GoogleCloudPlatform__opentelemetry-operations-go__detectors__gcp@v1.31.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric",
+      "version": "v0.55.0",
+      "h1": "h1:UnDZ/zFfG1JhH/DqxIZYU/1CUAlTUScoXD/LcM2Ykk8=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__GoogleCloudPlatform__opentelemetry-operations-go__exporter__metric@v0.55.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__GoogleCloudPlatform__opentelemetry-operations-go__exporter__metric@v0.55.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping",
+      "version": "v0.55.0",
+      "h1": "h1:0s6TxfCu2KHkkZPnBfsQ2y5qia0jl3MMrmBhu3nCOYk=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__GoogleCloudPlatform__opentelemetry-operations-go__internal__resourcemapping@v0.55.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__GoogleCloudPlatform__opentelemetry-operations-go__internal__resourcemapping@v0.55.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/Microsoft/go-winio",
+      "version": "v0.6.2",
+      "h1": "h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=",
+      "targets": [
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__Microsoft__go-winio@v0.6.2/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__Microsoft__go-winio@v0.6.2/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/anacrolix/fuse",
+      "version": "v0.3.1",
+      "h1": "h1:oT8s3B5HFkBdLe/WKJO5MNo9iIyEtc+BhvTZYp4jhDM=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64"
+      ],
+      "license_files": [
+        "deps/github.com__anacrolix__fuse@v0.3.1/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-2-Clause",
+        "BSD-3-Clause",
+        "X11-Lucent"
+      ],
+      "spdx": null,
+      "spdx_basis": "not confidently identifiable: detected [\"BSD-2-Clause\", \"BSD-3-Clause\", \"X11-Lucent\"] (non-SPDX classifier name or unclassified file)",
+      "files": [
+        {
+          "path": "deps/github.com__anacrolix__fuse@v0.3.1/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-2-Clause",
+            "BSD-3-Clause",
+            "X11-Lucent"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/cenkalti/backoff/v4",
+      "version": "v4.3.0",
+      "h1": "h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__cenkalti__backoff__v4@v4.3.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__cenkalti__backoff__v4@v4.3.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/cespare/xxhash/v2",
+      "version": "v2.3.0",
+      "h1": "h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__cespare__xxhash__v2@v2.3.0/LICENSE.txt"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__cespare__xxhash__v2@v2.3.0/LICENSE.txt",
+          "upstream_path": "LICENSE.txt",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/cpuguy83/go-md2man/v2",
+      "version": "v2.0.6",
+      "h1": "h1:XJtiaUW6dEEqVuZiMTn1ldk455QWwEIsMIJlo5vtkx0=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__cpuguy83__go-md2man__v2@v2.0.6/LICENSE.md"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__cpuguy83__go-md2man__v2@v2.0.6/LICENSE.md",
+          "upstream_path": "LICENSE.md",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/dustin/go-humanize",
+      "version": "v1.0.1",
+      "h1": "h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__dustin__go-humanize@v1.0.1/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__dustin__go-humanize@v1.0.1/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/elithrar/simple-scrypt",
+      "version": "v1.4.1",
+      "h1": "h1:LtAlU7NDhCJN2eUam1yOr9O1XTHb8T+pnDHh/wwlSt0=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__elithrar__simple-scrypt@v1.4.1/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__elithrar__simple-scrypt@v1.4.1/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/felixge/httpsnoop",
+      "version": "v1.0.4",
+      "h1": "h1:NFTV2Zj1bL4mc9sqWACXbQFVBBg2W3GPvqp8/ESS2Wg=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__felixge__httpsnoop@v1.0.4/LICENSE.txt"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__felixge__httpsnoop@v1.0.4/LICENSE.txt",
+          "upstream_path": "LICENSE.txt",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/go-ini/ini",
+      "version": "v1.67.0",
+      "h1": "h1:z6ZrTEZqSWOTyH2FlglNbNgARyHG8oLW9gMELqKr06A=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__go-ini__ini@v1.67.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__go-ini__ini@v1.67.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/go-logr/logr",
+      "version": "v1.4.3",
+      "h1": "h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__go-logr__logr@v1.4.3/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__go-logr__logr@v1.4.3/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/go-logr/stdr",
+      "version": "v1.2.2",
+      "h1": "h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__go-logr__stdr@v1.2.2/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__go-logr__stdr@v1.2.2/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/go-ole/go-ole",
+      "version": "v1.3.0",
+      "h1": "h1:Dt6ye7+vXGIKZ7Xtk4s6/xVdGDQynvom7xCFEdWr6uE=",
+      "targets": [
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__go-ole__go-ole@v1.3.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__go-ole__go-ole@v1.3.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/golang-jwt/jwt/v5",
+      "version": "v5.3.1",
+      "h1": "h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__golang-jwt__jwt__v5@v5.3.1/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__golang-jwt__jwt__v5@v5.3.1/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/google/s2a-go",
+      "version": "v0.1.9",
+      "h1": "h1:LGD7gtMgezd8a/Xak7mEWL0PjoTQFvpRudN895yqKW0=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__google__s2a-go@v0.1.9/LICENSE.md"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__google__s2a-go@v0.1.9/LICENSE.md",
+          "upstream_path": "LICENSE.md",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "h1": "h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__google__uuid@v1.6.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/github.com__google__uuid@v1.6.0/CONTRIBUTORS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__google__uuid@v1.6.0/CONTRIBUTORS",
+          "upstream_path": "CONTRIBUTORS",
+          "kind": "authors"
+        },
+        {
+          "path": "deps/github.com__google__uuid@v1.6.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/googleapis/enterprise-certificate-proxy",
+      "version": "v0.3.16",
+      "h1": "h1:F/VPrx0YPBdksZJQdCAp0WUsqnNmZpUZszzfYt0M5Dw=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__googleapis__enterprise-certificate-proxy@v0.3.16/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__googleapis__enterprise-certificate-proxy@v0.3.16/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/googleapis/gax-go/v2",
+      "version": "v2.22.0",
+      "h1": "h1:PjIWBpgGIVKGoCXuiCoP64altEJCj3/Ei+kSU5vlZD4=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__googleapis__gax-go__v2@v2.22.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__googleapis__gax-go__v2@v2.22.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/hashicorp/golang-lru/v2",
+      "version": "v2.0.7",
+      "h1": "h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__hashicorp__golang-lru__v2@v2.0.7/LICENSE",
+        "deps/github.com__hashicorp__golang-lru__v2@v2.0.7/simplelru/LICENSE_list"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-3-Clause",
+        "MPL-2.0"
+      ],
+      "spdx": "BSD-3-Clause AND MPL-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/github.com__hashicorp__golang-lru__v2@v2.0.7/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MPL-2.0"
+          ]
+        },
+        {
+          "path": "deps/github.com__hashicorp__golang-lru__v2@v2.0.7/simplelru/LICENSE_list",
+          "upstream_path": "simplelru/LICENSE_list",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/inconshreveable/mousetrap",
+      "version": "v1.1.0",
+      "h1": "h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=",
+      "targets": [
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__inconshreveable__mousetrap@v1.1.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__inconshreveable__mousetrap@v1.1.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/klauspost/compress",
+      "version": "v1.18.4",
+      "h1": "h1:RPhnKRAQ4Fh8zU2FY/6ZFDwTVTxgJ/EMydqSTzE9a2c=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__klauspost__compress@v1.18.4/LICENSE",
+        "deps/github.com__klauspost__compress@v1.18.4/internal/snapref/LICENSE",
+        "deps/github.com__klauspost__compress@v1.18.4/s2/LICENSE",
+        "deps/github.com__klauspost__compress@v1.18.4/zstd/internal/xxhash/LICENSE.txt"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause",
+        "MIT"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause AND MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/github.com__klauspost__compress@v1.18.4/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0",
+            "BSD-3-Clause",
+            "MIT"
+          ]
+        },
+        {
+          "path": "deps/github.com__klauspost__compress@v1.18.4/internal/snapref/LICENSE",
+          "upstream_path": "internal/snapref/LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/github.com__klauspost__compress@v1.18.4/s2/LICENSE",
+          "upstream_path": "s2/LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/github.com__klauspost__compress@v1.18.4/zstd/internal/xxhash/LICENSE.txt",
+          "upstream_path": "zstd/internal/xxhash/LICENSE.txt",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/klauspost/cpuid/v2",
+      "version": "v2.2.11",
+      "h1": "h1:0OwqZRYI2rFrjS4kvkDnqJkKHdHaRnCm68/DY4OxRzU=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__klauspost__cpuid__v2@v2.2.11/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__klauspost__cpuid__v2@v2.2.11/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/klauspost/crc32",
+      "version": "v1.3.0",
+      "h1": "h1:sSmTt3gUt81RP655XGZPElI0PelVTZ6YwCRnPSupoFM=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__klauspost__crc32@v1.3.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__klauspost__crc32@v1.3.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/kr/fs",
+      "version": "v0.1.0",
+      "h1": "h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__kr__fs@v0.1.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__kr__fs@v0.1.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/kylelemons/godebug",
+      "version": "v1.1.0",
+      "h1": "h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__kylelemons__godebug@v1.1.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__kylelemons__godebug@v1.1.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/minio/crc64nvme",
+      "version": "v1.1.1",
+      "h1": "h1:8dwx/Pz49suywbO+auHCBpCtlW1OfpcLN7wYgVR6wAI=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__minio__crc64nvme@v1.1.1/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__minio__crc64nvme@v1.1.1/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/minio/md5-simd",
+      "version": "v1.1.2",
+      "h1": "h1:Gdi1DZK69+ZVMoNHRXJyNcxrMA4dSxoYHZSQbirFg34=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__minio__md5-simd@v1.1.2/LICENSE",
+        "deps/github.com__minio__md5-simd@v1.1.2/LICENSE.Golang"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/github.com__minio__md5-simd@v1.1.2/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        },
+        {
+          "path": "deps/github.com__minio__md5-simd@v1.1.2/LICENSE.Golang",
+          "upstream_path": "LICENSE.Golang",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/minio/minio-go/v7",
+      "version": "v7.1.0",
+      "h1": "h1:QEt5IStDpxgGjEdtOgpiZ5QhmSl3ax7qy61vi2SwHO8=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__minio__minio-go__v7@v7.1.0/LICENSE"
+      ],
+      "notice_files": [
+        "deps/github.com__minio__minio-go__v7@v7.1.0/NOTICE"
+      ],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__minio__minio-go__v7@v7.1.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        },
+        {
+          "path": "deps/github.com__minio__minio-go__v7@v7.1.0/NOTICE",
+          "upstream_path": "NOTICE",
+          "kind": "notice"
+        }
+      ]
+    },
+    {
+      "module": "github.com/ncw/swift/v2",
+      "version": "v2.0.5",
+      "h1": "h1:9o5Gsd7bInAFEqsGPcaUdsboMbqf8lnNtxqWKFT9iz8=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__ncw__swift__v2@v2.0.5/COPYING"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__ncw__swift__v2@v2.0.5/COPYING",
+          "upstream_path": "COPYING",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/peterbourgon/unixtransport",
+      "version": "v0.0.7",
+      "h1": "h1:HhN7nydIDwlXWFzB6mbzQLcl46UdZLHrmF2lFfAgvnY=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__peterbourgon__unixtransport@v0.0.7/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__peterbourgon__unixtransport@v0.0.7/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/philhofer/fwd",
+      "version": "v1.2.0",
+      "h1": "h1:e6DnBTl7vGY+Gz322/ASL4Gyp1FspeMvx1RNDoToZuM=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__philhofer__fwd@v1.2.0/LICENSE.md"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__philhofer__fwd@v1.2.0/LICENSE.md",
+          "upstream_path": "LICENSE.md",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/pkg/browser",
+      "version": "v0.0.0-20240102092130-5ac0b6a4141c",
+      "h1": "h1:+mdjkGKdHQG3305AYmdv1U2eRNDiU2ErMBj1gwrq8eQ=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__pkg__browser@v0.0.0-20240102092130-5ac0b6a4141c/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-2-Clause"
+      ],
+      "spdx": "BSD-2-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__pkg__browser@v0.0.0-20240102092130-5ac0b6a4141c/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-2-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/pkg/errors",
+      "version": "v0.9.1",
+      "h1": "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__pkg__errors@v0.9.1/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-2-Clause"
+      ],
+      "spdx": "BSD-2-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__pkg__errors@v0.9.1/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-2-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/pkg/sftp",
+      "version": "v1.13.10",
+      "h1": "h1:+5FbKNTe5Z9aspU88DPIKJ9z2KZoaGCu6Sr6kKR/5mU=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__pkg__sftp@v1.13.10/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/github.com__pkg__sftp@v1.13.10/CONTRIBUTORS"
+      ],
+      "detected_licenses": [
+        "BSD-2-Clause"
+      ],
+      "spdx": "BSD-2-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__pkg__sftp@v1.13.10/CONTRIBUTORS",
+          "upstream_path": "CONTRIBUTORS",
+          "kind": "authors"
+        },
+        {
+          "path": "deps/github.com__pkg__sftp@v1.13.10/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-2-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/pkg/xattr",
+      "version": "v0.4.12",
+      "h1": "h1:rRTkSyFNTRElv6pkA3zpjHpQ90p/OdHQC1GmGh1aTjM=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64"
+      ],
+      "license_files": [
+        "deps/github.com__pkg__xattr@v0.4.12/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-2-Clause"
+      ],
+      "spdx": "BSD-2-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__pkg__xattr@v0.4.12/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-2-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/restic/chunker",
+      "version": "v0.4.0",
+      "h1": "h1:YUPYCUn70MYP7VO4yllypp2SjmsRhRJaad3xKu1QFRw=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__restic__chunker@v0.4.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-2-Clause"
+      ],
+      "spdx": "BSD-2-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__restic__chunker@v0.4.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-2-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/rs/xid",
+      "version": "v1.6.0",
+      "h1": "h1:fV591PaemRlL6JfRxGDEPl69wICngIQ3shQtzfy2gxU=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__rs__xid@v1.6.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__rs__xid@v1.6.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/russross/blackfriday/v2",
+      "version": "v2.1.0",
+      "h1": "h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__russross__blackfriday__v2@v2.1.0/LICENSE.txt"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-2-Clause"
+      ],
+      "spdx": "BSD-2-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__russross__blackfriday__v2@v2.1.0/LICENSE.txt",
+          "upstream_path": "LICENSE.txt",
+          "kind": "license",
+          "detected": [
+            "BSD-2-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "h1": "h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__spf13__cobra@v1.10.2/LICENSE.txt"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__spf13__cobra@v1.10.2/LICENSE.txt",
+          "upstream_path": "LICENSE.txt",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/spf13/pflag",
+      "version": "v1.0.10",
+      "h1": "h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__spf13__pflag@v1.0.10/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__spf13__pflag@v1.0.10/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/tinylib/msgp",
+      "version": "v1.6.1",
+      "h1": "h1:ESRv8eL3u+DNHUoSAAQRE50Hm162zqAnBoGv9PzScPY=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__tinylib__msgp@v1.6.1/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__tinylib__msgp@v1.6.1/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "github.com/zeebo/xxh3",
+      "version": "v1.1.0",
+      "h1": "h1:s7DLGDK45Dyfg7++yxI0khrfwq9661w9EN78eP/UZVs=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/github.com__zeebo__xxh3@v1.1.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-2-Clause"
+      ],
+      "spdx": "BSD-2-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/github.com__zeebo__xxh3@v1.1.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-2-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/auto/sdk",
+      "version": "v1.2.1",
+      "h1": "h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.opentelemetry.io__auto__sdk@v1.2.1/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/go.opentelemetry.io__auto__sdk@v1.2.1/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/contrib/detectors/gcp",
+      "version": "v1.42.0",
+      "h1": "h1:kpt2PEJuOuqYkPcktfJqWWDjTEd/FNgrxcniL7kQrXQ=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.opentelemetry.io__contrib__detectors__gcp@v1.42.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/go.opentelemetry.io__contrib__detectors__gcp@v1.42.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0",
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc",
+      "version": "v0.67.0",
+      "h1": "h1:yI1/OhfEPy7J9eoa6Sj051C7n5dvpj0QX8g4sRchg04=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.opentelemetry.io__contrib__instrumentation__google.golang.org__grpc__otelgrpc@v0.67.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/go.opentelemetry.io__contrib__instrumentation__google.golang.org__grpc__otelgrpc@v0.67.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0",
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
+      "version": "v0.67.0",
+      "h1": "h1:OyrsyzuttWTSur2qN/Lm0m2a8yqyIjUVBZcxFPuXq2o=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.opentelemetry.io__contrib__instrumentation__net__http__otelhttp@v0.67.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/go.opentelemetry.io__contrib__instrumentation__net__http__otelhttp@v0.67.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0",
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/otel",
+      "version": "v1.43.0",
+      "h1": "h1:mYIM03dnh5zfN7HautFE4ieIig9amkNANT+xcVxAj9I=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.opentelemetry.io__otel@v1.43.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/go.opentelemetry.io__otel@v1.43.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0",
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/otel/metric",
+      "version": "v1.43.0",
+      "h1": "h1:d7638QeInOnuwOONPp4JAOGfbCEpYb+K6DVWvdxGzgM=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.opentelemetry.io__otel__metric@v1.43.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/go.opentelemetry.io__otel__metric@v1.43.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0",
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/otel/sdk",
+      "version": "v1.43.0",
+      "h1": "h1:pi5mE86i5rTeLXqoF/hhiBtUNcrAGHLKQdhg4h4V9Dg=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.opentelemetry.io__otel__sdk@v1.43.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/go.opentelemetry.io__otel__sdk@v1.43.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0",
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/otel/sdk/metric",
+      "version": "v1.43.0",
+      "h1": "h1:S88dyqXjJkuBNLeMcVPRFXpRw2fuwdvfCGLEo89fDkw=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.opentelemetry.io__otel__sdk__metric@v1.43.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/go.opentelemetry.io__otel__sdk__metric@v1.43.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0",
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/otel/trace",
+      "version": "v1.43.0",
+      "h1": "h1:BkNrHpup+4k4w+ZZ86CZoHHEkohws8AY+WTX09nk+3A=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.opentelemetry.io__otel__trace@v1.43.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "spdx": "Apache-2.0 AND BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files ; multiple licenses cover different parts of the module",
+      "files": [
+        {
+          "path": "deps/go.opentelemetry.io__otel__trace@v1.43.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0",
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.uber.org/automaxprocs",
+      "version": "v1.6.0",
+      "h1": "h1:O3y2/QNTOdbF+e/dpXNNW7Rx2hZ4sTIPyybbxyNqTUs=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.uber.org__automaxprocs@v1.6.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/go.uber.org__automaxprocs@v1.6.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "go.yaml.in/yaml/v3",
+      "version": "v3.0.4",
+      "h1": "h1:tfq32ie2Jv2UxXFdLJdh3jXuOzWiL1fo0bu/FbuKpbc=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/go.yaml.in__yaml__v3@v3.0.4/LICENSE"
+      ],
+      "notice_files": [
+        "deps/go.yaml.in__yaml__v3@v3.0.4/NOTICE"
+      ],
+      "other_files": [],
+      "detected_licenses": [
+        "MIT"
+      ],
+      "spdx": "MIT",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/go.yaml.in__yaml__v3@v3.0.4/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "MIT"
+          ]
+        },
+        {
+          "path": "deps/go.yaml.in__yaml__v3@v3.0.4/NOTICE",
+          "upstream_path": "NOTICE",
+          "kind": "notice"
+        }
+      ]
+    },
+    {
+      "module": "golang.org/x/crypto",
+      "version": "v0.52.0",
+      "h1": "h1:RMs7fP2rXdep0CftQlK8Uf+kibLm7qkCcradZWYz988=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/golang.org__x__crypto@v0.52.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/golang.org__x__crypto@v0.52.0/PATENTS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/golang.org__x__crypto@v0.52.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/golang.org__x__crypto@v0.52.0/PATENTS",
+          "upstream_path": "PATENTS",
+          "kind": "patents"
+        }
+      ]
+    },
+    {
+      "module": "golang.org/x/net",
+      "version": "v0.55.0",
+      "h1": "h1:bcvxaJn3e1U6InsFWt1JUq1aSjnRxLzT2rtD2KfkDF8=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/golang.org__x__net@v0.55.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/golang.org__x__net@v0.55.0/PATENTS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/golang.org__x__net@v0.55.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/golang.org__x__net@v0.55.0/PATENTS",
+          "upstream_path": "PATENTS",
+          "kind": "patents"
+        }
+      ]
+    },
+    {
+      "module": "golang.org/x/oauth2",
+      "version": "v0.36.0",
+      "h1": "h1:peZ/1z27fi9hUOFCAZaHyrpWG5lwe0RJEEEeH0ThlIs=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/golang.org__x__oauth2@v0.36.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/golang.org__x__oauth2@v0.36.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "golang.org/x/sync",
+      "version": "v0.20.0",
+      "h1": "h1:e0PTpb7pjO8GAtTs2dQ6jYa5BWYlMuX047Dco/pItO4=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/golang.org__x__sync@v0.20.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/golang.org__x__sync@v0.20.0/PATENTS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/golang.org__x__sync@v0.20.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/golang.org__x__sync@v0.20.0/PATENTS",
+          "upstream_path": "PATENTS",
+          "kind": "patents"
+        }
+      ]
+    },
+    {
+      "module": "golang.org/x/sys",
+      "version": "v0.45.0",
+      "h1": "h1:dO4czNzziLiiXplLQgBCEpCvXQ3dnkn0SdaZSYdQ+FY=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/golang.org__x__sys@v0.45.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/golang.org__x__sys@v0.45.0/PATENTS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/golang.org__x__sys@v0.45.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/golang.org__x__sys@v0.45.0/PATENTS",
+          "upstream_path": "PATENTS",
+          "kind": "patents"
+        }
+      ]
+    },
+    {
+      "module": "golang.org/x/term",
+      "version": "v0.43.0",
+      "h1": "h1:S4RLU2sB31O/NCl+zFN9Aru9A/Cq2aqKpTZJ6B+DwT4=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/golang.org__x__term@v0.43.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/golang.org__x__term@v0.43.0/PATENTS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/golang.org__x__term@v0.43.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/golang.org__x__term@v0.43.0/PATENTS",
+          "upstream_path": "PATENTS",
+          "kind": "patents"
+        }
+      ]
+    },
+    {
+      "module": "golang.org/x/text",
+      "version": "v0.37.0",
+      "h1": "h1:Cqjiwd9eSg8e0QAkyCaQTNHFIIzWtidPahFWR83rTrc=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/golang.org__x__text@v0.37.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/golang.org__x__text@v0.37.0/PATENTS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/golang.org__x__text@v0.37.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/golang.org__x__text@v0.37.0/PATENTS",
+          "upstream_path": "PATENTS",
+          "kind": "patents"
+        }
+      ]
+    },
+    {
+      "module": "golang.org/x/time",
+      "version": "v0.15.0",
+      "h1": "h1:bbrp8t3bGUeFOx08pvsMYRTCVSMk89u4tKbNOZbp88U=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/golang.org__x__time@v0.15.0/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/golang.org__x__time@v0.15.0/PATENTS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/golang.org__x__time@v0.15.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/golang.org__x__time@v0.15.0/PATENTS",
+          "upstream_path": "PATENTS",
+          "kind": "patents"
+        }
+      ]
+    },
+    {
+      "module": "google.golang.org/api",
+      "version": "v0.282.0",
+      "h1": "h1:WmJiSVqUnKqJCpJOx7YADbXaC+9DDsnGSfllFSj7R2I=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/google.golang.org__api@v0.282.0/LICENSE",
+        "deps/google.golang.org__api@v0.282.0/internal/third_party/uritemplates/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/google.golang.org__api@v0.282.0/AUTHORS",
+        "deps/google.golang.org__api@v0.282.0/CONTRIBUTORS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/google.golang.org__api@v0.282.0/AUTHORS",
+          "upstream_path": "AUTHORS",
+          "kind": "authors"
+        },
+        {
+          "path": "deps/google.golang.org__api@v0.282.0/CONTRIBUTORS",
+          "upstream_path": "CONTRIBUTORS",
+          "kind": "authors"
+        },
+        {
+          "path": "deps/google.golang.org__api@v0.282.0/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/google.golang.org__api@v0.282.0/internal/third_party/uritemplates/LICENSE",
+          "upstream_path": "internal/third_party/uritemplates/LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "google.golang.org/genproto",
+      "version": "v0.0.0-20260319201613-d00831a3d3e7",
+      "h1": "h1:XzmzkmB14QhVhgnawEVsOn6OFsnpyxNPRY9QV01dNB0=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/google.golang.org__genproto@v0.0.0-20260319201613-d00831a3d3e7/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/google.golang.org__genproto@v0.0.0-20260319201613-d00831a3d3e7/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "google.golang.org/genproto/googleapis/api",
+      "version": "v0.0.0-20260401024825-9d38bb4040a9",
+      "h1": "h1:VPWxll4HlMw1Vs/qXtN7BvhZqsS9cdAittCNvVENElA=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/google.golang.org__genproto__googleapis__api@v0.0.0-20260401024825-9d38bb4040a9/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/google.golang.org__genproto__googleapis__api@v0.0.0-20260401024825-9d38bb4040a9/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "google.golang.org/genproto/googleapis/rpc",
+      "version": "v0.0.0-20260523011958-0a33c5d7ca68",
+      "h1": "h1:PvEgGJf9C/1u5CHkInMg7UFYYUoiaQmW2LbtH0pjB78=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/google.golang.org__genproto__googleapis__rpc@v0.0.0-20260523011958-0a33c5d7ca68/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/google.golang.org__genproto__googleapis__rpc@v0.0.0-20260523011958-0a33c5d7ca68/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "google.golang.org/grpc",
+      "version": "v1.81.1",
+      "h1": "h1:VnnIIZ88UzOOKLukQi+ImGz8O1Wdp8nAGGnvOfEIWQQ=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/google.golang.org__grpc@v1.81.1/LICENSE"
+      ],
+      "notice_files": [
+        "deps/google.golang.org__grpc@v1.81.1/NOTICE.txt"
+      ],
+      "other_files": [
+        "deps/google.golang.org__grpc@v1.81.1/AUTHORS"
+      ],
+      "detected_licenses": [
+        "Apache-2.0"
+      ],
+      "spdx": "Apache-2.0",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/google.golang.org__grpc@v1.81.1/AUTHORS",
+          "upstream_path": "AUTHORS",
+          "kind": "authors"
+        },
+        {
+          "path": "deps/google.golang.org__grpc@v1.81.1/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "Apache-2.0"
+          ]
+        },
+        {
+          "path": "deps/google.golang.org__grpc@v1.81.1/NOTICE.txt",
+          "upstream_path": "NOTICE.txt",
+          "kind": "notice"
+        }
+      ]
+    },
+    {
+      "module": "google.golang.org/protobuf",
+      "version": "v1.36.11",
+      "h1": "h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=",
+      "targets": [
+        "darwin_arm64",
+        "linux_amd64",
+        "linux_arm64",
+        "windows_amd64"
+      ],
+      "license_files": [
+        "deps/google.golang.org__protobuf@v1.36.11/LICENSE"
+      ],
+      "notice_files": [],
+      "other_files": [
+        "deps/google.golang.org__protobuf@v1.36.11/PATENTS"
+      ],
+      "detected_licenses": [
+        "BSD-3-Clause"
+      ],
+      "spdx": "BSD-3-Clause",
+      "spdx_basis": "licenseclassifier/v2 (conf>=0.9) over all shipped license files",
+      "files": [
+        {
+          "path": "deps/google.golang.org__protobuf@v1.36.11/LICENSE",
+          "upstream_path": "LICENSE",
+          "kind": "license",
+          "detected": [
+            "BSD-3-Clause"
+          ]
+        },
+        {
+          "path": "deps/google.golang.org__protobuf@v1.36.11/PATENTS",
+          "upstream_path": "PATENTS",
+          "kind": "patents"
+        }
+      ]
+    }
+  ]
+}
