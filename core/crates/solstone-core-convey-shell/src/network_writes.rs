@@ -273,6 +273,15 @@ async fn private_link_enable(
             enrollment: value.enrollment,
         })
         .unwrap_or(runtime);
+    if solstone_core_sol_link::service_identity::load_or_create_service_identity(&journal.0)
+        .is_err()
+    {
+        return refusal(
+            "service_operation_failed",
+            &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    }
     let committed = match solstone_core_sol_link::committed::load_committed_identity(&journal.0) {
         Ok(value) => value,
         Err(_) => {

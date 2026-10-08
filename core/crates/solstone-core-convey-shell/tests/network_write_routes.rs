@@ -1,6 +1,73 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(feature = "full-tests")]
+#[tokio::test]
+async fn enable_bootstraps_fresh_identity_and_repairs_state_using_the_existing_ca() {
+    for mode in ["fresh", "missing_state", "mismatched_state"] {
+        let root = journal();
+        let previous_ca = if mode == "fresh" {
+            None
+        } else {
+            plant_committed_identity(&root);
+            if mode == "missing_state" {
+                fs::remove_file(root.join("link/state.json")).unwrap();
+            } else {
+                fs::write(
+                    root.join("link/state.json"),
+                    b"{\"instance_id\":\"wrong-instance-id\",\"home_label\":\"Test\"}",
+                )
+                .unwrap();
+            }
+            Some(fs::read(root.join("link/ca/cert.pem")).unwrap())
+        };
+        let pending = json!({"service":"spl","state":"pending"})
+            .as_object()
+            .unwrap()
+            .clone();
+        let (app, _) = overridden(&root, SplPollOutcome::Success(pending), Enrollment::Token);
+        let (status, body) = request(
+            app,
+            Method::POST,
+            "/app/network/private-link/enable",
+            Body::empty(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{mode}: {body:?}");
+        let committed = solstone_core_sol_link::committed::load_committed_identity(&root).unwrap();
+        if let Some(certificate) = previous_ca {
+            assert_eq!(
+                fs::read(root.join("link/ca/cert.pem")).unwrap(),
+                certificate
+            );
+        }
+        let url = body["operation"]["portal_url"].as_str().unwrap();
+        let (_, query) = url.split_once('?').unwrap();
+        let params: std::collections::BTreeMap<_, _> = query
+            .split('&')
+            .map(|part| part.split_once('=').unwrap())
+            .collect();
+        assert_eq!(params.len(), 4);
+        let assertion =
+            solstone_core_sol_link::home_reach::percent_decode(params["assertion"]).unwrap();
+        let public_key =
+            solstone_core_sol_link::home_reach::percent_decode(params["ca_pubkey"]).unwrap();
+        assert!(
+            solstone_core_sol_link::home_reach::verify_service_enable_compact(
+                &public_key,
+                &assertion
+            )
+        );
+        let claims =
+            solstone_core_sol_link::home_reach::decode_service_enable_claims(&assertion).unwrap();
+        assert_eq!(claims["instance_id"], committed.instance_id());
+        assert_eq!(params["instance"], committed.instance_id());
+        assert_eq!(claims["service"], "spl");
+        assert_eq!(claims["nonce"], params["nonce"]);
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -595,8 +662,10 @@ async fn enable_busy_and_consent_preparation_failures_are_refusals() {
         assert_eq!(poll.calls.load(Ordering::Relaxed), 0);
     }
 
-    // Missing CA
+    // An established identity with its CA missing must not be silently replaced.
     let missing_ca = journal();
+    plant_committed_identity(&missing_ca);
+    fs::remove_dir_all(missing_ca.join("link/ca")).unwrap();
     assert_refusal(&missing_ca).await;
     let _ = fs::remove_dir_all(missing_ca);
 
@@ -606,24 +675,6 @@ async fn enable_busy_and_consent_preparation_failures_are_refusals() {
     fs::write(corrupt_ca.join("link/ca/cert.pem"), b"not a cert").unwrap();
     assert_refusal(&corrupt_ca).await;
     let _ = fs::remove_dir_all(corrupt_ca);
-
-    // Missing state
-    let missing_state = journal();
-    plant_committed_identity(&missing_state);
-    fs::remove_file(missing_state.join("link/state.json")).unwrap();
-    assert_refusal(&missing_state).await;
-    let _ = fs::remove_dir_all(missing_state);
-
-    // Mismatched state
-    let mismatched = journal();
-    plant_committed_identity(&mismatched);
-    fs::write(
-        mismatched.join("link/state.json"),
-        b"{\"instance_id\":\"wrong-instance-id\",\"home_label\":\"Test\"}",
-    )
-    .unwrap();
-    assert_refusal(&mismatched).await;
-    let _ = fs::remove_dir_all(mismatched);
 
     #[cfg(feature = "full-tests")]
     {

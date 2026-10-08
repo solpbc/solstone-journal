@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- your journal now signs requests to turn on a service. older journals can still turn on services during the rollout.
 - before your journal sends anything to confidential processing, it now also checks most of the measurements the service reports one by one against their published values, and refuses the service if any one doesn't match.
 - the encrypted backup screen now says up front that restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. restoring from storage sol pbc runs now points you to the services portal.
 - on windows, the setup warning and removal steps now say to move a journal kept inside the program folder before reinstalling or uninstalling. the steps explain how to remove its old background registration and select the moved journal again.
