@@ -6,6 +6,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.37] - 2026-10-08
+
+### Changed
+
+- on windows, this release brings everything in [2.0.36](https://solstone.app/releases#v2.0.36) that applies to windows. 2.0.36 wasn't released for windows.
+- on mac and linux, nothing changes from 2.0.36.
+
 ## [2.0.36] - 2026-10-08
 
 ### Added
