@@ -12,6 +12,7 @@ pub(crate) struct ThinkArgs {
     pub activity: Option<String>,
     pub stream: Option<String>,
     pub flush: bool,
+    pub settle: bool,
     pub jobs: i64,
     pub no_timeout: bool,
     pub segment_workers: Option<i64>,
@@ -40,6 +41,7 @@ impl Default for ThinkArgs {
             activity: None,
             stream: None,
             flush: false,
+            settle: false,
             jobs: 2,
             no_timeout: false,
             segment_workers: None,
@@ -71,6 +73,7 @@ pub(crate) const SEGMENT_WORKERS_RANGE: &str = "--segment-workers must be betwee
 pub(crate) const ACTIVITY_INCOMPATIBLE: &str =
     "--activity is incompatible with --segment, --segments, and --flush";
 pub(crate) const FLUSH_REQUIRES_SEGMENT: &str = "--flush requires --segment";
+pub(crate) const SETTLE_INCOMPATIBLE: &str = "--settle is incompatible with --segment, --segments, --activity, --flush, --refresh, --weekly, and --cadence";
 pub(crate) const FLUSH_INCOMPATIBLE: &str = "--flush is incompatible with --segments and --refresh";
 pub(crate) const SEGMENTS_INCOMPATIBLE: &str =
     "--segments is incompatible with --segment and --facet";
@@ -106,6 +109,7 @@ pub(crate) fn parse(args: &[String]) -> Result<ParseOutcome, String> {
             "--reactivate" => parsed.reactivate = true,
             "--stream" => parsed.stream = Some(value("--stream")?),
             "--flush" => parsed.flush = true,
+            "--settle" => parsed.settle = true,
             "-j" | "--jobs" => {
                 parsed.jobs = value(argument)?
                     .parse()

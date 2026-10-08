@@ -27,7 +27,7 @@ fn think_usage_is_owner_facing_and_refusals_are_detailed() {
     assert_eq!(help.stderr, b"");
     assert_eq!(
         help.stdout,
-        b"usage: solstone journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]\n"
+        b"usage: solstone journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [--settle] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]\n"
     );
     let output = command(&["think", "--facet", "work"], &journal)
         .output()
@@ -100,6 +100,10 @@ fn think_preserves_all_thirteen_semantic_refusal_messages() {
         (
             &["--flush", "--segment", "x", "--segments"],
             "--flush is incompatible with --segments and --refresh",
+        ),
+        (
+            &["--settle", "--segment", "x"],
+            "--settle is incompatible with --segment, --segments, --activity, --flush, --refresh, --weekly, and --cadence",
         ),
         (
             &["--segments", "--segment", "x"],
@@ -177,6 +181,7 @@ fn every_supported_argument_spelling_reaches_think_not_top_level_usage() {
         &["--activity", "a"],
         &["--stream", "stream"],
         &["--flush"],
+        &["--settle"],
         &["-j", "2"],
         &["--jobs", "2"],
         &["--no-timeout"],

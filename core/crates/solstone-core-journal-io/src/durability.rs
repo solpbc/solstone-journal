@@ -69,6 +69,7 @@ pub enum ArtifactId {
     SpeakersInstallOwner,
     ActivityState,
     StreamActivityState,
+    ActivitySettle,
     AwarenessCurrent,
     HealthMarkerStream,
     HealthMarkerDaily,
@@ -240,6 +241,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::RegenerableCache,
         parser: ParserKind::WholeJson,
         rationale: "one stream's current activity state machine snapshot; rebuilt from chronicle segments",
+    },
+    DurableArtifact {
+        id: ArtifactId::ActivitySettle,
+        path: "awareness/activity_settle/*.json",
+        class: DurabilityClass::RegenerableCache,
+        parser: ParserKind::WholeJson,
+        rationale: "one stream's activities waiting to settle and when they were first seen; candidates are rebuilt from chronicle segments, so a lost file only restarts their clocks",
     },
     DurableArtifact {
         id: ArtifactId::AwarenessCurrent,

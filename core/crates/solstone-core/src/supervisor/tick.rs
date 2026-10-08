@@ -358,6 +358,14 @@ pub(crate) async fn run(
             state.last_scratch_sweep = Some(tick);
         }
         let today = wall.format("%Y%m%d").to_string();
+        check_activity_settle(
+            &state.journal,
+            &state.queue,
+            &mut state.last_activity_settle_scan,
+            tick,
+            wall.timestamp_millis(),
+            &today,
+        );
         let (seed_outcome, drain_outcome) = activity_retry_drain_with(
             state.no_daily,
             processing_is_deferred(&state.journal),
@@ -573,6 +581,41 @@ pub(crate) fn check_segment_flush(
         }
         !due
     });
+}
+
+/// How often the supervisor reads when each stream's activities next need a
+/// settle check.
+const SETTLE_SCAN_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Run `think --settle` for each stream whose activities are due a settle
+/// check. The due times are kept on disk by the checks themselves, so a
+/// restart loses none of them.
+pub(crate) fn check_activity_settle(
+    journal: &Path,
+    queue: &TaskQueue,
+    last_scan: &mut Instant,
+    tick: Instant,
+    now_ms: i64,
+    today: &str,
+) {
+    if tick.saturating_duration_since(*last_scan) < SETTLE_SCAN_INTERVAL
+        || processing_is_deferred(journal)
+        || no_thinking_engine_chosen(journal)
+    {
+        return;
+    }
+    *last_scan = tick;
+    for stream in solstone_core_think_cli::activity_settle_due(journal, now_ms) {
+        let reference = format!("supervisor-settle-{stream}");
+        if queue.contains_reference(&reference) {
+            continue;
+        }
+        let _ = submit_think(queue, settle_think_argv(&stream), today, reference);
+    }
+}
+
+fn settle_think_argv(stream: &str) -> Vec<String> {
+    canonical_journal_command(["think", "-v", "--settle", "--stream", stream])
 }
 
 /// Handle one detected local-day rollover, including a forced previous-day flush.
@@ -1989,6 +2032,7 @@ mod tests {
             daily: DailyState { last_day: None },
             last_retry_expiry_drain: Instant::now(),
             last_activity_retry_drain: Instant::now(),
+            last_activity_settle_scan: Instant::now() - Duration::from_secs(60),
             last_scratch_sweep: None,
             activity_retry_seed_day: None,
             wedge: solstone_core_system::provider_runtime::WedgeState::default(),
@@ -3713,6 +3757,54 @@ mod tests {
             day: day.to_owned(),
             segment: segment.to_owned(),
         }
+    }
+
+    #[test]
+    fn a_stream_whose_settle_check_is_due_gets_one_and_a_restart_keeps_it() {
+        let bed = Bed::new("settle-due");
+        bed.enable_thinking();
+        let queue = queue(&bed.root);
+        let dir = bed.root.join("awareness/activity_settle");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("watch.json"),
+            r#"{"due_ms":1000,"days":{"20260101":{}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("desktop.json"),
+            r#"{"due_ms":5000,"days":{"20260101":{}}}"#,
+        )
+        .unwrap();
+        let origin = Instant::now();
+        let mut last = origin - SETTLE_SCAN_INTERVAL;
+
+        check_activity_settle(&bed.root, &queue, &mut last, origin, 2000, "20260101");
+        assert_eq!(pending(&queue), 1, "only the stream that is due");
+        assert!(queue.contains_reference("supervisor-settle-watch"));
+        assert_eq!(
+            settle_think_argv("watch"),
+            [
+                "solstone", "journal", "think", "-v", "--settle", "--stream", "watch"
+            ]
+            .map(str::to_owned)
+        );
+
+        // Within the scan interval nothing is read again; once it has
+        // passed, a check already queued is not queued twice.
+        check_activity_settle(&bed.root, &queue, &mut last, origin, 9000, "20260101");
+        assert_eq!(pending(&queue), 1);
+        let later = origin + SETTLE_SCAN_INTERVAL;
+        check_activity_settle(&bed.root, &queue, &mut last, later, 9000, "20260101");
+        assert_eq!(pending(&queue), 2);
+        assert!(queue.contains_reference("supervisor-settle-desktop"));
+
+        // A new supervisor reads the same due times from disk.
+        let restarted = self::queue(&bed.root);
+        let mut fresh = later - SETTLE_SCAN_INTERVAL;
+        check_activity_settle(&bed.root, &restarted, &mut fresh, later, 9000, "20260101");
+        assert_eq!(pending(&restarted), 2);
+        assert!(restarted.contains_reference("supervisor-settle-watch"));
     }
 
     #[test]

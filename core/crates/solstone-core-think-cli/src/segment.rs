@@ -1037,6 +1037,24 @@ pub(crate) fn run_repair_batch_with_activity(
         ) {
             crate::dispatch::record_followup_failure(&mut result, "activity replay", &error);
         }
+        let streams = selected
+            .iter()
+            .filter_map(|(_, stream)| stream.clone())
+            .collect::<BTreeSet<_>>();
+        for stream in streams {
+            if crate::settle::defers(Some(&stream), refresh)
+                && let Err(error) = crate::settle::check(
+                    context,
+                    log,
+                    &stream,
+                    false,
+                    no_activity_prompts,
+                    max_concurrency,
+                )
+            {
+                crate::dispatch::record_followup_failure(&mut result, "activity settle", &error);
+            }
+        }
         result
     })
 }
@@ -1072,7 +1090,7 @@ fn stream_day_segments(
 
 /// The stream coordinate of a discovered segment directory: its named stream,
 /// or the journal's name for the direct-under-day layout.
-fn stream_coordinate(segment_dir: &std::path::Path, day: &str) -> String {
+pub(crate) fn stream_coordinate(segment_dir: &std::path::Path, day: &str) -> String {
     named_stream(segment_dir, day)
         .unwrap_or(DEFAULT_STREAM)
         .to_owned()
@@ -1095,23 +1113,11 @@ pub(crate) fn replay_activity_state(
     skip_activity_prompts: bool,
     hydrate_existing: bool,
 ) -> Result<(), String> {
-    if !hydrate_existing {
-        return replay_activity_state_selected(
-            context,
-            log,
-            segments,
-            refresh,
-            max_concurrency,
-            skip_activity_prompts,
-            false,
-            None,
-        );
-    }
-    let mut ordered = segments.to_vec();
-    ordered.sort();
-    let errors = ordered
-        .into_iter()
-        .filter_map(|(segment, stream)| {
+    let mut errors = Vec::new();
+    if hydrate_existing {
+        let mut ordered = segments.to_vec();
+        ordered.sort();
+        errors.extend(ordered.into_iter().filter_map(|(segment, stream)| {
             advance_live_activity_state(
                 context,
                 log,
@@ -1122,8 +1128,41 @@ pub(crate) fn replay_activity_state(
                 skip_activity_prompts,
             )
             .err()
+        }));
+    } else if let Err(error) = replay_activity_state_selected(
+        context,
+        log,
+        segments,
+        refresh,
+        max_concurrency,
+        skip_activity_prompts,
+        false,
+        None,
+    ) {
+        errors.push(error);
+    }
+    // Write what has settled on each stream the replay touched.
+    let streams = segments
+        .iter()
+        .filter_map(|(segment, stream)| {
+            find_segment_dir(&context.journal, &context.day, segment, stream.as_deref())
+                .map(|dir| stream_coordinate(&dir, &context.day))
         })
-        .collect::<Vec<_>>();
+        .collect::<BTreeSet<_>>();
+    for stream in streams {
+        if crate::settle::defers(Some(&stream), refresh)
+            && let Err(error) = crate::settle::check(
+                context,
+                log,
+                &stream,
+                false,
+                skip_activity_prompts,
+                max_concurrency,
+            )
+        {
+            errors.push(error);
+        }
+    }
     if errors.is_empty() {
         Ok(())
     } else {
@@ -1142,7 +1181,7 @@ const LIVE_ORDER_WAIT_MS: i64 = 15 * 60 * 1000;
 /// The longest one earlier segment can hold its stream back, however busy the
 /// stream stays: a segment that never gets Sense must not hold it all day.
 /// Past either limit the tail goes on, and the straggler is late evidence.
-const LIVE_ORDER_HOLD_MS: i64 = 2 * 60 * 60 * 1000;
+pub(crate) const LIVE_ORDER_HOLD_MS: i64 = 2 * 60 * 60 * 1000;
 
 /// What the live tail does for one stream.
 #[derive(Debug, PartialEq, Eq)]
@@ -1153,7 +1192,7 @@ enum LiveStep {
     Late,
 }
 
-fn modified_ms(path: &std::path::Path) -> Option<i64> {
+pub(crate) fn modified_ms(path: &std::path::Path) -> Option<i64> {
     let modified = std::fs::metadata(path)
         .and_then(|meta| meta.modified())
         .ok()?;
@@ -1355,7 +1394,7 @@ fn advance_live_activity_state(
                 context.day
             );
             let selected =
-                std::collections::BTreeSet::from([(segment.to_owned(), Some(coordinate))]);
+                std::collections::BTreeSet::from([(segment.to_owned(), Some(coordinate.clone()))]);
             replay_activity_state_selected(
                 context,
                 log,
@@ -1526,18 +1565,28 @@ fn replay_activity_state_selected(
         // run stopped in between leaves the activity open in the snapshot, so
         // the stream's next segment or flush ends it again and the append
         // finds it already there.
-        let published = publish_ended_activities(
-            context,
-            log,
-            &segment,
-            &routing_day,
-            state_stream,
-            changes,
-            &selected_completed(machine, stream.as_deref(), selected),
-            refresh,
-            skip_activity_prompts,
-            &mut talents,
-        );
+        // A live stream's activities are written once its evidence settles,
+        // from its day's capture-order rebuild; here the days are only marked.
+        let published = if crate::settle::defers(stream.as_deref(), refresh) {
+            crate::settle::note(
+                &context.journal,
+                stream.as_deref().unwrap_or(DEFAULT_STREAM),
+                &[routing_day.as_str(), context.day.as_str()],
+            )
+        } else {
+            publish_ended_activities(
+                context,
+                log,
+                &segment,
+                &routing_day,
+                state_stream,
+                changes,
+                &selected_completed(machine, stream.as_deref(), selected),
+                refresh,
+                skip_activity_prompts,
+                &mut talents,
+            )
+        };
         #[cfg(test)]
         if hydrate_existing {
             state_probe::at(&context.journal, "published");
@@ -1612,7 +1661,7 @@ fn selected_completed(
 /// A durable Sense projection can drive activity state once it says how
 /// active the segment was and what kind of work it held; nothing else is
 /// required.
-fn valid_activity_sense(sense: &Value) -> bool {
+pub(crate) fn valid_activity_sense(sense: &Value) -> bool {
     ["density", "content_type"]
         .into_iter()
         .all(|key| sense.get(key).is_some())
@@ -1653,18 +1702,27 @@ fn flush_replay_machines(
             .unwrap_or(&context.day)
             .to_owned();
         let changes = machine.close_active(&last_segment, context.now_ms);
-        if let Err(error) = publish_ended_activities(
-            context,
-            log,
-            &last_segment,
-            &routing_day,
-            stream.as_deref().filter(|stream| *stream != DEFAULT_STREAM),
-            changes,
-            &selected_completed(machine, stream.as_deref(), selected),
-            refresh,
-            skip_activity_prompts,
-            talents,
-        ) {
+        let published = if crate::settle::defers(stream.as_deref(), refresh) {
+            crate::settle::note(
+                &context.journal,
+                stream.as_deref().unwrap_or(DEFAULT_STREAM),
+                &[routing_day.as_str()],
+            )
+        } else {
+            publish_ended_activities(
+                context,
+                log,
+                &last_segment,
+                &routing_day,
+                stream.as_deref().filter(|stream| *stream != DEFAULT_STREAM),
+                changes,
+                &selected_completed(machine, stream.as_deref(), selected),
+                refresh,
+                skip_activity_prompts,
+                talents,
+            )
+        };
+        if let Err(error) = published {
             errors.push(error);
         }
     }
@@ -1726,6 +1784,8 @@ pub(crate) fn close_idle_activities(
     {
         errors.push(error);
     }
+    // Whether `segment` is still the stream's last: only then is the stream idle.
+    let mut idle = false;
     'close: {
         // The flush runs in its own queue partition, so a live segment on
         // this stream may be advancing the same state right now.
@@ -1738,23 +1798,33 @@ pub(crate) fn close_idle_activities(
         {
             break 'close;
         }
+        idle = true;
         let changes = machine.close_active(segment, context.now_ms);
         if changes.is_empty() {
             break 'close;
         }
         let day = context.day.clone();
-        if let Err(error) = publish_ended_activities(
-            context,
-            log,
-            segment,
-            &day,
-            stream,
-            changes,
-            &machine.completed_activities(),
-            false,
-            skip_activity_prompts,
-            &mut talents,
-        ) {
+        let published = if crate::settle::defers(stream, false) {
+            crate::settle::note(
+                &context.journal,
+                stream.unwrap_or(DEFAULT_STREAM),
+                &[day.as_str()],
+            )
+        } else {
+            publish_ended_activities(
+                context,
+                log,
+                segment,
+                &day,
+                stream,
+                changes,
+                &machine.completed_activities(),
+                false,
+                skip_activity_prompts,
+                &mut talents,
+            )
+        };
+        if let Err(error) = published {
             errors.push(error);
         }
         #[cfg(test)]
@@ -1764,6 +1834,18 @@ pub(crate) fn close_idle_activities(
         }
     }
     if let Err(error) = run_activity_talents(context, log, talents, false, max_concurrency) {
+        errors.push(error);
+    }
+    if crate::settle::defers(stream, false)
+        && let Err(error) = crate::settle::check(
+            context,
+            log,
+            stream.unwrap_or(DEFAULT_STREAM),
+            idle,
+            skip_activity_prompts,
+            max_concurrency,
+        )
+    {
         errors.push(error);
     }
     if errors.is_empty() {
@@ -1864,7 +1946,7 @@ fn persist_activity_state(
 
 /// A published activity whose talent work is recorded and still to run,
 /// with the claim that keeps other runs off it until it does.
-struct EndedActivity {
+pub(crate) struct EndedActivity {
     day: String,
     facet: String,
     id: String,
@@ -1947,16 +2029,69 @@ fn publish_ended_activities(
                 continue;
             }
         };
-        // The ID it was published under: its own when another stream's
-        // activity already held the one its type and first segment make.
-        let published_id = record
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or(id)
-            .to_owned();
-        let id = published_id.as_str();
+        if let Err(failure) = record_publication(
+            context,
+            log,
+            segment,
+            routing_day,
+            facet,
+            &record,
+            id,
+            written,
+            refresh,
+            skip_activity_prompts,
+            talents,
+        ) {
+            failures.push(failure);
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("activity work pending: {}", failures.join(", ")))
+    }
+}
+
+/// Log a written activity and record its talent work, without running any
+/// of it. Every publisher ends here once the record store holds the activity.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn record_publication(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    segment: &str,
+    routing_day: &str,
+    facet: &str,
+    record: &Map<String, Value>,
+    fallback_id: &str,
+    written: bool,
+    refresh: bool,
+    skip_activity_prompts: bool,
+    talents: &mut Vec<EndedActivity>,
+) -> Result<(), String> {
+    // The ID it was published under: its own when another stream's
+    // activity already held the one its type and first segment make.
+    let published_id = record
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or(fallback_id)
+        .to_owned();
+    let id = published_id.as_str();
+    log.log(
+        "activity.persisted",
+        context.now_ms,
+        activity_event(
+            context,
+            segment,
+            routing_day,
+            Map::from_iter([
+                ("activity".to_owned(), Value::String(id.to_owned())),
+                ("facet".to_owned(), Value::String(facet.to_owned())),
+            ]),
+        ),
+    );
+    if skip_activity_prompts {
         log.log(
-            "activity.persisted",
+            "activity.prompts_skipped",
             context.now_ms,
             activity_event(
                 context,
@@ -1965,60 +2100,71 @@ fn publish_ended_activities(
                 Map::from_iter([
                     ("activity".to_owned(), Value::String(id.to_owned())),
                     ("facet".to_owned(), Value::String(facet.to_owned())),
+                    (
+                        "reason".to_owned(),
+                        Value::String("--no-activity-prompts".to_owned()),
+                    ),
                 ]),
             ),
         );
-        if skip_activity_prompts {
-            log.log(
-                "activity.prompts_skipped",
-                context.now_ms,
-                activity_event(
-                    context,
-                    segment,
-                    routing_day,
-                    Map::from_iter([
-                        ("activity".to_owned(), Value::String(id.to_owned())),
-                        ("facet".to_owned(), Value::String(facet.to_owned())),
-                        (
-                            "reason".to_owned(),
-                            Value::String("--no-activity-prompts".to_owned()),
-                        ),
-                    ]),
-                ),
-            );
-            continue;
-        }
-        let (changed, _) = activity_input_changed(context, routing_day, facet, id, &record);
-        if !(written || refresh || changed) {
-            log.log(
-                "activity.unchanged",
-                context.now_ms,
-                activity_event(
-                    context,
-                    segment,
-                    routing_day,
-                    Map::from_iter([("activity".to_owned(), Value::String(id.to_owned()))]),
-                ),
-            );
-            continue;
-        }
-        let enqueued = activity_context(context, routing_day)
-            .and_then(|day_context| crate::activity::enqueue(&day_context, id, facet, refresh));
-        match enqueued {
-            Ok(claim) => talents.push(EndedActivity {
+        return Ok(());
+    }
+    let (changed, _) = activity_input_changed(context, routing_day, facet, id, record);
+    if !(written || refresh || changed) {
+        log.log(
+            "activity.unchanged",
+            context.now_ms,
+            activity_event(
+                context,
+                segment,
+                routing_day,
+                Map::from_iter([("activity".to_owned(), Value::String(id.to_owned()))]),
+            ),
+        );
+        return Ok(());
+    }
+    let enqueued = activity_context(context, routing_day)
+        .and_then(|day_context| crate::activity::enqueue(&day_context, id, facet, refresh));
+    match enqueued {
+        Ok(claim) => {
+            talents.push(EndedActivity {
                 day: routing_day.to_owned(),
                 facet: facet.to_owned(),
                 id: id.to_owned(),
                 claim,
-            }),
-            Err(error) => failures.push(format!("{facet}/{id}: {error}")),
+            });
+            Ok(())
         }
+        Err(error) => Err(format!("{facet}/{id}: {error}")),
     }
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        Err(format!("activity work pending: {}", failures.join(", ")))
+}
+
+/// Record talent work again for a written activity whose input has changed
+/// since its talents last ran, as publishing it again would.
+pub(crate) fn rethink_if_input_changed(
+    context: &ThinkContext,
+    routing_day: &str,
+    facet: &str,
+    record: &Map<String, Value>,
+    talents: &mut Vec<EndedActivity>,
+) -> Result<(), String> {
+    let Some(id) = record.get("id").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let (changed, _) = activity_input_changed(context, routing_day, facet, id, record);
+    if !changed {
+        return Ok(());
     }
+    let claim = activity_context(context, routing_day)
+        .and_then(|day_context| crate::activity::enqueue(&day_context, id, facet, false))
+        .map_err(|error| format!("{facet}/{id}: {error}"))?;
+    talents.push(EndedActivity {
+        day: routing_day.to_owned(),
+        facet: facet.to_owned(),
+        id: id.to_owned(),
+        claim,
+    });
+    Ok(())
 }
 
 /// Append an ended activity, giving it its own ID when another stream's
@@ -2032,7 +2178,7 @@ fn publish_ended_activities(
 /// it is taken as the same activity, as before; a record of ours with no
 /// stream sits directly under the day and takes that layout's name. The choice
 /// holds on every later publish, because the first record stays where it is.
-fn append_own_activity(
+pub(crate) fn append_own_activity(
     journal: &std::path::Path,
     facet: &str,
     day: &str,
@@ -2080,7 +2226,7 @@ fn append_own_activity(
 
 /// Run the talents of activities [`publish_ended_activities`] recorded. A run
 /// stopped partway leaves the rest to the retry drain.
-fn run_activity_talents(
+pub(crate) fn run_activity_talents(
     context: &ThinkContext,
     log: &mut RunLogWriter,
     talents: Vec<EndedActivity>,
@@ -2134,7 +2280,7 @@ fn run_activity_talents(
 /// An activity's lifecycle event. An activity can end in a segment from the
 /// next day; its events use the same source day as its record and talents,
 /// and keep the triggering segment's day separately.
-fn activity_event(
+pub(crate) fn activity_event(
     context: &ThinkContext,
     segment: &str,
     routing_day: &str,
@@ -2148,7 +2294,7 @@ fn activity_event(
 
 /// The context an activity's talents run in: the day its record is filed
 /// under, with this run's boundaries and clock.
-fn activity_context(context: &ThinkContext, day: &str) -> Result<ThinkContext, String> {
+pub(crate) fn activity_context(context: &ThinkContext, day: &str) -> Result<ThinkContext, String> {
     let mut day_context = ThinkContext::new_with_event_clock(
         &context.journal,
         day.to_owned(),
@@ -2797,7 +2943,7 @@ fn resolve_segment_dir(
 
 /// The named stream a discovered segment directory sits under, or `None` for
 /// the direct-under-day layout.
-fn named_stream<'a>(segment_dir: &'a std::path::Path, day: &str) -> Option<&'a str> {
+pub(crate) fn named_stream<'a>(segment_dir: &'a std::path::Path, day: &str) -> Option<&'a str> {
     let parent = segment_dir.parent()?.file_name()?.to_str()?;
     (parent != day).then_some(parent)
 }
@@ -2927,7 +3073,7 @@ fn python_truthy(value: &Value) -> bool {
     }
 }
 
-fn filter_declared_facets<W: std::io::Write>(
+pub(crate) fn filter_declared_facets<W: std::io::Write>(
     facets_value: Option<&Value>,
     inventory: &DeclaredFacetInventory,
     context: &ThinkContext,

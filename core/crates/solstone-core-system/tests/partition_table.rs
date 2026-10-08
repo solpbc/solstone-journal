@@ -24,6 +24,12 @@ fn decision_table() -> Vec<(&'static str, Vec<&'static str>, &'static str)> {
             "activity",
         ),
         ("think_flush", vec!["journal", "think", "--flush"], "flush"),
+        // a settle check publishes beside the idle flush, not beside the day
+        (
+            "think_settle",
+            vec!["journal", "think", "--settle", "--stream", "watch"],
+            "flush",
+        ),
         (
             "think_segments",
             vec!["journal", "think", "--segments"],
