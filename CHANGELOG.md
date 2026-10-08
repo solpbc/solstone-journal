@@ -9,7 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - the journal's thinking app now says when confidential processing is no longer active for your sign-in, and how to get it back.
-- on windows, you can now turn on confidential processing on the thinking page, as on mac and linux. before sending anything, your journal checks the service's hardware, and sends nothing if it can't verify it.
+- on windows, the thinking page now offers confidential processing, as on mac and linux. before sending anything, your journal checks the service's hardware, and sends nothing if it can't verify it.
 - your journal now signs requests to turn on a service. older journals can still turn on services during the rollout.
 - before your journal sends anything to confidential processing, it now also checks most of the measurements the service reports one by one against their published values, and refuses the service if any one doesn't match.
 - the encrypted backup screen now says up front that restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. restoring from storage sol pbc runs now points you to the services portal.
