@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the encrypted backup screen now says up front that restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. restoring from storage sol pbc runs now points you to the services portal.
 - on windows, the setup warning and removal steps now say to move a journal kept inside the program folder before reinstalling or uninstalling. the steps explain how to remove its old background registration and select the moved journal again.
 - your journal now writes an activity once it has ended and nothing new has arrived for it for at least five minutes, so activities from every source except imports appear later than before. an activity written since this update can grow when more of it arrives, and its story is then written again, which means more requests to your thinking provider.
+- devices paired with your journal now also get the address you chose for your journal when they check its current addresses. while your journal is closed to devices on your network, it no longer gives them addresses it can't be reached at.
 
 ### Fixed
 
