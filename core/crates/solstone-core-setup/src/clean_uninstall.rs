@@ -871,6 +871,51 @@ fn remove_user_skill(
             );
         }
     };
+    if metadata.file_type().is_dir() {
+        let decision = may_remove_cleanup_target(
+            &path,
+            CleanupTargetKind::Shared,
+            context.plan.remove_owner_config,
+            context.registry_known,
+            &context.protected_journals,
+            context.platform,
+        );
+        if decision != CleanupTargetDecision::Remove {
+            return preserve_for_decision("user-skill", path, decision);
+        }
+        let matches = match solstone_core_skill_state::user_skill_copy_matches(
+            &context.bundled_user_skill,
+            &path,
+        ) {
+            Ok(matches) => matches,
+            Err(error) => {
+                return result(
+                    "user-skill",
+                    CleanUninstallState::Failed,
+                    Some(path),
+                    Some(error.to_string()),
+                );
+            }
+        };
+        if !matches {
+            return marked_result(
+                "user-skill",
+                CleanUninstallState::Preserved,
+                Some(path),
+                Some("your own skill content is preserved".into()),
+                CleanUninstallMark::Foreign,
+            );
+        }
+        return match fs::remove_dir_all(&path) {
+            Ok(()) => result("user-skill", CleanUninstallState::Removed, Some(path), None),
+            Err(error) => result(
+                "user-skill",
+                CleanUninstallState::Failed,
+                Some(path),
+                Some(error.to_string()),
+            ),
+        };
+    }
     if !metadata.file_type().is_symlink() {
         return marked_result(
             "user-skill",
@@ -2063,5 +2108,85 @@ mod tests {
                 && result.path.as_deref() == Some(manifest.as_path())
         }));
         assert!(manifest.exists());
+    }
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn installed_skill_copies_remove_only_with_owned_tree_and_safe_shared_boundary() {
+        for case in [
+            "eligible",
+            "modified",
+            "extra-empty",
+            "another-install",
+            "unknown",
+            "journal-root",
+            "journal-child",
+            "missing-reference",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            let home = root.join("home");
+            let bundled = root.join("bundled");
+            fs::create_dir_all(bundled.join("empty")).unwrap();
+            fs::write(bundled.join("SKILL.md"), "published skill\n").unwrap();
+            for path in user_skill_paths(&home) {
+                fs::create_dir_all(path.join("empty")).unwrap();
+                fs::write(path.join("SKILL.md"), "published skill\n").unwrap();
+            }
+            if case == "missing-reference" {
+                fs::remove_file(bundled.join("SKILL.md")).unwrap();
+            }
+            let mut runner = Runner(VecDeque::new());
+            let mut confirm = || true;
+            let mut context = CleanUninstallContext {
+                journal_path: root.join("journal"),
+                home_dir: home,
+                config_path: root.join("config.toml"),
+                manifest_path: root.join("journal/health/setup-state.json"),
+                plan: plan(),
+                protected_journals: ProtectedJournals::new(PlatformTag::Linux),
+                registry_known: case != "unknown",
+                platform: PlatformTag::Linux,
+                bundled_user_skill: bundled,
+                artifact_evidence: ArtifactBindingEvidence::Fresh,
+                curdir: root.join("repo"),
+                executable_dir: root.join("bin"),
+                yes: true,
+                stdin_is_tty: false,
+                confirm: &mut confirm,
+                runner: &mut runner,
+                identity_hold: &mut |_| Ok(()),
+            };
+            context.plan.remove_owner_config = case != "another-install";
+            for path in user_skill_paths(&context.home_dir) {
+                match case {
+                    "modified" => fs::write(path.join("SKILL.md"), "owner skill\n").unwrap(),
+                    "extra-empty" => fs::create_dir(path.join("owner-empty")).unwrap(),
+                    "journal-root" => context.protected_journals.insert(path.clone()),
+                    "journal-child" => context.protected_journals.insert(path.join("empty")),
+                    _ => {}
+                }
+                let before = fs::read(path.join("SKILL.md")).unwrap();
+                let result = remove_user_skill(path.clone(), &context);
+                if case == "eligible" {
+                    assert_eq!(result.state, CleanUninstallState::Removed);
+                    assert!(!path.exists());
+                    assert_eq!(
+                        remove_user_skill(path, &context).state,
+                        CleanUninstallState::AlreadyAbsent
+                    );
+                } else {
+                    assert_eq!(fs::read(path.join("SKILL.md")).unwrap(), before);
+                    assert!(path.join("empty").is_dir());
+                    assert_eq!(
+                        result.state,
+                        if case == "missing-reference" {
+                            CleanUninstallState::Failed
+                        } else {
+                            CleanUninstallState::Preserved
+                        }
+                    );
+                }
+            }
+        }
     }
 }

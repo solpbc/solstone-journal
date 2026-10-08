@@ -56,7 +56,7 @@ Only artifacts under the owner's `$HOME` are examined. A `solstone`/`journal` in
 solstone journal setup --clean-uninstall --yes
 ```
 
-Cleanup removes service files, wrappers, config, caches, setup backups, package receipts and skill links when they belong to this installation and are outside every recorded journal folder. Shared shell PATH additions, copied or custom skills, and small installation records stay to prevent old launchers from starting a removed installation.
+Cleanup removes service files, wrappers, config, caches, setup backups, package receipts and skill links when they belong to this installation and are outside every recorded journal folder. For the last installation, it also removes user skill copies that match the bundled skill. Modified or unrecognized copies and shared shell PATH additions stay. Small installation records stay to prevent old launchers from starting a removed installation.
 
 Your journal stays, including its setup manifest. Read the cleanup result; if cleanup fails, stop and resolve the reported problem first. Follow [INSTALL.md](https://github.com/solpbc/solstone-journal/blob/main/INSTALL.md) for each platform's removal steps and retained files.
 

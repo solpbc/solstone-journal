@@ -3646,6 +3646,7 @@ mod tests {
         let (owner, binding) = full_install(&home, &executable_dir, &journal);
         let bundled = executable_dir.join("solstone/talent/solstone");
         fs::create_dir_all(&bundled).unwrap();
+        fs::write(bundled.join("SKILL.md"), "published skill\n").unwrap();
         let claude = home.join(".claude/skills/solstone");
         let codex = home.join(".codex/skills/solstone");
         let gemini = home.join(".gemini/skills/solstone");
@@ -3706,5 +3707,52 @@ mod tests {
         assert!(rclone.is_symlink());
         assert!(manifest.exists());
         assert!(canary.exists());
+    }
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn clean_uninstall_copy_inspection_failure_never_tombstones_and_retry_preserves_journal() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let home = root.join("home");
+        let executable_dir = root.join("install/bin");
+        let journal = root.join("journal");
+        let (owner, binding) = full_install(&home, &executable_dir, &journal);
+        fs::write(journal.join("owner.txt"), "owner bytes\n").unwrap();
+        fs::create_dir(journal.join("empty")).unwrap();
+        let journal_before = identity_snapshot(&journal);
+        let state_before = identity_snapshot(&owner.path());
+        let skill = home.join(".claude/skills/solstone");
+        create_private_nested_dir(&home, &skill);
+        fs::write(skill.join("SKILL.md"), "published skill\n").unwrap();
+        let (failed, _, _) = run_clean_entry(&home, &executable_dir, root);
+        assert_ne!(failed, ExitCode::SUCCESS);
+        assert_eq!(identity_snapshot(&journal), journal_before);
+        assert_eq!(identity_snapshot(&owner.path()), state_before);
+        assert_eq!(
+            fs::read(skill.join("SKILL.md")).unwrap(),
+            b"published skill\n"
+        );
+        let bundled = executable_dir.join("solstone/talent/solstone");
+        fs::create_dir_all(&bundled).unwrap();
+        fs::write(bundled.join("SKILL.md"), "published skill\n").unwrap();
+        let (retry, _, stderr) = run_clean_entry(&home, &executable_dir, root);
+        assert_eq!(
+            retry,
+            ExitCode::SUCCESS,
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        assert!(!skill.exists());
+        assert_eq!(identity_snapshot(&journal), journal_before);
+        let record = solstone_core_installation_identity::read_installation_journal_census(
+            &owner,
+            &root_token_from_path(&executable_dir).unwrap(),
+            true,
+        )
+        .unwrap()
+        .root_record
+        .unwrap();
+        assert_eq!(record.lifecycle, LifecycleState::Tombstoned);
+        assert_eq!(record.generation, binding.generation);
     }
 }

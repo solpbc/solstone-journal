@@ -1048,17 +1048,7 @@ fn append_error(
 }
 
 fn tree_matches(src_dir: &Path, dst_dir: &Path) -> io::Result<bool> {
-    let src_files = collect_file_rel_paths(src_dir)?;
-    let dst_files = collect_file_rel_paths(dst_dir)?;
-    if src_files != dst_files {
-        return Ok(false);
-    }
-    for rel in src_files {
-        if fs::read(src_dir.join(&rel))? != fs::read(dst_dir.join(&rel))? {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    solstone_core_skill_state::user_skill_copy_matches(src_dir, dst_dir)
 }
 
 fn copy_tree_files(src_dir: &Path, dst_dir: &Path) -> io::Result<()> {

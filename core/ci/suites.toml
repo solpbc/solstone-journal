@@ -1288,12 +1288,13 @@ features = ["full-tests"]
 [[package_suites]]
 id = "package::solstone-core-skill-state"
 package = "solstone-core-skill-state"
+features = ["full-tests"]
 set = "component"
 areas = ["talents"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
 
 [[package_suites]]

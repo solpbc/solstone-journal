@@ -117,6 +117,72 @@ pub fn stale_router_skill_links(link_parent: &Path) -> Result<Vec<StaleRouterSki
         .collect())
 }
 
+/// Match an installed user copy against the complete bundled skill tree.
+/// Extra empty directories, links, reparse points and special entries cannot
+/// establish ownership. Missing/unreadable reference data is never a match.
+pub fn user_skill_copy_matches(bundled: &Path, installed: &Path) -> std::io::Result<bool> {
+    fn is_link(metadata: &fs::Metadata) -> bool {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            metadata.file_type().is_symlink() || metadata.file_attributes() & 0x400 != 0
+        }
+        #[cfg(not(windows))]
+        {
+            metadata.file_type().is_symlink()
+        }
+    }
+    fn compare(source: &Path, target: &Path) -> std::io::Result<bool> {
+        let source_meta = fs::symlink_metadata(source)?;
+        let target_meta = fs::symlink_metadata(target)?;
+        if is_link(&source_meta) || is_link(&target_meta) {
+            return Ok(false);
+        }
+        if source_meta.is_file() && target_meta.is_file() {
+            return Ok(
+                source_meta.len() == target_meta.len() && fs::read(source)? == fs::read(target)?
+            );
+        }
+        if !source_meta.is_dir() || !target_meta.is_dir() {
+            return Ok(false);
+        }
+        fn names(path: &Path) -> std::io::Result<Vec<OsString>> {
+            let mut names = fs::read_dir(path)?
+                .map(|entry| entry.map(|entry| entry.file_name()))
+                .collect::<std::io::Result<Vec<_>>>()?;
+            names.sort();
+            Ok(names)
+        }
+        let source_names = names(source)?;
+        if source_names != names(target)? {
+            return Ok(false);
+        }
+        for name in source_names {
+            if !compare(&source.join(&name), &target.join(&name))? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+    let source_meta = fs::symlink_metadata(bundled)?;
+    let target_meta = fs::symlink_metadata(installed)?;
+    let skill_meta = fs::symlink_metadata(bundled.join("SKILL.md"))?;
+    if !source_meta.is_dir()
+        || is_link(&source_meta)
+        || !skill_meta.is_file()
+        || is_link(&skill_meta)
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "bundled skill reference requires a directory with a regular SKILL.md",
+        ));
+    }
+    if !target_meta.is_dir() || is_link(&target_meta) {
+        return Ok(false);
+    }
+    compare(bundled, installed)
+}
+
 fn lexical_relpath(target: &Path, base: &Path) -> String {
     let (target_root, target_parts) = lexical_parts(target);
     let (base_root, base_parts) = lexical_parts(base);
@@ -210,5 +276,80 @@ mod tests {
         );
         assert!(target.starts_with("../../.."), "{target}");
         assert!(target.ends_with("solstone/talent/journal"), "{target}");
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod user_copy_tests {
+    use super::user_skill_copy_matches;
+    use std::fs;
+    use std::path::Path;
+
+    fn tree(root: &Path) {
+        fs::create_dir_all(root.join("nested/empty")).unwrap();
+        fs::write(root.join("SKILL.md"), "published skill\n").unwrap();
+        fs::write(root.join("nested/guide.txt"), "published guide\n").unwrap();
+    }
+
+    #[test]
+    fn user_copy_exact_tree_and_owner_additions() {
+        for change in ["none", "bytes", "file", "empty", "kind"] {
+            let root = tempfile::tempdir().unwrap();
+            let source = root.path().join("source");
+            let target = root.path().join("target");
+            tree(&source);
+            tree(&target);
+            match change {
+                "bytes" => fs::write(target.join("SKILL.md"), "owner skill\n").unwrap(),
+                "file" => fs::write(target.join("owner.txt"), "owner bytes").unwrap(),
+                "empty" => fs::create_dir(target.join("owner-empty")).unwrap(),
+                "kind" => {
+                    fs::remove_file(target.join("nested/guide.txt")).unwrap();
+                    fs::create_dir(target.join("nested/guide.txt")).unwrap();
+                }
+                _ => {}
+            }
+            assert_eq!(
+                user_skill_copy_matches(&source, &target).unwrap(),
+                change == "none"
+            );
+        }
+    }
+
+    #[test]
+    fn user_copy_invalid_reference_never_proves_ownership() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let target = root.path().join("target");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&target).unwrap();
+        assert!(user_skill_copy_matches(&source, &target).is_err());
+        fs::create_dir(source.join("SKILL.md")).unwrap();
+        assert!(user_skill_copy_matches(&source, &target).is_err());
+        assert!(user_skill_copy_matches(&root.path().join("missing"), &target).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn user_copy_links_never_prove_ownership() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let target = root.path().join("target");
+        tree(&source);
+        tree(&target);
+        let external = root.path().join("external");
+        fs::write(&external, "published guide\n").unwrap();
+        fs::remove_file(target.join("nested/guide.txt")).unwrap();
+        symlink(&external, target.join("nested/guide.txt")).unwrap();
+        assert!(!user_skill_copy_matches(&source, &target).unwrap());
+        fs::remove_file(target.join("nested/guide.txt")).unwrap();
+        fs::remove_file(source.join("nested/guide.txt")).unwrap();
+        symlink(&external, source.join("nested/guide.txt")).unwrap();
+        symlink(&external, target.join("nested/guide.txt")).unwrap();
+        assert!(!user_skill_copy_matches(&source, &target).unwrap());
+        fs::remove_file(source.join("SKILL.md")).unwrap();
+        symlink(&external, source.join("SKILL.md")).unwrap();
+        assert!(user_skill_copy_matches(&source, &target).is_err());
     }
 }
