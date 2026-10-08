@@ -324,9 +324,14 @@ mod tests {
 
     impl Temp {
         fn new() -> Self {
+            // Tests run in parallel threads of one process, and the clock alone
+            // can hand two of them the same tick, so a counter keeps each
+            // journal its own.
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let path = std::env::temp_dir().join(format!(
-                "local-network-{}-{}",
+                "local-network-{}-{}-{}",
                 std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .expect("clock")
