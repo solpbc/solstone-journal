@@ -881,6 +881,13 @@ async fn confidential_enable(
             None,
         ),
     };
+    // A journal that has never paired a device or turned on another service has no identity
+    // yet; make it here, as the other turn-ons do, before signing the consent request.
+    if solstone_core_sol_link::service_identity::load_or_create_service_identity(&journal.0)
+        .is_err()
+    {
+        return confidential_enable_failed();
+    }
     let committed = match solstone_core_sol_link::committed::load_committed_identity(&journal.0) {
         Ok(committed) => committed,
         Err(_) => return confidential_enable_failed(),
@@ -2820,6 +2827,51 @@ mod tests {
                 .and_then(|l| l.get("credential"))
                 .is_none()
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn a_journal_with_no_identity_yet_can_start_turning_confidential_processing_on() {
+        if !solstone_core_thinking::confidential::offered_on_this_platform() {
+            return;
+        }
+        let root = temporary_journal("fresh-identity");
+        assert!(solstone_core_sol_link::committed::load_committed_identity(&root).is_err());
+        let app = crate::router(root.clone()).layer(axum::extract::Extension(
+            super::ConfidentialRuntimeOverride {
+                portal_base_url: "https://services.solstone.app".to_owned(),
+                poll: Arc::new(ManualPoll(|_base: &str, _nonce: &str| {
+                    PollOutcome::Failed {
+                        token: "consent_link_expired".to_owned(),
+                        detail: None,
+                    }
+                })),
+                before_attempt: None,
+                now: Arc::new(std::time::Instant::now),
+                sleep: Arc::new(|_| ()),
+                access: None,
+            },
+        ));
+        let enable = app
+            .oneshot(
+                Request::post("/app/thinking/api/confidential/enable")
+                    .header("content-type", "application/json")
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+        assert_eq!(enable.status(), StatusCode::ACCEPTED);
+        let committed = solstone_core_sol_link::committed::load_committed_identity(&root)
+            .expect("turning it on gives the journal its identity");
+        let body: Value = serde_json::from_slice(
+            &to_bytes(enable.into_body(), usize::MAX)
+                .await
+                .expect("body reads"),
+        )
+        .expect("response is JSON");
+        let portal_url = body["operation"]["portal_url"].as_str().unwrap_or_default();
+        assert!(portal_url.contains(committed.instance_id()), "{portal_url}");
         let _ = fs::remove_dir_all(root);
     }
 

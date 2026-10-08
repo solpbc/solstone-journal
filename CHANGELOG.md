@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on a journal that had never paired a device or turned on another service, turning on confidential processing no longer stops at "confidential processing couldn't be turned on".
 - on mac and linux, "install local model" on the thinking page no longer says "local setup didn't start" when a local model is already installed.
 - on linux, if you installed local transcription before, your journal now installs what it needs when an update changes it. before, transcription could stop until you installed it again.
 

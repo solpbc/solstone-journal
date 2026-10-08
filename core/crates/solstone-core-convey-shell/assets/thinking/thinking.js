@@ -2779,14 +2779,22 @@
       return;
     }
     setHidden('confidentialLaneStatus', false);
+    // The service refusing this sign-in outranks a passing hardware check: the card says
+    // access ended, and the way back is one tap in (manage).
+    const accessEnded = !operationActive
+      && activeBrain().kind === 'confidential'
+      && (state.access?.state === 'ended' || state.access?.state === 'credential_unknown');
+    const accessLine = state.access?.state === 'ended'
+      ? confidentialCopy.access_ended || ''
+      : confidentialCopy.credential_unknown || '';
     setPill(
       'confidentialLanePill',
-      operationActive ? operation.phase || '' : rendered.pill,
-      operationActive ? '' : rendered.tone,
+      operationActive ? operation.phase || '' : accessEnded ? 'not active' : rendered.pill,
+      operationActive ? '' : accessEnded ? 'bad' : rendered.tone,
     );
     setText(
       'confidentialLaneDescription',
-      operationRendered.message || rendered.message || lane.description || '',
+      accessEnded ? accessLine : operationRendered.message || rendered.message || lane.description || '',
     );
     setText(
       'confidentialLaneStatus',

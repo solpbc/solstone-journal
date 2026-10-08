@@ -3111,6 +3111,8 @@ async function main() {
     subscribe_url: 'https://services.solstone.app/ended-subscribe',
   };
   thinking.renderConfidentialSetup();
+  thinking.renderMainLanes();
+  assert.strictEqual(nodes.get('confidentialLaneDescription').textContent, sentinelAccessEnded, 'ended access reads on the lane card too');
   assert.strictEqual(nodes.get('confidentialLaneOperation').textContent, sentinelAccessEnded, 'ended access operation text');
   assert.strictEqual(nodes.get('confidentialLaneOperationLink').href, 'https://services.solstone.app/ended-subscribe', 'ended access link href');
   assert.strictEqual(nodes.get('confidentialLaneOperationLink').hidden, false, 'ended access link visible');
