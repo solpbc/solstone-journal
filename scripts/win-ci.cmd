@@ -100,11 +100,10 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wi
 echo === cargo test --locked (Windows portal installer Job ownership) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install::windows::tests::native::windows_installer_job_receipt -- --exact --ignored --nocapture || exit /b 1
-echo === cargo test --locked (confidential processing is not offered on Windows) ===
+echo === cargo test --locked (confidential processing is offered on Windows) ===
 call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::only_a_platform_with_a_verifier_target_offers_confidential_processing" || exit /b 1
-call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::windows_owners_are_held_back_even_with_a_verifier_target" || exit /b 1
-call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::a_held_platform_opens_no_channel" || exit /b 1
-call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::windows_refuses_every_channel_before_connecting" || exit /b 1
+call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::no_shipped_platform_holds_its_owners_back" || exit /b 1
+call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::no_shipped_platform_is_refused_a_channel" || exit /b 1
 call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_environment_discards_ambient_configuration_case_insensitively" || exit /b 1
 call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_paths_refuse_network_paths_and_count_utf16_units" || exit /b 1
 call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "signed_layout_refuses_missing_or_changed_executable_ca_and_runtime" "test-hooks" || exit /b 1

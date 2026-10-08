@@ -83,7 +83,7 @@ On linux, check whether a computer is ready for the local models after the tree 
 solstone journal check   # gpu, memory, disk, and the bundled models: a one-shot readiness verdict
 ```
 
-The default local thinking model wants about 6 GB of GPU memory on linux or a 16 GB Apple Silicon mac. A machine below that bar still runs the journal; it brings its own provider key, or, if you are an approved scout, turns on confidential processing instead. On windows the local thinking model needs a compatible GPU; a windows journal without one brings its own provider key, and confidential processing is not available there. See [choosing a provider](INSTALL.md#choosing-a-provider).
+The default local thinking model wants about 6 GB of GPU memory on linux or a 16 GB Apple Silicon mac. A machine below that bar still runs the journal; it brings its own provider key, or, if you are an approved scout, turns on confidential processing instead. On windows the local thinking model needs a compatible GPU; without one, the same two choices apply. See [choosing a provider](INSTALL.md#choosing-a-provider).
 
 ## The solstone command
 

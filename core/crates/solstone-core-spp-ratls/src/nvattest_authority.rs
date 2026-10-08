@@ -62,12 +62,12 @@ struct Source {
     version: String,
 }
 
-/// Windows owners can't use confidential processing until it is qualified on
-/// Windows against the live service. While this is false, nothing offers the
-/// feature, installs a verifier or opens a channel on Windows. It changes in its
-/// own commit after that qualification; no configuration, environment variable
-/// or feature can lift the hold.
-const WINDOWS_OWNER_USE_QUALIFIED: bool = false;
+/// Windows owners can use confidential processing: it qualified on Windows
+/// against the live service. Setting this back to false holds them again, and
+/// then nothing offers the feature, installs a verifier or opens a channel on
+/// Windows. It changes only in its own commit; no configuration, environment
+/// variable or feature can lift or set the hold.
+const WINDOWS_OWNER_USE_QUALIFIED: bool = true;
 
 /// Whether owners on `os` are held back from confidential processing even when
 /// this build has a verifier for the platform. A held platform is not offered
@@ -186,29 +186,24 @@ mod tests {
 
     #[test]
     fn only_a_platform_with_a_verifier_target_offers_confidential_processing() {
-        assert_eq!(
+        assert!(
             super::confidential_verifier_on_this_platform(),
-            !cfg!(windows),
-            "every shipped journal target but Windows offers confidential processing"
+            "every shipped journal target offers confidential processing"
         );
-        assert!(!super::verifier_on_platform("windows", "x86_64"));
-        if cfg!(unix) {
-            for (os, arch) in [
-                ("linux", "x86_64"),
-                ("linux", "aarch64"),
-                ("macos", "aarch64"),
-            ] {
-                assert!(super::verifier_on_platform(os, arch), "{os}-{arch}");
-            }
+        for (os, arch) in [
+            ("linux", "x86_64"),
+            ("linux", "aarch64"),
+            ("macos", "aarch64"),
+            ("windows", "x86_64"),
+        ] {
+            assert!(super::verifier_on_platform(os, arch), "{os}-{arch}");
         }
+        assert!(!super::verifier_on_platform("macos", "x86_64"));
     }
 
     #[test]
-    fn windows_owners_are_held_back_even_with_a_verifier_target() {
-        assert!(super::owner_use_held("windows"));
-        assert!(nvattest_platform_key("windows", "x86_64").is_some());
-        assert!(!super::verifier_on_platform("windows", "x86_64"));
-        for os in ["linux", "macos"] {
+    fn no_shipped_platform_holds_its_owners_back() {
+        for os in ["linux", "macos", "windows"] {
             assert!(!super::owner_use_held(os), "{os}");
         }
     }

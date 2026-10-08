@@ -1774,13 +1774,12 @@ mod tests {
             body["error"],
             solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM
         );
-        assert_eq!(
+        assert!(
             super::not_offered_refusal(
                 solstone_core_thinking::confidential::offered_on_this_platform()
             )
-            .is_some(),
-            cfg!(windows),
-            "only a Windows journal refuses"
+            .is_none(),
+            "every shipped journal offers it"
         );
     }
 

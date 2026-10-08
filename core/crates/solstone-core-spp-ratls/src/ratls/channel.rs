@@ -1206,53 +1206,10 @@ mod tests {
     }
 
     #[test]
-    fn a_held_platform_opens_no_channel() {
-        assert_eq!(
-            refuse_held_platform("windows"),
-            Err(refused("nvattest_platform_unsupported"))
-        );
-        for os in ["linux", "macos"] {
+    fn no_shipped_platform_is_refused_a_channel() {
+        for os in ["linux", "macos", "windows"] {
             assert_eq!(refuse_held_platform(os), Ok(()), "{os}");
         }
-    }
-
-    #[cfg(windows)]
-    struct Unreached;
-
-    #[cfg(windows)]
-    impl CompositeVerifier for Unreached {
-        fn verify(
-            &self,
-            _bundle: solstone_core_spp_attest::CpuBundle<'_>,
-            _input: crate::ratls::verify::CompositeVerificationInput<'_>,
-        ) -> Result<crate::cadence::CompositeVerdict, crate::error::CompositeVerificationError>
-        {
-            unreachable!("a held platform never reaches appraisal")
-        }
-    }
-
-    /// On Windows the shared channel entry refuses before it resolves or
-    /// connects. The endpoint is a closed loopback port, so a missing hold
-    /// reads as `gateway_unreachable` rather than passing.
-    #[cfg(windows)]
-    #[test]
-    fn windows_refuses_every_channel_before_connecting() {
-        let Err(error) = establish_attested_channel_with_clock(
-            &RatlsEndpoint::new("127.0.0.1", 1),
-            &[0xAB; 32],
-            Path::new("nvattest"),
-            SystemTime::now(),
-            None,
-            None,
-            None,
-            &Unreached,
-            Duration::from_secs(1),
-            0,
-            &SystemAdmissionClock,
-        ) else {
-            panic!("a held platform opened a channel");
-        };
-        assert_eq!(error.reason_code, "nvattest_platform_unsupported");
     }
 
     #[test]
