@@ -1613,14 +1613,9 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
         .as_str()
         .expect("consent URL");
     assert!(url.starts_with("https://portal.example/enable/spp?nonce="));
-    let (_, instance) = url.split_once("&instance=").expect("mandatory instance");
+    let (instance, nonce) = consent_identity_and_nonce(&enable);
     assert_eq!(instance.len(), 36);
     assert_eq!(instance.matches('-').count(), 4);
-    let nonce = url
-        .split("?nonce=")
-        .nth(1)
-        .and_then(|value| value.split('&').next())
-        .expect("nonce");
     assert_eq!(nonce.len(), 52);
     assert!(
         nonce
