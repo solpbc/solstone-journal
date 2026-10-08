@@ -28,6 +28,7 @@ use crate::{
         CpuAppraisalStage, CpuLegError, PcrFingerprintError, PcrPinMismatchError, SnpParseError,
         SnpVerifyError,
     },
+    pcr_appraisal::{ApplicationPcrPolicy, check_application_pcrs},
     tlv::decode_gpu_envelope,
     tpm_quote::{TpmQuoteInput, load_ak_public_key, verify_quote, without_leading_zeros},
 };
@@ -165,6 +166,9 @@ pub struct Policy {
     /// `None` leaves the ID key unchecked; `Some` refuses a zero digest and
     /// any digest outside the set, so an empty set refuses every report.
     pub id_key_digests: Option<BTreeSet<[u8; 48]>>,
+    /// The published build's registers, appraised one by one after the
+    /// fingerprint check. `None` leaves the registers to the fingerprint alone.
+    pub application_pcrs: Option<ApplicationPcrPolicy>,
 }
 
 impl Default for Policy {
@@ -178,6 +182,7 @@ impl Default for Policy {
             pcr_mode: PcrMode::Record,
             pcr_pins: BTreeSet::new(),
             id_key_digests: None,
+            application_pcrs: None,
         }
     }
 }
@@ -636,6 +641,19 @@ fn appraise_cpu_leg_at(
             _ => format!("pinned PCR fingerprint matched {pcr_sha256}"),
         },
     ));
+    if let Some(application) = &policy.application_pcrs {
+        check_application_pcrs(bundle.quote_pcrs, application).map_err(|source| {
+            CpuLegError::ApplicationPcrs {
+                stage: CpuAppraisalStage::Quote,
+                source,
+            }
+        })?;
+        steps.push(ok_step(
+            "application-pcrs",
+            "PCRs 4, 7, 9 and 11-15 match the published build; 8, 16 and 23 are zero and 22 is all-FF"
+                .to_owned(),
+        ));
+    }
 
     Ok(CpuAppraisal {
         steps,

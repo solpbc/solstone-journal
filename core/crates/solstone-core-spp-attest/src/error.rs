@@ -225,6 +225,39 @@ pub enum QuotePcrsError {
     SelectionMismatch,
 }
 
+/// Fail-closed refusals raised while appraising a quote's registers one by one.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ApplicationPcrError {
+    #[error("quote.pcrs does not carry the published register set: {0}")]
+    Quote(#[from] QuotePcrsError),
+    #[error("PCR {pcr} does not match the published build")]
+    Register { pcr: u32 },
+}
+
+impl ApplicationPcrError {
+    /// The stable refusal reason, one per appraised register.
+    pub fn reason_code(&self) -> &'static str {
+        match self {
+            Self::Quote(_) => "pcr_selection_mismatch",
+            Self::Register { pcr } => match pcr {
+                4 => "pcr_4_mismatch",
+                7 => "pcr_7_mismatch",
+                8 => "pcr_8_mismatch",
+                9 => "pcr_9_mismatch",
+                11 => "pcr_11_mismatch",
+                12 => "pcr_12_mismatch",
+                13 => "pcr_13_mismatch",
+                14 => "pcr_14_mismatch",
+                15 => "pcr_15_mismatch",
+                16 => "pcr_16_mismatch",
+                22 => "pcr_22_mismatch",
+                23 => "pcr_23_mismatch",
+                _ => "composite_appraisal_failed",
+            },
+        }
+    }
+}
+
 /// Fail-closed errors raised while constructing application PCR expectations.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ApplicationExpectationsError {
@@ -284,6 +317,12 @@ pub enum CpuLegError {
         stage: CpuAppraisalStage,
         #[source]
         source: PcrFingerprintError,
+    },
+    #[error("CPU evidence failed at {stage:?}: {source}")]
+    ApplicationPcrs {
+        stage: CpuAppraisalStage,
+        #[source]
+        source: ApplicationPcrError,
     },
 }
 

@@ -102,7 +102,8 @@ pub(crate) fn build_account_registration_request(
             McpAccountWireError::ExpirationOverflow
         }
         solstone_core_sol_link::home_reach::HomeReachAssertionError::HeaderJsonSerialization
-        | solstone_core_sol_link::home_reach::HomeReachAssertionError::ClaimsJsonSerialization => {
+        | solstone_core_sol_link::home_reach::HomeReachAssertionError::ClaimsJsonSerialization
+        | solstone_core_sol_link::home_reach::HomeReachAssertionError::UnlistedService => {
             McpAccountWireError::JsonSerialization
         }
         solstone_core_sol_link::home_reach::HomeReachAssertionError::SigningKeyLoad => {
@@ -2289,13 +2290,15 @@ mod tests {
             solstone_core_sol_link::home_reach::HomeReachAssertionError::SigningKeyLoad,
             solstone_core_sol_link::home_reach::HomeReachAssertionError::EcdsaSign,
             solstone_core_sol_link::home_reach::HomeReachAssertionError::AssertionLengthCap,
+            solstone_core_sol_link::home_reach::HomeReachAssertionError::UnlistedService,
         ] {
             let mapped = match err {
                 solstone_core_sol_link::home_reach::HomeReachAssertionError::ExpirationOverflow => {
                     McpAccountWireError::ExpirationOverflow
                 }
                 solstone_core_sol_link::home_reach::HomeReachAssertionError::HeaderJsonSerialization
-                | solstone_core_sol_link::home_reach::HomeReachAssertionError::ClaimsJsonSerialization => {
+                | solstone_core_sol_link::home_reach::HomeReachAssertionError::ClaimsJsonSerialization
+                | solstone_core_sol_link::home_reach::HomeReachAssertionError::UnlistedService => {
                     McpAccountWireError::JsonSerialization
                 }
                 solstone_core_sol_link::home_reach::HomeReachAssertionError::SigningKeyLoad => {

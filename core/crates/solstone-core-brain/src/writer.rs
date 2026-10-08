@@ -31,8 +31,8 @@ use crate::inspect::{
 };
 use crate::record::{
     BrainStateRecord, ValidationError, component_status_for_reason, parse_component,
-    parse_evidence, parse_runtime_failure_marker, reduce_evidence_with_runtime, valid_spp_reason,
-    validate_brain_state_record,
+    parse_evidence, parse_runtime_failure_marker, reduce_evidence_with_runtime,
+    spp_reason_diagnostic, valid_spp_reason, validate_brain_state_record,
 };
 
 const BRAIN_FILE_MODE: u32 = 0o600;
@@ -663,6 +663,7 @@ pub fn record_confidential_attestation_refusal(
     raw_reason: &str,
 ) {
     let mapped_reason = valid_spp_reason(raw_reason);
+    let diagnostic = spp_reason_diagnostic(raw_reason);
     if derive_active_brain_lane(held_config).lane.as_deref() != Some("spp") {
         return;
     }
@@ -722,8 +723,16 @@ pub fn record_confidential_attestation_refusal(
                     .evidence
                     .get("lane_prerequisites")
                     .and_then(Option::as_ref)
-                    .and_then(|comp| comp.reason.as_deref())
-                    == Some(mapped_reason)
+                    .is_some_and(|comp| {
+                        comp.reason.as_deref() == Some(mapped_reason)
+                            && comp
+                                .diagnostic
+                                .iter()
+                                .map(|(key, value)| (key.as_str(), value.as_str()))
+                                .eq(diagnostic.iter().map(|(key, value)| {
+                                    (key.as_str(), value.as_str().unwrap_or(""))
+                                }))
+                    })
             {
                 return;
             }
@@ -735,7 +744,7 @@ pub fn record_confidential_attestation_refusal(
         mapped_reason,
         "lane_prerequisites",
         &loaded.sha256,
-        Map::new(),
+        diagnostic,
         now,
         None,
     ) {
@@ -2290,6 +2299,57 @@ mod tests {
         assert_eq!(
             record["evidence"]["lane_prerequisites"]["reason_code"],
             "attestation_not_verified"
+        );
+    }
+
+    #[test]
+    fn attestation_refusal_carries_the_failing_register_to_the_owner() {
+        let journal = TestJournal::new();
+        journal.write_config("lane_spp");
+        generate_fingerprint_key(journal.path()).unwrap();
+        let config = solstone_core_journal_config::read_journal_config(journal.path())
+            .unwrap()
+            .config
+            .unwrap();
+        let shown = |raw: &str| {
+            record_confidential_attestation_refusal(journal.path(), &config, raw);
+            let now = Utc::now() + chrono::Duration::seconds(1);
+            let inspection = inspect_brain_state(journal.path(), &config, now);
+            assert_eq!(
+                inspection.projection.reason_code.as_deref(),
+                Some("attestation_rejected")
+            );
+            let record = inspection.record.clone().expect("record exists");
+            let view = crate::present_brain_inspection(&inspection, now);
+            (record, view.reason_text)
+        };
+
+        let (record, register_9) = shown("pcr_9_mismatch");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["diagnostic"]["register"],
+            "9"
+        );
+        assert!(register_9.contains('9'));
+
+        // Another register on the same reason replaces the one shown.
+        let (record, register_22) = shown("pcr_22_mismatch");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["diagnostic"]["register"],
+            "22"
+        );
+        assert!(register_22.contains("22"));
+        assert_ne!(register_9, register_22);
+
+        // A refusal that names no register shows none.
+        let (record, unnamed) = shown("certificate_invalid");
+        assert!(
+            record["evidence"]["lane_prerequisites"]["diagnostic"]
+                .get("register")
+                .is_none()
+        );
+        assert_eq!(
+            unnamed,
+            crate::brain_reason_text(Some("attestation_rejected"))
         );
     }
 

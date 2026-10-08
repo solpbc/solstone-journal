@@ -1,0 +1,1 @@
+{"version":1,"alg":"ES256","typ":"home-reach","aud":"solstone-reach","scope":"services.enable","services":["spl","spb","spp","sme"],"lifetime_seconds":1800,"clock_skew_seconds":60}

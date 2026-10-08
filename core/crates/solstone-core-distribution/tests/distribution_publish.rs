@@ -440,6 +440,13 @@ fi
         .env("HOME", &fixture.root)
         .env("SOLSTONE_UNAME_S", "Linux")
         .env("SOLSTONE_UNAME_M", "x86_64")
+        .env("SOLSTONE_LIBC_VERSION", "2.35")
+        .env(
+            "SOLSTONE_LIBSTDCXX_GLIBCXX",
+            "GLIBCXX_3.4.29 GLIBCXX_3.4.30",
+        )
+        .env("SOLSTONE_LIBGOMP", "present")
+        .env("SOLSTONE_LIBGCC_S", "present")
         .env("TMPDIR", &fixture.root)
         .env(
             "PATH",

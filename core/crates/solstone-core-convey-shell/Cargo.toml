@@ -128,7 +128,7 @@ path = "tests/source_link_dom.rs"
 workspace = true
 
 [features]
-full-tests = ["solstone-core-thinking/test-hooks"]
+full-tests = ["solstone-core-thinking/test-hooks", "solstone-core-sol-link/test-hooks"]
 default = ["host"]
 test-hooks = [
     "solstone-core-speaker-resolve/test-hooks",

@@ -10,6 +10,7 @@ use serde::Deserialize;
 
 use crate::archive_taxonomy::ContainerKind;
 
+/// `zig-gnu-2.27` is the build baseline, not the shipped dependency ceiling.
 const KNOWN_LANES: &[&str] = &["musl-static", "zig-gnu-2.27"];
 /// Lanes a target may declare for itself. Linux entries carry a per-binary lane
 /// because the Linux tree is built by two distinct cross toolchains; macOS and
@@ -380,11 +381,15 @@ pub enum Entry {
     OnnxRuntime {
         dest_dir: String,
         mode: u32,
+        #[serde(default)]
+        identities: Vec<NativeIdentity>,
         targets: Vec<String>,
     },
     Pdfium {
         dest_dir: String,
         mode: u32,
+        #[serde(default)]
+        identities: Vec<NativeIdentity>,
         targets: Vec<String>,
     },
     Copy {
@@ -393,6 +398,25 @@ pub enum Entry {
         mode: u32,
         targets: Vec<String>,
     },
+    PinnedNative {
+        source: String,
+        dest: String,
+        mode: u32,
+        digest: String,
+        identity: NativeIdentity,
+        targets: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeIdentity {
+    #[serde(default)]
+    pub os: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub aliases: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -401,6 +425,8 @@ pub struct ArchiveSlot {
     pub id: String,
     pub target: String,
     pub container: ContainerKind,
+    #[serde(default)]
+    pub inspect_only: bool,
     pub executables: Vec<ArchiveExecutable>,
 }
 
@@ -605,6 +631,90 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             }
             if !native_members.insert((*component, member.as_str())) {
                 return Err(InventoryError::new("duplicate Windows native input member"));
+            }
+        }
+        if let Entry::PinnedNative {
+            dest,
+            identity,
+            targets,
+            ..
+        } = entry
+        {
+            if dest.starts_with("bin/")
+                || (dest.starts_with("lib/") && !dest["lib/".len()..].contains('/'))
+                || dest.starts_with("share/")
+                || dest.starts_with("lib/solstone_journal_models/")
+            {
+                return Err(InventoryError::new(format!(
+                    "invalid pinned-native dest {dest}"
+                )));
+            }
+            let Some(after_lib) = dest.strip_prefix("lib/") else {
+                return Err(InventoryError::new(format!(
+                    "pinned-native dest must be under lib/solstone-<component>/: {dest}"
+                )));
+            };
+            let Some((component, rest)) = after_lib.split_once('/') else {
+                return Err(InventoryError::new(format!(
+                    "pinned-native dest cannot be directly under lib/: {dest}"
+                )));
+            };
+            if !component.starts_with("solstone-")
+                || component == "solstone-"
+                || component == "solstone_journal_models"
+                || rest.is_empty()
+            {
+                return Err(InventoryError::new(format!(
+                    "pinned-native dest must be under lib/solstone-<component>/: {dest}"
+                )));
+            }
+            if identity.os.is_some() {
+                return Err(InventoryError::new(
+                    "pinned-native identity cannot declare os",
+                ));
+            }
+            for target_id in targets {
+                if let Some(target) = inventory.target.iter().find(|t| &t.id == target_id)
+                    && target.is_windows()
+                {
+                    return Err(InventoryError::new(format!(
+                        "pinned-native cannot target Windows: {target_id}"
+                    )));
+                }
+            }
+        }
+        if let Entry::OnnxRuntime {
+            identities,
+            targets,
+            ..
+        }
+        | Entry::Pdfium {
+            identities,
+            targets,
+            ..
+        } = entry
+        {
+            let has_linux = targets.iter().any(|tid| {
+                inventory
+                    .target
+                    .iter()
+                    .any(|t| &t.id == tid && t.os == OS_LINUX)
+            });
+            let has_macos = targets.iter().any(|tid| {
+                inventory
+                    .target
+                    .iter()
+                    .any(|t| &t.id == tid && t.os == OS_MACOS)
+            });
+            if has_linux && !identities.iter().any(|i| i.os.as_deref() == Some(OS_LINUX)) {
+                return Err(InventoryError::new(
+                    "missing required linux identity for onnx/pdfium",
+                ));
+            }
+            if has_macos && !identities.iter().any(|i| i.os.as_deref() == Some(OS_MACOS)) {
+                return Err(InventoryError::new(
+                    "missing required macos identity for onnx/pdfium",
+                ));
             }
         }
         let (dests, targets, lane) = entry_fields(entry);
@@ -974,7 +1084,8 @@ fn entry_fields(entry: &Entry) -> (Vec<&str>, &Vec<String>, Option<&String>) {
         | Entry::ModelAsset { dest, targets, .. }
         | Entry::Copy { dest, targets, .. }
         | Entry::WindowsBuildEvidence { dest, targets, .. }
-        | Entry::WindowsNative { dest, targets, .. } => (vec![dest.as_str()], targets, None),
+        | Entry::WindowsNative { dest, targets, .. }
+        | Entry::PinnedNative { dest, targets, .. } => (vec![dest.as_str()], targets, None),
         Entry::OnnxRuntime {
             dest_dir, targets, ..
         }
@@ -1702,5 +1813,69 @@ targets = ["windows-x86_64"]
             absolute.keychain_path(),
             PathBuf::from("/opt/keys/sol.keychain-db")
         );
+    }
+
+    #[test]
+    fn pinned_native_dest_and_target_validation() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let path = repo.join("core/distribution/inventory.toml");
+        let original = super::load_inventory(&path).unwrap();
+
+        // No pinned-native entry in committed inventory.toml
+        assert!(
+            !original
+                .entry
+                .iter()
+                .any(|entry| matches!(entry, super::Entry::PinnedNative { .. })),
+            "no pinned-native entry should be in inventory.toml"
+        );
+
+        let make_pinned = |dest: &str, target: &str| super::Entry::PinnedNative {
+            source: "fixture.so".to_owned(),
+            dest: dest.to_owned(),
+            mode: 0o755,
+            digest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_owned(),
+            identity: super::NativeIdentity {
+                os: None,
+                name: Some("libx.so".to_owned()),
+                aliases: vec![],
+            },
+            targets: vec![target.to_owned()],
+        };
+
+        for bad_dest in [
+            "bin/foo",
+            "lib/foo.so",
+            "share/foo.so",
+            "lib/solstone_journal_models/foo.so",
+        ] {
+            let mut inv = original.clone();
+            inv.entry.push(make_pinned(bad_dest, "linux-x86_64"));
+            assert!(
+                super::validate_inventory(&path, &inv).is_err(),
+                "should refuse bad dest: {bad_dest}"
+            );
+        }
+
+        // Windows target is refused
+        let mut inv_win = original.clone();
+        inv_win
+            .entry
+            .push(make_pinned("lib/solstone-foo/libx.so", "windows-x86_64"));
+        assert!(
+            super::validate_inventory(&path, &inv_win).is_err(),
+            "should refuse windows target for pinned-native"
+        );
+
+        // A dest `lib/solstone-foo/libx.so` with a non-windows target passes validation
+        let mut inv_ok = original.clone();
+        inv_ok
+            .entry
+            .push(make_pinned("lib/solstone-foo/libx.so", "linux-x86_64"));
+        super::validate_inventory(&path, &inv_ok).expect("valid pinned-native entry passes");
     }
 }

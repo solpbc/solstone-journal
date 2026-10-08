@@ -44,6 +44,11 @@
 #   transaction-policy-conflict
 #   compatibility-unknown
 #   candidate-invalid
+#   glibc-too-old
+#   cxx-runtime-missing
+#   cxx-runtime-too-old
+#   runtime-library-missing
+#   libc-undetermined
 
 set -eu
 
@@ -65,7 +70,7 @@ SUPPORTED_STATE_READER_MIN=1.0.0
 # BOOTSTRAP_REVISION of the installer live at https://solstone.app/install.sh
 # at promotion time (solstone-core-distribution's inspect.rs::MIN_BOOTSTRAP_REVISION
 # mirrors this floor).
-BOOTSTRAP_REVISION=2
+BOOTSTRAP_REVISION=3
 BOOTSTRAP_CONTRACT_VERSION=2
 
 refuse() {
@@ -1503,9 +1508,164 @@ publish_receipt() {
 	RECEIPT_PARTIAL=
 }
 
+compare_dotted_ge() {
+	_v1=$1
+	_v2=$2
+	while [ -n "$_v1" ] || [ -n "$_v2" ]; do
+		_c1=${_v1%%.*}
+		_c2=${_v2%%.*}
+		[ -n "$_c1" ] || _c1=0
+		[ -n "$_c2" ] || _c2=0
+		if [ "$_c1" -gt "$_c2" ]; then
+			return 0
+		elif [ "$_c1" -lt "$_c2" ]; then
+			return 1
+		fi
+		case $_v1 in
+		*.*) _v1=${_v1#*.} ;;
+		*) _v1= ;;
+		esac
+		case $_v2 in
+		*.*) _v2=${_v2#*.} ;;
+		*) _v2= ;;
+		esac
+	done
+	return 0
+}
+
+find_host_library() {
+	_lib_target=$1
+	if command -v ldconfig >/dev/null 2>&1; then
+		_found=$(ldconfig -p 2>/dev/null | awk -v name="$_lib_target" '$1 == name && /=>/ { print $NF; exit }')
+		if [ -n "$_found" ] && [ -f "$_found" ]; then
+			printf '%s\n' "$_found"
+			return 0
+		fi
+	fi
+	for _dir in /lib /lib64 /usr/lib /usr/lib64; do
+		if [ -f "$_dir/$_lib_target" ]; then
+			printf '%s\n' "$_dir/$_lib_target"
+			return 0
+		fi
+	done
+	for _dir in /lib /lib64 /usr/lib /usr/lib64; do
+		if [ -d "$_dir" ]; then
+			_found=$(find "$_dir" -name "$_lib_target" -type f 2>/dev/null | head -n 1)
+			if [ -n "$_found" ] && [ -f "$_found" ]; then
+				printf '%s\n' "$_found"
+				return 0
+			fi
+		fi
+	done
+	return 1
+}
+
+refuse_floor() {
+	_rf_name=$1
+	_rf_detail=$2
+	if [ "${UPGRADE:-0}" -eq 1 ]; then
+		_rf_detail="${_rf_detail} The current install is untouched and keeps running."
+	fi
+	refuse "$_rf_name" "$_rf_detail"
+}
+
+require_linux_floor() {
+	case ${TARGET:-} in
+	linux-*) ;;
+	*) return 0 ;;
+	esac
+
+	_libc_version=
+	_libstdcxx_symbols=
+	_has_libgomp=0
+	_has_libgcc_s=0
+
+	if [ -n "${SOLSTONE_UNAME_S:-}" ] || [ -n "${SOLSTONE_OS_RELEASE:-}" ]; then
+		if [ -z "${SOLSTONE_LIBC_VERSION:-}" ]; then
+			refuse_floor libc-undetermined "the glibc version could not be determined, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: run the installer on a glibc-based linux such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release."
+		fi
+		case $SOLSTONE_LIBC_VERSION in
+		*[!0-9.]* | .* | *. | *..* | "")
+			refuse_floor libc-undetermined "the glibc version could not be determined, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: run the installer on a glibc-based linux such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release."
+			;;
+		esac
+		_libc_version=$SOLSTONE_LIBC_VERSION
+
+		if [ -z "${SOLSTONE_LIBSTDCXX_GLIBCXX:-}" ] || [ "$SOLSTONE_LIBSTDCXX_GLIBCXX" = "missing" ]; then
+			_libstdcxx_symbols=missing
+		else
+			_libstdcxx_symbols=" $SOLSTONE_LIBSTDCXX_GLIBCXX "
+		fi
+
+		if [ "${SOLSTONE_LIBGOMP:-}" = "present" ]; then
+			_has_libgomp=1
+		fi
+		if [ "${SOLSTONE_LIBGCC_S:-}" = "present" ]; then
+			_has_libgcc_s=1
+		fi
+	else
+		_raw_libc=$(getconf GNU_LIBC_VERSION 2>/dev/null || true)
+		_libc_version=${_raw_libc##* }
+		if [ -z "$_libc_version" ]; then
+			refuse_floor libc-undetermined "the glibc version could not be determined, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: run the installer on a glibc-based linux such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release."
+		fi
+		case $_libc_version in
+		*[!0-9.]* | .* | *. | *..* | "")
+			refuse_floor libc-undetermined "the glibc version could not be determined, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: run the installer on a glibc-based linux such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release."
+			;;
+		esac
+
+		_stdcxx_file=$(find_host_library "libstdc++.so.6" || true)
+		if [ -n "$_stdcxx_file" ] && [ -f "$_stdcxx_file" ]; then
+			_syms=$(grep -a -o 'GLIBCXX_[0-9.]*' "$_stdcxx_file" 2>/dev/null || true)
+			_libstdcxx_symbols=" $(printf '%s' "$_syms" | tr '\n' ' ') "
+		else
+			_libstdcxx_symbols=missing
+		fi
+
+		if find_host_library "libgomp.so.1" >/dev/null 2>&1; then
+			_has_libgomp=1
+		fi
+		if find_host_library "libgcc_s.so.1" >/dev/null 2>&1; then
+			_has_libgcc_s=1
+		fi
+	fi
+
+	if ! compare_dotted_ge "$_libc_version" "2.34"; then
+		refuse_floor glibc-too-old "this system has glibc ${_libc_version}, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: move to a release that includes it, such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release, then run this command again."
+	fi
+
+	if [ "$_libstdcxx_symbols" = "missing" ]; then
+		refuse_floor cxx-runtime-missing "libstdc++.so.6 was not found, and the journal needs the GCC 11 C++ runtime. Nothing was changed. To fix: install libstdc++6 (Debian, Ubuntu) or libstdc++ (Fedora, RHEL), then run this command again."
+	fi
+
+	case $_libstdcxx_symbols in
+	*" GLIBCXX_3.4.29 "*) ;;
+	*)
+		refuse_floor cxx-runtime-too-old "the C++ runtime on this system (libstdc++.so.6) is older than GCC 11 (no GLIBCXX_3.4.29), and the journal needs GCC 11 or newer. Nothing was changed. To fix: update libstdc++6 (Debian, Ubuntu) or libstdc++ (Fedora, RHEL), then run this command again."
+		;;
+	esac
+
+	if [ "$_has_libgomp" -ne 1 ]; then
+		refuse_floor runtime-library-missing "libgomp.so.1 was not found, and the journal needs it. Nothing was changed. To fix: install libgomp1 (Debian, Ubuntu) or libgomp (Fedora, RHEL), then run this command again."
+	fi
+
+	if [ "$_has_libgcc_s" -ne 1 ]; then
+		refuse_floor runtime-library-missing "libgcc_s.so.1 was not found, and the journal needs it. Nothing was changed. To fix: install libgcc-s1 (Debian, Ubuntu) or libgcc (Fedora, RHEL), then run this command again."
+	fi
+
+	case $_libstdcxx_symbols in
+	*" GLIBCXX_3.4.30 "*) ;;
+	*)
+		printf 'warning: this system does not have the GCC 12 C++ runtime, which local transcription needs (Ubuntu 22.04, Debian 12, Fedora 36 and newer include it). The rest of the journal installs as usual.\n' >&2
+		;;
+	esac
+}
+
 main() {
 	parse_args "$@"
 	detect_target
+	require_linux_floor
 	trap cleanup 0
 	trap 'handle_signal 129' 1
 	trap 'handle_signal 130' 2

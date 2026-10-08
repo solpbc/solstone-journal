@@ -902,15 +902,155 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         &stage,
     )?;
 
-    // The macOS payload dylib is inspected here rather than in the binary loop,
-    // because it is not a binary: it is staged straight out of the pinned wheel
-    // and never passes through `select`. A census that walked only `selection`
-    // would report a clean tree with the loaded half never looked at.
+    let validated_archives = archive_census::validate_staged_archives(&stage, inventory, checkout)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+
+    let mut staged_files_with_bytes = Vec::new();
+    for record in stage::staged_records(&stage)? {
+        let bytes = fs::read(stage.join(&record.dest))?;
+        staged_files_with_bytes.push((record.dest, bytes));
+    }
+
+    let staged_files_borrowed: Vec<(&str, &[u8])> = staged_files_with_bytes
+        .iter()
+        .map(|(dest, bytes)| (dest.as_str(), bytes.as_slice()))
+        .collect();
+    let staged_file_paths: Vec<&str> = staged_files_with_bytes
+        .iter()
+        .map(|(dest, _)| dest.as_str())
+        .collect();
+
     match target.os.as_str() {
+        OS_LINUX => {
+            let machine = match target.arch.as_str() {
+                "x86_64" => elf::machine_x86_64(),
+                "aarch64" => elf::machine_aarch64(),
+                other => {
+                    return Err(ProduceError::new(format!("unexpected:\n  arch {other}")));
+                }
+            };
+
+            for (staged_path, bytes) in &staged_files_with_bytes {
+                if bytes.starts_with(b"\x7fELF") {
+                    let pkg_rel_dir = Path::new(staged_path)
+                        .parent()
+                        .and_then(|p| p.to_str())
+                        .unwrap_or("");
+                    elf::admit_elf(
+                        staged_path,
+                        bytes,
+                        machine,
+                        pkg_rel_dir,
+                        None,
+                        &staged_files_borrowed,
+                    )
+                    .map_err(|e| ProduceError::new(e.to_string()))?;
+
+                    if let Some(identity) =
+                        find_owning_identity(inventory, target, staged_path, true)?
+                    {
+                        validate_identity_basename(staged_path, identity)?;
+                        let elf_info =
+                            elf::parse_elf(bytes).map_err(|e| ProduceError::new(e.to_string()))?;
+                        validate_elf_identity(staged_path, &elf_info, identity)?;
+                    }
+                } else if macho::looks_like_macho(bytes) {
+                    return Err(ProduceError::new(format!(
+                        "unexpected Mach-O file {staged_path} in Linux tree"
+                    )));
+                }
+            }
+
+            for validated in &validated_archives {
+                for (member_path, member_bytes) in &validated.native_members {
+                    if member_bytes.starts_with(b"\x7fELF") {
+                        let pkg_rel_dir = Path::new(member_path)
+                            .parent()
+                            .and_then(|p| p.to_str())
+                            .unwrap_or("");
+                        elf::admit_elf(
+                            &validated.staged_path,
+                            member_bytes,
+                            machine,
+                            pkg_rel_dir,
+                            Some((&validated.staged_path, member_path.as_str())),
+                            &staged_files_borrowed,
+                        )
+                        .map_err(|e| ProduceError::new(e.to_string()))?;
+                    } else if macho::looks_like_macho(member_bytes) {
+                        return Err(ProduceError::new(format!(
+                            "unexpected Mach-O member {member_path} in Linux archive {}",
+                            validated.staged_path
+                        )));
+                    }
+                }
+            }
+        }
         OS_MACOS => {
-            archive_census::validate_staged_archives(&stage, inventory)
-                .map_err(|error| ProduceError::new(error.to_string()))?;
-            inspect_macos_payloads(&stage, target)?;
+            let cputype = macho::cputype_for_arch(&target.arch)
+                .ok_or_else(|| ProduceError::new(format!("unexpected:\n  arch {}", target.arch)))?;
+            let ceiling = parse_min_macos(&target.min_macos).ok_or_else(|| {
+                ProduceError::new(format!("unexpected:\n  min_macos {}", target.min_macos))
+            })?;
+
+            for (staged_path, bytes) in &staged_files_with_bytes {
+                if macho::looks_like_macho(bytes) {
+                    let pkg_rel_dir = Path::new(staged_path)
+                        .parent()
+                        .and_then(|p| p.to_str())
+                        .unwrap_or("");
+                    macho::admit_macho(
+                        staged_path,
+                        bytes,
+                        cputype,
+                        ceiling,
+                        pkg_rel_dir,
+                        None,
+                        &staged_file_paths,
+                    )
+                    .map_err(|e| ProduceError::new(e.to_string()))?;
+
+                    if let Some(identity) =
+                        find_owning_identity(inventory, target, staged_path, true)?
+                    {
+                        validate_identity_basename(staged_path, identity)?;
+                        let macho_info = macho::parse_macho(bytes)
+                            .map_err(|e| ProduceError::new(e.to_string()))?;
+                        validate_macho_identity(staged_path, &macho_info, identity)?;
+                    }
+                } else if bytes.starts_with(b"\x7fELF") {
+                    return Err(ProduceError::new(format!(
+                        "unexpected ELF file {staged_path} in macOS tree"
+                    )));
+                }
+            }
+
+            for validated in &validated_archives {
+                for (member_path, member_bytes) in &validated.native_members {
+                    if macho::looks_like_macho(member_bytes) {
+                        let pkg_rel_dir = Path::new(member_path)
+                            .parent()
+                            .and_then(|p| p.to_str())
+                            .unwrap_or("");
+                        macho::admit_macho(
+                            &validated.staged_path,
+                            member_bytes,
+                            cputype,
+                            ceiling,
+                            pkg_rel_dir,
+                            Some((&validated.staged_path, member_path.as_str())),
+                            &staged_file_paths,
+                        )
+                        .map_err(|e| ProduceError::new(e.to_string()))?;
+                    } else if member_bytes.starts_with(b"\x7fELF") {
+                        return Err(ProduceError::new(format!(
+                            "unexpected ELF member {member_path} in macOS archive {}",
+                            validated.staged_path
+                        )));
+                    }
+                }
+            }
+
             let prebuild = prebuild_input.ok_or_else(|| {
                 ProduceError::new("missing required:\n  macOS prebuild archive identity")
             })?;
@@ -920,7 +1060,6 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
             stage_chain(&stage, prebuild, delivery, commit, expected_lock)
                 .map_err(|error| ProduceError::new(error.to_string()))?;
         }
-        OS_LINUX => {}
         OS_WINDOWS => {
             return Err(ProduceError::new(
                 "windows produce is not implemented on this platform",
@@ -991,37 +1130,162 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
     })
 }
 
-/// Every Mach-O in the staged tree that is NOT an executable — the loaded half.
-fn inspect_macos_payloads(stage: &Path, target: &Target) -> Result<(), ProduceError> {
-    let cputype = macho::cputype_for_arch(&target.arch)
-        .ok_or_else(|| ProduceError::new(format!("unexpected:\n  arch {}", target.arch)))?;
-    let ceiling = parse_min_macos(&target.min_macos).ok_or_else(|| {
-        ProduceError::new(format!("unexpected:\n  min_macos {}", target.min_macos))
-    })?;
-    let members = crate::apple::discover_macho_members(stage)
-        .map_err(|error| ProduceError::new(error.to_string()))?;
-    let payloads = members
-        .iter()
-        .filter(|member| member.payload)
-        .collect::<Vec<_>>();
-    if payloads.is_empty() {
-        return Err(ProduceError::new(
-            "missing required:\n  a loaded mach-o payload in the staged macos tree",
-        ));
+fn find_owning_identity<'a>(
+    inventory: &'a Inventory,
+    target: &Target,
+    staged_dest: &str,
+    is_native: bool,
+) -> Result<Option<&'a crate::inventory::NativeIdentity>, ProduceError> {
+    for entry in &inventory.entry {
+        match entry {
+            Entry::PinnedNative {
+                dest,
+                identity,
+                targets,
+                ..
+            } if targets.iter().any(|t| t == &target.id) && staged_dest == dest => {
+                return Ok(Some(identity));
+            }
+            Entry::OnnxRuntime {
+                dest_dir,
+                identities,
+                targets,
+                ..
+            } if targets.iter().any(|t| t == &target.id)
+                && staged_dest.starts_with(&format!("{dest_dir}/"))
+                && is_native =>
+            {
+                let identity = identities
+                    .iter()
+                    .find(|i| i.os.as_deref() == Some(&target.os))
+                    .ok_or_else(|| {
+                        ProduceError::new(format!(
+                            "missing identity for os {} on onnx-runtime",
+                            target.os
+                        ))
+                    })?;
+                return Ok(Some(identity));
+            }
+            Entry::Pdfium {
+                dest_dir,
+                identities,
+                targets,
+                ..
+            } if targets.iter().any(|t| t == &target.id)
+                && staged_dest.starts_with(&format!("{dest_dir}/"))
+                && is_native =>
+            {
+                let identity = identities
+                    .iter()
+                    .find(|i| i.os.as_deref() == Some(&target.os))
+                    .ok_or_else(|| {
+                        ProduceError::new(format!(
+                            "missing identity for os {} on pdfium",
+                            target.os
+                        ))
+                    })?;
+                return Ok(Some(identity));
+            }
+            _ => {}
+        }
     }
-    for member in payloads {
-        let install_name = if member.relative.contains("libpdfium") {
-            member.info.install_name.as_deref().ok_or_else(|| {
-                ProduceError::new(format!(
-                    "missing required:\n  LC_ID_DYLIB {}",
-                    member.relative
-                ))
-            })?
-        } else {
-            macho::HELPER_INSTALL_NAME
-        };
-        macho::inspect_payload_dylib(&member.info, cputype, ceiling, install_name)
-            .map_err(|error| ProduceError::new(format!("{}: {error}", member.relative)))?;
+    Ok(None)
+}
+
+fn validate_identity_basename(
+    staged_path: &str,
+    identity: &crate::inventory::NativeIdentity,
+) -> Result<(), ProduceError> {
+    if identity.name.is_none() && identity.aliases.is_empty() {
+        return Ok(());
+    }
+    let basename = Path::new(staged_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| ProduceError::new(format!("invalid filename: {staged_path}")))?;
+    let mut matches = false;
+    if let Some(ref name) = identity.name {
+        let name_base = Path::new(name)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(name.as_str());
+        if basename == name_base {
+            matches = true;
+        }
+    }
+    if !matches {
+        for alias in &identity.aliases {
+            let alias_base = Path::new(alias)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(alias.as_str());
+            if basename == alias_base {
+                matches = true;
+                break;
+            }
+        }
+    }
+    if !matches {
+        return Err(ProduceError::new(format!(
+            "staged file {staged_path} basename {basename} does not match identity name {:?} or aliases {:?}",
+            identity.name, identity.aliases
+        )));
+    }
+    Ok(())
+}
+
+fn validate_elf_identity(
+    staged_path: &str,
+    elf: &elf::ElfInfo,
+    identity: &crate::inventory::NativeIdentity,
+) -> Result<(), ProduceError> {
+    match (elf.soname.as_deref(), identity.name.as_deref()) {
+        (Some(actual), Some(expected)) => {
+            if actual != expected {
+                return Err(ProduceError::new(format!(
+                    "{staged_path} DT_SONAME {actual} does not match identity name {expected}"
+                )));
+            }
+        }
+        (None, None) => {}
+        (Some(actual), None) => {
+            return Err(ProduceError::new(format!(
+                "{staged_path} has DT_SONAME {actual} but identity declares no name"
+            )));
+        }
+        (None, Some(expected)) => {
+            return Err(ProduceError::new(format!(
+                "{staged_path} missing DT_SONAME, expected {expected}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_macho_identity(
+    staged_path: &str,
+    macho: &macho::MachoInfo,
+    identity: &crate::inventory::NativeIdentity,
+) -> Result<(), ProduceError> {
+    match (macho.install_name.as_deref(), identity.name.as_deref()) {
+        (Some(actual), Some(expected)) => {
+            if actual != expected {
+                return Err(ProduceError::new(format!(
+                    "{staged_path} install name {actual} does not match identity name {expected}"
+                )));
+            }
+        }
+        (None, None) => {}
+        (Some(actual), None) => {
+            return Err(ProduceError::new(format!(
+                "{staged_path} has install name {actual} but identity declares no name"
+            )));
+        }
+        (None, Some(expected)) => {
+            return Err(ProduceError::new(format!(
+                "{staged_path} missing install name, expected {expected}"
+            )));
+        }
     }
     Ok(())
 }
@@ -1535,10 +1799,32 @@ fn stage_layout(
                     sealed_archives,
                 )?;
             }
+            Entry::PinnedNative {
+                source,
+                dest,
+                mode,
+                digest,
+                identity,
+                targets,
+            } => {
+                if !targets.iter().any(|item| item == target_id) {
+                    continue;
+                }
+                validate_identity_basename(dest, identity)?;
+                let bytes = fs::read(repo.join(source))?;
+                let actual = sha256_hex(&bytes);
+                if actual != *digest {
+                    return Err(ProduceError::new(format!(
+                        "unexpected:\n  {dest} digest {actual}"
+                    )));
+                }
+                stage::write_staged_file_mode(stage, dest, &bytes, *mode)?;
+            }
             Entry::OnnxRuntime {
                 dest_dir,
                 mode: _,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -1553,6 +1839,7 @@ fn stage_layout(
                 dest_dir,
                 mode: _,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -1592,7 +1879,9 @@ fn stage_model_asset(
     if !targets.iter().any(|item| item == target_id) {
         return Ok(());
     }
-    if let Some(slot) = archive_slot {
+    if let Some(slot) = archive_slot
+        && !slot.inspect_only
+    {
         let sealed = sealed_archives
             .and_then(|archives| archives.by_slot_id(&slot.id))
             .ok_or_else(|| {
@@ -1722,6 +2011,14 @@ fn build_parakeet_helper(checkout: &Path) -> Result<(), ProduceError> {
             String::from_utf8_lossy(&output.stderr)
         )));
     }
+    let bin_path = dir.join(".build/release/parakeet-helper");
+    let bytes = fs::read(&bin_path)
+        .map_err(|error| ProduceError::new(format!("read {}: {error}", bin_path.display())))?;
+    let rewritten = crate::macho::retain_allowed_rpaths(&bytes).map_err(|error| {
+        ProduceError::new(format!("rewrite rpaths {}: {error}", bin_path.display()))
+    })?;
+    fs::write(&bin_path, rewritten)
+        .map_err(|error| ProduceError::new(format!("write {}: {error}", bin_path.display())))?;
     Ok(())
 }
 
@@ -1898,6 +2195,7 @@ mod tests {
             id: "rfdetr-macos-metal-arm64".to_owned(),
             target: "macos-arm64".to_owned(),
             container: ContainerKind::GzipTar,
+            inspect_only: false,
             executables: vec![ArchiveExecutable {
                 path: "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64/rfdetr-cli".to_owned(),
                 digest_const: "RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256".to_owned(),
@@ -2888,5 +3186,290 @@ targets = ["windows-x86_64"]
         .expect_err("extra dest is unexpected");
         assert!(unexpected.contains("unexpected in staged"), "{unexpected}");
         assert!(unexpected.contains("bin/extra"), "{unexpected}");
+    }
+
+    #[test]
+    fn inspect_only_slot_stages_committed_bytes_without_sealed_archive() {
+        let repo = tempfile::tempdir().expect("temporary repository");
+        let stage = tempfile::tempdir().expect("temporary stage");
+        let targets = vec!["linux-x86_64".to_owned()];
+        let source_rel = "source.tar.gz";
+        let source_path = repo.path().join(source_rel);
+        let content = b"fake tarball bytes";
+        fs::write(&source_path, content).unwrap();
+
+        let digest_src_rel = "consts.rs";
+        let digest_src_path = repo.path().join(digest_src_rel);
+        let sha = sha256_hex(content);
+        fs::write(
+            &digest_src_path,
+            format!("pub const FAKE_TARBALL_SHA: &str = \"{sha}\";\n"),
+        )
+        .unwrap();
+
+        let slot = ArchiveSlot {
+            id: "fake-slot".to_owned(),
+            target: "linux-x86_64".to_owned(),
+            container: ContainerKind::GzipTar,
+            inspect_only: true,
+            executables: vec![],
+        };
+        let dest = "lib/dest/archive.tar.gz";
+
+        stage_model_asset(
+            repo.path(),
+            stage.path(),
+            "linux-x86_64",
+            source_rel,
+            dest,
+            0o644,
+            "FAKE_TARBALL_SHA",
+            digest_src_rel,
+            &targets,
+            Some(&slot),
+            None,
+        )
+        .expect("stage_model_asset succeeds with sealed_archives: None");
+
+        assert_eq!(fs::read(stage.path().join(dest)).unwrap(), content);
+    }
+
+    #[test]
+    fn sealer_skips_inspect_only_slot() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let checkout = temp.path().join("checkout");
+        fs::create_dir_all(&checkout).unwrap();
+
+        let inv_text = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "linux-x86_64"
+os = "linux"
+arch = "x86_64"
+deb_arch = "amd64"
+rpm_arch = "x86_64"
+triple_musl = "x86_64-unknown-linux-musl"
+triple_gnu = "x86_64-unknown-linux-gnu"
+zig_gnu = "x86_64-linux-gnu.2.27"
+[[entry]]
+kind = "model-asset"
+source = "fixture.tar.gz"
+dest = "lib/archive.tar.gz"
+mode = 0o644
+digest_const = "FIXTURE_SHA"
+digest_source = "consts.rs"
+archive_slot = { id = "inspect-slot", target = "linux-x86_64", container = "gzip-tar", inspect_only = true, executables = [] }
+targets = ["linux-x86_64"]
+"#;
+        let inventory: Inventory = toml_edit::de::from_str(inv_text).unwrap();
+        let signer = crate::apple::FakeArchiveMemberSigner::new("dummy");
+        let sealed = crate::archive_seal::seal_declared_archives(
+            &checkout,
+            &inventory,
+            "linux-x86_64",
+            &signer,
+        )
+        .expect("sealer runs");
+        assert!(
+            sealed.archives.is_empty(),
+            "inspect_only slot must be skipped by sealer"
+        );
+    }
+
+    #[test]
+    fn pinned_native_staging_refusals_and_passing_twin() {
+        let root = tempfile::tempdir().expect("root");
+        let stage = root.path().join("stage");
+        fs::create_dir_all(&stage).unwrap();
+        fs::write(root.path().join("payload.txt"), "").unwrap();
+
+        let source = "libfoo.so";
+        let source_path = root.path().join(source);
+        let content = b"\x7fELFfakecontent";
+        fs::write(&source_path, content).unwrap();
+        let digest = sha256_hex(content);
+
+        let identity = crate::inventory::NativeIdentity {
+            os: None,
+            name: Some("libfoo.so".to_owned()),
+            aliases: vec!["libfoo.so.1".to_owned()],
+        };
+
+        let make_inv = |entry: Entry| {
+            let mut inv: Inventory = toml_edit::de::from_str(
+                r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "linux-x86_64"
+os = "linux"
+arch = "x86_64"
+deb_arch = "amd64"
+rpm_arch = "x86_64"
+triple_musl = "x86_64-unknown-linux-musl"
+triple_gnu = "x86_64-unknown-linux-gnu"
+zig_gnu = "x86_64-linux-gnu.2.27"
+"#,
+            )
+            .unwrap();
+            inv.entry = vec![entry];
+            inv
+        };
+
+        // 1. Digest mismatch refuses
+        let bad_digest_entry = Entry::PinnedNative {
+            source: source.to_owned(),
+            dest: "lib/solstone-foo/libfoo.so".to_owned(),
+            mode: 0o755,
+            digest: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+            identity: identity.clone(),
+            targets: vec!["linux-x86_64".to_owned()],
+        };
+        let inv = make_inv(bad_digest_entry);
+        let err_digest = write_stage(
+            &select::Selection {
+                admitted: BTreeSet::new(),
+                bins: vec![],
+            },
+            root.path(),
+            &root.path().join("inventory.toml"),
+            &inv,
+            "linux-x86_64",
+            None,
+            None,
+            None,
+            &stage,
+        )
+        .unwrap_err();
+        assert!(err_digest.to_string().contains("digest"), "{err_digest}");
+
+        // 2. Filename that is neither identity name nor alias refuses
+        let bad_name_entry = Entry::PinnedNative {
+            source: source.to_owned(),
+            dest: "lib/solstone-foo/libwrong.so".to_owned(),
+            mode: 0o755,
+            digest: digest.clone(),
+            identity: identity.clone(),
+            targets: vec!["linux-x86_64".to_owned()],
+        };
+        let inv = make_inv(bad_name_entry);
+        let err_name = write_stage(
+            &select::Selection {
+                admitted: BTreeSet::new(),
+                bins: vec![],
+            },
+            root.path(),
+            &root.path().join("inventory.toml"),
+            &inv,
+            "linux-x86_64",
+            None,
+            None,
+            None,
+            &stage,
+        )
+        .unwrap_err();
+        assert!(
+            err_name.to_string().contains("basename") || err_name.to_string().contains("filename"),
+            "{err_name}"
+        );
+
+        // 3. Passing twin matches
+        let good_entry = Entry::PinnedNative {
+            source: source.to_owned(),
+            dest: "lib/solstone-foo/libfoo.so.1".to_owned(),
+            mode: 0o755,
+            digest,
+            identity,
+            targets: vec!["linux-x86_64".to_owned()],
+        };
+        let inv = make_inv(good_entry);
+        write_stage(
+            &select::Selection {
+                admitted: BTreeSet::new(),
+                bins: vec![],
+            },
+            root.path(),
+            &root.path().join("inventory.toml"),
+            &inv,
+            "linux-x86_64",
+            None,
+            None,
+            None,
+            &stage,
+        )
+        .expect("passing twin stages successfully");
+        assert!(stage.join("lib/solstone-foo/libfoo.so.1").is_file());
+    }
+
+    #[test]
+    fn dylib_install_name_identity_validation() {
+        let bad_macho = crate::macho::fixture(&crate::macho::FixtureSpec {
+            filetype: crate::macho::MH_DYLIB,
+            install_name: Some("@rpath/libwrong.dylib"),
+            ..Default::default()
+        });
+        let bad_info = crate::macho::parse_macho(&bad_macho).unwrap();
+        let identity = crate::inventory::NativeIdentity {
+            os: Some("macos".to_owned()),
+            name: Some("@rpath/libcorrect.dylib".to_owned()),
+            aliases: vec![],
+        };
+        let err =
+            validate_macho_identity("lib/libcorrect.dylib", &bad_info, &identity).unwrap_err();
+        assert!(err.to_string().contains("install name"));
+
+        let good_macho = crate::macho::fixture(&crate::macho::FixtureSpec {
+            filetype: crate::macho::MH_DYLIB,
+            install_name: Some("@rpath/libcorrect.dylib"),
+            ..Default::default()
+        });
+        let good_info = crate::macho::parse_macho(&good_macho).unwrap();
+        validate_macho_identity("lib/libcorrect.dylib", &good_info, &identity)
+            .expect("passing dylib matches identity");
+
+        let pdfium_macho = crate::macho::fixture(&crate::macho::FixtureSpec {
+            filetype: crate::macho::MH_DYLIB,
+            install_name: Some("./libpdfium.dylib"),
+            ..Default::default()
+        });
+        let pdfium_info = crate::macho::parse_macho(&pdfium_macho).unwrap();
+        let pdfium_identity = crate::inventory::NativeIdentity {
+            os: Some("macos".to_owned()),
+            name: Some("./libpdfium.dylib".to_owned()),
+            aliases: vec![],
+        };
+        validate_macho_identity("lib/libpdfium.dylib", &pdfium_info, &pdfium_identity)
+            .expect("passing pdfium dylib matches identity");
+    }
+
+    #[test]
+    fn onnx_alias_copies_are_regular_files() {
+        let (spec, staged, _, _) = linux_fixture_runtimes();
+        let temp = tempfile::tempdir().unwrap();
+        let dest = temp.path().join("onnx");
+        onnx_runtime::write_staged_runtime(spec, &staged, &dest).unwrap();
+        for name in spec.link_names {
+            let path = dest.join(name);
+            assert!(path.is_file());
+            let meta = fs::symlink_metadata(&path).unwrap();
+            assert!(
+                !meta.file_type().is_symlink(),
+                "{name} must be a regular file, not a symlink"
+            );
+        }
     }
 }

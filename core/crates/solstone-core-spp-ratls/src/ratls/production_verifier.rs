@@ -206,6 +206,7 @@ fn cpu_error(error: CpuLegError) -> CompositeVerificationError {
             source: PcrFingerprintError::PinMismatch(_),
             ..
         } => composite_error("pcr_pin_mismatch"),
+        CpuLegError::ApplicationPcrs { source, .. } => composite_error(source.reason_code()),
         CpuLegError::SnpVerify {
             source: SnpVerifyError::PolicyIdKeyAbsent | SnpVerifyError::PolicyIdKeyNotPinned,
             ..
@@ -253,6 +254,16 @@ mod tests {
 
     const CURRENT_PIN: &str = "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3";
 
+    /// The fixture is the overlap engine's evidence, which predates the
+    /// published per-register record. Tests of what follows a verified CPU leg
+    /// appraise it by its fingerprint alone.
+    fn overlap_engine_policy() -> solstone_core_spp_attest::Policy {
+        solstone_core_spp_attest::Policy {
+            application_pcrs: None,
+            ..solstone_core_spp_attest::production_policy()
+        }
+    }
+
     fn profiles(entries: &[(&str, StatusMode)]) -> GpuProfiles {
         GpuProfiles::from_profiles(
             entries
@@ -265,7 +276,7 @@ mod tests {
     #[test]
     fn the_verified_cpu_fingerprint_alone_selects_the_status_mode() {
         let fixture = Fixture::load();
-        let policy = solstone_core_spp_attest::production_policy();
+        let policy = overlap_engine_policy();
         let successor = "44".repeat(32);
         // Test-only coexistence: the current pin online, a successor offline.
         let both = profiles(&[
@@ -303,7 +314,7 @@ mod tests {
     #[test]
     fn an_admitted_pin_without_a_profile_stops_before_gpu_work() {
         let fixture = Fixture::load();
-        let policy = solstone_core_spp_attest::production_policy();
+        let policy = overlap_engine_policy();
         for set in [
             profiles(&[]),
             profiles(&[(&"55".repeat(32), StatusMode::OfflineSignedAge)]),
@@ -511,7 +522,7 @@ mod tests {
     fn composite_positive_uses_attested_gpu_hwmodel_for_substrate() {
         let fixture = Fixture::load();
         let appraiser = FixtureGpuAppraiser::accepted();
-        let policy = solstone_core_spp_attest::production_policy();
+        let policy = overlap_engine_policy();
 
         let verdict = fixture
             .verify(Some(&policy), &appraiser)
@@ -520,6 +531,22 @@ mod tests {
         assert_eq!(verdict.legs, ["cpu", "gpu"]);
         assert_eq!(verdict.substrate, "AMD SEV-SNP + NVIDIA attested-hwmodel");
         assert!(appraiser.called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn production_refuses_the_overlap_engine_by_its_registers_before_gpu() {
+        let fixture = Fixture::load();
+        let appraiser = FixtureGpuAppraiser::accepted();
+        let policy = solstone_core_spp_attest::production_policy();
+        // Its fingerprint is still pinned; the register appraisal refuses it.
+        assert!(
+            solstone_core_spp_attest::check_pcr_fingerprint(&fixture.quote_pcrs, &policy).is_ok()
+        );
+        let error = fixture
+            .verify(Some(&policy), &appraiser)
+            .expect_err("the overlap engine's registers are not the published build");
+        assert_eq!(error.reason_code, "pcr_selection_mismatch");
+        assert!(!appraiser.called.load(Ordering::SeqCst));
     }
 
     #[test]
@@ -561,7 +588,7 @@ mod tests {
             let appraiser = FixtureGpuAppraiser::accepted();
             let policy = solstone_core_spp_attest::Policy {
                 id_key_digests: Some(pinned),
-                ..solstone_core_spp_attest::production_policy()
+                ..overlap_engine_policy()
             };
             let error = fixture
                 .verify(Some(&policy), &appraiser)
@@ -598,10 +625,7 @@ mod tests {
         );
 
         assert_eq!(
-            fixture.verify(
-                Some(&solstone_core_spp_attest::production_policy()),
-                &appraiser
-            ),
+            fixture.verify(Some(&overlap_engine_policy()), &appraiser),
             Err(crate::CompositeVerificationError {
                 reason_code: "gpu_nonce_mismatch"
             })
@@ -616,10 +640,7 @@ mod tests {
         let mut tampered = fixture;
         tampered.channel_binding = b"tampered-binding".to_vec();
         let error = tampered
-            .verify(
-                Some(&solstone_core_spp_attest::production_policy()),
-                &appraiser,
-            )
+            .verify(Some(&overlap_engine_policy()), &appraiser)
             .expect_err("tampered CPU binding rejects");
 
         assert_eq!(error.reason_code, "cpu_verification_failed");
@@ -636,10 +657,7 @@ mod tests {
         let mut tampered = fixture;
         tampered.envelope[16] ^= 1;
         let error = tampered
-            .verify(
-                Some(&solstone_core_spp_attest::production_policy()),
-                &appraiser,
-            )
+            .verify(Some(&overlap_engine_policy()), &appraiser)
             .expect_err("envelope nonce mismatch rejects");
 
         assert_eq!(error.reason_code, "cpu_verification_failed");
@@ -669,10 +687,7 @@ mod tests {
         ] {
             let appraiser = FixtureGpuAppraiser::rejected(reason);
             assert_eq!(
-                fixture.verify(
-                    Some(&solstone_core_spp_attest::production_policy()),
-                    &appraiser
-                ),
+                fixture.verify(Some(&overlap_engine_policy()), &appraiser),
                 Err(crate::CompositeVerificationError {
                     reason_code: expected
                 })

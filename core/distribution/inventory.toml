@@ -40,6 +40,7 @@ deb_arch = "amd64"
 rpm_arch = "x86_64"
 triple_musl = "x86_64-unknown-linux-musl"
 triple_gnu = "x86_64-unknown-linux-gnu"
+# zig_gnu is the build baseline, not the shipped dependency ceiling
 zig_gnu = "x86_64-linux-gnu.2.27"
 
 [[target]]
@@ -50,6 +51,7 @@ deb_arch = "arm64"
 rpm_arch = "aarch64"
 triple_musl = "aarch64-unknown-linux-musl"
 triple_gnu = "aarch64-unknown-linux-gnu"
+# zig_gnu is the build baseline, not the shipped dependency ceiling
 zig_gnu = "aarch64-linux-gnu.2.27"
 
 # macOS builds natively on Apple hardware with Apple's own toolchain, so it has
@@ -63,9 +65,8 @@ os = "macos"
 arch = "arm64"
 lane = "apple-native"
 triple_apple = "aarch64-apple-darwin"
-# The macOS analogue of the Linux GLIBC 2.27 ceiling: every shipped Mach-O must
-# declare a deployment target at or below this or it refuses to launch on the
-# oldest macOS we claim.
+# Every shipped Mach-O must declare a deployment target at or below this or it
+# refuses to launch on the oldest macOS we claim.
 min_macos = "14.0"
 
 # Windows public commands are real binaries. Native dependency artifacts are
@@ -324,24 +325,6 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "model-asset"
-source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz"
-dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz"
-mode = 0o644
-digest_const = "RFDETR_ENGINE_LINUX_CPU_X64_TARBALL_SHA256"
-digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
-targets = ["linux-x86_64"]
-
-[[entry]]
-kind = "model-asset"
-source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz"
-dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz"
-mode = 0o644
-digest_const = "RFDETR_ENGINE_LINUX_CPU_ARM64_TARBALL_SHA256"
-digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
-targets = ["linux-aarch64"]
-
-[[entry]]
-kind = "model-asset"
 source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz"
 dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz"
 mode = 0o644
@@ -351,6 +334,30 @@ archive_slot = { id = "rfdetr-macos-metal-arm64", target = "macos-arm64", contai
   { path = "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64/rfdetr-cli", digest_const = "RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256", digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs" },
 ] }
 targets = ["macos-arm64"]
+
+[[entry]]
+kind = "model-asset"
+source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz"
+dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz"
+mode = 0o644
+digest_const = "RFDETR_ENGINE_LINUX_CPU_X64_TARBALL_SHA256"
+digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
+archive_slot = { id = "rfdetr-linux-cpu-x64", target = "linux-x86_64", container = "gzip-tar", inspect_only = true, executables = [
+  { path = "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64/rfdetr-cli", digest_const = "RFDETR_ENGINE_LINUX_CPU_X64_BINARY_SHA256", digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs" },
+] }
+targets = ["linux-x86_64"]
+
+[[entry]]
+kind = "model-asset"
+source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz"
+dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz"
+mode = 0o644
+digest_const = "RFDETR_ENGINE_LINUX_CPU_ARM64_TARBALL_SHA256"
+digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
+archive_slot = { id = "rfdetr-linux-cpu-arm64", target = "linux-aarch64", container = "gzip-tar", inspect_only = true, executables = [
+  { path = "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64/rfdetr-cli", digest_const = "RFDETR_ENGINE_LINUX_CPU_ARM64_BINARY_SHA256", digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs" },
+] }
+targets = ["linux-aarch64"]
 
 [[entry]]
 kind = "model-asset"
@@ -365,12 +372,20 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 kind = "onnx-runtime"
 dest_dir = "lib/solstone-core-speakers-analyze"
 mode = 0o755
+identities = [
+  { os = "linux", name = "libonnxruntime.so.1", aliases = ["libonnxruntime.so.1.25.0", "libonnxruntime.so"] },
+  { os = "macos", name = "@rpath/libonnxruntime.1.25.0.dylib", aliases = ["libonnxruntime.dylib"] },
+]
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "pdfium"
 dest_dir = "lib/solstone-core-pdf"
 mode = 0o755
+identities = [
+  { os = "linux", name = "libpdfium.so" },
+  { os = "macos", name = "./libpdfium.dylib" },
+]
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]

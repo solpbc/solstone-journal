@@ -30,6 +30,9 @@ const LC_LOAD_DYLIB: u32 = 0x0000_000c;
 const LC_ID_DYLIB: u32 = 0x0000_000d;
 const LC_LOAD_WEAK_DYLIB: u32 = 0x18 | LC_REQ_DYLD;
 const LC_REEXPORT_DYLIB: u32 = 0x1f | LC_REQ_DYLD;
+const LC_LOAD_UPWARD_DYLIB: u32 = 0x23 | LC_REQ_DYLD;
+const LC_LAZY_LOAD_DYLIB: u32 = 0x20;
+const LC_DYLD_ENVIRONMENT: u32 = 0x27;
 const LC_RPATH: u32 = 0x1c | LC_REQ_DYLD;
 const LC_CODE_SIGNATURE: u32 = 0x0000_001d;
 const LC_BUILD_VERSION: u32 = 0x0000_0032;
@@ -64,6 +67,9 @@ pub struct MachoInfo {
     pub min_os: Option<(u32, u32)>,
     pub code_signature: bool,
     pub position_independent: bool,
+    pub upward_dylibs: Vec<String>,
+    pub lazy_dylibs: Vec<String>,
+    pub dyld_environments: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -170,6 +176,9 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachoInfo, MachoError> {
         min_os: None,
         code_signature: false,
         position_independent: flags & MH_PIE != 0,
+        upward_dylibs: Vec::new(),
+        lazy_dylibs: Vec::new(),
+        dyld_environments: Vec::new(),
     };
 
     let mut cursor = 0usize;
@@ -187,6 +196,18 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachoInfo, MachoError> {
             LC_LOAD_DYLIB | LC_LOAD_WEAK_DYLIB | LC_REEXPORT_DYLIB => {
                 let offset = u32_at(command, 8)? as usize;
                 info.needed.push(lc_string(command, offset)?);
+            }
+            LC_LOAD_UPWARD_DYLIB => {
+                let offset = u32_at(command, 8)? as usize;
+                info.upward_dylibs.push(lc_string(command, offset)?);
+            }
+            LC_LAZY_LOAD_DYLIB => {
+                let offset = u32_at(command, 8)? as usize;
+                info.lazy_dylibs.push(lc_string(command, offset)?);
+            }
+            LC_DYLD_ENVIRONMENT => {
+                let offset = u32_at(command, 8)? as usize;
+                info.dyld_environments.push(lc_string(command, offset)?);
             }
             LC_ID_DYLIB => {
                 let offset = u32_at(command, 8)? as usize;
@@ -354,6 +375,259 @@ pub fn inspect_payload_dylib(
     finish(unexpected)
 }
 
+fn resolve_path_tokens(raw: &str, pkg_rel_dir: &str) -> Result<String, MachoError> {
+    let subpath = if let Some(rest) = raw.strip_prefix("@loader_path") {
+        rest
+    } else if let Some(rest) = raw.strip_prefix("@executable_path") {
+        rest
+    } else {
+        return Ok(raw.to_string());
+    };
+    let subpath = subpath.strip_prefix('/').unwrap_or(subpath);
+    let mut components = if pkg_rel_dir.is_empty() || pkg_rel_dir == "." {
+        Vec::new()
+    } else {
+        pkg_rel_dir.split('/').map(String::from).collect::<Vec<_>>()
+    };
+    if !subpath.is_empty() {
+        for part in subpath.split('/') {
+            if part.is_empty() || part == "." {
+                continue;
+            }
+            if part == ".." {
+                if components.is_empty() {
+                    return Err(MachoError::new(format!("path {raw} leaves package root")));
+                }
+                components.pop();
+            } else {
+                components.push(part.to_string());
+            }
+        }
+    }
+    Ok(components.join("/"))
+}
+
+pub fn admit_macho(
+    staged_path: &str,
+    bytes: &[u8],
+    expected_cputype: u32,
+    macos_ceiling: (u32, u32),
+    pkg_rel_dir: &str,
+    nested: Option<(&str, &str)>,
+    staged_files: &[&str],
+) -> Result<(), MachoError> {
+    let info = parse_macho(bytes)?;
+    let target_prefix = match nested {
+        Some((archive, member)) => format!("archive {archive} member {member}"),
+        None => staged_path.to_string(),
+    };
+
+    if info.cputype != expected_cputype {
+        return Err(MachoError::new(format!(
+            "{target_prefix}: unexpected cputype {:#x} (expected {expected_cputype:#x})",
+            info.cputype
+        )));
+    }
+
+    match info.min_os {
+        Some(version) if version <= macos_ceiling => {}
+        Some(version) => {
+            return Err(MachoError::new(format!(
+                "{target_prefix}: deployment target {}.{} exceeds ceiling {}.{}",
+                version.0, version.1, macos_ceiling.0, macos_ceiling.1
+            )));
+        }
+        None => {
+            return Err(MachoError::new(format!(
+                "{target_prefix}: missing deployment target (LC_BUILD_VERSION)"
+            )));
+        }
+    }
+
+    if !info.upward_dylibs.is_empty() {
+        return Err(MachoError::new(format!(
+            "{target_prefix}: forbidden load command LC_LOAD_UPWARD_DYLIB"
+        )));
+    }
+    if !info.lazy_dylibs.is_empty() {
+        return Err(MachoError::new(format!(
+            "{target_prefix}: forbidden load command LC_LAZY_LOAD_DYLIB"
+        )));
+    }
+    if !info.dyld_environments.is_empty() {
+        return Err(MachoError::new(format!(
+            "{target_prefix}: forbidden load command LC_DYLD_ENVIRONMENT"
+        )));
+    }
+
+    if info.filetype != MH_EXECUTE {
+        let has_exec_path = info.rpaths.iter().any(|r| r.contains("@executable_path"))
+            || info.needed.iter().any(|n| n.contains("@executable_path"))
+            || info
+                .install_name
+                .as_deref()
+                .is_some_and(|i| i.contains("@executable_path"));
+        if has_exec_path {
+            return Err(MachoError::new(format!(
+                "{target_prefix}: @executable_path is forbidden on non-executable (filetype {})",
+                info.filetype
+            )));
+        }
+    }
+
+    if let Some((archive, member)) = nested {
+        if let Some(rpath) = info.rpaths.first() {
+            return Err(MachoError::new(format!(
+                "archive {archive} member {member}: nested archive binary must not declare LC_RPATH ({rpath})"
+            )));
+        }
+        for dep in &info.needed {
+            if !is_system_dylib(dep) {
+                return Err(MachoError::new(format!(
+                    "archive {archive} member {member}: non-system dependency {dep}"
+                )));
+            }
+        }
+        return Ok(());
+    }
+
+    for dep in &info.needed {
+        if dep.starts_with("@loader_path/") || dep.starts_with("@executable_path/") {
+            let res = resolve_path_tokens(dep, pkg_rel_dir)
+                .map_err(|e| MachoError::new(format!("{target_prefix}: {e}")))?;
+            if !staged_files.contains(&res.as_str()) {
+                return Err(MachoError::new(format!(
+                    "{target_prefix}: unsatisfied dependency {dep} ({res})"
+                )));
+            }
+        }
+    }
+
+    let mut resolved_rpaths = Vec::new();
+    for rpath in &info.rpaths {
+        if rpath.starts_with('/') {
+            if !rpath.starts_with("/usr/lib/") && !rpath.starts_with("/System/Library/") {
+                return Err(MachoError::new(format!(
+                    "{target_prefix}: absolute LC_RPATH {rpath} not allowed outside /usr/lib/ or /System/Library/"
+                )));
+            }
+            resolved_rpaths.push(rpath.clone());
+        } else if rpath == "@loader_path"
+            || rpath.starts_with("@loader_path/")
+            || rpath == "@executable_path"
+            || rpath.starts_with("@executable_path/")
+        {
+            let res = resolve_path_tokens(rpath, pkg_rel_dir)
+                .map_err(|e| MachoError::new(format!("{target_prefix}: {e}")))?;
+            resolved_rpaths.push(res);
+        } else {
+            return Err(MachoError::new(format!(
+                "{target_prefix}: relative LC_RPATH {rpath} without @loader_path or @executable_path"
+            )));
+        }
+    }
+
+    let has_rpath_dep = info.needed.iter().any(|dep| dep.starts_with("@rpath/"));
+    if has_rpath_dep {
+        let lands_in_private_lib = resolved_rpaths.iter().any(|r| {
+            r.starts_with("lib/solstone-") || r.starts_with("lib/solstone_journal_models")
+        });
+        let lands_in_bin = resolved_rpaths
+            .iter()
+            .any(|r| r == "bin" || r.starts_with("bin/"));
+        if lands_in_private_lib && lands_in_bin {
+            return Err(MachoError::new(format!(
+                "{target_prefix}: binary with @rpath dependency must not combine private lib rpath with bin rpath"
+            )));
+        }
+
+        for dep in &info.needed {
+            if let Some(lib_name) = dep.strip_prefix("@rpath/") {
+                let found = resolved_rpaths.iter().any(|rdir| {
+                    let cand = format!("{rdir}/{lib_name}");
+                    staged_files.contains(&cand.as_str())
+                });
+                if !found {
+                    return Err(MachoError::new(format!(
+                        "{target_prefix}: unsatisfied @rpath dependency {dep}"
+                    )));
+                }
+            }
+        }
+    }
+
+    for dep in &info.needed {
+        if is_system_dylib(dep) {
+            continue;
+        }
+        if dep.starts_with("@rpath/") {
+            continue;
+        }
+        if dep.starts_with("@loader_path/") || dep.starts_with("@executable_path/") {
+            continue;
+        }
+        return Err(MachoError::new(format!(
+            "{target_prefix}: unallowed dependency {dep}"
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn retain_allowed_rpaths(bytes: &[u8]) -> Result<Vec<u8>, MachoError> {
+    let magic = u32_at(bytes, 0)?;
+    if magic != MH_MAGIC_64 {
+        return Err(MachoError::new(
+            "retain_allowed_rpaths: only thin 64-bit Mach-O supported",
+        ));
+    }
+    let ncmds = u32_at(bytes, 16)?;
+    let sizeofcmds = u32_at(bytes, 20)? as usize;
+    let commands = bytes
+        .get(HEADER_64..HEADER_64 + sizeofcmds)
+        .ok_or_else(|| MachoError::new("unexpected:\n  truncated load commands"))?;
+
+    let mut new_commands = Vec::new();
+    let mut new_ncmds = 0u32;
+    let mut cursor = 0usize;
+
+    for _ in 0..ncmds {
+        if cursor + 8 > commands.len() {
+            return Err(MachoError::new("unexpected:\n  truncated load command"));
+        }
+        let cmd = u32_at(commands, cursor)?;
+        let cmdsize = u32_at(commands, cursor + 4)? as usize;
+        if cmdsize < 8 || cursor + cmdsize > commands.len() {
+            return Err(MachoError::new("unexpected:\n  load command size"));
+        }
+        let command = &commands[cursor..cursor + cmdsize];
+        if cmd == LC_RPATH {
+            let offset = u32_at(command, 8)? as usize;
+            let rpath = lc_string(command, offset)?;
+            let keep = rpath.starts_with("/usr/lib/")
+                || rpath.starts_with("/System/Library/")
+                || rpath == "@loader_path"
+                || rpath.starts_with("@loader_path/");
+            if keep {
+                new_commands.extend_from_slice(command);
+                new_ncmds += 1;
+            }
+        } else {
+            new_commands.extend_from_slice(command);
+            new_ncmds += 1;
+        }
+        cursor += cmdsize;
+    }
+
+    let new_sizeofcmds = new_commands.len();
+    let mut out = bytes.to_vec();
+    out[16..20].copy_from_slice(&new_ncmds.to_le_bytes());
+    out[20..24].copy_from_slice(&(new_sizeofcmds as u32).to_le_bytes());
+    out[HEADER_64..HEADER_64 + new_sizeofcmds].copy_from_slice(&new_commands);
+    out[HEADER_64 + new_sizeofcmds..HEADER_64 + sizeofcmds].fill(0);
+    Ok(out)
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures. Synthetic Mach-O images with known answers, so a zero from the
 // parser can be distinguished from a blind parser.
@@ -369,6 +643,9 @@ pub struct FixtureSpec<'a> {
     pub min_os: Option<(u32, u32)>,
     pub code_signature: bool,
     pub position_independent: bool,
+    pub upward_dylibs: &'a [&'a str],
+    pub lazy_dylibs: &'a [&'a str],
+    pub dyld_environments: &'a [&'a str],
 }
 
 impl Default for FixtureSpec<'_> {
@@ -382,6 +659,9 @@ impl Default for FixtureSpec<'_> {
             min_os: Some((14, 0)),
             code_signature: false,
             position_independent: true,
+            upward_dylibs: &[],
+            lazy_dylibs: &[],
+            dyld_environments: &[],
         }
     }
 }
@@ -438,6 +718,18 @@ pub fn fixture(spec: &FixtureSpec<'_>) -> Vec<u8> {
         push_dylib_command(&mut commands, LC_LOAD_DYLIB, dependency);
         ncmds += 1;
     }
+    for upward in spec.upward_dylibs {
+        push_dylib_command(&mut commands, LC_LOAD_UPWARD_DYLIB, upward);
+        ncmds += 1;
+    }
+    for lazy in spec.lazy_dylibs {
+        push_dylib_command(&mut commands, LC_LAZY_LOAD_DYLIB, lazy);
+        ncmds += 1;
+    }
+    for env in spec.dyld_environments {
+        push_lc_str_command(&mut commands, LC_DYLD_ENVIRONMENT, env);
+        ncmds += 1;
+    }
     for rpath in spec.rpaths {
         push_lc_str_command(&mut commands, LC_RPATH, rpath);
         ncmds += 1;
@@ -489,6 +781,9 @@ mod tests {
         assert_eq!(info.min_os, Some((14, 0)));
         assert!(info.code_signature);
         assert!(info.position_independent);
+        assert!(info.upward_dylibs.is_empty());
+        assert!(info.lazy_dylibs.is_empty());
+        assert!(info.dyld_environments.is_empty());
     }
 
     #[test]
@@ -712,5 +1007,339 @@ mod tests {
         assert!(!is_system_dylib("/opt/homebrew/lib/libfoo.dylib"));
         assert!(!is_system_dylib("@rpath/libonnxruntime.1.25.0.dylib"));
         assert!(!is_system_dylib("@loader_path/../lib/libfoo.dylib"));
+    }
+
+    #[test]
+    fn retain_allowed_rpaths_compacts_load_commands() {
+        let original = fixture(&FixtureSpec {
+            needed: SYSTEM,
+            rpaths: &[
+                "/usr/lib/swift",
+                "@loader_path",
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx",
+            ],
+            ..FixtureSpec::default()
+        });
+        let rewritten = retain_allowed_rpaths(&original).expect("retain allowed rpaths");
+        let info = parse_macho(&rewritten).expect("parsed rewritten");
+        assert_eq!(
+            info.rpaths,
+            vec!["/usr/lib/swift".to_string(), "@loader_path".to_string()]
+        );
+    }
+
+    #[test]
+    fn admit_macho_rules_and_twins() {
+        let arm64 = cputype_arm64();
+        let ceiling = (14, 0);
+
+        // Baseline good binary
+        let staged_files = &["lib/solstone-core-speakers-analyze/libonnxruntime.dylib"];
+        let good = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0], "@rpath/libonnxruntime.dylib"],
+            rpaths: &["@loader_path/../lib/solstone-core-speakers-analyze"],
+            ..FixtureSpec::default()
+        });
+        assert!(
+            admit_macho(
+                "bin/helper",
+                &good,
+                arm64,
+                ceiling,
+                "bin",
+                None,
+                staged_files
+            )
+            .is_ok()
+        );
+
+        // cputype mismatch refuses
+        let bad_arch = fixture(&FixtureSpec {
+            cputype: cputype_x86_64(),
+            needed: &[SYSTEM[0], "@rpath/libonnxruntime.dylib"],
+            rpaths: &["@loader_path/../lib/solstone-core-speakers-analyze"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "bin/helper",
+            &bad_arch,
+            arm64,
+            ceiling,
+            "bin",
+            None,
+            staged_files,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("cputype"));
+
+        // min_os above ceiling refuses
+        let bad_os = fixture(&FixtureSpec {
+            min_os: Some((15, 0)),
+            needed: &[SYSTEM[0], "@rpath/libonnxruntime.dylib"],
+            rpaths: &["@loader_path/../lib/solstone-core-speakers-analyze"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "bin/helper",
+            &bad_os,
+            arm64,
+            ceiling,
+            "bin",
+            None,
+            staged_files,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("exceeds ceiling"));
+
+        // missing min_os refuses
+        let no_os = fixture(&FixtureSpec {
+            min_os: None,
+            needed: &[SYSTEM[0], "@rpath/libonnxruntime.dylib"],
+            rpaths: &["@loader_path/../lib/solstone-core-speakers-analyze"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "bin/helper",
+            &no_os,
+            arm64,
+            ceiling,
+            "bin",
+            None,
+            staged_files,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("missing deployment target"));
+
+        // LC_LOAD_UPWARD_DYLIB refuses naming command
+        let upward = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0]],
+            upward_dylibs: &["/usr/lib/libupward.dylib"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho("bin/helper", &upward, arm64, ceiling, "bin", None, &[]).unwrap_err();
+        assert!(err.to_string().contains("LC_LOAD_UPWARD_DYLIB"));
+
+        // LC_LAZY_LOAD_DYLIB refuses naming command
+        let lazy = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0]],
+            lazy_dylibs: &["/usr/lib/liblazy.dylib"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho("bin/helper", &lazy, arm64, ceiling, "bin", None, &[]).unwrap_err();
+        assert!(err.to_string().contains("LC_LAZY_LOAD_DYLIB"));
+
+        // LC_DYLD_ENVIRONMENT refuses naming command
+        let dyld_env = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0]],
+            dyld_environments: &["DYLD_INSERT_LIBRARIES=/foo"],
+            ..FixtureSpec::default()
+        });
+        let err =
+            admit_macho("bin/helper", &dyld_env, arm64, ceiling, "bin", None, &[]).unwrap_err();
+        assert!(err.to_string().contains("LC_DYLD_ENVIRONMENT"));
+
+        // @executable_path on non-MH_EXECUTE (dylib) refuses
+        let dylib_exec_path = fixture(&FixtureSpec {
+            filetype: MH_DYLIB,
+            needed: &[SYSTEM[0]],
+            rpaths: &["@executable_path/../lib"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "lib/foo.dylib",
+            &dylib_exec_path,
+            arm64,
+            ceiling,
+            "lib",
+            None,
+            &[],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("@executable_path"));
+
+        // @executable_path on MH_EXECUTE passes
+        let exe_exec_path = fixture(&FixtureSpec {
+            filetype: MH_EXECUTE,
+            needed: &[SYSTEM[0]],
+            rpaths: &["@executable_path/../lib/solstone-core-speakers-analyze"],
+            ..FixtureSpec::default()
+        });
+        assert!(
+            admit_macho(
+                "bin/helper",
+                &exe_exec_path,
+                arm64,
+                ceiling,
+                "bin",
+                None,
+                &[]
+            )
+            .is_ok()
+        );
+
+        // @loader_path leaving package root refuses
+        let leaves_root = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0]],
+            rpaths: &["@loader_path/../../outside"],
+            ..FixtureSpec::default()
+        });
+        let err =
+            admit_macho("bin/helper", &leaves_root, arm64, ceiling, "bin", None, &[]).unwrap_err();
+        assert!(err.to_string().contains("leaves package root"));
+
+        // Allowed absolute rpath: /usr/lib/swift passes
+        let swift_rpath = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0]],
+            rpaths: &["/usr/lib/swift", "@loader_path"],
+            ..FixtureSpec::default()
+        });
+        assert!(admit_macho("bin/helper", &swift_rpath, arm64, ceiling, "bin", None, &[]).is_ok());
+
+        // Disallowed absolute rpath refuses
+        let bad_abs_rpath = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0]],
+            rpaths: &["/usr/lib/swift", "@loader_path", "/usr/local/lib"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "bin/helper",
+            &bad_abs_rpath,
+            arm64,
+            ceiling,
+            "bin",
+            None,
+            &[],
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("absolute LC_RPATH /usr/local/lib not allowed")
+        );
+
+        // Binary with @rpath dependency combining private lib rpath + @loader_path in bin/ refuses
+        let combo_bin = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0], "@rpath/libonnxruntime.dylib"],
+            rpaths: &[
+                "@loader_path/../lib/solstone-core-speakers-analyze",
+                "@loader_path",
+            ],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "bin/helper",
+            &combo_bin,
+            arm64,
+            ceiling,
+            "bin",
+            None,
+            staged_files,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("must not combine private lib rpath with bin rpath")
+        );
+
+        // Direct @loader_path/../../outside dependency that leaves package root refuses
+        let outside_dep = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0], "@loader_path/../../outside/libfoo.dylib"],
+            ..FixtureSpec::default()
+        });
+        let err =
+            admit_macho("bin/helper", &outside_dep, arm64, ceiling, "bin", None, &[]).unwrap_err();
+        assert!(err.to_string().contains("leaves package root"));
+
+        // Nested archive checks
+        let nested_good = fixture(&FixtureSpec {
+            needed: SYSTEM,
+            ..FixtureSpec::default()
+        });
+        assert!(
+            admit_macho(
+                "rfdetr.tar.gz",
+                &nested_good,
+                arm64,
+                ceiling,
+                "rfdetr",
+                Some(("rfdetr.tar.gz", "rfdetr-cli")),
+                &[],
+            )
+            .is_ok()
+        );
+
+        let nested_with_rpath = fixture(&FixtureSpec {
+            needed: SYSTEM,
+            rpaths: &["/usr/lib/swift"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "rfdetr.tar.gz",
+            &nested_with_rpath,
+            arm64,
+            ceiling,
+            "rfdetr",
+            Some(("rfdetr.tar.gz", "rfdetr-cli")),
+            &[],
+        )
+        .unwrap_err();
+        let err_str = err.to_string();
+        assert!(err_str.contains("rfdetr.tar.gz"));
+        assert!(err_str.contains("rfdetr-cli"));
+        assert!(err_str.contains("LC_RPATH"));
+
+        let nested_non_system = fixture(&FixtureSpec {
+            needed: &[SYSTEM[0], "@rpath/libcustom.dylib"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "rfdetr.tar.gz",
+            &nested_non_system,
+            arm64,
+            ceiling,
+            "rfdetr",
+            Some(("rfdetr.tar.gz", "rfdetr-cli")),
+            &[],
+        )
+        .unwrap_err();
+        let err_str = err.to_string();
+        assert!(err_str.contains("rfdetr.tar.gz"));
+        assert!(err_str.contains("rfdetr-cli"));
+        assert!(err_str.contains("@rpath/libcustom.dylib"));
+    }
+
+    #[test]
+    fn admit_macho_real_rfdetr_member() {
+        let archive_bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz"
+        ))
+        .expect("read rfdetr asset");
+
+        let uncompressed = crate::tar::gunzip_bytes(&archive_bytes).expect("gunzip");
+        let mut archive = tar::Archive::new(std::io::Cursor::new(uncompressed));
+        let mut cli_bytes = Vec::new();
+        for entry in archive.entries().expect("entries") {
+            let mut entry = entry.expect("entry");
+            let path = entry.path().expect("path");
+            if path.to_string_lossy() == "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64/rfdetr-cli" {
+                std::io::Read::read_to_end(&mut entry, &mut cli_bytes).expect("read cli bytes");
+                break;
+            }
+        }
+        assert!(!cli_bytes.is_empty(), "found rfdetr-cli member");
+
+        admit_macho(
+            "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+            &cli_bytes,
+            cputype_arm64(),
+            (14, 0),
+            "rfdetr",
+            Some((
+                "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+                "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64/rfdetr-cli",
+            )),
+            &[],
+        )
+        .expect("admit nested rfdetr-cli");
     }
 }

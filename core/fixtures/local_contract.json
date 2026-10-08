@@ -33,7 +33,22 @@
     "diagnostic_metadata_schemas": {
       "attestation_expired": {},
       "attestation_not_verified": {},
-      "attestation_rejected": {},
+      "attestation_rejected": {
+        "register": [
+          "4",
+          "7",
+          "8",
+          "9",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "22",
+          "23"
+        ]
+      },
       "brain_check_in_progress": {},
       "brain_check_interrupted": {},
       "brain_config_changed": {},

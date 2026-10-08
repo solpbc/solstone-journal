@@ -6,6 +6,12 @@
 
 set -eu
 
+SOLSTONE_LIBC_VERSION=2.34
+SOLSTONE_LIBSTDCXX_GLIBCXX="GLIBCXX_3.4.29 GLIBCXX_3.4.30"
+SOLSTONE_LIBGOMP=present
+SOLSTONE_LIBGCC_S=present
+export SOLSTONE_LIBC_VERSION SOLSTONE_LIBSTDCXX_GLIBCXX SOLSTONE_LIBGOMP SOLSTONE_LIBGCC_S
+
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 INSTALL_SOURCE=$ROOT/core/distribution/install.sh
 INSTALL=
@@ -59,7 +65,7 @@ make_release() {
 		"lock_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		"upgrade_epoch=journal-v2" \
 		"retention_window=3" \
-		"min_bootstrap_revision=2" \
+		"min_bootstrap_revision=3" \
 		"bootstrap_contract_version=2" \
 		"bootstrap_filename=solstone-journal-${_version}-install.sh" \
 		"state_reader_min=${_min}" \
@@ -79,7 +85,7 @@ make_legacy_release() {
 		"lock_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		"upgrade_epoch=journal-v2" \
 		"retention_window=3" \
-		"min_bootstrap_revision=2" \
+		"min_bootstrap_revision=3" \
 		>"$_dest"
 }
 
@@ -422,7 +428,7 @@ if grep -F 'schema_version=1' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'origin=local' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F "architecture=$TARGET" "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'installer_revision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$PREFIX/install-receipt" >/dev/null \
-	&& grep -F 'bootstrap_revision=2' "$PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'bootstrap_revision=3' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'route=tree' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'signature_verification=skipped' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'role=journal' "$PREFIX/install-receipt" >/dev/null \
@@ -804,7 +810,7 @@ OUTDATED_DIGEST=0000000000000000000000000000000000000000000000000000000000000000
 mkdir -p "$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin"
 printf '%s\n' "$OUTDATED_DIGEST" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.archive-sha256"
 make_release "$BASE/outdated-owned-base.release" 1.0.22 "$TARGET"
-sed 's/^min_bootstrap_revision=2$/min_bootstrap_revision=99/' "$BASE/outdated-owned-base.release" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.release"
+sed 's/^min_bootstrap_revision=3$/min_bootstrap_revision=99/' "$BASE/outdated-owned-base.release" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.release"
 printf '%s\n' '#!/bin/sh' 'exit 0' >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin/journal"
 chmod 755 "$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin/journal"
 ln -s versions/1.0.22-000000000000 "$OUTDATED_PREFIX/current"
@@ -1216,7 +1222,7 @@ expect_refuse version-mismatch version-other \
 
 # installer-outdated (fresh-fetch route)
 make_release "$BASE/outdated-fetch-base.release" 1.0.22 "$TARGET"
-sed 's/^min_bootstrap_revision=2$/min_bootstrap_revision=99/' "$BASE/outdated-fetch-base.release" >"$BASE/outdated-fetch.release"
+sed 's/^min_bootstrap_revision=3$/min_bootstrap_revision=99/' "$BASE/outdated-fetch-base.release" >"$BASE/outdated-fetch.release"
 expect_refuse installer-outdated installer-outdated-fresh-fetch \
 	env HOME="$HOME" \
 	"$INSTALL" --prefix "$BASE/other" --archive "$ARCHIVE" --sha256 "$SHA" --release "$BASE/outdated-fetch.release"
@@ -2043,6 +2049,152 @@ else
 	fail "loopback fetch install: distribution binary missing"
 	tail -n 20 "$BUILD_LOG" >&2 || true
 fi
+
+# --- Linux Floor Contract Test Suite ---
+
+for _name in glibc-too-old cxx-runtime-missing cxx-runtime-too-old runtime-library-missing libc-undetermined; do
+	if grep -F "#   $_name" "$INSTALL_SOURCE" >/dev/null; then
+		pass "INSTALL_REFUSALS comment lists $_name"
+	else
+		fail "INSTALL_REFUSALS comment missing $_name"
+	fi
+done
+
+FLOOR_PREFIX_1=$BASE/floor-prefix-1
+expect_refuse glibc-too-old floor-glibc-too-old \
+	env HOME="$HOME" SOLSTONE_UNAME_S=Linux SOLSTONE_LIBC_VERSION=2.31 \
+	"$INSTALL" --prefix "$FLOOR_PREFIX_1" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+if [ ! -e "$FLOOR_PREFIX_1" ]; then
+	pass "floor glibc-too-old does not create prefix"
+else
+	fail "floor glibc-too-old created prefix"
+fi
+
+FLOOR_PREFIX_2=$BASE/floor-prefix-2
+expect_refuse cxx-runtime-missing floor-cxx-runtime-missing \
+	env HOME="$HOME" SOLSTONE_UNAME_S=Linux SOLSTONE_LIBSTDCXX_GLIBCXX=missing \
+	"$INSTALL" --prefix "$FLOOR_PREFIX_2" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+if [ ! -e "$FLOOR_PREFIX_2" ]; then
+	pass "floor cxx-runtime-missing does not create prefix"
+else
+	fail "floor cxx-runtime-missing created prefix"
+fi
+
+FLOOR_PREFIX_3=$BASE/floor-prefix-3
+expect_refuse cxx-runtime-too-old floor-cxx-runtime-too-old \
+	env HOME="$HOME" SOLSTONE_UNAME_S=Linux SOLSTONE_LIBSTDCXX_GLIBCXX="GLIBCXX_3.4.28" \
+	"$INSTALL" --prefix "$FLOOR_PREFIX_3" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+if [ ! -e "$FLOOR_PREFIX_3" ]; then
+	pass "floor cxx-runtime-too-old does not create prefix"
+else
+	fail "floor cxx-runtime-too-old created prefix"
+fi
+
+FLOOR_PREFIX_4=$BASE/floor-prefix-4
+_out_4=$(mktemp "$BASE/solstone-install-test-output-XXXXXX")
+_st_4=0
+env HOME="$HOME" SOLSTONE_UNAME_S=Linux SOLSTONE_LIBGOMP=missing \
+	"$INSTALL" --prefix "$FLOOR_PREFIX_4" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" \
+	>"$_out_4" 2>&1 || _st_4=$?
+_text_4=$(cat "$_out_4")
+rm -f "$_out_4"
+if [ "$_st_4" -ne 0 ] && [ ! -e "$FLOOR_PREFIX_4" ]; then
+	case $_text_4 in
+	*runtime-library-missing*libgomp.so.1*) pass "floor runtime-library-missing libgomp.so.1" ;;
+	*) fail "floor runtime-library-missing libgomp.so.1: wanted runtime-library-missing and libgomp.so.1 in: $_text_4" ;;
+	esac
+else
+	fail "floor runtime-library-missing libgomp.so.1 succeeded or created prefix"
+fi
+
+FLOOR_PREFIX_5=$BASE/floor-prefix-5
+_out_5=$(mktemp "$BASE/solstone-install-test-output-XXXXXX")
+_st_5=0
+env HOME="$HOME" SOLSTONE_UNAME_S=Linux SOLSTONE_LIBGCC_S=missing \
+	"$INSTALL" --prefix "$FLOOR_PREFIX_5" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" \
+	>"$_out_5" 2>&1 || _st_5=$?
+_text_5=$(cat "$_out_5")
+rm -f "$_out_5"
+if [ "$_st_5" -ne 0 ] && [ ! -e "$FLOOR_PREFIX_5" ]; then
+	case $_text_5 in
+	*runtime-library-missing*libgcc_s.so.1*) pass "floor runtime-library-missing libgcc_s.so.1" ;;
+	*) fail "floor runtime-library-missing libgcc_s.so.1: wanted runtime-library-missing and libgcc_s.so.1 in: $_text_5" ;;
+	esac
+else
+	fail "floor runtime-library-missing libgcc_s.so.1 succeeded or created prefix"
+fi
+
+FLOOR_PREFIX_6=$BASE/floor-prefix-6
+_out_6=$(mktemp "$BASE/solstone-install-test-output-XXXXXX")
+_st_6=0
+(
+	unset SOLSTONE_LIBC_VERSION
+	env HOME="$HOME" SOLSTONE_UNAME_S=Linux \
+		"$INSTALL" --prefix "$FLOOR_PREFIX_6" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" \
+		>"$_out_6" 2>&1
+) || _st_6=$?
+_text_6=$(cat "$_out_6")
+rm -f "$_out_6"
+if [ "$_st_6" -ne 0 ] && [ ! -e "$FLOOR_PREFIX_6" ]; then
+	case $_text_6 in
+	*libc-undetermined*) pass "floor libc-undetermined when unset" ;;
+	*) fail "floor libc-undetermined: wanted libc-undetermined in: $_text_6" ;;
+	esac
+else
+	fail "floor libc-undetermined succeeded or created prefix"
+fi
+
+FLOOR_PREFIX_7=$BASE/floor-prefix-7
+_out_7=$(mktemp "$BASE/solstone-install-test-output-XXXXXX")
+_st_7=0
+env HOME="$HOME" SOLSTONE_UNAME_S=Linux SOLSTONE_LIBC_VERSION=2.31 \
+	"$INSTALL" --upgrade --prefix "$FLOOR_PREFIX_7" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" \
+	>"$_out_7" 2>&1 || _st_7=$?
+_text_7=$(cat "$_out_7")
+rm -f "$_out_7"
+if [ "$_st_7" -ne 0 ] && [ ! -e "$FLOOR_PREFIX_7" ]; then
+	case $_text_7 in
+	*glibc-too-old*The\ current\ install\ is\ untouched*keeps\ running*) pass "floor upgrade refusal preserves running install" ;;
+	*) fail "floor upgrade refusal: wanted glibc-too-old, untouched, keeps running in: $_text_7" ;;
+	esac
+else
+	fail "floor upgrade refusal succeeded or created prefix"
+fi
+
+_out_8=$(mktemp "$BASE/solstone-install-test-output-XXXXXX")
+_st_8=0
+env HOME="$HOME" SOLSTONE_UNAME_S=Linux SOLSTONE_LIBC_VERSION=2.34 SOLSTONE_LIBSTDCXX_GLIBCXX="GLIBCXX_3.4.29 GLIBCXX_3.4.30" \
+	"$INSTALL" --prefix "$BASE/floor-prefix-8" --archive /nope --sha256 /nope --release /nope \
+	>"$_out_8" 2>&1 || _st_8=$?
+_text_8=$(cat "$_out_8")
+rm -f "$_out_8"
+case $_text_8 in
+*"warning: local transcription"* | *glibc-too-old* | *cxx-runtime-missing* | *cxx-runtime-too-old*)
+	fail "floor passing glibc 2.34 with 3.4.30: had unexpected warning or refusal: $_text_8"
+	;;
+*)
+	pass "floor passing glibc 2.34 with 3.4.30 produces no transcription warning"
+	;;
+esac
+
+_out_9=$(mktemp "$BASE/solstone-install-test-output-XXXXXX")
+_st_9=0
+env HOME="$HOME" SOLSTONE_UNAME_S=Linux SOLSTONE_LIBC_VERSION=2.34 SOLSTONE_LIBSTDCXX_GLIBCXX="GLIBCXX_3.4.29" \
+	"$INSTALL" --prefix "$BASE/floor-prefix-9" --archive /nope --sha256 /nope --release /nope \
+	>"$_out_9" 2>&1 || _st_9=$?
+_text_9=$(cat "$_out_9")
+rm -f "$_out_9"
+case $_text_9 in
+*glibc-too-old* | *cxx-runtime-missing* | *cxx-runtime-too-old*)
+	fail "floor passing glibc 2.34 without 3.4.30 had floor refusal: $_text_9"
+	;;
+*"warning: this system does not have the GCC 12 C++ runtime, which local transcription needs (Ubuntu 22.04, Debian 12, Fedora 36 and newer include it). The rest of the journal installs as usual."*)
+	pass "floor passing glibc 2.34 without 3.4.30 prints transcription warning"
+	;;
+*)
+	fail "floor passing glibc 2.34 without 3.4.30 missing warning: $_text_9"
+	;;
+esac
 
 say "passed=$PASSES failed=$FAILS"
 [ "$FAILS" -eq 0 ]

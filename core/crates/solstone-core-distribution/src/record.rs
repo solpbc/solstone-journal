@@ -162,7 +162,9 @@ pub fn declared_records(
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
                 }
-                let bytes = if let Some(slot) = archive_slot {
+                let bytes = if let Some(slot) = archive_slot
+                    && !slot.inspect_only
+                {
                     let sealed = sealed_archives
                         .and_then(|archives| archives.by_slot_id(&slot.id))
                         .ok_or_else(|| {
@@ -195,6 +197,24 @@ pub fn declared_records(
                     stage::recorded_mode(*mode),
                     sha256_hex(&bytes),
                 ));
+            }
+            Entry::PinnedNative {
+                source,
+                dest,
+                mode,
+                digest,
+                targets,
+                ..
+            } => {
+                if !targets.iter().any(|item| item == target_id) {
+                    continue;
+                }
+                let bytes = std::fs::read(repo.join(source)).map_err(|error| error.to_string())?;
+                let actual = sha256_hex(&bytes);
+                if actual != *digest {
+                    return Err(format!("unexpected:\n  {dest} digest {actual}"));
+                }
+                records.push(FileRecord::file(dest, stage::recorded_mode(*mode), actual));
             }
             Entry::OnnxRuntime {
                 dest_dir, targets, ..

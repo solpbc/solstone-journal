@@ -266,6 +266,29 @@ pub fn valid_spp_reason(raw: &str) -> &'static str {
     }
 }
 
+/// The diagnostic an attestation refusal carries: the one register that did
+/// not match the published build, when that is the refusal. Only a register
+/// the contract names is carried, so the record always validates.
+pub fn spp_reason_diagnostic(raw: &str) -> Map<String, Value> {
+    let mut diagnostic = Map::new();
+    let Some(register) = raw
+        .strip_prefix("pcr_")
+        .and_then(|rest| rest.strip_suffix("_mismatch"))
+    else {
+        return diagnostic;
+    };
+    let named = local_contract()
+        .brain_state
+        .diagnostic_metadata_schemas
+        .get(spp_reason(raw))
+        .and_then(|schema| schema.get("register"))
+        .is_some_and(|registers| registers.iter().any(|candidate| candidate == register));
+    if named {
+        diagnostic.insert("register".to_owned(), Value::String(register.to_owned()));
+    }
+    diagnostic
+}
+
 fn spp_reason(raw: &str) -> &'static str {
     match raw {
         "gateway_unreachable" => "attestation_not_verified",
@@ -829,6 +852,29 @@ mod tests {
         let (aggregate, reason) = reduce_evidence_with_runtime(&record, now, false, None);
         assert_eq!(aggregate, "blocked");
         assert_eq!(reason.as_deref(), Some("endpoint_configuration_incomplete"));
+    }
+
+    #[test]
+    fn a_register_refusal_carries_only_a_register_the_contract_names() {
+        for register in [
+            "4", "7", "8", "9", "11", "12", "13", "14", "15", "16", "22", "23",
+        ] {
+            let raw = format!("pcr_{register}_mismatch");
+            assert_eq!(valid_spp_reason(&raw), "attestation_rejected");
+            assert_eq!(
+                spp_reason_diagnostic(&raw).get("register"),
+                Some(&Value::String(register.to_owned()))
+            );
+        }
+        for raw in [
+            "pcr_0_mismatch",
+            "pcr_5_mismatch",
+            "pcr_pin_mismatch",
+            "pcr_selection_mismatch",
+            "certificate_invalid",
+        ] {
+            assert!(spp_reason_diagnostic(raw).is_empty(), "{raw}");
+        }
     }
 
     #[test]

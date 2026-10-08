@@ -75,6 +75,7 @@ const SIGTAG_SIZE: i32 = 1000;
 
 const SHA256_ALGORITHM: u32 = 8;
 const RPM_SENSE_EQUAL: u32 = 8;
+const RPM_SENSE_GREATER_EQUAL: u32 = 12;
 const RPM_SENSE_RPMLIB_LESS_EQUAL: u32 = 0x0100_000a;
 const REGULAR_FILE_TYPE: u32 = 0o100000;
 
@@ -226,16 +227,21 @@ fn main_header(
         .collect::<Vec<_>>();
     let provide_version = format!("{}-1", meta.version);
     let require_names = [
+        "glibc",
         "libc.so.6()(64bit)",
         "libgcc_s.so.1()(64bit)",
+        // libgomp ships from the same GCC as libstdc++, which the GLIBCXX capability already pins.
         "libgomp",
         "libstdc++.so.6()(64bit)",
+        "libstdc++.so.6(GLIBCXX_3.4.29)(64bit)",
         "rpmlib(CompressedFileNames)",
         "rpmlib(FileDigests)",
         "rpmlib(PayloadFilesHavePrefix)",
     ];
-    let require_versions = ["", "", "", "", "3.0.4-1", "4.6.0-1", "4.0-1"];
+    let require_versions = ["2.34", "", "", "", "", "", "3.0.4-1", "4.6.0-1", "4.0-1"];
     let require_flags = [
+        RPM_SENSE_GREATER_EQUAL,
+        0,
         0,
         0,
         0,
@@ -600,6 +606,12 @@ pub fn rpm_requires(path: &Path) -> io::Result<Vec<String>> {
     read_require_names(&bytes[sig_end..])
 }
 
+pub fn rpm_require_triples(path: &Path) -> io::Result<Vec<(String, u32, String)>> {
+    let bytes = fs::read(path)?;
+    let sig_end = align8(skip_one_header(&bytes, LEAD_LEN)?);
+    read_require_triples(&bytes[sig_end..])
+}
+
 pub fn rpm_arch(path: &Path) -> io::Result<String> {
     let bytes = fs::read(path)?;
     let sig_end = align8(skip_one_header(&bytes, LEAD_LEN)?);
@@ -688,4 +700,109 @@ fn read_require_names(header: &[u8]) -> io::Result<Vec<String>> {
         return Ok(names);
     }
     Ok(Vec::new())
+}
+
+fn read_require_triples(header: &[u8]) -> io::Result<Vec<(String, u32, String)>> {
+    if header.len() < 16 || header[..8] != HEADER_MAGIC {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid rpm header",
+        ));
+    }
+    let index = u32::from_be_bytes(header[8..12].try_into().unwrap()) as usize;
+    let data = u32::from_be_bytes(header[12..16].try_into().unwrap()) as usize;
+    let store_at = 16 + index * 16;
+    if store_at + data > header.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "truncated rpm header store",
+        ));
+    }
+    let store = &header[store_at..store_at + data];
+
+    let mut names_entry = None;
+    let mut flags_entry = None;
+    let mut versions_entry = None;
+
+    for slot in 0..index {
+        let base = 16 + slot * 16;
+        let tag = i32::from_be_bytes(header[base..base + 4].try_into().unwrap());
+        let offset = i32::from_be_bytes(header[base + 8..base + 12].try_into().unwrap()) as usize;
+        let count = i32::from_be_bytes(header[base + 12..base + 16].try_into().unwrap()) as usize;
+        if tag == TAG_REQUIRENAME {
+            names_entry = Some((offset, count));
+        } else if tag == TAG_REQUIRE_FLAGS {
+            flags_entry = Some((offset, count));
+        } else if tag == TAG_REQUIRE_VERSION {
+            versions_entry = Some((offset, count));
+        }
+    }
+
+    let (Some((name_off, name_cnt)), Some((flag_off, flag_cnt)), Some((ver_off, ver_cnt))) =
+        (names_entry, flags_entry, versions_entry)
+    else {
+        return Ok(Vec::new());
+    };
+
+    if name_cnt != flag_cnt || name_cnt != ver_cnt {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "require tags count mismatch",
+        ));
+    }
+
+    let mut names = Vec::with_capacity(name_cnt);
+    let mut cursor = name_off;
+    for _ in 0..name_cnt {
+        let end = store[cursor..]
+            .iter()
+            .position(|byte| *byte == 0)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "unterminated require name")
+            })?;
+        names.push(
+            std::str::from_utf8(&store[cursor..cursor + end])
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+                .to_owned(),
+        );
+        cursor += end + 1;
+    }
+
+    let mut flags = Vec::with_capacity(flag_cnt);
+    for i in 0..flag_cnt {
+        let start = flag_off + i * 4;
+        let bytes: [u8; 4] = store
+            .get(start..start + 4)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "out of bounds require flag")
+            })?
+            .try_into()
+            .unwrap();
+        flags.push(u32::from_be_bytes(bytes));
+    }
+
+    let mut versions = Vec::with_capacity(ver_cnt);
+    let mut cursor = ver_off;
+    for _ in 0..ver_cnt {
+        let end = store[cursor..]
+            .iter()
+            .position(|byte| *byte == 0)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "unterminated require version")
+            })?;
+        versions.push(
+            std::str::from_utf8(&store[cursor..cursor + end])
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+                .to_owned(),
+        );
+        cursor += end + 1;
+    }
+
+    let triples = names
+        .into_iter()
+        .zip(flags)
+        .zip(versions)
+        .map(|((n, f), v)| (n, f, v))
+        .collect();
+    Ok(triples)
 }

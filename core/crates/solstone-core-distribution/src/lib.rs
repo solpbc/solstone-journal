@@ -20,6 +20,7 @@ pub mod controlled_build;
 pub mod deb;
 pub mod digest;
 pub mod elf;
+pub mod elf_gcc11;
 pub mod ffmpeg_windows;
 pub mod import_policy;
 pub mod inspect;
@@ -119,7 +120,9 @@ fn inventory_requires_every_runtime_layout_anchor() {
         .expect("create digest-source parent");
     fs::write(
         &digest_source,
-        "pub const RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256: &str =\n    \"f15d89e24d44245e2288e0d9839e54d4495d6ebf1071e1f906805f2989d18c9e\";\n",
+        "pub const RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256: &str =\n    \"f15d89e24d44245e2288e0d9839e54d4495d6ebf1071e1f906805f2989d18c9e\";\n\
+         pub const RFDETR_ENGINE_LINUX_CPU_X64_BINARY_SHA256: &str =\n    \"6f225708e4b9dafc39a085f1323bc426ca037b746b3be9c7c571d9be494306af\";\n\
+         pub const RFDETR_ENGINE_LINUX_CPU_ARM64_BINARY_SHA256: &str =\n    \"14c47251ffd61a3ef0dc358c4b6a88d8718c5c3f266f4d79db9ae1440e3b6ecc\";\n",
     )
     .expect("write digest source");
     fs::create_dir_all(&distribution).expect("create distribution fixture");
@@ -444,9 +447,39 @@ fn arch_mapping_modes_and_clean_package_depends() {
         assert!(
             control
                 .split([',', '\n'])
-                .any(|item| item.trim() == "libgomp1")
+                .any(|item| item.trim() == "libgomp1 (>= 11)")
         );
         assert!(requires.iter().any(|item| item == "libgomp"));
+        let triples = rpm::rpm_require_triples(&out.join(&rpm_name)).unwrap();
+        for (want_name, want_flags, want_ver) in [
+            ("glibc", 12, "2.34"),
+            ("libstdc++.so.6(GLIBCXX_3.4.29)(64bit)", 0, ""),
+            ("libc.so.6()(64bit)", 0, ""),
+            ("libgcc_s.so.1()(64bit)", 0, ""),
+            ("libgomp", 0, ""),
+            ("libstdc++.so.6()(64bit)", 0, ""),
+        ] {
+            assert!(
+                triples.iter().any(|(name, flags, ver)| name == want_name
+                    && *flags == want_flags
+                    && ver == want_ver),
+                "rpm require triples missing ({want_name}, {want_flags}, {want_ver})"
+            );
+        }
+        for (_soname, deb_col, rpm_col) in elf::NON_GLIBC_SYSTEM_NEEDED {
+            assert!(!deb_col.is_empty(), "deb token must not be empty");
+            assert!(!rpm_col.is_empty(), "rpm token must not be empty");
+            assert!(
+                control
+                    .split([',', '\n'])
+                    .any(|item| item.trim() == *deb_col),
+                "deb control missing {deb_col}"
+            );
+            assert!(
+                triples.iter().any(|(name, _, _)| name == rpm_col),
+                "rpm triples missing {rpm_col}"
+            );
+        }
         assert_eq!(arch, target.rpm_arch);
         match target.id.as_str() {
             "linux-x86_64" => {
@@ -668,14 +701,13 @@ fn elf_reader_accepts_gnu_and_static_and_rejects_bad_inputs() {
         "/lib64/ld-linux-x86-64.so.2",
         &["libc.so.6"],
         None,
-        (2, 34),
+        (2, 35),
     );
-    let high_info = elf::parse_elf(&high).unwrap();
     assert!(
-        elf::inspect_gnu_helper(&high_info, elf::machine_x86_64(), None, &[])
+        elf::admit_elf("high", &high, elf::machine_x86_64(), "lib", None, &[],)
             .unwrap_err()
             .to_string()
-            .contains("GLIBC_2.34")
+            .contains("GLIBC_2.35")
     );
 
     let musl = elf::fixture_static_musl(elf::machine_x86_64());
@@ -760,16 +792,12 @@ fn elf_reader_accepts_gnu_and_static_and_rejects_bad_inputs() {
             .contains("dynamic core-family")
     );
 
-    let mut broken = gnu.clone();
-    // Drop section headers so a dynamic helper cannot read verneed.
-    broken[40..48].copy_from_slice(&0_u64.to_le_bytes());
-    broken[60..62].copy_from_slice(&0_u16.to_le_bytes());
-    assert!(
-        elf::parse_elf(&broken)
-            .unwrap_err()
-            .to_string()
-            .contains("could not read GNU version needs")
-    );
+    let mut stripped = gnu.clone();
+    // Drop section headers; dynamic info is parsed entirely from PT_DYNAMIC / PT_LOAD.
+    stripped[40..48].copy_from_slice(&0_u64.to_le_bytes());
+    stripped[60..62].copy_from_slice(&0_u16.to_le_bytes());
+    let stripped_info = elf::parse_elf(&stripped).expect("parse stripped gnu");
+    assert_eq!(stripped_info, info);
 }
 
 #[cfg(test)]

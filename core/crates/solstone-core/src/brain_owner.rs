@@ -519,7 +519,8 @@ fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: DateTime<U
         Ok(_) => component_for_reason("lane_prerequisites", "attestation_expired", Map::new(), now),
         Err(failure) => {
             let reason = solstone_core_brain::valid_spp_reason(failure.reason_code);
-            component_for_reason("lane_prerequisites", reason, Map::new(), now)
+            let diagnostic = solstone_core_brain::spp_reason_diagnostic(failure.reason_code);
+            component_for_reason("lane_prerequisites", reason, diagnostic, now)
         }
     }
 }
