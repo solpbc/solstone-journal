@@ -26,7 +26,7 @@ unsafe_code = "deny"
 
 [features]
 full-tests = []
-test-fixture-pin = []
+test-fixture-pin = ["solstone-core-installed-payload/test-fixture-pin"]
 test-hooks = []
 
 [dependencies]
@@ -38,6 +38,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-artifact-download.workspace = true
+solstone-core-installed-payload.workspace = true
 solstone-core-ffmpeg-build-support.workspace = true
 solstone-core-journal-io.workspace = true
 tar.workspace = true

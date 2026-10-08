@@ -22,7 +22,7 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|llama-windows|nvattest-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|llama-windows|nvattest-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -238,6 +238,39 @@ fn main() -> ExitCode {
                         }
                         Err(error) => {
                             eprintln!("{error}");
+                            ExitCode::from(2)
+                        }
+                    }
+                }
+                _ => {
+                    eprintln!("{}", usage());
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("check-installed") => {
+            let root = args.next();
+            let version = args.next();
+            let target = args.next();
+            match (root, version, target) {
+                (Some(root), Some(version), Some(target)) => {
+                    match solstone_core_distribution::installed_check::check_installed(
+                        std::path::Path::new(&root),
+                        &version,
+                        &target,
+                    ) {
+                        Ok(()) => {
+                            print!(
+                                "{}",
+                                solstone_core_distribution::installed_check::admitted_line()
+                            );
+                            ExitCode::SUCCESS
+                        }
+                        Err(refusal) => {
+                            print!(
+                                "{}",
+                                solstone_core_distribution::installed_check::refusal_line(&refusal)
+                            );
                             ExitCode::from(2)
                         }
                     }

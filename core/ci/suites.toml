@@ -944,6 +944,17 @@ runtime = "none"
 features = ["full-tests"]
 
 [[package_suites]]
+id = "package::solstone-core-installed-payload"
+package = "solstone-core-installed-payload"
+set = "component"
+areas = ["system", "support"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-journal-cli"
 package = "solstone-core-journal-cli"
 set = "component"

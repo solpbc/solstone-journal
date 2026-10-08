@@ -8,6 +8,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::apple;
+#[cfg(test)]
+use crate::apple::ArchiveMemberSigner;
 use crate::archive_contract;
 use crate::deb::{DebMeta, write_deb};
 use crate::inspect::{ArchiveChainDigests, ReleaseInfo, write_sidecars};
@@ -24,6 +26,7 @@ pub enum PromoteStep {
     Tar,
     Deb,
     Rpm,
+    VerifyInstalled,
     Notarize,
     Checksums,
     Manifest,
@@ -32,13 +35,14 @@ pub enum PromoteStep {
 }
 
 impl PromoteStep {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Compile,
         Self::Stage,
         Self::Sign,
         Self::Tar,
         Self::Deb,
         Self::Rpm,
+        Self::VerifyInstalled,
         Self::Notarize,
         Self::Checksums,
         Self::Manifest,
@@ -79,6 +83,7 @@ impl PromoteStep {
             Self::Tar => "tar",
             Self::Deb => "deb",
             Self::Rpm => "rpm",
+            Self::VerifyInstalled => "verify-installed",
             Self::Notarize => "notarize",
             Self::Checksums => "checksums",
             Self::Manifest => "manifest",
@@ -219,47 +224,42 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         other => return Err(PromoteError::new(format!("unexpected os {other}"))),
     };
     checkpoint(request, PromoteStep::Sign)?;
+    render_installed_manifest(request, &stage)?;
 
     let tar_name = format!("{}.tar.gz", request.basename);
     crate::tar::write_tar_gz(&stage, &partial.join(&tar_name))
         .map_err(|error| PromoteError::new(error.to_string()))?;
     checkpoint(request, PromoteStep::Tar)?;
 
-    match request.os.as_str() {
-        OS_MACOS => {
-            if let Some(signing) = signing.as_mut() {
-                notarize_macos_tree(request, &stage, signing)?;
-            }
-        }
-        OS_LINUX => {
-            let [_tar, deb_name, rpm_name] = artifact_archives(&request.basename);
-            write_deb(
-                &stage,
-                &partial.join(deb_name),
-                DebMeta {
-                    version: &request.version,
-                    arch: &request.deb_arch,
-                },
-            )
-            .map_err(|error| PromoteError::new(error.to_string()))?;
-            checkpoint(request, PromoteStep::Deb)?;
-            write_rpm(
-                &stage,
-                &partial.join(rpm_name),
-                RpmMeta {
-                    version: &request.version,
-                    arch: &request.rpm_arch,
-                },
-            )
-            .map_err(|error| PromoteError::new(error.to_string()))?;
-            checkpoint(request, PromoteStep::Rpm)?;
-        }
-        OS_WINDOWS => {
-            return Err(PromoteError::new(
-                "windows archive/signing is not implemented on this platform",
-            ));
-        }
-        other => return Err(PromoteError::new(format!("unexpected os {other}"))),
+    if request.os == OS_LINUX {
+        let [_tar, deb_name, rpm_name] = artifact_archives(&request.basename);
+        write_deb(
+            &stage,
+            &partial.join(deb_name),
+            DebMeta {
+                version: &request.version,
+                arch: &request.deb_arch,
+            },
+        )
+        .map_err(|error| PromoteError::new(error.to_string()))?;
+        checkpoint(request, PromoteStep::Deb)?;
+        write_rpm(
+            &stage,
+            &partial.join(rpm_name),
+            RpmMeta {
+                version: &request.version,
+                arch: &request.rpm_arch,
+            },
+        )
+        .map_err(|error| PromoteError::new(error.to_string()))?;
+        checkpoint(request, PromoteStep::Rpm)?;
+    }
+    verify_installed_containers(request, &partial, &tar_name)?;
+    checkpoint(request, PromoteStep::VerifyInstalled)?;
+    if request.os == OS_MACOS
+        && let Some(signing) = signing.as_mut()
+    {
+        notarize_macos_tree(request, &stage, signing)?;
     }
 
     let release = ReleaseInfo {
@@ -410,6 +410,10 @@ impl MacosSigning {
 }
 
 fn sign_macos_tree(request: &PromoteRequest, stage: &Path) -> Result<MacosSigning, PromoteError> {
+    #[cfg(test)]
+    if fake_macos_sign_enabled() {
+        return fake_sign_macos_tree(stage);
+    }
     let apple_config = request.apple.as_ref().ok_or_else(|| {
         PromoteError::new("missing required:\n  [apple] signing contract for a macos target")
     })?;
@@ -436,6 +440,14 @@ fn notarize_macos_tree(
     stage: &Path,
     signing: &mut MacosSigning,
 ) -> Result<(), PromoteError> {
+    #[cfg(test)]
+    if fake_macos_sign_enabled() {
+        signing.notarization = Some(apple::NotarizationReceipt {
+            submission_id: "fake-submission".to_owned(),
+            status: "Accepted".to_owned(),
+        });
+        return checkpoint(request, PromoteStep::Notarize);
+    }
     let apple_config = request.apple.as_ref().ok_or_else(|| {
         PromoteError::new("missing required:\n  [apple] signing contract for a macos target")
     })?;
@@ -443,6 +455,153 @@ fn notarize_macos_tree(
         .map_err(|error| PromoteError::new(error.to_string()))?;
     signing.notarization = Some(receipt);
     checkpoint(request, PromoteStep::Notarize)
+}
+
+fn render_installed_manifest(request: &PromoteRequest, stage: &Path) -> Result<(), PromoteError> {
+    let target = installed_target(request)?;
+    let bytes = solstone_core_installed_payload::render_installed_payload(
+        stage,
+        solstone_core_installed_payload::PRODUCT,
+        &request.version,
+        target,
+        &request.expected.commit,
+    )
+    .map_err(|error| PromoteError::new(error.to_string()))?;
+    crate::stage::write_staged_file(
+        stage,
+        solstone_core_installed_payload::INSTALLED_PAYLOAD_MANIFEST,
+        &bytes,
+    )
+    .map_err(|error| PromoteError::new(error.to_string()))?;
+    Ok(())
+}
+
+fn verify_installed_containers(
+    request: &PromoteRequest,
+    partial: &Path,
+    tar_name: &str,
+) -> Result<(), PromoteError> {
+    let target = installed_target(request)?;
+    let mut containers = Vec::new();
+    let tar_bytes =
+        fs::read(partial.join(tar_name)).map_err(|error| PromoteError::new(error.to_string()))?;
+    containers.push((
+        "tar",
+        crate::tar::tar_members(&tar_bytes)
+            .map_err(|error| PromoteError::new(error.to_string()))?,
+    ));
+    if request.os == OS_LINUX {
+        let [_tar, deb_name, rpm_name] = artifact_archives(&request.basename);
+        containers.push((
+            "deb",
+            crate::deb::deb_members(&partial.join(deb_name))
+                .map_err(|error| PromoteError::new(error.to_string()))?,
+        ));
+        containers.push((
+            "rpm",
+            crate::rpm::rpm_members(&partial.join(rpm_name))
+                .map_err(|error| PromoteError::new(error.to_string()))?,
+        ));
+    }
+    for (name, members) in containers {
+        let root = request.work.join("installed-verify").join(name);
+        let _ = fs::remove_dir_all(&root);
+        materialize_members(&root, &members)?;
+        solstone_core_installed_payload::verify_installed_package(&root, &request.version, target)
+            .map_err(|error| PromoteError::new(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn installed_target(request: &PromoteRequest) -> Result<&'static str, PromoteError> {
+    solstone_core_installed_payload::canonical_target(&request.arch).ok_or_else(|| {
+        PromoteError::new(format!("unknown installed-payload target {}", request.arch))
+    })
+}
+
+fn materialize_members(
+    root: &Path,
+    members: &[crate::tar::MemberBytes],
+) -> Result<(), PromoteError> {
+    for member in members {
+        crate::archive::refuse_escape(&member.path)
+            .map_err(|error| PromoteError::new(error.as_str()))?;
+        let path = root.join(&member.path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| PromoteError::new(error.to_string()))?;
+        }
+        fs::write(&path, &member.bytes).map_err(|error| PromoteError::new(error.to_string()))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static FAKE_MACOS_SIGN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(crate) struct FakeMacosSignGuard;
+
+#[cfg(test)]
+impl Drop for FakeMacosSignGuard {
+    fn drop(&mut self) {
+        FAKE_MACOS_SIGN.with(|cell| cell.set(false));
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn install_fake_macos_sign() -> FakeMacosSignGuard {
+    FAKE_MACOS_SIGN.with(|cell| cell.set(true));
+    FakeMacosSignGuard
+}
+
+#[cfg(test)]
+fn fake_macos_sign_enabled() -> bool {
+    FAKE_MACOS_SIGN.with(|cell| cell.get())
+}
+
+#[cfg(test)]
+fn fake_sign_macos_tree(stage: &Path) -> Result<MacosSigning, PromoteError> {
+    let signer = apple::FakeArchiveMemberSigner::new("promote");
+    let mut members = Vec::new();
+    match apple::discover_macho_members(stage) {
+        Ok(found) if !found.is_empty() => {
+            for member in found {
+                let mut signed = signer
+                    .sign_executable(&member.path, &member.relative)
+                    .map_err(|error| PromoteError::new(error.to_string()))?;
+                signed.payload = member.payload;
+                members.push(signed);
+            }
+        }
+        _ => {
+            for record in crate::stage::staged_records(stage)
+                .map_err(|error| PromoteError::new(error.to_string()))?
+            {
+                let path = stage.join(&record.dest);
+                let bytes =
+                    fs::read(&path).map_err(|error| PromoteError::new(error.to_string()))?;
+                if !crate::macho::looks_like_macho(&bytes) {
+                    continue;
+                }
+                let mut signed = signer
+                    .sign_executable(&path, &record.dest)
+                    .map_err(|error| PromoteError::new(error.to_string()))?;
+                signed.payload = record.dest.starts_with("lib/");
+                members.push(signed);
+            }
+        }
+    }
+    if members.iter().all(|member| !member.payload) {
+        return Err(PromoteError::new(
+            "missing required:\n  a signed loaded payload in the macos tree\n  a binaries-only signing census is exactly the gap this step exists to close",
+        ));
+    }
+    Ok(MacosSigning {
+        members,
+        notarization: None,
+    })
 }
 
 pub fn snapshot_dir(path: &Path) -> Result<BTreeMap<String, Vec<u8>>, PromoteError> {
@@ -679,5 +838,288 @@ mod tests {
         assert!(!src.exists());
         assert_eq!(fs::read_to_string(dest.join("marker")).expect("read"), "ok");
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn promotion_root(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("solstone-installed-{label}-"))
+            .tempdir_in("/var/tmp")
+            .expect("promotion root")
+    }
+
+    fn linux_tree() -> Vec<(String, Vec<u8>, u32)> {
+        vec![
+            ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
+            (
+                "lib/solstone-demo/model.bin".into(),
+                b"model-bytes".to_vec(),
+                0o644,
+            ),
+            ("share/LICENSE".into(), b"license-text".to_vec(), 0o644),
+        ]
+    }
+
+    fn linux_request(
+        root: &std::path::Path,
+        target: &str,
+        deb_arch: &str,
+        rpm_arch: &str,
+    ) -> super::PromoteRequest {
+        use crate::provenance::Provenance;
+
+        let version = env!("CARGO_PKG_VERSION");
+        let arch = target.strip_prefix("linux-").expect("linux target id");
+        super::PromoteRequest {
+            dest: root.join("dest"),
+            work: root.join("work"),
+            tree: linux_tree(),
+            version: version.to_owned(),
+            basename: format!("solstone-journal-{version}-linux-{arch}"),
+            os: "linux".into(),
+            arch: target.to_owned(),
+            deb_arch: deb_arch.into(),
+            rpm_arch: rpm_arch.into(),
+            dirty: false,
+            observed: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            expected: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            fail_after: None,
+            apple: None,
+        }
+    }
+
+    fn manifest_bytes(members: &[crate::tar::MemberBytes]) -> Vec<u8> {
+        members
+            .iter()
+            .find(|member| {
+                member.path == solstone_core_installed_payload::INSTALLED_PAYLOAD_MANIFEST
+            })
+            .expect("installed payload manifest")
+            .bytes
+            .clone()
+    }
+
+    fn assert_rendered_identity(bytes: &[u8], target: &str) {
+        let value: serde_json::Value = serde_json::from_slice(bytes).expect("manifest json");
+        assert_eq!(value["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(value["target"], target);
+        assert_eq!(value["source_commit"], "aaa");
+        assert_eq!(
+            value["schema"],
+            solstone_core_installed_payload::INSTALLED_PAYLOAD_SCHEMA
+        );
+        let files = value["files"].as_array().expect("files");
+        assert!(files.iter().all(|file| {
+            file["path"] != solstone_core_installed_payload::INSTALLED_PAYLOAD_MANIFEST
+                && file["path"] != solstone_core_installed_payload::INSTALLED_PAYLOAD_SIGNATURE
+        }));
+        assert!(files.windows(2).all(|pair| {
+            pair[0]["path"].as_str().expect("path") < pair[1]["path"].as_str().expect("path")
+        }));
+    }
+
+    #[test]
+    fn render_installed_manifest_bytes_match_across_linux_containers() {
+        for (target, deb_arch, rpm_arch, constant) in [
+            (
+                "linux-x86_64",
+                "amd64",
+                "x86_64",
+                solstone_core_installed_payload::TARGET_LINUX_X86_64,
+            ),
+            (
+                "linux-aarch64",
+                "arm64",
+                "aarch64",
+                solstone_core_installed_payload::TARGET_LINUX_AARCH64,
+            ),
+        ] {
+            let root = promotion_root(target);
+            let request = linux_request(root.path(), target, deb_arch, rpm_arch);
+            super::promote(&request).expect(target);
+            let tar =
+                fs::read(request.dest.join(format!("{}.tar.gz", request.basename))).expect("tar");
+            let tar_manifest = manifest_bytes(&crate::tar::tar_members(&tar).expect("tar members"));
+            let deb_manifest = manifest_bytes(
+                &crate::deb::deb_members(&request.dest.join(format!("{}.deb", request.basename)))
+                    .expect("deb members"),
+            );
+            let rpm_manifest = manifest_bytes(
+                &crate::rpm::rpm_members(&request.dest.join(format!("{}.rpm", request.basename)))
+                    .expect("rpm members"),
+            );
+            assert_eq!(tar_manifest, deb_manifest, "{target}");
+            assert_eq!(tar_manifest, rpm_manifest, "{target}");
+            assert_rendered_identity(&tar_manifest, constant);
+        }
+    }
+
+    #[test]
+    fn self_check_seams_fail_promote_and_check_installed_names_the_share_flip() {
+        use crate::container_seam::{ContainerSeam, ContainerSeamKind};
+
+        let cases = [
+            (
+                "lib/solstone-demo/model.bin",
+                ContainerSeamKind::Drop,
+                "member-missing",
+            ),
+            (
+                "lib/solstone-demo/model.bin",
+                ContainerSeamKind::Grow,
+                "member-changed",
+            ),
+            (
+                "lib/solstone-demo/model.bin",
+                ContainerSeamKind::Flip,
+                "member-changed",
+            ),
+            ("share/LICENSE", ContainerSeamKind::Flip, "member-changed"),
+        ];
+        for (index, (path, kind, needle)) in cases.into_iter().enumerate() {
+            let root = promotion_root(&format!("seam-{index}"));
+            let request = linux_request(root.path(), "linux-x86_64", "amd64", "x86_64");
+            fs::create_dir_all(&request.dest).expect("dest");
+            fs::write(request.dest.join("marker"), b"prior").expect("marker");
+            let before = super::snapshot_dir(&request.dest).expect("before");
+            let _guard = crate::container_seam::install(ContainerSeam { path, kind });
+            let error = super::promote(&request).expect_err(path);
+            assert!(
+                error.to_string().contains(needle) && error.to_string().contains(path),
+                "{error}"
+            );
+            assert_eq!(
+                super::snapshot_dir(&request.dest).expect("after"),
+                before,
+                "{path}"
+            );
+            if path == "share/LICENSE" {
+                let tar_name = format!("{}.tar.gz", request.basename);
+                let tar = fs::read(request.work.join("out.partial").join(&tar_name))
+                    .expect("partial tar");
+                let members = crate::tar::tar_members(&tar).expect("partial members");
+                let subject = root.path().join("subject");
+                super::materialize_members(&subject, &members).expect("materialize");
+                let subject_before = super::snapshot_dir(&subject).expect("subject before");
+                let refusal = crate::installed_check::check_installed(
+                    &subject,
+                    env!("CARGO_PKG_VERSION"),
+                    solstone_core_installed_payload::TARGET_LINUX_X86_64,
+                )
+                .expect_err("check-installed");
+                assert_eq!(
+                    crate::installed_check::refusal_line(&refusal),
+                    "member-changed share/LICENSE\n"
+                );
+                assert_eq!(
+                    super::snapshot_dir(&subject).expect("subject after"),
+                    subject_before
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn macos_signer_seam_records_the_post_sign_digest() {
+        use crate::archive_contract::{DeliveryContract, PrebuildInputIdentity};
+        use crate::macho::{FixtureSpec, MH_DYLIB, fixture};
+        use crate::provenance::Provenance;
+
+        let root = promotion_root("macos-sign");
+        let stage = root.path().join("chain-stage");
+        let executable = fixture(&FixtureSpec::default());
+        let dylib = fixture(&FixtureSpec {
+            filetype: MH_DYLIB,
+            install_name: Some("@rpath/libdemo.dylib"),
+            ..FixtureSpec::default()
+        });
+        crate::stage::write_staged_file_mode(&stage, "bin/solstone", &executable, 0o755)
+            .expect("stage executable");
+        crate::stage::write_staged_file_mode(
+            &stage,
+            "lib/solstone-runtime/libdemo.dylib",
+            &dylib,
+            0o644,
+        )
+        .expect("stage dylib");
+        let prebuild = PrebuildInputIdentity {
+            target_id: "macos-arm64".into(),
+            commit: "aaa".into(),
+            lock_sha256: "bbb".into(),
+            inventory_sha256: "ab".repeat(32),
+            slots: Vec::new(),
+        };
+        let delivery = DeliveryContract {
+            target_id: prebuild.target_id.clone(),
+            prebuild_input_sha256: prebuild.digest(),
+            slots: Vec::new(),
+        };
+        crate::archive_contract::stage_chain(&stage, &prebuild, &delivery, "aaa", "bbb")
+            .expect("stage chain");
+        let mut tree = Vec::new();
+        for record in crate::stage::staged_records(&stage).expect("staged records") {
+            let bytes = fs::read(stage.join(&record.dest)).expect("staged bytes");
+            tree.push((record.dest, bytes, record.mode));
+        }
+        let version = env!("CARGO_PKG_VERSION");
+        let basename = format!("solstone-journal-{version}-macos-arm64");
+        let _guard = super::install_fake_macos_sign();
+        let request = super::PromoteRequest {
+            dest: root.path().join("dest"),
+            work: root.path().join("work"),
+            tree,
+            version: version.to_owned(),
+            basename: basename.clone(),
+            os: "macos".into(),
+            arch: "macos-arm64".into(),
+            deb_arch: String::new(),
+            rpm_arch: String::new(),
+            dirty: false,
+            observed: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            expected: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            fail_after: None,
+            apple: None,
+        };
+        super::promote(&request).expect("macos promote");
+        let tar = fs::read(request.dest.join(format!("{basename}.tar.gz"))).expect("tar");
+        let members = crate::tar::tar_members(&tar).expect("tar members");
+        let manifest = manifest_bytes(&members);
+        assert_rendered_identity(
+            &manifest,
+            solstone_core_installed_payload::TARGET_MACOS_ARM64,
+        );
+        let shipped = members
+            .iter()
+            .find(|member| member.path == "lib/solstone-runtime/libdemo.dylib")
+            .expect("dylib");
+        let value: serde_json::Value = serde_json::from_slice(&manifest).expect("json");
+        let listed = value["files"]
+            .as_array()
+            .expect("files")
+            .iter()
+            .find(|file| file["path"] == "lib/solstone-runtime/libdemo.dylib")
+            .expect("listed dylib");
+        assert_eq!(
+            listed["sha256"].as_str().expect("sha"),
+            crate::digest::sha256_hex(&shipped.bytes)
+        );
+        assert_ne!(shipped.bytes, dylib);
+        assert!(
+            shipped
+                .bytes
+                .windows(b"SOLSTONE-FAKE-ARCHIVE-SIGNATURE:promote:".len())
+                .any(|window| window == b"SOLSTONE-FAKE-ARCHIVE-SIGNATURE:promote:")
+        );
     }
 }

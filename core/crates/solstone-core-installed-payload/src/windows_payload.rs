@@ -24,7 +24,7 @@ use sha2::{Digest, Sha256};
 #[allow(unsafe_code)]
 mod native_hash;
 
-use crate::manifest_verify::verify_pinned_signature;
+use crate::pin::verify_pinned_signature;
 
 pub const WINDOWS_PAYLOAD_SCHEMA_V1: &str = "solstone.windows-installed-payload.v1";
 pub const WINDOWS_PAYLOAD_TARGET: &str = "windows-x86_64";

@@ -71,14 +71,17 @@ fn data_tar(stage: &Path) -> io::Result<Vec<u8>> {
         append_directory(&mut builder, &directory, 0o755)?;
     }
     for dest in files {
+        let path = stage.join(&dest);
+        let bytes = fs::read(&path)?;
+        let Some(bytes) = crate::container_seam::apply(&dest, bytes) else {
+            continue;
+        };
         let archive = to_system_path(&dest).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("unstaged dest {dest} has no system prefix"),
             )
         })?;
-        let path = stage.join(&dest);
-        let bytes = fs::read(&path)?;
         let mode = crate::stage::file_mode(&fs::metadata(&path)?);
         append_regular(&mut builder, &archive, &bytes, mode)?;
     }
@@ -102,6 +105,26 @@ pub fn deb_records(path: &Path) -> io::Result<Vec<FileRecord>> {
     }
     records.sort();
     Ok(records)
+}
+
+pub fn deb_members(path: &Path) -> io::Result<Vec<crate::tar::MemberBytes>> {
+    let bytes = fs::read(path)?;
+    let members = read_archive(&bytes)?;
+    let data = member(&members, "data.tar.gz")?;
+    let mut out = Vec::new();
+    for member in crate::tar::tar_members(data)? {
+        let dest = from_system_path(&member.path).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("deb member {} is outside the system prefix", member.path),
+            )
+        })?;
+        out.push(crate::tar::MemberBytes {
+            path: dest,
+            bytes: member.bytes,
+        });
+    }
+    Ok(out)
 }
 
 pub fn deb_control_text(path: &Path) -> io::Result<String> {
