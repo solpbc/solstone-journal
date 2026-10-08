@@ -273,6 +273,7 @@ mod tests {
     use serde_json::json;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
+    #[cfg(feature = "full-tests")]
     use std::sync::mpsc::channel;
     use std::time::Duration;
 
@@ -635,7 +636,7 @@ mod tests {
             follow.observe_at(
                 Path::new("/"),
                 &input_ok,
-                || Err(std::io::Error::new(std::io::ErrorKind::Other, "err")),
+                || Err(std::io::Error::other("err")),
                 Instant::now()
             ),
             ParakeetFollowDecision::Hold("install-lease-unreadable".into())
@@ -802,6 +803,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn concurrent_observe_race_free_mutex_hold() {
         let (entered_tx, entered_rx) = channel();

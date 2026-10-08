@@ -1052,7 +1052,7 @@ mod composition_tests {
     }
 
     fn write_old_revision_opt_in(journal: &Path) {
-        let (repo, _, _, ..) = pins::PARAKEET_MODEL;
+        let (repo, ..) = pins::PARAKEET_MODEL;
         let old_rev_dir = pins::parakeet_cache_root(journal)
             .join("models")
             .join(repo.replace('/', "__"))
@@ -1105,6 +1105,7 @@ mod composition_tests {
         };
         seam.dispatch_truth(&state, &fence1);
         let obs1 = shared.wait_for_truth_result(&fence1);
+        assert_eq!(called.load(Ordering::SeqCst), 1);
         assert_eq!(obs1.phase, RuntimePhase::ArtifactNotReady);
         assert_eq!(
             obs1.reason_code.as_ref().map(ReasonCode::as_str),
@@ -1117,7 +1118,6 @@ mod composition_tests {
                 .and_then(Value::as_str),
             Some("launch")
         );
-        assert_eq!(called.load(Ordering::SeqCst), 1);
 
         let fence2 = ProviderFence {
             incarnation: "inc".to_owned(),
