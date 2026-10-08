@@ -34,13 +34,12 @@ use solstone_core_thinking::confidential::OperationRegistry;
 use solstone_core_journal_config::read_direct_door_port;
 
 use crate::JournalRoot;
-use crate::link_health_cache::{RelayHealthCache, RelayHealthCacheStore};
+use crate::link_health_cache::{LINK_HEALTH_FRESHNESS_MS, RelayHealthCache, RelayHealthCacheStore};
 use crate::network::read_posture;
 use crate::network_writes::NetworkOperationsOverride;
 
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
 const HOME_CANDIDATES_ERROR: &str = "couldn't check your journal's addresses";
-const LINK_HEALTH_FRESHNESS_MS: i64 = 90_000;
 
 /// The non-I/O health fields published by the status route.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

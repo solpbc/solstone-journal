@@ -162,14 +162,81 @@ impl<'a> WsByteSink for Box<dyn ListenWriter + 'a> {
     }
 }
 
+use std::path::PathBuf;
+
+/// The outcome of reading the service token for an individual attempt.
+pub enum AttemptToken {
+    /// A valid non-empty service token was read.
+    Present(ServiceToken),
+    /// The service token file has not been provisioned.
+    Missing,
+    /// The service token file could not be read.
+    Unreadable,
+    /// The service token file was not a JSON object or contained invalid JSON.
+    Malformed,
+}
+
+/// Dynamic source for loading the service token on each attempt.
+pub trait AttemptTokenSource: Send + Sync {
+    /// Reads the service token for a single listen or tunnel attempt.
+    fn read_for_attempt(&self) -> AttemptToken;
+}
+
+/// Token source backed by the journal's on-disk link credentials.
+pub struct JournalAttemptTokenSource {
+    journal_root: PathBuf,
+}
+
+impl JournalAttemptTokenSource {
+    /// Creates a token source for a journal root.
+    #[must_use]
+    pub fn new(journal_root: PathBuf) -> Self {
+        Self { journal_root }
+    }
+}
+
+impl AttemptTokenSource for JournalAttemptTokenSource {
+    fn read_for_attempt(&self) -> AttemptToken {
+        match crate::link_state_files::load_link_service_token(&self.journal_root) {
+            crate::LinkServiceTokenRead::Present(token) => {
+                AttemptToken::Present(ServiceToken::new(token.as_str().to_owned()))
+            }
+            crate::LinkServiceTokenRead::Missing => AttemptToken::Missing,
+            crate::LinkServiceTokenRead::Unreadable => AttemptToken::Unreadable,
+            crate::LinkServiceTokenRead::Malformed => AttemptToken::Malformed,
+        }
+    }
+}
+
+/// Token source returning a static token on every read.
+pub struct StaticAttemptTokenSource {
+    token: ServiceToken,
+}
+
+impl StaticAttemptTokenSource {
+    /// Creates a static token source for tests and fixtures.
+    #[must_use]
+    pub fn new(token: ServiceToken) -> Self {
+        Self { token }
+    }
+}
+
+impl AttemptTokenSource for StaticAttemptTokenSource {
+    fn read_for_attempt(&self) -> AttemptToken {
+        AttemptToken::Present(self.token.clone())
+    }
+}
+
 /// Configuration that is fixed for one relay-client lifetime.
 pub struct RelayClientConfig {
     /// The persisted home instance identifier used in relay URL query strings.
     pub instance_id: String,
     /// The configured HTTP(S) or WebSocket relay endpoint.
     pub relay_endpoint: String,
-    /// The service credential sent in both the query and bearer header.
+    /// Listen and tunnel attempts do not read `service_token`.
     pub service_token: ServiceToken,
+    /// Dynamic token source read once per listen and tunnel attempt.
+    pub token_source: Arc<dyn AttemptTokenSource>,
     /// The absolute bound for collecting the four-byte dispatch prefix.
     pub dispatch_read_deadline: Duration,
     /// The interval between acknowledged relay-listener Ping frames.
@@ -292,20 +359,44 @@ impl RelayClient {
     async fn run_once(&self) -> ListenAttemptEnd {
         let mut reset_backoff_earned = false;
         self.begin_listen_attempt();
+        let service_token = match self.inner.config.token_source.read_for_attempt() {
+            AttemptToken::Present(token) => token,
+            AttemptToken::Missing | AttemptToken::Unreadable | AttemptToken::Malformed => {
+                self.record_listen_failure(RelayTunnelFailure::ServiceTokenRejected);
+                return ListenAttemptEnd {
+                    reset_backoff: false,
+                };
+            }
+        };
         let listen_url = relay_tunnel_url(
             &self.inner.config.relay_endpoint,
             "/session/listen",
             &self.inner.config.instance_id,
-            self.inner.config.service_token.as_str(),
+            service_token.as_str(),
         );
         let (mut reader, mut writer) = match self
             .inner
             .connector
-            .connect(&listen_url, &self.inner.config.service_token)
+            .connect(&listen_url, &service_token)
             .await
         {
-            Ok(websocket) => websocket,
-            Err(_) => {
+            Ok(websocket) => {
+                lock_unpoisoned(&self.inner.health).mark_listen_upgraded();
+                websocket
+            }
+            Err(error) => {
+                let failure = match error {
+                    RelayWebSocketError::Status(404) => {
+                        RelayTunnelFailure::RelayTunnelRejected { status: 404 }
+                    }
+                    RelayWebSocketError::Status(status) => {
+                        classify_relay_tunnel_failure(RelayTunnelFailureSignal::HttpStatus(status))
+                    }
+                    RelayWebSocketError::Request | RelayWebSocketError::Connection => {
+                        classify_relay_tunnel_failure(RelayTunnelFailureSignal::TransportFailure)
+                    }
+                };
+                self.record_listen_failure(failure);
                 return ListenAttemptEnd {
                     reset_backoff: false,
                 };
@@ -403,17 +494,20 @@ impl RelayClient {
     }
 
     async fn handle_tunnel(&self, tunnel_id: String, _lifecycle: TunnelLifecycle) {
+        let service_token = match self.inner.config.token_source.read_for_attempt() {
+            AttemptToken::Present(token) => token,
+            AttemptToken::Missing | AttemptToken::Unreadable | AttemptToken::Malformed => {
+                self.record_failure(RelayTunnelFailure::ServiceTokenRejected);
+                return;
+            }
+        };
         let url = relay_tunnel_url(
             &self.inner.config.relay_endpoint,
             &format!("/tunnel/{tunnel_id}"),
             &self.inner.config.instance_id,
-            self.inner.config.service_token.as_str(),
+            service_token.as_str(),
         );
-        let websocket = self
-            .inner
-            .connector
-            .connect(&url, &self.inner.config.service_token)
-            .await;
+        let websocket = self.inner.connector.connect(&url, &service_token).await;
         let (reader, mut writer) = match websocket {
             Ok(websocket) => websocket,
             Err(error) => {
@@ -493,6 +587,11 @@ impl RelayClient {
         }
     }
 
+    fn record_listen_failure(&self, failure: RelayTunnelFailure) {
+        lock_unpoisoned(&self.inner.health).record_listen_failure(failure, now_ms());
+        self.emit_health();
+    }
+
     fn record_tunnel_success(&self) {
         lock_unpoisoned(&self.inner.health).record_tunnel_success(now_ms());
         self.emit_health();
@@ -503,6 +602,7 @@ impl RelayClient {
             let mut health = lock_unpoisoned(&self.inner.health);
             health.record_listener_ack(timestamp_ms);
             if first_for_generation {
+                health.clear_on_first_acknowledgement();
                 health.set_state(RelayHealthState::Connected);
             }
         }
@@ -738,15 +838,24 @@ impl FakeSocketHandle {
 }
 
 #[cfg(test)]
+enum FakeConnectorItem {
+    Socket(FakeListenReader, FakeListenWriter),
+    Status(u16),
+    Transport,
+}
+
+#[cfg(test)]
 struct FakeConnector {
-    sockets: Mutex<std::collections::VecDeque<(FakeListenReader, FakeListenWriter)>>,
+    items: Mutex<std::collections::VecDeque<FakeConnectorItem>>,
+    observations: Mutex<Vec<(String, String)>>,
 }
 
 #[cfg(test)]
 impl FakeConnector {
     fn new() -> Arc<Self> {
         Arc::new(Self {
-            sockets: Mutex::new(std::collections::VecDeque::new()),
+            items: Mutex::new(std::collections::VecDeque::new()),
+            observations: Mutex::new(Vec::new()),
         })
     }
 
@@ -754,7 +863,7 @@ impl FakeConnector {
         let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
         let (ping_tx, ping_rx) = tokio::sync::mpsc::unbounded_channel();
         let closed = Arc::new(AtomicBool::new(false));
-        lock_unpoisoned(&self.sockets).push_back((
+        lock_unpoisoned(&self.items).push_back(FakeConnectorItem::Socket(
             FakeListenReader { events: event_rx },
             FakeListenWriter {
                 pings: ping_tx,
@@ -766,6 +875,18 @@ impl FakeConnector {
             pings: ping_rx,
             closed,
         }
+    }
+
+    fn push_status(self: &Arc<Self>, status: u16) {
+        lock_unpoisoned(&self.items).push_back(FakeConnectorItem::Status(status));
+    }
+
+    fn push_transport(self: &Arc<Self>) {
+        lock_unpoisoned(&self.items).push_back(FakeConnectorItem::Transport);
+    }
+
+    fn observations(&self) -> Vec<(String, String)> {
+        lock_unpoisoned(&self.observations).clone()
     }
 }
 
@@ -817,16 +938,18 @@ impl ListenWriter for FakeListenWriter {
 
 #[cfg(test)]
 impl RelayConnector for FakeConnector {
-    fn connect(&self, _url: &str, _token: &ServiceToken) -> RelayConnect {
-        let pair = lock_unpoisoned(&self.sockets).pop_front();
+    fn connect(&self, url: &str, token: &ServiceToken) -> RelayConnect {
+        lock_unpoisoned(&self.observations).push((url.to_owned(), token.as_str().to_owned()));
+        let item = lock_unpoisoned(&self.items).pop_front();
         Box::pin(async move {
-            pair.ok_or(RelayWebSocketError::Connection)
-                .map(|(reader, writer)| {
-                    (
-                        Box::new(reader) as Box<dyn ListenReader>,
-                        Box::new(writer) as Box<dyn ListenWriter>,
-                    )
-                })
+            match item {
+                Some(FakeConnectorItem::Socket(reader, writer)) => Ok((
+                    Box::new(reader) as Box<dyn ListenReader>,
+                    Box::new(writer) as Box<dyn ListenWriter>,
+                )),
+                Some(FakeConnectorItem::Status(status)) => Err(RelayWebSocketError::Status(status)),
+                Some(FakeConnectorItem::Transport) | None => Err(RelayWebSocketError::Connection),
+            }
         })
     }
 }
@@ -835,13 +958,14 @@ impl RelayConnector for FakeConnector {
 mod tests {
     use std::{
         collections::HashSet,
-        sync::{Arc, Mutex},
+        sync::{Arc, Mutex, atomic::Ordering},
         time::Duration,
     };
 
     use super::{
-        FakeConnector, GlobalAdmission, LoopbackConnect, LoopbackDialer, RelayClient,
-        RelayClientConfig, TunnelLifecycle, lock_unpoisoned, prefix_hex, stability_window_reached,
+        AttemptToken, AttemptTokenSource, FakeConnector, GlobalAdmission, LoopbackConnect,
+        LoopbackDialer, RelayClient, RelayClientConfig, RelayConnector, StaticAttemptTokenSource,
+        TunnelLifecycle, lock_unpoisoned, prefix_hex, stability_window_reached,
     };
     use bytes::Bytes;
     use tokio::{
@@ -887,6 +1011,25 @@ mod tests {
                 notified.await;
             }
         }
+
+        async fn wait_for_health_predicate(
+            &self,
+            predicate: impl Fn(&serde_json::Value) -> bool,
+        ) -> serde_json::Value {
+            loop {
+                let notified = self.changed.notified();
+                if let Ok(events) = self.events.lock() {
+                    if let Some((_, fields)) = events
+                        .iter()
+                        .rev()
+                        .find(|(event, fields)| event == "health" && predicate(fields))
+                    {
+                        return fields.clone();
+                    }
+                }
+                notified.await;
+            }
+        }
     }
 
     impl CallosumEmit for Emitter {
@@ -927,7 +1070,35 @@ mod tests {
         }
     }
 
+    struct ScriptedAttemptTokenSource {
+        tokens: Mutex<std::collections::VecDeque<AttemptToken>>,
+        calls: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl ScriptedAttemptTokenSource {
+        fn new(tokens: Vec<AttemptToken>) -> (Arc<Self>, Arc<std::sync::atomic::AtomicUsize>) {
+            let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            (
+                Arc::new(Self {
+                    tokens: Mutex::new(tokens.into()),
+                    calls: Arc::clone(&calls),
+                }),
+                calls,
+            )
+        }
+    }
+
+    impl AttemptTokenSource for ScriptedAttemptTokenSource {
+        fn read_for_attempt(&self) -> AttemptToken {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            lock_unpoisoned(&self.tokens)
+                .pop_front()
+                .unwrap_or(AttemptToken::Missing)
+        }
+    }
+
     fn client_config(address: std::net::SocketAddr, token: &str) -> RelayClientConfig {
+        let service_token = ServiceToken::new(token.to_owned());
         RelayClientConfig {
             // Effectively never for tests asserting exact event sequences; the
             // heartbeat cadence test shortens these explicitly.
@@ -936,7 +1107,8 @@ mod tests {
             ack_stability_window: Duration::from_secs(3600),
             instance_id: "home-instance".to_owned(),
             relay_endpoint: format!("http://{address}"),
-            service_token: ServiceToken::new(token.to_owned()),
+            token_source: Arc::new(StaticAttemptTokenSource::new(service_token.clone())),
+            service_token,
             dispatch_read_deadline: Duration::from_secs(1),
             global_admission_ceiling: 1,
         }
@@ -1697,6 +1869,689 @@ mod tests {
         running.abort();
         let _ = running.await;
         assert_eq!(emitter.snapshot(), events_after_stop);
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn refused_listen_emits_reconnecting_service_token_rejected() -> Result<(), String> {
+        let connector = FakeConnector::new();
+        connector.push_status(401);
+        let emitter = Arc::new(Emitter::default());
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "test-token"),
+            Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+
+        // Under pause, run executes run_once(), fails connect, calls announce_disconnect(),
+        // schedules backoff, and hits sleep(delay).
+        let reconnecting = emitter
+            .wait_for_health_predicate(|fields| fields["state"] == "reconnecting")
+            .await;
+        running.abort();
+        let _ = running.await;
+
+        assert_eq!(
+            reconnecting["last_relay_tunnel_error"],
+            "service_token_rejected"
+        );
+        assert!(reconnecting["last_relay_tunnel_error_at"].is_u64());
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn listen_and_tunnel_http_status_reasons() -> Result<(), String> {
+        // Case 1: Listen 402 -> relay_tunnel_rejected, status 402
+        {
+            let connector = FakeConnector::new();
+            connector.push_status(402);
+            let emitter = Arc::new(Emitter::default());
+            let client = RelayClient::new_with_connector(
+                client_config(dummy_addr(), "test-token"),
+                Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+                Arc::new(Dialer::new(oneshot::channel().0)),
+                connector,
+            );
+            let running = {
+                let client = client.clone();
+                tokio::spawn(async move { client.run().await })
+            };
+            let reconnecting = emitter
+                .wait_for_health_predicate(|fields| fields["state"] == "reconnecting")
+                .await;
+            running.abort();
+            let _ = running.await;
+            assert_eq!(
+                reconnecting["last_relay_tunnel_error"],
+                "relay_tunnel_rejected"
+            );
+            assert_eq!(reconnecting["relay_tunnel_error_status"], 402);
+        }
+
+        // Case 2: Listen 404 -> relay_tunnel_rejected, status 404 (not home_missing_mobile)
+        {
+            let connector = FakeConnector::new();
+            connector.push_status(404);
+            let emitter = Arc::new(Emitter::default());
+            let client = RelayClient::new_with_connector(
+                client_config(dummy_addr(), "test-token"),
+                Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+                Arc::new(Dialer::new(oneshot::channel().0)),
+                connector,
+            );
+            let running = {
+                let client = client.clone();
+                tokio::spawn(async move { client.run().await })
+            };
+            let reconnecting = emitter
+                .wait_for_health_predicate(|fields| fields["state"] == "reconnecting")
+                .await;
+            running.abort();
+            let _ = running.await;
+            assert_eq!(
+                reconnecting["last_relay_tunnel_error"],
+                "relay_tunnel_rejected"
+            );
+            assert_eq!(reconnecting["relay_tunnel_error_status"], 404);
+        }
+
+        // Case 3: Listen transport failure -> relay_tunnel_unreachable
+        {
+            let connector = FakeConnector::new();
+            connector.push_transport();
+            let emitter = Arc::new(Emitter::default());
+            let client = RelayClient::new_with_connector(
+                client_config(dummy_addr(), "test-token"),
+                Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+                Arc::new(Dialer::new(oneshot::channel().0)),
+                connector,
+            );
+            let running = {
+                let client = client.clone();
+                tokio::spawn(async move { client.run().await })
+            };
+            let reconnecting = emitter
+                .wait_for_health_predicate(|fields| fields["state"] == "reconnecting")
+                .await;
+            running.abort();
+            let _ = running.await;
+            assert_eq!(
+                reconnecting["last_relay_tunnel_error"],
+                "relay_tunnel_unreachable"
+            );
+            assert_eq!(
+                reconnecting["relay_tunnel_error_status"],
+                serde_json::Value::Null
+            );
+        }
+
+        // Case 4: Listen connects, tunnel offer, tunnel 404 -> home_missing_mobile
+        {
+            let connector = FakeConnector::new();
+            let listen = connector.push_socket();
+            connector.push_status(404);
+            let emitter = Arc::new(Emitter::default());
+            let client = RelayClient::new_with_connector(
+                client_config(dummy_addr(), "test-token"),
+                Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+                Arc::new(Dialer::new(oneshot::channel().0)),
+                connector,
+            );
+            let running = {
+                let client = client.clone();
+                tokio::spawn(async move { client.run().await })
+            };
+            listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}"[..]);
+            let tunnel_err_health = emitter
+                .wait_for_health_predicate(|fields| {
+                    fields["last_relay_tunnel_error"] == "home_missing_mobile"
+                })
+                .await;
+            running.abort();
+            let _ = running.await;
+            assert_eq!(
+                tunnel_err_health["last_relay_tunnel_error"],
+                "home_missing_mobile"
+            );
+            assert_eq!(
+                tunnel_err_health["relay_tunnel_error_status"],
+                serde_json::Value::Null
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn second_generation_ack_clears_a_refused_listen() -> Result<(), String> {
+        let connector = FakeConnector::new();
+        connector.push_status(401);
+        let mut second_listen = connector.push_socket();
+        let emitter = Arc::new(Emitter::default());
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "test-token"),
+            Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+
+        // Generation 1 fails
+        emitter
+            .wait_for_health_predicate(|fields| fields["state"] == "reconnecting")
+            .await;
+
+        // Advance 2s to cross reconnect backoff sleep
+        tokio::time::advance(Duration::from_secs(2)).await;
+
+        // Generation 2 connects and sends initial ping
+        let nonce = timeout(Duration::from_secs(1), second_listen.recv_ping())
+            .await
+            .map_err(|_| "ping timeout")?
+            .map_err(|_| "ping dropped")?;
+        second_listen.push_pong(nonce);
+
+        let connected = emitter
+            .wait_for_health_predicate(|fields| fields["state"] == "connected")
+            .await;
+        running.abort();
+        let _ = running.await;
+
+        assert_eq!(connected["state"], "connected");
+        assert_eq!(
+            connected["last_relay_tunnel_error"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            connected["last_relay_tunnel_error_at"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            connected["relay_tunnel_error_status"],
+            serde_json::Value::Null
+        );
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tunnel_token_rejection_after_upgrade_survives_the_first_ack() -> Result<(), String> {
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
+        connector.push_status(401); // Tunnel connect rejection
+        let emitter = Arc::new(Emitter::default());
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "test-token"),
+            Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+
+        let nonce = timeout(Duration::from_secs(1), listen.recv_ping())
+            .await
+            .map_err(|_| "ping timeout")?
+            .map_err(|_| "ping dropped")?;
+
+        // Before answering pong, trigger incoming tunnel offer
+        listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}"[..]);
+        emitter
+            .wait_for_health_predicate(|fields| {
+                fields["last_relay_tunnel_error"] == "service_token_rejected"
+            })
+            .await;
+
+        // Now answer pong (first ack)
+        listen.push_pong(nonce);
+        let connected = emitter
+            .wait_for_health_predicate(|fields| fields["state"] == "connected")
+            .await;
+        running.abort();
+        let _ = running.await;
+
+        assert_eq!(
+            connected["last_relay_tunnel_error"],
+            "service_token_rejected"
+        );
+        assert!(connected["last_relay_tunnel_error_at"].is_u64());
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn later_generation_ack_clears_an_earlier_token_rejection() -> Result<(), String> {
+        let (source, _) = ScriptedAttemptTokenSource::new(vec![
+            AttemptToken::Present(ServiceToken::new("token-1".to_owned())), // Gen N listen
+            AttemptToken::Present(ServiceToken::new("token-1".to_owned())), // Gen N tunnel
+            AttemptToken::Present(ServiceToken::new("token-1".to_owned())), // Gen N+1 listen
+            AttemptToken::Present(ServiceToken::new("token-2".to_owned())), // Gen N+2 listen
+        ]);
+
+        let connector = FakeConnector::new();
+        let mut gen_n_listen = connector.push_socket();
+        connector.push_status(401); // Gen N tunnel 401
+        connector.push_status(401); // Gen N+1 listen 401
+        let mut gen_n2_listen = connector.push_socket();
+
+        let emitter = Arc::new(Emitter::default());
+        let mut config = client_config(dummy_addr(), "test-token");
+        config.token_source = source;
+        let client = RelayClient::new_with_connector(
+            config,
+            Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+
+        // Gen N ping
+        let nonce = timeout(Duration::from_secs(1), gen_n_listen.recv_ping())
+            .await
+            .map_err(|_| "ping timeout")?
+            .map_err(|_| "ping dropped")?;
+        gen_n_listen.push_pong(nonce);
+        emitter
+            .wait_for_health_predicate(|fields| fields["state"] == "connected")
+            .await;
+
+        // Tunnel offer on Gen N
+        gen_n_listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}"[..]);
+        emitter
+            .wait_for_health_predicate(|fields| {
+                fields["last_relay_tunnel_error"] == "service_token_rejected"
+            })
+            .await;
+
+        // Drop Gen N listener
+        drop(gen_n_listen);
+        emitter
+            .wait_for_health_predicate(|fields| {
+                fields["state"] == "reconnecting" && fields["listen_generation"] == 1
+            })
+            .await;
+
+        // Advance 2s to Gen N+1
+        tokio::time::advance(Duration::from_secs(2)).await;
+
+        // Gen N+1 fails with 401, goes back to reconnecting
+        emitter
+            .wait_for_health_predicate(|fields| {
+                fields["state"] == "reconnecting" && fields["listen_generation"] == 2
+            })
+            .await;
+
+        // Advance 2s to Gen N+2
+        tokio::time::advance(Duration::from_secs(2)).await;
+
+        // Gen N+2 connects
+        let nonce2 = timeout(Duration::from_secs(1), gen_n2_listen.recv_ping())
+            .await
+            .map_err(|_| "ping2 timeout")?
+            .map_err(|_| "ping2 dropped")?;
+        gen_n2_listen.push_pong(nonce2);
+
+        let connected = emitter
+            .wait_for_health_predicate(|fields| {
+                fields["state"] == "connected" && fields["listen_generation"] == 3
+            })
+            .await;
+        running.abort();
+        let _ = running.await;
+
+        assert_eq!(
+            connected["last_relay_tunnel_error"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            connected["last_relay_tunnel_error_at"],
+            serde_json::Value::Null
+        );
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tunnel_token_rejection_after_the_first_ack_survives_a_later_ack() -> Result<(), String>
+    {
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
+        connector.push_status(401); // Tunnel 401
+        let emitter = Arc::new(Emitter::default());
+        let mut config = client_config(dummy_addr(), "test-token");
+        config.ping_interval = Duration::from_millis(100);
+        config.ping_ack_timeout = Duration::from_millis(50);
+        let client = RelayClient::new_with_connector(
+            config,
+            Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+
+        // First ping
+        let nonce1 = timeout(Duration::from_secs(1), listen.recv_ping())
+            .await
+            .map_err(|_| "ping1 timeout")?
+            .map_err(|_| "ping1 dropped")?;
+        listen.push_pong(nonce1);
+        emitter
+            .wait_for_health_predicate(|fields| fields["state"] == "connected")
+            .await;
+
+        // Trigger tunnel offer and 401 failure
+        listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}"[..]);
+        emitter
+            .wait_for_health_predicate(|fields| {
+                fields["last_relay_tunnel_error"] == "service_token_rejected"
+            })
+            .await;
+
+        // Advance to second ping
+        tokio::time::advance(Duration::from_millis(100)).await;
+        let nonce2 = timeout(Duration::from_secs(1), listen.recv_ping())
+            .await
+            .map_err(|_| "ping2 timeout")?
+            .map_err(|_| "ping2 dropped")?;
+        let count_before_pong = emitter.snapshot().len();
+        listen.push_pong(nonce2);
+        timeout(Duration::from_secs(1), async {
+            loop {
+                let notified = emitter.changed.notified();
+                if emitter.snapshot().len() > count_before_pong {
+                    break;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .map_err(|_| "new health event was not emitted after pong".to_owned())?;
+        let latest_health = emitter
+            .snapshot()
+            .into_iter()
+            .rev()
+            .find_map(|(event, fields)| (event == "health").then_some(fields))
+            .ok_or_else(|| "missing health event".to_owned())?;
+        running.abort();
+        let _ = running.await;
+
+        assert_eq!(
+            latest_health["last_relay_tunnel_error"],
+            "service_token_rejected"
+        );
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn each_listen_attempt_presents_the_token_read_for_that_attempt() -> Result<(), String> {
+        let (source, calls) = ScriptedAttemptTokenSource::new(vec![
+            AttemptToken::Present(ServiceToken::new("token-1".to_owned())),
+            AttemptToken::Present(ServiceToken::new("token-2".to_owned())),
+        ]);
+        let connector = FakeConnector::new();
+        connector.push_status(401);
+        let _listen2 = connector.push_socket();
+
+        let emitter = Arc::new(Emitter::default());
+        let mut config = client_config(dummy_addr(), "test-token");
+        config.token_source = source;
+        let client = RelayClient::new_with_connector(
+            config,
+            Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+            Arc::clone(&connector) as Arc<dyn RelayConnector>,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+
+        // First attempt fails with 401
+        emitter
+            .wait_for_health_predicate(|fields| fields["state"] == "reconnecting")
+            .await;
+
+        // Advance 2s to cross backoff sleep
+        tokio::time::advance(Duration::from_secs(2)).await;
+
+        emitter
+            .wait_for_health_predicate(|fields| fields["listen_generation"] == 2)
+            .await;
+        running.abort();
+        let _ = running.await;
+
+        let obs = connector.observations();
+        assert_eq!(obs.len(), 2);
+        assert!(obs[0].0.contains("token=token-1"));
+        assert_eq!(obs[0].1, "token-1");
+        assert!(obs[1].0.contains("token=token-2"));
+        assert_eq!(obs[1].1, "token-2");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn open_listener_presents_a_new_token_on_the_next_tunnel() -> Result<(), String> {
+        let (source, _) = ScriptedAttemptTokenSource::new(vec![
+            AttemptToken::Present(ServiceToken::new("token-1".to_owned())),
+            AttemptToken::Present(ServiceToken::new("token-2".to_owned())),
+        ]);
+        let connector = FakeConnector::new();
+        let listen = connector.push_socket();
+        let _tunnel = connector.push_socket();
+
+        let emitter = Arc::new(Emitter::default());
+        let mut config = client_config(dummy_addr(), "test-token");
+        config.token_source = source;
+        let client = RelayClient::new_with_connector(
+            config,
+            Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+            Arc::clone(&connector) as Arc<dyn RelayConnector>,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+
+        // Generation 1 connects on token-1
+        emitter
+            .wait_for_health_predicate(|fields| fields["listen_generation"] == 1)
+            .await;
+
+        listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}"[..]);
+
+        // Wait for tunnel connect to register in connector
+        loop {
+            if connector.observations().len() == 2 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        running.abort();
+        let _ = running.await;
+
+        assert!(!listen.is_closed());
+        let obs = connector.observations();
+        assert_eq!(obs.len(), 2);
+        assert!(obs[0].0.contains("/session/listen"));
+        assert!(obs[0].0.contains("token=token-1"));
+        assert_eq!(obs[0].1, "token-1");
+        assert!(obs[1].0.contains("/tunnel/tls"));
+        assert!(obs[1].0.contains("token=token-2"));
+        assert_eq!(obs[1].1, "token-2");
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn missing_and_malformed_token_reads_do_not_reach_the_connector() -> Result<(), String> {
+        let (source, _) = ScriptedAttemptTokenSource::new(vec![
+            AttemptToken::Missing,
+            AttemptToken::Malformed,
+            AttemptToken::Present(ServiceToken::new("test-service-token".to_owned())),
+            AttemptToken::Missing,
+        ]);
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
+
+        let emitter = Arc::new(Emitter::default());
+        let mut config = client_config(dummy_addr(), "test-token");
+        config.service_token = ServiceToken::new("seed-token".to_owned());
+        config.token_source = source;
+        let client = RelayClient::new_with_connector(
+            config,
+            Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+            Arc::clone(&connector) as Arc<dyn RelayConnector>,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+
+        // Attempt 1: Missing
+        emitter
+            .wait_for_health_predicate(|fields| {
+                fields["state"] == "reconnecting"
+                    && fields["listen_generation"] == 1
+                    && fields["last_relay_tunnel_error"] == "service_token_rejected"
+            })
+            .await;
+        assert_eq!(connector.observations().len(), 0);
+
+        // Advance 2s to Attempt 2: Malformed
+        tokio::time::advance(Duration::from_secs(2)).await;
+        emitter
+            .wait_for_health_predicate(|fields| {
+                fields["state"] == "reconnecting"
+                    && fields["listen_generation"] == 2
+                    && fields["last_relay_tunnel_error"] == "service_token_rejected"
+            })
+            .await;
+        assert_eq!(connector.observations().len(), 0);
+
+        // Advance 2s to Attempt 3: Present(test-service-token)
+        tokio::time::advance(Duration::from_secs(2)).await;
+        let nonce = timeout(Duration::from_secs(1), listen.recv_ping())
+            .await
+            .map_err(|_| "ping timeout")?
+            .map_err(|_| "ping dropped")?;
+        listen.push_pong(nonce);
+
+        emitter
+            .wait_for_health_predicate(|fields| {
+                fields["state"] == "connected" && fields["listen_generation"] == 3
+            })
+            .await;
+        let obs = connector.observations();
+        assert_eq!(obs.len(), 1);
+        assert_eq!(obs[0].1, "test-service-token");
+        assert!(!obs[0].1.contains("seed-token"));
+
+        // Offer tunnel; read is Missing
+        listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}"[..]);
+        let tunnel_missing = emitter
+            .wait_for_health_predicate(|fields| {
+                fields["listen_generation"] == 3
+                    && fields["state"] == "connected"
+                    && fields["last_relay_tunnel_error"] == "service_token_rejected"
+            })
+            .await;
+
+        running.abort();
+        let _ = running.await;
+
+        assert_eq!(connector.observations().len(), 1);
+        assert_eq!(
+            tunnel_missing["last_relay_tunnel_error"],
+            "service_token_rejected"
+        );
+        assert_eq!(client.inner.config.service_token.as_str(), "seed-token");
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn next_generation_without_a_listen_refusal_clears_the_token_rejection()
+    -> Result<(), String> {
+        let connector = FakeConnector::new();
+        let mut gen_n_listen = connector.push_socket();
+        connector.push_status(401); // Tunnel 401
+        let mut gen_n1_listen = connector.push_socket();
+
+        let emitter = Arc::new(Emitter::default());
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "test-token"),
+            Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+
+        // Gen N connects and pongs
+        let nonce = timeout(Duration::from_secs(1), gen_n_listen.recv_ping())
+            .await
+            .map_err(|_| "ping timeout")?
+            .map_err(|_| "ping dropped")?;
+        gen_n_listen.push_pong(nonce);
+        emitter
+            .wait_for_health_predicate(|fields| fields["state"] == "connected")
+            .await;
+
+        // Tunnel offer -> 401
+        gen_n_listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}"[..]);
+        emitter
+            .wait_for_health_predicate(|fields| {
+                fields["last_relay_tunnel_error"] == "service_token_rejected"
+            })
+            .await;
+
+        // Drop Gen N listener
+        drop(gen_n_listen);
+        emitter
+            .wait_for_health_predicate(|fields| fields["state"] == "reconnecting")
+            .await;
+
+        // Advance 2s to Gen N+1
+        tokio::time::advance(Duration::from_secs(2)).await;
+
+        let nonce2 = timeout(Duration::from_secs(1), gen_n1_listen.recv_ping())
+            .await
+            .map_err(|_| "ping2 timeout")?
+            .map_err(|_| "ping2 dropped")?;
+        gen_n1_listen.push_pong(nonce2);
+
+        let connected = emitter
+            .wait_for_health_predicate(|fields| {
+                fields["state"] == "connected" && fields["listen_generation"] == 2
+            })
+            .await;
+        running.abort();
+        let _ = running.await;
+
+        assert_eq!(
+            connected["last_relay_tunnel_error"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            connected["last_relay_tunnel_error_at"],
+            serde_json::Value::Null
+        );
         Ok(())
     }
 }

@@ -65,6 +65,19 @@ impl RelayTunnelFailure {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FailureRecord {
+    reason: &'static str,
+    at: u64,
+    status: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TunnelFailureRecord {
+    failure: FailureRecord,
+    recorded_before_upgrade: bool,
+}
+
 /// Pure in-memory state for a relay listener's owner-visible health payload.
 ///
 /// This type performs no I/O, runtime work, clock reads, or event emission.
@@ -74,9 +87,9 @@ pub struct RelayHealth {
     state: RelayHealthState,
     listen_generation: u64,
     last_successful_relay_tunnel_at: Option<u64>,
-    last_relay_tunnel_error: Option<&'static str>,
-    last_relay_tunnel_error_at: Option<u64>,
-    relay_tunnel_error_status: Option<u16>,
+    listen_failure: Option<FailureRecord>,
+    tunnel_failure: Option<TunnelFailureRecord>,
+    upgrade_marked: bool,
     relay_admission_saturated_count: u64,
     last_relay_listener_ack_at: Option<u64>,
     last_relay_listener_ack_generation: Option<u64>,
@@ -89,9 +102,9 @@ impl RelayHealth {
             state: RelayHealthState::Connecting,
             listen_generation: 0,
             last_successful_relay_tunnel_at: None,
-            last_relay_tunnel_error: None,
-            last_relay_tunnel_error_at: None,
-            relay_tunnel_error_status: None,
+            listen_failure: None,
+            tunnel_failure: None,
+            upgrade_marked: false,
             relay_admission_saturated_count: 0,
             last_relay_listener_ack_at: None,
             last_relay_listener_ack_generation: None,
@@ -101,6 +114,15 @@ impl RelayHealth {
     /// Starts a new relay listener attempt.
     pub fn begin_listen_attempt(&mut self) {
         self.listen_generation = self.listen_generation.saturating_add(1);
+        self.upgrade_marked = false;
+        if let Some(tunnel_failure) = self.tunnel_failure.as_mut() {
+            tunnel_failure.recorded_before_upgrade = true;
+        }
+    }
+
+    /// Marks that the current listen connection has upgraded to WebSocket.
+    pub fn mark_listen_upgraded(&mut self) {
+        self.upgrade_marked = true;
     }
 
     /// Updates the owner-visible listener state.
@@ -108,19 +130,43 @@ impl RelayHealth {
         self.state = state;
     }
 
-    /// Records a successful relay tunnel and clears the prior tunnel error.
+    /// Records a failed listen connection attempt.
+    pub fn record_listen_failure(&mut self, failure: RelayTunnelFailure, timestamp_ms: u64) {
+        self.listen_failure = Some(FailureRecord {
+            reason: failure.reason(),
+            at: timestamp_ms,
+            status: failure.status(),
+        });
+    }
+
+    /// Records a successful relay tunnel and clears prior failures.
     pub fn record_tunnel_success(&mut self, timestamp_ms: u64) {
         self.last_successful_relay_tunnel_at = Some(timestamp_ms);
-        self.last_relay_tunnel_error = None;
-        self.last_relay_tunnel_error_at = None;
-        self.relay_tunnel_error_status = None;
+        self.listen_failure = None;
+        self.tunnel_failure = None;
     }
 
     /// Records a failed relay tunnel without changing the last success.
     pub fn record_tunnel_failure(&mut self, failure: RelayTunnelFailure, timestamp_ms: u64) {
-        self.last_relay_tunnel_error = Some(failure.reason());
-        self.last_relay_tunnel_error_at = Some(timestamp_ms);
-        self.relay_tunnel_error_status = failure.status();
+        self.tunnel_failure = Some(TunnelFailureRecord {
+            failure: FailureRecord {
+                reason: failure.reason(),
+                at: timestamp_ms,
+                status: failure.status(),
+            },
+            recorded_before_upgrade: !self.upgrade_marked,
+        });
+    }
+
+    /// Clears failures cleared on the first acknowledgement of a generation.
+    pub fn clear_on_first_acknowledgement(&mut self) {
+        self.listen_failure = None;
+        if let Some(tunnel_failure) = self.tunnel_failure
+            && tunnel_failure.failure.reason == crate::REASON_SERVICE_TOKEN_REJECTED
+            && tunnel_failure.recorded_before_upgrade
+        {
+            self.tunnel_failure = None;
+        }
     }
 
     /// Records an acknowledged heartbeat for the current listener generation.
@@ -139,13 +185,20 @@ impl RelayHealth {
 
     /// Returns the complete owner-visible relay health payload.
     pub fn payload(&self) -> Value {
+        let failure = self
+            .listen_failure
+            .or_else(|| self.tunnel_failure.map(|t| t.failure));
+        let (reason, error_at, status) = match failure {
+            Some(f) => (Some(f.reason), Some(f.at), f.status),
+            None => (None, None, None),
+        };
         json!({
             "state": self.state.as_str(),
             "listen_generation": self.listen_generation,
             "last_successful_relay_tunnel_at": self.last_successful_relay_tunnel_at,
-            "last_relay_tunnel_error": self.last_relay_tunnel_error,
-            "last_relay_tunnel_error_at": self.last_relay_tunnel_error_at,
-            "relay_tunnel_error_status": self.relay_tunnel_error_status,
+            "last_relay_tunnel_error": reason,
+            "last_relay_tunnel_error_at": error_at,
+            "relay_tunnel_error_status": status,
             "relay_admission_saturated_count": self.relay_admission_saturated_count,
             "last_relay_listener_ack_at": self.last_relay_listener_ack_at,
             "last_relay_listener_ack_generation": self.last_relay_listener_ack_generation,
@@ -249,5 +302,119 @@ mod tests {
             health.payload()["last_relay_listener_ack_generation"],
             health.payload()["listen_generation"],
         );
+    }
+
+    #[test]
+    fn hidden_tunnel_failure_returns_with_its_original_timestamp() {
+        let mut health = RelayHealth::new();
+        health.begin_listen_attempt();
+        let t = 1_700_000_000_500;
+        health.record_tunnel_failure(RelayTunnelFailure::RelayTunnelRejected { status: 503 }, t);
+
+        // Next generation records a listen transport failure.
+        health.begin_listen_attempt();
+        health.record_listen_failure(
+            RelayTunnelFailure::RelayTunnelUnreachable,
+            1_700_000_001_000,
+        );
+        assert_eq!(
+            health.payload()["last_relay_tunnel_error"],
+            "relay_tunnel_unreachable"
+        );
+        assert_eq!(
+            health.payload()["last_relay_tunnel_error_at"],
+            1_700_000_001_000_u64
+        );
+        assert_eq!(
+            health.payload()["relay_tunnel_error_status"],
+            serde_json::Value::Null
+        );
+
+        // Next generation marks upgrade and first ack.
+        health.begin_listen_attempt();
+        health.mark_listen_upgraded();
+        health.record_listener_ack(1_700_000_002_000);
+        health.clear_on_first_acknowledgement();
+        assert_eq!(
+            health.payload()["last_relay_tunnel_error"],
+            "relay_tunnel_rejected"
+        );
+        assert_eq!(health.payload()["relay_tunnel_error_status"], 503);
+        assert_eq!(health.payload()["last_relay_tunnel_error_at"], t);
+
+        // Repeat sequence with LocalPrivateListenerUnreachable.
+        let t2 = 1_700_000_003_000;
+        health.record_tunnel_failure(RelayTunnelFailure::LocalPrivateListenerUnreachable, t2);
+        health.begin_listen_attempt();
+        health.record_listen_failure(
+            RelayTunnelFailure::RelayTunnelUnreachable,
+            1_700_000_004_000,
+        );
+        assert_eq!(
+            health.payload()["last_relay_tunnel_error"],
+            "relay_tunnel_unreachable"
+        );
+
+        health.begin_listen_attempt();
+        health.mark_listen_upgraded();
+        health.record_listener_ack(1_700_000_005_000);
+        health.clear_on_first_acknowledgement();
+        assert_eq!(
+            health.payload()["last_relay_tunnel_error"],
+            "local_private_listener_unreachable"
+        );
+        assert_eq!(
+            health.payload()["relay_tunnel_error_status"],
+            serde_json::Value::Null
+        );
+        assert_eq!(health.payload()["last_relay_tunnel_error_at"], t2);
+    }
+
+    #[test]
+    fn first_ack_clears_only_a_token_rejection_recorded_before_upgrade() {
+        let mut health = RelayHealth::new();
+        health.begin_listen_attempt();
+        health.record_tunnel_failure(RelayTunnelFailure::ServiceTokenRejected, 1_000);
+        health.mark_listen_upgraded();
+        health.record_listener_ack(1_500);
+        health.clear_on_first_acknowledgement();
+        assert_eq!(
+            health.payload()["last_relay_tunnel_error"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            health.payload()["last_relay_tunnel_error_at"],
+            serde_json::Value::Null
+        );
+
+        // Second case: begin, mark upgrade, then record tunnel failure, then first ack.
+        health.begin_listen_attempt();
+        health.mark_listen_upgraded();
+        health.record_tunnel_failure(RelayTunnelFailure::ServiceTokenRejected, 2_000);
+        health.record_listener_ack(2_500);
+        health.clear_on_first_acknowledgement();
+        assert_eq!(
+            health.payload()["last_relay_tunnel_error"],
+            "service_token_rejected"
+        );
+        assert_eq!(health.payload()["last_relay_tunnel_error_at"], 2_000);
+    }
+
+    #[test]
+    fn first_ack_projects_the_tunnel_rejection_timestamp() {
+        let mut health = RelayHealth::new();
+        health.begin_listen_attempt();
+        health.record_listen_failure(RelayTunnelFailure::ServiceTokenRejected, 1_000);
+
+        health.begin_listen_attempt();
+        health.mark_listen_upgraded();
+        health.record_tunnel_failure(RelayTunnelFailure::ServiceTokenRejected, 2_000);
+        health.record_listener_ack(2_500);
+        health.clear_on_first_acknowledgement();
+        assert_eq!(
+            health.payload()["last_relay_tunnel_error"],
+            "service_token_rejected"
+        );
+        assert_eq!(health.payload()["last_relay_tunnel_error_at"], 2_000);
     }
 }
