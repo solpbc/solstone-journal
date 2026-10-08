@@ -3,11 +3,10 @@
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use sha2::{Digest, Sha256};
 
@@ -27,8 +26,6 @@ const RETIRED_SOL_USER_SKILL_JSON: &str =
     include_str!("../../../fixtures/native-sol/retired-sol-user-skill-v1.json");
 const GLOBAL_SKIP_MESSAGE: &str =
     "no AI coding agent config directories found — skipping skill registration";
-
-static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Agent {
@@ -542,76 +539,177 @@ fn cleanup_retired_sol_user_skill(skills_root: &Path, agent: &str, report: &mut 
 }
 
 fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> InstallReport {
-    let (selected, _default_all) = selection.user_agents();
+    let (selected, default_all) = selection.user_agents();
     let mut report = InstallReport::default();
-    for spec in selected {
-        let skills_root = home.join(spec.skills_dir);
-        cleanup_retired_sol_user_skill(&skills_root, spec.name, &mut report);
-        if let Err(error) = fs::create_dir_all(&skills_root) {
-            append_error(&mut report.rows, spec.name, "", &skills_root, error);
-            continue;
-        }
-        let target = skills_root.join(USER_SKILL_NAME);
-        let mut action = Action::Installed;
-        match fs::symlink_metadata(&target) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                if let Err(error) = fs::remove_file(&target) {
-                    append_error(&mut report.rows, spec.name, USER_SKILL_NAME, &target, error);
-                    continue;
-                }
-                action = Action::Replaced;
+
+    let guard = match solstone_core_user_skill::selected_journal_for_install(home)
+        .and_then(|j| solstone_core_user_skill::guard_user_skill_mutation(home, &j))
+    {
+        Ok(guard) => guard,
+        Err(err) => {
+            for spec in selected {
+                let target = home.join(spec.skills_dir).join(USER_SKILL_NAME);
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: USER_SKILL_NAME.to_string(),
+                    action: Action::Error,
+                    path: target,
+                    reason: Some(err.clone()),
+                });
             }
-            Ok(metadata) if !metadata.file_type().is_dir() => {
-                if let Err(error) = fs::remove_file(&target) {
-                    append_error(&mut report.rows, spec.name, USER_SKILL_NAME, &target, error);
+            return report;
+        }
+    };
+
+    for spec in selected {
+        let config_root = home.join(spec.parent_dir);
+        match fs::symlink_metadata(&config_root) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                if default_all && spec.silent_when_default_all {
                     continue;
                 }
-                action = Action::Replaced;
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: String::new(),
+                    action: Action::Skipped,
+                    reason: Some(format!("config dir absent at {}", config_root.display())),
+                    path: config_root,
+                });
+                continue;
+            }
+            Err(e) => {
+                let error_path = home.join(spec.skills_dir);
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: String::new(),
+                    action: Action::Error,
+                    path: error_path,
+                    reason: Some(e.to_string()),
+                });
+                continue;
+            }
+            Ok(_) => {}
+        }
+
+        match fs::metadata(&config_root) {
+            Ok(meta) if meta.is_dir() => {
+                // Directory root (including symlink pointing to directory)
             }
             Ok(_) => {
-                match tree_matches(skill_dir, &target) {
-                    Ok(true) => {
-                        report.rows.push(ActionRow {
-                            agent: spec.name.to_string(),
-                            skill: USER_SKILL_NAME.to_string(),
-                            action: Action::Noop,
-                            path: target,
-                            reason: None,
-                        });
-                        continue;
-                    }
-                    Ok(false) => {}
-                    Err(error) => {
-                        append_error(&mut report.rows, spec.name, USER_SKILL_NAME, &target, error);
-                        continue;
-                    }
-                }
-                // Python checked os.access(target, W_OK) before rmtree. Native Rust
-                // intentionally omits that pre-check and lets remove_dir_all/write fail;
-                // the filesystem outcome is the same, but the reason string is Rust-native.
-                if let Err(error) = fs::remove_dir_all(&target) {
-                    append_error(&mut report.rows, spec.name, USER_SKILL_NAME, &target, error);
-                    continue;
-                }
-                action = Action::Replaced;
+                let error_path = home.join(spec.skills_dir);
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: String::new(),
+                    action: Action::Error,
+                    path: error_path,
+                    reason: Some(format!("{} is not a directory", config_root.display())),
+                });
+                continue;
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => {
-                append_error(&mut report.rows, spec.name, USER_SKILL_NAME, &target, error);
+            Err(e) => {
+                let error_path = home.join(spec.skills_dir);
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: String::new(),
+                    action: Action::Error,
+                    path: error_path,
+                    reason: Some(e.to_string()),
+                });
                 continue;
             }
         }
-        if let Err(error) = copy_tree_files(skill_dir, &target) {
-            append_error(&mut report.rows, spec.name, USER_SKILL_NAME, &target, error);
+
+        let skills_root = home.join(spec.skills_dir);
+        let retired_path = skills_root.join(RETIRED_USER_SKILL_NAME);
+        let target = skills_root.join(USER_SKILL_NAME);
+
+        if let Err(e) = guard.allows(&retired_path) {
+            report.rows.push(ActionRow {
+                agent: spec.name.to_string(),
+                skill: RETIRED_USER_SKILL_NAME.to_string(),
+                action: Action::Error,
+                path: retired_path,
+                reason: Some(e),
+            });
             continue;
         }
-        report.rows.push(ActionRow {
-            agent: spec.name.to_string(),
-            skill: USER_SKILL_NAME.to_string(),
-            action,
-            path: target,
-            reason: None,
-        });
+
+        if let Err(e) = guard.allows(&target) {
+            report.rows.push(ActionRow {
+                agent: spec.name.to_string(),
+                skill: USER_SKILL_NAME.to_string(),
+                action: Action::Error,
+                path: target,
+                reason: Some(e),
+            });
+            continue;
+        }
+
+        cleanup_retired_sol_user_skill(&skills_root, spec.name, &mut report);
+
+        let sync_res = guard.sync(
+            skill_dir,
+            &target,
+            solstone_core_user_skill::UserSkillMode::Install,
+        );
+        match sync_res {
+            solstone_core_user_skill::UserSkillSync::Installed => {
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: USER_SKILL_NAME.to_string(),
+                    action: Action::Installed,
+                    path: target,
+                    reason: None,
+                });
+            }
+            solstone_core_user_skill::UserSkillSync::Replaced => {
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: USER_SKILL_NAME.to_string(),
+                    action: Action::Replaced,
+                    path: target,
+                    reason: None,
+                });
+            }
+            solstone_core_user_skill::UserSkillSync::Unchanged => {
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: USER_SKILL_NAME.to_string(),
+                    action: Action::Noop,
+                    path: target,
+                    reason: None,
+                });
+            }
+            solstone_core_user_skill::UserSkillSync::Failed(msg) => {
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: USER_SKILL_NAME.to_string(),
+                    action: Action::Error,
+                    path: target,
+                    reason: Some(msg),
+                });
+            }
+            solstone_core_user_skill::UserSkillSync::Preserved => {
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: USER_SKILL_NAME.to_string(),
+                    action: Action::Error,
+                    path: target,
+                    reason: Some(
+                        "target path overlaps protected journal or is preserved".to_string(),
+                    ),
+                });
+            }
+            solstone_core_user_skill::UserSkillSync::Ineligible => {
+                report.rows.push(ActionRow {
+                    agent: spec.name.to_string(),
+                    skill: USER_SKILL_NAME.to_string(),
+                    action: Action::Error,
+                    path: target,
+                    reason: Some("target is ineligible for install".to_string()),
+                });
+            }
+        }
     }
     report
 }
@@ -1047,18 +1145,6 @@ fn append_error(
     });
 }
 
-fn tree_matches(src_dir: &Path, dst_dir: &Path) -> io::Result<bool> {
-    solstone_core_skill_state::user_skill_copy_matches(src_dir, dst_dir)
-}
-
-fn copy_tree_files(src_dir: &Path, dst_dir: &Path) -> io::Result<()> {
-    fs::create_dir_all(dst_dir)?;
-    for rel in collect_file_rel_paths(src_dir)? {
-        copy_file_0600(&src_dir.join(&rel), &dst_dir.join(rel))?;
-    }
-    Ok(())
-}
-
 fn collect_file_rel_paths(root: &Path) -> io::Result<Vec<PathBuf>> {
     let mut output = Vec::new();
     collect_file_rel_paths_inner(root, root, &mut output)?;
@@ -1092,60 +1178,6 @@ fn sorted_entries(dir: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(entries)
 }
 
-fn copy_file_0600(src: &Path, dst: &Path) -> io::Result<()> {
-    if let Some(parent) = dst.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temp = temp_path(dst);
-    let result = (|| {
-        let mut input = File::open(src)?;
-        let mut output = create_temp_file_0600(&temp)?;
-        let mut buffer = Vec::new();
-        input.read_to_end(&mut buffer)?;
-        output.write_all(&buffer)?;
-        output.sync_all()?;
-        drop(output);
-        set_mode_0600(&temp)?;
-        fs::rename(&temp, dst)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    result
-}
-
-fn temp_path(dst: &Path) -> PathBuf {
-    let count = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = format!(".tmp_{}_{}.tmp", std::process::id(), count);
-    dst.parent().unwrap_or_else(|| Path::new(".")).join(name)
-}
-
-#[cfg(unix)]
-fn create_temp_file_0600(path: &Path) -> io::Result<File> {
-    use std::os::unix::fs::OpenOptionsExt;
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)
-}
-
-#[cfg(not(unix))]
-fn create_temp_file_0600(path: &Path) -> io::Result<File> {
-    OpenOptions::new().write(true).create_new(true).open(path)
-}
-
-#[cfg(unix)]
-fn set_mode_0600(path: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-}
-
-#[cfg(not(unix))]
-fn set_mode_0600(_path: &Path) -> io::Result<()> {
-    Ok(())
-}
-
 #[cfg(unix)]
 fn create_symlink(target: &Path, link: &Path) -> io::Result<()> {
     std::os::unix::fs::symlink(target, link)
@@ -1174,6 +1206,21 @@ mod tests {
             .prefix(&format!("solstone-core-sol-skills-{name}-"))
             .tempdir()
             .expect("tempdir")
+    }
+
+    fn copy_tree_files_for_test(src_dir: &Path, dst_dir: &Path) -> io::Result<()> {
+        fs::create_dir_all(dst_dir)?;
+        for entry in fs::read_dir(src_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let dest = dst_dir.join(entry.file_name());
+            if path.is_dir() {
+                copy_tree_files_for_test(&path, &dest)?;
+            } else {
+                fs::copy(&path, &dest)?;
+            }
+        }
+        Ok(())
     }
 
     fn fixture_root() -> PathBuf {
@@ -1241,8 +1288,11 @@ mod tests {
                     }
                 }
                 "copy_user_skill" => {
-                    copy_tree_files(&source_root().join("solstone/talent/solstone"), &path)
-                        .expect("copy user skill setup");
+                    copy_tree_files_for_test(
+                        &source_root().join("solstone/talent/solstone"),
+                        &path,
+                    )
+                    .expect("copy user skill setup");
                 }
                 "project_links" => {
                     let agent = op.get("agent").and_then(Value::as_str).unwrap_or("all");
@@ -1330,6 +1380,17 @@ mod tests {
             fs::create_dir_all(&cwd).expect("create cwd");
             values.insert("${HOME}".to_string(), home.display().to_string());
             values.insert("${CWD}".to_string(), cwd.display().to_string());
+            let is_user_install = vector["mode"].as_str() == Some("user")
+                && vector["argv"]
+                    .as_array()
+                    .and_then(|a| a.get(1))
+                    .and_then(Value::as_str)
+                    == Some("install");
+            if is_user_install {
+                for agent in [".claude", ".codex", ".gemini"] {
+                    let _ = fs::create_dir_all(home.join(agent));
+                }
+            }
             setup_vector(
                 vector["setup"].as_array().expect("setup should be array"),
                 &values,
@@ -1383,6 +1444,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let temp = unique_temp("mode");
         let home = temp.path().join("home");
+        fs::create_dir_all(home.join(".claude")).expect("create .claude");
         let context = RuntimeContext {
             home: home.clone(),
             cwd: temp.path().to_path_buf(),
@@ -1412,6 +1474,7 @@ mod tests {
         use std::os::unix::fs::MetadataExt;
         let temp = unique_temp("user-idempotent");
         let home = temp.path().join("home");
+        fs::create_dir_all(home.join(".claude")).expect("create .claude");
         let context = RuntimeContext {
             home: home.clone(),
             cwd: temp.path().to_path_buf(),
@@ -1548,6 +1611,9 @@ mod tests {
     fn row_order_matches_python_contract() {
         let temp = unique_temp("row-order");
         let home = temp.path().join("home");
+        fs::create_dir_all(home.join(".claude")).expect("create .claude");
+        fs::create_dir_all(home.join(".codex")).expect("create .codex");
+        fs::create_dir_all(home.join(".gemini")).expect("create .gemini");
         let context = RuntimeContext {
             home: home.clone(),
             cwd: temp.path().to_path_buf(),
@@ -1685,5 +1751,333 @@ mod tests {
                     .as_deref()
                     .is_some_and(|reason| reason.contains("does not match the retired sol skill"))
         }));
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn explicit_agent_claude_absent_root_skips() {
+        let temp = unique_temp("claude-absent");
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).expect("create home");
+        let context = RuntimeContext {
+            home: home.clone(),
+            cwd: temp.path().to_path_buf(),
+            project_root: source_root(),
+        };
+        let command = parse_command(&[
+            OsString::from("install"),
+            OsString::from("--agent"),
+            OsString::from("claude"),
+        ])
+        .expect("parse install");
+        let output = run_with_context(command, &context);
+        assert_eq!(output.exit, 0);
+        let claude_root = home.join(".claude");
+        assert!(!claude_root.exists());
+        assert!(
+            output
+                .stdout
+                .contains(&format!("config dir absent at {}", claude_root.display()))
+        );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn agent_all_empty_home_skips_all_with_global_line() {
+        let temp = unique_temp("all-empty-home");
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).expect("create home");
+        let context = RuntimeContext {
+            home: home.clone(),
+            cwd: temp.path().to_path_buf(),
+            project_root: source_root(),
+        };
+        let command = parse_command(&[
+            OsString::from("install"),
+            OsString::from("--agent"),
+            OsString::from("all"),
+        ])
+        .expect("parse install");
+        let output = run_with_context(command, &context);
+        assert_eq!(output.exit, 0);
+        assert!(!home.join(".claude").exists());
+        assert!(!home.join(".codex").exists());
+        assert!(!home.join(".gemini").exists());
+        assert!(output.stdout.contains("claude"));
+        assert!(output.stdout.contains("codex"));
+        assert!(!output.stdout.contains("gemini"));
+        assert!(output.stdout.contains(GLOBAL_SKIP_MESSAGE));
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn journal_overlap_through_install_user() {
+        let temp = unique_temp("overlap");
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).expect("create home");
+
+        let journal = temp.path().join("test_journal");
+        fs::create_dir_all(&journal).expect("create journal");
+        let marker = journal.join("marker.txt");
+        fs::write(&marker, b"marker_data").expect("write marker");
+
+        let config_dir = home.join(".config/solstone");
+        fs::create_dir_all(&config_dir).expect("config dir");
+        fs::write(
+            config_dir.join("config.toml"),
+            format!("journal = \"{}\"\n", journal.display()),
+        )
+        .expect("write config.toml");
+
+        let skill_dir = source_root().join("solstone/talent/solstone");
+
+        // 1. Skill nested in the journal
+        let nested_claude = journal.join(".claude");
+        fs::create_dir_all(nested_claude.join("skills/solstone")).expect("nested claude");
+        let nested_skill_file = nested_claude.join("skills/solstone/SKILL.md");
+        fs::write(&nested_skill_file, b"old_nested_skill").expect("old skill");
+        let home_nested = temp.path().join("home_nested");
+        fs::create_dir_all(&home_nested).expect("home_nested");
+        let config_dir_nested = home_nested.join(".config/solstone");
+        fs::create_dir_all(&config_dir_nested).expect("config dir nested");
+        fs::write(
+            config_dir_nested.join("config.toml"),
+            format!("journal = \"{}\"\n", journal.display()),
+        )
+        .expect("write config.toml");
+        create_symlink(&nested_claude, &home_nested.join(".claude"))
+            .expect("symlink to nested claude");
+        let report = install_user(&skill_dir, &home_nested, AgentSelection::One(Agent::Claude));
+        assert_eq!(report.error_count(), 1);
+        assert_eq!(
+            fs::read(&nested_skill_file).expect("read old"),
+            b"old_nested_skill"
+        );
+        assert_eq!(fs::read(&marker).expect("marker"), b"marker_data");
+
+        // 2. Journal nested in skill
+        let home_j_in_skill = temp.path().join("home_j_in_skill");
+        fs::create_dir_all(home_j_in_skill.join(".claude/skills/solstone/inner_journal"))
+            .expect("inner journal");
+        let inner_j = home_j_in_skill.join(".claude/skills/solstone/inner_journal");
+        let inner_marker = inner_j.join("marker.txt");
+        fs::write(&inner_marker, b"inner_marker").expect("inner marker");
+        let config_dir_inner = home_j_in_skill.join(".config/solstone");
+        fs::create_dir_all(&config_dir_inner).expect("config dir inner");
+        fs::write(
+            config_dir_inner.join("config.toml"),
+            format!("journal = \"{}\"\n", inner_j.display()),
+        )
+        .expect("write config.toml");
+        let report = install_user(
+            &skill_dir,
+            &home_j_in_skill,
+            AgentSelection::One(Agent::Claude),
+        );
+        assert_eq!(report.error_count(), 1);
+        assert_eq!(
+            fs::read(&inner_marker).expect("inner marker"),
+            b"inner_marker"
+        );
+
+        // 3. Same directory: journal is exactly the skill target
+        let home_same = temp.path().join("home_same");
+        let same_target = home_same.join(".claude/skills/solstone");
+        fs::create_dir_all(&same_target).expect("same target");
+        let same_marker = same_target.join("marker.txt");
+        fs::write(&same_marker, b"same_marker").expect("same marker");
+        let config_dir_same = home_same.join(".config/solstone");
+        fs::create_dir_all(&config_dir_same).expect("config dir same");
+        fs::write(
+            config_dir_same.join("config.toml"),
+            format!("journal = \"{}\"\n", same_target.display()),
+        )
+        .expect("write config.toml");
+        let report = install_user(&skill_dir, &home_same, AgentSelection::One(Agent::Claude));
+        assert_eq!(report.error_count(), 1);
+        assert_eq!(fs::read(&same_marker).expect("same marker"), b"same_marker");
+
+        // 4. Symlink alias: skill target is a symlink pointing to journal
+        let home_alias = temp.path().join("home_alias");
+        fs::create_dir_all(home_alias.join(".claude/skills")).expect("claude skills");
+        create_symlink(&journal, &home_alias.join(".claude/skills/solstone"))
+            .expect("symlink to journal");
+        let config_dir_alias = home_alias.join(".config/solstone");
+        fs::create_dir_all(&config_dir_alias).expect("config dir alias");
+        fs::write(
+            config_dir_alias.join("config.toml"),
+            format!("journal = \"{}\"\n", journal.display()),
+        )
+        .expect("write config.toml");
+        let report = install_user(&skill_dir, &home_alias, AgentSelection::One(Agent::Claude));
+        assert_eq!(report.error_count(), 1);
+        assert_eq!(fs::read(&marker).expect("marker"), b"marker_data");
+
+        // 5. Not-yet-created skills/solstone whose parent config root is a symlink into journal
+        let home_sym_root = temp.path().join("home_sym_root");
+        fs::create_dir_all(&home_sym_root).expect("home_sym_root");
+        let target_in_journal = journal.join("symlink_target_dir");
+        fs::create_dir_all(&target_in_journal).expect("target in journal");
+        create_symlink(&target_in_journal, &home_sym_root.join(".claude"))
+            .expect("symlink config root");
+        let config_dir_sym_root = home_sym_root.join(".config/solstone");
+        fs::create_dir_all(&config_dir_sym_root).expect("config dir sym root");
+        fs::write(
+            config_dir_sym_root.join("config.toml"),
+            format!("journal = \"{}\"\n", journal.display()),
+        )
+        .expect("write config.toml");
+        let report = install_user(
+            &skill_dir,
+            &home_sym_root,
+            AgentSelection::One(Agent::Claude),
+        );
+        assert_eq!(report.error_count(), 1);
+        assert!(!target_in_journal.join("skills").exists());
+        assert_eq!(fs::read(&marker).expect("marker"), b"marker_data");
+
+        // 6. Legitimate skill outside the journal
+        let home_legit = temp.path().join("home_legit");
+        fs::create_dir_all(home_legit.join(".codex")).expect("codex dir");
+        let config_dir_legit = home_legit.join(".config/solstone");
+        fs::create_dir_all(&config_dir_legit).expect("config dir legit");
+        fs::write(
+            config_dir_legit.join("config.toml"),
+            format!("journal = \"{}\"\n", journal.display()),
+        )
+        .expect("write config.toml");
+        let report = install_user(&skill_dir, &home_legit, AgentSelection::One(Agent::Codex));
+        assert_eq!(report.error_count(), 0);
+        assert!(home_legit.join(".codex/skills/solstone/SKILL.md").is_file());
+        assert_eq!(fs::read(&marker).expect("marker"), b"marker_data");
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn unknown_census_through_install_user() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = unique_temp("unknown-census");
+        let home = temp.path().join("home");
+        fs::create_dir_all(home.join(".claude/skills/solstone")).expect("create skill dir");
+        let skill_file = home.join(".claude/skills/solstone/SKILL.md");
+        fs::write(&skill_file, b"existing_skill_bytes").expect("write existing");
+        let owner = solstone_core_installation_identity::OwnerBase::at_home(
+            home.clone(),
+            solstone_core_installation_identity::PlatformTag::current(),
+        )
+        .expect("owner");
+        fs::create_dir_all(owner.path()).expect("create owner dir");
+
+        struct ModeRestorer(PathBuf);
+        impl Drop for ModeRestorer {
+            fn drop(&mut self) {
+                let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+            }
+        }
+        let _restorer = ModeRestorer(owner.path());
+        fs::set_permissions(owner.path(), fs::Permissions::from_mode(0o000)).expect("chmod 000");
+
+        let skill_dir = source_root().join("solstone/talent/solstone");
+        let report = install_user(&skill_dir, &home, AgentSelection::One(Agent::Claude));
+        assert_eq!(report.error_count(), 1);
+        assert_eq!(
+            fs::read(&skill_file).expect("read existing"),
+            b"existing_skill_bytes"
+        );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "subprocess helper"]
+    fn admission_child_helper() {
+        if std::env::var("SOLSTONE_ADMISSION_CHILD_ROLE").as_deref() != Ok("helper") {
+            return;
+        }
+        let exit = crate::run(
+            "solstone",
+            vec![
+                OsString::from("skills"),
+                OsString::from("install"),
+                OsString::from("--agent"),
+                OsString::from("all"),
+            ],
+        );
+        std::process::exit(if exit == std::process::ExitCode::SUCCESS {
+            0
+        } else {
+            1
+        });
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn admission_holds_lock_and_child_fails_overlap() {
+        use solstone_core_installation_identity::{
+            ArtifactBindingEvidence, JournalToken, LegacyManifestEvidence, OwnerBase, PlatformTag,
+            RootToken, SetupAdmissionRequest, admit_setup,
+        };
+        let temp = unique_temp("admission-test");
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).expect("create home");
+        let journal = home.join(".claude");
+        fs::create_dir_all(&journal).expect("create journal");
+        let marker = journal.join("marker.txt");
+        fs::write(&marker, b"marker_data").expect("write marker");
+
+        let owner = OwnerBase::at_home(home.clone(), PlatformTag::Linux).expect("owner");
+        let root_token = RootToken::from_raw_absolute(b"/mock/root".to_vec()).expect("root token");
+        let journal_token =
+            JournalToken::from_raw_absolute(journal.as_os_str().as_encoded_bytes().to_vec())
+                .expect("journal token");
+        let request = SetupAdmissionRequest {
+            owner,
+            root_token,
+            journal_token,
+            journal_is_explicit: true,
+            accept_prepared_retarget: false,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        };
+        let admission = admit_setup(request).expect("admit setup");
+
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test exe"))
+            .args([
+                "--exact",
+                "skills::tests::admission_child_helper",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("SOLSTONE_ADMISSION_CHILD_ROLE", "helper")
+            .env("HOME", &home)
+            .env("SOLSTONE_JOURNAL", &journal)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::inherit())
+            .spawn()
+            .expect("spawn child");
+
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(10);
+        let mut status = None;
+        while start.elapsed() < timeout {
+            if let Some(s) = child.try_wait().expect("try wait") {
+                status = Some(s);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        if status.is_none() {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("child timed out");
+        }
+        let status = status.expect("child status");
+        assert_eq!(status.code(), Some(1));
+        drop(admission);
+
+        assert_eq!(fs::read(&marker).expect("marker read"), b"marker_data");
+        assert!(!home.join(".claude/skills/solstone").exists());
     }
 }

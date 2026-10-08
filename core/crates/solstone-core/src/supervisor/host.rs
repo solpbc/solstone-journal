@@ -297,6 +297,13 @@ pub async fn run_hosted(
         Ok(binding) => binding,
         Err(reason) => return SupervisorHostOutcome::Refused { reason },
     };
+    #[cfg(unix)]
+    if let Some(home_val) = std::env::var_os("HOME") {
+        let home_path = PathBuf::from(home_val);
+        if home_path.is_absolute() {
+            solstone_core_user_skill::refresh_installed_user_skills(&home_path, journal);
+        }
+    }
     let journal_binary = match runtime::preflight_journal_binary() {
         Ok(binary) => binary,
         Err(error) => {

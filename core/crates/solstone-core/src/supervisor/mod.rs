@@ -13,6 +13,9 @@ mod shutdown;
 #[cfg(test)]
 mod test_support;
 mod tick;
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(unix)]
+mod user_skill_refresh;
 
 pub use host::{
     ALREADY_RUNNING_COPY, InstallationBindingRefusal, LifecycleBootError, ShutdownCause,

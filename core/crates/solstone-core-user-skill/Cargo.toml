@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-user-skill"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+default = []
+test-hooks = []
+full-tests = ["test-hooks"]
+
+[dependencies]
+log.workspace = true
+solstone-core-installation-identity.workspace = true
+solstone-core-journal.workspace = true
+solstone-core-skill-state.workspace = true
+
+[lints]
+workspace = true

@@ -13,7 +13,7 @@ autotests = false
 unsafe_code = "deny"
 
 [features]
-full-tests = ["solstone-core-chatgpt-auth/test-hooks", "solstone-core-indexer-store/test-hooks"]
+full-tests = ["solstone-core-chatgpt-auth/test-hooks", "solstone-core-indexer-store/test-hooks", "solstone-core-user-skill/test-hooks"]
 test-hooks = ["solstone-core-system/test-hooks", "solstone-core-local/test-hooks"]
 journal-mcp-endpoint = ["dep:solstone-core-mcp-endpoint"]
 
@@ -178,6 +178,7 @@ solstone-core-spp-ratls.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
+solstone-core-user-skill.workspace = true
 getrandom.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-think-cli.workspace = true
@@ -228,6 +229,7 @@ spl-core.workspace = true
 tempfile = "3.24.0"
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["handshake"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
+solstone-core-skill-state.workspace = true
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dev-dependencies]

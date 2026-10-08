@@ -3517,6 +3517,7 @@ dependencies = [
  "solstone-core-sense",
  "solstone-core-service-unit",
  "solstone-core-setup",
+ "solstone-core-skill-state",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
@@ -3530,6 +3531,7 @@ dependencies = [
  "solstone-core-thinking",
  "solstone-core-top",
  "solstone-core-transcribe",
+ "solstone-core-user-skill",
  "solstone-core-win-owner-rail",
  "spl-core",
  "tempfile",
@@ -5260,12 +5262,14 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-about",
  "solstone-core-cli-boundary",
+ "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-cli",
  "solstone-core-skill-state",
  "solstone-core-sol-client",
  "solstone-core-sol-client-cli",
  "solstone-core-sol-link",
+ "solstone-core-user-skill",
  "tempfile",
  "velopack",
 ]
@@ -5852,6 +5856,16 @@ dependencies = [
  "tokio",
  "tower",
  "zip 2.4.2",
+]
+
+[[package]]
+name = "solstone-core-user-skill"
+version = "2.0.35"
+dependencies = [
+ "log",
+ "solstone-core-installation-identity",
+ "solstone-core-journal",
+ "solstone-core-skill-state",
 ]
 
 [[package]]

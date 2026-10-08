@@ -1305,8 +1305,9 @@ areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-sol-bin"
@@ -1648,6 +1649,18 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = false
 runtime = "none"
+
+[[package_suites]]
+id = "package::solstone-core-user-skill"
+package = "solstone-core-user-skill"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-vad-analyze"

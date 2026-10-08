@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+full-tests = []
+
 [dependencies]
 solstone-core-about.workspace = true
 serde_json = { workspace = true }
@@ -15,6 +18,7 @@ solstone-core-journal = { workspace = true }
 solstone-core-sol-client = { workspace = true }
 solstone-core-sol-client-cli = { workspace = true }
 solstone-core-skill-state = { workspace = true }
+solstone-core-user-skill = { workspace = true }
 env_logger.workspace = true
 solstone-core-journal-cli = { workspace = true }
 
@@ -29,6 +33,7 @@ velopack.workspace = true
 
 [dev-dependencies]
 log.workspace = true
+solstone-core-installation-identity = { workspace = true }
 tempfile = "3.24.0"
 
 [lints]

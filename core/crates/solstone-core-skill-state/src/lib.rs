@@ -2,9 +2,13 @@
 // Copyright (c) 2026 sol pbc
 
 //! Read-only inspection of source-checkout router-skill links.
+//!
+//! It also compares user-skill directory trees, still read-only.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 
 pub const ROUTER_SKILL_NAMES: [&str; 2] = ["solstone", "journal"];
@@ -231,6 +235,80 @@ fn lexical_parts(path: &Path) -> (bool, Vec<OsString>) {
     (rooted, parts)
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum SkillTreeEntry {
+    Directory,
+    File(Vec<u8>),
+}
+
+fn collect_skill_tree(root: &Path) -> io::Result<BTreeMap<PathBuf, SkillTreeEntry>> {
+    let root_meta = fs::symlink_metadata(root)?;
+    if root_meta.file_type().is_symlink() || !root_meta.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "root is not an ordinary directory",
+        ));
+    }
+    let mut map = BTreeMap::new();
+    collect_skill_tree_inner(root, Path::new(""), &mut map)?;
+    Ok(map)
+}
+
+fn collect_skill_tree_inner(
+    root: &Path,
+    rel: &Path,
+    map: &mut BTreeMap<PathBuf, SkillTreeEntry>,
+) -> io::Result<()> {
+    let current_dir = if rel.as_os_str().is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(rel)
+    };
+    for entry in fs::read_dir(current_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path)?;
+        let file_type = metadata.file_type();
+        if file_type.is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "symlinks are not permitted in user skill trees",
+            ));
+        }
+        let child_rel = if rel.as_os_str().is_empty() {
+            PathBuf::from(entry.file_name())
+        } else {
+            rel.join(entry.file_name())
+        };
+        if file_type.is_dir() {
+            map.insert(child_rel.clone(), SkillTreeEntry::Directory);
+            collect_skill_tree_inner(root, &child_rel, map)?;
+        } else if file_type.is_file() {
+            let bytes = fs::read(&path)?;
+            map.insert(child_rel, SkillTreeEntry::File(bytes));
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "special files are not permitted in user skill trees",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Compare two ordinary user-skill directory trees without following symlinks.
+///
+/// Both walks must succeed without encountering symlinks or special files.
+/// Those entries are errors, so a refresh or install leaves them in place.
+/// Directories, including empty ones, and regular-file bytes are compared.
+///
+/// Uninstall ownership stays on [`user_skill_copy_matches`].
+pub fn user_skill_ordinary_copy_matches(left: &Path, right: &Path) -> io::Result<bool> {
+    let left_tree = collect_skill_tree(left)?;
+    let right_tree = collect_skill_tree(right)?;
+    Ok(left_tree == right_tree)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,6 +354,84 @@ mod tests {
         );
         assert!(target.starts_with("../../.."), "{target}");
         assert!(target.ends_with("solstone/talent/journal"), "{target}");
+    }
+
+    #[test]
+    fn user_skill_ordinary_copy_matches_reports_true_for_identical_trees() {
+        let temp =
+            std::env::temp_dir().join(format!("skill-matches-identical-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        let left = temp.join("left");
+        let right = temp.join("right");
+        fs::create_dir_all(left.join("sub")).unwrap();
+        fs::create_dir_all(right.join("sub")).unwrap();
+        fs::write(left.join("SKILL.md"), b"content").unwrap();
+        fs::write(right.join("SKILL.md"), b"content").unwrap();
+        fs::write(left.join("sub/doc.txt"), b"doc").unwrap();
+        fs::write(right.join("sub/doc.txt"), b"doc").unwrap();
+
+        assert_eq!(
+            user_skill_ordinary_copy_matches(&left, &right).unwrap(),
+            true
+        );
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn user_skill_ordinary_copy_matches_reports_false_for_byte_difference() {
+        let temp =
+            std::env::temp_dir().join(format!("skill-matches-diff-bytes-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        let left = temp.join("left");
+        let right = temp.join("right");
+        fs::create_dir_all(&left).unwrap();
+        fs::create_dir_all(&right).unwrap();
+        fs::write(left.join("SKILL.md"), b"content a").unwrap();
+        fs::write(right.join("SKILL.md"), b"content b").unwrap();
+
+        assert_eq!(
+            user_skill_ordinary_copy_matches(&left, &right).unwrap(),
+            false
+        );
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn user_skill_ordinary_copy_matches_reports_false_for_extra_empty_directory() {
+        let temp =
+            std::env::temp_dir().join(format!("skill-matches-extra-dir-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        let left = temp.join("left");
+        let right = temp.join("right");
+        fs::create_dir_all(left.join("empty")).unwrap();
+        fs::create_dir_all(&right).unwrap();
+        fs::write(left.join("SKILL.md"), b"content").unwrap();
+        fs::write(right.join("SKILL.md"), b"content").unwrap();
+
+        assert_eq!(
+            user_skill_ordinary_copy_matches(&left, &right).unwrap(),
+            false
+        );
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn user_skill_ordinary_copy_matches_reports_err_for_internal_symlink() {
+        let temp =
+            std::env::temp_dir().join(format!("skill-matches-symlink-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        let left = temp.join("left");
+        let right = temp.join("right");
+        fs::create_dir_all(&left).unwrap();
+        fs::create_dir_all(&right).unwrap();
+        fs::write(left.join("SKILL.md"), b"content").unwrap();
+        fs::write(right.join("SKILL.md"), b"content").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("target", left.join("link")).unwrap();
+
+        #[cfg(unix)]
+        assert!(user_skill_ordinary_copy_matches(&left, &right).is_err());
+        fs::remove_dir_all(temp).unwrap();
     }
 }
 

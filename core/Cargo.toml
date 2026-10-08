@@ -57,6 +57,7 @@ members = [
     "crates/solstone-core-segment",
     "crates/solstone-core-sol",
     "crates/solstone-core-skill-state",
+    "crates/solstone-core-user-skill",
     "crates/solstone-core-sol-bin",
     "crates/solstone-core-cli-boundary",
     "crates/solstone-core-sol-client",
@@ -216,6 +217,7 @@ solstone-core-segment = { path = "crates/solstone-core-segment" }
 solstone-core-sol = { path = "crates/solstone-core-sol" }
 solstone-core-sol-client = { path = "crates/solstone-core-sol-client" }
 solstone-core-skill-state = { path = "crates/solstone-core-skill-state" }
+solstone-core-user-skill = { path = "crates/solstone-core-user-skill" }
 solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
 solstone-core-sol-link = { path = "crates/solstone-core-sol-link", default-features = false }
 solstone-core-mcp-endpoint = { path = "crates/solstone-core-mcp-endpoint" }
