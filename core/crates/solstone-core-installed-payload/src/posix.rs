@@ -1164,7 +1164,7 @@ mod tests {
         seal(root, COMPILED_VERSION, TARGET_LINUX_X86_64);
         let locked = root.join("lib/solstone-demo/model.bin");
         let mut permissions = fs::metadata(&locked).expect("meta").permissions();
-        permissions.set_mode(0);
+        permissions.set_mode(0o000);
         fs::set_permissions(&locked, permissions).expect("mode");
         let result = admit(root, COMPILED_VERSION, TARGET_LINUX_X86_64);
         if nix::unistd::Uid::effective().is_root() {
