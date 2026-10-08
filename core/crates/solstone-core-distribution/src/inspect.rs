@@ -20,7 +20,7 @@ pub const RETENTION_WINDOW: usize = 3;
 /// Invariant: must never exceed the BOOTSTRAP_REVISION of the installer live
 /// at https://solstone.app/install.sh at promotion time
 /// (core/distribution/install.sh's BOOTSTRAP_REVISION is the counterpart).
-pub const MIN_BOOTSTRAP_REVISION: u32 = 2;
+pub const MIN_BOOTSTRAP_REVISION: u32 = 3;
 /// The contract version governing bootstrap script delivery and role options.
 pub const BOOTSTRAP_CONTRACT_VERSION: u32 = 2;
 /// Earliest state reader version supported by this release family.

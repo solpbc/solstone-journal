@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Refuse undeclared or unsafe archive payloads in a staged macOS tree.
+//! Refuse undeclared or unsafe archive payloads in a staged tree.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -42,6 +42,7 @@ pub struct ValidatedArchiveSlot {
     pub staged_path: String,
     pub slot: ArchiveSlot,
     pub records: Vec<FileRecord>,
+    pub native_members: Vec<(String, Vec<u8>)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +64,7 @@ pub(crate) struct ValidatedGzipMember {
 pub(crate) struct ValidatedGzipArchive {
     pub members: Vec<ValidatedGzipMember>,
     pub records: Vec<FileRecord>,
+    pub native_members: Vec<(String, Vec<u8>)>,
 }
 
 /// Census every staged file that declares a recognized archive signature.
@@ -73,6 +75,7 @@ pub(crate) struct ValidatedGzipArchive {
 pub fn validate_staged_archives(
     stage: &Path,
     inventory: &Inventory,
+    checkout: &Path,
 ) -> Result<Vec<ValidatedArchiveSlot>, ArchiveCensusError> {
     let mut validated = Vec::new();
     for record in staged_records(stage).map_err(|error| {
@@ -113,10 +116,47 @@ pub fn validate_staged_archives(
             )));
         }
         let validated_archive = validate_gzip_archive(&record.dest, &bytes, slot)?;
+        if slot.inspect_only {
+            for executable in &slot.executables {
+                let member = validated_archive
+                    .members
+                    .iter()
+                    .find(|m| m.path == executable.path)
+                    .ok_or_else(|| {
+                        ArchiveCensusError::new(format!(
+                            "missing declared executable in {}: {}",
+                            record.dest, executable.path
+                        ))
+                    })?;
+                let actual_digest = crate::digest::sha256_hex(&member.bytes);
+                let source_path = checkout.join(&executable.digest_source);
+                let source = fs::read_to_string(&source_path).map_err(|error| {
+                    ArchiveCensusError::new(format!(
+                        "read archive executable digest source {}: {error}",
+                        source_path.display()
+                    ))
+                })?;
+                let expected_digest =
+                    crate::inventory::digest_const_hex(&source, &executable.digest_const)
+                        .ok_or_else(|| {
+                            ArchiveCensusError::new(format!(
+                                "missing required:\n  digest {}",
+                                executable.digest_const
+                            ))
+                        })?;
+                if actual_digest != expected_digest {
+                    return Err(ArchiveCensusError::new(format!(
+                        "digest mismatch in {} for {}: expected {expected_digest}, got {actual_digest}",
+                        record.dest, executable.path
+                    )));
+                }
+            }
+        }
         validated.push(ValidatedArchiveSlot {
             staged_path: record.dest,
             slot: slot.clone(),
             records: validated_archive.records,
+            native_members: validated_archive.native_members,
         });
     }
     Ok(validated)
@@ -149,6 +189,7 @@ pub(crate) fn validate_gzip_archive(
     let mut member_paths = BTreeSet::new();
     let mut member_collision_keys = BTreeSet::new();
     let mut macho_paths = BTreeSet::new();
+    let mut elf_paths = BTreeSet::new();
     let mut members = Vec::new();
     for entry in archive.entries().map_err(|error| {
         ArchiveCensusError::new(format!("enumerate gzip archive {staged_path}: {error}"))
@@ -199,8 +240,11 @@ pub(crate) fn validate_gzip_archive(
             })?;
         }
         let is_macho = kind.is_file() && looks_like_macho(&bytes);
+        let is_elf = kind.is_file() && bytes.starts_with(b"\x7fELF");
+        let is_executable = if slot.inspect_only { is_elf } else { is_macho };
+
         if !member_paths.insert(member_path.to_owned()) {
-            let label = if is_macho {
+            let label = if is_executable {
                 "duplicate executable name"
             } else {
                 "duplicate archive member path"
@@ -211,7 +255,7 @@ pub(crate) fn validate_gzip_archive(
         }
         let collision_key = member_path.to_lowercase();
         if !member_collision_keys.insert(collision_key) {
-            let label = if is_macho {
+            let label = if is_executable {
                 "duplicate executable name"
             } else {
                 "case-or-Unicode-colliding archive member path"
@@ -245,7 +289,17 @@ pub(crate) fn validate_gzip_archive(
                 "unsupported archive member in {staged_path}: {member_path}"
             )));
         }
+        if slot.inspect_only && is_macho {
+            return Err(ArchiveCensusError::new(format!(
+                "unexpected Mach-O in {staged_path}: {member_path}"
+            )));
+        }
         if is_macho && !macho_paths.insert(member_path.to_owned()) {
+            return Err(ArchiveCensusError::new(format!(
+                "duplicate executable name in {staged_path}: {member_path}"
+            )));
+        }
+        if is_elf && !elf_paths.insert(member_path.to_owned()) {
             return Err(ArchiveCensusError::new(format!(
                 "duplicate executable name in {staged_path}: {member_path}"
             )));
@@ -264,29 +318,67 @@ pub(crate) fn validate_gzip_archive(
         .iter()
         .map(|executable| executable.path.as_str())
         .collect::<BTreeSet<_>>();
-    let observed = macho_paths
-        .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
-    let missing = expected.difference(&observed).copied().collect::<Vec<_>>();
-    let unexpected = observed.difference(&expected).copied().collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err(ArchiveCensusError::new(format!(
-            "missing declared executable in {staged_path}: {}",
-            missing.join(", ")
-        )));
-    }
-    if !unexpected.is_empty() {
-        return Err(ArchiveCensusError::new(format!(
-            "unexpected second Mach-O in {staged_path}: {}",
-            unexpected.join(", ")
-        )));
-    }
+
+    let native_members = if slot.inspect_only {
+        let observed = elf_paths
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let missing = expected.difference(&observed).copied().collect::<Vec<_>>();
+        let unexpected = observed.difference(&expected).copied().collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(ArchiveCensusError::new(format!(
+                "missing declared ELF in {staged_path}: {}",
+                missing.join(", ")
+            )));
+        }
+        if !unexpected.is_empty() {
+            return Err(ArchiveCensusError::new(format!(
+                "unexpected ELF in {staged_path}: {}",
+                unexpected.join(", ")
+            )));
+        }
+
+        members
+            .iter()
+            .filter(|m| elf_paths.contains(&m.path))
+            .map(|m| (m.path.clone(), m.bytes.clone()))
+            .collect()
+    } else {
+        let observed = macho_paths
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let missing = expected.difference(&observed).copied().collect::<Vec<_>>();
+        let unexpected = observed.difference(&expected).copied().collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(ArchiveCensusError::new(format!(
+                "missing declared executable in {staged_path}: {}",
+                missing.join(", ")
+            )));
+        }
+        if !unexpected.is_empty() {
+            return Err(ArchiveCensusError::new(format!(
+                "unexpected second Mach-O in {staged_path}: {}",
+                unexpected.join(", ")
+            )));
+        }
+
+        members
+            .iter()
+            .filter(|m| m.macho)
+            .map(|m| (m.path.clone(), m.bytes.clone()))
+            .collect()
+    };
 
     let records = tar_records(compressed).map_err(|error| {
         ArchiveCensusError::new(format!("record gzip archive {staged_path}: {error}"))
     })?;
-    Ok(ValidatedGzipArchive { members, records })
+    Ok(ValidatedGzipArchive {
+        members,
+        records,
+        native_members,
+    })
 }
 
 #[cfg(test)]
@@ -447,8 +539,8 @@ targets = ["macos-arm64"]
             dest,
             &fs::read(repository.join(source)).expect("RF-DETR"),
         );
-        let validated =
-            validate_staged_archives(temporary.path(), &inventory).expect("valid archive");
+        let validated = validate_staged_archives(temporary.path(), &inventory, &repository)
+            .expect("valid archive");
         assert_eq!(validated.len(), 1);
         assert_eq!(validated[0].slot.id, "rfdetr-macos-metal-arm64");
     }
@@ -468,8 +560,8 @@ targets = ["macos-arm64"]
             "lib/fixture/second.tar.gz",
             &gzip_tar(&[(synthetic_path, EntryType::Regular, &macho())]),
         );
-        let validated =
-            validate_staged_archives(temporary.path(), &inventory).expect("valid archive");
+        let validated = validate_staged_archives(temporary.path(), &inventory, temporary.path())
+            .expect("valid archive");
         assert_eq!(validated[0].slot.id, "synthetic-second-archive");
     }
 
@@ -481,9 +573,10 @@ targets = ["macos-arm64"]
             ARCHIVE_DEST,
             &gzip_tar(&[(EXECUTABLE_PATH, EntryType::Regular, &macho())]),
         );
-        let error = validate_staged_archives(temporary.path(), &fixture_inventory(""))
-            .expect_err("undeclared archive is refused")
-            .to_string();
+        let error =
+            validate_staged_archives(temporary.path(), &fixture_inventory(""), temporary.path())
+                .expect_err("undeclared archive is refused")
+                .to_string();
         assert!(error.contains("undeclared recognized archive"), "{error}");
     }
 
@@ -510,7 +603,7 @@ targets = ["macos-arm64"]
             ARCHIVE_DEST,
             &gzip_tar(&[(EXECUTABLE_PATH, EntryType::Regular, &macho())]),
         );
-        let error = validate_staged_archives(temporary.path(), &inventory)
+        let error = validate_staged_archives(temporary.path(), &inventory, temporary.path())
             .expect_err("duplicate slots are refused")
             .to_string();
         assert!(error.contains("duplicate slot"), "{error}");
@@ -530,7 +623,7 @@ targets = ["macos-arm64"]
             ARCHIVE_DEST,
             &gzip_tar(&[(EXECUTABLE_PATH, EntryType::Regular, &macho())]),
         );
-        let error = validate_staged_archives(temporary.path(), &inventory)
+        let error = validate_staged_archives(temporary.path(), &inventory, temporary.path())
             .expect_err("mismatched container is refused")
             .to_string();
         assert!(error.contains("unsupported declared encoding"), "{error}");
@@ -552,7 +645,7 @@ targets = ["macos-arm64"]
             let inventory = fixture_inventory(&slot_entry(SLOT_ID, ARCHIVE_DEST, kind, &[]));
             let temporary = TempDir::new().expect("temporary stage");
             stage_archive(&temporary, ARCHIVE_DEST, &bytes);
-            let error = validate_staged_archives(temporary.path(), &inventory)
+            let error = validate_staged_archives(temporary.path(), &inventory, temporary.path())
                 .expect_err("non-gzip container is refused")
                 .to_string();
             assert!(error.contains("unsupported declared encoding"), "{error}");
@@ -573,7 +666,7 @@ targets = ["macos-arm64"]
             ARCHIVE_DEST,
             &gzip_tar(&[("fixture/bin/other-cli", EntryType::Regular, &macho())]),
         );
-        let error = validate_staged_archives(temporary.path(), &inventory)
+        let error = validate_staged_archives(temporary.path(), &inventory, temporary.path())
             .expect_err("missing member is refused")
             .to_string();
         assert!(error.contains("missing declared executable"), "{error}");
@@ -587,7 +680,7 @@ targets = ["macos-arm64"]
                 ("fixture/bin/second-cli", EntryType::Regular, &macho()),
             ]),
         );
-        let error = validate_staged_archives(temporary.path(), &inventory)
+        let error = validate_staged_archives(temporary.path(), &inventory, temporary.path())
             .expect_err("unexpected member is refused")
             .to_string();
         assert!(error.contains("unexpected second Mach-O"), "{error}");
@@ -623,7 +716,7 @@ targets = ["macos-arm64"]
                 .map(|(path, kind, bytes)| (*path, *kind, bytes.as_slice()))
                 .collect::<Vec<_>>();
             stage_archive(&temporary, ARCHIVE_DEST, &gzip_tar(&borrowed));
-            let error = validate_staged_archives(temporary.path(), &inventory)
+            let error = validate_staged_archives(temporary.path(), &inventory, temporary.path())
                 .expect_err("unsafe member is refused")
                 .to_string();
             assert!(error.contains(expected), "{error}");
@@ -635,10 +728,176 @@ targets = ["macos-arm64"]
             ARCHIVE_DEST,
             &gzip_tar_with_path("../escape", &macho()),
         );
-        let error = validate_staged_archives(temporary.path(), &inventory)
+        let error = validate_staged_archives(temporary.path(), &inventory, temporary.path())
             .expect_err("path escape is refused")
             .to_string();
         assert!(error.contains("archive member path escape"), "{error}");
+    }
+
+    #[test]
+    fn inspect_only_slot_reports_exact_elf_member_and_refuses_extra_and_digest_mismatch() {
+        let temp = TempDir::new().expect("tempdir");
+        let dest = "lib/fixture/archive.tar.gz";
+        let member_path = "fixture/bin/tool";
+        let elf_bytes = b"\x7fELFfixturebytes";
+        let digest = crate::digest::sha256_hex(elf_bytes);
+
+        // Write a digest source file
+        let digest_src = "fixtures/consts.rs";
+        let digest_src_path = temp.path().join(digest_src);
+        fs::create_dir_all(digest_src_path.parent().unwrap()).unwrap();
+        fs::write(
+            &digest_src_path,
+            format!("pub const TOOL_SHA256: &str = \"{digest}\";\n"),
+        )
+        .unwrap();
+
+        let make_inv = |execs: &[&str], digest_name: &str| {
+            let exec_entries = execs
+                .iter()
+                .map(|p| {
+                    format!(
+                        "{{ path = \"{p}\", digest_const = \"{digest_name}\", digest_source = \"{digest_src}\" }}"
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            fixture_inventory(&format!(
+                r#"
+[[entry]]
+kind = "model-asset"
+source = "fixture.tar.gz"
+dest = "{dest}"
+mode = 0o644
+digest_const = "FIXTURE_ARCHIVE_SHA256"
+digest_source = "{digest_src}"
+archive_slot = {{ id = "elf-slot", target = "macos-arm64", container = "gzip-tar", inspect_only = true, executables = [{exec_entries}] }}
+targets = ["macos-arm64"]
+"#
+            ))
+        };
+
+        // 1. Success case: reports exactly the declared ELF member
+        let inv_ok = make_inv(&[member_path], "TOOL_SHA256");
+        let archive_bytes = gzip_tar(&[(member_path, EntryType::Regular, elf_bytes)]);
+        stage_archive(&temp, dest, &archive_bytes);
+        let validated =
+            validate_staged_archives(temp.path(), &inv_ok, temp.path()).expect("census succeeds");
+        assert_eq!(validated.len(), 1);
+        assert_eq!(validated[0].native_members.len(), 1);
+        assert_eq!(validated[0].native_members[0].0, member_path);
+        assert_eq!(validated[0].native_members[0].1, elf_bytes);
+
+        // 2. Extra ELF member fails, naming archive and member
+        let extra_archive = gzip_tar(&[
+            (member_path, EntryType::Regular, elf_bytes),
+            ("fixture/bin/extra", EntryType::Regular, b"\x7fELFextra"),
+        ]);
+        stage_archive(&temp, dest, &extra_archive);
+        let err_extra = validate_staged_archives(temp.path(), &inv_ok, temp.path())
+            .expect_err("extra ELF member must fail")
+            .to_string();
+        assert!(err_extra.contains(dest), "{err_extra}");
+        assert!(err_extra.contains("fixture/bin/extra"), "{err_extra}");
+        assert!(err_extra.contains("ELF"), "{err_extra}");
+
+        // Mach-O member in inspect-only slot fails, naming archive, member, and Mach-O
+        let macho_bytes = macho();
+        let macho_archive = gzip_tar(&[
+            (member_path, EntryType::Regular, elf_bytes),
+            ("fixture/bin/macho_tool", EntryType::Regular, &macho_bytes),
+        ]);
+        stage_archive(&temp, dest, &macho_archive);
+        let err_macho = validate_staged_archives(temp.path(), &inv_ok, temp.path())
+            .expect_err("Mach-O member in inspect-only must fail")
+            .to_string();
+        assert!(err_macho.contains(dest), "{err_macho}");
+        assert!(err_macho.contains("fixture/bin/macho_tool"), "{err_macho}");
+        assert!(err_macho.contains("Mach-O"), "{err_macho}");
+
+        // 3. Digest mismatch fails, naming archive and member
+        fs::write(
+            &digest_src_path,
+            "pub const TOOL_SHA256: &str = \"0000000000000000000000000000000000000000000000000000000000000000\";\n",
+        )
+        .unwrap();
+        stage_archive(&temp, dest, &archive_bytes);
+        let err_mismatch = validate_staged_archives(temp.path(), &inv_ok, temp.path())
+            .expect_err("digest mismatch must fail")
+            .to_string();
+        assert!(err_mismatch.contains(dest), "{err_mismatch}");
+        assert!(err_mismatch.contains(member_path), "{err_mismatch}");
+    }
+
+    #[test]
+    fn real_rfdetr_linux_tarballs_admit_and_match_consts() {
+        let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let inventory_path = repository.join("core/distribution/inventory.toml");
+        let inventory = crate::inventory::load_inventory(&inventory_path).expect("inventory");
+
+        let cases = [
+            (
+                "linux-x86_64",
+                "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
+                "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
+                "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64/rfdetr-cli",
+                "RFDETR_ENGINE_LINUX_CPU_X64_TARBALL_SHA256",
+                crate::elf::machine_x86_64(),
+            ),
+            (
+                "linux-aarch64",
+                "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz",
+                "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz",
+                "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64/rfdetr-cli",
+                "RFDETR_ENGINE_LINUX_CPU_ARM64_TARBALL_SHA256",
+                crate::elf::machine_aarch64(),
+            ),
+        ];
+
+        let install_rs = fs::read_to_string(
+            repository.join("core/crates/solstone-core-local/src/install/rfdetr_install.rs"),
+        )
+        .expect("read rfdetr_install.rs");
+
+        for (_target_id, source_rel, dest_rel, member_rel, tarball_const, expected_machine) in cases
+        {
+            let tarball_bytes = fs::read(repository.join(source_rel)).expect("read tarball");
+            let actual_tarball_sha = crate::digest::sha256_hex(&tarball_bytes);
+            let expected_tarball_sha =
+                crate::inventory::digest_const_hex(&install_rs, tarball_const)
+                    .expect("find tarball sha256 const");
+            assert_eq!(
+                actual_tarball_sha, expected_tarball_sha,
+                "tarball sha256 must match {tarball_const}"
+            );
+
+            let temp = TempDir::new().expect("tempdir");
+            stage_archive(&temp, dest_rel, &tarball_bytes);
+            let validated = validate_staged_archives(temp.path(), &inventory, &repository)
+                .expect("census real tarball");
+            assert_eq!(validated.len(), 1);
+            let slot = &validated[0];
+            assert_eq!(slot.native_members.len(), 1);
+            assert_eq!(slot.native_members[0].0, member_rel);
+
+            let member_bytes = &slot.native_members[0].1;
+            let pkg_rel_dir = std::path::Path::new(member_rel)
+                .parent()
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let staged_files: &[(&str, &[u8])] = &[(dest_rel, &tarball_bytes)];
+
+            crate::elf::admit_elf(
+                dest_rel,
+                member_bytes,
+                expected_machine,
+                pkg_rel_dir,
+                Some((dest_rel, member_rel)),
+                staged_files,
+            )
+            .expect("admit_elf on nested member succeeds");
+        }
     }
 
     fn gzip_tar_with_path(path: &str, bytes: &[u8]) -> Vec<u8> {

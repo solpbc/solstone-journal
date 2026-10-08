@@ -21,13 +21,7 @@ For an archive installation, run the linux `solstone` commands below through tha
 
 ### Prerequisites
 
-The journal ships as one self-contained tree. It needs no interpreter and no package manager of its own. The `.deb` and `.rpm` declare the OpenMP runtime used by the default local Parakeet transcription provider. For the archive route on linux, install it yourself if `solstone journal doctor` names it:
-
-```bash
-sudo apt install libgomp1      # Ubuntu/Debian
-sudo dnf install libgomp       # Fedora/RHEL
-sudo pacman -S libgomp         # Arch
-```
+The journal needs glibc 2.34 or newer and the GCC 11 C++ runtime, for example Ubuntu 22.04, Debian 12, RHEL 9, or Fedora 35 or later. Local transcription additionally needs the GCC 12 C++ runtime (Ubuntu 22.04, Debian 12, Fedora 37 or later; not RHEL 9).
 
 ## Install the journal on linux
 
@@ -172,7 +166,7 @@ This runs the setup readiness doctor battery and sets up your selected journal (
 
 Let your human know: **open http://localhost:5015 in a browser**. The first-run wizard walks them through setting their identity and choosing a provider.
 
-⚠ **The tree carries the binaries the journal needs to run, not the transcription stack.** The Parakeet transcription helper and its model are fetched during setup, by `solstone journal install-models`. `solstone journal doctor --readiness` runs the actual binary before reporting it ready, and on linux it gives the exact package-manager command when the system OpenMP runtime listed in prerequisites is missing.
+⚠ **The tree carries the binaries the journal needs to run, not the transcription stack.** The Parakeet transcription helper and its model are fetched during setup, by `solstone journal install-models`. `solstone journal doctor --readiness` runs the actual binary before reporting it ready, and on linux it gives the exact package-manager command when the system OpenMP runtime is missing.
 
 `solstone journal doctor` reports whether the transcription runtime, the native speaker-analysis helper, and the models they need are ready.
 

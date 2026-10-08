@@ -120,6 +120,9 @@ fn seal_declared_archives_inner(
         else {
             continue;
         };
+        if slot.inspect_only {
+            continue;
+        }
         if slot.target != target_id {
             continue;
         }
@@ -612,7 +615,8 @@ targets = ["macos-arm64"]
         let staged = TempDir::new().expect("temporary stage");
         write_staged_file(staged.path(), &archive.staged_dest, &archive.bytes)
             .expect("stage sealed");
-        validate_staged_archives(staged.path(), &inventory).expect("sealed archive census");
+        validate_staged_archives(staged.path(), &inventory, &checkout)
+            .expect("sealed archive census");
 
         let prebuild = PrebuildInputIdentity::from_sealed_archives(
             "macos-arm64",
