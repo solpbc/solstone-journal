@@ -912,6 +912,16 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
 /// signal against the forking thread, so one dedicated thread forks and reaps.
 #[cfg(not(windows))]
 fn launch_local_installer(journal: &Path) -> Result<(), String> {
+    launch_provider_installer(journal, "local")
+}
+
+#[cfg(target_os = "linux")]
+fn launch_parakeet_installer(journal: &Path) -> Result<(), String> {
+    launch_provider_installer(journal, "parakeet")
+}
+
+#[cfg(not(windows))]
+fn launch_provider_installer(journal: &Path, provider: &'static str) -> Result<(), String> {
     use solstone_core_system::process::{
         Disposition, ManagedLaunchRequest, SpawnOptions, launch_managed_request,
     };
@@ -925,11 +935,11 @@ fn launch_local_installer(journal: &Path) -> Result<(), String> {
         command: vec![
             binary.to_string_lossy().into_owned(),
             "install-provider".into(),
-            "local".into(),
+            provider.into(),
         ],
         options: SpawnOptions {
             journal_root: journal.to_owned(),
-            reference: "local-install".into(),
+            reference: format!("{provider}-install"),
             day: None,
             sink: None,
             // This supervisor is the running journal the installer would otherwise
@@ -939,7 +949,7 @@ fn launch_local_installer(journal: &Path) -> Result<(), String> {
     };
     let (started, outcome) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
-        .name("local-install".into())
+        .name(format!("{provider}-install"))
         .spawn(move || {
             match launch_managed_request(
                 Disposition::IndependentBoundedHelper {
@@ -1936,12 +1946,15 @@ pub(crate) async fn boot_and_tick(
     //     state is re-observed on the tick like Local's.
     //
     // ⚠ STILL NARROWER THAN PYTHON, and deliberately — see the module header on
-    // `provider_runtime::parakeet_truth_seam`. It does not yet inspect
-    // manifests, proof state, install progress, or binary host eligibility, and
-    // the `decide_parakeet_auto_placement` / `is_local_provider_needed`
-    // co-location branch remains follow-up work. Those
-    // gaps degrade placement quality; they do not leave the provider unmanaged,
-    // which is the distinction that gated the cutover.
+    // `provider_runtime::parakeet_truth_seam`. Linux presence-follows the
+    // current CPU server, Vulkan server, and model manifests for a journal
+    // that already installed a Parakeet model, and starts `install-provider
+    // parakeet` when a pin is missing or mismatched. This tick still does not
+    // hash artifact bytes, probe the binary, or run
+    // `decide_parakeet_auto_placement` / `is_local_provider_needed`
+    // co-location. It reads install status and the lease only to decide
+    // whether to start the installer. Those remaining gaps degrade placement
+    // quality; they do not leave the provider unmanaged.
     let parakeet_fixture = std::env::var(PARAKEET_FIXTURE_ENV).as_deref() == Ok("1");
     let parakeet_truth = if parakeet_fixture {
         ParakeetTruthSeam::with_config(
@@ -1954,7 +1967,10 @@ pub(crate) async fn boot_and_tick(
             },
         )
     } else {
-        ParakeetTruthSeam::new(parakeet_shared.clone(), journal.clone())
+        let seam = ParakeetTruthSeam::new(parakeet_shared.clone(), journal.clone());
+        #[cfg(target_os = "linux")]
+        let seam = seam.with_installer(Arc::new(launch_parakeet_installer));
+        seam
     };
     let parakeet = ParakeetProvider {
         coordinator: ProviderRuntimeCoordinator::new(),

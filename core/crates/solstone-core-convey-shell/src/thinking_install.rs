@@ -27,15 +27,15 @@ use solstone_core_system::process::{
 mod windows;
 
 static ADMISSION: Mutex<()> = Mutex::new(());
+#[cfg(any(windows, test))]
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(5);
 const STOP_TIMEOUT: Duration = Duration::from_secs(2);
-// Windows verifies the installed signed payload and probes Vulkan before the
-// installer publishes its lease-backed status. That startup work can exceed
-// the short registry/control deadline; it does not extend cancellation cleanup.
-#[cfg(windows)]
+// Before the installer publishes its lease-backed status it checks what is
+// already installed: on every platform that hashes an installed model of
+// several gigabytes (5-9 s on ordinary hardware), and Windows also verifies its
+// signed payload and probes Vulkan. That startup work exceeds the short
+// registry/control deadline; it does not extend cancellation cleanup.
 const INSTALLER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
-#[cfg(not(windows))]
-const INSTALLER_STARTUP_TIMEOUT: Duration = ADMISSION_TIMEOUT;
 
 pub(crate) fn start(journal: &Path, model: &str) -> Result<Value, String> {
     admit(journal, model, false)

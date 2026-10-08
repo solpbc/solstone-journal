@@ -7,7 +7,7 @@
 //! Windows verifies the signed package payload and invokes the bounded helper.
 
 use std::collections::BTreeMap;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -64,12 +64,7 @@ pub struct VulkanWindowsLaunchSpec {
 /// Derive the containing package root for an executable in `<root>/bin/`.
 #[allow(clippy::result_unit_err)]
 pub fn package_root_from_executable(executable: &Path) -> Result<PathBuf, ()> {
-    let bin = executable.parent().ok_or(())?;
-    if bin.file_name() != Some(OsStr::new("bin")) {
-        return Err(());
-    }
-    let root = bin.parent().ok_or(())?;
-    Ok(root.to_path_buf())
+    solstone_core_installed_payload::bin_parent_root(executable).ok_or(())
 }
 
 /// Resolve and verify the Vulkan helper and loader from the signed package containing `executable`.

@@ -93,7 +93,7 @@ Attribution: parakeet.cpp project (mudler).
 
 Source:
 
-- linux release binaries: https://github.com/mudler/parakeet.cpp/releases/tag/v0.5.0
+- linux release binaries: https://github.com/mudler/parakeet.cpp/releases/tag/v0.6.1
 - windows build: sol pbc builds v0.5.0 from source with one patch
   (`core/distribution/parakeet-windows-patches/`). It statically links ggml
   (MIT, https://github.com/ggml-org/ggml), whose license ships with the package.
@@ -104,18 +104,21 @@ License notice: MIT.
 The MIT license permits sol pbc's redistribution of this server binary and its
 windows build.
 
-The linux v0.5.0 archives have notice sidecars beside the downloads:
+The linux v0.6.1 archives have notice sidecars beside the downloads:
 
-- [parakeet-v0.5.0-bin-linux-cpu-arm64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-arm64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-arm64.tar.gz.THIRD_PARTY_NOTICES.md)
-- [parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz.THIRD_PARTY_NOTICES.md)
-- [parakeet-v0.5.0-bin-linux-vulkan-arm64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-arm64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-arm64.tar.gz.THIRD_PARTY_NOTICES.md)
-- [parakeet-v0.5.0-bin-linux-vulkan-x64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-x64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-x64.tar.gz.THIRD_PARTY_NOTICES.md)
+- [parakeet-v0.6.1-bin-linux-cpu-arm64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-cpu-arm64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-cpu-arm64.tar.gz.THIRD_PARTY_NOTICES.md)
+- [parakeet-v0.6.1-bin-linux-cpu-x64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-cpu-x64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-cpu-x64.tar.gz.THIRD_PARTY_NOTICES.md)
+- [parakeet-v0.6.1-bin-linux-vulkan-arm64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-arm64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-arm64.tar.gz.THIRD_PARTY_NOTICES.md)
+- [parakeet-v0.6.1-bin-linux-vulkan-x64.tar.gz](https://updates.solstone.app/assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-x64.tar.gz) · [full notices](https://updates.solstone.app/assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-x64.tar.gz.THIRD_PARTY_NOTICES.md)
 
 windows packages built from this source place the YaRN and cpp-httplib blocks at `share/licenses/parakeet/YaRN-LICENSE.txt` and `share/licenses/parakeet/cpp-httplib-LICENSE.txt` beside the parakeet.cpp and ggml licence files. The full text for each component follows.
 
 ## parakeet.cpp (linux CLI and server; windows server)
 
-Source: https://github.com/mudler/parakeet.cpp/blob/1bfbebfaaf493866f49597cd3b7901959d395c60/LICENSE
+Sources:
+
+- linux: https://github.com/mudler/parakeet.cpp/blob/5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f/LICENSE
+- windows: https://github.com/mudler/parakeet.cpp/blob/1bfbebfaaf493866f49597cd3b7901959d395c60/LICENSE
 
 ```text
 MIT License
@@ -254,7 +257,63 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### parakeet TDT 0.6B v3 GGUF model
+## ced.cpp (linux CLI and server)
+
+Source: https://github.com/localai-org/ced.cpp/blob/736a4ee46a31d4ff38b41add65ce0f2cf1aaa05f/LICENSE
+
+```text
+MIT License
+
+Copyright (c) 2026 the ced.cpp authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## voice-detect.cpp (linux CLI)
+
+Source: https://github.com/localai-org/voice-detect.cpp/blob/bca46bcbc2fe68169c2d7c414e9b290a7cb89911/LICENSE
+
+```text
+MIT License
+
+Copyright (c) 2026 the voice-detect.cpp authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## parakeet TDT 0.6B v3 GGUF model
 
 Attribution: parakeet-cpp-gguf (mudler), NVIDIA NeMo Parakeet TDT 0.6B v3.
 

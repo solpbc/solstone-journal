@@ -541,6 +541,36 @@ fn guard_current_vulkan_keys_pinned_by_their_releases_and_head() {
 }
 
 #[test]
+fn guard_sol6_nvattest_keys_pinned_by_their_releases_and_head() {
+    // These are the release-bound keys, independent of the snapshot under test.
+    // Deriving them from that snapshot would let a stale row erase its own witness.
+    let head = crate::pins::head_origin_pins().unwrap();
+    let history = historical_origin_pins().unwrap();
+    for target in ["linux-aarch64", "linux-x86_64", "macos-arm64"] {
+        for suffix in ["tar.xz", "manifest.json"] {
+            let key = format!("providers/nvattest/libnvat-{target}-1.2.2-sol.6-archive.{suffix}");
+            let mut owners = history
+                .iter()
+                .filter(|(_, pins)| pins.iter().any(|pin| pin.origin_key == key))
+                .map(|(version, _)| PinOwner::Release(version.clone()))
+                .collect::<Vec<_>>();
+            assert!(!owners.is_empty(), "expected release owners for {key}");
+            assert!(
+                owners.contains(&PinOwner::Release("2.0.37".to_owned())),
+                "2.0.37 must retain its sol.6 nvattest key: {key}"
+            );
+            if head.iter().any(|pin| pin.origin_key == key) {
+                owners.push(PinOwner::HeadUnreleased);
+            }
+            assert_eq!(
+                assess_prune_with_current_support(&key).unwrap(),
+                PruneAssessment::PinnedBy { owners }
+            );
+        }
+    }
+}
+
+#[test]
 fn guard_unknown_is_not_convertible_to_permission() {
     let unknown: Result<(), GuardError> = require_prunable("assets/mlx-model/unknown");
     assert!(matches!(unknown, Err(GuardError::Refused { .. })));

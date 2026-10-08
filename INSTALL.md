@@ -281,7 +281,13 @@ The solstone app is separate. Run `solstone-linux uninstall-service` before remo
 
 ## Uninstall on windows
 
-Setup requires your journal to be outside the program installation folder, normally `%LOCALAPPDATA%\SolstoneJournal`. Settings deletes that folder, including any journal placed inside it. If an older installation has your journal there, quit the journal app and run `solstone journal service stop`. If setup previously completed, run `solstone journal service uninstall` and wait for it to succeed before moving the journal. This removes its old background registration so setup can use the moved folder. Move the whole journal folder outside the program folder, then select it in setup before uninstalling: `solstone journal setup --accept-existing-journal --journal "D:\journal"`, replacing `D:\journal` with its new location. Keep the moved folder; uninstall does not delete it.
+Setup requires your journal to be outside the program installation folder, normally `%LOCALAPPDATA%\SolstoneJournal`. Reinstalling with Setup or uninstalling through Settings deletes that folder, including any journal placed inside it. If an older installation has your journal there, move it before reinstalling or uninstalling:
+
+1. Quit the journal app. If setup previously completed, run `solstone journal service stop`, then `solstone journal service uninstall` and wait for it to succeed. This removes its old background registration so setup can use the moved folder.
+2. Move the whole journal folder outside the program folder.
+3. Select the moved journal with `solstone journal setup --accept-existing-journal --journal "D:\journal"`, replacing `D:\journal` with its new location. Always name that location: otherwise setup can fall back to `~/journal` and create a fresh journal while your history stays in the moved folder.
+
+Keep the moved folder. Once it is outside the program folder, these reinstall and uninstall routes leave it in place. An ordinary in-app update replaces only the program's `current` folder; rerunning Setup replaces the whole program folder.
 
 Open Settings → Apps → Installed apps, find **journal**, and choose Uninstall. Settings removes the program. When the recorded installation can be verified and its cleanup succeeds, that cleanup also removes the background task, sign-in resume entry and command PATH entries. For the last installation, it removes the journal-location config, task profiles, app preferences, mark icon and WebView data outside your journal. WebView data stays if that folder contains your journal. If cleanup refuses or fails, some outside state can remain.
 

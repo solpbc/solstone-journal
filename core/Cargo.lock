@@ -4099,6 +4099,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-artifact-download",
  "solstone-core-ffmpeg-build-support",
+ "solstone-core-installed-payload",
  "solstone-core-journal-io",
  "tar",
  "tempfile",
@@ -4633,6 +4634,19 @@ dependencies = [
  "getrandom 0.3.4",
  "nix",
  "sha2 0.10.9",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "solstone-core-installed-payload"
+version = "2.0.37"
+dependencies = [
+ "minisign",
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
  "windows-sys 0.61.2",
 ]
 
@@ -5567,6 +5581,7 @@ dependencies = [
  "solstone-core-indexer",
  "solstone-core-indexer-store",
  "solstone-core-installation-identity",
+ "solstone-core-installed-payload",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",

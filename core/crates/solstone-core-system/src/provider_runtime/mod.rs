@@ -10,6 +10,7 @@ mod launch;
 mod local_follow;
 mod model;
 mod parakeet;
+mod parakeet_follow;
 mod parakeet_truth;
 mod parakeet_truth_seam;
 mod placement;

@@ -1475,6 +1475,7 @@ async fn rejected_pair_window_registration_leaves_no_open_window() -> Result<(),
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
 async fn rotated_service_token_is_presented_on_the_next_listen() -> Result<(), String> {
     timeout(Duration::from_secs(8), async {
         static NEXT_TEMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

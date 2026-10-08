@@ -3,12 +3,16 @@
 
 //! Parakeet truth observation and launch-plan staging.
 //!
-//! This is deliberately narrower than Python's readiness observation: it
-//! derives pinned paths and checks that the resolved backend binary and model
-//! are regular files, but does not yet inspect manifests, proof state, install
-//! progress, or binary host eligibility. Vulkan devices come from the packaged
-//! probe helper; `decide_parakeet_auto_placement` / `is_local_provider_needed`
-//! co-location remains follow-up work.
+//! Derives pinned paths and checks that the resolved backend binary and model
+//! are regular files. When this seam has an installer, Linux also does a
+//! presence check of the current CPU server, Vulkan server, and model
+//! manifests and, for a journal that already installed a Parakeet model, starts
+//! that installer once if a current pin is missing or mismatched. Presence
+//! checks do not hash artifact bytes or probe the binary. Vulkan devices come
+//! from the packaged probe helper; `decide_parakeet_auto_placement` /
+//! `is_local_provider_needed` co-location remains follow-up work. File checks
+//! and the CPU fallback stay the runtime-readiness decision. Starting the
+//! installer does not mark the runtime ready.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -31,11 +35,13 @@ use solstone_core_local::select_device;
 use crate::stt_backend_choice::configured_stt_backend;
 
 use super::admission::{ParakeetAdmissionInput, parakeet_stt_admission_latch};
+use super::local_follow::LocalInstallerLauncher;
 use super::model::{
     ProviderFence, ProviderName, ProviderRuntimeState, ProviderTruthObservation, ReasonCode,
     RuntimePhase,
 };
 use super::parakeet::{ParakeetLaunchConfig, ParakeetPlacement, ParakeetRuntimeShared};
+use super::parakeet_follow::ParakeetFollow;
 use super::parakeet_truth::{
     admission_blocked_observation, admission_not_desired_observation, parakeet_platform_can_host,
     platform_cannot_host_not_desired,
@@ -60,6 +66,7 @@ pub struct ParakeetTruthConfig {
 pub struct ParakeetTruthSeam {
     shared: Arc<ParakeetRuntimeShared>,
     config: ParakeetTruthConfig,
+    follow: Option<Arc<ParakeetFollow>>,
 }
 
 struct ResolvedParakeetPaths {
@@ -113,7 +120,17 @@ impl ParakeetTruthSeam {
     }
 
     pub fn with_config(shared: Arc<ParakeetRuntimeShared>, config: ParakeetTruthConfig) -> Self {
-        Self { shared, config }
+        Self {
+            shared,
+            config,
+            follow: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_installer(mut self, launcher: LocalInstallerLauncher) -> Self {
+        self.follow = Some(Arc::new(ParakeetFollow::new(launcher)));
+        self
     }
 }
 
@@ -126,9 +143,10 @@ impl TruthObservationSeam for ParakeetTruthSeam {
     fn dispatch_truth(&mut self, _: &ProviderRuntimeState, fence: &ProviderFence) {
         let shared = Arc::clone(&self.shared);
         let config = self.config.clone();
+        let follow = self.follow.clone();
         let fence = fence.clone();
         thread::spawn(move || {
-            let outcome = observe_parakeet_truth(&shared, &config);
+            let outcome = observe_parakeet_truth(&shared, &config, follow.as_deref());
             shared.record_truth_result(&fence, outcome);
         });
     }
@@ -197,6 +215,7 @@ fn physical_core_count_from_cpuinfo(cpuinfo: &str) -> Option<u32> {
 fn observe_parakeet_truth(
     shared: &ParakeetRuntimeShared,
     config: &ParakeetTruthConfig,
+    follow: Option<&ParakeetFollow>,
 ) -> ProviderTruthObservation {
     if !parakeet_platform_can_host(&config.platform, &config.machine) {
         return platform_cannot_host_not_desired(&config.platform);
@@ -246,7 +265,10 @@ fn observe_parakeet_truth(
     }
 
     #[cfg(windows)]
-    return observe_windows_parakeet_truth(shared, config, &latch);
+    {
+        let _ = follow;
+        return observe_windows_parakeet_truth(shared, config, &latch);
+    }
 
     #[cfg(not(windows))]
     {
@@ -254,10 +276,34 @@ fn observe_parakeet_truth(
         else {
             return platform_cannot_host_not_desired(&config.platform);
         };
+
+        let follow_decision = follow.map(|f| f.observe(&config.journal_path, &artifact_key));
+        let attach_pin_follow = |mut obs: ProviderTruthObservation| {
+            if let Some(decision) = &follow_decision {
+                let follow_str = match decision {
+                    super::parakeet_follow::ParakeetFollowDecision::Launch => "launch",
+                    super::parakeet_follow::ParakeetFollowDecision::Hold(reason) => reason.as_str(),
+                };
+                let mut detail_map = obs
+                    .detail
+                    .and_then(|v| match v {
+                        Value::Object(map) => Some(map),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                detail_map.insert(
+                    "pin_follow".to_owned(),
+                    Value::String(follow_str.to_owned()),
+                );
+                obs.detail = Some(Value::Object(detail_map));
+            }
+            obs
+        };
+
         let Some((fingerprint_json, fingerprint_sha256)) =
             parakeet_target_fingerprint(&config.journal_path, &artifact_key)
         else {
-            return unavailable_observation("truth-observation-failed");
+            return attach_pin_follow(unavailable_observation("truth-observation-failed"));
         };
         let (config_device, invalid_device) = configured_parakeet_device(&transcribe);
         if let Some(value) = invalid_device {
@@ -285,14 +331,17 @@ fn observe_parakeet_truth(
             }
         }
         let Some(paths) = paths else {
-            return unavailable_observation("truth-observation-failed");
+            return attach_pin_follow(unavailable_observation("truth-observation-failed"));
         };
         match regular_files_exist(&paths.binary_path, &paths.model_path) {
             Ok(true) => {}
             Ok(false) => {
-                return artifact_missing_observation(&fingerprint_json, &fingerprint_sha256);
+                return attach_pin_follow(artifact_missing_observation(
+                    &fingerprint_json,
+                    &fingerprint_sha256,
+                ));
             }
-            Err(_) => return unavailable_observation("record-unavailable"),
+            Err(_) => return attach_pin_follow(unavailable_observation("record-unavailable")),
         }
 
         let launch = build_parakeet_launch_config(
@@ -311,10 +360,10 @@ fn observe_parakeet_truth(
         let Some((after_json, after_sha256)) =
             parakeet_target_fingerprint(&config.journal_path, &artifact_key)
         else {
-            return unavailable_observation("truth-observation-failed");
+            return attach_pin_follow(unavailable_observation("truth-observation-failed"));
         };
         if after_sha256 != fingerprint_sha256 {
-            return ProviderTruthObservation {
+            return attach_pin_follow(ProviderTruthObservation {
                 provider: ProviderName::Parakeet,
                 phase: RuntimePhase::StateUnavailable,
                 reason_code: Some(ReasonCode::known("observation-raced")),
@@ -322,9 +371,9 @@ fn observe_parakeet_truth(
                 has_plan: false,
                 boot_required: true,
                 detail: Some(json!({"before": fingerprint_sha256, "after": after_sha256})),
-            };
+            });
         }
-        ProviderTruthObservation {
+        attach_pin_follow(ProviderTruthObservation {
             provider: ProviderName::Parakeet,
             phase: RuntimePhase::Starting,
             reason_code: Some(ReasonCode::known("launch-requested")),
@@ -337,7 +386,7 @@ fn observe_parakeet_truth(
                 "stt_admission_latch": latch.to_json(),
                 "target_fingerprint_json": after_json,
             })),
-        }
+        })
     }
 }
 
@@ -925,5 +974,585 @@ mod tests {
         assert_eq!(vulkan_called, 0);
         assert!(seam.config.vulkan_devices.is_empty());
         assert_eq!(windows_parakeet_placement(), ("cpu", "cpu"));
+    }
+}
+
+#[cfg(all(test, feature = "full-tests", not(windows)))]
+mod composition_tests {
+    use super::*;
+    use solstone_core_local::install::manifest::{
+        artifact_manifest_path, build_manifest, write_manifest,
+    };
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    fn setup_journal_with_config(device_auto: bool) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = dir.path().join("config");
+        std::fs::create_dir_all(&config_dir).expect("create config dir");
+        let config_val = if device_auto {
+            json!({
+                "transcribe": {
+                    "backend": "parakeet",
+                    "parakeet-cpp": {
+                        "device": "auto"
+                    }
+                }
+            })
+        } else {
+            json!({
+                "transcribe": {
+                    "backend": "parakeet"
+                }
+            })
+        };
+        std::fs::write(
+            config_dir.join("journal.json"),
+            serde_json::to_vec(&config_val).expect("serialize config"),
+        )
+        .expect("write journal.json");
+        dir
+    }
+
+    fn write_manifest_and_member(
+        manifest_dir: &Path,
+        unit: &str,
+        pin_identity: Value,
+        member_name: &str,
+        content: &[u8],
+    ) {
+        std::fs::create_dir_all(manifest_dir).expect("manifest dir");
+        let member_file = manifest_dir.join(member_name);
+        std::fs::write(&member_file, content).expect("write member");
+
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(content);
+        let sha256_hex = format!("{:02x}", hasher.finalize());
+
+        let inventory = vec![json!({
+            "relative_path": member_name,
+            "role": "binary",
+            "size": content.len() as u64,
+            "sha256": sha256_hex,
+        })];
+
+        let manifest_val = build_manifest(
+            "parakeet",
+            unit,
+            "test-fingerprint",
+            json!({"pin_identity": pin_identity}),
+            inventory,
+            None,
+            None,
+        )
+        .expect("build manifest");
+
+        write_manifest(&artifact_manifest_path(manifest_dir), &manifest_val)
+            .expect("write manifest");
+    }
+
+    fn write_old_revision_opt_in(journal: &Path) {
+        let (repo, ..) = pins::PARAKEET_MODEL;
+        let old_rev_dir = pins::parakeet_cache_root(journal)
+            .join("models")
+            .join(repo.replace('/', "__"))
+            .join("old-revision-not-current");
+        std::fs::create_dir_all(&old_rev_dir).expect("create old rev dir");
+        let manifest_path = artifact_manifest_path(&old_rev_dir);
+        std::fs::write(
+            manifest_path,
+            json!({
+                "schema_version": 1,
+                "provider": "parakeet",
+                "unit": "parakeet-model",
+                "inventory": []
+            })
+            .to_string(),
+        )
+        .expect("write opt-in manifest");
+    }
+
+    #[test]
+    fn case_a_opt_in_only_repeated_dispatch_single_launch_then_backoff() {
+        let dir = setup_journal_with_config(false);
+        let journal = dir.path();
+        write_old_revision_opt_in(journal);
+
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let called = Arc::new(AtomicU32::new(0));
+        let called_clone = called.clone();
+
+        let mut seam = ParakeetTruthSeam::with_config(
+            shared.clone(),
+            ParakeetTruthConfig {
+                journal_path: journal.to_path_buf(),
+                platform: "linux".to_owned(),
+                machine: "x86_64".to_owned(),
+                vulkan_devices: Vec::new(),
+            },
+        )
+        .with_installer(Arc::new(move |_| {
+            called_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        let state = ProviderRuntimeState::new(ProviderName::Parakeet);
+        let fence1 = ProviderFence {
+            incarnation: "inc".to_owned(),
+            generation: 1,
+            fingerprint: None,
+            attempt: 1,
+        };
+        seam.dispatch_truth(&state, &fence1);
+        let obs1 = shared.wait_for_truth_result(&fence1);
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+        assert_eq!(obs1.phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            obs1.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("artifact-missing")
+        );
+        assert_eq!(
+            obs1.detail
+                .as_ref()
+                .and_then(|d| d.get("pin_follow"))
+                .and_then(Value::as_str),
+            Some("launch")
+        );
+
+        let fence2 = ProviderFence {
+            incarnation: "inc".to_owned(),
+            generation: 1,
+            fingerprint: None,
+            attempt: 2,
+        };
+        seam.dispatch_truth(&state, &fence2);
+        let obs2 = shared.wait_for_truth_result(&fence2);
+        assert_eq!(obs2.phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            obs2.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("artifact-missing")
+        );
+        assert_eq!(
+            obs2.detail
+                .as_ref()
+                .and_then(|d| d.get("pin_follow"))
+                .and_then(Value::as_str),
+            Some("backoff")
+        );
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn case_b_runtime_ready_model_absent_then_present() {
+        let dir = setup_journal_with_config(false);
+        let journal = dir.path();
+        write_old_revision_opt_in(journal);
+
+        let key = "x86_64-unknown-linux-gnu";
+        let paths = pins::parakeet_paths(journal, key);
+        let cpu_binary_path = PathBuf::from(paths["binary_path_cpu"].as_str().unwrap());
+        let vulkan_binary_path = PathBuf::from(paths["binary_path_vulkan"].as_str().unwrap());
+        let model_path = PathBuf::from(paths["model_path"].as_str().unwrap());
+
+        let (_, _, _, cpu_bin_name) = pins::parakeet_backend_pin(key, "cpu").unwrap();
+        let (_, _, _, vulkan_bin_name) = pins::parakeet_backend_pin(key, "vulkan").unwrap();
+
+        write_manifest_and_member(
+            cpu_binary_path.parent().unwrap(),
+            "parakeet-server",
+            pins::parakeet_backend_identity(key, "cpu").unwrap(),
+            cpu_bin_name,
+            b"cpu binary bytes",
+        );
+        write_manifest_and_member(
+            vulkan_binary_path.parent().unwrap(),
+            "parakeet-server",
+            pins::parakeet_backend_identity(key, "vulkan").unwrap(),
+            vulkan_bin_name,
+            b"vulkan binary bytes",
+        );
+
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let called = Arc::new(AtomicU32::new(0));
+        let called_clone = called.clone();
+
+        let mut seam = ParakeetTruthSeam::with_config(
+            shared.clone(),
+            ParakeetTruthConfig {
+                journal_path: journal.to_path_buf(),
+                platform: "linux".to_owned(),
+                machine: "x86_64".to_owned(),
+                vulkan_devices: Vec::new(),
+            },
+        )
+        .with_installer(Arc::new(move |_| {
+            called_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        let state = ProviderRuntimeState::new(ProviderName::Parakeet);
+        let fence1 = ProviderFence {
+            incarnation: "inc".to_owned(),
+            generation: 1,
+            fingerprint: None,
+            attempt: 1,
+        };
+        seam.dispatch_truth(&state, &fence1);
+        let obs1 = shared.wait_for_truth_result(&fence1);
+        assert_eq!(obs1.phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            obs1.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("artifact-missing")
+        );
+        assert_eq!(
+            obs1.detail
+                .as_ref()
+                .and_then(|d| d.get("pin_follow"))
+                .and_then(Value::as_str),
+            Some("launch")
+        );
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+
+        // Write only model file at model_path (no current model manifest)
+        std::fs::create_dir_all(model_path.parent().unwrap()).expect("create model dir");
+        std::fs::write(&model_path, b"model file bytes").expect("write model file");
+
+        let fence2 = ProviderFence {
+            incarnation: "inc".to_owned(),
+            generation: 1,
+            fingerprint: None,
+            attempt: 2,
+        };
+        seam.dispatch_truth(&state, &fence2);
+        let obs2 = shared.wait_for_truth_result(&fence2);
+        assert_eq!(obs2.phase, RuntimePhase::Starting);
+        assert_eq!(
+            obs2.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-requested")
+        );
+        assert!(obs2.has_plan);
+        assert_eq!(
+            obs2.detail
+                .as_ref()
+                .and_then(|d| d.get("placement"))
+                .and_then(Value::as_str),
+            Some("cpu")
+        );
+        assert_eq!(
+            obs2.detail
+                .as_ref()
+                .and_then(|d| d.get("pin_follow"))
+                .and_then(Value::as_str),
+            Some("backoff")
+        );
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn case_c_cpu_and_model_ready_vulkan_absent_device_auto() {
+        let dir = setup_journal_with_config(true);
+        let journal = dir.path();
+        write_old_revision_opt_in(journal);
+
+        let key = "x86_64-unknown-linux-gnu";
+        let paths = pins::parakeet_paths(journal, key);
+        let cpu_binary_path = PathBuf::from(paths["binary_path_cpu"].as_str().unwrap());
+
+        let (_, _, _, cpu_bin_name) = pins::parakeet_backend_pin(key, "cpu").unwrap();
+        let (repo, filename, revision, ..) = pins::PARAKEET_MODEL;
+
+        write_manifest_and_member(
+            cpu_binary_path.parent().unwrap(),
+            "parakeet-server",
+            pins::parakeet_backend_identity(key, "cpu").unwrap(),
+            cpu_bin_name,
+            b"cpu binary bytes",
+        );
+
+        let model_dir = pins::parakeet_cache_root(journal)
+            .join("models")
+            .join(repo.replace('/', "__"))
+            .join(revision);
+        write_manifest_and_member(
+            &model_dir,
+            "parakeet-model",
+            pins::parakeet_model_identity(),
+            filename,
+            b"model bytes",
+        );
+
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let called = Arc::new(AtomicU32::new(0));
+        let called_clone = called.clone();
+
+        let mut seam = ParakeetTruthSeam::with_config(
+            shared.clone(),
+            ParakeetTruthConfig {
+                journal_path: journal.to_path_buf(),
+                platform: "linux".to_owned(),
+                machine: "x86_64".to_owned(),
+                vulkan_devices: Vec::new(),
+            },
+        )
+        .with_installer(Arc::new(move |_| {
+            called_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        let state = ProviderRuntimeState::new(ProviderName::Parakeet);
+        let fence = ProviderFence {
+            incarnation: "inc".to_owned(),
+            generation: 1,
+            fingerprint: None,
+            attempt: 1,
+        };
+        seam.dispatch_truth(&state, &fence);
+        let obs = shared.wait_for_truth_result(&fence);
+
+        assert_eq!(obs.phase, RuntimePhase::Starting);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-requested")
+        );
+        assert_eq!(
+            obs.detail
+                .as_ref()
+                .and_then(|d| d.get("placement"))
+                .and_then(Value::as_str),
+            Some("cpu")
+        );
+        assert!(obs.has_plan);
+        assert_eq!(
+            obs.detail
+                .as_ref()
+                .and_then(|d| d.get("pin_follow"))
+                .and_then(Value::as_str),
+            Some("launch")
+        );
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn case_d_malformed_and_size_mismatched_manifests() {
+        let key = "x86_64-unknown-linux-gnu";
+        let (_, _, _, cpu_bin_name) = pins::parakeet_backend_pin(key, "cpu").unwrap();
+
+        // Subcase 1: manifest is "{"
+        let dir1 = setup_journal_with_config(false);
+        let j1 = dir1.path();
+        write_old_revision_opt_in(j1);
+        let paths1 = pins::parakeet_paths(j1, key);
+        let cpu_path1 = PathBuf::from(paths1["binary_path_cpu"].as_str().unwrap());
+        let manifest_dir1 = cpu_path1.parent().unwrap();
+        std::fs::create_dir_all(manifest_dir1).expect("create dir");
+        std::fs::write(artifact_manifest_path(manifest_dir1), b"{").expect("write malformed");
+
+        let shared1 = Arc::new(ParakeetRuntimeShared::default());
+        let called1 = Arc::new(AtomicU32::new(0));
+        let called1_clone = called1.clone();
+        let mut seam1 = ParakeetTruthSeam::with_config(
+            shared1.clone(),
+            ParakeetTruthConfig {
+                journal_path: j1.to_path_buf(),
+                platform: "linux".to_owned(),
+                machine: "x86_64".to_owned(),
+                vulkan_devices: Vec::new(),
+            },
+        )
+        .with_installer(Arc::new(move |_| {
+            called1_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        let state = ProviderRuntimeState::new(ProviderName::Parakeet);
+        let fence1 = ProviderFence {
+            incarnation: "inc".to_owned(),
+            generation: 1,
+            fingerprint: None,
+            attempt: 1,
+        };
+        seam1.dispatch_truth(&state, &fence1);
+        let obs1 = shared1.wait_for_truth_result(&fence1);
+        assert_eq!(obs1.phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            obs1.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("artifact-missing")
+        );
+        assert_eq!(
+            obs1.detail
+                .as_ref()
+                .and_then(|d| d.get("pin_follow"))
+                .and_then(Value::as_str),
+            Some("manifest_malformed")
+        );
+        assert_eq!(called1.load(Ordering::SeqCst), 0);
+        assert!(!j1.join("health/providers/parakeet.json").exists());
+        assert!(!j1.join("health/providers/parakeet.lease").exists());
+
+        // Subcase 2: size mismatch
+        let dir2 = setup_journal_with_config(false);
+        let j2 = dir2.path();
+        write_old_revision_opt_in(j2);
+        let paths2 = pins::parakeet_paths(j2, key);
+        let cpu_path2 = PathBuf::from(paths2["binary_path_cpu"].as_str().unwrap());
+        let manifest_dir2 = cpu_path2.parent().unwrap();
+        std::fs::create_dir_all(manifest_dir2).expect("create dir");
+        std::fs::write(manifest_dir2.join(cpu_bin_name), b"actual bytes 12").expect("write binary");
+
+        let inventory = vec![json!({
+            "relative_path": cpu_bin_name,
+            "role": "binary",
+            "size": 99999u64, // mismatched size
+            "sha256": "fakehash",
+        })];
+        let manifest_val2 = build_manifest(
+            "parakeet",
+            "parakeet-server",
+            "test-fingerprint",
+            json!({"pin_identity": pins::parakeet_backend_identity(key, "cpu").unwrap()}),
+            inventory,
+            None,
+            None,
+        )
+        .expect("build manifest");
+        write_manifest(&artifact_manifest_path(manifest_dir2), &manifest_val2)
+            .expect("write manifest");
+
+        let shared2 = Arc::new(ParakeetRuntimeShared::default());
+        let called2 = Arc::new(AtomicU32::new(0));
+        let called2_clone = called2.clone();
+        let mut seam2 = ParakeetTruthSeam::with_config(
+            shared2.clone(),
+            ParakeetTruthConfig {
+                journal_path: j2.to_path_buf(),
+                platform: "linux".to_owned(),
+                machine: "x86_64".to_owned(),
+                vulkan_devices: Vec::new(),
+            },
+        )
+        .with_installer(Arc::new(move |_| {
+            called2_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        let fence2 = ProviderFence {
+            incarnation: "inc".to_owned(),
+            generation: 1,
+            fingerprint: None,
+            attempt: 1,
+        };
+        seam2.dispatch_truth(&state, &fence2);
+        let obs2 = shared2.wait_for_truth_result(&fence2);
+        assert_eq!(obs2.phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            obs2.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("artifact-missing")
+        );
+        assert_eq!(
+            obs2.detail
+                .as_ref()
+                .and_then(|d| d.get("pin_follow"))
+                .and_then(Value::as_str),
+            Some("inventory_size_mismatch")
+        );
+        assert_eq!(called2.load(Ordering::SeqCst), 0);
+        assert!(!j2.join("health/providers/parakeet.json").exists());
+        assert!(!j2.join("health/providers/parakeet.lease").exists());
+    }
+
+    #[test]
+    fn case_e_never_installed_and_owner_cancelled() {
+        let state = ProviderRuntimeState::new(ProviderName::Parakeet);
+
+        // Subcase 1: no model manifest (bin only)
+        let dir1 = setup_journal_with_config(false);
+        let j1 = dir1.path();
+        let bin_dir = pins::parakeet_cache_root(j1).join("bin");
+        std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+        std::fs::write(bin_dir.join("some_binary"), b"bin only").expect("write file");
+
+        let shared1 = Arc::new(ParakeetRuntimeShared::default());
+        let called1 = Arc::new(AtomicU32::new(0));
+        let called1_clone = called1.clone();
+        let mut seam1 = ParakeetTruthSeam::with_config(
+            shared1.clone(),
+            ParakeetTruthConfig {
+                journal_path: j1.to_path_buf(),
+                platform: "linux".to_owned(),
+                machine: "x86_64".to_owned(),
+                vulkan_devices: Vec::new(),
+            },
+        )
+        .with_installer(Arc::new(move |_| {
+            called1_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        let fence1 = ProviderFence {
+            incarnation: "inc".to_owned(),
+            generation: 1,
+            fingerprint: None,
+            attempt: 1,
+        };
+        seam1.dispatch_truth(&state, &fence1);
+        let obs1 = shared1.wait_for_truth_result(&fence1);
+        assert_eq!(
+            obs1.detail
+                .as_ref()
+                .and_then(|d| d.get("pin_follow"))
+                .and_then(Value::as_str),
+            Some("never-installed")
+        );
+        assert_eq!(called1.load(Ordering::SeqCst), 0);
+
+        // Subcase 2: old opt-in, missing manifests, failed + install_cancelled status
+        let dir2 = setup_journal_with_config(false);
+        let j2 = dir2.path();
+        write_old_revision_opt_in(j2);
+
+        let status_dir = j2.join("health/providers");
+        std::fs::create_dir_all(&status_dir).expect("create status dir");
+        let status_content = r#"{"schema_version":1,"provider":"parakeet","revision":1,"install_state":"failed","attempt_id":null,"target_fingerprint_json":null,"target_fingerprint_sha256":null,"started_at":null,"last_transition_at":"2026-09-01T12:00:00Z","last_progress_at":null,"completed_at":"2026-09-01T12:00:00Z","progress_bytes_received":null,"progress_bytes_total":null,"install_error":null,"error_code":"install_cancelled","owner":null}"#;
+        std::fs::write(status_dir.join("parakeet.json"), status_content.as_bytes())
+            .expect("write status");
+
+        let shared2 = Arc::new(ParakeetRuntimeShared::default());
+        let called2 = Arc::new(AtomicU32::new(0));
+        let called2_clone = called2.clone();
+        let mut seam2 = ParakeetTruthSeam::with_config(
+            shared2.clone(),
+            ParakeetTruthConfig {
+                journal_path: j2.to_path_buf(),
+                platform: "linux".to_owned(),
+                machine: "x86_64".to_owned(),
+                vulkan_devices: Vec::new(),
+            },
+        )
+        .with_installer(Arc::new(move |_| {
+            called2_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        let fence2 = ProviderFence {
+            incarnation: "inc".to_owned(),
+            generation: 1,
+            fingerprint: None,
+            attempt: 1,
+        };
+        seam2.dispatch_truth(&state, &fence2);
+        let obs2 = shared2.wait_for_truth_result(&fence2);
+        assert_eq!(
+            obs2.detail
+                .as_ref()
+                .and_then(|d| d.get("pin_follow"))
+                .and_then(Value::as_str),
+            Some("owner-cancelled")
+        );
+        assert_eq!(called2.load(Ordering::SeqCst), 0);
+
+        let read_back =
+            std::fs::read_to_string(status_dir.join("parakeet.json")).expect("read status");
+        assert_eq!(read_back, status_content);
+        assert!(!status_dir.join("parakeet.lease").exists());
     }
 }

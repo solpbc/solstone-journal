@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-installed-payload"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# Windows CNG hashing is the only unsafe leaf. It lives in
+# `windows_payload/native_hash.rs` and carries its own exception.
+[lints.rust]
+unsafe_code = "deny"
+
+[features]
+test-fixture-pin = []
+
+[dependencies]
+minisign.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Security_Cryptography"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["fs"] }
+
+[dev-dependencies]
+tempfile = "3"

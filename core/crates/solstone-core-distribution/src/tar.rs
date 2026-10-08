@@ -26,6 +26,9 @@ pub fn write_tar_gz(stage: &Path, dest: &Path) -> io::Result<()> {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.as_str()))?;
         let path = stage.join(&dest_path);
         let bytes = fs::read(&path)?;
+        let Some(bytes) = crate::container_seam::apply(&dest_path, bytes) else {
+            continue;
+        };
         let mode = crate::stage::file_mode(&fs::metadata(&path)?);
         append_file(&mut builder, &dest_path, &bytes, mode)?;
     }
@@ -81,10 +84,22 @@ pub(crate) fn append_directory<W: io::Write>(
     builder.append(&header, io::empty())
 }
 
-pub fn tar_records(bytes: &[u8]) -> io::Result<Vec<FileRecord>> {
+#[derive(Debug)]
+pub struct MemberBytes {
+    pub path: String,
+    pub bytes: Vec<u8>,
+}
+
+struct TarMember {
+    path: String,
+    mode: u32,
+    bytes: Vec<u8>,
+}
+
+fn read_tar_members(bytes: &[u8]) -> io::Result<Vec<TarMember>> {
     let decoder = GzDecoder::new(bytes);
     let mut archive = tar::Archive::new(decoder);
-    let mut records = Vec::new();
+    let mut members = Vec::new();
     for entry in archive.entries()? {
         let mut entry = entry?;
         if entry.header().entry_type().is_dir() {
@@ -102,10 +117,36 @@ pub fn tar_records(bytes: &[u8]) -> io::Result<Vec<FileRecord>> {
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes)?;
         let mode = entry.header().mode()?;
-        records.push(FileRecord::file(dest, mode, sha256_hex(&bytes)));
+        members.push(TarMember {
+            path: dest,
+            mode,
+            bytes,
+        });
+    }
+    Ok(members)
+}
+
+pub fn tar_records(bytes: &[u8]) -> io::Result<Vec<FileRecord>> {
+    let mut records = Vec::new();
+    for member in read_tar_members(bytes)? {
+        records.push(FileRecord::file(
+            member.path,
+            member.mode,
+            sha256_hex(&member.bytes),
+        ));
     }
     records.sort();
     Ok(records)
+}
+
+pub fn tar_members(bytes: &[u8]) -> io::Result<Vec<MemberBytes>> {
+    Ok(read_tar_members(bytes)?
+        .into_iter()
+        .map(|member| MemberBytes {
+            path: member.path,
+            bytes: member.bytes,
+        })
+        .collect())
 }
 
 pub fn gzip_bytes(bytes: &[u8]) -> io::Result<Vec<u8>> {

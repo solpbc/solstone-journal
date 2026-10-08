@@ -627,7 +627,7 @@ pub const FOREIGN_ARTIFACTS_REFUSAL: &str =
 pub const UNCERTAIN_ARTIFACTS_REFUSAL: &str = "artifact binding is malformed or ambiguous";
 
 /// The refusal when the journal is located inside a Velopack program folder.
-pub const PROGRAM_FOLDER_JOURNAL_REFUSAL: &str = "Uninstall removes this program folder. Choose a journal location outside it. If a journal is already inside the program folder, stop it and move the whole journal folder outside the program folder before uninstalling.";
+pub const PROGRAM_FOLDER_JOURNAL_REFUSAL: &str = "Reinstalling or uninstalling removes this program folder. Choose a journal location outside it. If your journal is already there, quit the journal app. If setup completed, run `solstone journal service stop`, then `solstone journal service uninstall` and wait for it to succeed. Move the whole journal folder outside the program folder before reinstalling or uninstalling, then select its new location with `solstone journal setup --accept-existing-journal --journal \"D:\\journal\"`, replacing D:\\journal with its new location.";
 
 /// Provider failures, including unsafe storage states that require repair.
 #[derive(Debug)]

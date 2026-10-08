@@ -544,7 +544,7 @@ fn preflip_origin_readiness_fixture_preserves_all_pin_identities_and_proofs() {
             row["backend"].as_str().unwrap(),
         )
         .unwrap();
-        assert_eq!(identity, row["pin_identity"]);
+        assert_ne!(identity, row["pin_identity"]);
         assert_manifest_proves_preflip_identity(
             &root.join(format!(
                 "parakeet-{}-{}",
@@ -652,7 +652,12 @@ fn preflip_fixture_preserves_paths_and_native_pins_json_fields() {
         PathBuf::from(fixture["paths"]["local_model_dir"].as_str().unwrap())
     );
     for row in fixture["parakeet_server"].as_array().unwrap() {
-        let identity = &row["pin_identity"];
+        let identity = pins::parakeet_backend_identity(
+            row["arch_key"].as_str().unwrap(),
+            row["backend"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_ne!(identity, row["pin_identity"]);
         let paths = pins::parakeet_paths(journal, identity["artifact_key"].as_str().unwrap());
         assert_eq!(
             path_value(&paths[format!("binary_path_{}", identity["backend"].as_str().unwrap())]),
@@ -695,7 +700,7 @@ fn origin_urls_follow_the_catalog_for_every_rust_download_unit() {
             "parakeet-server",
             Some(Platform::LinuxX64),
             Some(Backend::Cpu),
-            "https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz",
+            "https://updates.solstone.app/assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-cpu-x64.tar.gz",
         ),
         (
             "parakeet-model",
@@ -1253,7 +1258,7 @@ fn dispatch_paths_parakeet_with_explicit_artifact_key_is_host_independent() {
             .join("bin")
             .join("aarch64-unknown-linux-gnu")
             .join("cpu")
-            .join("v0.5.0")
+            .join("v0.6.1")
             .join("parakeet-server"),
     );
     assert_eq!(
@@ -1262,7 +1267,7 @@ fn dispatch_paths_parakeet_with_explicit_artifact_key_is_host_independent() {
             .join("bin")
             .join("aarch64-unknown-linux-gnu")
             .join("vulkan")
-            .join("v0.5.0")
+            .join("v0.6.1")
             .join("parakeet-server"),
     );
     let _ = fs::remove_dir_all(root);
@@ -2612,7 +2617,7 @@ fn registry_preserves_prechange_identity_literals() {
                 pins::parakeet_backend_identity("x86_64-unknown-linux-gnu", "cpu").unwrap(),
             )
             .unwrap(),
-            "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"backend\":\"cpu\",\"binary_name\":\"parakeet-server\",\"filename\":\"parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz\",\"release_tag\":\"v0.5.0\",\"sha256\":\"636a9fc48ac023096037790f9b77d7e5043b200dd6399ec0438bd648c35d79b9\",\"unit\":\"parakeet-server\"}",
+            "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"backend\":\"cpu\",\"binary_name\":\"parakeet-server\",\"filename\":\"parakeet-v0.6.1-bin-linux-cpu-x64.tar.gz\",\"release_tag\":\"v0.6.1\",\"sha256\":\"cce60d122ab72e1068cd0d164e54a21655a0b83f1b9c21befc20124f5a972c10\",\"unit\":\"parakeet-server\"}",
         ),
         (
             fingerprint::canonical(pins::parakeet_model_identity()).unwrap(),
@@ -2729,7 +2734,7 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
             .join("bin")
             .join(key)
             .join("cpu")
-            .join("v0.5.0")
+            .join("v0.6.1")
             .join("parakeet-server")
     );
     assert_eq!(

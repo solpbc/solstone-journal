@@ -147,6 +147,9 @@ fn package_files(stage: &Path) -> io::Result<Vec<PackageFile>> {
         let dirname_index = *directories.entry(dirname.clone()).or_insert(next_index);
         let path = stage.join(&dest);
         let bytes = fs::read(&path)?;
+        let Some(bytes) = crate::container_seam::apply(&dest, bytes) else {
+            continue;
+        };
         let mode = (REGULAR_FILE_TYPE | crate::stage::file_mode(&fs::metadata(&path)?)) as u16;
         prepared.push(PackageFile {
             archive,
@@ -533,6 +536,62 @@ fn align4(value: usize) -> usize {
 
 fn align8(value: usize) -> usize {
     (value + 7) & !7
+}
+
+pub fn rpm_members(path: &Path) -> io::Result<Vec<crate::tar::MemberBytes>> {
+    let bytes = fs::read(path)?;
+    let start = skip_headers(&bytes)?;
+    let raw = crate::tar::gunzip_bytes(&bytes[start..])?;
+    read_cpio_members(&raw)
+}
+
+fn read_cpio_members(raw: &[u8]) -> io::Result<Vec<crate::tar::MemberBytes>> {
+    let mut offset = 0;
+    let mut members = Vec::new();
+    while offset + 110 <= raw.len() {
+        if &raw[offset..offset + 6] != b"070701" {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid cpio magic",
+            ));
+        }
+        let filesize = parse_hex(&raw[offset + 54..offset + 62])?;
+        let namesize = parse_hex(&raw[offset + 94..offset + 102])?;
+        let name_start = offset + 110;
+        let name_end = name_start + namesize;
+        if name_end > raw.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "truncated cpio name",
+            ));
+        }
+        let name = std::str::from_utf8(&raw[name_start..name_end - 1])
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let after_name = align4(name_end);
+        let data_end = after_name + filesize;
+        if name == "TRAILER!!!" {
+            break;
+        }
+        if data_end > raw.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "truncated cpio file",
+            ));
+        }
+        let name = name.strip_prefix("./").unwrap_or(name);
+        let dest = from_system_path(name).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("rpm member {name} is outside the system prefix"),
+            )
+        })?;
+        members.push(crate::tar::MemberBytes {
+            path: dest,
+            bytes: raw[after_name..data_end].to_vec(),
+        });
+        offset = align4(data_end);
+    }
+    Ok(members)
 }
 
 pub fn rpm_requires(path: &Path) -> io::Result<Vec<String>> {

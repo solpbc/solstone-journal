@@ -293,32 +293,32 @@ pub fn required_members_for(
 pub const PARAKEET_VULKAN_PINS: &[(&str, &str, &str, &str, &str)] = &[
     (
         "x86_64-unknown-linux-gnu",
-        "v0.5.0",
-        "parakeet-v0.5.0-bin-linux-vulkan-x64.tar.gz",
-        "36c8d4b93594ec18928c9c76b02e04b2d738e859deda8b5e3944bb34fc0646eb",
+        "v0.6.1",
+        "parakeet-v0.6.1-bin-linux-vulkan-x64.tar.gz",
+        "881fd99d531a4dcfc26119a4969aec61b8390ba84e9d641716411d4c1db2de3a",
         "parakeet-server",
     ),
     (
         "aarch64-unknown-linux-gnu",
-        "v0.5.0",
-        "parakeet-v0.5.0-bin-linux-vulkan-arm64.tar.gz",
-        "b95483070eb87ed144b9f39826a69fb67ea516c68aacc4fcf13a121a746ad7e4",
+        "v0.6.1",
+        "parakeet-v0.6.1-bin-linux-vulkan-arm64.tar.gz",
+        "96bc0a9ac524ea875f7260fbaed65632d55cd249e251d0f8a69d9df13dc30c9c",
         "parakeet-server",
     ),
 ];
 pub const PARAKEET_CPU_PINS: &[(&str, &str, &str, &str, &str)] = &[
     (
         "x86_64-unknown-linux-gnu",
-        "v0.5.0",
-        "parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz",
-        "636a9fc48ac023096037790f9b77d7e5043b200dd6399ec0438bd648c35d79b9",
+        "v0.6.1",
+        "parakeet-v0.6.1-bin-linux-cpu-x64.tar.gz",
+        "cce60d122ab72e1068cd0d164e54a21655a0b83f1b9c21befc20124f5a972c10",
         "parakeet-server",
     ),
     (
         "aarch64-unknown-linux-gnu",
-        "v0.5.0",
-        "parakeet-v0.5.0-bin-linux-cpu-arm64.tar.gz",
-        "a7c9064c64b84f6b041252d5d2334d4a47693636e9c7c6ab2c535fcef11cf88b",
+        "v0.6.1",
+        "parakeet-v0.6.1-bin-linux-cpu-arm64.tar.gz",
+        "85b6dafce8a984d0971d94865da5e2e50e111604fb6e7030f5b599dc2616c8db",
         "parakeet-server",
     ),
 ];
