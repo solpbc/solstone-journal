@@ -6,29 +6,31 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-- setup cleanup removes more files outside your journal on linux, mac and windows. it keeps your journal's setup record and removes matching copies of its agent skill.
-- on windows, setup requires your journal to be outside the program folder that uninstall removes. if your journal is already there, stop it and move the whole journal folder before uninstalling.
+## [2.0.36] - 2026-10-08
 
 ### Added
 
 - until a device is paired, the thinking page links to where you pair one. setup ends on that page, so you see the link as soon as your journal is set up.
 - your week now shows things you said, word for word, under "said by you": up to three a day, taken only from conversations where your journal recognized your voice, each with a link to where you said it. you can leave one out of the page, as with a memory.
 
+### Changed
+
+- on windows, setup requires your journal to be outside the program folder that uninstall removes. if your journal is already there, stop it and move the whole journal folder before uninstalling.
+- uninstall cleanup now removes more files outside your journal on linux, mac and windows. it keeps your journal's setup record and removes unedited copies of the solstone skill.
+- each time your journal starts, on mac and linux, it replaces existing copies of the solstone skill with its current one, including copies you edited.
+
 ### Fixed
 
-- on windows, if your journal thinks on this computer and you installed its local model before, it now installs a newer model on its own when an update needs it. you can cancel the download on the thinking page, and it stays cancelled until you install again.
+- if your journal thinks on this computer and you installed its local model before, it now installs what local thinking needs on its own when an update changes it, on mac, linux and windows. since 2.0.34, on mac and linux, an update could stop your journal's thinking, and home said "processing needs a setup" until you installed the local model again. you can cancel the download on the thinking page, and it stays cancelled until you install again.
 - when your screen stayed the same at the start of a stretch but changed later, your journal could skip writing about that stretch. it now uses those later changes too.
-- choosing the same screen twice no longer uses up your journal's allowance for screen details. if it has to choose screens on its own, it fills unused slots while respecting your category preferences.
 - a link to the devices section of the network page now opens the page at that section. before, it could open at the top.
-- on windows, the network page now tells you when Windows Firewall has kept a Block rule for journal after Cancel, and how an administrator can remove it. opening your journal to the network alone couldn't get past that rule.
-- if your journal thinks on this computer, on mac or linux, it now installs the local model again on its own when an update needs it. since 2.0.34, an update could stop your journal's thinking, and home said "processing needs a setup" until you installed the local model again. you can cancel the download on the thinking page, and it stays cancelled until you install again.
+- on windows, the network page now tells you when Windows Defender Firewall has kept a Block rule for "journal" after you chose Cancel, and how an administrator can remove it. opening your journal to the network alone couldn't get past that rule.
 - the date on each card on the entities page is now the last day its name came up in your journal. before, a card could show the day it was added to your journal or last changed, so after an import every card could say "Today".
-- your morning briefing no longer needs another attempt when it lists too many older open follow-ups.
-- on a mac, the solstone skill points your agent at the `solstone` command inside the journal app. before, the skill told your agent solstone wasn't installed. existing skills now update when your journal starts after an update, on mac and linux.
-- setup and `solstone skills install` on mac and linux now skip agents whose configuration folders are absent.
+- on a mac, the solstone skill points your agent at the `solstone` command inside the journal app. before, the skill told your agent solstone wasn't installed.
+- setup and `solstone skills install` on mac and linux no longer create a folder for an agent you haven't set up.
 - some weeks wouldn't open, and their card on home said they couldn't be read. they open now.
-- when a page in your journal can't load because the connection dropped or took too long, the page now shows its own message without the browser's wording, like "Load failed". on the curation page, "show more" now says when the next suggestions didn't load. before, it went quiet.
-- if no owner is already marked, daily review marks at most one new person whose name matches your configured name as the owner.
+- when a page in your journal can't load because the connection dropped or took too long, the page now shows its own message instead of the browser's wording, like "Load failed". on the curation page, "show more" now says when the next suggestions didn't load. before, it went quiet.
+- on the entities page, if no one is marked "you" yet, your journal now marks at most one new person whose name matches yours.
 - the agents page now says a browser-paired agent can read for at most 30 days after pairing, or until you disconnect it, and that turning solstone.me back on reuses your certificate only while the one you have is still good.
 - when your phone lost its connection partway through sending, home said your phone "isn't reaching your journal" until something new from it went into your journal, sometimes all night. what was cut off still goes into your journal when your phone tries again, so home no longer shows that line for it.
 - `solstone journal doctor` no longer warns that a device "had requests turned away" when the last time was more than a week ago.
