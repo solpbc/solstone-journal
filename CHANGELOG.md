@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.36] - 2026-10-07
+
 - setup cleanup removes more files outside your journal on linux, mac and windows. it keeps your journal's setup record.
 - on windows, setup requires your journal to be outside the program folder that uninstall removes. if your journal is already there, stop it and move the whole journal folder before uninstalling.
 
