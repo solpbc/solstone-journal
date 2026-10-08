@@ -741,7 +741,10 @@ fn build_local_endpoints_body(
     port: u16,
 ) -> LocalEndpointsBody {
     LocalEndpointsBody {
-        v: 1,
+        // 2: the list carries the configured home and is empty while closed, so a
+        // device may replace its saved set with it. A device leaves its set alone
+        // on 1.
+        v: 2,
         endpoints: endpoints
             .into_iter()
             .map(|(ip, scope)| LocalEndpointBody {
@@ -1849,7 +1852,7 @@ mod tests {
                 .expect("body"),
         )
         .expect("JSON");
-        assert_eq!(body["v"], 1);
+        assert_eq!(body["v"], 2);
         assert_eq!(body["ttl_s"], 3600);
         assert_eq!(
             body["endpoints"],
@@ -1903,7 +1906,7 @@ mod tests {
                     .expect("body"),
             )
             .expect("JSON");
-            assert_eq!(body["v"], 1, "{prefix}");
+            assert_eq!(body["v"], 2, "{prefix}");
             assert_eq!(
                 body["endpoints"],
                 json!([
