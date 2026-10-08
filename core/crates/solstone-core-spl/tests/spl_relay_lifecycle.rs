@@ -12,10 +12,11 @@ use std::{
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use solstone_core_spl::{
-    CallosumEmit, EnrollError, LoopbackConnect, LoopbackDialer, PairWindowClientError,
-    PairWindowSecret, PostureGate, PostureInput, RelayClient, RelayClientConfig, RelayDecision,
-    RelayWebSocket, ServiceToken, TokenInput, WsByteSink, WsByteSource, attach_pair_window_tunnel,
-    enroll_home, register_pair_window, relay_tunnel_url, stop_relay_run,
+    CallosumEmit, EnrollError, JournalAttemptTokenSource, LoopbackConnect, LoopbackDialer,
+    PairWindowClientError, PairWindowSecret, PostureGate, PostureInput, RelayClient,
+    RelayClientConfig, RelayDecision, RelayWebSocket, ServiceToken, StaticAttemptTokenSource,
+    TokenInput, WsByteSink, WsByteSource, attach_pair_window_tunnel, enroll_home,
+    register_pair_window, relay_tunnel_url, save_service_token, stop_relay_run,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -280,11 +281,13 @@ async fn listen_events_surface_pongs_and_flush_automatic_ping_replies() -> Resul
         });
 
         let (connected_send, connected_receive) = oneshot::channel();
+        let service_token = token()?;
         let mut client = RelayClient::new(
             RelayClientConfig {
                 instance_id: "home-a".to_owned(),
                 relay_endpoint: format!("http://{address}"),
-                service_token: token()?,
+                token_source: Arc::new(StaticAttemptTokenSource::new(service_token.clone())),
+                service_token,
                 dispatch_read_deadline: Duration::from_secs(1),
                 ping_interval: Duration::from_secs(3600),
                 ping_ack_timeout: Duration::from_secs(1),
@@ -476,11 +479,13 @@ async fn incoming_offer_dials_loopback_replays_split_tls_prefix_and_emits_exact_
         });
 
         let emit = Arc::new(RecordingEmit::default());
+        let service_token = ServiceToken::new("test-service-token".to_owned());
         let mut client = RelayClient::new(
             RelayClientConfig {
                 instance_id: "persisted-instance".to_owned(),
                 relay_endpoint: format!("http://{relay_address}"),
-                service_token: ServiceToken::new("test-service-token".to_owned()),
+                token_source: Arc::new(StaticAttemptTokenSource::new(service_token.clone())),
+                service_token,
                 dispatch_read_deadline: Duration::from_secs(1),
                 ping_interval: Duration::from_secs(3600),
                 ping_ack_timeout: Duration::from_secs(1),
@@ -579,11 +584,13 @@ async fn concrete_service_shutdown_stops_then_cancels_the_live_listen_socket() -
             Ok::<(), String>(())
         });
 
+        let service_token = ServiceToken::new("test-service-token".to_owned());
         let mut client = RelayClient::new(
             RelayClientConfig {
                 instance_id: "persisted-instance".to_owned(),
                 relay_endpoint: format!("http://{address}"),
-                service_token: ServiceToken::new("test-service-token".to_owned()),
+                token_source: Arc::new(StaticAttemptTokenSource::new(service_token.clone())),
+                service_token,
                 dispatch_read_deadline: std::time::Duration::from_secs(10),
                 ping_interval: std::time::Duration::from_secs(3600),
                 ping_ack_timeout: std::time::Duration::from_secs(2),
@@ -1465,6 +1472,133 @@ async fn rejected_pair_window_registration_leaves_no_open_window() -> Result<(),
     })
     .await
     .map_err(|_| "refused pair-window registration fixture timed out".to_owned())?
+}
+
+#[tokio::test]
+async fn rotated_service_token_is_presented_on_the_next_listen() -> Result<(), String> {
+    timeout(Duration::from_secs(8), async {
+        static NEXT_TEMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let journal_root = std::env::temp_dir().join(format!(
+            "solstone-spl-lifecycle-rotate-{}-{}",
+            std::process::id(),
+            NEXT_TEMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&journal_root);
+        std::fs::create_dir_all(&journal_root).map_err(|e| e.to_string())?;
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(journal_root.clone());
+        save_service_token(&journal_root, "token-1").map_err(|e| e.to_string())?;
+
+        let listener = TokioTcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|_| "listener bind failed".to_owned())?;
+        let address = listener
+            .local_addr()
+            .map_err(|_| "local addr failed".to_owned())?;
+
+        let server_journal = journal_root.clone();
+        let (first_seen_send, first_seen_recv) = oneshot::channel();
+        let (second_seen_send, second_seen_recv) = oneshot::channel();
+        let mut first_send_slot = Some(first_seen_send);
+        let mut second_send_slot = Some(second_seen_send);
+
+        let server_task = tokio::spawn(async move {
+            let mut attempt = 0;
+            while let Ok((stream, _)) = listener.accept().await {
+                attempt += 1;
+                if attempt == 1 {
+                    if let Some(first_seen_send) = first_send_slot.take() {
+                        let server_journal = server_journal.clone();
+                        let _ = accept_hdr_async(stream, move |req: &ServerRequest, _res| {
+                            let auth = req
+                                .headers()
+                                .get(AUTHORIZATION)
+                                .and_then(|h| h.to_str().ok())
+                                .map(str::to_owned);
+                            let query = req.uri().query().map(str::to_owned);
+                            let _ = first_seen_send.send((auth, query));
+                            let _ = save_service_token(&server_journal, "test-service-token");
+                            Err(rejection_response(StatusCode::UNAUTHORIZED))
+                        })
+                        .await;
+                    }
+                } else if attempt == 2 {
+                    if let Some(second_seen_send) = second_send_slot.take() {
+                        let ws = accept_hdr_async(stream, move |req: &ServerRequest, res| {
+                            let auth = req
+                                .headers()
+                                .get(AUTHORIZATION)
+                                .and_then(|h| h.to_str().ok())
+                                .map(str::to_owned);
+                            let query = req.uri().query().map(str::to_owned);
+                            let _ = second_seen_send.send((auth, query));
+                            Ok(res)
+                        })
+                        .await;
+                        if let Ok(mut socket) = ws {
+                            // Keep open until cancelled
+                            let _ = socket.next().await;
+                        }
+                    }
+                    break;
+                }
+            }
+            Ok::<(), String>(())
+        });
+
+        let mut client = RelayClient::new(
+            RelayClientConfig {
+                instance_id: "home-a".to_owned(),
+                relay_endpoint: format!("http://{address}"),
+                token_source: Arc::new(JournalAttemptTokenSource::new(journal_root)),
+                service_token: ServiceToken::new(String::new()),
+                dispatch_read_deadline: Duration::from_secs(1),
+                ping_interval: Duration::from_secs(3600),
+                ping_ack_timeout: Duration::from_secs(1),
+                ack_stability_window: Duration::from_secs(3600),
+                global_admission_ceiling: 1,
+            },
+            Arc::new(NullEmit),
+            Arc::new(ClosedDialer),
+        );
+        let running_client = client.clone();
+        let run_task = tokio::spawn(async move { running_client.run().await });
+
+        let (first_auth, first_query) = first_seen_recv
+            .await
+            .map_err(|_| "first request not received".to_owned())?;
+        assert_eq!(first_auth.as_deref(), Some("Bearer token-1"));
+        assert!(
+            first_query
+                .as_deref()
+                .unwrap_or("")
+                .contains("token=token-1")
+        );
+
+        let (second_auth, second_query) = second_seen_recv
+            .await
+            .map_err(|_| "second request not received".to_owned())?;
+        assert_eq!(second_auth.as_deref(), Some("Bearer test-service-token"));
+        assert!(
+            second_query
+                .as_deref()
+                .unwrap_or("")
+                .contains("token=test-service-token")
+        );
+
+        stop_relay_run(&mut client, run_task)
+            .await
+            .map_err(|e| e.to_string())?;
+        server_task.abort();
+        Ok(())
+    })
+    .await
+    .map_err(|_| "rotated token lifecycle test timed out".to_owned())?
 }
 
 #[path = "spl_relay_lifecycle/access_contract.rs"]

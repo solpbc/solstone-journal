@@ -303,7 +303,7 @@ impl ServiceDeps for ProcessServiceDeps {
 
     fn start_relay(
         &mut self,
-        token: RelayServiceToken,
+        _token: RelayServiceToken,
     ) -> Result<crate::StartedRelay<Self::Client, Self::RunError>, Self::StartError> {
         let instance_id = self.load_instance_id()?;
         let relay_endpoint = self.load_relay_endpoint()?;
@@ -311,7 +311,10 @@ impl ServiceDeps for ProcessServiceDeps {
             RelayClientConfig {
                 instance_id,
                 relay_endpoint,
-                service_token: ServiceToken::new(token.as_str().to_owned()),
+                token_source: Arc::new(crate::JournalAttemptTokenSource::new(
+                    self.journal_root.clone(),
+                )),
+                service_token: ServiceToken::new(String::new()),
                 dispatch_read_deadline: DISPATCH_READ_DEADLINE,
                 ping_interval: crate::LISTEN_PING_INTERVAL,
                 ping_ack_timeout: crate::LISTEN_PING_ACK_TIMEOUT,

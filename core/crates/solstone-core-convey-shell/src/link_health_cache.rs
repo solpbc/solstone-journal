@@ -65,6 +65,8 @@ pub(crate) fn parse_relay_health_event(
     })
 }
 
+pub(crate) const LINK_HEALTH_FRESHNESS_MS: i64 = 90_000;
+
 pub(crate) fn replace_if_not_stale(
     store: &RelayHealthCacheStore,
     candidate: RelayHealthCache,
@@ -75,12 +77,16 @@ pub(crate) fn replace_if_not_stale(
     let mut cache = store
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if cache.as_ref().is_some_and(|current| {
-        current
-            .listen_generation
-            .is_some_and(|generation| candidate_generation < generation)
-    }) {
-        return false;
+    if let Some(current) = cache.as_ref()
+        && let Some(current_generation) = current.listen_generation
+        && candidate_generation < current_generation
+    {
+        let Some(delta) = candidate.ts.checked_sub(current.ts) else {
+            return false;
+        };
+        if delta <= LINK_HEALTH_FRESHNESS_MS {
+            return false;
+        }
     }
     *cache = Some(candidate);
     true
@@ -213,6 +219,56 @@ mod tests {
                 .expect("cached")
                 .ts,
             14
+        );
+    }
+
+    #[test]
+    fn older_listener_generation_replaces_a_cached_payload_outside_the_freshness_window() {
+        let store = Arc::new(Mutex::new(None));
+        // Cache generation 40 at ts = 100_000.
+        assert!(replace_if_not_stale(
+            &store,
+            parse_relay_health_event(&envelope(Some(100_000), Some(40)), 100_000)
+                .expect("gen 40 parses"),
+        ));
+
+        // Candidate generation 1 at ts = 190_000 (delta = 90_000) is rejected.
+        assert!(!replace_if_not_stale(
+            &store,
+            parse_relay_health_event(&envelope(Some(190_000), Some(1)), 190_000)
+                .expect("gen 1 parses"),
+        ));
+
+        // Candidate generation 1 at ts = 190_001 (delta = 90_001) replaces it.
+        assert!(replace_if_not_stale(
+            &store,
+            parse_relay_health_event(&envelope(Some(190_001), Some(1)), 190_001)
+                .expect("gen 1 parses"),
+        ));
+        assert_eq!(
+            store
+                .lock()
+                .expect("cache lock")
+                .as_ref()
+                .expect("cached")
+                .listen_generation,
+            Some(1)
+        );
+
+        // A higher generation than the cached one (e.g. 5) replaces it without that gap.
+        assert!(replace_if_not_stale(
+            &store,
+            parse_relay_health_event(&envelope(Some(190_005), Some(5)), 190_005)
+                .expect("gen 5 parses"),
+        ));
+        assert_eq!(
+            store
+                .lock()
+                .expect("cache lock")
+                .as_ref()
+                .expect("cached")
+                .listen_generation,
+            Some(5)
         );
     }
 }
