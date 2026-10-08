@@ -46,13 +46,9 @@ pub(crate) fn install(seam: ContainerSeam) -> ContainerSeamGuard {
 /// seam is installed, which is every release build.
 pub(crate) fn apply(dest: &str, bytes: Vec<u8>) -> Option<Vec<u8>> {
     #[cfg(test)]
+    if let Some(seam) = SEAM.with(|cell| cell.get())
+        && dest == seam.path
     {
-        let Some(seam) = SEAM.with(|cell| cell.get()) else {
-            return Some(bytes);
-        };
-        if dest != seam.path {
-            return Some(bytes);
-        }
         return match seam.kind {
             ContainerSeamKind::Drop => None,
             ContainerSeamKind::Grow => {
@@ -69,9 +65,6 @@ pub(crate) fn apply(dest: &str, bytes: Vec<u8>) -> Option<Vec<u8>> {
             }
         };
     }
-    #[cfg(not(test))]
-    {
-        let _ = dest;
-        Some(bytes)
-    }
+    let _ = dest;
+    Some(bytes)
 }
