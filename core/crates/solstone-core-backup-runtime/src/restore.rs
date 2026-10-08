@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 use solstone_core_backup::{
-    Destination, assemble_backend_env, get_backup_config, parse_recovery_key, set_destination,
-    set_recovery_key, set_recovery_key_confirmed,
+    Destination, assemble_backend_env, get_backup_config, load_hosted_binding, parse_recovery_key,
+    save_hosted_binding, set_destination, set_recovery_key, set_recovery_key_confirmed,
 };
 
 use crate::engine::{BackupServices, Clock, RestoreRecorder};
@@ -297,6 +297,7 @@ pub fn restore_journal(
             return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
         }
     };
+    let active_binding = load_hosted_binding(journal);
     let finish =
         |journal: &Path, clock: &dyn Clock, recorder: &dyn RestoreRecorder, draft: RestoreDraft| {
             #[cfg(windows)]
@@ -306,6 +307,16 @@ pub fn restore_journal(
             if admitted.revalidate_for_target().is_err() {
                 unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED))
             } else {
+                if let Some(binding) = &active_binding
+                    && save_hosted_binding(journal, binding).is_err()
+                {
+                    return crate::restore::finish(
+                        journal,
+                        clock,
+                        recorder,
+                        error_draft(RESTORE_REASON_RESTORE_IO_FAILED),
+                    );
+                }
                 crate::restore::finish(journal, clock, recorder, draft)
             }
         };
@@ -876,6 +887,62 @@ mod tests {
         );
         assert_recorded_counters(&recorder, "ok", json!(2), json!(2), json!(11), json!(11));
         assert!(runner.refusals().is_empty());
+    }
+
+    #[test]
+    fn snapshot_binding_cannot_replace_the_active_binding_on_success_or_failure() {
+        struct BindingRestore<'a> {
+            script: Script,
+            journal: &'a Path,
+        }
+        impl ToolRunner for BindingRestore<'_> {
+            fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+                if request.argv.first().is_some_and(|arg| arg == "restore") {
+                    let mut retired = solstone_core_backup::load_hosted_binding(self.journal)
+                        .expect("active binding");
+                    retired.broker_token = "retired-token-from-snapshot".into();
+                    solstone_core_backup::save_hosted_binding(self.journal, &retired)
+                        .expect("snapshot binding");
+                }
+                self.script.run(request)
+            }
+        }
+        for restore_exit in [0, 1] {
+            let journal = tempfile::tempdir().expect("journal");
+            let keys = solstone_core_backup::generate_and_store_keys(journal.path()).unwrap();
+            let active = solstone_core_backup::HostedBinding {
+                broker_endpoint: "https://services.example".into(),
+                account_id: "owner".into(),
+                instance_id: "instance".into(),
+                bucket: "bucket".into(),
+                prefix: "owner/instance/".into(),
+                broker_token: "fresh-consent-token".into(),
+            };
+            solstone_core_backup::save_hosted_binding(journal.path(), &active).unwrap();
+            let runner = BindingRestore {
+                script: Script::new(vec![
+                    output(0, CAPTURED_SNAPSHOTS),
+                    output(restore_exit, CAPTURED_RESTORE),
+                    output(0, ""),
+                ]),
+                journal: journal.path(),
+            };
+            let outcome = restore_journal(
+                journal.path(),
+                &services(&runner, &TestClock, &Maintenance),
+                &RestoreRecorderSpy::new(),
+                destination(),
+                &keys.recovery_key,
+            );
+            assert_eq!(
+                outcome.status,
+                if restore_exit == 0 { "ok" } else { "error" }
+            );
+            assert_eq!(
+                solstone_core_backup::load_hosted_binding(journal.path()),
+                Some(active)
+            );
+        }
     }
 
     #[test]
