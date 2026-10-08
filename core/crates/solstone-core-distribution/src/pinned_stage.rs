@@ -728,13 +728,13 @@ mod tests {
             let path_bytes = path.as_bytes();
             let mut i = 0;
             while i + 46 + path_bytes.len() <= bytes.len() {
-                if &bytes[i..i + 4] == cd_sig {
+                if bytes[i..i + 4] == cd_sig {
                     let name_len = u16::from_le_bytes([bytes[i + 28], bytes[i + 29]]) as usize;
                     if name_len == path_bytes.len()
                         && &bytes[i + 46..i + 46 + name_len] == path_bytes
                     {
                         bytes[i + 5] = 3; // Unix
-                        let mode_bytes = ((*mode as u32) << 16).to_le_bytes();
+                        let mode_bytes = (*mode << 16).to_le_bytes();
                         bytes[i + 38..i + 42].copy_from_slice(&mode_bytes);
                         break;
                     }
