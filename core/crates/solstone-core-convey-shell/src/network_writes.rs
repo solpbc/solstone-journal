@@ -28,7 +28,7 @@ use solstone_core_sol_link::ledger::{
     read_authorized_clients, read_device_activity,
 };
 use solstone_core_sol_link::pairing::addresses::{is_allowed_direct_ipv4, is_usable_ipv4};
-use solstone_core_sol_link::service_identity::{ServiceIdentity, load_or_create_service_identity};
+use solstone_core_sol_link::service_identity::ServiceIdentity;
 use solstone_core_spl::{EnrollError, disable_spl, enable_spl_with, enroll_home};
 use solstone_core_thinking::confidential::{
     HandoffResult, OperationHandle, OperationRegistry, Phase,
@@ -273,7 +273,7 @@ async fn private_link_enable(
             enrollment: value.enrollment,
         })
         .unwrap_or(runtime);
-    let identity = match load_or_create_service_identity(&journal.0) {
+    let committed = match solstone_core_sol_link::committed::load_committed_identity(&journal.0) {
         Ok(value) => value,
         Err(_) => {
             return refusal(
@@ -293,9 +293,39 @@ async fn private_link_enable(
             );
         }
     };
-    let portal_url = format!(
-        "{}/enable/spl?nonce={nonce}&instance={}",
-        runtime.portal_base_url, identity.instance_id
+    let wall_unix_seconds = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+    {
+        Ok(duration) => duration.as_secs() as i64,
+        Err(_) => {
+            return refusal(
+                "service_operation_failed",
+                &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let assertion = match solstone_core_sol_link::home_reach::sign_service_enable_assertion(
+        &committed,
+        "spl",
+        &nonce,
+        wall_unix_seconds,
+    ) {
+        Ok(value) => value,
+        Err(_) => {
+            return refusal(
+                "service_operation_failed",
+                &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let portal_url = solstone_core_sol_link::home_reach::service_enable_portal_url(
+        &runtime.portal_base_url,
+        "spl",
+        &nonce,
+        committed.instance_id(),
+        &assertion.compact,
+        &assertion.ca_pubkey_pem,
     );
     let (handle, operation) =
         match operations.start_operation(SERVICE, "spl_enable", Some(portal_url)) {

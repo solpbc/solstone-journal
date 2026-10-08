@@ -15,7 +15,6 @@ use axum::extract::{Extension, Path as UrlPath, Query};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::envelope::error_envelope;
@@ -38,36 +37,6 @@ const GENERIC_THINKING_ERROR: &str =
     "something went wrong - try again, and if it persists, check the health dashboard";
 const NOT_VERIFIED_GUIDANCE: &str =
     "Hardware attestation is not yet verified. Thinking stays blocked until verification finishes.";
-const PYTHON_QUOTE_COMPONENT: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'!')
-    .add(b'\"')
-    .add(b'#')
-    .add(b'$')
-    .add(b'%')
-    .add(b'&')
-    .add(b'\'')
-    .add(b'(')
-    .add(b')')
-    .add(b'*')
-    .add(b'+')
-    .add(b',')
-    .add(b'/')
-    .add(b':')
-    .add(b';')
-    .add(b'<')
-    .add(b'=')
-    .add(b'>')
-    .add(b'?')
-    .add(b'@')
-    .add(b'[')
-    .add(b'\\')
-    .add(b']')
-    .add(b'^')
-    .add(b'`')
-    .add(b'{')
-    .add(b'|')
-    .add(b'}');
 
 #[derive(Debug, Clone)]
 pub enum PollOutcome {
@@ -614,17 +583,35 @@ async fn confidential_enable(
         ),
         None => (runtime.portal_base_url, runtime.poll, None),
     };
-    let instance_id = match confidential_instance_id(&journal.0) {
-        Some(instance_id) => instance_id,
-        None => return confidential_enable_failed(),
+    let committed = match solstone_core_sol_link::committed::load_committed_identity(&journal.0) {
+        Ok(committed) => committed,
+        Err(_) => return confidential_enable_failed(),
     };
     let nonce = match mint_nonce() {
         Ok(nonce) => nonce,
         Err(_) => return confidential_enable_failed(),
     };
-    let portal_url = format!(
-        "{portal_base_url}/enable/{SERVICE_SPP}?nonce={nonce}&instance={}",
-        utf8_percent_encode(&instance_id, PYTHON_QUOTE_COMPONENT),
+    let wall_unix_seconds = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+    {
+        Ok(duration) => duration.as_secs() as i64,
+        Err(_) => return confidential_enable_failed(),
+    };
+    let assertion = match solstone_core_sol_link::home_reach::sign_service_enable_assertion(
+        &committed,
+        "spp",
+        &nonce,
+        wall_unix_seconds,
+    ) {
+        Ok(assertion) => assertion,
+        Err(_) => return confidential_enable_failed(),
+    };
+    let portal_url = solstone_core_sol_link::home_reach::service_enable_portal_url(
+        &portal_base_url,
+        SERVICE_SPP,
+        &nonce,
+        committed.instance_id(),
+        &assertion.compact,
+        &assertion.ca_pubkey_pem,
     );
     let (handle, operation) =
         match operations.start_operation(SERVICE_SPP, "enable", Some(portal_url)) {
@@ -716,6 +703,7 @@ fn confidential_configured(config: &serde_json::Map<String, Value>) -> bool {
         .is_some_and(|services| services.get("confidential").is_some_and(Value::is_object))
 }
 
+#[allow(dead_code)]
 fn confidential_instance_id(journal: &Path) -> Option<String> {
     let ca_dir = journal.join("link").join("ca");
     let derived = std::fs::read_to_string(ca_dir.join("cert.pem"))

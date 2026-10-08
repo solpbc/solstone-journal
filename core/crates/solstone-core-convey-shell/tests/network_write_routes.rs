@@ -72,6 +72,25 @@ fn write_token(root: &Path) {
     fs::write(path, br#"{"service_token":"token"}"#).expect("token writes");
 }
 
+fn plant_committed_identity(root: &Path) -> String {
+    let ca = solstone_core_sol_link::ca::generate_ca().expect("ca");
+    let cert_pem = ca.certificate_pem();
+    let key_pem = ca.private_key_pem();
+    let instance_id = solstone_core_sol_link::ca::jid_from_spki(ca.spki_der()).expect("jid");
+
+    let ca_dir = root.join("link/ca");
+    fs::create_dir_all(&ca_dir).expect("ca dir");
+    fs::write(ca_dir.join("cert.pem"), cert_pem).expect("cert");
+    fs::write(ca_dir.join("private.pem"), key_pem).expect("key");
+    let state_path = root.join("link/state.json");
+    fs::write(
+        state_path,
+        format!(r#"{{"instance_id":"{instance_id}","home_label":"Test Home"}}"#),
+    )
+    .expect("state");
+    instance_id
+}
+
 fn operation_keys(value: &Value) {
     let object = value.as_object().expect("operation object");
     assert_eq!(object.len(), 7);
@@ -423,6 +442,7 @@ async fn host_address_rejects_malformed_input_and_substitutes_port_copy() {
 #[tokio::test]
 async fn enable_refuses_only_fully_enabled_and_has_exact_acceptance_shape() {
     let root = journal();
+    let instance_id = plant_committed_identity(&root);
     fs::write(
         root.join("config/journal.json"),
         b"{\"setup\":{\"completed_at\":1},\"link\":{\"posture\":\"spl\"}}\n",
@@ -450,6 +470,40 @@ async fn enable_refuses_only_fully_enabled_and_has_exact_acceptance_shape() {
         StatusCode::ACCEPTED,
         "inconsistent state can retry: {body:?}"
     );
+    let portal_url = body["operation"]["portal_url"].as_str().unwrap();
+    let (path, query) = portal_url
+        .strip_prefix("https://portal.test")
+        .unwrap()
+        .split_once('?')
+        .unwrap();
+    assert_eq!(path, "/enable/spl");
+    let params: std::collections::BTreeMap<_, _> = query
+        .split('&')
+        .map(|p| p.split_once('=').unwrap())
+        .collect();
+    assert_eq!(params.len(), 4);
+    assert_eq!(params["instance"], instance_id);
+    let nonce = params["nonce"];
+    assert_eq!(nonce.len(), 52);
+    let compact = solstone_core_sol_link::home_reach::percent_decode(params["assertion"]).unwrap();
+    let _ca_pubkey =
+        solstone_core_sol_link::home_reach::percent_decode(params["ca_pubkey"]).unwrap();
+    #[cfg(feature = "full-tests")]
+    assert!(
+        solstone_core_sol_link::home_reach::verify_service_enable_compact(&_ca_pubkey, &compact)
+    );
+    let claims =
+        solstone_core_sol_link::home_reach::decode_service_enable_claims(&compact).unwrap();
+    assert_eq!(claims["iss"], format!("home:{instance_id}"));
+    assert_eq!(claims["aud"], "solstone-reach");
+    assert_eq!(claims["scope"], "services.enable");
+    assert_eq!(claims["instance_id"], instance_id);
+    assert_eq!(claims["nonce"], nonce);
+    assert_eq!(claims["service"], "spl");
+    let iat = claims["iat"].as_i64().unwrap();
+    let exp = claims["exp"].as_i64().unwrap();
+    assert_eq!(exp - iat, 1800);
+
     write_token(&root);
     let (status, body) = post(&root, "/app/network/private-link/enable", Body::empty()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -460,6 +514,7 @@ async fn enable_refuses_only_fully_enabled_and_has_exact_acceptance_shape() {
 #[tokio::test]
 async fn enable_busy_and_consent_preparation_failures_are_refusals() {
     let root = journal();
+    plant_committed_identity(&root);
     let registry = Arc::new(OperationRegistry::default());
     registry.start_operation("spl", "spl_enable", None).unwrap();
     let (status, busy) = request(
@@ -480,6 +535,7 @@ async fn enable_busy_and_consent_preparation_failures_are_refusals() {
         })
     );
     let isolated = journal();
+    plant_committed_identity(&isolated);
     let pending = json!({"service":"spl","state":"pending"})
         .as_object()
         .expect("pending payload")
@@ -509,6 +565,114 @@ async fn enable_busy_and_consent_preparation_failures_are_refusals() {
         StatusCode::ACCEPTED,
         "router-scoped registry does not leak busy state"
     );
+
+    async fn assert_refusal(root: &Path) {
+        let pending = json!({"service":"spl","state":"pending"})
+            .as_object()
+            .unwrap()
+            .clone();
+        let (app, poll) = overridden(root, SplPollOutcome::Success(pending), Enrollment::Token);
+        let (status, failed) = request(
+            app.clone(),
+            Method::POST,
+            "/app/network/private-link/enable",
+            Body::empty(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(failed["reason_code"], "service_operation_failed");
+
+        let (_, status_body) = request(
+            app,
+            Method::GET,
+            "/app/network/api/private-link",
+            Body::empty(),
+        )
+        .await;
+        assert!(
+            status_body["operation"].is_null() || status_body["operation"]["portal_url"].is_null()
+        );
+        assert_eq!(poll.calls.load(Ordering::Relaxed), 0);
+    }
+
+    // Missing CA
+    let missing_ca = journal();
+    assert_refusal(&missing_ca).await;
+    let _ = fs::remove_dir_all(missing_ca);
+
+    // Corrupt CA
+    let corrupt_ca = journal();
+    plant_committed_identity(&corrupt_ca);
+    fs::write(corrupt_ca.join("link/ca/cert.pem"), b"not a cert").unwrap();
+    assert_refusal(&corrupt_ca).await;
+    let _ = fs::remove_dir_all(corrupt_ca);
+
+    // Missing state
+    let missing_state = journal();
+    plant_committed_identity(&missing_state);
+    fs::remove_file(missing_state.join("link/state.json")).unwrap();
+    assert_refusal(&missing_state).await;
+    let _ = fs::remove_dir_all(missing_state);
+
+    // Mismatched state
+    let mismatched = journal();
+    plant_committed_identity(&mismatched);
+    fs::write(
+        mismatched.join("link/state.json"),
+        b"{\"instance_id\":\"wrong-instance-id\",\"home_label\":\"Test\"}",
+    )
+    .unwrap();
+    assert_refusal(&mismatched).await;
+    let _ = fs::remove_dir_all(mismatched);
+
+    #[cfg(feature = "full-tests")]
+    {
+        use solstone_core_sol_link::home_reach::{HomeReachFaultGuard, HomeReachFaultPrimitive};
+        for primitive in [
+            HomeReachFaultPrimitive::HeaderJsonSerialization,
+            HomeReachFaultPrimitive::ClaimsJsonSerialization,
+            HomeReachFaultPrimitive::SigningKeyLoad,
+            HomeReachFaultPrimitive::EcdsaSign,
+        ] {
+            let fault_root = journal();
+            plant_committed_identity(&fault_root);
+            let pending = json!({"service":"spl","state":"pending"})
+                .as_object()
+                .unwrap()
+                .clone();
+            let (app, poll) = overridden(
+                &fault_root,
+                SplPollOutcome::Success(pending),
+                Enrollment::Token,
+            );
+            let guard = HomeReachFaultGuard::install(primitive);
+            let (status, body) = request(
+                app.clone(),
+                Method::POST,
+                "/app/network/private-link/enable",
+                Body::empty(),
+            )
+            .await;
+            assert!(guard.was_consumed());
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(body["reason_code"], "service_operation_failed");
+
+            let (_, status_body) = request(
+                app,
+                Method::GET,
+                "/app/network/api/private-link",
+                Body::empty(),
+            )
+            .await;
+            assert!(
+                status_body["operation"].is_null()
+                    || status_body["operation"]["portal_url"].is_null()
+            );
+            assert_eq!(poll.calls.load(Ordering::Relaxed), 0);
+            let _ = fs::remove_dir_all(fault_root);
+        }
+    }
+
     let broken = journal();
     fs::write(broken.join("link"), b"not-a-directory").unwrap();
     let (status, failed) = post(&broken, "/app/network/private-link/enable", Body::empty()).await;
@@ -519,9 +683,116 @@ async fn enable_busy_and_consent_preparation_failures_are_refusals() {
     let _ = fs::remove_dir_all(broken);
 }
 
+struct DynamicPoll {
+    outcome: std::sync::Mutex<SplPollOutcome>,
+    calls: AtomicUsize,
+}
+impl SplPoll for DynamicPoll {
+    fn poll(&self, _base_url: &str, _nonce: &str) -> SplPollOutcome {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        self.outcome.lock().unwrap().clone()
+    }
+}
+
+#[tokio::test]
+async fn enable_busy_keeps_original_signed_portal_url_until_terminal() {
+    let root = journal();
+    let instance_id = plant_committed_identity(&root);
+    let pending = json!({"service":"spl","state":"pending"})
+        .as_object()
+        .unwrap()
+        .clone();
+    let poll = Arc::new(DynamicPoll {
+        outcome: std::sync::Mutex::new(SplPollOutcome::Success(pending)),
+        calls: AtomicUsize::new(0),
+    });
+    let app = router(root.to_path_buf())
+        .layer(Extension(NetworkOperationsOverride(Arc::new(
+            OperationRegistry::default(),
+        ))))
+        .layer(Extension(SplRuntimeOverride {
+            portal_base_url: "https://portal.test".to_owned(),
+            poll: poll.clone(),
+            enrollment: Arc::new(FakeEnrollment(Enrollment::Token)),
+        }));
+
+    // 1. First accepted enable stores a signed URL
+    let (status, body) = request(
+        app.clone(),
+        Method::POST,
+        "/app/network/private-link/enable",
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let first_url = body["operation"]["portal_url"].as_str().unwrap().to_owned();
+
+    // 2. Second start while that operation is open returns service_busy refusal
+    let (busy_status, busy_body) = request(
+        app.clone(),
+        Method::POST,
+        "/app/network/private-link/enable",
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(busy_status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(busy_body["reason_code"], "service_busy");
+
+    // Read-back returns that same URL string
+    let (_, status_body) = request(
+        app.clone(),
+        Method::GET,
+        "/app/network/api/private-link",
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(
+        status_body["operation"]["portal_url"].as_str().unwrap(),
+        first_url
+    );
+
+    // 3. After operation ends, next start has new nonce and different assertion
+    let revoked = json!({"service":"spl","state":"revoked"})
+        .as_object()
+        .unwrap()
+        .clone();
+    *poll.outcome.lock().unwrap() = SplPollOutcome::Success(revoked);
+    let terminal = wait_operation(app.clone(), "revoked").await;
+    assert!(terminal["portal_url"].is_null());
+
+    let (next_status, next_body) = request(
+        app.clone(),
+        Method::POST,
+        "/app/network/private-link/enable",
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(next_status, StatusCode::ACCEPTED);
+    let next_url = next_body["operation"]["portal_url"].as_str().unwrap();
+    assert_ne!(next_url, first_url);
+
+    let first_query = first_url.split_once('?').unwrap().1;
+    let first_params: std::collections::BTreeMap<_, _> = first_query
+        .split('&')
+        .map(|p| p.split_once('=').unwrap())
+        .collect();
+    let next_query = next_url.split_once('?').unwrap().1;
+    let next_params: std::collections::BTreeMap<_, _> = next_query
+        .split('&')
+        .map(|p| p.split_once('=').unwrap())
+        .collect();
+    assert_ne!(first_params["nonce"], next_params["nonce"]);
+    assert_ne!(first_params["assertion"], next_params["assertion"]);
+    assert_eq!(first_params["instance"], instance_id);
+    assert_eq!(next_params["instance"], instance_id);
+
+    let _ = fs::remove_dir_all(root);
+}
+
 #[tokio::test]
 async fn enable_approved_writes_identity_posture_and_token() {
     let root = journal();
+    plant_committed_identity(&root);
     let approved = json!({"service":"spl","state":"approved","approved_at":1})
         .as_object()
         .unwrap()
@@ -572,6 +843,7 @@ async fn enable_consent_and_relay_outcomes_are_mapped_without_egress() {
     ];
     for (poll_result, enrollment, phase, guidance) in cases {
         let root = journal();
+        plant_committed_identity(&root);
         let (app, poll) = overridden(&root, poll_result, enrollment);
         let (status, _) = request(
             app.clone(),
@@ -599,6 +871,7 @@ async fn enable_consent_and_relay_outcomes_are_mapped_without_egress() {
 #[tokio::test]
 async fn pending_stays_open_and_terminal_grace_allows_a_fresh_enable() {
     let root = journal();
+    plant_committed_identity(&root);
     let pending = json!({"service":"spl","state":"pending"})
         .as_object()
         .unwrap()
@@ -614,6 +887,7 @@ async fn pending_stays_open_and_terminal_grace_allows_a_fresh_enable() {
     let pending = wait_operation(app, "waiting").await;
     operation_keys(&pending);
     let terminal_root = journal();
+    plant_committed_identity(&terminal_root);
     let revoked = json!({"service":"spl","state":"revoked"})
         .as_object()
         .unwrap()

@@ -695,9 +695,28 @@ async fn enable_backup(deps: BackupWebDeps) -> axum::response::Response {
 }
 
 fn mint_portal(deps: &BackupWebDeps) -> Result<(String, String, String), axum::response::Response> {
+    let committed = solstone_core_sol_link::committed::load_committed_identity(&deps.journal_root)
+        .map_err(|_| internal_error())?;
     let nonce = solstone_core_handoff_nonce::mint_nonce().map_err(|_| internal_error())?;
-    let instance = operation::mint_hex().map_err(|_| internal_error())?;
-    let url = operation::portal_url(&deps.portal_base, &nonce, &instance);
+    let wall_unix_seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .map_err(|_| internal_error())?;
+    let assertion = solstone_core_sol_link::home_reach::sign_service_enable_assertion(
+        &committed,
+        "spb",
+        &nonce,
+        wall_unix_seconds,
+    )
+    .map_err(|_| internal_error())?;
+    let instance = committed.instance_id().to_owned();
+    let url = operation::portal_url(
+        &deps.portal_base,
+        &nonce,
+        &instance,
+        &assertion.compact,
+        &assertion.ca_pubkey_pem,
+    );
     Ok((nonce, instance, url))
 }
 

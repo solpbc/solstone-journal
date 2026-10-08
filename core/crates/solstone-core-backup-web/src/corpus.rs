@@ -938,6 +938,7 @@ fn engine_deps(
     http: Arc<dyn HttpTransport + Send + Sync>,
     restic_install_dir: Option<PathBuf>,
 ) -> crate::BackupWebDeps {
+    write_test_committed_identity(&journal_root);
     crate::BackupWebDeps {
         journal_root,
         cache: corpus_cache(),
@@ -955,6 +956,25 @@ fn engine_deps(
         handoff_poll_lease: Arc::new(AtomicBool::new(false)),
         restore_prepare: crate::restore_prepare::new_shared(),
     }
+}
+
+fn write_test_committed_identity(journal_root: &Path) -> String {
+    let ca = solstone_core_sol_link::ca::generate_ca().expect("ca");
+    let cert_pem = ca.certificate_pem();
+    let key_pem = ca.private_key_pem();
+    let instance_id = solstone_core_sol_link::ca::jid_from_spki(ca.spki_der()).expect("jid");
+
+    let ca_dir = journal_root.join("link/ca");
+    fs::create_dir_all(&ca_dir).expect("ca dir");
+    fs::write(ca_dir.join("cert.pem"), cert_pem).expect("cert");
+    fs::write(ca_dir.join("private.pem"), key_pem).expect("key");
+    let state_path = journal_root.join("link/state.json");
+    fs::write(
+        state_path,
+        format!(r#"{{"instance_id":"{instance_id}","home_label":"Test Home"}}"#),
+    )
+    .expect("state");
+    instance_id
 }
 
 fn prepared(
@@ -1015,6 +1035,12 @@ async fn drain_hosted_wait(deps: &crate::BackupWebDeps) {
         crate::operation::HANDOFF_TTL + Duration::from_secs(1),
     );
     let _ = wait_terminal(deps).await;
+    for _ in 0..400 {
+        if !deps.handoff_poll_lease.load(Ordering::Acquire) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 fn disable_backup(root: &Path) {
@@ -1530,32 +1556,49 @@ fn assert_enable_portal_url(url: &str) {
     let relative = url.strip_prefix("https://services.solstone.app").unwrap();
     let (path, query) = relative.split_once('?').unwrap();
     assert_eq!(path, "/enable/backup");
-    let nonce = query
-        .split("nonce=")
-        .nth(1)
-        .unwrap()
+    let pairs = query
         .split('&')
-        .next()
-        .unwrap();
-    let instance = query
-        .split("instance=")
-        .nth(1)
-        .unwrap()
-        .split('&')
-        .next()
-        .unwrap();
+        .map(|p| p.split_once('=').unwrap())
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(pairs.len(), 4);
+
+    let nonce = pairs.get("nonce").copied().unwrap();
     assert_eq!(nonce.len(), solstone_core_handoff_nonce::NONCE_LENGTH_CHARS);
     assert!(
         nonce
             .bytes()
-            .all(|byte| { solstone_core_handoff_nonce::NONCE_ALPHABET.contains(&byte) })
+            .all(|byte| solstone_core_handoff_nonce::NONCE_ALPHABET.contains(&byte))
     );
-    assert_eq!(instance.len(), 32);
-    assert!(
-        instance
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-    );
+
+    let instance = pairs.get("instance").copied().unwrap();
+    assert_eq!(instance.len(), 36);
+    let parts: Vec<&str> = instance.split('-').collect();
+    assert_eq!(parts.len(), 5);
+    assert_eq!(parts[0].len(), 8);
+    assert_eq!(parts[1].len(), 4);
+    assert_eq!(parts[2].len(), 4);
+    assert_eq!(parts[3].len(), 4);
+    assert_eq!(parts[4].len(), 12);
+
+    let assertion_encoded = pairs.get("assertion").copied().unwrap();
+    let compact = solstone_core_sol_link::home_reach::percent_decode(assertion_encoded).unwrap();
+    let ca_pubkey_encoded = pairs.get("ca_pubkey").copied().unwrap();
+    let ca_pubkey = solstone_core_sol_link::home_reach::percent_decode(ca_pubkey_encoded).unwrap();
+    assert!(!ca_pubkey.contains("PRIVATE KEY"));
+    assert!(ca_pubkey.starts_with("-----BEGIN PUBLIC KEY-----"));
+    assert!(ca_pubkey.ends_with("-----END PUBLIC KEY-----"));
+
+    let claims =
+        solstone_core_sol_link::home_reach::decode_service_enable_claims(&compact).unwrap();
+    assert_eq!(claims["iss"], format!("home:{instance}"));
+    assert_eq!(claims["aud"], "solstone-reach");
+    assert_eq!(claims["scope"], "services.enable");
+    assert_eq!(claims["instance_id"], instance);
+    assert_eq!(claims["nonce"], nonce);
+    assert_eq!(claims["service"], "spb");
+    let iat = claims["iat"].as_i64().unwrap();
+    let exp = claims["exp"].as_i64().unwrap();
+    assert_eq!(exp - iat, 1800);
 }
 
 fn assert_restore_portal_url(url: &str) {
@@ -1592,6 +1635,135 @@ async fn enable_hosted_returns_portal_url() {
     let url = body["operation"]["portal_url"].as_str().unwrap();
     assert_enable_portal_url(url);
     drain_hosted_wait(&deps).await;
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[tokio::test]
+async fn enable_hosted_verifies_refusals_and_busy_behavior() {
+    use solstone_core_sol_link::home_reach::{
+        HomeReachFaultGuard, HomeReachFaultPrimitive, verify_service_enable_compact,
+    };
+
+    // 1. Success case independently ring-verifies and checks response body
+    let root = crate::test_support::root("healthy");
+    let (deps, _restic) = prepared(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    let (status, body) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 200);
+    assert!(
+        !serde_json::to_string(&body)
+            .unwrap()
+            .contains("PRIVATE KEY")
+    );
+    let url = body["operation"]["portal_url"].as_str().unwrap();
+    assert_enable_portal_url(url);
+    let pairs = url
+        .split_once('?')
+        .unwrap()
+        .1
+        .split('&')
+        .map(|p| p.split_once('=').unwrap())
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let compact = solstone_core_sol_link::home_reach::percent_decode(pairs["assertion"]).unwrap();
+    let pem = solstone_core_sol_link::home_reach::percent_decode(pairs["ca_pubkey"]).unwrap();
+    assert!(verify_service_enable_compact(&pem, &compact));
+
+    // Busy while open returns existing refusal and keeps stored URL
+    let (busy_status, busy_body) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(busy_status, 400);
+    assert_eq!(busy_body["reason_code"], "backup_busy");
+    let (_, status_body) = get_status_json(&deps).await;
+    assert_eq!(
+        status_body["operation"]["portal_url"].as_str().unwrap(),
+        url
+    );
+
+    drain_hosted_wait(&deps).await;
+
+    // After finish, next start gets new nonce and different assertion
+    let (next_status, next_body) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(next_status, 200);
+    let next_url = next_body["operation"]["portal_url"].as_str().unwrap();
+    assert_ne!(url, next_url);
+    drain_hosted_wait(&deps).await;
+
+    // 2. Refusals: missing CA
+    let missing_ca_root = crate::test_support::root("healthy");
+    let (missing_deps, _restic) = prepared(
+        missing_ca_root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    fs::remove_file(missing_ca_root.path().join("link/ca/cert.pem")).unwrap();
+    let (status, body) = post_json(&missing_deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 500);
+    assert_eq!(body["reason_code"], "internal_error");
+    assert!(missing_deps.operations.lock().unwrap().is_none());
+
+    // Corrupt CA
+    let corrupt_ca_root = crate::test_support::root("healthy");
+    let (corrupt_deps, _restic) = prepared(
+        corrupt_ca_root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    fs::write(
+        corrupt_ca_root.path().join("link/ca/cert.pem"),
+        b"not a pem",
+    )
+    .unwrap();
+    let (status, body) = post_json(&corrupt_deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 500);
+    assert_eq!(body["reason_code"], "internal_error");
+    assert!(corrupt_deps.operations.lock().unwrap().is_none());
+
+    // Missing state
+    let missing_state_root = crate::test_support::root("healthy");
+    let (missing_state_deps, _restic) = prepared(
+        missing_state_root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    fs::remove_file(missing_state_root.path().join("link/state.json")).unwrap();
+    let (status, body) = post_json(&missing_state_deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 500);
+    assert_eq!(body["reason_code"], "internal_error");
+    assert!(missing_state_deps.operations.lock().unwrap().is_none());
+
+    // Mismatched state
+    let mismatched_state_root = crate::test_support::root("healthy");
+    let (mismatched_state_deps, _restic) = prepared(
+        mismatched_state_root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    fs::write(
+        mismatched_state_root.path().join("link/state.json"),
+        b"{\"instance_id\":\"wrong-instance-id\",\"home_label\":\"Test\"}",
+    )
+    .unwrap();
+    let (status, body) = post_json(&mismatched_state_deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 500);
+    assert_eq!(body["reason_code"], "internal_error");
+    assert!(mismatched_state_deps.operations.lock().unwrap().is_none());
+
+    // Fault primitives
+    for primitive in [
+        HomeReachFaultPrimitive::HeaderJsonSerialization,
+        HomeReachFaultPrimitive::ClaimsJsonSerialization,
+        HomeReachFaultPrimitive::SigningKeyLoad,
+        HomeReachFaultPrimitive::EcdsaSign,
+    ] {
+        let fault_root = crate::test_support::root("healthy");
+        let (fault_deps, _restic) = prepared(
+            fault_root.path().to_path_buf(),
+            Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        );
+        let guard = HomeReachFaultGuard::install(primitive);
+        let (status, body) = post_json(&fault_deps, "/app/backup/enable-hosted", None).await;
+        assert_eq!(status, 500);
+        assert_eq!(body["reason_code"], "internal_error");
+        assert!(guard.was_consumed());
+        assert!(fault_deps.operations.lock().unwrap().is_none());
+    }
 }
 
 #[tokio::test]
@@ -2296,7 +2468,7 @@ async fn restore_prepare_does_not_allocate_an_enable_instance_id() {
     crate::operation::reset_instance_allocations();
     let (status, _) = post_json(&enabled_deps, "/app/backup/enable-hosted", None).await;
     assert_eq!(status, 200);
-    assert_eq!(crate::operation::instance_allocations(), 1);
+    assert_eq!(crate::operation::instance_allocations(), 0);
     drain_hosted_wait(&enabled_deps).await;
 }
 

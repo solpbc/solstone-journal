@@ -387,6 +387,7 @@ where
     });
 }
 
+#[allow(dead_code)]
 pub fn mint_hex() -> Result<String, getrandom::Error> {
     #[cfg(test)]
     INSTANCE_ALLOCATIONS.with(|count| count.set(count.get().saturating_add(1)));
@@ -413,12 +414,15 @@ pub fn instance_allocations() -> usize {
     INSTANCE_ALLOCATIONS.with(Cell::get)
 }
 
-pub fn portal_url(base: &str, nonce: &str, instance: &str) -> String {
-    // /enable/backup is the external services-portal handoff endpoint, not a local
-    // Convey route. Keep this URL absolute so the browser does not target this journal.
-    format!(
-        "{}/enable/backup?nonce={nonce}&instance={instance}",
-        base.trim_end_matches('/')
+pub fn portal_url(
+    base: &str,
+    nonce: &str,
+    instance: &str,
+    assertion: &str,
+    ca_pubkey: &str,
+) -> String {
+    solstone_core_sol_link::home_reach::service_enable_portal_url(
+        base, "backup", nonce, instance, assertion, ca_pubkey,
     )
 }
 
@@ -562,14 +566,30 @@ mod tests {
     fn portal_url_uses_exact_backup_handoff_route_and_query() {
         let nonce = "alpha-nonce-1";
         let instance = "beta-instance-2";
-        let url = portal_url("http://portal.example.test:8123/", nonce, instance);
+        let assertion = "test-assertion";
+        let ca_pubkey = "test-ca-pubkey";
+        let url = portal_url(
+            "http://portal.example.test:8123/",
+            nonce,
+            instance,
+            assertion,
+            ca_pubkey,
+        );
 
         let (scheme, authority, path, query_pairs) = parse_portal_url(&url);
 
         assert_eq!(scheme, "http");
         assert_eq!(authority, "portal.example.test:8123");
         assert_eq!(path, "/enable/backup");
-        assert_eq!(query_pairs, vec![("instance", instance), ("nonce", nonce)]);
+        assert_eq!(
+            query_pairs,
+            vec![
+                ("assertion", assertion),
+                ("ca_pubkey", ca_pubkey),
+                ("instance", instance),
+                ("nonce", nonce),
+            ]
+        );
     }
 
     #[test]

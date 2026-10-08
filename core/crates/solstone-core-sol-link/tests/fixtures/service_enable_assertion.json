@@ -1,0 +1,11 @@
+{
+  "generator": "capture_service_enable_fixture",
+  "clock_unix_seconds": 1700000000,
+  "nonce": "2222222222222222222222222222222222222222222222222222",
+  "service": "spl",
+  "instance_id": "2c02aa47-034f-8974-963f-24821e6c7186",
+  "iat": 1700000000,
+  "exp": 1700001800,
+  "ca_pubkey_pem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtnyUMX+e5ty+qE/6KKNoTMbQ+fKY\nrJohNYDZsuWRmM2QmeeAMt81UGg7Qu0Ru0TZmNtz9uLrjywygiSLHUObNA==\n-----END PUBLIC KEY-----",
+  "compact": "eyJhbGciOiJFUzI1NiIsInR5cCI6ImhvbWUtcmVhY2gifQ.eyJpc3MiOiJob21lOjJjMDJhYTQ3LTAzNGYtODk3NC05NjNmLTI0ODIxZTZjNzE4NiIsImF1ZCI6InNvbHN0b25lLXJlYWNoIiwic2NvcGUiOiJzZXJ2aWNlcy5lbmFibGUiLCJpbnN0YW5jZV9pZCI6IjJjMDJhYTQ3LTAzNGYtODk3NC05NjNmLTI0ODIxZTZjNzE4NiIsIm5vbmNlIjoiMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIsInNlcnZpY2UiOiJzcGwiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMTgwMH0.YHhK-cNab3J4x7Arja4PEuk4U1Z5ZJ4PFndJkHGhpvSPx3d0EzyqhMmgk9LWrDTnAoaoYU_7cDYK7DrtrxkJXg"
+}

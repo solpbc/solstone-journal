@@ -24,6 +24,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-handoff-nonce.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-offload.workspace = true
+solstone-core-sol-link = { workspace = true, default-features = false, features = ["host"] }
 solstone-core-system.workspace = true
 
 [target.'cfg(windows)'.dependencies]
@@ -33,7 +34,6 @@ tokio = { workspace = true, features = ["rt", "time"] }
 nix = { workspace = true, features = ["fs"] }
 
 [target.'cfg(windows)'.dev-dependencies]
-solstone-core-sol-link.workspace = true
 solstone-core-system = { workspace = true, features = ["test-hooks"] }
 
 [dev-dependencies]
@@ -49,4 +49,4 @@ name = "backup_web_callosum_transport"
 path = "tests/backup_web_callosum_transport.rs"
 
 [features]
-full-tests = []
+full-tests = ["solstone-core-sol-link/test-hooks"]

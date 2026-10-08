@@ -5349,6 +5349,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-auth-flow",
  "solstone-core-convey-http",
  "solstone-core-ingest-contract",
  "solstone-core-journal-config",

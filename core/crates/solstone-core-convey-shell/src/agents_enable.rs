@@ -16,7 +16,6 @@ use solstone_core_journal_config::{
     McpEndpointCapability, mcp_endpoint_capability, read_journal_config,
 };
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
-use solstone_core_sol_link::service_identity::load_or_create_service_identity;
 use solstone_core_thinking::confidential::{
     HandoffResult, OperationHandle, OperationRegistry, Phase,
 };
@@ -186,7 +185,7 @@ async fn agents_enable(
             poll: value.poll,
         })
         .unwrap_or(runtime);
-    let identity = match load_or_create_service_identity(&journal.0) {
+    let committed = match solstone_core_sol_link::committed::load_committed_identity(&journal.0) {
         Ok(value) => value,
         Err(_) => {
             return refusal(
@@ -206,9 +205,39 @@ async fn agents_enable(
             );
         }
     };
-    let portal_url = format!(
-        "{}/enable/solstone-me?nonce={nonce}&instance={}",
-        runtime.portal_base_url, identity.instance_id
+    let wall_unix_seconds = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+    {
+        Ok(duration) => duration.as_secs() as i64,
+        Err(_) => {
+            return refusal(
+                "service_operation_failed",
+                &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let assertion = match solstone_core_sol_link::home_reach::sign_service_enable_assertion(
+        &committed,
+        "sme",
+        &nonce,
+        wall_unix_seconds,
+    ) {
+        Ok(value) => value,
+        Err(_) => {
+            return refusal(
+                "service_operation_failed",
+                &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let portal_url = solstone_core_sol_link::home_reach::service_enable_portal_url(
+        &runtime.portal_base_url,
+        "solstone-me",
+        &nonce,
+        committed.instance_id(),
+        &assertion.compact,
+        &assertion.ca_pubkey_pem,
     );
     let (handle, operation) =
         match operations.start_operation(SERVICE, "sme_enable", Some(portal_url)) {

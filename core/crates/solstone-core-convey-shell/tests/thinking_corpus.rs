@@ -422,6 +422,17 @@ fn write_link_state(journal: &Path, instance_id: &str) {
     .expect("link state writes");
 }
 
+fn write_committed_link(journal: &Path) -> String {
+    let ca = generate_ca().expect("test CA generates");
+    let directory = journal.join("link/ca");
+    fs::create_dir_all(&directory).expect("CA directory creates");
+    fs::write(directory.join("cert.pem"), ca.certificate_pem()).expect("certificate writes");
+    fs::write(directory.join("private.pem"), ca.private_key_pem()).expect("private key writes");
+    let instance_id = solstone_core_sol_link::ca::jid_from_spki(ca.spki_der()).expect("jid");
+    write_link_state(journal, &instance_id);
+    instance_id
+}
+
 fn link_snapshot(journal: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     fn collect(root: &Path, directory: &Path, entries: &mut Vec<(PathBuf, Vec<u8>)>) {
         let Ok(children) = fs::read_dir(directory) else {
@@ -575,6 +586,7 @@ fn router_with_runtime_override(
     router(journal).layer(Extension(runtime_override))
 }
 
+#[allow(dead_code)]
 fn consent_identity_and_nonce(
     response: &(StatusCode, String, Option<String>, Vec<u8>),
 ) -> (String, String) {
@@ -582,17 +594,13 @@ fn consent_identity_and_nonce(
     let url = body["operation"]["portal_url"]
         .as_str()
         .expect("consent URL");
-    let nonce = url
-        .split("?nonce=")
-        .nth(1)
-        .and_then(|value| value.split('&').next())
-        .expect("nonce")
-        .to_owned();
-    let instance = url
-        .split_once("&instance=")
-        .expect("mandatory instance")
-        .1
-        .to_owned();
+    let query = url.split_once('?').expect("query params").1;
+    let params: std::collections::BTreeMap<_, _> = query
+        .split('&')
+        .map(|p| p.split_once('=').expect("pair"))
+        .collect();
+    let instance = params["instance"].to_owned();
+    let nonce = params["nonce"].to_owned();
     (instance, nonce)
 }
 
@@ -1573,7 +1581,7 @@ async fn validate_keys_is_non_persisting_and_has_the_exact_contract_shape() {
 #[tokio::test]
 async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operation() {
     let first_journal = journal_for_phase("none");
-    write_link_ca(&first_journal.0);
+    write_committed_link(&first_journal.0);
     let second_journal = journal_for_phase("confidential_inactive");
     let (started_sender, started_receiver) = channel();
     let (release_sender, release_receiver) = channel();
@@ -1731,7 +1739,7 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
 }
 
 #[tokio::test]
-async fn confidential_enable_reads_identity_without_mutating_link_state() {
+async fn confidential_enable_requires_committed_identity_and_preserves_link_state() {
     let journal = journal_for_phase("none");
     write_link_ca(&journal.0);
     let app = router_with_runtime(
@@ -1740,38 +1748,92 @@ async fn confidential_enable_reads_identity_without_mutating_link_state() {
         Arc::new(EarlyAccessPoll),
     );
 
+    // 1. CA without state refuses with existing confidential_enable_failed body and starts no operation
     let before = link_snapshot(&journal.0);
-    let first = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
-    assert_eq!(first.0, StatusCode::ACCEPTED);
-    let (derived, first_nonce) = consent_identity_and_nonce(&first);
+    let ca_only = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(ca_only.0, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: Value = serde_json::from_slice(&ca_only.3).expect("refusal JSON");
+    assert_eq!(body["reason_code"], "settings_operation_failed");
     assert_eq!(link_snapshot(&journal.0), before);
-    wait_for_operation_phase(app.clone(), "early_access").await;
+    let providers = request(app.clone(), "GET", "/app/thinking/api/providers").await;
+    let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+    assert_eq!(
+        providers_body["active_lane"]["confidential_operation"],
+        Value::Null
+    );
 
-    let second = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
-    assert_eq!(second.0, StatusCode::ACCEPTED);
-    let (second_identity, second_nonce) = consent_identity_and_nonce(&second);
-    assert_eq!(second_identity, derived);
-    assert_ne!(second_nonce, first_nonce);
-    assert_eq!(link_snapshot(&journal.0), before);
-    wait_for_operation_phase(app.clone(), "early_access").await;
-
-    write_link_state(&journal.0, &derived);
+    // 2. CA plus matching state succeeds, link files are unchanged, and the URL verifies as service spp with exp - iat = 1800
+    let instance_id = write_committed_link(&journal.0);
     let before = link_snapshot(&journal.0);
-    let matching = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
-    assert_eq!(matching.0, StatusCode::ACCEPTED);
-    assert_eq!(consent_identity_and_nonce(&matching).0, derived);
+    let success = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(success.0, StatusCode::ACCEPTED);
     assert_eq!(link_snapshot(&journal.0), before);
-    wait_for_operation_phase(app.clone(), "early_access").await;
+    let success_body: Value = serde_json::from_slice(&success.3).expect("enable JSON");
+    let portal_url = success_body["operation"]["portal_url"]
+        .as_str()
+        .expect("portal_url");
+    let (path, query) = portal_url
+        .strip_prefix("https://portal.example")
+        .expect("prefix")
+        .split_once('?')
+        .expect("query params");
+    assert_eq!(path, "/enable/spp");
+    let params: std::collections::BTreeMap<_, _> = query
+        .split('&')
+        .map(|p| p.split_once('=').expect("pair"))
+        .collect();
+    assert_eq!(params.len(), 4);
+    assert_eq!(params["instance"], instance_id);
+    let nonce = params["nonce"];
+    assert_eq!(nonce.len(), 52);
+    let compact = solstone_core_sol_link::home_reach::percent_decode(params["assertion"]).unwrap();
+    let _ca_pubkey =
+        solstone_core_sol_link::home_reach::percent_decode(params["ca_pubkey"]).unwrap();
+    #[cfg(feature = "full-tests")]
+    assert!(
+        solstone_core_sol_link::home_reach::verify_service_enable_compact(&_ca_pubkey, &compact)
+    );
+    let claims =
+        solstone_core_sol_link::home_reach::decode_service_enable_claims(&compact).unwrap();
+    assert_eq!(claims["iss"], format!("home:{instance_id}"));
+    assert_eq!(claims["aud"], "solstone-reach");
+    assert_eq!(claims["scope"], "services.enable");
+    assert_eq!(claims["instance_id"], instance_id);
+    assert_eq!(claims["nonce"], nonce);
+    assert_eq!(claims["service"], "spp");
+    let iat = claims["iat"].as_i64().expect("iat integer");
+    let exp = claims["exp"].as_i64().expect("exp integer");
+    assert_eq!(exp - iat, 1800);
 
+    // 3. Drifted state.json refuses, starts no operation, and does not rewrite link files
+    let drifted_journal = journal_for_phase("none");
+    write_link_ca(&drifted_journal.0);
     let drifted = "11111111-1111-8111-8111-111111111111";
-    write_link_state(&journal.0, drifted);
-    let before = link_snapshot(&journal.0);
-    let repaired = request(app, "POST", "/app/thinking/api/confidential/enable").await;
-    assert_eq!(repaired.0, StatusCode::ACCEPTED);
-    assert_eq!(consent_identity_and_nonce(&repaired).0, derived);
-    assert_ne!(consent_identity_and_nonce(&repaired).0, drifted);
-    assert_eq!(link_snapshot(&journal.0), before);
+    write_link_state(&drifted_journal.0, drifted);
+    let before = link_snapshot(&drifted_journal.0);
+    let drifted_app = router_with_runtime(
+        drifted_journal.0.clone(),
+        "https://portal.example",
+        Arc::new(EarlyAccessPoll),
+    );
+    let drifted_response = request(
+        drifted_app.clone(),
+        "POST",
+        "/app/thinking/api/confidential/enable",
+    )
+    .await;
+    assert_eq!(drifted_response.0, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: Value = serde_json::from_slice(&drifted_response.3).expect("refusal JSON");
+    assert_eq!(body["reason_code"], "settings_operation_failed");
+    assert_eq!(link_snapshot(&drifted_journal.0), before);
+    let providers = request(drifted_app, "GET", "/app/thinking/api/providers").await;
+    let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+    assert_eq!(
+        providers_body["active_lane"]["confidential_operation"],
+        Value::Null
+    );
 
+    // 4. State without a CA refuses the same way
     let fallback_journal = journal_for_phase("none");
     let stored = "22222222-2222-8222-8222-222222222222";
     write_link_state(&fallback_journal.0, stored);
@@ -1781,39 +1843,101 @@ async fn confidential_enable_reads_identity_without_mutating_link_state() {
         Arc::new(EarlyAccessPoll),
     );
     let before = link_snapshot(&fallback_journal.0);
-    let response = request(fallback, "POST", "/app/thinking/api/confidential/enable").await;
-    assert_eq!(response.0, StatusCode::ACCEPTED);
-    assert_eq!(consent_identity_and_nonce(&response).0, stored);
-    assert_eq!(link_snapshot(&fallback_journal.0), before);
-}
-
-#[tokio::test]
-async fn confidential_enable_refuses_missing_identity_without_starting_an_operation() {
-    let journal = journal_for_phase("none");
-    let app = router(journal.0.clone());
-    let before = link_snapshot(&journal.0);
-    let response = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    let response = request(
+        fallback.clone(),
+        "POST",
+        "/app/thinking/api/confidential/enable",
+    )
+    .await;
     assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
     let body: Value = serde_json::from_slice(&response.3).expect("refusal JSON");
-    assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
-    assert!(
-        body["error"]
-            .as_str()
-            .is_some_and(|error| !error.is_empty()),
-        "the refusal carries owner words in error"
-    );
     assert_eq!(body["reason_code"], "settings_operation_failed");
-    assert_eq!(
-        body["detail"],
-        "something went wrong - try again, and if it persists, check the health dashboard"
-    );
-    assert_eq!(link_snapshot(&journal.0), before);
-    let providers = request(app, "GET", "/app/thinking/api/providers").await;
+    assert_eq!(link_snapshot(&fallback_journal.0), before);
+    let providers = request(fallback, "GET", "/app/thinking/api/providers").await;
     let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
     assert_eq!(
         providers_body["active_lane"]["confidential_operation"],
         Value::Null
     );
+}
+
+#[tokio::test]
+async fn confidential_enable_refuses_missing_identity_without_starting_an_operation() {
+    async fn assert_refusal(journal: &Path) {
+        let (started_tx, started_rx) = channel();
+        let (_release_tx, release_rx) = channel();
+        let app = router_with_runtime(
+            journal.to_path_buf(),
+            "https://portal.example",
+            Arc::new(ParkedPoll {
+                started: started_tx,
+                release: Mutex::new(release_rx),
+            }),
+        );
+        let before = link_snapshot(journal);
+        let response = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+        assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
+        let body: Value = serde_json::from_slice(&response.3).expect("refusal JSON");
+        assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
+        assert!(
+            body["error"]
+                .as_str()
+                .is_some_and(|error| !error.is_empty()),
+            "the refusal carries owner words in error"
+        );
+        assert_eq!(body["reason_code"], "settings_operation_failed");
+        assert_eq!(
+            body["detail"],
+            "something went wrong - try again, and if it persists, check the health dashboard"
+        );
+        assert_eq!(link_snapshot(journal), before);
+        let providers = request(app, "GET", "/app/thinking/api/providers").await;
+        let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+        assert_eq!(
+            providers_body["active_lane"]["confidential_operation"],
+            Value::Null
+        );
+        assert!(started_rx.try_recv().is_err(), "poll must not be called");
+    }
+
+    // 1. Missing identity (neither CA nor state)
+    let missing = journal_for_phase("none");
+    assert_refusal(&missing.0).await;
+
+    // 2. Corrupt CA
+    let corrupt = journal_for_phase("none");
+    write_committed_link(&corrupt.0);
+    fs::write(corrupt.0.join("link/ca/cert.pem"), b"not a cert").unwrap();
+    assert_refusal(&corrupt.0).await;
+
+    // 3. Missing state (CA present, state deleted)
+    let missing_state = journal_for_phase("none");
+    write_committed_link(&missing_state.0);
+    fs::remove_file(missing_state.0.join("link/state.json")).unwrap();
+    assert_refusal(&missing_state.0).await;
+
+    // 4. Mismatched state
+    let mismatched = journal_for_phase("none");
+    write_committed_link(&mismatched.0);
+    write_link_state(&mismatched.0, "wrong-instance-id");
+    assert_refusal(&mismatched.0).await;
+
+    #[cfg(feature = "full-tests")]
+    {
+        use solstone_core_sol_link::home_reach::{HomeReachFaultGuard, HomeReachFaultPrimitive};
+        for primitive in [
+            HomeReachFaultPrimitive::HeaderJsonSerialization,
+            HomeReachFaultPrimitive::ClaimsJsonSerialization,
+            HomeReachFaultPrimitive::SigningKeyLoad,
+            HomeReachFaultPrimitive::EcdsaSign,
+        ] {
+            let fault_journal = journal_for_phase("none");
+            write_committed_link(&fault_journal.0);
+            let guard = HomeReachFaultGuard::install(primitive);
+            assert_refusal(&fault_journal.0).await;
+            assert!(guard.was_consumed());
+        }
+    }
 }
 
 #[tokio::test]
@@ -1830,7 +1954,7 @@ async fn confidential_handoff_provisions_and_disable_restores_the_prior_provider
         "providers": {"local": prior_local.clone(), "active": prior_active.clone()},
         "services": {"other": {"kept": true}},
     })));
-    write_link_ca(&journal.0);
+    write_committed_link(&journal.0);
     let handoff = json!({
         "endpoint_url": "https://handoff.example/v1",
         "served_model_id": "handoff-model",
@@ -1889,7 +2013,7 @@ async fn confidential_handoff_provisions_and_disable_restores_the_prior_provider
 #[tokio::test]
 async fn confidential_worker_panic_is_supervised_and_allows_a_later_enable() {
     let journal = journal_for_phase("none");
-    write_link_ca(&journal.0);
+    write_committed_link(&journal.0);
     let app = router_with_runtime(
         journal.0.clone(),
         "https://portal.example",
@@ -2090,7 +2214,7 @@ fn thinking_conversion_is_explicit_at_the_catch_all_boundary() {
 #[tokio::test]
 async fn confidential_disable_while_worker_is_parked_cancels_operation_and_prevents_provisioning() {
     let journal = journal_for_phase("none");
-    write_link_ca(&journal.0);
+    write_committed_link(&journal.0);
     let (started_sender, started_receiver) = channel();
     let (release_sender, release_receiver) = channel();
     let handoff = json!({
@@ -2188,7 +2312,7 @@ impl ConfidentialPoll for ContinuePoll {
 #[tokio::test]
 async fn confidential_turn_on_right_after_turn_off_is_accepted() {
     let journal = journal_for_phase("none");
-    write_link_ca(&journal.0);
+    write_committed_link(&journal.0);
     let app = router_with_runtime(
         journal.0.clone(),
         "https://portal.example/",
@@ -2216,7 +2340,7 @@ async fn confidential_turn_on_right_after_turn_off_is_accepted() {
 #[tokio::test]
 async fn confidential_enable_cancelled_during_pre_attempt_hook_skips_attempt_write_and_spawn() {
     let journal = journal_for_phase("none");
-    write_link_ca(&journal.0);
+    write_committed_link(&journal.0);
     let (in_hook_tx, in_hook_rx) = channel();
     let (done_tx, done_rx) = channel();
     let done_rx = Mutex::new(done_rx);
