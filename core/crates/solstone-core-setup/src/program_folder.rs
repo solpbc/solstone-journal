@@ -319,20 +319,23 @@ fn is_prefix_of(prefix: &[String], full: &[String], case_sensitive: bool) -> boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "full-tests")]
     use std::fs;
+    #[cfg(feature = "full-tests")]
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    #[cfg(feature = "full-tests")]
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
+    #[cfg(feature = "full-tests")]
     fn test_dir(label: &str) -> PathBuf {
-        let path = PathBuf::from("/var/tmp").join(format!(
+        let path = std::env::temp_dir().join(format!(
             "program-folder-{}-{}-{}",
             label,
             std::process::id(),
             TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).expect("create test directory");
+        fs::create_dir(&path).expect("create owned test directory");
         path
     }
 
@@ -400,6 +403,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_layout_no_update_exe_allows_journal() {
         let dir = test_dir("no-update");
@@ -416,6 +420,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_layout_update_exe_in_parent() {
         let dir = test_dir("direct-parent");
@@ -428,6 +433,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_layout_current_bin_nested() {
         let dir = test_dir("nested-current");
@@ -442,6 +448,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_layout_current_component_case_insensitive() {
         let dir = test_dir("case-current");
@@ -456,7 +463,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests", unix))]
     #[test]
     fn program_folder_symlink_into_root_refuses() {
         let dir = test_dir("symlink-into-root");
@@ -482,6 +489,41 @@ mod tests {
     }
 
     #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(windows)]
+    #[test]
+    fn program_folder_windows_junction_and_missing_leaf_refuse() {
+        let dir = test_dir("windows-junction");
+        let program = dir.join("program");
+        let bin = program.join("current").join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(program.join("Update.exe"), b"exe").unwrap();
+        let exe = bin.join("solstone.exe");
+        fs::write(&exe, b"exe").unwrap();
+        let journal = program.join("journal");
+        fs::create_dir(&journal).unwrap();
+        let alias = dir.join("outside-junction");
+        let result = std::process::Command::new("cmd.exe")
+            .args(["/D", "/C", "mklink", "/J"])
+            .arg(&alias)
+            .arg(&journal)
+            .output()
+            .expect("create Windows directory junction");
+        assert!(
+            result.status.success(),
+            "junction creation failed: {result:?}"
+        );
+        for target in [&alias, &alias.join("uncreated-child")] {
+            assert!(matches!(
+                refuse_journal_in_program_folder(target, &exe),
+                Err(IdentityError::AdmissionRefused(reason))
+                    if reason == PROGRAM_FOLDER_JOURNAL_REFUSAL
+            ));
+        }
+        fs::remove_dir(&alias).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
     #[test]
     fn program_folder_missing_leaf_under_alias_refuses() {
         let dir = test_dir("missing-leaf");
@@ -507,7 +549,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests", unix))]
     #[test]
     fn program_folder_unresolvable_alias_refuses() {
         let dir = test_dir("unresolvable-alias");

@@ -6,6 +6,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- setup cleanup removes more files outside your journal on linux, mac and windows. it keeps your journal's setup record.
+- on windows, setup requires your journal to be outside the program folder that uninstall removes. if your journal is already there, stop it and move the whole journal folder before uninstalling.
+
 ### Added
 
 - until a device is paired, the thinking page links to where you pair one. setup ends on that page, so you see the link as soon as your journal is set up.

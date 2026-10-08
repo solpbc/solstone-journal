@@ -1349,6 +1349,7 @@ mod tests {
         assert!(service.calls.lock().unwrap().is_empty());
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_move_refuses_before_rename() {
         let root = test_root("program-folder-move");

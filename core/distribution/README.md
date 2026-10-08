@@ -2,7 +2,7 @@
 
 This file ships inside the installed tree, at `share/README.md`, next to `bin/` and `share/LICENSE`. If you are an agent (Claude, Codex, or similar) helping an owner get the journal running, start here.
 
-## Where things are
+## Where things are on linux
 
 - `~/.local/bin/solstone`: the CLI. `solstone journal` runs and repairs the journal on this computer (setup, service, doctor); the other commands reach your journal through its API
 - `~/.local/bin/journal`: the same program under a shorter name; `journal <command>` is `solstone journal <command>`
@@ -56,4 +56,8 @@ Only artifacts under the owner's `$HOME` are examined. A `solstone`/`journal` in
 solstone journal setup --clean-uninstall --yes
 ```
 
-Removes the managed service, wrappers, config, and setup manifest. Never the journal.
+Cleanup removes service files, wrappers, config, caches, setup backups, package receipts and skill links when they belong to this installation and are outside every recorded journal folder. Shared shell PATH additions, copied or custom skills, and small installation records stay to prevent old launchers from starting a removed installation.
+
+Your journal stays, including its setup manifest. Read the cleanup result; if cleanup fails, stop and resolve the reported problem first. Follow [INSTALL.md](https://github.com/solpbc/solstone-journal/blob/main/INSTALL.md) for each platform's removal steps and retained files.
+
+On windows, keep the journal outside the program folder, normally `%LOCALAPPDATA%\SolstoneJournal`. Uninstall deletes that program folder. If your journal is already there, follow the windows removal steps in INSTALL.md to stop its background support, move the whole journal folder outside the program folder and select the moved journal again before uninstalling.

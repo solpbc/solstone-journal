@@ -462,6 +462,8 @@ pub struct SetupAdmissionRequest {
     pub journal_token: JournalToken,
     /// Only an explicit CLI/environment journal selection may update an existing record.
     pub journal_is_explicit: bool,
+    /// Allows recovery only when the recorded Prepared journal fails the
+    /// program-folder policy and its owner has moved it to an existing safe folder.
     pub accept_prepared_retarget: bool,
     pub legacy_manifest: LegacyManifestEvidence,
     pub artifacts: ArtifactBindingEvidence,
@@ -625,7 +627,7 @@ pub const FOREIGN_ARTIFACTS_REFUSAL: &str =
 pub const UNCERTAIN_ARTIFACTS_REFUSAL: &str = "artifact binding is malformed or ambiguous";
 
 /// The refusal when the journal is located inside a Velopack program folder.
-pub const PROGRAM_FOLDER_JOURNAL_REFUSAL: &str = "Uninstall removes this program folder. Choose a journal location outside it. If a journal is already inside the program folder, stop it and move that folder before uninstalling.";
+pub const PROGRAM_FOLDER_JOURNAL_REFUSAL: &str = "Uninstall removes this program folder. Choose a journal location outside it. If a journal is already inside the program folder, stop it and move the whole journal folder outside the program folder before uninstalling.";
 
 /// Provider failures, including unsafe storage states that require repair.
 #[derive(Debug)]
@@ -2117,8 +2119,15 @@ fn admit_existing_setup(
         && request.accept_prepared_retarget
         && request.journal_is_explicit
         && record.journal_token != request.journal_token
+        && matches!(
+            validate_effective_journal(&record.journal_token),
+            Err(IdentityError::AdmissionRefused(reason))
+                if reason == PROGRAM_FOLDER_JOURNAL_REFUSAL
+        )
         && path_presence(&record.journal_token.to_path_buf()) == PathPresence::Absent
         && path_presence(&request.journal_token.to_path_buf()) == PathPresence::Present
+        && std::fs::metadata(request.journal_token.to_path_buf())
+            .is_ok_and(|metadata| metadata.is_dir())
         && validate_effective_journal(&request.journal_token).is_ok()
     {
         record.journal_token = request.journal_token.clone();
@@ -5356,6 +5365,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_fresh_refusal_publishes_no_record() {
         let _serial = serial();
@@ -5376,6 +5386,7 @@ mod tests {
         assert!(!fixture.namespace_path(root).join("record").exists());
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_prepared_resume_adopts_allowed_recorded_journal() {
         let _serial = serial();
@@ -5422,6 +5433,7 @@ mod tests {
         assert_eq!(record_after.journal_token, token_a);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_prepared_recovery_adopts_moved_journal() {
         let _serial = serial();
@@ -5467,6 +5479,29 @@ mod tests {
         assert_eq!(record_after.generation, record_before.generation);
     }
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn program_folder_safe_prepared_keeps_selection_after_owner_consent() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root = b"/install/safe-prepared-consent";
+        let journal_a = fixture.root.join("journal-a");
+        let journal_b = fixture.root.join("journal-b");
+        fail_at(FaultPoint::MarkerCreation);
+        assert!(
+            admit_setup(fixture.request(root, journal_a.to_str().unwrap().as_bytes())).is_err()
+        );
+        clear_control();
+        fs::create_dir(&journal_b).unwrap();
+        let mut request = fixture.request(root, journal_b.to_str().unwrap().as_bytes());
+        request.accept_prepared_retarget = true;
+        let admission = admit_setup_with_effective_journal_validator(request, &|_| Ok(()))
+            .expect("ordinary Prepared retry resumes its recorded journal");
+        assert_eq!(admission.binding().journal_token.to_path_buf(), journal_a);
+    }
+
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_prepared_recovery_old_path_present_leaves_record() {
         let _serial = serial();
@@ -5512,6 +5547,7 @@ mod tests {
         assert_eq!(record_after.journal_token, record_before.journal_token);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_prepared_recovery_new_path_absent_leaves_record() {
         let _serial = serial();
@@ -5554,6 +5590,7 @@ mod tests {
         assert_eq!(record_after.journal_token, record_before.journal_token);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_prepared_recovery_without_consent_leaves_record() {
         let _serial = serial();
@@ -5598,6 +5635,7 @@ mod tests {
         assert_eq!(record_after.journal_token, record_before.journal_token);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_prepared_recovery_rejected_request_leaves_record() {
         let _serial = serial();
@@ -5635,6 +5673,7 @@ mod tests {
         assert_eq!(record_after.journal_token, record_before.journal_token);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_adopted_implicit_refusal_leaves_record() {
         let _serial = serial();
@@ -5679,6 +5718,7 @@ mod tests {
         assert_eq!(record_after.journal_token, record_before.journal_token);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_adopted_explicit_refusal_leaves_record() {
         let _serial = serial();
@@ -5723,6 +5763,7 @@ mod tests {
         assert_eq!(record_after.journal_token, record_before.journal_token);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_adopted_explicit_update_keeps_id() {
         let _serial = serial();
@@ -5765,6 +5806,7 @@ mod tests {
         assert_eq!(record_after.journal_token, token_b);
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_load_and_cleanup_keep_adopted_journal() {
         let _serial = serial();
@@ -5980,6 +6022,104 @@ mod windows_tests {
 
     fn token_bytes(value: &str) -> Vec<u8> {
         value.encode_utf16().flat_map(u16::to_le_bytes).collect()
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn program_folder_windows_prepared_recovery_preserves_moved_journal() {
+        let _serial = serial();
+        clear_fault_control_for_test();
+        let fixture = TestRoot::new();
+        let root = r"C:\install\program-folder-recovery";
+        let old = fixture.root.join("program-journal");
+        let moved = fixture.root.join("moved-journal");
+        fs::create_dir(&old).unwrap();
+        fs::write(old.join("canary"), b"owner journal bytes").unwrap();
+        fail_at_for_test(FaultPoint::MarkerCreation);
+        assert!(admit_setup(fixture.request(root, old.to_str().unwrap())).is_err());
+        clear_fault_control_for_test();
+        let record_path = fixture.namespace_path(root).join("record");
+        let before = decode_record(&fs::read(&record_path).unwrap()).unwrap();
+        fs::rename(&old, &moved).unwrap();
+        let moved_before = snapshot_tree(&moved);
+        let mut request = fixture.request(root, moved.to_str().unwrap());
+        request.accept_prepared_retarget = true;
+        let old_token = before.journal_token.clone();
+        let admission = admit_setup_with_effective_journal_validator(request, &|token| {
+            if token == &old_token {
+                Err(IdentityError::AdmissionRefused(
+                    PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                ))
+            } else {
+                Ok(())
+            }
+        })
+        .expect("consented owner move recovers unsafe Prepared binding");
+        assert_eq!(admission.binding().id, before.id);
+        assert_eq!(admission.binding().generation, before.generation);
+        assert_eq!(admission.binding().journal_token.to_path_buf(), moved);
+        assert_tree_unchanged(&moved, moved_before);
+        assert!(!old.exists());
+        let after = decode_record(&fs::read(record_path).unwrap()).unwrap();
+        assert_eq!(after.state, LifecycleState::Adopted);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn program_folder_windows_prepared_recovery_refusals_and_safe_control() {
+        let _serial = serial();
+        for case in [
+            "old-present",
+            "new-absent",
+            "new-file",
+            "no-consent",
+            "unsafe-new",
+            "safe-old",
+        ] {
+            clear_fault_control_for_test();
+            let fixture = TestRoot::new();
+            let root = r"C:\install\program-folder-control";
+            let old = fixture.root.join("old-journal");
+            let new = fixture.root.join("new-journal");
+            if case == "old-present" {
+                fs::create_dir(&old).unwrap();
+            }
+            if case == "new-file" {
+                fs::write(&new, b"not a journal folder").unwrap();
+            } else if case != "new-absent" {
+                fs::create_dir(&new).unwrap();
+            }
+            fail_at_for_test(FaultPoint::MarkerCreation);
+            assert!(admit_setup(fixture.request(root, old.to_str().unwrap())).is_err());
+            clear_fault_control_for_test();
+            let record_path = fixture.namespace_path(root).join("record");
+            let before = fs::read(&record_path).unwrap();
+            let old_token = journal_token_from_path(&old).unwrap();
+            let new_token = journal_token_from_path(&new).unwrap();
+            let mut request = fixture.request(root, new.to_str().unwrap());
+            request.accept_prepared_retarget = case != "no-consent";
+            let result = admit_setup_with_effective_journal_validator(request, &|token| {
+                if (token == &old_token && case != "safe-old")
+                    || (token == &new_token && case == "unsafe-new")
+                {
+                    Err(IdentityError::AdmissionRefused(
+                        PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                    ))
+                } else {
+                    Ok(())
+                }
+            });
+            if case == "safe-old" {
+                let admission = result.expect("safe Prepared selection is unchanged");
+                assert_eq!(admission.binding().journal_token, old_token);
+            } else {
+                assert!(
+                    matches!(result, Err(IdentityError::AdmissionRefused(_))),
+                    "{case}"
+                );
+                assert_eq!(fs::read(&record_path).unwrap(), before, "{case}");
+            }
+        }
     }
 
     fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, TreeEntry> {

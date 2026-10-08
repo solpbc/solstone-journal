@@ -1252,6 +1252,13 @@ fn run_install_action(
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(error) = solstone_core_setup::refuse_journal_in_program_folder(
+        &ctx.journal,
+        &ctx.public_solstone_exe,
+    ) {
+        eprintln!("{error}");
+        return ExitCode::from(1);
+    }
     if let Some(supplied) = supplied {
         let environment = BTreeMap::from([
             (

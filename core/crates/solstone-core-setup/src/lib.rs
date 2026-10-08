@@ -890,7 +890,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             &project_root,
             &resolved,
             !args.skip_wrapper,
-            args.accept_existing_journal,
+            cfg!(windows) && args.accept_existing_journal,
         ) {
             Ok(admission) => admission,
             Err(error) => {
@@ -1973,6 +1973,7 @@ mod tests {
         assert!(!marker_path.exists());
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_skip_wrapper_refuses_before_service() {
         let root = root("program-folder-skip-wrapper");
@@ -2025,6 +2026,7 @@ mod tests {
         assert!(!record_path.exists());
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn program_folder_dry_run_refuses_without_writing() {
         let root = root("program-folder-dry-run");
