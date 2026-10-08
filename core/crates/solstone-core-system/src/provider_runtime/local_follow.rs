@@ -63,7 +63,7 @@ pub(crate) struct FollowMemory {
 }
 
 impl FollowMemory {
-    fn backoff_elapsed(&self, now: Instant) -> bool {
+    pub(crate) fn backoff_elapsed(&self, now: Instant) -> bool {
         let Some(last) = self.last_launch else {
             return true;
         };
@@ -72,12 +72,12 @@ impl FollowMemory {
         now.saturating_duration_since(last) >= wait
     }
 
-    fn record_launch(&mut self, now: Instant) {
+    pub(crate) fn record_launch(&mut self, now: Instant) {
         self.launches = self.launches.saturating_add(1);
         self.last_launch = Some(now);
     }
 
-    fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         *self = Self::default();
     }
 }
@@ -161,7 +161,21 @@ pub(crate) fn decide(
     if let Some(reason) = pins_moved(input.readiness) {
         return FollowDecision::Hold(reason);
     }
-    let Some(record) = input.record else {
+    install_follow_tail(
+        input.record,
+        input.now,
+        input.launch_backoff_elapsed,
+        lease_held,
+    )
+}
+
+pub(crate) fn install_follow_tail(
+    record: Option<&InstallStatus>,
+    now: DateTime<Utc>,
+    launch_backoff_elapsed: bool,
+    lease_held: impl FnOnce() -> std::io::Result<bool>,
+) -> FollowDecision {
+    let Some(record) = record else {
         return FollowDecision::Hold("install-status-unreadable");
     };
     if record.install_state == "failed" && record.error_code.as_deref() == Some("install_cancelled")
@@ -171,7 +185,7 @@ pub(crate) fn decide(
     match latest_activity(record) {
         Err(()) => return FollowDecision::Hold("install-status-unreadable"),
         Ok(Some(latest)) => {
-            let Ok(since) = (input.now - latest).to_std() else {
+            let Ok(since) = (now - latest).to_std() else {
                 return FollowDecision::Hold("install-status-in-future");
             };
             if since < PERSISTED_BACKOFF {
@@ -180,7 +194,7 @@ pub(crate) fn decide(
         }
         Ok(None) => {}
     }
-    if !input.launch_backoff_elapsed {
+    if !launch_backoff_elapsed {
         return FollowDecision::Hold("backoff");
     }
     match lease_held() {
