@@ -14,10 +14,10 @@
         "delete anytime"
       ],
       "optional": "your journal lives on your device; backup is optional.",
-      "steps": "you'll save a recovery key, then choose where your backup lives."
+      "steps": "you'll save a recovery key, then choose where your encrypted backup lives. restoring takes that key and one more thing: your storage details, or a sign-in to the services portal if sol pbc runs your storage."
     },
     "educate": {
-      "stakes": "if you lose your recovery key, no one can recover your journal. not even sol pbc."
+      "stakes": "restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. if you lose your recovery key, no one can restore your backup. not even sol pbc."
     },
     "key": {
       "theft_honesty": "anyone with your recovery key can read everything in your backup. store it like a master password.",
@@ -113,9 +113,9 @@
       "hosted": {
         "choose_lane": "where is the encrypted copy you're restoring from?",
         "byo_desc": "storage you bring yourself, reached with credentials you provide.",
-        "operated_desc": "storage sol pbc runs, reached from your services.",
+        "operated_desc": "storage sol pbc runs, reached through the services portal.",
         "lane_title": "restore from sol pbc",
-        "lane_intro": "enter your recovery key, then sign in to your services and confirm the restore.",
+        "lane_intro": "enter your recovery key, then sign in to the services portal and confirm the restore.",
         "key_label": "your recovery key",
         "key_reassurance": "this journal uses your key and never sends it to sol pbc.",
         "primary": "sign in to restore →",

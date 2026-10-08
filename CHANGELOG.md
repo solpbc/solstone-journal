@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- the encrypted backup screen now says up front that restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. restoring from storage sol pbc runs now points you to the services portal.
+
 ## [2.0.37] - 2026-10-08
 
 ### Changed
