@@ -20,6 +20,7 @@ const CONFIDENTIAL_TERMINAL_PHASES: &[&str] = &[
     "revoked",
     "repair_needed",
     "early_access",
+    "journal_limit",
 ];
 const CONFIDENTIAL_RECHECK_WAIT_SECONDS: f64 = 15.0;
 const CONFIDENTIAL_RECHECK_POLL_INTERVAL_SECONDS: f64 = 5.0;
@@ -57,7 +58,7 @@ pub fn confidential_enable(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 1),
     };
-    let wait_seconds = match parse_float_option(parsed.value("--wait-seconds"), 900.0) {
+    let wait_seconds = match parse_float_option(parsed.value("--wait-seconds"), 4560.0) {
         Ok(value) => value,
         Err(error) => return stderr(error, 1),
     };
@@ -952,5 +953,209 @@ fn sleep(ctx: CommandContext<'_>, duration: Duration) {
         clock.sleep(duration);
     } else {
         std::thread::sleep(duration);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::seam::{ExpectedHttpCall, FakeClock, ScriptedHttpTransport};
+    use crate::transport::{ApiRequest, HttpMethod, HttpResponse, TimeoutPolicy};
+    use serde_json::json;
+
+    fn json_response(value: Value, policy: TimeoutPolicy) -> HttpResponse {
+        HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&value).expect("json response"),
+            policy,
+        }
+    }
+
+    #[test]
+    fn test_a_confidential_enable_waits_up_to_new_default_and_stops_at_terminal() {
+        let clock = FakeClock::at_unix(0);
+        let mut calls = vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Post,
+                path: "/app/thinking/api/confidential/enable".to_string(),
+                params: vec![],
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(json_response(json!({}), TimeoutPolicy::Api)),
+        }];
+
+        // Four GETs with phase "subscribing" landing at monotonic 0, 1500, 3000, 4500
+        for _ in 0..4 {
+            calls.push(ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/app/thinking/api/providers".to_string(),
+                    params: vec![],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(
+                    json!({
+                        "active_lane": {
+                            "confidential_enabled": false,
+                            "confidential_provenance_configured": false,
+                            "confidential_operation": {
+                                "phase": "subscribing",
+                                "subscribe_url": "https://services.solstone.app/confidential-processing"
+                            }
+                        }
+                    }),
+                    TimeoutPolicy::Api,
+                )),
+            });
+        }
+
+        // Fifth GET: phase "early_access"
+        calls.push(ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: "/app/thinking/api/providers".to_string(),
+                params: vec![],
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(json_response(
+                json!({
+                    "active_lane": {
+                        "confidential_enabled": false,
+                        "confidential_provenance_configured": false,
+                        "confidential_operation": {
+                            "phase": "early_access",
+                            "subscribe_url": "https://services.solstone.app/confidential-processing"
+                        }
+                    }
+                }),
+                TimeoutPolicy::Api,
+            )),
+        });
+
+        let transport = ScriptedHttpTransport::new(calls);
+        let args = vec!["--poll-interval".to_string(), "1500".to_string()];
+        let env = BTreeMap::new();
+        let output = confidential_enable(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            transport: &transport,
+            clock: Some(&clock),
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        });
+
+        assert_eq!(output.exit, 1, "exit must be 1; output: {:?}", output);
+        assert!(
+            output
+                .stdout
+                .contains("subscribe_url: https://services.solstone.app/confidential-processing"),
+            "stdout must contain subscribe_url: {}",
+            output.stdout
+        );
+        assert!(
+            output.stdout.contains("operation: early_access"),
+            "stdout must contain operation: early_access: {}",
+            output.stdout
+        );
+        assert!(
+            !output.stdout.contains("operation continues server-side"),
+            "stdout must not contain timeout guidance: {}",
+            output.stdout
+        );
+        transport.assert_done();
+    }
+
+    #[test]
+    fn test_b_confidential_enable_stops_at_journal_limit_terminal_phase() {
+        let clock = FakeClock::at_unix(0);
+        let calls = vec![
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Post,
+                    path: "/app/thinking/api/confidential/enable".to_string(),
+                    params: vec![],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(json!({}), TimeoutPolicy::Api)),
+            },
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/app/thinking/api/providers".to_string(),
+                    params: vec![],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(
+                    json!({
+                        "active_lane": {
+                            "confidential_enabled": false,
+                            "confidential_provenance_configured": false,
+                            "confidential_operation": {
+                                "phase": "journal_limit",
+                                "subscribe_url": "https://services.solstone.app/confidential-processing"
+                            }
+                        }
+                    }),
+                    TimeoutPolicy::Api,
+                )),
+            },
+        ];
+
+        let transport = ScriptedHttpTransport::new(calls);
+        let args = vec![];
+        let env = BTreeMap::new();
+        let output = confidential_enable(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            transport: &transport,
+            clock: Some(&clock),
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        });
+
+        assert_eq!(output.exit, 1, "exit must be 1; output: {:?}", output);
+        assert!(
+            output.stdout.contains("operation: journal_limit"),
+            "stdout must contain operation: journal_limit: {}",
+            output.stdout
+        );
+        assert!(
+            output
+                .stdout
+                .contains("subscribe_url: https://services.solstone.app/confidential-processing"),
+            "stdout must contain subscribe_url: {}",
+            output.stdout
+        );
+        assert!(
+            !output.stdout.contains("operation continues server-side"),
+            "stdout must not contain timeout guidance: {}",
+            output.stdout
+        );
+        transport.assert_done();
     }
 }

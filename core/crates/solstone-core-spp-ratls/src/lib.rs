@@ -49,8 +49,8 @@ pub use ratls::{
         AdmissionClock, AttestedChannel, AttestedHttpError, AttestedHttpResponse, AttestedIo,
         ChannelAdmission, ChannelStatus, OFFLINE_STATUS_ADMISSION_MARGIN,
         OFFLINE_STATUS_MIN_REMAINING, OFFLINE_STATUS_REQUEST_WINDOW, RatlsEndpoint,
-        SystemAdmissionClock, Trailing, establish_attested_channel,
-        establish_attested_channel_with_clock, send_json_request,
+        SystemAdmissionClock, Trailing, append_bearer_header, establish_attested_channel,
+        establish_attested_channel_with_clock, send_admission_probe, send_json_request,
     },
     production_verifier::{
         ProductionCompositeVerifier, check_nvattest_readiness,

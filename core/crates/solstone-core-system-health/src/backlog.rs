@@ -258,8 +258,12 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                 let representative_provider = representative.and_then(|unit| unit.provider.clone());
                 let representative_model = representative.and_then(|unit| unit.model.clone());
                 if reason.is_none() && backoff.is_some() {
-                    reason = Some(REASON_CATCHUP_BACKOFF.to_owned());
-                    reason_code = Some(REASON_CATCHUP_BACKOFF.to_owned());
+                    if reason_code.as_deref() == Some("confidential_access_ended") {
+                        reason = Some("confidential_access_ended".to_owned());
+                    } else {
+                        reason = Some(REASON_CATCHUP_BACKOFF.to_owned());
+                        reason_code = Some(REASON_CATCHUP_BACKOFF.to_owned());
+                    }
                 }
                 let state = if why.iter().any(|unit| unit.stuck) || backoff.is_some() {
                     BACKLOG_STATE_STUCK

@@ -667,10 +667,17 @@ fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
 /// The reason for a non-success reply from the endpoint. An owner-supplied
 /// endpoint that answers 401 is refusing the credential, which the owner can fix,
 /// so it is named as a key problem, the same as the OpenAI and Anthropic presets:
-/// a refused key when one is set, a missing one when none is. The bundled and
-/// confidential lanes keep the generic reason: their credential is ours.
+/// a refused key when one is set, a missing one when none is. A confidential
+/// endpoint that answers 401 indicates access has ended. The bundled lane keeps
+/// the generic reason.
 fn non_success_reason(endpoint: &ByoEndpoint, status: u16) -> &'static str {
-    if status != 401 || endpoint.is_bundled || endpoint.is_confidential {
+    if status != 401 {
+        return "provider_response_invalid";
+    }
+    if endpoint.is_confidential {
+        return "confidential_access_ended";
+    }
+    if endpoint.is_bundled {
         return "provider_response_invalid";
     }
     if endpoint.credential.is_some() {

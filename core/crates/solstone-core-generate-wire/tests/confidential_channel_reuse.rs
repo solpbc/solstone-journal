@@ -404,6 +404,7 @@ struct ServerStats {
     proof_requests_read: AtomicUsize,
     handshake_completed: AtomicUsize,
     app_requests_read: AtomicUsize,
+    admission_probes: AtomicUsize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -752,7 +753,17 @@ impl TestServer {
                     }
 
                     let mut app_index = 0;
-                    while let Ok(_req) = read_http_request(&mut stream) {
+                    while let Ok(req) = read_http_request(&mut stream) {
+                        if req.starts_with(b"GET /solstone-admission ") {
+                            let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+                            if stream.write_all(resp).is_err() {
+                                return;
+                            }
+                            let _ = stream.sock.flush();
+                            stats_clone.admission_probes.fetch_add(1, Ordering::SeqCst);
+                            continue;
+                        }
+
                         conn_stats.app_requests.fetch_add(1, Ordering::SeqCst);
                         stats_clone.app_requests_read.fetch_add(1, Ordering::SeqCst);
 
@@ -2643,6 +2654,7 @@ fn oracle_13_offline_status_channels_keep_the_reuse_window_and_short_status_is_r
         ConfidentialResult::Generated(_)
     ));
     assert_eq!(server.stats.prefaces_read.load(Ordering::SeqCst), 1);
+    assert_eq!(server.stats.admission_probes.load(Ordering::SeqCst), 1);
     // 121 s after admission it starts no new request: a fresh channel is
     // attested instead.
     clock.advance_both(Duration::from_secs(61));
@@ -2651,6 +2663,7 @@ fn oracle_13_offline_status_channels_keep_the_reuse_window_and_short_status_is_r
         ConfidentialResult::Generated(_)
     ));
     assert_eq!(server.stats.prefaces_read.load(Ordering::SeqCst), 2);
+    assert_eq!(server.stats.admission_probes.load(Ordering::SeqCst), 2);
 
     // A status with 129 s left is refused at admission and sends nothing.
     let short_server = TestServer::spawn(AppScript::Ok("hello".to_owned()));

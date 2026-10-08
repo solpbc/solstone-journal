@@ -8,6 +8,9 @@ use serde_json::{Map, Value};
 pub fn backlog_day_reason_copy(day: &Map<String, Value>) -> &'static str {
     let marker = day_reason_marker(day);
     match marker {
+        Some("confidential_access_ended") => {
+            return "confidential processing isn't active for this journal. open the thinking app to see why.";
+        }
         Some("catchup_backoff") => return "waiting to retry automatically. no action needed yet",
         Some("chatgpt_sign_in_required") => {
             return "signed out of ChatGPT. sign in again on the thinking page";
@@ -53,6 +56,15 @@ fn day_reason_marker(day: &Map<String, Value>) -> Option<&str> {
     if reason == Some("corrupt_raw") {
         return reason;
     }
+    let reason_code = day
+        .get("reason_code")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty());
+    if reason == Some("confidential_access_ended")
+        || reason_code == Some("confidential_access_ended")
+    {
+        return Some("confidential_access_ended");
+    }
     match day.get("segment_repair_status").and_then(Value::as_str) {
         Some("stuck") => return Some("segment_repair_stuck"),
         Some("unknown") => return Some("segment_repair_unknown"),
@@ -61,10 +73,7 @@ fn day_reason_marker(day: &Map<String, Value>) -> Option<&str> {
     if reason == Some("catchup_backoff") {
         return reason;
     }
-    day.get("reason_code")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .or(reason)
+    reason_code.or(reason)
 }
 
 fn category(reason: Option<&str>) -> &'static str {

@@ -183,6 +183,13 @@ where
             journal_path.display()
         );
     }
+    if let Err(code) = solstone_core_spp_ratls::send_admission_probe(
+        &mut channel.stream,
+        &channel.host,
+        endpoint.credential.as_deref(),
+    ) {
+        return Err(deferred(code, "the confidential admission probe failed"));
+    }
     let response = send_multipart_request(
         &mut channel.stream,
         &channel.host,
@@ -274,11 +281,7 @@ pub(crate) fn send_multipart_request(
         "POST /v1/audio/transcriptions HTTP/1.1\r\nHost: {host}\r\nContent-Type: multipart/form-data; boundary={boundary}\r\nContent-Length: {}\r\n",
         body.len()
     );
-    if let Some(bearer) = bearer {
-        request.push_str("Authorization: Bearer ");
-        request.push_str(bearer);
-        request.push_str("\r\n");
-    }
+    solstone_core_spp_ratls::append_bearer_header(&mut request, bearer);
     request.push_str("\r\n");
     retry_interrupted(|| stream.set_io_timeout(Some(timeout))).map_err(HttpError::Transport)?;
     write_all_retry_interrupted(stream, request.as_bytes()).map_err(HttpError::Transport)?;
@@ -390,6 +393,10 @@ fn hosted_response(
     response: HttpResponse,
 ) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
     match response.status {
+        401 => Err(deferred(
+            "confidential_access_ended",
+            "hosted STT returned HTTP 401",
+        )),
         400 | 413 => Err(deferred(
             "hosted_transcribe_rejected",
             format!("hosted STT returned HTTP {}", response.status),
@@ -524,6 +531,7 @@ mod tests {
     #[test]
     fn hosted_status_and_contract_failures_are_all_deferred() {
         for (status, body, expected) in [
+            (401, "", "confidential_access_ended"),
             (400, "", "hosted_transcribe_rejected"),
             (413, "", "hosted_transcribe_rejected"),
             (429, "", "hosted_transcribe_backpressure"),
@@ -777,17 +785,12 @@ mod tests {
             |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
                 Ok((
                     verdict(),
-                    MockAttestedStream {
-                        response: Vec::new(),
-                        read_offset: 0,
-                        written: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-                        established_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
-                            false,
-                        )),
-                        saw_established: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
-                            false,
-                        )),
-                    },
+                    MockAttestedStream::new(
+                        Vec::new(),
+                        std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    ),
                 ))
             },
         )
@@ -1021,23 +1024,81 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert_deferred_reason(error, "hosted_transcribe_unreachable");
+        assert_deferred_reason(error, "local_endpoint_unreachable");
         assert!(!journal_path.join("health/brain.json").exists());
     }
 
     struct MockAttestedStream {
-        response: Vec<u8>,
+        responses: Vec<Vec<u8>>,
+        current_idx: usize,
         read_offset: usize,
         written: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
         established_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
         saw_established: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        initial_read_error: Option<std::io::ErrorKind>,
+    }
+
+    impl MockAttestedStream {
+        fn new(
+            response: Vec<u8>,
+            written: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+            established_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+            saw_established: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        ) -> Self {
+            let probe = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec();
+            Self::with_responses(
+                vec![probe, response],
+                written,
+                established_flag,
+                saw_established,
+            )
+        }
+
+        fn with_responses(
+            responses: Vec<Vec<u8>>,
+            written: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+            established_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+            saw_established: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        ) -> Self {
+            Self {
+                responses,
+                current_idx: 0,
+                read_offset: 0,
+                written,
+                established_flag,
+                saw_established,
+                initial_read_error: None,
+            }
+        }
+
+        fn with_initial_read_error(
+            kind: std::io::ErrorKind,
+            written: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+        ) -> Self {
+            Self {
+                responses: Vec::new(),
+                current_idx: 0,
+                read_offset: 0,
+                written,
+                established_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                saw_established: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                initial_read_error: Some(kind),
+            }
+        }
     }
 
     impl std::io::Read for MockAttestedStream {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            let available = &self.response[self.read_offset..];
-            let len = available.len().min(buf.len());
-            buf[..len].copy_from_slice(&available[..len]);
+            if let Some(kind) = self.initial_read_error.take() {
+                return Err(std::io::Error::from(kind));
+            }
+            if self.current_idx >= self.responses.len() {
+                return Ok(0);
+            }
+            let current = &self.responses[self.current_idx];
+            let remaining = &current[self.read_offset..];
+            let len = remaining.len().min(buf.len());
+            buf[..len].copy_from_slice(&remaining[..len]);
             self.read_offset += len;
             Ok(len)
         }
@@ -1063,11 +1124,18 @@ mod tests {
         }
 
         fn trailing_after_body(&mut self) -> std::io::Result<solstone_core_spp_ratls::Trailing> {
-            if self.read_offset < self.response.len() {
-                Ok(solstone_core_spp_ratls::Trailing::Surplus)
-            } else {
-                Ok(solstone_core_spp_ratls::Trailing::None)
+            if self.current_idx < self.responses.len() {
+                let current = &self.responses[self.current_idx];
+                if self.read_offset < current.len() {
+                    return Ok(solstone_core_spp_ratls::Trailing::Surplus);
+                }
+                if self.current_idx + 1 < self.responses.len() {
+                    self.current_idx += 1;
+                    self.read_offset = 0;
+                    return Ok(solstone_core_spp_ratls::Trailing::None);
+                }
             }
+            Ok(solstone_core_spp_ratls::Trailing::None)
         }
     }
 
@@ -1106,13 +1174,12 @@ mod tests {
             |_| NvattestEnsureStatus::AlreadyInstalled,
             move |_, _, _| {
                 channel_attempts_clone.fetch_add(1, Ordering::SeqCst);
-                let stream = MockAttestedStream {
-                    response: response_bytes,
-                    read_offset: 0,
-                    written: written_clone,
-                    established_flag: established_clone.clone(),
-                    saw_established: saw_established_clone,
-                };
+                let stream = MockAttestedStream::new(
+                    response_bytes,
+                    written_clone,
+                    established_clone.clone(),
+                    saw_established_clone,
+                );
                 established_clone.store(true, Ordering::SeqCst);
                 Ok((verdict(), stream))
             },
@@ -1152,13 +1219,12 @@ mod tests {
             |_| NvattestEnsureStatus::AlreadyInstalled,
             move |_, _, _| {
                 channel_attempts_clone.fetch_add(1, Ordering::SeqCst);
-                let stream = MockAttestedStream {
-                    response: response_bytes,
-                    read_offset: 0,
-                    written: written_clone,
-                    established_flag: established_clone.clone(),
-                    saw_established: saw_established_clone,
-                };
+                let stream = MockAttestedStream::new(
+                    response_bytes,
+                    written_clone,
+                    established_clone.clone(),
+                    saw_established_clone,
+                );
                 established_clone.store(true, Ordering::SeqCst);
                 Ok((verdict(), stream))
             },
@@ -1197,13 +1263,12 @@ mod tests {
             |_| NvattestEnsureStatus::AlreadyInstalled,
             move |_, _, _| {
                 channel_attempts_clone.fetch_add(1, Ordering::SeqCst);
-                let stream = MockAttestedStream {
-                    response: response_bytes,
-                    read_offset: 0,
-                    written: written_clone,
-                    established_flag: established_clone.clone(),
-                    saw_established: saw_established_clone,
-                };
+                let stream = MockAttestedStream::new(
+                    response_bytes,
+                    written_clone,
+                    established_clone.clone(),
+                    saw_established_clone,
+                );
                 established_clone.store(true, Ordering::SeqCst);
                 Ok((verdict(), stream))
             },
@@ -1225,6 +1290,20 @@ mod tests {
                 .count(),
             1
         );
+        let written_str = String::from_utf8_lossy(&written_bytes);
+        let (probe_head, _) = written_str
+            .split_once("\r\n\r\n")
+            .expect("probe head split");
+        assert!(!probe_head.contains("Content-Length"));
+        assert!(!probe_head.contains("Transfer-Encoding"));
+        assert!(!probe_head.contains("Expect:"));
+        assert!(!probe_head.contains("Connection:"));
+        let auth_lines: Vec<&str> = written_str
+            .lines()
+            .filter(|line| line.starts_with("Authorization:"))
+            .collect();
+        assert_eq!(auth_lines.len(), 2);
+        assert_eq!(auth_lines[0], auth_lines[1]);
     }
 
     #[test]
@@ -1442,13 +1521,12 @@ mod tests {
     }
 
     fn mock_stream(response: Vec<u8>) -> MockAttestedStream {
-        MockAttestedStream {
+        MockAttestedStream::new(
             response,
-            read_offset: 0,
-            written: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-            established_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            saw_established: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        }
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
     }
 
     #[test]
@@ -1616,7 +1694,7 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert_deferred_reason(error2, "hosted_transcribe_unreachable");
+        assert_deferred_reason(error2, "local_endpoint_unreachable");
 
         // Status is cleared, but brain.json from first call remains
         assert_eq!(
@@ -1757,5 +1835,294 @@ mod tests {
             logs.iter().any(|msg| msg.contains(&journal_str)),
             "expected warning in logs: {logs:?}"
         );
+    }
+
+    #[test]
+    fn transcription_admission_probe_200_admits_and_sends_audio() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let written_clone = written.clone();
+        let probe_resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec();
+        let content_resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{VALID}",
+            VALID.len()
+        )
+        .into_bytes();
+
+        let (response, _meta) = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            move |_, _, _| {
+                let stream = MockAttestedStream::with_responses(
+                    vec![probe_resp.clone(), content_resp.clone()],
+                    written_clone.clone(),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                );
+                Ok((verdict(), stream))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(response.text, "hello");
+        let written_bytes = written.lock().unwrap().clone();
+        let written_str = String::from_utf8_lossy(&written_bytes);
+        assert!(written_str.contains("GET /solstone-admission HTTP/1.1\r\n"));
+        assert!(written_str.contains("POST /v1/audio/transcriptions HTTP/1.1\r\n"));
+        let (probe_head, _) = written_str
+            .split_once("\r\n\r\n")
+            .expect("probe head split");
+        assert!(!probe_head.contains("Content-Length"));
+        assert!(!probe_head.contains("Transfer-Encoding"));
+        assert!(!probe_head.contains("Expect:"));
+        assert!(!probe_head.contains("Connection:"));
+        let auth_lines: Vec<&str> = written_str
+            .lines()
+            .filter(|line| line.starts_with("Authorization:"))
+            .collect();
+        assert_eq!(auth_lines.len(), 2);
+        assert_eq!(auth_lines[0], auth_lines[1]);
+    }
+
+    #[test]
+    fn transcription_admission_probe_404_and_405_admit() {
+        for probe_status in [404, 405] {
+            let store = AttestationStateStore::new();
+            let active = active_config();
+            let audio = [0.0_f32; 160];
+            let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let written_clone = written.clone();
+            let probe_resp =
+                format!("HTTP/1.1 {probe_status} Not Allowed\r\nContent-Length: 0\r\n\r\n")
+                    .into_bytes();
+            let content_resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{VALID}",
+                VALID.len()
+            )
+            .into_bytes();
+
+            let (response, _meta) = super::transcribe_with(
+                &audio,
+                Path::new("/journal"),
+                &active,
+                &store,
+                |_| NvattestEnsureStatus::AlreadyInstalled,
+                move |_, _, _| {
+                    let stream = MockAttestedStream::with_responses(
+                        vec![probe_resp.clone(), content_resp.clone()],
+                        written_clone.clone(),
+                        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    );
+                    Ok((verdict(), stream))
+                },
+            )
+            .unwrap();
+
+            assert_eq!(response.text, "hello");
+        }
+    }
+
+    #[test]
+    fn transcription_admission_probe_401_access_ended_writes_zero_audio() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let written_clone = written.clone();
+        let probe_resp = b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n".to_vec();
+
+        let error = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            move |_, _, _| {
+                let stream = MockAttestedStream::with_responses(
+                    vec![probe_resp.clone()],
+                    written_clone.clone(),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                );
+                Ok((verdict(), stream))
+            },
+        )
+        .unwrap_err();
+
+        assert_deferred_reason(error, "confidential_access_ended");
+        let written_bytes = written.lock().unwrap().clone();
+        let written_str = String::from_utf8_lossy(&written_bytes);
+        assert!(written_str.contains("GET /solstone-admission HTTP/1.1\r\n"));
+        assert!(!written_str.contains("POST /v1/audio/transcriptions"));
+        assert!(!written_str.contains("multipart/form-data"));
+    }
+
+    #[test]
+    fn transcription_admission_probe_503_unreachable_writes_zero_audio() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let written_clone = written.clone();
+        let probe_resp = b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n".to_vec();
+
+        let error = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            move |_, _, _| {
+                let stream = MockAttestedStream::with_responses(
+                    vec![probe_resp.clone()],
+                    written_clone.clone(),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                );
+                Ok((verdict(), stream))
+            },
+        )
+        .unwrap_err();
+
+        assert_deferred_reason(error, "local_endpoint_unreachable");
+        let written_bytes = written.lock().unwrap().clone();
+        let written_str = String::from_utf8_lossy(&written_bytes);
+        assert!(written_str.contains("GET /solstone-admission HTTP/1.1\r\n"));
+        assert!(!written_str.contains("POST /v1/audio/transcriptions"));
+    }
+
+    #[test]
+    fn transcription_hosted_response_401_access_ended() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let probe_resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec();
+        let content_resp = b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n".to_vec();
+
+        let error = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            move |_, _, _| {
+                let stream = MockAttestedStream::with_responses(
+                    vec![probe_resp.clone(), content_resp.clone()],
+                    std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                );
+                Ok((verdict(), stream))
+            },
+        )
+        .unwrap_err();
+
+        assert_deferred_reason(error, "confidential_access_ended");
+    }
+
+    #[test]
+    fn transcription_admission_probe_first_read_close_defers_unreachable() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let written_clone = written.clone();
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let journal_path = temp.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(active.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        let journal_bytes_before = std::fs::read(journal_path.join("config/journal.json")).unwrap();
+        let fp_path = solstone_core_brain::brain_fingerprint_key_path(journal_path);
+        let fp_bytes_before = std::fs::read(&fp_path).unwrap();
+
+        let error = super::transcribe_with(
+            &audio,
+            journal_path,
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            move |_, _, _| {
+                let stream = MockAttestedStream::with_initial_read_error(
+                    std::io::ErrorKind::UnexpectedEof,
+                    written_clone.clone(),
+                );
+                Ok((verdict(), stream))
+            },
+        )
+        .unwrap_err();
+
+        assert_deferred_reason(error, "local_endpoint_unreachable");
+        let written_bytes = written.lock().unwrap().clone();
+        let written_str = String::from_utf8_lossy(&written_bytes);
+        assert!(written_str.contains("GET /solstone-admission HTTP/1.1\r\n"));
+        assert!(!written_str.contains("POST /v1/audio/transcriptions"));
+
+        let journal_bytes_after = std::fs::read(journal_path.join("config/journal.json")).unwrap();
+        let fp_bytes_after = std::fs::read(&fp_path).unwrap();
+        assert_eq!(journal_bytes_before, journal_bytes_after);
+        assert_eq!(fp_bytes_before, fp_bytes_after);
+    }
+
+    #[test]
+    fn transcription_admission_probe_first_read_timeout_defers_unreachable() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let written_clone = written.clone();
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let journal_path = temp.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(active.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        let journal_bytes_before = std::fs::read(journal_path.join("config/journal.json")).unwrap();
+        let fp_path = solstone_core_brain::brain_fingerprint_key_path(journal_path);
+        let fp_bytes_before = std::fs::read(&fp_path).unwrap();
+
+        let error = super::transcribe_with(
+            &audio,
+            journal_path,
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            move |_, _, _| {
+                let stream = MockAttestedStream::with_initial_read_error(
+                    std::io::ErrorKind::TimedOut,
+                    written_clone.clone(),
+                );
+                Ok((verdict(), stream))
+            },
+        )
+        .unwrap_err();
+
+        assert_deferred_reason(error, "local_endpoint_unreachable");
+        let written_bytes = written.lock().unwrap().clone();
+        let written_str = String::from_utf8_lossy(&written_bytes);
+        assert!(written_str.contains("GET /solstone-admission HTTP/1.1\r\n"));
+        assert!(!written_str.contains("POST /v1/audio/transcriptions"));
+
+        let journal_bytes_after = std::fs::read(journal_path.join("config/journal.json")).unwrap();
+        let fp_bytes_after = std::fs::read(&fp_path).unwrap();
+        assert_eq!(journal_bytes_before, journal_bytes_after);
+        assert_eq!(fp_bytes_before, fp_bytes_after);
     }
 }

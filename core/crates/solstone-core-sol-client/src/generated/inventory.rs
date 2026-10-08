@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 747a4dd27e24adb9ba433d22105a5f431474d4e94567a0eae9a3aaddcb3a508d
+// authority-source-sha256: 5406babec4476a797c35909fff86727da90dc83e7d1e5e8b1ec7fc1eb8c9c10c
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -1607,7 +1607,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         kind: "command",
         help: "Enable confidential processing.",
         authority_path: "core/native-sol/apps/thinking/native/authority.toml",
-        params_json: "[{\"count\":false,\"default\":900.0,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"wait_seconds\",\"nargs\":1,\"options\":[\"--wait-seconds\"],\"required\":false,\"secondary\":[],\"type\":\"float\"},{\"count\":false,\"default\":1.0,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"poll_interval\",\"nargs\":1,\"options\":[\"--poll-interval\"],\"required\":false,\"secondary\":[],\"type\":\"float\"}]",
+        params_json: "[{\"count\":false,\"default\":4560.0,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"wait_seconds\",\"nargs\":1,\"options\":[\"--wait-seconds\"],\"required\":false,\"secondary\":[],\"type\":\"float\"},{\"count\":false,\"default\":1.0,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"poll_interval\",\"nargs\":1,\"options\":[\"--poll-interval\"],\"required\":false,\"secondary\":[],\"type\":\"float\"}]",
         entry_type: "http",
         operation_id: "thinking.confidential.enable",
         method: Some("POST"),

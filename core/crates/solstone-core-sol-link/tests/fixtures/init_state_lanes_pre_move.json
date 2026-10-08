@@ -27,7 +27,7 @@
       "egress": "when it's on, the thinking leaves your device. your journal itself never leaves.",
       "claims": "no content is retained · no human reviews it · nothing is used to train",
       "attestation": "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
-      "early_access": "confidential processing is available to approved scouts."
+      "early_access": "the services portal shows how to get it."
     }
   }
 }

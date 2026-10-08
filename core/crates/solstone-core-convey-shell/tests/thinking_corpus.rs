@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use axum::Extension;
 use axum::body::{Body, to_bytes};
@@ -16,7 +16,8 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_brain::{begin_refresh, finish_refresh};
 use solstone_core_convey_shell::{
-    ConfidentialPoll, ConfidentialRuntimeOverride, PollOutcome, router,
+    AccessClientHandle, AccessSnapshot, ConfidentialAccess, ConfidentialPoll,
+    ConfidentialRuntimeOverride, PollOutcome, router,
 };
 use solstone_core_sol_link::ca::generate_ca;
 use tower::ServiceExt;
@@ -567,6 +568,14 @@ impl ConfidentialPoll for ParkedSuccessPoll {
     }
 }
 
+struct OfflineAccess;
+
+impl ConfidentialAccess for OfflineAccess {
+    fn fetch(&self, _portal_base: &str, _credential: &str) -> AccessSnapshot {
+        AccessSnapshot::unknown()
+    }
+}
+
 fn router_with_runtime(
     journal: PathBuf,
     portal_base_url: &str,
@@ -576,6 +585,9 @@ fn router_with_runtime(
         portal_base_url: portal_base_url.to_owned(),
         poll,
         before_attempt: None,
+        now: Arc::new(Instant::now),
+        sleep: Arc::new(|_| ()),
+        access: None,
     }))
 }
 
@@ -1260,8 +1272,10 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
             .iter()
             .enumerate()
         {
+            let app = router(journal.0.clone())
+                .layer(Extension(AccessClientHandle(Arc::new(OfflineAccess))));
             let response = request_with_body(
-                router(journal.0.clone()),
+                app,
                 case["method"].as_str().expect("method"),
                 case["path"].as_str().expect("path"),
                 case.get("request_json"),
@@ -2355,6 +2369,9 @@ async fn confidential_enable_cancelled_during_pre_attempt_hook_skips_attempt_wri
             portal_base_url: "https://portal.example/".to_owned(),
             poll: Arc::new(PanicPoll),
             before_attempt: Some(before_attempt),
+            now: Arc::new(Instant::now),
+            sleep: Arc::new(|_| ()),
+            access: None,
         },
     );
 

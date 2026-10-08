@@ -639,6 +639,12 @@
       "retryable": true
     },
     {
+      "blocking": true,
+      "code": "confidential_access_ended",
+      "overrides_live_taxonomy": true,
+      "retryable": true
+    },
+    {
       "blocking": false,
       "code": "confidential_channel_closed",
       "overrides_live_taxonomy": false,

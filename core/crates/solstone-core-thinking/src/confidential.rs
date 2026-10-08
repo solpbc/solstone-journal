@@ -26,6 +26,8 @@ const CONFIDENTIAL_ATTEMPT_FIELD: &str = "confidential_attempt";
 pub enum Phase {
     Starting,
     Waiting,
+    Subscribing,
+    JournalLimit,
     Enabled,
     Pending,
     Revoked,
@@ -40,6 +42,8 @@ impl Phase {
         match self {
             Self::Starting => "starting",
             Self::Waiting => "waiting",
+            Self::Subscribing => "subscribing",
+            Self::JournalLimit => "journal_limit",
             Self::Enabled => "enabled",
             Self::Pending => "pending",
             Self::Revoked => "revoked",
@@ -56,8 +60,11 @@ impl Phase {
             | Self::NeedsSubscription
             | Self::Revoked
             | Self::EarlyAccess
-            | Self::Error => true,
-            Self::Starting | Self::Waiting | Self::Pending | Self::Other(_) => false,
+            | Self::Error
+            | Self::JournalLimit => true,
+            Self::Starting | Self::Waiting | Self::Subscribing | Self::Pending | Self::Other(_) => {
+                false
+            }
         }
     }
 
@@ -68,9 +75,12 @@ impl Phase {
             Self::Enabled => "not_verified".to_owned(),
             Self::EarlyAccess => "early_access".to_owned(),
             Self::Error => "repair_needed".to_owned(),
-            Self::Pending | Self::Revoked | Self::NeedsSubscription | Self::Other(_) => {
-                self.raw().to_owned()
-            }
+            Self::Pending
+            | Self::Revoked
+            | Self::NeedsSubscription
+            | Self::Subscribing
+            | Self::JournalLimit
+            | Self::Other(_) => self.raw().to_owned(),
         }
     }
 }
@@ -175,6 +185,27 @@ impl OperationRegistry {
         true
     }
 
+    pub fn note_subscribing(
+        &self,
+        service: &str,
+        handle: OperationHandle,
+        subscribe_url: String,
+    ) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .expect("operation registry lock is not poisoned");
+        let Some(entry) = state.entries.get_mut(service) else {
+            return false;
+        };
+        if entry.generation != handle.generation || entry.ended.is_some() {
+            return false;
+        }
+        entry.phase = Phase::Subscribing;
+        entry.subscribe_url = Some(subscribe_url);
+        true
+    }
+
     pub fn finish(&self, service: &str, handle: OperationHandle, result: HandoffResult) -> bool {
         let mut state = self
             .state
@@ -275,7 +306,9 @@ fn sweep(entries: &mut HashMap<String, OperationEntry>, now: Instant) {
 /// another one. The owner is usually in their browser when it fails, so a
 /// message that lived only for the grace window was gone before they got back.
 fn held_until_next_start(service: &str, entry: &OperationEntry) -> bool {
-    service == SERVICE_SPP && entry.ended.is_some() && entry.phase == Phase::Error
+    service == SERVICE_SPP
+        && entry.ended.is_some()
+        && (entry.phase == Phase::Error || entry.phase == Phase::JournalLimit)
 }
 
 fn payload(entry: &OperationEntry, now: Instant, remap: bool) -> Value {
@@ -853,26 +886,40 @@ mod tests {
         let long_ago = now
             .checked_sub(std::time::Duration::from_secs(OPERATION_GRACE_SECONDS * 10))
             .expect("clock reaches back past the grace window");
-        let ended = |phase: Phase| OperationEntry {
+        let ended = |phase: Phase, subscribe_url: Option<&str>| OperationEntry {
             kind: "enable".to_owned(),
             phase,
             guidance: None,
             retryable: true,
             portal_url: None,
-            subscribe_url: None,
+            subscribe_url: subscribe_url.map(str::to_owned),
             started: long_ago,
             ended: Some(long_ago),
             generation: 1,
         };
         let mut entries = HashMap::from([
-            (SERVICE_SPP.to_owned(), ended(Phase::Error)),
-            ("spl".to_owned(), ended(Phase::Error)),
+            (SERVICE_SPP.to_owned(), ended(Phase::Error, None)),
+            ("spl".to_owned(), ended(Phase::Error, None)),
         ]);
         sweep(&mut entries, now);
         assert!(entries.contains_key(SERVICE_SPP));
         assert!(!entries.contains_key("spl"));
 
-        let mut entries = HashMap::from([(SERVICE_SPP.to_owned(), ended(Phase::Enabled))]);
+        let mut entries = HashMap::from([(
+            SERVICE_SPP.to_owned(),
+            ended(
+                Phase::JournalLimit,
+                Some("https://services.solstone.app/subscribe"),
+            ),
+        )]);
+        sweep(&mut entries, now);
+        assert!(entries.contains_key(SERVICE_SPP));
+        assert_eq!(
+            payload(&entries[SERVICE_SPP], now, false)["subscribe_url"],
+            "https://services.solstone.app/subscribe"
+        );
+
+        let mut entries = HashMap::from([(SERVICE_SPP.to_owned(), ended(Phase::Enabled, None))]);
         sweep(&mut entries, now);
         assert!(entries.is_empty());
     }

@@ -83,7 +83,7 @@ On linux, check whether a computer is ready for the local models after the tree 
 solstone journal check   # gpu, memory, disk, and the bundled models: a one-shot readiness verdict
 ```
 
-The default local thinking model wants about 6 GB of GPU memory on linux or a 16 GB Apple Silicon mac. A machine below that bar still runs the journal; it brings its own provider key, or, if you are an approved scout, turns on confidential processing instead. On windows the local thinking model needs a compatible GPU; without one, the same two choices apply. See [choosing a provider](INSTALL.md#choosing-a-provider).
+The default local thinking model wants about 6 GB of GPU memory on linux or a 16 GB Apple Silicon mac. A machine below that bar still runs the journal; it brings its own provider key, or turns on confidential processing instead. On windows the local thinking model needs a compatible GPU; without one, the same two choices apply. See [choosing a provider](INSTALL.md#choosing-a-provider).
 
 ## The solstone command
 
@@ -144,7 +144,7 @@ Text and image completions use Generate, the journal's completion boundary. Tran
 
 1. **Local, the default.** Transcription (Parakeet), speaker analysis, screen description and the thinking model (Qwen, fetched when you choose local) run on your own machine. Nothing leaves.
 2. **Your own provider key.** Google, OpenAI, Anthropic, or any OpenAI-compatible endpoint you run yourself. The task's prompt, text and images go straight from your machine to that provider, under your key and your account. sol pbc is never in the path.
-3. **Confidential processing, operated by sol pbc.** Available to approved scouts. Off until you turn it on. While it is on, your journal verifies the service by attestation before anything leaves, and the work is done in memory and not retained.
+3. **Confidential processing, operated by sol pbc.** Off until you turn it on. While it is on, your journal verifies the service by attestation before anything leaves, and the work is done in memory and not retained.
 
 The plain-language account of each model path is [DATA-FLOW.md](DATA-FLOW.md). Optional sol pbc services disclose their connection and processing records when you enable them.
 

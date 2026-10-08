@@ -12,8 +12,8 @@ use solstone_core_system_health::{
     BACKLOG_STATE_UNKNOWN, BacklogDay, BacklogError, BacklogUnit, BacklogView, BackoffSummary,
     CappedDailySummary, CappedDailyUnit, FilesystemHealthLogSource, FilesystemSegmentSource,
     HealthError, HealthLogSource, MODALITY_INPUT_AGED_MS, SegmentRepairSummary, SegmentSource,
-    read_backlog_view, read_backoff_summary, read_segment_repair_attempted,
-    read_segment_repair_summary,
+    backlog_day_reason_copy, read_backlog_view, read_backoff_summary,
+    read_segment_repair_attempted, read_segment_repair_summary,
 };
 use tempfile::TempDir;
 
@@ -568,6 +568,90 @@ fn repair_reason_does_not_replace_catchup_backoff_reason_code() {
     assert_eq!(
         result.days[0].reason_code.as_deref(),
         Some("catchup_backoff")
+    );
+}
+
+#[test]
+fn catchup_backoff_with_confidential_access_ended_preserves_reason_code() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let day = "20990101";
+    screen_segment(root, day, "120000_60");
+    health(
+        root,
+        day,
+        &[
+            r#"{"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"}"#,
+            r#"{"event":"talent.fail","ts":2000,"mode":"segment","stream":"_default","segment":"120000_60","name":"documents","reason_code":"confidential_access_ended"}"#,
+        ],
+    );
+    incomplete(root, day, NOW_MS);
+    let state = root.join("health/catchup-state.json");
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    fs::write(
+        state,
+        json!({"version":1,"entries":{format!("{day}:daily-catchup"):{
+            "entered_backoff_at":1,"attempts":3,"consecutive_non_completion":3,"last_outcome":"timeout","next_retry_at":2
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+
+    let result = view(root, 1);
+    assert_eq!(result.days[0].state, BACKLOG_STATE_STUCK);
+    assert_eq!(
+        result.days[0].reason_code.as_deref(),
+        Some("confidential_access_ended")
+    );
+    assert_ne!(
+        result.days[0].reason_code.as_deref(),
+        Some("catchup_backoff")
+    );
+    assert_ne!(
+        result.days[0].reason_code.as_deref(),
+        Some("segment_repair_stuck")
+    );
+    let day_value = serde_json::to_value(&result.days[0]).unwrap();
+    let day_view = day_value.as_object().unwrap();
+    assert_eq!(
+        backlog_day_reason_copy(day_view),
+        "confidential processing isn't active for this journal. open the thinking app to see why."
+    );
+}
+
+#[test]
+fn repair_stuck_with_confidential_access_ended_preserves_reason_code() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let day = "20990101";
+    stuck_segment_day(root, day, Some("confidential_access_ended"));
+    let fingerprint = solstone_core_system::catchup::read_raw_input_fingerprint(root, day).unwrap();
+    write_repair_record(
+        root,
+        day,
+        json!({
+            "fingerprint": fingerprint,
+            "attempts": 1,
+            "consecutive_non_completion": 1,
+            "entered_backoff_at": 1,
+        }),
+    );
+
+    let result = view(root, 1);
+    assert_eq!(result.days[0].state, BACKLOG_STATE_STUCK);
+    assert_eq!(
+        result.days[0].reason_code.as_deref(),
+        Some("confidential_access_ended")
+    );
+    assert_ne!(
+        result.days[0].reason_code.as_deref(),
+        Some("segment_repair_stuck")
+    );
+    let day_value = serde_json::to_value(&result.days[0]).unwrap();
+    let day_view = day_value.as_object().unwrap();
+    assert_eq!(
+        backlog_day_reason_copy(day_view),
+        "confidential processing isn't active for this journal. open the thinking app to see why."
     );
 }
 

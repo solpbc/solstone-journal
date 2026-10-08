@@ -1080,6 +1080,7 @@ mod tests {
             "provider_request_rejected",
             "provider_response_invalid",
             "provider_unavailable",
+            "confidential_access_ended",
         ] {
             assert_eq!(map_provider_reason("generate", Some(reason)), reason);
         }

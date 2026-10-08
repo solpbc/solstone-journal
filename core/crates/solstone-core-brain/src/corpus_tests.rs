@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use crate::fingerprint::{CanonicalInput, canonical_fingerprint, canonical_json, hmac_sha256};
 use crate::fixture::{brain_state_keys, local_contract, projection_fixture};
 use crate::inspect::{FINGERPRINT_KEY_BYTES, project_brain_state};
-use crate::record::validate_brain_state_record;
+use crate::record::{evidence_component_for_reason, validate_brain_state_record};
 use crate::runtime_health::{inspect_runtime_health, inspection_from_fixture};
 use crate::{
     InspectionStatus, brain_fingerprint_key_path, brain_refresh_lease_path, brain_state_path,
@@ -359,7 +359,7 @@ fn projection_corpus_has_exact_count_and_coverage() {
 #[test]
 fn reason_to_aggregate_corpus_has_exact_count_and_partition() {
     let vocabulary = &local_contract().brain_state;
-    assert_eq!(vocabulary.reason_to_aggregate.len(), 44);
+    assert_eq!(vocabulary.reason_to_aggregate.len(), 45);
     for (reason, aggregate) in &vocabulary.reason_to_aggregate {
         assert!(
             vocabulary
@@ -384,13 +384,27 @@ fn reason_to_aggregate_corpus_has_exact_count_and_partition() {
         .iter()
         .collect::<std::collections::BTreeSet<_>>();
     assert!(evidence.is_disjoint(&projection));
-    assert_eq!(evidence.union(&projection).count(), 44);
+    assert_eq!(evidence.union(&projection).count(), 45);
     assert!(
         vocabulary
             .aggregate_states
             .iter()
             .all(|aggregate| !vocabulary.reason_codes.contains(aggregate))
     );
+}
+
+#[test]
+fn evidence_component_for_confidential_access_ended() {
+    let result = evidence_component_for_reason(
+        "generate",
+        "confidential_access_ended",
+        Map::new(),
+        fixture_now(),
+    );
+    assert!(result.is_ok());
+    let value = result.unwrap();
+    assert_eq!(value["status"], "blocked");
+    assert_eq!(value["reason_code"], "confidential_access_ended");
 }
 
 #[test]
