@@ -376,6 +376,33 @@ impl InstalledPackage {
         if !digest_matches(&bytes, listed.bytes, &listed.sha256) {
             return Err(member_changed(path));
         }
+
+        let ns_set = namespaces(&self.files);
+        let member_ns_root = ns_set.iter().find(|ns| path.starts_with(&format!("{ns}/")));
+
+        if let Some(ns_root) = member_ns_root {
+            let prefix = format!("{ns_root}/");
+            for (p, l) in &self.files {
+                if p != path && p.starts_with(&prefix) {
+                    let f = resolve_member(&self.root, p)?;
+                    let b = read_member(&f, p)?;
+                    if is_native(&b) && !digest_matches(&b, l.bytes, &l.sha256) {
+                        return Err(member_changed(p));
+                    }
+                }
+            }
+        } else if is_native(&bytes) {
+            for (p, l) in &self.files {
+                if p != path && ns_set.iter().any(|ns| p.starts_with(&format!("{ns}/"))) {
+                    let f = resolve_member(&self.root, p)?;
+                    let b = read_member(&f, p)?;
+                    if is_native(&b) && !digest_matches(&b, l.bytes, &l.sha256) {
+                        return Err(member_changed(p));
+                    }
+                }
+            }
+        }
+
         let mut seen = self.seen.lock().expect("installed payload digest record");
         seen.insert(path.to_owned(), digest);
         let _recorded = seen.get(path);
@@ -610,7 +637,7 @@ fn check_listed_members(
             continue;
         }
         let bytes = read_member(&full, path)?;
-        if is_native(&bytes) && !digest_matches(&bytes, listed.bytes, &listed.sha256) {
+        if bytes.len() as u64 != listed.bytes {
             return Err(member_changed(path));
         }
     }
@@ -1093,6 +1120,7 @@ mod tests {
             "lib/solstone-demo/extra.bin",
             "lib/solstone_journal_models/extra.bin",
             "share/solstone-journal/.DS_Store",
+            "share/solstone-journal/licenses/ced/extra",
         ] {
             write_file(root, relative, b"extra");
             let error = admit(root, COMPILED_VERSION, TARGET_LINUX_X86_64).expect_err(relative);
@@ -1117,17 +1145,86 @@ mod tests {
             write_file(root, relative, bytes);
         }
         seal(root, COMPILED_VERSION, TARGET_LINUX_X86_64);
-        for (relative, bytes) in natives {
+        for (relative, bytes) in &natives {
             let mut flipped = bytes.clone();
             *flipped.last_mut().expect("byte") ^= 0xff;
             write_file(root, relative, &flipped);
-            let error = admit(root, COMPILED_VERSION, TARGET_LINUX_X86_64).expect_err(relative);
+            let pkg = admit(root, COMPILED_VERSION, TARGET_LINUX_X86_64)
+                .expect("admit succeeds on same-length flip");
+            let error = pkg.member(relative).expect_err(relative);
             assert_eq!(error.code, code::MEMBER_CHANGED, "{relative}");
             assert_eq!(error.guidance, guidance::PACKAGE_MISMATCH);
-            assert_eq!(error.path.as_deref(), Some(relative));
-            write_file(root, relative, &bytes);
+            assert_eq!(error.path.as_deref(), Some(*relative));
+            write_file(root, relative, bytes);
         }
         admit(root, COMPILED_VERSION, TARGET_LINUX_X86_64).expect("restored");
+    }
+
+    #[test]
+    fn request_scoped_native_hashing_and_isolation() {
+        let tmp = scratch();
+        let root = tmp.path();
+        write_file(root, "bin/solstone", b"core-bin");
+        write_file(root, "bin/helper", &elf(b"-helper-elf-"));
+        write_file(root, "share/LICENSE", b"Apache-2.0");
+
+        let libx = elf(b"-libx-so-body-");
+        write_file(root, "lib/solstone-a/lib/libx.so", &libx);
+        write_file(root, "lib/solstone-a/bin/tool", &elf(b"-tool-elf-"));
+        write_file(root, "lib/solstone-a/share/ca.pem", b"PEM-CERTIFICATE");
+
+        let liby = elf(b"-liby-so-body-");
+        write_file(root, "lib/solstone-b/lib/liby.so", &liby);
+        write_file(root, "lib/solstone-b/bin/tool_b", &elf(b"-tool-b-elf-"));
+
+        seal(root, COMPILED_VERSION, TARGET_LINUX_X86_64);
+
+        // 1. Flip lib/solstone-a/lib/libx.so (same length)
+        let mut flipped_x = libx.clone();
+        *flipped_x.last_mut().unwrap() ^= 0xff;
+        write_file(root, "lib/solstone-a/lib/libx.so", &flipped_x);
+
+        let pkg = admit(root, COMPILED_VERSION, TARGET_LINUX_X86_64).expect("admit succeeds");
+
+        // A request for lib/solstone-a/bin/tool and lib/solstone-a/share/ca.pem both return member-changed naming lib/solstone-a/lib/libx.so
+        let err1 = pkg
+            .member("lib/solstone-a/bin/tool")
+            .expect_err("tool error");
+        assert_eq!(err1.code, code::MEMBER_CHANGED);
+        assert_eq!(err1.path.as_deref(), Some("lib/solstone-a/lib/libx.so"));
+
+        let err2 = pkg
+            .member("lib/solstone-a/share/ca.pem")
+            .expect_err("ca error");
+        assert_eq!(err2.code, code::MEMBER_CHANGED);
+        assert_eq!(err2.path.as_deref(), Some("lib/solstone-a/lib/libx.so"));
+
+        // bin/helper is native outside namespaces. Flipping a native in lib/solstone-a/ makes bin/helper return member-changed.
+        let err_bin = pkg.member("bin/helper").expect_err("bin/helper error");
+        assert_eq!(err_bin.code, code::MEMBER_CHANGED);
+        assert_eq!(err_bin.path.as_deref(), Some("lib/solstone-a/lib/libx.so"));
+
+        // A request for a member of lib/solstone-b/ still succeeds.
+        assert!(pkg.member("lib/solstone-b/bin/tool_b").is_ok());
+
+        // share/LICENSE or another non-native outside every namespace still resolves while a namespace native is flipped.
+        assert!(pkg.member("share/LICENSE").is_ok());
+
+        // Restore namespace A
+        write_file(root, "lib/solstone-a/lib/libx.so", &libx);
+
+        // 2. With the flip in namespace B, verify_installed_package returns member-changed for that B path.
+        let mut flipped_y = liby.clone();
+        *flipped_y.last_mut().unwrap() ^= 0xff;
+        write_file(root, "lib/solstone-b/lib/liby.so", &flipped_y);
+
+        let err_verify = verify_installed_package(root, COMPILED_VERSION, TARGET_LINUX_X86_64)
+            .expect_err("verify fails");
+        assert_eq!(err_verify.code, code::MEMBER_CHANGED);
+        assert_eq!(
+            err_verify.path.as_deref(),
+            Some("lib/solstone-b/lib/liby.so")
+        );
     }
 
     #[cfg(unix)]
@@ -1260,7 +1357,7 @@ mod tests {
         write_file(root, "lib/solstone-demo/model.bin", b"model-bytes");
         let first = admit(root, COMPILED_VERSION, TARGET_LINUX_X86_64).expect("first op");
         first.member("lib/solstone-demo/model.bin").expect("hash");
-        write_file(root, "lib/solstone-demo/model.bin", b"after-hash");
+        write_file(root, "lib/solstone-demo/model.bin", b"after-hashe");
         let second = admit(root, COMPILED_VERSION, TARGET_LINUX_X86_64).expect("second op");
         let error = second
             .member("lib/solstone-demo/model.bin")
@@ -1272,7 +1369,7 @@ mod tests {
         let held = admit(root, COMPILED_VERSION, TARGET_LINUX_X86_64).expect("held");
         held.member("lib/solstone-demo/model.bin")
             .expect("held hash");
-        write_file(root, "lib/solstone-demo/model.bin", b"thread-mutated");
+        write_file(root, "lib/solstone-demo/model.bin", b"thread-muta");
         let root_buf = root.to_path_buf();
         std::thread::scope(|scope| {
             scope.spawn(|| {

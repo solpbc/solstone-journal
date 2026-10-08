@@ -234,13 +234,17 @@ fn main_header(
         "libgomp",
         "libstdc++.so.6()(64bit)",
         "libstdc++.so.6(GLIBCXX_3.4.29)(64bit)",
+        "libz.so.1()(64bit)",
         "rpmlib(CompressedFileNames)",
         "rpmlib(FileDigests)",
         "rpmlib(PayloadFilesHavePrefix)",
     ];
-    let require_versions = ["2.34", "", "", "", "", "", "3.0.4-1", "4.6.0-1", "4.0-1"];
+    let require_versions = [
+        "2.34", "", "", "", "", "", "", "3.0.4-1", "4.6.0-1", "4.0-1",
+    ];
     let require_flags = [
         RPM_SENSE_GREATER_EQUAL,
+        0,
         0,
         0,
         0,

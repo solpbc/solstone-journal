@@ -605,14 +605,14 @@ fn pins_fail_loudly_when_the_authority_is_missing_or_malformed() {
     let malformed_result = authority_origin_pins_from_test_path(&malformed);
     assert!(matches!(
         malformed_result,
-        Err(PinsError::AuthorityParse { .. })
+        Err(PinsError::AuthorityTargetInvalid { .. })
     ));
 }
 
 #[test]
 fn pins_fail_loudly_when_the_authority_has_no_targets() {
     let path = temp("authority-empty").join("authority.json");
-    fs::write(&path, r#"{"targets":{}}"#).unwrap();
+    fs::write(&path, r#"{"schema_version":1,"targets":{}}"#).unwrap();
     assert!(matches!(
         authority_origin_pins_from_test_path(&path),
         Err(PinsError::AuthorityTargetsEmpty { .. })

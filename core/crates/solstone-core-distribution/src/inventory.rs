@@ -399,16 +399,65 @@ pub enum Entry {
         targets: Vec<String>,
     },
     PinnedNative {
-        source: String,
+        #[serde(default)]
+        component: Option<String>,
+        input: PinnedInput,
         dest: String,
         mode: u32,
-        digest: String,
         identity: NativeIdentity,
+        targets: Vec<String>,
+    },
+    PinnedMembers {
+        #[serde(default)]
+        component: Option<String>,
+        input: PinnedInput,
+        staged: Vec<StagedMember>,
+        #[serde(default)]
+        ignored: Vec<String>,
+        targets: Vec<String>,
+    },
+    LicenceTree {
+        source: String,
+        #[serde(default)]
+        component: Option<String>,
         targets: Vec<String>,
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum PinnedInput {
+    Inline {
+        source: String,
+        digest: String,
+    },
+    CatalogCommitted {
+        unit: String,
+        filename: String,
+        path: String,
+    },
+    CatalogAcquired {
+        unit: String,
+        filename: String,
+    },
+    AuthorityCommitted {
+        platform: String,
+        path: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedMember {
+    pub relpath: String,
+    pub dest: String,
+    pub mode: u32,
+    pub extracted_sha256: String,
+    #[serde(default)]
+    pub identity: Option<NativeIdentity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeIdentity {
     #[serde(default)]
@@ -562,6 +611,75 @@ pub fn load_payload(
         .collect())
 }
 
+fn is_valid_component(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() || c.is_ascii_digit() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_' || c == '-')
+}
+
+pub(crate) fn collect_licence_relative_paths(
+    source_dir: &Path,
+    source_name: &str,
+) -> Result<Vec<String>, InventoryError> {
+    if !source_dir.is_dir() {
+        return Err(InventoryError::new(format!(
+            "licence-tree {source_name}: missing source directory {}",
+            source_dir.display()
+        )));
+    }
+    let mut files = Vec::new();
+    let mut dirs = vec![source_dir.to_path_buf()];
+    while let Some(current_dir) = dirs.pop() {
+        let entries = fs::read_dir(&current_dir).map_err(|e| {
+            InventoryError::new(format!(
+                "licence-tree {source_name}: read dir {}: {e}",
+                current_dir.display()
+            ))
+        })?;
+        for entry_res in entries {
+            let entry = entry_res.map_err(|e| {
+                InventoryError::new(format!(
+                    "licence-tree {source_name}: read entry in {}: {e}",
+                    current_dir.display()
+                ))
+            })?;
+            let p = entry.path();
+            let meta = fs::symlink_metadata(&p).map_err(|e| {
+                InventoryError::new(format!(
+                    "licence-tree {source_name}: metadata {}: {e}",
+                    p.display()
+                ))
+            })?;
+            let rel = p
+                .strip_prefix(source_dir)
+                .map_err(|e| InventoryError::new(e.to_string()))?;
+            let rel_str = rel.to_str().ok_or_else(|| {
+                InventoryError::new(format!("licence-tree {source_name}: non-utf8 path"))
+            })?;
+            if meta.file_type().is_symlink() {
+                return Err(InventoryError::new(format!(
+                    "licence-tree {source_name}: licence tree contains symlink at {rel_str}"
+                )));
+            }
+            if meta.is_dir() {
+                dirs.push(p);
+            } else if meta.is_file() {
+                files.push(rel_str.to_owned());
+            }
+        }
+    }
+    if files.is_empty() {
+        return Err(InventoryError::new(format!(
+            "licence-tree {source_name}: empty source directory"
+        )));
+    }
+    files.sort();
+    Ok(files)
+}
+
 fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), InventoryError> {
     if inventory.version != 1 {
         return Err(InventoryError::new(format!(
@@ -634,12 +752,20 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             }
         }
         if let Entry::PinnedNative {
+            component,
             dest,
             identity,
             targets,
             ..
         } = entry
         {
+            if let Some(comp) = component
+                && !is_valid_component(comp)
+            {
+                return Err(InventoryError::new(format!(
+                    "pinned-native {dest}: invalid-component {comp}"
+                )));
+            }
             if dest.starts_with("bin/")
                 || (dest.starts_with("lib/") && !dest["lib/".len()..].contains('/'))
                 || dest.starts_with("share/")
@@ -654,14 +780,14 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
                     "pinned-native dest must be under lib/solstone-<component>/: {dest}"
                 )));
             };
-            let Some((component, rest)) = after_lib.split_once('/') else {
+            let Some((component_part, rest)) = after_lib.split_once('/') else {
                 return Err(InventoryError::new(format!(
                     "pinned-native dest cannot be directly under lib/: {dest}"
                 )));
             };
-            if !component.starts_with("solstone-")
-                || component == "solstone-"
-                || component == "solstone_journal_models"
+            if !component_part.starts_with("solstone-")
+                || component_part == "solstone-"
+                || component_part == "solstone_journal_models"
                 || rest.is_empty()
             {
                 return Err(InventoryError::new(format!(
@@ -680,6 +806,155 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
                     return Err(InventoryError::new(format!(
                         "pinned-native cannot target Windows: {target_id}"
                     )));
+                }
+            }
+        }
+        if let Entry::PinnedMembers {
+            component,
+            staged,
+            targets,
+            ..
+        } = entry
+        {
+            if let Some(comp) = component
+                && !is_valid_component(comp)
+            {
+                return Err(InventoryError::new(format!(
+                    "pinned-members: invalid-component {comp}"
+                )));
+            }
+            for target_id in targets {
+                let is_windows = inventory
+                    .target
+                    .iter()
+                    .find(|t| &t.id == target_id)
+                    .map(Target::is_windows)
+                    .unwrap_or(false);
+                for member in staged {
+                    let dest = &member.dest;
+                    if let Some(ref identity) = member.identity
+                        && identity.os.is_some()
+                    {
+                        return Err(InventoryError::new(
+                            "pinned-members identity cannot declare os",
+                        ));
+                    }
+                    if is_windows {
+                        let valid = if let Some(after_lib) = dest.strip_prefix("lib/") {
+                            if let Some(rest) = after_lib.strip_prefix("solstone_journal_models/") {
+                                !rest.is_empty()
+                            } else if let Some((comp, rest)) = after_lib.split_once('/') {
+                                comp.starts_with("solstone-")
+                                    && comp != "solstone-"
+                                    && !rest.is_empty()
+                            } else {
+                                false
+                            }
+                        } else if let Some(after_share) = dest.strip_prefix("share/licenses/") {
+                            if let Some((comp, rest)) = after_share.split_once('/') {
+                                !comp.is_empty() && !rest.is_empty()
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+                        if !valid || dest.starts_with("share/provenance/") {
+                            return Err(InventoryError::new(format!(
+                                "invalid pinned-members dest for Windows: {dest}"
+                            )));
+                        }
+                    } else {
+                        // POSIX (Linux or macOS)
+                        if dest.starts_with("bin/")
+                            || dest.starts_with("share/licenses/")
+                            || dest.starts_with("share/provenance/")
+                            || dest.starts_with("lib/solstone_journal_models/")
+                        {
+                            return Err(InventoryError::new(format!(
+                                "invalid pinned-members dest {dest} for {target_id}"
+                            )));
+                        }
+                        let valid = if let Some(after_lib) = dest.strip_prefix("lib/") {
+                            if let Some((comp, rest)) = after_lib.split_once('/') {
+                                comp.starts_with("solstone-")
+                                    && comp != "solstone-"
+                                    && comp != "solstone_journal_models"
+                                    && !rest.is_empty()
+                            } else {
+                                false
+                            }
+                        } else if let Some(after_lic) =
+                            dest.strip_prefix("share/solstone-journal/licenses/")
+                        {
+                            if let Some((comp, rest)) = after_lic.split_once('/') {
+                                !comp.is_empty() && !rest.is_empty()
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+                        if !valid {
+                            return Err(InventoryError::new(format!(
+                                "invalid pinned-members dest {dest} for {target_id}"
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+        if let Entry::LicenceTree {
+            source,
+            component,
+            targets,
+        } = entry
+        {
+            let Some(comp) = component else {
+                return Err(InventoryError::new(format!(
+                    "licence-tree {source}: missing-component"
+                )));
+            };
+            if !is_valid_component(comp) {
+                return Err(InventoryError::new(format!(
+                    "licence-tree {source}: invalid-component {comp}"
+                )));
+            }
+            let repo = path.ancestors().nth(3).unwrap_or_else(|| Path::new("."));
+            let source_dir = repo.join(source);
+            let rel_files = collect_licence_relative_paths(&source_dir, source)?;
+            for target_id in targets {
+                if !target_ids.contains(target_id) {
+                    missing_targets.insert(target_id.to_owned());
+                }
+                let target_obj = inventory.target.iter().find(|t| &t.id == target_id);
+                let is_windows = target_obj.map(Target::is_windows).unwrap_or(false);
+                for rel in &rel_files {
+                    let dest = if is_windows {
+                        format!("share/licenses/{comp}/{rel}")
+                    } else {
+                        format!("share/solstone-journal/licenses/{comp}/{rel}")
+                    };
+                    let key = if target_id == "windows-x86_64" {
+                        dest.to_ascii_lowercase()
+                    } else {
+                        dest.clone()
+                    };
+                    if !dests_by_target
+                        .entry(target_id.clone())
+                        .or_default()
+                        .insert(key)
+                    {
+                        return Err(InventoryError::new(format!(
+                            "duplicate dest {dest} for target {target_id} in {}",
+                            path.display()
+                        )));
+                    }
+                    if let Some(declared) = target_obj
+                        && let Err(error) = crate::layout::admit_dest(&declared.os, &dest)
+                    {
+                        unexpected_dests.insert(format!("{target_id} {dest}: {error}"));
+                    }
                 }
             }
         }
@@ -1086,6 +1361,14 @@ fn entry_fields(entry: &Entry) -> (Vec<&str>, &Vec<String>, Option<&String>) {
         | Entry::WindowsBuildEvidence { dest, targets, .. }
         | Entry::WindowsNative { dest, targets, .. }
         | Entry::PinnedNative { dest, targets, .. } => (vec![dest.as_str()], targets, None),
+        Entry::PinnedMembers {
+            staged, targets, ..
+        } => (
+            staged.iter().map(|s| s.dest.as_str()).collect(),
+            targets,
+            None,
+        ),
+        Entry::LicenceTree { targets, .. } => (Vec::new(), targets, None),
         Entry::OnnxRuntime {
             dest_dir, targets, ..
         }
@@ -1201,7 +1484,7 @@ mod tests {
         assert!(target.is_macos());
         assert_eq!(target.lane, "apple-native");
         assert_eq!(target.triple_apple, "aarch64-apple-darwin");
-        assert_eq!(parse_min_macos(&target.min_macos), Some((14, 0)));
+        assert_eq!(parse_min_macos(&target.min_macos), Some((15, 0)));
         assert_eq!(target.deb_arch, "");
         assert_eq!(target.rpm_arch, "");
         assert_eq!(target.triple_musl, "");
@@ -1500,7 +1783,7 @@ os = "macos"
 arch = "arm64"
 lane = "apple-native"
 triple_apple = "aarch64-apple-darwin"
-min_macos = "14.0"
+min_macos = "15.0"
 deb_arch = "arm64"
 "#;
         let error = parse(macos_with_deb).unwrap_err().to_string();
@@ -1546,7 +1829,7 @@ os = "macos"
 arch = "arm64"
 lane = "xcodebuild"
 triple_apple = "aarch64-apple-darwin"
-min_macos = "14.0"
+min_macos = "15.0"
 "#;
         let error = parse(unknown_lane).unwrap_err().to_string();
         assert!(error.contains("macos-arm64 lane xcodebuild"), "{error}");
@@ -1609,7 +1892,7 @@ os = "macos"
 arch = "arm64"
 lane = "msvc-native"
 triple_apple = "aarch64-apple-darwin"
-min_macos = "14.0"
+min_macos = "15.0"
 "#;
         let error = parse(macos_with_msvc_lane).unwrap_err().to_string();
         assert!(error.contains("unexpected target field"), "{error}");
@@ -1697,7 +1980,7 @@ arch = "x86_64"
 lane = "msvc-native"
 triple_windows = "x86_64-pc-windows-msvc"
 triple_apple = "aarch64-apple-darwin"
-min_macos = "14.0"
+min_macos = "15.0"
 "#;
         let error = parse(windows_with_apple_fields).unwrap_err().to_string();
         assert!(error.contains("unexpected target field"), "{error}");
@@ -1743,7 +2026,7 @@ os = "macos"
 arch = "arm64"
 lane = "apple-native"
 triple_apple = "aarch64-apple-darwin"
-min_macos = "14.0"
+min_macos = "15.0"
 "#;
         let inventory: Inventory = toml_edit::de::from_str(text).unwrap();
         assert!(!inventory.apple.is_declared());
@@ -1834,11 +2117,14 @@ targets = ["windows-x86_64"]
         );
 
         let make_pinned = |dest: &str, target: &str| super::Entry::PinnedNative {
-            source: "fixture.so".to_owned(),
+            component: None,
+            input: super::PinnedInput::Inline {
+                source: "fixture.so".to_owned(),
+                digest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .to_owned(),
+            },
             dest: dest.to_owned(),
             mode: 0o755,
-            digest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-                .to_owned(),
             identity: super::NativeIdentity {
                 os: None,
                 name: Some("libx.so".to_owned()),
@@ -1877,5 +2163,144 @@ targets = ["windows-x86_64"]
             .entry
             .push(make_pinned("lib/solstone-foo/libx.so", "linux-x86_64"));
         super::validate_inventory(&path, &inv_ok).expect("valid pinned-native entry passes");
+    }
+
+    #[test]
+    fn pinned_input_rejects_unknown_fields() {
+        let toml_str = r#"
+version = 1
+product = "solstone"
+payload = "core/distribution/payload.txt"
+payload_dest_prefix = "share/solstone-journal"
+payload_src_root = "core/payload"
+entry = [
+    { kind = "pinned-members", targets = ["linux-x86_64"], input = { kind = "catalog-acquired", unit = "u", filename = "f", digest = "d" }, staged = [] }
+]
+deny = []
+[artifact]
+basename = "solstone-{version}-{os}-{arch}"
+[[target]]
+id = "linux-x86_64"
+os = "linux"
+arch = "x86_64"
+lane = "glibc-native"
+deb_arch = "amd64"
+rpm_arch = "x86_64"
+triple_musl = "x86_64-unknown-linux-musl"
+triple_gnu = "x86_64-unknown-linux-gnu"
+zig_gnu = "x86_64-linux-gnu.2.28"
+"#;
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp.path(), toml_str).unwrap();
+        let err = super::load_inventory(temp.path()).unwrap_err().to_string();
+        assert!(
+            err.contains("digest"),
+            "expected error to contain 'digest', got: {err}"
+        );
+
+        let toml_inline = r#"
+version = 1
+product = "solstone"
+payload = "core/distribution/payload.txt"
+payload_dest_prefix = "share/solstone-journal"
+payload_src_root = "core/payload"
+entry = [
+    { kind = "pinned-native", targets = ["linux-x86_64"], dest = "lib/solstone-foo/libfoo.so.1", mode = 493, identity = { name = "libfoo.so.1" }, input = { kind = "inline", source = "foo", digest = "d" } }
+]
+deny = []
+[artifact]
+basename = "solstone-{version}-{os}-{arch}"
+[[target]]
+id = "linux-x86_64"
+os = "linux"
+arch = "x86_64"
+deb_arch = "amd64"
+rpm_arch = "x86_64"
+triple_musl = "x86_64-unknown-linux-musl"
+triple_gnu = "x86_64-unknown-linux-gnu"
+zig_gnu = "x86_64-linux-gnu.2.28"
+"#;
+        assert!(toml_edit::de::from_str::<super::Inventory>(toml_inline).is_ok());
+    }
+
+    #[test]
+    fn component_bad_id_refusals() {
+        let make_inv = |entry_str: &str| {
+            format!(
+                r#"
+version = 1
+product = "solstone"
+payload = "core/distribution/payload.txt"
+payload_dest_prefix = "share/solstone-journal"
+payload_src_root = "core/payload"
+entry = [
+    {entry_str}
+]
+deny = []
+[artifact]
+basename = "solstone-{{version}}-{{os}}-{{arch}}"
+[[target]]
+id = "linux-x86_64"
+os = "linux"
+arch = "x86_64"
+deb_arch = "amd64"
+rpm_arch = "x86_64"
+triple_musl = "x86_64-unknown-linux-musl"
+triple_gnu = "x86_64-unknown-linux-gnu"
+zig_gnu = "x86_64-linux-gnu.2.28"
+"#
+            )
+        };
+
+        // PinnedNative with component = "Bad Id"
+        let t1 = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            t1.path(),
+            make_inv(
+                r#"{ kind = "pinned-native", component = "Bad Id", dest = "lib/solstone-foo/libfoo.so.1", mode = 493, targets = ["linux-x86_64"], identity = { name = "libfoo.so.1" }, input = { kind = "inline", source = "foo", digest = "d" } }"#,
+            ),
+        )
+        .unwrap();
+        let err1 = super::load_inventory(t1.path()).unwrap_err().to_string();
+        assert!(
+            err1.contains("invalid-component")
+                && err1.contains("Bad Id")
+                && !err1.starts_with("Bad Id:"),
+            "{err1}"
+        );
+
+        // PinnedMembers with component = "Bad Id"
+        let t2 = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            t2.path(),
+            make_inv(
+                r#"{ kind = "pinned-members", component = "Bad Id", targets = ["linux-x86_64"], input = { kind = "inline", source = "foo", digest = "d" }, staged = [] }"#,
+            ),
+        )
+        .unwrap();
+        let err2 = super::load_inventory(t2.path()).unwrap_err().to_string();
+        assert!(
+            err2.contains("invalid-component")
+                && err2.contains("Bad Id")
+                && !err2.starts_with("Bad Id:"),
+            "{err2}"
+        );
+
+        // LicenceTree with component = "Bad Id"
+        let t3 = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            t3.path(),
+            make_inv(
+                r#"{ kind = "licence-tree", component = "Bad Id", source = "licenses/foo", targets = ["linux-x86_64"] }"#,
+            ),
+        )
+        .unwrap();
+        let err3 = super::load_inventory(t3.path()).unwrap_err().to_string();
+        assert!(
+            err3.contains("invalid-component")
+                && err3.contains("Bad Id")
+                && !err3.starts_with("Bad Id:"),
+            "{err3}"
+        );
     }
 }

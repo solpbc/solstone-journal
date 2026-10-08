@@ -1,65 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
-
-use serde::Deserialize;
-
-pub(crate) const NVATTEST_AUTHORITY_JSON: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../fixtures/nvattest_authority_v1.json"
-));
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NvattestArtifactSpec {
-    pub platform: String,
-    pub version: String,
-    pub name: String,
-    pub sha256: String,
-    pub size_bytes: u64,
-    pub url: String,
-    pub origin_key: String,
-    pub inventory: Vec<NvattestInventoryEntry>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub(crate) struct NvattestInventoryEntry {
-    pub relpath: String,
-    pub executable: bool,
-    pub kind: String,
-    #[serde(default)]
-    pub symlink_target: Option<String>,
-}
+use solstone_core_nvattest_authority::{
+    AuthorityParseError, NvattestArtifactSpec, artifact_spec, parse,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AuthorityError {
     PlatformUnsupported,
     Malformed,
-}
-
-#[derive(Deserialize)]
-struct AuthorityFile {
-    targets: BTreeMap<String, Target>,
-}
-
-#[derive(Deserialize)]
-struct Target {
-    artifact: ArtifactObject,
-    inventory: Vec<NvattestInventoryEntry>,
-    source: Source,
-}
-
-#[derive(Deserialize)]
-struct ArtifactObject {
-    name: String,
-    sha256: String,
-    size_bytes: Option<u64>,
-    url: String,
-}
-
-#[derive(Deserialize)]
-struct Source {
-    version: String,
 }
 
 /// Windows owners can use confidential processing: it qualified on Windows
@@ -101,34 +50,10 @@ pub(crate) fn parse_nvattest_target(
     authority_json: &str,
     platform: &str,
 ) -> Result<NvattestArtifactSpec, AuthorityError> {
-    let authority: AuthorityFile =
-        serde_json::from_str(authority_json).map_err(|_| AuthorityError::Malformed)?;
-    let Some(target) = authority.targets.get(platform) else {
-        return Err(AuthorityError::PlatformUnsupported);
-    };
-    let size_bytes = target
-        .artifact
-        .size_bytes
-        .ok_or(AuthorityError::Malformed)?;
-    let basename = target
-        .artifact
-        .url
-        .rsplit('/')
-        .next()
-        .filter(|name| !name.is_empty())
-        .ok_or(AuthorityError::Malformed)?;
-    if basename != target.artifact.name {
-        return Err(AuthorityError::Malformed);
-    }
-    Ok(NvattestArtifactSpec {
-        platform: platform.to_owned(),
-        version: target.source.version.clone(),
-        name: target.artifact.name.clone(),
-        sha256: target.artifact.sha256.clone(),
-        size_bytes,
-        url: target.artifact.url.clone(),
-        origin_key: format!("providers/nvattest/{}", target.artifact.name),
-        inventory: target.inventory.clone(),
+    let auth = parse(authority_json).map_err(|_| AuthorityError::Malformed)?;
+    artifact_spec(&auth, platform).map_err(|e| match e {
+        AuthorityParseError::PlatformUnsupported(_) => AuthorityError::PlatformUnsupported,
+        AuthorityParseError::Malformed(_) => AuthorityError::Malformed,
     })
 }
 
@@ -136,15 +61,15 @@ pub(crate) fn parse_nvattest_target(
 mod tests {
     use solstone_core_artifact_download::{PRODUCTION_DOWNLOAD_POLICY, origin_url};
 
-    use super::{
-        AuthorityError, NVATTEST_AUTHORITY_JSON, nvattest_platform_key, parse_nvattest_target,
-    };
+    use solstone_core_nvattest_authority::AUTHORITY_JSON;
+
+    use super::{AuthorityError, nvattest_platform_key, parse_nvattest_target};
 
     #[test]
     fn fixture_pins_compose_against_the_production_origin() {
         for platform in ["linux-x86_64", "linux-aarch64", "macos-arm64"] {
-            let spec = parse_nvattest_target(NVATTEST_AUTHORITY_JSON, platform)
-                .expect("fixture target parses");
+            let spec =
+                parse_nvattest_target(AUTHORITY_JSON, platform).expect("fixture target parses");
             assert_eq!(spec.platform, platform);
             assert_eq!(spec.version, "1.2.2-sol.6");
             assert_eq!(spec.origin_key, format!("providers/nvattest/{}", spec.name));
@@ -211,7 +136,7 @@ mod tests {
     #[test]
     fn missing_target_is_platform_unsupported() {
         assert_eq!(
-            parse_nvattest_target(NVATTEST_AUTHORITY_JSON, "windows-x86_64"),
+            parse_nvattest_target(AUTHORITY_JSON, "windows-x86_64"),
             Err(AuthorityError::PlatformUnsupported)
         );
     }

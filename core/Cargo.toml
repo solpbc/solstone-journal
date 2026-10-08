@@ -99,6 +99,7 @@ members = [
     "crates/solstone-core-generate-wire",
     "crates/solstone-core-spp-attest",
     "crates/solstone-core-spp-ratls",
+    "crates/solstone-core-nvattest-authority",
     "crates/solstone-core-speakers-onnx",
     "crates/solstone-core-local",
     "crates/solstone-core-assets",
@@ -275,6 +276,7 @@ solstone-core-assets = { path = "crates/solstone-core-assets" }
 solstone-core-origin = { path = "crates/solstone-core-origin" }
 solstone-core-spp-attest = { path = "crates/solstone-core-spp-attest" }
 solstone-core-spp-ratls = { path = "crates/solstone-core-spp-ratls" }
+solstone-core-nvattest-authority = { path = "crates/solstone-core-nvattest-authority" }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 chrono-tz = "0.10.4"
 glob = "0.3.3"

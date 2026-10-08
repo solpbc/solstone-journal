@@ -8,7 +8,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use serde_json::Value;
 use thiserror::Error;
 
 const SNAPSHOTS: &[(&str, &str)] = &[
@@ -314,76 +313,34 @@ fn authority_origin_pins_from_path(path: &Path) -> Result<Vec<OriginPin>, PinsEr
         path: path.to_path_buf(),
         source,
     })?;
-    let authority: Value =
-        serde_json::from_str(&text).map_err(|source| PinsError::AuthorityParse {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    let targets = authority
-        .get("targets")
-        .and_then(Value::as_object)
-        .ok_or_else(|| PinsError::AuthorityTargetInvalid {
-            target: "targets".to_owned(),
-            detail: "missing object".to_owned(),
-        })?;
-    if targets.is_empty() {
+    let authority = solstone_core_nvattest_authority::parse(&text).map_err(|source| {
+        PinsError::AuthorityTargetInvalid {
+            target: path.display().to_string(),
+            detail: source.to_string(),
+        }
+    })?;
+    if authority.targets.is_empty() {
         return Err(PinsError::AuthorityTargetsEmpty {
             path: path.to_path_buf(),
         });
     }
-    let mut pins = Vec::new();
-    for (target, entry) in targets {
-        let source = entry
-            .get("source")
-            .and_then(Value::as_object)
-            .ok_or_else(|| invalid_authority(target, "missing source object"))?;
-        let prefix = source
-            .get("url_prefix")
-            .and_then(Value::as_str)
-            .ok_or_else(|| invalid_authority(target, "missing source.url_prefix"))?;
-        let version = source
-            .get("version")
-            .and_then(Value::as_str)
-            .ok_or_else(|| invalid_authority(target, "missing source.version"))?;
-        for object_name in ["artifact", "companion_manifest"] {
-            let object = entry
-                .get(object_name)
-                .and_then(Value::as_object)
-                .ok_or_else(|| invalid_authority(target, &format!("missing {object_name}")))?;
-            let name = object
-                .get("name")
-                .and_then(Value::as_str)
-                .ok_or_else(|| invalid_authority(target, &format!("missing {object_name}.name")))?;
-            let sha256 = object
-                .get("sha256")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    invalid_authority(target, &format!("missing {object_name}.sha256"))
-                })?;
-            let url = object
-                .get("url")
-                .and_then(Value::as_str)
-                .ok_or_else(|| invalid_authority(target, &format!("missing {object_name}.url")))?;
-            let size_bytes = object.get("size_bytes").and_then(Value::as_u64);
-            let origin_key = url.strip_prefix(prefix).ok_or_else(|| {
-                invalid_authority(target, "object URL is outside source.url_prefix")
-            })?;
-            pins.push(OriginPin {
-                origin_key: format!("providers/nvattest/{origin_key}"),
-                sha256: sha256.to_owned(),
-                unit: "nvattest".to_owned(),
-                version: Some(version.to_owned()),
-                size_bytes,
-                upstream_url: Some(url.to_owned()),
-            });
-            if origin_key != name {
-                return Err(invalid_authority(
-                    target,
-                    "object URL basename disagrees with name",
-                ));
-            }
+    let raw_pins = solstone_core_nvattest_authority::origin_pins(&authority).map_err(|source| {
+        PinsError::AuthorityTargetInvalid {
+            target: path.display().to_string(),
+            detail: source.to_string(),
         }
-    }
+    })?;
+    let pins = raw_pins
+        .into_iter()
+        .map(|pin| OriginPin {
+            origin_key: format!("providers/nvattest/{}", pin.origin_key),
+            sha256: pin.sha256,
+            unit: "nvattest".to_owned(),
+            version: Some(pin.version),
+            size_bytes: pin.size_bytes,
+            upstream_url: Some(pin.upstream_url),
+        })
+        .collect();
     Ok(pins)
 }
 
@@ -392,11 +349,4 @@ pub(super) fn authority_origin_pins_from_test_path(
     path: &Path,
 ) -> Result<Vec<OriginPin>, PinsError> {
     authority_origin_pins_from_path(path)
-}
-
-fn invalid_authority(target: &str, detail: &str) -> PinsError {
-    PinsError::AuthorityTargetInvalid {
-        target: target.to_owned(),
-        detail: detail.to_owned(),
-    }
 }

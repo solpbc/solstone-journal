@@ -10,7 +10,8 @@ SOLSTONE_LIBC_VERSION=2.34
 SOLSTONE_LIBSTDCXX_GLIBCXX="GLIBCXX_3.4.29 GLIBCXX_3.4.30"
 SOLSTONE_LIBGOMP=present
 SOLSTONE_LIBGCC_S=present
-export SOLSTONE_LIBC_VERSION SOLSTONE_LIBSTDCXX_GLIBCXX SOLSTONE_LIBGOMP SOLSTONE_LIBGCC_S
+SOLSTONE_LIBZ=present
+export SOLSTONE_LIBC_VERSION SOLSTONE_LIBSTDCXX_GLIBCXX SOLSTONE_LIBGOMP SOLSTONE_LIBGCC_S SOLSTONE_LIBZ
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 INSTALL_SOURCE=$ROOT/core/distribution/install.sh
@@ -2122,6 +2123,23 @@ if [ "$_st_5" -ne 0 ] && [ ! -e "$FLOOR_PREFIX_5" ]; then
 	esac
 else
 	fail "floor runtime-library-missing libgcc_s.so.1 succeeded or created prefix"
+fi
+
+FLOOR_PREFIX_5Z=$BASE/floor-prefix-5z
+_out_5z=$(mktemp "$BASE/solstone-install-test-output-XXXXXX")
+_st_5z=0
+env HOME="$HOME" SOLSTONE_UNAME_S=Linux SOLSTONE_LIBZ=missing \
+	"$INSTALL" --prefix "$FLOOR_PREFIX_5Z" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" \
+	>"$_out_5z" 2>&1 || _st_5z=$?
+_text_5z=$(cat "$_out_5z")
+rm -f "$_out_5z"
+if [ "$_st_5z" -ne 0 ] && [ ! -e "$FLOOR_PREFIX_5Z" ]; then
+	case $_text_5z in
+	*runtime-library-missing*libz.so.1*) pass "floor runtime-library-missing libz.so.1" ;;
+	*) fail "floor runtime-library-missing libz.so.1: wanted runtime-library-missing and libz.so.1 in: $_text_5z" ;;
+	esac
+else
+	fail "floor runtime-library-missing libz.so.1 succeeded or created prefix"
 fi
 
 FLOOR_PREFIX_6=$BASE/floor-prefix-6

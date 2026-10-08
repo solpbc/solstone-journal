@@ -502,6 +502,7 @@ pub const NON_GLIBC_SYSTEM_NEEDED: &[(&str, &str, &str)] = &[
         "libgcc_s.so.1()(64bit)",
     ),
     ("libgomp.so.1", "libgomp1 (>= 11)", "libgomp"),
+    ("libz.so.1", "zlib1g", "libz.so.1()(64bit)"),
 ];
 
 pub fn admit_elf(
@@ -570,6 +571,7 @@ pub fn admit_elf(
         "libpthread.so.0",
         "libdl.so.2",
         "librt.so.1",
+        "libutil.so.1",
         loader_so,
     ];
 
@@ -596,6 +598,14 @@ pub fn admit_elf(
                     return Err(ElfError::new(format!(
                         "{target_prefix}: glibc version {ver} exceeds ceiling {}.{} in {file}",
                         GLIBC_CEILING.0, GLIBC_CEILING.1
+                    )));
+                }
+            }
+        } else if file == "libz.so.1" {
+            for ver in &need.names {
+                if !crate::elf_zlib::ZLIB_VERSIONS.contains(&ver.as_str()) {
+                    return Err(ElfError::new(format!(
+                        "{target_prefix}: unadmitted symbol version {ver} in {file}"
                     )));
                 }
             }
@@ -2515,5 +2525,130 @@ mod tests {
             let err = parse_elf(&elf).unwrap_err();
             assert!(err.to_string().contains(name));
         }
+    }
+
+    #[test]
+    fn origin_dot_dot_lib_and_zlib_checks() {
+        let dummy = vec![0_u8; 16];
+
+        // 1. $ORIGIN/../lib on lib/solstone-x/bin/tool
+        let elf_origin_lib = build_complex_elf(
+            EM_X86_64,
+            Some("/lib64/ld-linux-x86-64.so.2"),
+            None,
+            &["libc.so.6"],
+            Some("$ORIGIN/../lib"),
+            None,
+            &[("libc.so.6", &["GLIBC_2.34"])],
+            &[],
+            &[],
+        );
+
+        // Passes when lib/solstone-x/lib/ holds a shipped file
+        let staged_x = vec![("lib/solstone-x/lib/libx.so", dummy.as_slice())];
+        admit_elf(
+            "lib/solstone-x/bin/tool",
+            &elf_origin_lib,
+            EM_X86_64,
+            "lib/solstone-x/bin",
+            None,
+            &staged_x,
+        )
+        .unwrap();
+
+        // Same element on package-root bin/tool fails
+        assert!(
+            admit_elf(
+                "bin/tool",
+                &elf_origin_lib,
+                EM_X86_64,
+                "bin",
+                None,
+                &staged_x,
+            )
+            .is_err()
+        );
+
+        // $ORIGIN/../../solstone-other/lib fails
+        let elf_escape_other = build_complex_elf(
+            EM_X86_64,
+            Some("/lib64/ld-linux-x86-64.so.2"),
+            None,
+            &["libc.so.6"],
+            Some("$ORIGIN/../../solstone-other/lib"),
+            None,
+            &[("libc.so.6", &["GLIBC_2.34"])],
+            &[],
+            &[],
+        );
+        let staged_both = vec![
+            ("lib/solstone-x/lib/libx.so", dummy.as_slice()),
+            ("lib/solstone-other/lib/libo.so", dummy.as_slice()),
+        ];
+        assert!(
+            admit_elf(
+                "lib/solstone-x/bin/tool",
+                &elf_escape_other,
+                EM_X86_64,
+                "lib/solstone-x/bin",
+                None,
+                &staged_both,
+            )
+            .is_err()
+        );
+
+        // 2. ZLIB_1.2.3.4 passes and ZLIB_1.2.12 refuses, naming the file and the version
+        let elf_zlib_pass = build_complex_elf(
+            EM_X86_64,
+            None,
+            Some("libztest.so"),
+            &["libz.so.1", "libc.so.6"],
+            None,
+            None,
+            &[
+                ("libz.so.1", &["ZLIB_1.2.3.4"]),
+                ("libc.so.6", &["GLIBC_2.34"]),
+            ],
+            &[],
+            &[],
+        );
+        assert!(
+            admit_elf(
+                "lib/libztest.so",
+                &elf_zlib_pass,
+                EM_X86_64,
+                "lib",
+                None,
+                &[],
+            )
+            .is_ok()
+        );
+
+        let elf_zlib_fail = build_complex_elf(
+            EM_X86_64,
+            None,
+            Some("libztest.so"),
+            &["libz.so.1", "libc.so.6"],
+            None,
+            None,
+            &[
+                ("libz.so.1", &["ZLIB_1.2.12"]),
+                ("libc.so.6", &["GLIBC_2.34"]),
+            ],
+            &[],
+            &[],
+        );
+        let err = admit_elf(
+            "lib/libztest.so",
+            &elf_zlib_fail,
+            EM_X86_64,
+            "lib",
+            None,
+            &[],
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("lib/libztest.so"), "{msg}");
+        assert!(msg.contains("ZLIB_1.2.12"), "{msg}");
     }
 }

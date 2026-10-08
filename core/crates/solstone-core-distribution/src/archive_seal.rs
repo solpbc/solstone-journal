@@ -481,7 +481,7 @@ os = "macos"
 arch = "arm64"
 lane = "apple-native"
 triple_apple = "aarch64-apple-darwin"
-min_macos = "14.0"
+min_macos = "15.0"
 [apple]
 team_id = "team"
 app_identity = "app"

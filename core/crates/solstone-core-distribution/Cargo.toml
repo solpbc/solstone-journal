@@ -30,7 +30,9 @@ test-fixture-pin = ["solstone-core-installed-payload/test-fixture-pin"]
 test-hooks = []
 
 [dependencies]
+bzip2-rs.workspace = true
 flate2.workspace = true
+lzma-rs.workspace = true
 minisign.workspace = true
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 quick-xml = "0.41.0"
@@ -38,9 +40,11 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-artifact-download.workspace = true
+solstone-core-assets.workspace = true
 solstone-core-installed-payload.workspace = true
 solstone-core-ffmpeg-build-support.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-nvattest-authority.workspace = true
 tar.workspace = true
 tempfile = "3"
 toml_edit = { workspace = true, features = ["serde"] }

@@ -1579,6 +1579,7 @@ require_linux_floor() {
 	_libstdcxx_symbols=
 	_has_libgomp=0
 	_has_libgcc_s=0
+	_has_libz=0
 
 	if [ -n "${SOLSTONE_UNAME_S:-}" ] || [ -n "${SOLSTONE_OS_RELEASE:-}" ]; then
 		if [ -z "${SOLSTONE_LIBC_VERSION:-}" ]; then
@@ -1602,6 +1603,9 @@ require_linux_floor() {
 		fi
 		if [ "${SOLSTONE_LIBGCC_S:-}" = "present" ]; then
 			_has_libgcc_s=1
+		fi
+		if [ "${SOLSTONE_LIBZ:-}" = "present" ]; then
+			_has_libz=1
 		fi
 	else
 		_raw_libc=$(getconf GNU_LIBC_VERSION 2>/dev/null || true)
@@ -1629,6 +1633,9 @@ require_linux_floor() {
 		if find_host_library "libgcc_s.so.1" >/dev/null 2>&1; then
 			_has_libgcc_s=1
 		fi
+		if find_host_library "libz.so.1" >/dev/null 2>&1; then
+			_has_libz=1
+		fi
 	fi
 
 	if ! compare_dotted_ge "$_libc_version" "2.34"; then
@@ -1652,6 +1659,10 @@ require_linux_floor() {
 
 	if [ "$_has_libgcc_s" -ne 1 ]; then
 		refuse_floor runtime-library-missing "libgcc_s.so.1 was not found, and the journal needs it. Nothing was changed. To fix: install libgcc-s1 (Debian, Ubuntu) or libgcc (Fedora, RHEL), then run this command again."
+	fi
+
+	if [ "$_has_libz" -ne 1 ]; then
+		refuse_floor runtime-library-missing "libz.so.1 is missing; install that library"
 	fi
 
 	case $_libstdcxx_symbols in

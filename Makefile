@@ -473,6 +473,7 @@ ci-prep-ffmpeg:
 	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire ffmpeg --dest $(FFMPEG_SOURCE_ARCHIVE)
 
 ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf ci-full-prep-ios
+	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire catalog-inputs --target $(ONNX_RUNTIME_HOST_TARGET)
 
 ci-full-prep-cargo: ci-prep-ffmpeg
 	@$(REQUIRE_CARGO)

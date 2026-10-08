@@ -2488,3 +2488,73 @@ fn windows_native_driver_binds_backup_selection_and_receipts() {
         }
     }
 }
+
+#[test]
+fn ci_full_prep_acquires_catalog_inputs_once_and_gates_never() {
+    let temp = TempDir::new("ci-catalog-inputs-graph");
+    let root = &temp.path;
+    let system = if cfg!(target_os = "macos") {
+        "Darwin"
+    } else {
+        "Linux"
+    };
+    let arch = String::from_utf8(
+        Command::new("/usr/bin/uname")
+            .arg("-m")
+            .output()
+            .expect("inspect fixture host architecture")
+            .stdout,
+    )
+    .expect("host architecture is UTF-8");
+    write_host_makefile(root, system, arch.trim());
+    let expected_target = if cfg!(target_os = "macos") {
+        "macos-arm64"
+    } else if matches!(arch.trim(), "aarch64" | "arm64") {
+        "linux-aarch64"
+    } else {
+        "linux-x86_64"
+    };
+
+    let run_make_dry = |gate: &str| -> String {
+        let mut command = Command::new("make");
+        command.arg("-n").arg(gate).current_dir(root);
+        isolate_local_ci_fixture(&mut command);
+        let output = command.output().expect("run make -n");
+        assert!(
+            output.status.success(),
+            "make -n {gate} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).to_string()
+    };
+
+    let prep_stdout = run_make_dry("ci-full-prep");
+    let prep_matches: Vec<&str> = prep_stdout
+        .lines()
+        .filter(|line| line.contains("acquire catalog-inputs"))
+        .collect();
+    assert_eq!(
+        prep_matches.len(),
+        1,
+        "ci-full-prep must invoke acquire catalog-inputs exactly once, got: {prep_matches:?}"
+    );
+    let expected_cmd = format!("acquire catalog-inputs --target {expected_target}");
+    assert!(
+        prep_matches[0].contains(&expected_cmd),
+        "ci-full-prep invocation {:?} must contain {expected_cmd:?}",
+        prep_matches[0]
+    );
+
+    for gate in ["ci", "ci-full", "ci-contained"] {
+        let gate_stdout = run_make_dry(gate);
+        let gate_matches: Vec<&str> = gate_stdout
+            .lines()
+            .filter(|line| line.contains("acquire catalog-inputs"))
+            .collect();
+        assert_eq!(
+            gate_matches.len(),
+            0,
+            "{gate} must not invoke acquire catalog-inputs, got: {gate_matches:?}"
+        );
+    }
+}

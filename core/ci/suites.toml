@@ -209,6 +209,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-nvattest-authority"
+package = "solstone-core-nvattest-authority"
+set = "component"
+areas = ["system", "support"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core"
 package = "solstone-core"
 set = "component"
