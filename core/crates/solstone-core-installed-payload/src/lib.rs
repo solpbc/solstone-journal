@@ -43,17 +43,19 @@ pub mod code {
 }
 
 pub mod guidance {
-    pub const PACKAGE_MISMATCH: &str = "the installed package doesn't match this journal; if you just updated, restart the journal; otherwise reinstall.";
-    pub const RESTART_UPDATE: &str = "restart to finish the update.";
-    pub const MANIFEST_MISSING: &str = "the package root has no installed-payload manifest.";
+    pub const PACKAGE_MISMATCH: &str = "your journal's install doesn't match; if you just updated, restart your journal, otherwise reinstall it.";
+    pub const RESTART_UPDATE: &str = "restart your journal to finish the update.";
+    pub const MANIFEST_MISSING: &str =
+        "part of your journal's install is missing; reinstall your journal.";
     pub const MANIFEST_INVALID: &str =
-        "the installed-payload manifest is not valid for this version.";
-    pub const UNSUPPORTED_LOCATION: &str =
-        "the executable is not running from an installed package bin directory.";
-    pub const WRONG_PRODUCT: &str = "the installed package is a different product.";
-    pub const WRONG_TARGET: &str = "the installed package was built for a different target.";
-    pub const MEMBER_UNREADABLE: &str = "a package file could not be read.";
-    pub const UNSAFE_PATH: &str = "a package path is not a contained regular file.";
+        "part of your journal's install is damaged; reinstall your journal.";
+    pub const UNSUPPORTED_LOCATION: &str = "this copy of the journal isn't running from an installed package, so its files can't be checked.";
+    pub const WRONG_PRODUCT: &str =
+        "what's installed here isn't the journal; reinstall your journal.";
+    pub const WRONG_TARGET: &str = "your journal was built for a different kind of computer; reinstall the version for this one.";
+    pub const MEMBER_UNREADABLE: &str = "part of your journal's install couldn't be read; if it keeps happening, reinstall your journal.";
+    pub const UNSAFE_PATH: &str =
+        "part of your journal's install isn't what it should be; reinstall your journal.";
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
