@@ -8,7 +8,7 @@ use solstone_core_backup::HostedBinding;
 use crate::response;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HandoffFieldError {
+pub enum HandoffFieldError {
     Missing(&'static str),
     InvalidValue,
 }
@@ -142,19 +142,57 @@ pub(crate) fn require_portal_origin(
     }
 }
 
-pub(crate) fn require_https_portal_url(
-    url: &str,
-    portal_base: &str,
-) -> Result<(), HandoffFieldError> {
+fn extract_https_host(value: &str) -> Option<&str> {
+    let after = value.strip_prefix("https://")?;
+    let authority_end = after.find(['/', '?', '#']).unwrap_or(after.len());
+    let authority = &after[..authority_end];
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+    let (host, _) = authority.split_once(':').unwrap_or((authority, ""));
+    if host.is_empty()
+        || !host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
+    {
+        return None;
+    }
+    Some(host)
+}
+
+pub fn require_https_portal_url(url: &str, portal_base: &str) -> Result<(), HandoffFieldError> {
     let Some(after) = url.strip_prefix("https://") else {
         return Err(HandoffFieldError::InvalidValue);
     };
     let authority_end = after.find(['/', '?', '#']).unwrap_or(after.len());
     let authority = &after[..authority_end];
-    if authority.contains('@') {
+    if authority.is_empty() || authority.contains('@') {
         return Err(HandoffFieldError::InvalidValue);
     }
-    require_portal_origin(&format!("https://{authority}"), portal_base)
+    let (host, port) = match authority.split_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (authority, None),
+    };
+    if host.is_empty()
+        || !host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
+    {
+        return Err(HandoffFieldError::InvalidValue);
+    }
+    if let Some(port) = port
+        && port != "443"
+    {
+        return Err(HandoffFieldError::InvalidValue);
+    }
+    let Some(base_host) = extract_https_host(portal_base) else {
+        return Err(HandoffFieldError::InvalidValue);
+    };
+    if host.eq_ignore_ascii_case(base_host) || host.eq_ignore_ascii_case("services.solstone.app") {
+        Ok(())
+    } else {
+        Err(HandoffFieldError::InvalidValue)
+    }
 }
 
 pub fn destination(value: &Map<String, Value>) -> Result<(), Response> {
@@ -381,6 +419,57 @@ mod tests {
         assert_eq!(
             require_https_portal_url("https://broker.solstone.app/services/backup", PORTAL),
             Err(HandoffFieldError::InvalidValue)
+        );
+        assert!(
+            require_https_portal_url(
+                "https://services.solstone.app/confidential-processing",
+                PORTAL
+            )
+            .is_ok()
+        );
+        assert!(
+            require_https_portal_url(
+                "https://SERVICES.solstone.app/confidential-processing",
+                PORTAL
+            )
+            .is_ok()
+        );
+        assert!(
+            require_https_portal_url(
+                "https://services.solstone.app:443/confidential-processing",
+                PORTAL
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            require_https_portal_url("https://services.solstone.app:8443/", PORTAL),
+            Err(HandoffFieldError::InvalidValue)
+        );
+        assert_eq!(
+            require_https_portal_url("https://services.solstone.app.evil.example/x", PORTAL),
+            Err(HandoffFieldError::InvalidValue)
+        );
+        assert_eq!(
+            require_https_portal_url("https://evil.example/?services.solstone.app", PORTAL),
+            Err(HandoffFieldError::InvalidValue)
+        );
+        assert_eq!(
+            require_https_portal_url("https://user@services.solstone.app/", PORTAL),
+            Err(HandoffFieldError::InvalidValue)
+        );
+        assert!(
+            require_https_portal_url(
+                "https://services.solstone.app/confidential-processing",
+                "https://other.portal.example"
+            )
+            .is_ok()
+        );
+        assert!(
+            require_https_portal_url(
+                "https://other.portal.example/sub",
+                "https://other.portal.example"
+            )
+            .is_ok()
         );
     }
 

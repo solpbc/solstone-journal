@@ -121,7 +121,7 @@ See [AGENTS.md](AGENTS.md) for the full Makefile command table and [docs/testing
 
 ### macOS Apple Silicon: CoreML-accelerated parakeet
 
-Packaged installs of solstone on Apple Silicon Macs running macOS 14 or newer ship the CoreML transcription helper as a pre-built, signed, and notarized binary. No build step is required for owners using a packaged install.
+Packaged installs of solstone on Apple Silicon Macs running macOS 15 or newer ship the CoreML transcription helper as a pre-built, signed, and notarized binary. No build step is required for owners using a packaged install.
 
 Source-checkout installs build the helper locally so you can iterate on the Swift source:
 

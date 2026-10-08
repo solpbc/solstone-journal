@@ -16,7 +16,8 @@ use solstone_core_spp_ratls::AttestedChannel;
 /// The bound stays below the service's idle close (180s). It stays well below
 /// the service's channel lifetime, which is checked when each request head
 /// arrives. Reuse shrinks an in-flight request's headroom to the service's
-/// hard deadline by at most this age.
+/// hard deadline by at most this age. A reused channel is not probed again,
+/// so content can reach the service for at most about 120 seconds after access ends.
 pub const CONFIDENTIAL_CHANNEL_REUSE_MAX_AGE: Duration = Duration::from_secs(120);
 
 // An offline-status channel is admitted with at least the request window plus

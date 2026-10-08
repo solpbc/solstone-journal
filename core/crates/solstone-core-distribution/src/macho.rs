@@ -491,10 +491,19 @@ pub fn admit_macho(
         return Ok(());
     }
 
+    let own_ns = crate::layout::namespace_root(staged_path);
+
     for dep in &info.needed {
         if dep.starts_with("@loader_path/") || dep.starts_with("@executable_path/") {
             let res = resolve_path_tokens(dep, pkg_rel_dir)
                 .map_err(|e| MachoError::new(format!("{target_prefix}: {e}")))?;
+            if let Some(src_ns) = own_ns
+                && !res.starts_with(&format!("{src_ns}/"))
+            {
+                return Err(MachoError::new(format!(
+                    "{target_prefix}: cross-namespace dependency {dep}"
+                )));
+            }
             if !staged_files.contains(&res.as_str()) {
                 return Err(MachoError::new(format!(
                     "{target_prefix}: unsatisfied dependency {dep} ({res})"
@@ -519,6 +528,14 @@ pub fn admit_macho(
         {
             let res = resolve_path_tokens(rpath, pkg_rel_dir)
                 .map_err(|e| MachoError::new(format!("{target_prefix}: {e}")))?;
+            if let Some(src_ns) = own_ns {
+                let inside = res == src_ns || res.starts_with(&format!("{src_ns}/"));
+                if !inside {
+                    return Err(MachoError::new(format!(
+                        "{target_prefix}: cross-namespace LC_RPATH {rpath}"
+                    )));
+                }
+            }
             resolved_rpaths.push(res);
         } else {
             return Err(MachoError::new(format!(
@@ -1248,6 +1265,105 @@ mod tests {
         let err =
             admit_macho("bin/helper", &outside_dep, arm64, ceiling, "bin", None, &[]).unwrap_err();
         assert!(err.to_string().contains("leaves package root"));
+
+        // Cross-namespace LC_RPATH refuses naming file and element
+        let cross_rpath = fixture(&FixtureSpec {
+            filetype: MH_DYLIB,
+            needed: &[SYSTEM[0]],
+            rpaths: &["@loader_path/../solstone-b/lib"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "lib/solstone-a/liba.dylib",
+            &cross_rpath,
+            arm64,
+            ceiling,
+            "lib/solstone-a",
+            None,
+            &[],
+        )
+        .unwrap_err();
+        let err_s = err.to_string();
+        assert!(
+            err_s.contains("lib/solstone-a/liba.dylib")
+                && err_s.contains("@loader_path/../solstone-b/lib")
+        );
+
+        // Cross-namespace @loader_path/../solstone-b/x.dylib refuses naming file and element
+        let cross_dep = fixture(&FixtureSpec {
+            filetype: MH_DYLIB,
+            needed: &[SYSTEM[0], "@loader_path/../solstone-b/x.dylib"],
+            ..FixtureSpec::default()
+        });
+        let err = admit_macho(
+            "lib/solstone-a/liba.dylib",
+            &cross_dep,
+            arm64,
+            ceiling,
+            "lib/solstone-a",
+            None,
+            &["lib/solstone-b/x.dylib"],
+        )
+        .unwrap_err();
+        let err_s = err.to_string();
+        assert!(
+            err_s.contains("lib/solstone-a/liba.dylib")
+                && err_s.contains("@loader_path/../solstone-b/x.dylib")
+        );
+
+        // @loader_path to the file's own directory passes
+        let own_rpath = fixture(&FixtureSpec {
+            filetype: MH_DYLIB,
+            needed: &[SYSTEM[0]],
+            rpaths: &["@loader_path"],
+            ..FixtureSpec::default()
+        });
+        assert!(
+            admit_macho(
+                "lib/solstone-a/liba.dylib",
+                &own_rpath,
+                arm64,
+                ceiling,
+                "lib/solstone-a",
+                None,
+                &[],
+            )
+            .is_ok()
+        );
+
+        // Executable @executable_path/../lib inside the namespace passes
+        let exe_ns = fixture(&FixtureSpec {
+            filetype: MH_EXECUTE,
+            needed: &[SYSTEM[0]],
+            rpaths: &["@executable_path/../lib"],
+            ..FixtureSpec::default()
+        });
+        assert!(
+            admit_macho(
+                "lib/solstone-a/bin/tool",
+                &exe_ns,
+                arm64,
+                ceiling,
+                "lib/solstone-a/bin",
+                None,
+                &[],
+            )
+            .is_ok()
+        );
+
+        // Producer ceiling (15, 0) admits minimum 15.0 and refuses 15.1
+        let min_15_0 = fixture(&FixtureSpec {
+            min_os: Some((15, 0)),
+            needed: &[SYSTEM[0]],
+            ..FixtureSpec::default()
+        });
+        assert!(admit_macho("bin/helper", &min_15_0, arm64, (15, 0), "bin", None, &[]).is_ok());
+        let min_15_1 = fixture(&FixtureSpec {
+            min_os: Some((15, 1)),
+            needed: &[SYSTEM[0]],
+            ..FixtureSpec::default()
+        });
+        assert!(admit_macho("bin/helper", &min_15_1, arm64, (15, 0), "bin", None, &[]).is_err());
 
         // Nested archive checks
         let nested_good = fixture(&FixtureSpec {

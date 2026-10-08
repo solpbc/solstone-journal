@@ -304,6 +304,22 @@ where
         (&mut **injected_stream.as_mut().unwrap(), None)
     };
 
+    if need_establish {
+        match solstone_core_spp_ratls::send_admission_probe(
+            stream_ref,
+            &target_host,
+            endpoint.credential.as_deref(),
+        ) {
+            Ok(()) => {}
+            Err(code) => {
+                return ConfidentialResult::Failed(EndpointFailure {
+                    reason_code: Some(code.to_owned()),
+                    detail: None,
+                });
+            }
+        }
+    }
+
     let mut transport = AttestedEndpointTransport {
         stream: stream_ref,
         host: target_host,
@@ -625,7 +641,12 @@ mod tests {
     fn parsed_request(written: &Rc<RefCell<Vec<u8>>>) -> (String, Value) {
         let bytes = written.borrow();
         let text = std::str::from_utf8(&bytes).expect("request UTF-8");
-        let (head, body) = text.split_once("\r\n\r\n").expect("header/body split");
+        let post_text = if let Some(pos) = text.find("POST ") {
+            &text[pos..]
+        } else {
+            text
+        };
+        let (head, body) = post_text.split_once("\r\n\r\n").expect("header/body split");
         (
             head.to_owned(),
             serde_json::from_str(body).expect("JSON body"),
@@ -634,7 +655,10 @@ mod tests {
 
     pub(crate) struct RecordingChannel {
         written: Rc<RefCell<Vec<u8>>>,
-        response: io::Cursor<Vec<u8>>,
+        responses: Vec<Vec<u8>>,
+        current_idx: usize,
+        current_pos: usize,
+        initial_read_error: Option<io::ErrorKind>,
     }
 
     impl RecordingChannel {
@@ -648,20 +672,111 @@ mod tests {
             reason: &str,
             response_body: &str,
         ) -> Self {
+            let probe = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec();
             let framed = format!(
                 "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\n\r\n{response_body}",
                 response_body.len()
-            );
+            )
+            .into_bytes();
             Self {
                 written,
-                response: io::Cursor::new(framed.into_bytes()),
+                responses: vec![probe, framed],
+                current_idx: 0,
+                current_pos: 0,
+                initial_read_error: None,
+            }
+        }
+
+        pub(crate) fn with_direct_status(
+            written: Rc<RefCell<Vec<u8>>>,
+            status: u16,
+            reason: &str,
+            response_body: &str,
+        ) -> Self {
+            let framed = format!(
+                "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\n\r\n{response_body}",
+                response_body.len()
+            )
+            .into_bytes();
+            Self {
+                written,
+                responses: vec![framed],
+                current_idx: 0,
+                current_pos: 0,
+                initial_read_error: None,
+            }
+        }
+
+        pub(crate) fn with_probe_failure(
+            written: Rc<RefCell<Vec<u8>>>,
+            probe_status: u16,
+            probe_reason: &str,
+        ) -> Self {
+            let probe =
+                format!("HTTP/1.1 {probe_status} {probe_reason}\r\nContent-Length: 0\r\n\r\n")
+                    .into_bytes();
+            Self {
+                written,
+                responses: vec![probe],
+                current_idx: 0,
+                current_pos: 0,
+                initial_read_error: None,
+            }
+        }
+
+        pub(crate) fn with_probe_and_status(
+            written: Rc<RefCell<Vec<u8>>>,
+            probe_status: u16,
+            probe_reason: &str,
+            status: u16,
+            reason: &str,
+            response_body: &str,
+        ) -> Self {
+            let probe =
+                format!("HTTP/1.1 {probe_status} {probe_reason}\r\nContent-Length: 0\r\n\r\n")
+                    .into_bytes();
+            let framed = format!(
+                "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\n\r\n{response_body}",
+                response_body.len()
+            )
+            .into_bytes();
+            Self {
+                written,
+                responses: vec![probe, framed],
+                current_idx: 0,
+                current_pos: 0,
+                initial_read_error: None,
+            }
+        }
+
+        pub(crate) fn with_initial_read_error(
+            written: Rc<RefCell<Vec<u8>>>,
+            kind: io::ErrorKind,
+        ) -> Self {
+            Self {
+                written,
+                responses: Vec::new(),
+                current_idx: 0,
+                current_pos: 0,
+                initial_read_error: Some(kind),
             }
         }
     }
 
     impl Read for RecordingChannel {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            self.response.read(buf)
+            if let Some(kind) = self.initial_read_error.take() {
+                return Err(io::Error::from(kind));
+            }
+            if self.current_idx >= self.responses.len() {
+                return Ok(0);
+            }
+            let current = &self.responses[self.current_idx];
+            let remaining = &current[self.current_pos..];
+            let n = remaining.len().min(buf.len());
+            buf[..n].copy_from_slice(&remaining[..n]);
+            self.current_pos += n;
+            Ok(n)
         }
     }
 
@@ -682,11 +797,18 @@ mod tests {
         }
 
         fn trailing_after_body(&mut self) -> io::Result<solstone_core_spp_ratls::Trailing> {
-            if self.response.position() as usize >= self.response.get_ref().len() {
-                Ok(solstone_core_spp_ratls::Trailing::Eof)
-            } else {
-                Ok(solstone_core_spp_ratls::Trailing::Surplus)
+            if self.current_idx < self.responses.len() {
+                let current = &self.responses[self.current_idx];
+                if self.current_pos < current.len() {
+                    return Ok(solstone_core_spp_ratls::Trailing::Surplus);
+                }
+                if self.current_idx + 1 < self.responses.len() {
+                    self.current_idx += 1;
+                    self.current_pos = 0;
+                    return Ok(solstone_core_spp_ratls::Trailing::None);
+                }
             }
+            Ok(solstone_core_spp_ratls::Trailing::Eof)
         }
     }
 
@@ -718,7 +840,7 @@ mod tests {
         let written = Rc::new(RefCell::new(Vec::new()));
         // The engine answers the first request with a context refusal; a refit
         // would be a second request on the same channel.
-        let mut channel = RecordingChannel::with_status(
+        let mut channel = RecordingChannel::with_direct_status(
             written.clone(),
             400,
             "Bad Request",
@@ -812,7 +934,8 @@ mod tests {
         );
         let raw = written.borrow();
         let text = std::str::from_utf8(&raw).expect("request UTF-8");
-        let (_, raw_body) = text.split_once("\r\n\r\n").expect("header/body split");
+        let post_text = text.find("POST ").map(|pos| &text[pos..]).unwrap_or(text);
+        let (_, raw_body) = post_text.split_once("\r\n\r\n").expect("header/body split");
         let declared = head
             .lines()
             .find_map(|line| line.strip_prefix("Content-Length: "))
@@ -1566,6 +1689,326 @@ mod tests {
         ));
         assert!(!path.join("secrets/fingerprint.key").exists());
         assert!(!path.join("health/brain.json").exists());
+
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn confidential_admission_probe_failure_writes_zero_application_bytes() {
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-probe-zero-bytes");
+        let config_map = active_spp_config();
+        setup_journal(&path, &config_map);
+
+        let endpoint = endpoint(9099);
+        let req = request();
+        let fp_path = solstone_core_brain::brain_fingerprint_key_path(&path);
+
+        // Channel 1: Probes successfully (200), sends application bytes
+        let written1 = Rc::new(RefCell::new(Vec::new()));
+        let written1_clone = written1.clone();
+        let journal_bytes_before1 = std::fs::read(path.join("config/journal.json")).unwrap();
+        let fp_bytes_before1 = std::fs::read(&fp_path).unwrap();
+
+        let result1 = confidential_generate_with(
+            ConfidentialCall {
+                request: &req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _, _| {
+                Ok(EstablishedChannel::Injected {
+                    verdict: Box::new(verdict()),
+                    stream: Box::new(RecordingChannel::new(
+                        written1_clone,
+                        r#"{"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#,
+                    )),
+                })
+            },
+        );
+        assert!(matches!(result1, ConfidentialResult::Generated(_)));
+        assert_eq!(
+            journal_bytes_before1,
+            std::fs::read(path.join("config/journal.json")).unwrap()
+        );
+        assert_eq!(fp_bytes_before1, std::fs::read(&fp_path).unwrap());
+        let read_config1 = solstone_core_journal_config::read_journal_config(&path)
+            .unwrap()
+            .config
+            .unwrap();
+        assert_eq!(
+            solstone_core_brain::derive_active_brain_lane(&read_config1)
+                .lane
+                .as_deref(),
+            Some("spp")
+        );
+
+        let written1_str = String::from_utf8(written1.borrow().clone()).unwrap();
+        assert!(written1_str.contains("GET /solstone-admission"));
+        assert!(written1_str.contains("POST /v1/chat/completions"));
+
+        let (probe_head, _) = written1_str
+            .split_once("\r\n\r\n")
+            .expect("probe head split");
+        assert!(!probe_head.contains("Content-Length"));
+        assert!(!probe_head.contains("Transfer-Encoding"));
+        assert!(!probe_head.contains("Expect:"));
+        assert!(!probe_head.contains("Connection:"));
+        let auth_lines: Vec<&str> = written1_str
+            .lines()
+            .filter(|line| line.starts_with("Authorization:"))
+            .collect();
+        assert_eq!(auth_lines.len(), 2);
+        assert_eq!(auth_lines[0], auth_lines[1]);
+
+        // Channel 2: Probes with 401, writes zero application bytes
+        let written2 = Rc::new(RefCell::new(Vec::new()));
+        let written2_clone = written2.clone();
+        let journal_bytes_before2 = std::fs::read(path.join("config/journal.json")).unwrap();
+        let fp_bytes_before2 = std::fs::read(&fp_path).unwrap();
+
+        let result2 = confidential_generate_with(
+            ConfidentialCall {
+                request: &req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _, _| {
+                Ok(EstablishedChannel::Injected {
+                    verdict: Box::new(verdict()),
+                    stream: Box::new(RecordingChannel::with_probe_failure(
+                        written2_clone,
+                        401,
+                        "Unauthorized",
+                    )),
+                })
+            },
+        );
+        assert!(matches!(
+            result2,
+            ConfidentialResult::Failed(EndpointFailure {
+                reason_code: Some(ref code),
+                ..
+            }) if code == "confidential_access_ended"
+        ));
+        assert_eq!(
+            journal_bytes_before2,
+            std::fs::read(path.join("config/journal.json")).unwrap()
+        );
+        assert_eq!(fp_bytes_before2, std::fs::read(&fp_path).unwrap());
+        let read_config2 = solstone_core_journal_config::read_journal_config(&path)
+            .unwrap()
+            .config
+            .unwrap();
+        assert_eq!(
+            solstone_core_brain::derive_active_brain_lane(&read_config2)
+                .lane
+                .as_deref(),
+            Some("spp")
+        );
+
+        let written2_str = String::from_utf8(written2.borrow().clone()).unwrap();
+        assert!(written2_str.contains("GET /solstone-admission"));
+        // Zero application bytes written on channel 2:
+        assert!(!written2_str.contains("chat/completions"));
+        assert!(!written2_str.contains("POST"));
+
+        // Assert brain fingerprint file is unchanged
+        assert!(solstone_core_brain::brain_fingerprint_key_path(&path).exists());
+        assert!(!path.join("health/brain.json").exists());
+
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn confidential_admission_probe_status_and_io_edge_cases() {
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-probe-edge-cases");
+        let config_map = active_spp_config();
+        setup_journal(&path, &config_map);
+
+        let endpoint = endpoint(9099);
+        let req = request();
+        let chat_body = r#"{"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#;
+        let fp_path = solstone_core_brain::brain_fingerprint_key_path(&path);
+
+        // 404 and 405 admit and proceed to chat completions
+        for (probe_status, probe_reason) in [(404, "Not Found"), (405, "Method Not Allowed")] {
+            let written = Rc::new(RefCell::new(Vec::new()));
+            let written_clone = written.clone();
+
+            let journal_bytes_before = std::fs::read(path.join("config/journal.json")).unwrap();
+            let fp_bytes_before = std::fs::read(&fp_path).unwrap();
+
+            let result = confidential_generate_with(
+                ConfidentialCall {
+                    request: &req,
+                    journal_path: &path,
+                    endpoint: &endpoint,
+                    config: &config_map,
+                    runtime: &runtime,
+                    now: UNIX_EPOCH,
+                },
+                |_| NvattestEnsureStatus::AlreadyInstalled,
+                |_, _, _, _| {
+                    Ok(EstablishedChannel::Injected {
+                        verdict: Box::new(verdict()),
+                        stream: Box::new(RecordingChannel::with_probe_and_status(
+                            written_clone,
+                            probe_status,
+                            probe_reason,
+                            200,
+                            "OK",
+                            chat_body,
+                        )),
+                    })
+                },
+            );
+
+            assert!(matches!(result, ConfidentialResult::Generated(_)));
+            let written_str = String::from_utf8(written.borrow().clone()).unwrap();
+            assert!(written_str.contains("GET /solstone-admission HTTP/1.1"));
+            assert!(written_str.contains("POST /v1/chat/completions"));
+
+            assert_eq!(
+                journal_bytes_before,
+                std::fs::read(path.join("config/journal.json")).unwrap()
+            );
+            assert_eq!(fp_bytes_before, std::fs::read(&fp_path).unwrap());
+            let read_config = solstone_core_journal_config::read_journal_config(&path)
+                .unwrap()
+                .config
+                .unwrap();
+            assert_eq!(
+                solstone_core_brain::derive_active_brain_lane(&read_config)
+                    .lane
+                    .as_deref(),
+                Some("spp")
+            );
+        }
+
+        // 503 is local_endpoint_unreachable, contains probe and no POST
+        {
+            let written = Rc::new(RefCell::new(Vec::new()));
+            let written_clone = written.clone();
+
+            let journal_bytes_before = std::fs::read(path.join("config/journal.json")).unwrap();
+            let fp_bytes_before = std::fs::read(&fp_path).unwrap();
+
+            let result = confidential_generate_with(
+                ConfidentialCall {
+                    request: &req,
+                    journal_path: &path,
+                    endpoint: &endpoint,
+                    config: &config_map,
+                    runtime: &runtime,
+                    now: UNIX_EPOCH,
+                },
+                |_| NvattestEnsureStatus::AlreadyInstalled,
+                |_, _, _, _| {
+                    Ok(EstablishedChannel::Injected {
+                        verdict: Box::new(verdict()),
+                        stream: Box::new(RecordingChannel::with_probe_failure(
+                            written_clone,
+                            503,
+                            "Service Unavailable",
+                        )),
+                    })
+                },
+            );
+
+            assert!(matches!(
+                result,
+                ConfidentialResult::Failed(EndpointFailure {
+                    reason_code: Some(ref code),
+                    ..
+                }) if code == "local_endpoint_unreachable"
+            ));
+            let written_str = String::from_utf8(written.borrow().clone()).unwrap();
+            assert!(written_str.contains("GET /solstone-admission"));
+            assert!(!written_str.contains("POST"));
+
+            assert_eq!(
+                journal_bytes_before,
+                std::fs::read(path.join("config/journal.json")).unwrap()
+            );
+            assert_eq!(fp_bytes_before, std::fs::read(&fp_path).unwrap());
+            let read_config = solstone_core_journal_config::read_journal_config(&path)
+                .unwrap()
+                .config
+                .unwrap();
+            assert_eq!(
+                solstone_core_brain::derive_active_brain_lane(&read_config)
+                    .lane
+                    .as_deref(),
+                Some("spp")
+            );
+        }
+
+        // UnexpectedEof and TimedOut on first read -> local_endpoint_unreachable, contains probe and no POST
+        for err_kind in [io::ErrorKind::UnexpectedEof, io::ErrorKind::TimedOut] {
+            let written = Rc::new(RefCell::new(Vec::new()));
+            let written_clone = written.clone();
+
+            let journal_bytes_before = std::fs::read(path.join("config/journal.json")).unwrap();
+            let fp_bytes_before = std::fs::read(&fp_path).unwrap();
+
+            let result = confidential_generate_with(
+                ConfidentialCall {
+                    request: &req,
+                    journal_path: &path,
+                    endpoint: &endpoint,
+                    config: &config_map,
+                    runtime: &runtime,
+                    now: UNIX_EPOCH,
+                },
+                |_| NvattestEnsureStatus::AlreadyInstalled,
+                |_, _, _, _| {
+                    Ok(EstablishedChannel::Injected {
+                        verdict: Box::new(verdict()),
+                        stream: Box::new(RecordingChannel::with_initial_read_error(
+                            written_clone,
+                            err_kind,
+                        )),
+                    })
+                },
+            );
+
+            assert!(matches!(
+                result,
+                ConfidentialResult::Failed(EndpointFailure {
+                    reason_code: Some(ref code),
+                    ..
+                }) if code == "local_endpoint_unreachable"
+            ));
+            let written_str = String::from_utf8(written.borrow().clone()).unwrap();
+            assert!(written_str.contains("GET /solstone-admission"));
+            assert!(!written_str.contains("POST"));
+
+            assert_eq!(
+                journal_bytes_before,
+                std::fs::read(path.join("config/journal.json")).unwrap()
+            );
+            assert_eq!(fp_bytes_before, std::fs::read(&fp_path).unwrap());
+            let read_config = solstone_core_journal_config::read_journal_config(&path)
+                .unwrap()
+                .config
+                .unwrap();
+            assert_eq!(
+                solstone_core_brain::derive_active_brain_lane(&read_config)
+                    .lane
+                    .as_deref(),
+                Some("spp")
+            );
+        }
 
         let _ = std::fs::remove_dir_all(path);
     }

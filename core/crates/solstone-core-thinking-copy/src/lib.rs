@@ -47,7 +47,8 @@ pub const LANES: [Lane; 3] = [
 ];
 
 /// What a journal with no hardware check says in place of turning confidential
-/// processing on. The only shipped journal without one is Windows.
+/// processing on. Every shipped journal has one; Windows reads this again only
+/// if its owners are held back.
 pub const CONFIDENTIAL_NOT_ON_PLATFORM: &str = "confidential processing isn't on windows yet.";
 
 pub const CONFIDENTIAL_LANE_DETAIL: ConfidentialLaneDetail = ConfidentialLaneDetail {
@@ -57,7 +58,7 @@ pub const CONFIDENTIAL_LANE_DETAIL: ConfidentialLaneDetail = ConfidentialLaneDet
     egress: "when it's on, the thinking leaves your device. your journal itself never leaves.",
     claims: "no content is retained · no human reviews it · nothing is used to train",
     attestation: "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
-    early_access: "confidential processing is available to approved scouts.",
+    early_access: "the services portal shows how to get it.",
 };
 
 #[derive(Clone, Copy)]
@@ -288,7 +289,19 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "early_access",
                         CopyValue::String(
-                            "confidential processing is available to approved scouts.",
+                            "your sign-in doesn't have confidential processing. the services portal shows how to get it.",
+                        ),
+                    ),
+                    (
+                        "subscribing",
+                        CopyValue::String(
+                            "confidential processing isn't on yet. finish turning it on in the services portal, and your journal completes it by itself while it's still waiting.",
+                        ),
+                    ),
+                    (
+                        "journal_limit",
+                        CopyValue::String(
+                            "your sign-in's confidential processing already covers another journal, and it covers only one. to use it here, release the other journal in the services portal, then turn it on here again.",
                         ),
                     ),
                     (
@@ -310,6 +323,19 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ("recheck", CopyValue::String("check again")),
                 ]),
             ),
+            (
+                "access_ended",
+                CopyValue::String(
+                    "confidential processing isn't active for your sign-in anymore, so your journal isn't sending your thinking to it. the services portal shows how to get it back, and your journal picks it up again by itself.",
+                ),
+            ),
+            (
+                "credential_unknown",
+                CopyValue::String(
+                    "the services portal no longer recognizes this journal for confidential processing. turn it off, then on again.",
+                ),
+            ),
+            ("portal_link", CopyValue::String("open the services portal")),
         ]),
     ),
     (

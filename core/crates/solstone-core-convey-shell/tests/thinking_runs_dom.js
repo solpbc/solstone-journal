@@ -282,6 +282,12 @@ async function main() {
     applyCopy,
     runProviderLabel,
     CHATGPT_ATTEMPT_STORAGE_KEY,
+    get accessUnknownRereadMs() { return accessUnknownRereadMs; },
+    set accessUnknownRereadMs(v) { accessUnknownRereadMs = v; },
+    get accessUnknownRereadScheduled() { return accessUnknownRereadScheduled; },
+    set accessUnknownRereadScheduled(v) { accessUnknownRereadScheduled = v; },
+    scheduleAccessUnknownReread,
+    loadInitialState,
   };
 })();`,
   );
@@ -543,6 +549,7 @@ async function main() {
   const providerResponses = [];
   const chatgptResponses = [];
   const settingsResponses = [];
+  const stateResponses = [];
 
   const sessionStorageMap = new Map();
   const sessionStorage = {
@@ -598,6 +605,11 @@ async function main() {
     apiJson(url, options) {
       requests.push(url);
       apiCalls.push({ url, method: options?.method || 'GET', body: options?.body ?? null });
+      if (url === '/app/thinking/api/state' || url.startsWith('/app/thinking/api/state')) {
+        const handler = stateResponses.shift();
+        if (handler) return typeof handler === 'function' ? handler(url, options) : Promise.resolve(handler);
+        return Promise.resolve({ providers: {}, keys: {}, copy: {} });
+      }
       if (url.startsWith('api/local/')) return localResponses.shift()?.(url, options) || Promise.reject(new Error(`unexpected URL: ${url}`));
       if (url.startsWith('api/providers')) return providerResponses.shift()?.(url, options) || Promise.reject(new Error(`unexpected URL: ${url}`));
       if (url.startsWith('/app/thinking/api/chatgpt/') || url.startsWith('api/chatgpt/')) {
@@ -2945,15 +2957,27 @@ async function main() {
   // Where turning it on would be, it says so; a lane turned on before reads the
   // same line and can still be turned off; nothing offers the consent page.
   const notOnPlatformLine = 'SENTINEL_NOT_ON_PLATFORM';
+  const sentinelEarlyAccess = 'SENTINEL_EARLY_ACCESS';
+  const sentinelSubscribing = 'SENTINEL_SUBSCRIBING';
+  const sentinelJournalLimit = 'SENTINEL_JOURNAL_LIMIT';
+  const sentinelAccessEnded = 'SENTINEL_ACCESS_ENDED';
+  const sentinelCredentialUnknown = 'SENTINEL_CREDENTIAL_UNKNOWN';
+  const sentinelPortalLink = 'SENTINEL_PORTAL_LINK';
   thinking.applyCopy({
     ...sentinelCopy,
     confidential: {
       attestation_states: {off: '', inactive: 'SENTINEL_AVAILABLE', failed: 'SENTINEL_FAILED', not_on_platform: notOnPlatformLine},
       actions: {off: 'SENTINEL_TURN_ON', enabled: 'SENTINEL_TURN_OFF', recheck: 'SENTINEL_RECHECK'},
-      lane_detail: {early_access: 'SENTINEL_EARLY_ACCESS'},
+      lane_detail: {early_access: sentinelEarlyAccess},
       setup: {trust_beats: {}},
       audio: {},
-      operation_states: {},
+      operation_states: {
+        subscribing: sentinelSubscribing,
+        journal_limit: sentinelJournalLimit,
+      },
+      access_ended: sentinelAccessEnded,
+      credential_unknown: sentinelCredentialUnknown,
+      portal_link: sentinelPortalLink,
     },
   });
   for (const id of [
@@ -2968,6 +2992,9 @@ async function main() {
     'confidentialRecheck',
     'confidentialAudioRow',
     'confidentialTrustEarlyAccess',
+    'confidentialLaneOperation',
+    'confidentialLaneOperationLink',
+    'confidentialNotice',
   ]) {
     if (!nodes.get(id)) make(id);
   }
@@ -2995,7 +3022,7 @@ async function main() {
     assert.strictEqual(nodes.get('confidentialRecheck').hidden, true, `${who} is not asked to check again`);
     assert.strictEqual(nodes.get('confidentialDisable').hidden, !configured, `${who} ${configured ? 'can' : 'has nothing to'} turn off`);
     assert.strictEqual(nodes.get('confidentialDisable').disabled, !configured, `${who}: turning off is ${configured ? 'enabled' : 'not offered'}`);
-    assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').hidden, true, `${who} is not told it is available to scouts`);
+    assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').hidden, true, `${who} sees the early-access line hidden`);
     assert.strictEqual(nodes.get('confidentialAudioRow').hidden, true, `${who} has no audio setting`);
     assert.strictEqual(nodes.get('lane-confidential').classList.contains('greyed'), true, `${who} sees the card greyed`);
   }
@@ -3006,8 +3033,135 @@ async function main() {
   assert.strictEqual(nodes.get('confidentialLaneStatus').textContent, 'SENTINEL_TURN_ON', 'a journal with the check is offered turning it on');
   assert.strictEqual(nodes.get('confidentialLaneStatus').hidden, false, 'from the card');
   assert.strictEqual(nodes.get('confidentialEnable').hidden, false, 'and from setup');
-  assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').hidden, false, 'with the scouts line');
+  assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').hidden, false, 'with the early-access line shown');
   assert.strictEqual(nodes.get('lane-confidential').classList.contains('greyed'), false, 'and the card is not greyed');
+
+  // Attestation state inactive and lane off: early-access line is shown
+  thinking.state.providers = confidentialProviders(false, {state: 'inactive'});
+  thinking.renderConfidentialSetup();
+  assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').hidden, false, 'inactive and lane off shows early access');
+  assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').textContent, sentinelEarlyAccess, 'early access text matches sentinel when inactive');
+
+  // Confidential processing subscription, operation, and access DOM cases
+  // 1. Offered and off: #confidentialTrustEarlyAccess is shown and its text is the early_access sentinel
+  thinking.state.providers = confidentialProviders(false, {state: 'off'});
+  thinking.state.access = null;
+  thinking.renderConfidentialSetup();
+  assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').hidden, false, 'offered and off shows early access');
+  assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').textContent, sentinelEarlyAccess, 'early access text matches sentinel');
+
+  // 2. Confidential lane on: that element is hidden
+  thinking.state.providers = confidentialProviders(true, {state: 'active'});
+  thinking.renderConfidentialSetup();
+  assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').hidden, true, 'confidential lane on hides early access');
+
+  // 3. Subscribing: #confidentialLaneOperation text is operation_states.subscribing, #confidentialLaneOperationLink href is subscribe_url
+  thinking.state.providers = {
+    active_lane: {
+      lane: 'confidential',
+      confidential_enabled: true,
+      confidential_provenance_configured: true,
+      confidential_operation: {
+        phase: 'subscribing',
+        subscribe_url: 'https://services.solstone.app/subscribe-test',
+      },
+      confidential_attestation: {state: 'active'},
+    },
+    provider_status: {local: {generate_ready: false, issues: []}},
+  };
+  thinking.renderConfidentialSetup();
+  assert.strictEqual(nodes.get('confidentialLaneOperation').textContent, sentinelSubscribing, 'subscribing operation text');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').href, 'https://services.solstone.app/subscribe-test', 'subscribing link href');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').hidden, false, 'subscribing link visible');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').textContent, sentinelPortalLink, 'subscribing link text');
+
+  // 4. Journal_limit: #confidentialLaneOperation text is operation_states.journal_limit, #confidentialLaneOperationLink href is subscribe_url
+  thinking.state.providers = {
+    active_lane: {
+      lane: 'confidential',
+      confidential_enabled: true,
+      confidential_provenance_configured: true,
+      confidential_operation: {
+        phase: 'journal_limit',
+        subscribe_url: 'https://services.solstone.app/limit-test',
+      },
+      confidential_attestation: {state: 'active'},
+    },
+    provider_status: {local: {generate_ready: false, issues: []}},
+  };
+  thinking.renderConfidentialSetup();
+  assert.strictEqual(nodes.get('confidentialLaneOperation').textContent, sentinelJournalLimit, 'journal_limit operation text');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').href, 'https://services.solstone.app/limit-test', 'journal_limit link href');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').hidden, false, 'journal_limit link visible');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').textContent, sentinelPortalLink, 'journal_limit link text');
+
+  // 5. Access ended with no operation: operation element text is access_ended sentinel and link href is subscribe_url
+  thinking.state.providers = {
+    active_lane: {
+      lane: 'confidential',
+      confidential_enabled: true,
+      confidential_provenance_configured: true,
+      confidential_operation: null,
+      confidential_attestation: {state: 'active'},
+    },
+    provider_status: {local: {generate_ready: false, issues: []}},
+  };
+  thinking.state.access = {
+    state: 'ended',
+    subscribe_url: 'https://services.solstone.app/ended-subscribe',
+  };
+  thinking.renderConfidentialSetup();
+  thinking.renderMainLanes();
+  assert.strictEqual(nodes.get('confidentialLaneDescription').textContent, sentinelAccessEnded, 'ended access reads on the lane card too');
+  assert.strictEqual(nodes.get('confidentialLaneOperation').textContent, sentinelAccessEnded, 'ended access operation text');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').href, 'https://services.solstone.app/ended-subscribe', 'ended access link href');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').hidden, false, 'ended access link visible');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').textContent, sentinelPortalLink, 'ended access link text');
+
+  // 6. Credential unknown: operation element text is credential_unknown sentinel and link is hidden
+  thinking.state.providers = {
+    active_lane: {
+      lane: 'confidential',
+      confidential_enabled: true,
+      confidential_provenance_configured: true,
+      confidential_operation: null,
+      confidential_attestation: {state: 'active'},
+    },
+    provider_status: {local: {generate_ready: false, issues: []}},
+  };
+  thinking.state.access = {
+    state: 'credential_unknown',
+    subscribe_url: null,
+  };
+  thinking.renderConfidentialSetup();
+  assert.strictEqual(nodes.get('confidentialLaneOperation').textContent, sentinelCredentialUnknown, 'credential_unknown operation text');
+  assert.strictEqual(nodes.get('confidentialLaneOperationLink').hidden, true, 'credential_unknown link hidden');
+
+  // 7. Unknown schedules one reread; a second unknown does not
+  thinking.accessUnknownRereadMs = 0;
+  thinking.accessUnknownRereadScheduled = false;
+  thinking.state.access = {
+    state: 'unknown',
+    subscribe_url: null,
+  };
+  const stateCallsBefore = requests.filter((r) => r === '/app/thinking/api/state').length;
+  stateResponses.push({
+    providers: {},
+    keys: {},
+    copy: {},
+    access: { state: 'unknown', subscribe_url: null },
+  });
+  thinking.scheduleAccessUnknownReread();
+  await advance(0);
+  await settle();
+  const stateCallsAfterFirst = requests.filter((r) => r === '/app/thinking/api/state').length;
+  assert.strictEqual(stateCallsAfterFirst, stateCallsBefore + 1, 'unknown schedules one reread');
+
+  thinking.scheduleAccessUnknownReread();
+  await advance(0);
+  await settle();
+  const stateCallsAfterSecond = requests.filter((r) => r === '/app/thinking/api/state').length;
+  assert.strictEqual(stateCallsAfterSecond, stateCallsAfterFirst, 'second unknown does not schedule another reread');
 
   // Restore state
   thinking.state.providers = savedProvidersBeforeGpt;

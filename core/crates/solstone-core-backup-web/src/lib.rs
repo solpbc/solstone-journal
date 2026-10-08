@@ -50,6 +50,8 @@ mod restore_prepare;
 mod status;
 mod validation;
 
+pub use validation::{HandoffFieldError, require_https_portal_url};
+
 use measurement::SharedMeasurementCache;
 use operation::{SharedOperationSlot, Terminal};
 use restore_prepare::SharedRestorePrepare;

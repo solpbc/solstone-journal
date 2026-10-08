@@ -39,7 +39,7 @@ route = "/app/thinking/api/confidential/enable"
 contract_operation_id = "thinking.confidential.enable"
 handler = "confidential_enable"
 params = [
-  { name = "wait_seconds", kind = "option", type = "float", required = false, nargs = 1, multiple = false, default = 900.0, options = ["--wait-seconds"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "wait_seconds", kind = "option", type = "float", required = false, nargs = 1, multiple = false, default = 4560.0, options = ["--wait-seconds"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "poll_interval", kind = "option", type = "float", required = false, nargs = 1, multiple = false, default = 1.0, options = ["--poll-interval"], secondary = [], hidden = false, is_flag = false, count = false },
 ]
 

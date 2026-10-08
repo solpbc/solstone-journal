@@ -38,7 +38,7 @@ pub fn write_deb(stage: &Path, dest: &Path, meta: DebMeta<'_>) -> io::Result<()>
 
 fn control_tar(meta: DebMeta<'_>) -> io::Result<Vec<u8>> {
     let control = format!(
-        "Package: solstone-journal\nVersion: {}\nArchitecture: {}\nMaintainer: sol pbc <support@solstone.app>\nDescription: solstone-journal\nDepends: libc6 (>= 2.34), libstdc++6 (>= 11), libgcc-s1 (>= 11), libgomp1 (>= 11)\n",
+        "Package: solstone-journal\nVersion: {}\nArchitecture: {}\nMaintainer: sol pbc <support@solstone.app>\nDescription: solstone-journal\nDepends: libc6 (>= 2.34), libstdc++6 (>= 11), libgcc-s1 (>= 11), libgomp1 (>= 11), zlib1g\n",
         meta.version, meta.arch
     );
     let mut builder = Builder::new(Vec::new());
@@ -205,6 +205,11 @@ mod tests {
             control
                 .split([',', '\n'])
                 .any(|item| item.trim() == "libgomp1 (>= 11)")
+        );
+        assert!(
+            control
+                .split([',', '\n'])
+                .any(|item| item.trim() == "zlib1g")
         );
     }
 }

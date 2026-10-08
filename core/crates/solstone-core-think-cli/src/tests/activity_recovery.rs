@@ -177,7 +177,7 @@ fn assert_subset_replay_keeps_record(
 }
 
 #[test]
-fn subset_batch_replay_uses_boundaries_without_publishing_unselected_activities() {
+fn subset_batch_replay_uses_its_streams_boundaries_and_writes_only_that_streams_activities() {
     let (_journal, _roots, context, recorder) = fixture();
     let active = fs::read(
         segment_dir(&context.journal, &context.day, "090000_300").join("talents/sense.json"),
@@ -214,9 +214,15 @@ fn subset_batch_replay_uses_boundaries_without_publishing_unselected_activities(
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["id"], "work_090000_300");
-    assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+    // Everything settled on the repaired stream's finished day is written,
+    // including an activity no repaired segment is in; another stream's is not.
+    let ids = rows
+        .iter()
+        .map(|row| row["id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, ["work_090000_300", "work_100000_300"]);
+    assert!(rows.iter().all(|row| row["stream"] == "default"));
+    assert_eq!(recorder.requests.lock().unwrap().len(), 2);
 }
 
 fn fail_first(context: &context::ThinkContext, recorder: &Recorder) {

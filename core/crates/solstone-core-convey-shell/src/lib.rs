@@ -193,7 +193,10 @@ pub use network_writes::{
     SplPoll, SplPollOutcome, SplRuntimeOverride,
 };
 #[cfg(feature = "host")]
-pub use thinking::{ConfidentialPoll, ConfidentialRuntimeOverride, PollOutcome};
+pub use thinking::{
+    AccessClientHandle, AccessSnapshot, ConfidentialAccess, ConfidentialPoll,
+    ConfidentialRuntimeOverride, PollOutcome,
+};
 
 use assets::lookup;
 use refusal::AppNotConverted;

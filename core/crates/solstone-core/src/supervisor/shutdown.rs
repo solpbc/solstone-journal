@@ -476,6 +476,7 @@ mod tests {
             daily: DailyState { last_day: None },
             last_retry_expiry_drain: Instant::now(),
             last_activity_retry_drain: Instant::now(),
+            last_activity_settle_scan: Instant::now() - Duration::from_secs(60),
             last_scratch_sweep: None,
             activity_retry_seed_day: None,
             wedge: WedgeState::default(),

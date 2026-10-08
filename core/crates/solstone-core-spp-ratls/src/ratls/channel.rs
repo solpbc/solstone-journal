@@ -1049,6 +1049,56 @@ fn peer_closed_kind(kind: ErrorKind) -> bool {
     )
 }
 
+/// Appends an Authorization Bearer header if a credential is present.
+pub fn append_bearer_header(request: &mut String, bearer: Option<&str>) {
+    if let Some(bearer) = bearer {
+        request.push_str("Authorization: Bearer ");
+        request.push_str(bearer);
+        request.push_str("\r\n");
+    }
+}
+
+/// Sends an admission probe over an attested transport before content requests.
+pub fn send_admission_probe(
+    stream: &mut dyn AttestedIo,
+    host: &str,
+    bearer: Option<&str>,
+) -> Result<(), &'static str> {
+    let mut request = format!("GET /solstone-admission HTTP/1.1\r\nHost: {host}\r\n");
+    append_bearer_header(&mut request, bearer);
+    request.push_str("\r\n");
+    if write_all_retry_interrupted(stream, request.as_bytes()).is_err() {
+        return Err("local_endpoint_unreachable");
+    }
+
+    let mut counting = CountingStream {
+        stream,
+        bytes_read: 0,
+    };
+    let response = match recv_bounded_http_response(
+        &mut counting,
+        MAX_PROOF_RESPONSE_HEADERS,
+        MAX_PROOF_RESPONSE_BYTES,
+    ) {
+        Ok(resp) => resp,
+        Err(_) => return Err("local_endpoint_unreachable"),
+    };
+    let status = match response_status(&response.status_line) {
+        Ok(s) => s,
+        Err(_) => return Err("local_endpoint_unreachable"),
+    };
+    if status == 401 {
+        return Err("confidential_access_ended");
+    }
+    if status == 503 {
+        return Err("local_endpoint_unreachable");
+    }
+    match stream.trailing_after_body() {
+        Ok(Trailing::None) => Ok(()),
+        _ => Err("local_endpoint_unreachable"),
+    }
+}
+
 /// Sends one JSON POST over an already attested transport.
 pub fn send_json_request(
     stream: &mut dyn AttestedIo,
@@ -1062,11 +1112,7 @@ pub fn send_json_request(
         "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
         body.len()
     );
-    if let Some(bearer) = bearer {
-        request.push_str("Authorization: Bearer ");
-        request.push_str(bearer);
-        request.push_str("\r\n");
-    }
+    append_bearer_header(&mut request, bearer);
     request.push_str("\r\n");
     if let Err(error) = write_all_retry_interrupted(stream, request.as_bytes())
         .and_then(|_| write_all_retry_interrupted(stream, body))
@@ -1206,53 +1252,10 @@ mod tests {
     }
 
     #[test]
-    fn a_held_platform_opens_no_channel() {
-        assert_eq!(
-            refuse_held_platform("windows"),
-            Err(refused("nvattest_platform_unsupported"))
-        );
-        for os in ["linux", "macos"] {
+    fn no_shipped_platform_is_refused_a_channel() {
+        for os in ["linux", "macos", "windows"] {
             assert_eq!(refuse_held_platform(os), Ok(()), "{os}");
         }
-    }
-
-    #[cfg(windows)]
-    struct Unreached;
-
-    #[cfg(windows)]
-    impl CompositeVerifier for Unreached {
-        fn verify(
-            &self,
-            _bundle: solstone_core_spp_attest::CpuBundle<'_>,
-            _input: crate::ratls::verify::CompositeVerificationInput<'_>,
-        ) -> Result<crate::cadence::CompositeVerdict, crate::error::CompositeVerificationError>
-        {
-            unreachable!("a held platform never reaches appraisal")
-        }
-    }
-
-    /// On Windows the shared channel entry refuses before it resolves or
-    /// connects. The endpoint is a closed loopback port, so a missing hold
-    /// reads as `gateway_unreachable` rather than passing.
-    #[cfg(windows)]
-    #[test]
-    fn windows_refuses_every_channel_before_connecting() {
-        let Err(error) = establish_attested_channel_with_clock(
-            &RatlsEndpoint::new("127.0.0.1", 1),
-            &[0xAB; 32],
-            Path::new("nvattest"),
-            SystemTime::now(),
-            None,
-            None,
-            None,
-            &Unreached,
-            Duration::from_secs(1),
-            0,
-            &SystemAdmissionClock,
-        ) else {
-            panic!("a held platform opened a channel");
-        };
-        assert_eq!(error.reason_code, "nvattest_platform_unsupported");
     }
 
     #[test]

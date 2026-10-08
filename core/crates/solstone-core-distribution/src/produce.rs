@@ -75,7 +75,7 @@ pub struct ProduceError {
 }
 
 impl ProduceError {
-    fn new(message: impl Into<String>) -> Self {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
         }
@@ -379,6 +379,18 @@ pub fn inspect_macho_bin(
     .map_err(|error| ProduceError::new(format!("{bin}: {error}")))
 }
 
+pub(crate) fn require_same_source_commit(
+    producer: &str,
+    produced: &str,
+) -> Result<(), ProduceError> {
+    if producer != produced {
+        return Err(ProduceError::new(format!(
+            "producer-commit-mismatch: producer source commit {producer} != produced source commit {produced}"
+        )));
+    }
+    Ok(())
+}
+
 pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
     let inventory_path =
         crate::inventory::repository_inventory_path(&args.start).ok_or_else(|| {
@@ -422,6 +434,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
     let ffmpeg_run_id = ffmpeg_build_run_id();
 
     let commit = git_stdout(repo, &["rev-parse", "HEAD"])?;
+    require_same_source_commit(env!("SOLSTONE_DISTRIBUTION_SOURCE_COMMIT"), &commit)?;
     let dirty = !git_stdout(repo, &["status", "--porcelain"])?.is_empty();
     provenance::require_clean(dirty).map_err(|error| ProduceError::new(error.to_string()))?;
     let lock_path = repo.join("core/Cargo.lock");
@@ -1146,6 +1159,15 @@ fn find_owning_identity<'a>(
             } if targets.iter().any(|t| t == &target.id) && staged_dest == dest => {
                 return Ok(Some(identity));
             }
+            Entry::PinnedMembers {
+                targets, staged, ..
+            } if targets.iter().any(|t| t == &target.id) => {
+                if let Some(m) = staged.iter().find(|m| m.dest == staged_dest)
+                    && let Some(ref ident) = m.identity
+                {
+                    return Ok(Some(ident));
+                }
+            }
             Entry::OnnxRuntime {
                 dest_dir,
                 identities,
@@ -1737,6 +1759,65 @@ fn write_stage(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn check_authority_inventory(
+    entry: &str,
+    platform: &str,
+    staged: &[crate::inventory::StagedMember],
+    ignored: &[String],
+) -> Result<(), ProduceError> {
+    let authority =
+        solstone_core_nvattest_authority::parse(solstone_core_nvattest_authority::AUTHORITY_JSON)
+            .map_err(|e| ProduceError::new(e.to_string()))?;
+    let spec = solstone_core_nvattest_authority::artifact_spec(&authority, platform)
+        .map_err(|e| ProduceError::new(e.to_string()))?;
+    let mut auth_map = std::collections::BTreeMap::new();
+    for item in &spec.inventory {
+        auth_map.insert(item.relpath.as_str(), item);
+    }
+    let mut declared = std::collections::BTreeSet::new();
+    for s in staged {
+        if !declared.insert(s.relpath.as_str()) {
+            return Err(ProduceError::new(format!(
+                "{entry}: duplicate staged member {}",
+                s.relpath
+            )));
+        }
+        let auth_item = auth_map.get(s.relpath.as_str()).ok_or_else(|| {
+            ProduceError::new(format!(
+                "{entry}: staged member {} not in authority inventory",
+                s.relpath
+            ))
+        })?;
+        if auth_item.kind != "regular" && auth_item.kind != "symlink" {
+            return Err(ProduceError::new(format!(
+                "{entry}: staged member {} has unsupported authority kind {}",
+                s.relpath, auth_item.kind
+            )));
+        }
+    }
+    for ign in ignored {
+        if !declared.insert(ign.as_str()) {
+            return Err(ProduceError::new(format!(
+                "{entry}: duplicate or staged ignored member {ign}"
+            )));
+        }
+        if !auth_map.contains_key(ign.as_str()) {
+            return Err(ProduceError::new(format!(
+                "{entry}: ignored member {ign} not in authority inventory"
+            )));
+        }
+    }
+    for auth_rel in auth_map.keys() {
+        if !declared.contains(*auth_rel) {
+            return Err(ProduceError::new(format!(
+                "{entry}: missing authority inventory member {auth_rel}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn stage_layout(
     repo: &Path,
     inventory_path: &Path,
@@ -1800,10 +1881,10 @@ fn stage_layout(
                 )?;
             }
             Entry::PinnedNative {
-                source,
+                component: _,
+                input,
                 dest,
                 mode,
-                digest,
                 identity,
                 targets,
             } => {
@@ -1811,14 +1892,85 @@ fn stage_layout(
                     continue;
                 }
                 validate_identity_basename(dest, identity)?;
-                let bytes = fs::read(repo.join(source))?;
-                let actual = sha256_hex(&bytes);
-                if actual != *digest {
-                    return Err(ProduceError::new(format!(
-                        "unexpected:\n  {dest} digest {actual}"
-                    )));
+                let (bytes, pin, filename) =
+                    crate::pinned_stage::resolve_pinned_input(dest, repo, target_id, input)?;
+                let staged_member = crate::inventory::StagedMember {
+                    relpath: String::new(),
+                    dest: dest.clone(),
+                    mode: *mode,
+                    extracted_sha256: pin.sha256_hex.clone(),
+                    identity: Some(identity.clone()),
+                };
+                let plans = crate::pinned_stage::plan_pinned_input(
+                    dest,
+                    &bytes,
+                    &pin,
+                    &filename,
+                    &[staged_member],
+                    &[],
+                )?;
+                crate::pinned_stage::stage_pinned_plans(dest, stage, &bytes, &filename, &plans)?;
+            }
+            Entry::PinnedMembers {
+                component: _,
+                input,
+                staged,
+                ignored,
+                targets,
+            } => {
+                if !targets.iter().any(|item| item == target_id) {
+                    continue;
                 }
-                stage::write_staged_file_mode(stage, dest, &bytes, *mode)?;
+                for m in staged {
+                    if let Some(ref ident) = m.identity {
+                        validate_identity_basename(&m.dest, ident)?;
+                    }
+                }
+                let entry_name = staged
+                    .first()
+                    .map(|m| m.dest.as_str())
+                    .unwrap_or("pinned-members");
+                let (bytes, pin, filename) =
+                    crate::pinned_stage::resolve_pinned_input(entry_name, repo, target_id, input)?;
+                if let crate::inventory::PinnedInput::AuthorityCommitted { platform, .. } = input {
+                    check_authority_inventory(entry_name, platform, staged, ignored)?;
+                }
+                let plans = crate::pinned_stage::plan_pinned_input(
+                    entry_name, &bytes, &pin, &filename, staged, ignored,
+                )?;
+                crate::pinned_stage::stage_pinned_plans(
+                    entry_name, stage, &bytes, &filename, &plans,
+                )?;
+            }
+            Entry::LicenceTree {
+                source,
+                component,
+                targets,
+            } => {
+                if !targets.iter().any(|item| item == target_id) {
+                    continue;
+                }
+                let comp = component.as_deref().ok_or_else(|| {
+                    ProduceError::new(format!("licence-tree {source}: missing component"))
+                })?;
+                let source_dir = repo.join(source);
+                let rel_files =
+                    crate::inventory::collect_licence_relative_paths(&source_dir, source)
+                        .map_err(|e| ProduceError::new(e.to_string()))?;
+                let target_obj = inventory.target.iter().find(|t| t.id == target_id);
+                let is_windows = target_obj
+                    .map(|t| t.os.as_str() == "windows")
+                    .unwrap_or(false);
+                let prefix = if is_windows {
+                    format!("share/licenses/{comp}/")
+                } else {
+                    format!("share/solstone-journal/licenses/{comp}/")
+                };
+                for rel in rel_files {
+                    let dest = format!("{prefix}{rel}");
+                    let bytes = fs::read(source_dir.join(&rel))?;
+                    stage::write_staged_file_mode(stage, &dest, &bytes, 0o644)?;
+                }
             }
             Entry::OnnxRuntime {
                 dest_dir,
@@ -2049,7 +2201,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use crate::archive_taxonomy::ContainerKind;
-    use crate::inventory::{ArchiveExecutable, ArchiveSlot};
+    use crate::inventory::{ArchiveExecutable, ArchiveSlot, PinnedInput};
 
     #[test]
     fn work_lock_refuses_a_second_producer_without_erasing_the_warm_cache() {
@@ -3332,10 +3484,14 @@ zig_gnu = "x86_64-linux-gnu.2.27"
 
         // 1. Digest mismatch refuses
         let bad_digest_entry = Entry::PinnedNative {
-            source: source.to_owned(),
+            component: None,
+            input: PinnedInput::Inline {
+                source: source.to_owned(),
+                digest: "0000000000000000000000000000000000000000000000000000000000000000"
+                    .to_owned(),
+            },
             dest: "lib/solstone-foo/libfoo.so".to_owned(),
             mode: 0o755,
-            digest: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
             identity: identity.clone(),
             targets: vec!["linux-x86_64".to_owned()],
         };
@@ -3355,14 +3511,20 @@ zig_gnu = "x86_64-linux-gnu.2.27"
             &stage,
         )
         .unwrap_err();
-        assert!(err_digest.to_string().contains("digest"), "{err_digest}");
+        assert!(
+            err_digest.to_string().contains("pin sha256 mismatch"),
+            "{err_digest}"
+        );
 
         // 2. Filename that is neither identity name nor alias refuses
         let bad_name_entry = Entry::PinnedNative {
-            source: source.to_owned(),
+            component: None,
+            input: PinnedInput::Inline {
+                source: source.to_owned(),
+                digest: digest.clone(),
+            },
             dest: "lib/solstone-foo/libwrong.so".to_owned(),
             mode: 0o755,
-            digest: digest.clone(),
             identity: identity.clone(),
             targets: vec!["linux-x86_64".to_owned()],
         };
@@ -3389,10 +3551,13 @@ zig_gnu = "x86_64-linux-gnu.2.27"
 
         // 3. Passing twin matches
         let good_entry = Entry::PinnedNative {
-            source: source.to_owned(),
+            component: None,
+            input: PinnedInput::Inline {
+                source: source.to_owned(),
+                digest,
+            },
             dest: "lib/solstone-foo/libfoo.so.1".to_owned(),
             mode: 0o755,
-            digest,
             identity,
             targets: vec!["linux-x86_64".to_owned()],
         };
@@ -3413,6 +3578,15 @@ zig_gnu = "x86_64-linux-gnu.2.27"
         )
         .expect("passing twin stages successfully");
         assert!(stage.join("lib/solstone-foo/libfoo.so.1").is_file());
+    }
+
+    #[test]
+    fn require_same_source_commit_enforces_equality() {
+        assert!(require_same_source_commit("commit1", "commit1").is_ok());
+        let err = require_same_source_commit("commit1", "commit2").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.starts_with("producer-commit-mismatch:"), "{msg}");
+        assert!(msg.contains("commit1") && msg.contains("commit2"), "{msg}");
     }
 
     #[test]

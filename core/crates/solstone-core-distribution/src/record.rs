@@ -199,22 +199,115 @@ pub fn declared_records(
                 ));
             }
             Entry::PinnedNative {
-                source,
+                component: _,
+                input,
                 dest,
                 mode,
-                digest,
+                identity: _,
                 targets,
-                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
                 }
-                let bytes = std::fs::read(repo.join(source)).map_err(|error| error.to_string())?;
-                let actual = sha256_hex(&bytes);
-                if actual != *digest {
-                    return Err(format!("unexpected:\n  {dest} digest {actual}"));
+                let (bytes, pin, filename) =
+                    crate::pinned_stage::resolve_pinned_input(dest, repo, target_id, input)
+                        .map_err(|e| e.to_string())?;
+                let staged_member = crate::inventory::StagedMember {
+                    relpath: String::new(),
+                    dest: dest.clone(),
+                    mode: *mode,
+                    extracted_sha256: pin.sha256_hex.clone(),
+                    identity: None,
+                };
+                let plans = crate::pinned_stage::plan_pinned_input(
+                    dest,
+                    &bytes,
+                    &pin,
+                    &filename,
+                    &[staged_member],
+                    &[],
+                )
+                .map_err(|e| e.to_string())?;
+                let contents =
+                    crate::pinned_stage::extract_and_verify_plans(dest, &bytes, &filename, &plans)
+                        .map_err(|e| e.to_string())?;
+                for plan in plans {
+                    let file_bytes = &contents[&plan.inner_path];
+                    records.push(FileRecord::file(
+                        &plan.dest,
+                        stage::recorded_mode(plan.mode),
+                        sha256_hex(file_bytes),
+                    ));
                 }
-                records.push(FileRecord::file(dest, stage::recorded_mode(*mode), actual));
+            }
+            Entry::PinnedMembers {
+                component: _,
+                input,
+                staged,
+                ignored,
+                targets,
+            } => {
+                if !targets.iter().any(|item| item == target_id) {
+                    continue;
+                }
+                let entry_name = staged
+                    .first()
+                    .map(|m| m.dest.as_str())
+                    .unwrap_or("pinned-members");
+                let (bytes, pin, filename) =
+                    crate::pinned_stage::resolve_pinned_input(entry_name, repo, target_id, input)
+                        .map_err(|e| e.to_string())?;
+                let plans = crate::pinned_stage::plan_pinned_input(
+                    entry_name, &bytes, &pin, &filename, staged, ignored,
+                )
+                .map_err(|e| e.to_string())?;
+                let contents = crate::pinned_stage::extract_and_verify_plans(
+                    entry_name, &bytes, &filename, &plans,
+                )
+                .map_err(|e| e.to_string())?;
+                for plan in plans {
+                    let file_bytes = &contents[&plan.inner_path];
+                    records.push(FileRecord::file(
+                        &plan.dest,
+                        stage::recorded_mode(plan.mode),
+                        sha256_hex(file_bytes),
+                    ));
+                }
+            }
+            Entry::LicenceTree {
+                source,
+                component,
+                targets,
+            } => {
+                if !targets.iter().any(|item| item == target_id) {
+                    continue;
+                }
+                let comp = component
+                    .as_deref()
+                    .ok_or_else(|| format!("licence-tree {source}: missing component"))?;
+                let source_dir = repo.join(source);
+                let rel_files =
+                    crate::inventory::collect_licence_relative_paths(&source_dir, source)
+                        .map_err(|e| e.to_string())?;
+                let target_obj = inventory.target.iter().find(|t| t.id == target_id);
+                let is_windows = target_obj
+                    .map(|t| t.os.as_str() == "windows")
+                    .unwrap_or(false);
+                let prefix = if is_windows {
+                    format!("share/licenses/{comp}/")
+                } else {
+                    format!("share/solstone-journal/licenses/{comp}/")
+                };
+                for rel in rel_files {
+                    let dest = format!("{prefix}{rel}");
+                    let bytes =
+                        std::fs::read(source_dir.join(&rel)).map_err(|error| error.to_string())?;
+                    records.push(FileRecord::file(
+                        &dest,
+                        stage::recorded_mode(0o644),
+                        sha256_hex(&bytes),
+                    ));
+                }
             }
             Entry::OnnxRuntime {
                 dest_dir, targets, ..

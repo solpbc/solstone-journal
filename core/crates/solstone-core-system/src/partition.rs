@@ -83,6 +83,7 @@ fn alias_partition_for(cmd: &[String]) -> Partition {
             for (flag, mode) in [
                 ("--activity", "activity"),
                 ("--flush", "flush"),
+                ("--settle", "flush"),
                 ("--segments", "segment"),
                 ("--weekly", "weekly"),
                 ("--cadence", "cadence"),

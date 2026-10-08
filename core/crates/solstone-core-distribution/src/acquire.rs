@@ -161,7 +161,7 @@ struct Flags {
 }
 
 pub fn usage() -> &'static str {
-    "usage: solstone-distribution acquire <ffmpeg|ffmpeg-windows-tools|onnx|pdfium|builder-inputs|cmake-windows|python-windows> [FLAG]"
+    "usage: solstone-distribution acquire <ffmpeg|ffmpeg-windows-tools|onnx|pdfium|builder-inputs|cmake-windows|python-windows|catalog-inputs> [FLAG]"
 }
 
 pub fn run(args: &[String]) -> Result<(), AcquireError> {
@@ -178,6 +178,34 @@ pub fn run(args: &[String]) -> Result<(), AcquireError> {
         "builder-inputs" => acquire_builder_inputs(&repo, flags.dest.as_deref())?,
         "cmake-windows" => acquire_cmake_windows(&repo, flags.dest.as_deref())?,
         "python-windows" => acquire_python_windows(&repo, flags.dest.as_deref())?,
+        "catalog-inputs" => {
+            let target = flags
+                .target
+                .as_deref()
+                .ok_or_else(|| AcquireError::new("acquire catalog-inputs requires --target"))?;
+            let inventory_path = repo.join("core/distribution/inventory.toml");
+            let inventory = crate::inventory::load_inventory(&inventory_path)
+                .map_err(|e| AcquireError::new(e.to_string()))?;
+            let mut fetcher = |url: &str| {
+                let row = solstone_core_assets::catalog()
+                    .iter()
+                    .find(|a| a.upstream_url == url)
+                    .ok_or_else(|| format!("no catalog row for {url}"))?;
+                let temp_dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+                let temp_file = temp_dir.path().join("download.bin");
+                ensure_verified_url(
+                    row.upstream_url,
+                    row.sha256,
+                    Some(row.size_bytes),
+                    &temp_file,
+                    &BUILDER_INPUT_DOWNLOAD_POLICY,
+                    |_, _| {},
+                )
+                .map_err(|e| e.to_string())?;
+                fs::read(&temp_file).map_err(|e| e.to_string())
+            };
+            acquire_catalog_inputs(&repo, target, &inventory, &mut fetcher)?;
+        }
         other => {
             return Err(AcquireError::new(format!(
                 "unknown acquire command {other:?}\n{}",
@@ -467,6 +495,84 @@ fn acquire_python_windows(repo: &Path, dest: Option<&Path>) -> Result<(), Acquir
         python.version,
         dest.display()
     );
+    Ok(())
+}
+
+pub(crate) fn check_cache_path_components(
+    unit: &str,
+    version: &str,
+    filename: &str,
+) -> Result<(), AcquireError> {
+    if unit.contains('/')
+        || unit.contains("..")
+        || version.contains('/')
+        || version.contains("..")
+        || filename.contains('/')
+        || filename.contains("..")
+    {
+        return Err(AcquireError::new(format!(
+            "invalid path component in catalog input ({unit}, {version}, {filename})"
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn acquire_catalog_inputs(
+    repo: &Path,
+    target: &str,
+    inventory: &crate::inventory::Inventory,
+    fetcher: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
+) -> Result<(), AcquireError> {
+    for entry in &inventory.entry {
+        let (input, targets) = match entry {
+            crate::inventory::Entry::PinnedNative { input, targets, .. } => (input, targets),
+            crate::inventory::Entry::PinnedMembers { input, targets, .. } => (input, targets),
+            _ => continue,
+        };
+        if !targets.iter().any(|t| t == target) {
+            continue;
+        }
+        let (unit, filename) = match input {
+            crate::inventory::PinnedInput::CatalogAcquired { unit, filename } => (unit, filename),
+            _ => continue,
+        };
+        let row = solstone_core_assets::catalog()
+            .iter()
+            .find(|a| a.unit == unit && a.filename == filename)
+            .ok_or_else(|| {
+                AcquireError::new(format!("catalog item not found for ({unit}, {filename})"))
+            })?;
+        if row.extracted_binary_sha256.is_some() {
+            return Err(AcquireError::new(format!(
+                "catalog item ({unit}, {filename}) has extracted_binary_sha256: Some, which is forbidden"
+            )));
+        }
+        check_cache_path_components(unit, row.version, filename)?;
+        let cache_dir = repo
+            .join("target/catalog-input-cache")
+            .join(unit)
+            .join(row.version);
+        let cache_file = cache_dir.join(filename);
+        if let Ok(bytes) = fs::read(&cache_file)
+            && bytes.len() as u64 == row.size_bytes
+            && crate::digest::sha256_hex(&bytes).eq_ignore_ascii_case(row.sha256)
+        {
+            continue;
+        }
+        fs::create_dir_all(&cache_dir)?;
+        let part_file = cache_dir.join(format!(".{filename}.part"));
+        let bytes = fetcher(row.upstream_url).map_err(AcquireError::new)?;
+        fs::write(&part_file, &bytes)?;
+        if bytes.len() as u64 != row.size_bytes
+            || !crate::digest::sha256_hex(&bytes).eq_ignore_ascii_case(row.sha256)
+        {
+            let _ = fs::remove_file(&part_file);
+            return Err(AcquireError::new(format!(
+                "download verification failed for ({unit}, {filename})"
+            )));
+        }
+        fs::rename(&part_file, &cache_file)?;
+    }
     Ok(())
 }
 
@@ -929,5 +1035,116 @@ mod tests {
         assert!(flags.wheel_only);
         assert_eq!(flags.target.as_deref(), Some("linux-x86_64"));
         assert_eq!(flags.dest.as_deref(), Some(Path::new("out")));
+    }
+
+    #[test]
+    fn check_cache_path_components_rejects_traversal_and_separators() {
+        assert!(check_cache_path_components("..", "1.0", "file.tar.gz").is_err());
+        assert!(check_cache_path_components("unit", "..", "file.tar.gz").is_err());
+        assert!(check_cache_path_components("unit", "1.0", "..").is_err());
+        assert!(check_cache_path_components("a/b", "1.0", "file.tar.gz").is_err());
+        assert!(check_cache_path_components("unit", "a/b", "file.tar.gz").is_err());
+        assert!(check_cache_path_components("unit", "1.0", "a/b").is_err());
+        assert!(check_cache_path_components("valid-unit", "1.0.0", "valid-file.tar.gz").is_ok());
+    }
+
+    #[test]
+    fn acquire_catalog_inputs_with_injected_fetcher() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+
+        let row = solstone_core_assets::catalog()
+            .iter()
+            .find(|a| a.unit == "ced-engine" && a.filename == "ced-v0.1.0-lib-linux-cpu-x64.tar.gz")
+            .expect("ced-engine row");
+
+        let inv_text = r#"
+version = 1
+product = "solstone"
+payload = "core/distribution/payload.txt"
+payload_dest_prefix = "share/solstone-journal"
+payload_src_root = "core/payload"
+entry = [
+    { kind = "pinned-members", targets = ["linux-x86_64"], input = { kind = "catalog-acquired", unit = "ced-engine", filename = "ced-v0.1.0-lib-linux-cpu-x64.tar.gz" }, staged = [] }
+]
+deny = []
+[artifact]
+basename = "solstone-{version}-{os}-{arch}"
+[[target]]
+id = "linux-x86_64"
+os = "linux"
+arch = "x86_64"
+deb_arch = "amd64"
+rpm_arch = "x86_64"
+triple_musl = "x86_64-unknown-linux-musl"
+triple_gnu = "x86_64-unknown-linux-gnu"
+zig_gnu = "x86_64-linux-gnu.2.28"
+"#;
+        let inventory: crate::inventory::Inventory = toml_edit::de::from_str(inv_text).unwrap();
+
+        let committed_bytes = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .unwrap()
+                .join("models/assets/ced/ced-v0.1.0-lib-linux-cpu-x64.tar.gz"),
+        )
+        .expect("read committed CED tar.gz");
+
+        let fetch_count = std::cell::Cell::new(0);
+        let mut fetcher = |url: &str| {
+            fetch_count.set(fetch_count.get() + 1);
+            assert_eq!(url, row.upstream_url);
+            Ok(committed_bytes.clone())
+        };
+
+        acquire_catalog_inputs(repo, "linux-x86_64", &inventory, &mut fetcher).unwrap();
+        assert_eq!(fetch_count.get(), 1);
+
+        let cached_file = repo
+            .join("target/catalog-input-cache/ced-engine")
+            .join(row.version)
+            .join("ced-v0.1.0-lib-linux-cpu-x64.tar.gz");
+        assert!(cached_file.is_file());
+
+        // Second call should skip fetcher because cache matches
+        acquire_catalog_inputs(repo, "linux-x86_64", &inventory, &mut fetcher).unwrap();
+        assert_eq!(fetch_count.get(), 1);
+
+        // Cache replacement on valid download when cache is mismatched
+        std::fs::write(&cached_file, b"corrupted cache").unwrap();
+        acquire_catalog_inputs(repo, "linux-x86_64", &inventory, &mut fetcher).unwrap();
+        assert_eq!(fetch_count.get(), 2);
+        assert_eq!(std::fs::read(&cached_file).unwrap(), committed_bytes);
+
+        // Failed verification deletes .part and leaves mismatched cache without overwriting
+        std::fs::write(&cached_file, b"corrupted cache").unwrap();
+        let part_file = cached_file
+            .parent()
+            .unwrap()
+            .join(".ced-v0.1.0-lib-linux-cpu-x64.tar.gz.part");
+        let mut bad_fetcher = |_url: &str| Ok(vec![1, 2, 3]);
+        assert!(
+            acquire_catalog_inputs(repo, "linux-x86_64", &inventory, &mut bad_fetcher).is_err()
+        );
+        assert!(!part_file.exists());
+        assert_eq!(std::fs::read(&cached_file).unwrap(), b"corrupted cache");
+
+        // Zero calls for committed core/distribution/inventory.toml
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let committed_inv =
+            crate::inventory::load_inventory(&repo_root.join("core/distribution/inventory.toml"))
+                .unwrap();
+        let committed_fetch_count = std::cell::Cell::new(0);
+        let mut committed_fetcher = |_url: &str| {
+            committed_fetch_count.set(committed_fetch_count.get() + 1);
+            Ok(vec![])
+        };
+        acquire_catalog_inputs(repo, "linux-x86_64", &committed_inv, &mut committed_fetcher)
+            .unwrap();
+        assert_eq!(committed_fetch_count.get(), 0);
     }
 }

@@ -27,6 +27,9 @@ use solstone_core_thinking::confidential::{
 };
 use solstone_core_thinking::providers::{ManagedKeyValidator, UnavailableValidator};
 
+use solstone_core_backup_web::require_https_portal_url;
+use solstone_core_brain::derive_active_brain_lane;
+
 use crate::{JournalRoot, asset_response, not_found_response};
 
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
@@ -38,7 +41,7 @@ const GENERIC_THINKING_ERROR: &str =
 const NOT_VERIFIED_GUIDANCE: &str =
     "Hardware attestation is not yet verified. Thinking stays blocked until verification finishes.";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PollOutcome {
     Continue,
     Failed {
@@ -46,6 +49,12 @@ pub enum PollOutcome {
         detail: Option<String>,
     },
     EarlyAccess,
+    NeedsSubscription {
+        subscribe_url: String,
+    },
+    JournalLimit {
+        subscribe_url: String,
+    },
     Success(serde_json::Map<String, Value>),
 }
 
@@ -53,17 +62,204 @@ pub trait ConfidentialPoll: Send + Sync {
     fn poll(&self, base_url: &str, nonce: &str) -> PollOutcome;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessSnapshot {
+    pub state: String,
+    pub subscribe_url: Option<String>,
+}
+
+impl AccessSnapshot {
+    pub fn active() -> Self {
+        Self {
+            state: "active".to_owned(),
+            subscribe_url: None,
+        }
+    }
+
+    pub fn ended(url: String) -> Self {
+        Self {
+            state: "ended".to_owned(),
+            subscribe_url: Some(url),
+        }
+    }
+
+    pub fn credential_unknown() -> Self {
+        Self {
+            state: "credential_unknown".to_owned(),
+            subscribe_url: None,
+        }
+    }
+
+    pub fn unknown() -> Self {
+        Self {
+            state: "unknown".to_owned(),
+            subscribe_url: None,
+        }
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "state": self.state,
+            "subscribe_url": self.subscribe_url,
+        })
+    }
+}
+
+pub trait ConfidentialAccess: Send + Sync {
+    fn fetch(&self, portal_base: &str, credential: &str) -> AccessSnapshot;
+}
+
+#[derive(Clone)]
+pub struct AccessClientHandle(pub Arc<dyn ConfidentialAccess>);
+
+pub fn parse_spp_access(status: u16, body: &str, portal_base: &str) -> AccessSnapshot {
+    match status {
+        200 => {
+            let Ok(val) = serde_json::from_str::<Value>(body) else {
+                return AccessSnapshot::unknown();
+            };
+            let Some(obj) = val.as_object() else {
+                return AccessSnapshot::unknown();
+            };
+            match obj.get("state").and_then(Value::as_str) {
+                Some("active") => AccessSnapshot::active(),
+                Some("ended") => {
+                    let Some(subscribe_url) = obj.get("subscribe_url").and_then(Value::as_str)
+                    else {
+                        return AccessSnapshot::unknown();
+                    };
+                    match require_https_portal_url(subscribe_url, portal_base) {
+                        Ok(()) => AccessSnapshot::ended(subscribe_url.to_owned()),
+                        Err(_) => AccessSnapshot::unknown(),
+                    }
+                }
+                _ => AccessSnapshot::unknown(),
+            }
+        }
+        401 => AccessSnapshot::credential_unknown(),
+        _ => AccessSnapshot::unknown(),
+    }
+}
+
+#[derive(Default)]
+struct ProductionAccess;
+
+impl ConfidentialAccess for ProductionAccess {
+    fn fetch(&self, portal_base: &str, credential: &str) -> AccessSnapshot {
+        let portal_base = portal_base.trim_end_matches('/');
+        let url = format!("{portal_base}/spp/access");
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(Duration::from_secs(10)))
+            .timeout_recv_response(Some(Duration::from_secs(10)))
+            .timeout_recv_body(Some(Duration::from_secs(10)))
+            .timeout_global(Some(Duration::from_secs(10)))
+            .build();
+        let agent = ureq::Agent::new_with_config(config);
+        let response = match agent
+            .get(&url)
+            .header("X-Sol-Entitlement", credential)
+            .header("Connection", "close")
+            .call()
+        {
+            Ok(response) => response,
+            Err(_) => return AccessSnapshot::unknown(),
+        };
+        let status = response.status().as_u16();
+        let body = response.into_body().read_to_string().unwrap_or_default();
+        parse_spp_access(status, &body, portal_base)
+    }
+}
+
 #[derive(Clone)]
 pub struct ConfidentialRuntimeOverride {
     pub portal_base_url: String,
     pub poll: Arc<dyn ConfidentialPoll>,
     pub before_attempt: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub now: Arc<dyn Fn() -> Instant + Send + Sync>,
+    pub sleep: Arc<dyn Fn(Duration) + Send + Sync>,
+    pub access: Option<Arc<dyn ConfidentialAccess + Send + Sync>>,
 }
 
 #[derive(Clone)]
 struct ConfidentialRuntime {
     portal_base_url: String,
     poll: Arc<dyn ConfidentialPoll>,
+    access: Arc<dyn ConfidentialAccess + Send + Sync>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedAccess {
+    snapshot: AccessSnapshot,
+    fetched_at: Instant,
+}
+
+#[derive(Default)]
+pub struct AccessCache {
+    cached: Option<CachedAccess>,
+    in_flight: bool,
+}
+
+fn get_or_refresh_access(
+    config: &Map<String, Value>,
+    portal_base_url: &str,
+    client: Arc<dyn ConfidentialAccess>,
+    now: Arc<dyn Fn() -> Instant + Send + Sync>,
+    cache: &Arc<std::sync::Mutex<AccessCache>>,
+) -> AccessSnapshot {
+    let credential = match solstone_core_local::resolve_local_endpoint(config) {
+        solstone_core_local::LocalEndpointResolution::Byo(byo) => byo.credential,
+        _ => None,
+    };
+
+    let Some(credential) = credential else {
+        return AccessSnapshot::unknown();
+    };
+
+    let mut cache_guard = cache.lock().expect("access cache lock is not poisoned");
+    let now_time = now();
+
+    let (result_snapshot, should_fetch) = match &cache_guard.cached {
+        Some(cached) => {
+            let age = now_time.saturating_duration_since(cached.fetched_at);
+            if age < Duration::from_secs(60) {
+                (cached.snapshot.clone(), false)
+            } else {
+                let should = !cache_guard.in_flight;
+                (cached.snapshot.clone(), should)
+            }
+        }
+        None => {
+            let should = !cache_guard.in_flight;
+            (AccessSnapshot::unknown(), should)
+        }
+    };
+
+    if should_fetch {
+        cache_guard.in_flight = true;
+    }
+
+    if should_fetch {
+        let cache_clone = cache.clone();
+        let portal_base = portal_base_url.to_owned();
+        let cred = credential.to_owned();
+        let now_fn = now.clone();
+        tokio::task::spawn(async move {
+            let snapshot = tokio::task::spawn_blocking(move || client.fetch(&portal_base, &cred))
+                .await
+                .unwrap_or_else(|_| AccessSnapshot::unknown());
+            let mut guard = cache_clone
+                .lock()
+                .expect("access cache lock is not poisoned");
+            guard.cached = Some(CachedAccess {
+                snapshot,
+                fetched_at: now_fn(),
+            });
+            guard.in_flight = false;
+        });
+    }
+
+    result_snapshot
 }
 
 struct PortalPoll;
@@ -93,7 +289,7 @@ impl ConfidentialPoll for PortalPoll {
                 token: "consent_link_expired".to_owned(),
                 detail: None,
             },
-            200 => poll_success_body(response.into_body().read_to_string()),
+            200 => poll_success_body(response.into_body().read_to_string(), base_url),
             _ => PollOutcome::Failed {
                 token: "unexpected_payload".to_owned(),
                 detail: None,
@@ -112,7 +308,7 @@ fn classify_portal_call_error(error: ureq::Error) -> PollOutcome {
     }
 }
 
-fn poll_success_body(body: Result<String, ureq::Error>) -> PollOutcome {
+fn poll_success_body(body: Result<String, ureq::Error>, portal_base: &str) -> PollOutcome {
     let body = match body {
         Ok(body) => body,
         Err(ureq::Error::Timeout(_)) => return PollOutcome::Continue,
@@ -123,18 +319,64 @@ fn poll_success_body(body: Result<String, ureq::Error>) -> PollOutcome {
             };
         }
     };
-    match serde_json::from_str::<Value>(&body)
+    let Some(payload) = serde_json::from_str::<Value>(&body)
         .ok()
         .and_then(|value| value.as_object().cloned())
-    {
-        Some(payload) if payload.get("state").and_then(Value::as_str) == Some("early_access") => {
-            PollOutcome::EarlyAccess
-        }
-        Some(payload) => PollOutcome::Success(payload),
-        None => PollOutcome::Failed {
+    else {
+        return PollOutcome::Failed {
             token: "unexpected_payload".to_owned(),
             detail: None,
-        },
+        };
+    };
+    match payload.get("state").and_then(Value::as_str) {
+        Some("early_access") => PollOutcome::EarlyAccess,
+        Some("needs_subscription") => {
+            if payload.len() != 2 {
+                return PollOutcome::Failed {
+                    token: "unexpected_payload".to_owned(),
+                    detail: None,
+                };
+            }
+            let Some(subscribe_url) = payload.get("subscribe_url").and_then(Value::as_str) else {
+                return PollOutcome::Failed {
+                    token: "unexpected_payload".to_owned(),
+                    detail: None,
+                };
+            };
+            match require_https_portal_url(subscribe_url, portal_base) {
+                Ok(()) => PollOutcome::NeedsSubscription {
+                    subscribe_url: subscribe_url.to_owned(),
+                },
+                Err(_) => PollOutcome::Failed {
+                    token: "unexpected_payload".to_owned(),
+                    detail: None,
+                },
+            }
+        }
+        Some("journal_limit") => {
+            if payload.len() != 2 {
+                return PollOutcome::Failed {
+                    token: "unexpected_payload".to_owned(),
+                    detail: None,
+                };
+            }
+            let Some(subscribe_url) = payload.get("subscribe_url").and_then(Value::as_str) else {
+                return PollOutcome::Failed {
+                    token: "unexpected_payload".to_owned(),
+                    detail: None,
+                };
+            };
+            match require_https_portal_url(subscribe_url, portal_base) {
+                Ok(()) => PollOutcome::JournalLimit {
+                    subscribe_url: subscribe_url.to_owned(),
+                },
+                Err(_) => PollOutcome::Failed {
+                    token: "unexpected_payload".to_owned(),
+                    detail: None,
+                },
+            }
+        }
+        _ => PollOutcome::Success(payload),
     }
 }
 
@@ -145,6 +387,7 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
             .trim_end_matches('/')
             .to_owned(),
         poll: Arc::new(PortalPoll),
+        access: Arc::new(ProductionAccess),
     };
     Router::new()
         .route("/app/thinking/", get(shell))
@@ -267,6 +510,9 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         )))
         .layer(Extension(Arc::new(OperationRegistry::default())))
         .layer(Extension(confidential_runtime))
+        .layer(Extension(Arc::new(std::sync::Mutex::new(
+            AccessCache::default(),
+        ))))
 }
 
 async fn shell() -> Response {
@@ -308,12 +554,56 @@ async fn background_not_found() -> Response {
 async fn state(
     Extension(journal): Extension<Arc<JournalRoot>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
+    Extension(runtime): Extension<ConfidentialRuntime>,
+    Extension(access_cache): Extension<Arc<std::sync::Mutex<AccessCache>>>,
+    override_runtime: Option<Extension<ConfidentialRuntimeOverride>>,
+    access_client: Option<Extension<AccessClientHandle>>,
 ) -> Response {
     let journal = journal.as_ref();
     match config(&journal.0) {
-        Ok(config) => json_response(
-            json!({"providers":solstone_core_thinking::providers::payload(&journal.0,&config,solstone_core_thinking::local::default_model(),operations.operation(SERVICE_SPP)),"keys":solstone_core_thinking::providers::keys(&config),"copy":solstone_core_thinking_copy::thinking_copy_payload()}),
-        ),
+        Ok(config) => {
+            let mut state_json = json!({
+                "providers": solstone_core_thinking::providers::payload(
+                    &journal.0,
+                    &config,
+                    solstone_core_thinking::local::default_model(),
+                    operations.operation(SERVICE_SPP),
+                ),
+                "keys": solstone_core_thinking::providers::keys(&config),
+                "copy": solstone_core_thinking_copy::thinking_copy_payload(),
+            });
+            if derive_active_brain_lane(&config).lane.as_deref() == Some("spp") {
+                let access_snapshot = match override_runtime {
+                    Some(Extension(val)) => match val.access {
+                        Some(client) => get_or_refresh_access(
+                            &config,
+                            val.portal_base_url.trim_end_matches('/'),
+                            client,
+                            val.now,
+                            &access_cache,
+                        ),
+                        None => AccessSnapshot::unknown(),
+                    },
+                    None => {
+                        let client = match access_client {
+                            Some(Extension(handle)) => handle.0,
+                            None => runtime.access,
+                        };
+                        get_or_refresh_access(
+                            &config,
+                            &runtime.portal_base_url,
+                            client,
+                            Arc::new(Instant::now),
+                            &access_cache,
+                        )
+                    }
+                };
+                if let Some(obj) = state_json.as_object_mut() {
+                    obj.insert("access".to_owned(), access_snapshot.to_json());
+                }
+            }
+            json_response(state_json)
+        }
         Err(response) => *response,
     }
 }
@@ -575,14 +865,29 @@ async fn confidential_enable(
     if confidential_configured(&config) {
         return invalid_state("confidential processing is already set up.");
     }
-    let (portal_base_url, poll, before_attempt) = match override_runtime {
+    let (portal_base_url, poll, before_attempt, now, sleep) = match override_runtime {
         Some(Extension(value)) => (
             value.portal_base_url.trim_end_matches('/').to_owned(),
             value.poll,
             value.before_attempt,
+            value.now,
+            Some(value.sleep),
         ),
-        None => (runtime.portal_base_url, runtime.poll, None),
+        None => (
+            runtime.portal_base_url,
+            runtime.poll,
+            None,
+            Arc::new(Instant::now) as Arc<dyn Fn() -> Instant + Send + Sync>,
+            None,
+        ),
     };
+    // A journal that has never paired a device or turned on another service has no identity
+    // yet; make it here, as the other turn-ons do, before signing the consent request.
+    if solstone_core_sol_link::service_identity::load_or_create_service_identity(&journal.0)
+        .is_err()
+    {
+        return confidential_enable_failed();
+    }
     let committed = match solstone_core_sol_link::committed::load_committed_identity(&journal.0) {
         Ok(committed) => committed,
         Err(_) => return confidential_enable_failed(),
@@ -642,6 +947,8 @@ async fn confidential_enable(
         portal_base_url,
         nonce,
         poll,
+        now,
+        sleep,
     );
     json_response_with_status(
         StatusCode::ACCEPTED,
@@ -725,6 +1032,7 @@ fn confidential_instance_id(journal: &Path) -> Option<String> {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_confidential_handoff(
     journal: std::path::PathBuf,
     operations: Arc<OperationRegistry>,
@@ -732,13 +1040,16 @@ fn spawn_confidential_handoff(
     portal_base_url: String,
     nonce: String,
     poll: Arc<dyn ConfidentialPoll>,
+    now: Arc<dyn Fn() -> Instant + Send + Sync>,
+    sleep: Option<Arc<dyn Fn(Duration) + Send + Sync>>,
 ) {
     let worker_operations = operations.clone();
     let worker = tokio::spawn(async move {
         if !worker_operations.mark_waiting(SERVICE_SPP, handle) {
             return true;
         }
-        let deadline = Instant::now() + Duration::from_secs(15 * 60);
+        let mut deadline = now() + Duration::from_secs(15 * 60);
+        let mut first_subscription = true;
         let result = loop {
             // Turning confidential processing off ends this turn-on: stop polling.
             if !worker_operations.is_open(SERVICE_SPP, handle) {
@@ -750,8 +1061,12 @@ fn spawn_confidential_handoff(
             let poll_result =
                 tokio::task::spawn_blocking(move || poll.poll(&base_url, &poll_nonce)).await;
             match poll_result {
-                Ok(PollOutcome::Continue) if Instant::now() < deadline => {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                Ok(PollOutcome::Continue) if now() < deadline => {
+                    if let Some(s) = &sleep {
+                        s(Duration::from_secs(1));
+                    } else {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
                     continue;
                 }
                 Ok(PollOutcome::Continue) => break handoff_error("consent_timeout", None),
@@ -762,6 +1077,32 @@ fn spawn_confidential_handoff(
                         guidance: None,
                         retryable: false,
                         subscribe_url: None,
+                    };
+                }
+                Ok(PollOutcome::NeedsSubscription { subscribe_url }) => {
+                    if first_subscription {
+                        deadline = now() + Duration::from_secs(60 * 60);
+                        first_subscription = false;
+                    }
+                    if now() >= deadline {
+                        break handoff_error("consent_timeout", None);
+                    }
+                    if !worker_operations.note_subscribing(SERVICE_SPP, handle, subscribe_url) {
+                        return true;
+                    }
+                    if let Some(s) = &sleep {
+                        s(Duration::from_secs(5));
+                    } else {
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                    continue;
+                }
+                Ok(PollOutcome::JournalLimit { subscribe_url }) => {
+                    break HandoffResult {
+                        phase: Phase::JournalLimit,
+                        guidance: None,
+                        retryable: false,
+                        subscribe_url: Some(subscribe_url),
                     };
                 }
                 Ok(PollOutcome::Success(payload)) => {
@@ -1731,6 +2072,7 @@ fn chatgpt_credential_error_response(
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::Arc;
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
@@ -1774,13 +2116,12 @@ mod tests {
             body["error"],
             solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM
         );
-        assert_eq!(
+        assert!(
             super::not_offered_refusal(
                 solstone_core_thinking::confidential::offered_on_this_platform()
             )
-            .is_some(),
-            cfg!(windows),
-            "only a Windows journal refuses"
+            .is_none(),
+            "every shipped journal offers it"
         );
     }
 
@@ -1850,11 +2191,17 @@ mod tests {
     #[test]
     fn portal_body_timeout_keeps_polling() {
         assert!(matches!(
-            poll_success_body(Err(ureq::Error::Timeout(ureq::Timeout::RecvBody))),
+            poll_success_body(
+                Err(ureq::Error::Timeout(ureq::Timeout::RecvBody)),
+                super::DEFAULT_PORTAL_URL
+            ),
             PollOutcome::Continue
         ));
         assert!(matches!(
-            poll_success_body(Err(ureq::Error::HostNotFound)),
+            poll_success_body(
+                Err(ureq::Error::HostNotFound),
+                super::DEFAULT_PORTAL_URL
+            ),
             PollOutcome::Failed {
                 token,
                 ..
@@ -2314,6 +2661,731 @@ mod tests {
         let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let body: Value = serde_json::from_slice(&bytes).unwrap();
         assert!(body["revoked"].is_boolean());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    struct ManualPoll<F>(F);
+    impl<F: Fn(&str, &str) -> PollOutcome + Send + Sync> super::ConfidentialPoll for ManualPoll<F> {
+        fn poll(&self, base_url: &str, nonce: &str) -> PollOutcome {
+            (self.0)(base_url, nonce)
+        }
+    }
+
+    fn sample_handoff_payload() -> serde_json::Map<String, Value> {
+        json!({
+            "endpoint_url": "https://handoff.example/v1",
+            "served_model_id": "handoff-model",
+            "credential": "handoff-credential",
+            "account_id": "account",
+            "created_at": "2026-01-01T00:00:00+00:00",
+        })
+        .as_object()
+        .unwrap()
+        .clone()
+    }
+
+    #[test]
+    fn poll_success_body_validation_and_url_rules() {
+        let portal = "https://services.solstone.app";
+        // Extra key rejected
+        assert_eq!(
+            super::poll_success_body(
+                Ok(json!({
+                    "state": "needs_subscription",
+                    "subscribe_url": "https://services.solstone.app/sub",
+                    "extra": 1
+                })
+                .to_string()),
+                portal
+            ),
+            PollOutcome::Failed {
+                token: "unexpected_payload".to_owned(),
+                detail: None
+            }
+        );
+        // Evil subdomain / domain rejected
+        assert_eq!(
+            super::poll_success_body(
+                Ok(json!({
+                    "state": "needs_subscription",
+                    "subscribe_url": "https://services.solstone.app.evil.example/x"
+                })
+                .to_string()),
+                portal
+            ),
+            PollOutcome::Failed {
+                token: "unexpected_payload".to_owned(),
+                detail: None
+            }
+        );
+        // Userinfo rejected
+        assert_eq!(
+            super::poll_success_body(
+                Ok(json!({
+                    "state": "needs_subscription",
+                    "subscribe_url": "https://user@services.solstone.app/"
+                })
+                .to_string()),
+                portal
+            ),
+            PollOutcome::Failed {
+                token: "unexpected_payload".to_owned(),
+                detail: None
+            }
+        );
+        // Case-insensitive portal url accepted
+        assert_eq!(
+            super::poll_success_body(
+                Ok(json!({
+                    "state": "needs_subscription",
+                    "subscribe_url": "https://SERVICES.solstone.app/confidential-processing"
+                })
+                .to_string()),
+                portal
+            ),
+            PollOutcome::NeedsSubscription {
+                subscribe_url: "https://SERVICES.solstone.app/confidential-processing".to_owned()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn confidential_subscribing_expiry_moves_clock_and_expires_without_credential() {
+        let root = temporary_journal("subscribing-expiry");
+        let operations = Arc::new(super::OperationRegistry::default());
+        let (handle, _) = operations
+            .start_operation(
+                super::SERVICE_SPP,
+                "enable",
+                Some("https://portal/init".into()),
+            )
+            .unwrap();
+
+        let t0 = std::time::Instant::now();
+        let clock = Arc::new(std::sync::Mutex::new(t0));
+        let clock_clone = clock.clone();
+        let now_fn = {
+            let c = clock.clone();
+            Arc::new(move || *c.lock().unwrap())
+        };
+
+        let poll_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let pc = poll_count.clone();
+        let poll = Arc::new(ManualPoll(move |_base: &str, _nonce: &str| {
+            let count = pc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                // First sight moves clock to start + 14m59s
+                *clock_clone.lock().unwrap() = t0 + std::time::Duration::from_secs(14 * 60 + 59);
+                PollOutcome::NeedsSubscription {
+                    subscribe_url: "https://services.solstone.app/sub".to_owned(),
+                }
+            } else {
+                // Later poll moves it to first-sight + 60min
+                *clock_clone.lock().unwrap() =
+                    t0 + std::time::Duration::from_secs(14 * 60 + 59 + 60 * 60);
+                PollOutcome::NeedsSubscription {
+                    subscribe_url: "https://services.solstone.app/sub".to_owned(),
+                }
+            }
+        }));
+
+        super::spawn_confidential_handoff(
+            root.clone(),
+            operations.clone(),
+            handle,
+            "https://services.solstone.app".to_owned(),
+            "nonce-123".to_owned(),
+            poll,
+            now_fn,
+            Some(Arc::new(|_| ())),
+        );
+
+        let mut ended = false;
+        for _ in 0..5000 {
+            if !operations.is_open(super::SERVICE_SPP, handle) {
+                ended = true;
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            ended,
+            "operation never ended; phase: {:?}",
+            operations.operation(super::SERVICE_SPP).get("phase")
+        );
+
+        let op = super::remap_operation(operations.operation(super::SERVICE_SPP));
+        assert_eq!(op["phase"], "repair_needed");
+
+        let config_bytes = fs::read(root.join("config/journal.json")).unwrap();
+        let config: Value = serde_json::from_slice(&config_bytes).unwrap();
+        assert!(
+            config
+                .get("providers")
+                .and_then(|p| p.get("local"))
+                .and_then(|l| l.get("credential"))
+                .is_none()
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn a_journal_with_no_identity_yet_can_start_turning_confidential_processing_on() {
+        if !solstone_core_thinking::confidential::offered_on_this_platform() {
+            return;
+        }
+        let root = temporary_journal("fresh-identity");
+        assert!(solstone_core_sol_link::committed::load_committed_identity(&root).is_err());
+        let app = crate::router(root.clone()).layer(axum::extract::Extension(
+            super::ConfidentialRuntimeOverride {
+                portal_base_url: "https://services.solstone.app".to_owned(),
+                poll: Arc::new(ManualPoll(|_base: &str, _nonce: &str| {
+                    PollOutcome::Failed {
+                        token: "consent_link_expired".to_owned(),
+                        detail: None,
+                    }
+                })),
+                before_attempt: None,
+                now: Arc::new(std::time::Instant::now),
+                sleep: Arc::new(|_| ()),
+                access: None,
+            },
+        ));
+        let enable = app
+            .oneshot(
+                Request::post("/app/thinking/api/confidential/enable")
+                    .header("content-type", "application/json")
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+        assert_eq!(enable.status(), StatusCode::ACCEPTED);
+        let committed = solstone_core_sol_link::committed::load_committed_identity(&root)
+            .expect("turning it on gives the journal its identity");
+        let body: Value = serde_json::from_slice(
+            &to_bytes(enable.into_body(), usize::MAX)
+                .await
+                .expect("body reads"),
+        )
+        .expect("response is JSON");
+        let portal_url = body["operation"]["portal_url"].as_str().unwrap_or_default();
+        assert!(portal_url.contains(committed.instance_id()), "{portal_url}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn confidential_subscribing_then_approval_provisions_fields() {
+        let root = temporary_journal("subscribing-approval");
+        super::record_confidential_attempt(&root, "nonce-appr").unwrap();
+
+        let operations = Arc::new(super::OperationRegistry::default());
+        let (handle, _) = operations
+            .start_operation(
+                super::SERVICE_SPP,
+                "enable",
+                Some("https://portal/init".into()),
+            )
+            .unwrap();
+
+        let pc = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let poll = Arc::new(ManualPoll(move |_base: &str, _nonce: &str| {
+            let count = pc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                PollOutcome::NeedsSubscription {
+                    subscribe_url: "https://services.solstone.app/sub".to_owned(),
+                }
+            } else {
+                PollOutcome::Success(sample_handoff_payload())
+            }
+        }));
+
+        super::spawn_confidential_handoff(
+            root.clone(),
+            operations.clone(),
+            handle,
+            "https://services.solstone.app".to_owned(),
+            "nonce-appr".to_owned(),
+            poll,
+            Arc::new(std::time::Instant::now),
+            Some(Arc::new(|_| ())),
+        );
+
+        let mut ended = false;
+        for _ in 0..5000 {
+            if !operations.is_open(super::SERVICE_SPP, handle) {
+                ended = true;
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            ended,
+            "operation never ended; phase: {:?}",
+            operations.operation(super::SERVICE_SPP).get("phase")
+        );
+
+        let op = super::remap_operation(operations.operation(super::SERVICE_SPP));
+        assert_eq!(op["phase"], "not_verified");
+
+        let config_bytes = fs::read(root.join("config/journal.json")).unwrap();
+        let config: Value = serde_json::from_slice(&config_bytes).unwrap();
+        assert_eq!(
+            config["providers"]["local"]["credential"],
+            "handoff-credential"
+        );
+        assert!(config["services"].get("confidential").is_some());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn confidential_subscribing_then_early_access_or_expired_writes_no_credential() {
+        let root = temporary_journal("subscribing-no-cred");
+
+        // Case A: early_access
+        let operations = Arc::new(super::OperationRegistry::default());
+        let (handle, _) = operations
+            .start_operation(super::SERVICE_SPP, "enable", None)
+            .unwrap();
+        let pc = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let poll = Arc::new(ManualPoll(move |_base: &str, _nonce: &str| {
+            let count = pc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                PollOutcome::NeedsSubscription {
+                    subscribe_url: "https://services.solstone.app/sub".to_owned(),
+                }
+            } else {
+                PollOutcome::EarlyAccess
+            }
+        }));
+        super::spawn_confidential_handoff(
+            root.clone(),
+            operations.clone(),
+            handle,
+            "https://services.solstone.app".to_owned(),
+            "nonce-a".to_owned(),
+            poll,
+            Arc::new(std::time::Instant::now),
+            Some(Arc::new(|_| ())),
+        );
+        let mut ended = false;
+        for _ in 0..5000 {
+            if !operations.is_open(super::SERVICE_SPP, handle) {
+                ended = true;
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            ended,
+            "operation never ended; phase: {:?}",
+            operations.operation(super::SERVICE_SPP).get("phase")
+        );
+        let op = super::remap_operation(operations.operation(super::SERVICE_SPP));
+        assert_eq!(op["phase"], "early_access");
+        let config_bytes = fs::read(root.join("config/journal.json")).unwrap();
+        let config: Value = serde_json::from_slice(&config_bytes).unwrap();
+        assert!(config.get("services").is_none());
+
+        // Case B: 410 (consent_link_expired)
+        let operations = Arc::new(super::OperationRegistry::default());
+        let (handle, _) = operations
+            .start_operation(super::SERVICE_SPP, "enable", None)
+            .unwrap();
+        let pc = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let poll = Arc::new(ManualPoll(move |_base: &str, _nonce: &str| {
+            let count = pc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                PollOutcome::NeedsSubscription {
+                    subscribe_url: "https://services.solstone.app/sub".to_owned(),
+                }
+            } else {
+                PollOutcome::Failed {
+                    token: "consent_link_expired".to_owned(),
+                    detail: None,
+                }
+            }
+        }));
+        super::spawn_confidential_handoff(
+            root.clone(),
+            operations.clone(),
+            handle,
+            "https://services.solstone.app".to_owned(),
+            "nonce-b".to_owned(),
+            poll,
+            Arc::new(std::time::Instant::now),
+            Some(Arc::new(|_| ())),
+        );
+        let mut ended = false;
+        for _ in 0..5000 {
+            if !operations.is_open(super::SERVICE_SPP, handle) {
+                ended = true;
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            ended,
+            "operation never ended; phase: {:?}",
+            operations.operation(super::SERVICE_SPP).get("phase")
+        );
+        let op = super::remap_operation(operations.operation(super::SERVICE_SPP));
+        assert_eq!(op["phase"], "repair_needed");
+        let config_bytes = fs::read(root.join("config/journal.json")).unwrap();
+        let config: Value = serde_json::from_slice(&config_bytes).unwrap();
+        assert!(config.get("services").is_none());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn confidential_journal_limit_finishes_with_subscribe_url_and_writes_no_credential() {
+        let root = temporary_journal("journal-limit");
+        let operations = Arc::new(super::OperationRegistry::default());
+        let (handle, _) = operations
+            .start_operation(super::SERVICE_SPP, "enable", None)
+            .unwrap();
+
+        let poll = Arc::new(ManualPoll(|_base: &str, _nonce: &str| {
+            PollOutcome::JournalLimit {
+                subscribe_url: "https://services.solstone.app/limit".to_owned(),
+            }
+        }));
+
+        super::spawn_confidential_handoff(
+            root.clone(),
+            operations.clone(),
+            handle,
+            "https://services.solstone.app".to_owned(),
+            "nonce-limit".to_owned(),
+            poll,
+            Arc::new(std::time::Instant::now),
+            Some(Arc::new(|_| ())),
+        );
+
+        let mut ended = false;
+        for _ in 0..5000 {
+            if !operations.is_open(super::SERVICE_SPP, handle) {
+                ended = true;
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            ended,
+            "operation never ended; phase: {:?}",
+            operations.operation(super::SERVICE_SPP).get("phase")
+        );
+
+        let op = operations.operation(super::SERVICE_SPP);
+        assert_eq!(op["phase"], "journal_limit");
+        assert_eq!(op["subscribe_url"], "https://services.solstone.app/limit");
+
+        let config_bytes = fs::read(root.join("config/journal.json")).unwrap();
+        let config: Value = serde_json::from_slice(&config_bytes).unwrap();
+        assert!(config.get("services").is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn confidential_disable_during_subscribing_stops_polling_and_writes_no_credential() {
+        let root = temporary_journal("disable-subscribing");
+        let operations = Arc::new(super::OperationRegistry::default());
+        let (handle, _) = operations
+            .start_operation(super::SERVICE_SPP, "enable", None)
+            .unwrap();
+
+        let ops_clone = operations.clone();
+        let poll_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let pc = poll_count.clone();
+        let poll = Arc::new(ManualPoll(move |_base: &str, _nonce: &str| {
+            let count = pc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                // Cancel operation during subscribing
+                ops_clone.cancel(
+                    super::SERVICE_SPP,
+                    super::handoff_result(super::HandoffCode::Revoked),
+                );
+                PollOutcome::NeedsSubscription {
+                    subscribe_url: "https://services.solstone.app/sub".to_owned(),
+                }
+            } else {
+                panic!("should not poll again after disable/cancel");
+            }
+        }));
+
+        super::spawn_confidential_handoff(
+            root.clone(),
+            operations.clone(),
+            handle,
+            "https://services.solstone.app".to_owned(),
+            "nonce-dis".to_owned(),
+            poll,
+            Arc::new(std::time::Instant::now),
+            Some(Arc::new(|_| ())),
+        );
+
+        let mut ended = false;
+        for _ in 0..5000 {
+            if !operations.is_open(super::SERVICE_SPP, handle) {
+                ended = true;
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            ended,
+            "operation never ended; phase: {:?}",
+            operations.operation(super::SERVICE_SPP).get("phase")
+        );
+
+        let config_bytes = fs::read(root.join("config/journal.json")).unwrap();
+        let config: Value = serde_json::from_slice(&config_bytes).unwrap();
+        assert!(config.get("services").is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    struct GatedAccess {
+        gate_rx: std::sync::Mutex<std::sync::mpsc::Receiver<super::AccessSnapshot>>,
+        call_count: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl super::ConfidentialAccess for GatedAccess {
+        fn fetch(&self, _portal_base: &str, _credential: &str) -> super::AccessSnapshot {
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let rx = self.gate_rx.lock().unwrap();
+            rx.recv()
+                .unwrap_or_else(|_| super::AccessSnapshot::unknown())
+        }
+    }
+
+    #[tokio::test]
+    async fn confidential_access_cache_with_gated_client() {
+        let root = temporary_journal("access-cache-gate");
+        fs::write(
+            root.join("config/journal.json"),
+            json!({
+                "setup": {"completed_at": 1767225600},
+                "services": {
+                    "confidential": {
+                        "device": "abc",
+                        "endpoint_url": "https://attested.example",
+                        "served_model_id": "served-model",
+                        "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a",
+                    }
+                },
+                "providers": {
+                    "active": {"provider": "local", "model": "served-model"},
+                    "local": {
+                        "endpoint_url": "https://attested.example",
+                        "served_model_id": "served-model",
+                        "credential": "endpoint-credential",
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let client = Arc::new(GatedAccess {
+            gate_rx: std::sync::Mutex::new(rx),
+            call_count: call_count.clone(),
+        });
+        let clock = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+        let clock_fn = {
+            let c = clock.clone();
+            Arc::new(move || *c.lock().unwrap())
+        };
+
+        let app = crate::router(root.clone()).layer(axum::extract::Extension(
+            super::ConfidentialRuntimeOverride {
+                portal_base_url: "https://services.solstone.app".to_owned(),
+                poll: Arc::new(ManualPoll(|_base: &str, _nonce: &str| {
+                    PollOutcome::Failed {
+                        token: "unexpected_payload".to_owned(),
+                        detail: None,
+                    }
+                })),
+                before_attempt: None,
+                now: clock_fn.clone(),
+                sleep: Arc::new(|_| ()),
+                access: Some(client),
+            },
+        ));
+
+        // 1. Initial state read before gate opens: returns unknown
+        let req = Request::builder()
+            .method("GET")
+            .uri("/app/thinking/api/state")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            body["access"],
+            json!({
+                "state": "unknown",
+                "subscribe_url": Value::Null
+            })
+        );
+
+        // 2. Open the gate with ended status and valid subscribe URL
+        tx.send(super::AccessSnapshot::ended(
+            "https://services.solstone.app/confidential-processing".to_owned(),
+        ))
+        .unwrap();
+
+        // 3. Later state read: shows ended and that URL
+        let mut body: Value = Value::Null;
+        let mut ended = false;
+        for _ in 0..5000 {
+            tokio::task::yield_now().await;
+            let req = Request::builder()
+                .method("GET")
+                .uri("/app/thinking/api/state")
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+            body = serde_json::from_slice(&bytes).unwrap();
+            if body["access"]["state"] == "ended" {
+                ended = true;
+                break;
+            }
+        }
+        assert!(ended, "state never transitioned to ended; body: {:?}", body);
+        assert_eq!(
+            body["access"],
+            json!({
+                "state": "ended",
+                "subscribe_url": "https://services.solstone.app/confidential-processing"
+            })
+        );
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // 4. Second read with clock unmoved does not call again
+        let req = Request::builder()
+            .method("GET")
+            .uri("/app/thinking/api/state")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // 5. Advancing clock 10 minutes with no state read leaves call count unchanged
+        *clock.lock().unwrap() += std::time::Duration::from_secs(600);
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn parse_spp_access_rules() {
+        let portal_base = "https://services.solstone.app";
+
+        // 200 and {"state":"active","extra":1} is active and subscribe_url is null
+        let snap = super::parse_spp_access(200, r#"{"state":"active","extra":1}"#, portal_base);
+        assert_eq!(snap, super::AccessSnapshot::active());
+
+        // 200 and {"state":"ended","subscribe_url":"https://services.solstone.app/confidential-processing"} is ended with that URL
+        let snap = super::parse_spp_access(
+            200,
+            r#"{"state":"ended","subscribe_url":"https://services.solstone.app/confidential-processing"}"#,
+            portal_base,
+        );
+        assert_eq!(
+            snap,
+            super::AccessSnapshot::ended(
+                "https://services.solstone.app/confidential-processing".to_owned()
+            )
+        );
+
+        // 200 and {"state":"ended","subscribe_url":"https://services.solstone.app.evil.example/x"} is unknown and the URL is not kept
+        let snap = super::parse_spp_access(
+            200,
+            r#"{"state":"ended","subscribe_url":"https://services.solstone.app.evil.example/x"}"#,
+            portal_base,
+        );
+        assert_eq!(snap, super::AccessSnapshot::unknown());
+
+        // 401 with any body is credential_unknown
+        let snap = super::parse_spp_access(401, "unauthorized", portal_base);
+        assert_eq!(snap, super::AccessSnapshot::credential_unknown());
+
+        // 404, a non-JSON body, and 200 with {"state":"Active"} are unknown
+        let snap = super::parse_spp_access(404, r#"{"state":"active"}"#, portal_base);
+        assert_eq!(snap, super::AccessSnapshot::unknown());
+
+        let snap = super::parse_spp_access(200, "not json", portal_base);
+        assert_eq!(snap, super::AccessSnapshot::unknown());
+
+        let snap = super::parse_spp_access(200, r#"{"state":"Active"}"#, portal_base);
+        assert_eq!(snap, super::AccessSnapshot::unknown());
+    }
+
+    #[tokio::test]
+    async fn state_read_non_local_lane_omits_access_and_does_not_call_client() {
+        let root = temporary_journal("non-local-lane-access");
+        fs::write(
+            root.join("config/journal.json"),
+            json!({
+                "setup": {"completed_at": 1767225600},
+                "providers": {
+                    "active": {"provider": "openrouter", "model": "anthropic/claude-3-haiku"},
+                    "openrouter": {
+                        "key": "test-key"
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        struct CountingAccess(Arc<std::sync::atomic::AtomicUsize>);
+        impl super::ConfidentialAccess for CountingAccess {
+            fn fetch(&self, _portal_base: &str, _credential: &str) -> super::AccessSnapshot {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                super::AccessSnapshot::active()
+            }
+        }
+
+        let client = Arc::new(CountingAccess(call_count.clone()));
+        let app = crate::router(root.clone()).layer(axum::extract::Extension(
+            super::ConfidentialRuntimeOverride {
+                portal_base_url: "https://services.solstone.app".to_owned(),
+                poll: Arc::new(ManualPoll(|_base: &str, _nonce: &str| {
+                    PollOutcome::Failed {
+                        token: "unexpected_payload".to_owned(),
+                        detail: None,
+                    }
+                })),
+                before_attempt: None,
+                now: Arc::new(std::time::Instant::now),
+                sleep: Arc::new(|_| ()),
+                access: Some(client),
+            },
+        ));
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/app/thinking/api/state")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(body.get("access").is_none());
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 0);
 
         let _ = fs::remove_dir_all(root);
     }

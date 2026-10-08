@@ -73,4 +73,17 @@ mod tests {
         assert!(!is_attestation_family_reason("attestation_unreachable"));
         assert!(!is_attestation_family_reason("unknown_code"));
     }
+
+    #[test]
+    fn confidential_access_ended_flags() {
+        let entry = contract()["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["code"].as_str() == Some("confidential_access_ended"))
+            .expect("confidential_access_ended reason code present in contract");
+        assert_eq!(entry["blocking"].as_bool(), Some(true));
+        assert_eq!(entry["retryable"].as_bool(), Some(true));
+        assert_eq!(entry["overrides_live_taxonomy"].as_bool(), Some(true));
+    }
 }

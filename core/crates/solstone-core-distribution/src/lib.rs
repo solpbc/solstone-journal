@@ -21,6 +21,7 @@ pub mod deb;
 pub mod digest;
 pub mod elf;
 pub mod elf_gcc11;
+pub mod elf_zlib;
 pub mod ffmpeg_windows;
 pub mod import_policy;
 pub mod inspect;
@@ -43,6 +44,7 @@ pub mod parakeet_windows_source;
 pub mod pdfium;
 pub mod pe;
 pub mod pe_dependencies;
+pub mod pinned_stage;
 pub mod produce;
 pub mod promote;
 pub mod provenance;
@@ -458,6 +460,7 @@ fn arch_mapping_modes_and_clean_package_depends() {
             ("libgcc_s.so.1()(64bit)", 0, ""),
             ("libgomp", 0, ""),
             ("libstdc++.so.6()(64bit)", 0, ""),
+            ("libz.so.1()(64bit)", 0, ""),
         ] {
             assert!(
                 triples.iter().any(|(name, flags, ver)| name == want_name

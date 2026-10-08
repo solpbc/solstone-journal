@@ -19,6 +19,7 @@ thiserror.workspace = true
 ureq.workspace = true
 solstone-core-assets.workspace = true
 solstone-core-local.workspace = true
+solstone-core-nvattest-authority.workspace = true
 
 [lints]
 workspace = true

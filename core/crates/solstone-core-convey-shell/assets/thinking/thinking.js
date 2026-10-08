@@ -5,6 +5,7 @@
   const state = {
     providers: {},
     keys: {},
+    access: null,
     localModels: [],
     localAvailability: null,
     install: null,
@@ -87,7 +88,7 @@
     if (launch) launch.popup = null;
     try { if (popup && !popup.closed) popup.close(); } catch (_err) {}
   }
-  const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access']);
+  const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access', 'journal_limit']);
   const installInFlightStates = new Set(['resolving', 'downloading', 'verifying', 'installing']);
   const installTerminalStates = new Set(['idle', 'installed', 'failed', 'unavailable']);
   const localServerUnhealthyReasons = new Set(['local_server_unhealthy', 'server_unhealthy']);
@@ -102,9 +103,9 @@
     'manifest_pin_mismatch',
   ]);
   const pollIntervalMs = 1500;
-  // The journal stops waiting for the browser after 15 minutes and then reports
-  // why. Wait a minute past that so its answer, not this page, ends the wait.
-  const confidentialPollMaxMs = 16 * 60 * 1000;
+  // The turn-on can wait 15 minutes, then 60 minutes after the portal says a
+  // subscription is needed. The page waits a minute past that.
+  const confidentialPollMaxMs = 76 * 60 * 1000;
   const views = new Set(['main', 'byo-setup', 'confidential-setup', 'local-setup', 'lane-switch']);
   // A day of ordinary processing is well over a thousand runs. Group them by
   // talent and page each group; a light day still renders in full.
@@ -462,6 +463,8 @@
     if (phase === 'starting' || phase === 'waiting') {
       return {message: states[phase] || '', tone: ''};
     }
+    if (phase === 'subscribing') return {message: states.subscribing || '', tone: ''};
+    if (phase === 'journal_limit') return {message: states.journal_limit || '', tone: ''};
     if (phase === 'early_access') {
       return {message: states.early_access || '', tone: ''};
     }
@@ -903,13 +906,34 @@
     });
   }
 
+  let accessUnknownRereadMs = 1000;
+  let accessUnknownRereadScheduled = false;
+
+  function scheduleAccessUnknownReread() {
+    if (accessUnknownRereadScheduled) return;
+    if (state.access?.state !== 'unknown') return;
+    accessUnknownRereadScheduled = true;
+    setTimeout(async () => {
+      try {
+        const payload = await window.apiJson('/app/thinking/api/state');
+        state.providers = payload.providers || {};
+        state.keys = payload.keys || {};
+        state.access = payload.access || null;
+        applyCopy(payload.copy || {});
+        renderAll();
+      } catch (_err) {}
+    }, accessUnknownRereadMs);
+  }
+
   async function loadInitialState() {
     renderInitialLoading();
     try {
       const payload = await window.apiJson('/app/thinking/api/state');
       state.providers = payload.providers || {};
       state.keys = payload.keys || {};
+      state.access = payload.access || null;
       applyCopy(payload.copy || {});
+      scheduleAccessUnknownReread();
       revealThinkingApp();
       return true;
     } catch (err) {
@@ -2729,7 +2753,8 @@
     setText('confidentialTrustFailClosed', beats.attestation || '');
     setText('confidentialTrustSubstrate', beats.substrate || '');
     setText('confidentialTrustEarlyAccess', copy.confidential?.lane_detail?.early_access || '');
-    setHidden('confidentialTrustEarlyAccess', !confidentialOffered(attestation));
+    const showEarlyAccess = confidentialOffered(attestation) && activeBrain().kind !== 'confidential';
+    setHidden('confidentialTrustEarlyAccess', !showEarlyAccess);
   }
 
   function renderConfidentialCard() {
@@ -2754,14 +2779,22 @@
       return;
     }
     setHidden('confidentialLaneStatus', false);
+    // The service refusing this sign-in outranks a passing hardware check: the card says
+    // access ended, and the way back is one tap in (manage).
+    const accessEnded = !operationActive
+      && activeBrain().kind === 'confidential'
+      && (state.access?.state === 'ended' || state.access?.state === 'credential_unknown');
+    const accessLine = state.access?.state === 'ended'
+      ? confidentialCopy.access_ended || ''
+      : confidentialCopy.credential_unknown || '';
     setPill(
       'confidentialLanePill',
-      operationActive ? operation.phase || '' : rendered.pill,
-      operationActive ? '' : rendered.tone,
+      operationActive ? operation.phase || '' : accessEnded ? 'not active' : rendered.pill,
+      operationActive ? '' : accessEnded ? 'bad' : rendered.tone,
     );
     setText(
       'confidentialLaneDescription',
-      operationRendered.message || rendered.message || lane.description || '',
+      accessEnded ? accessLine : operationRendered.message || rendered.message || lane.description || '',
     );
     setText(
       'confidentialLaneStatus',
@@ -2796,15 +2829,41 @@
     );
     setText('confidentialSetupState', lines.state);
     setText('confidentialSetupMeta', confidentialSetupMetaLine(attestation, checked));
+
+    if (phase === 'subscribing' || phase === 'journal_limit') {
+      setLink(
+        'confidentialLaneOperationLink',
+        operation?.subscribe_url || '',
+        confidentialCopy.portal_link || '',
+      );
+    } else if (activeBrain().kind === 'confidential' && confidentialOperationIsTerminal(operation)) {
+      if (state.access?.state === 'ended') {
+        lines.operation = confidentialCopy.access_ended || '';
+        setLink(
+          'confidentialLaneOperationLink',
+          state.access.subscribe_url || '',
+          confidentialCopy.portal_link || '',
+        );
+      } else if (state.access?.state === 'credential_unknown') {
+        lines.operation = confidentialCopy.credential_unknown || '';
+        setLink('confidentialLaneOperationLink', '', '');
+      } else {
+        setLink('confidentialLaneOperationLink', '', '');
+      }
+    } else if (phase === 'starting' || phase === 'waiting') {
+      setLink(
+        'confidentialLaneOperationLink',
+        operation?.portal_url || '',
+        'continue in browser →',
+      );
+    } else {
+      setLink('confidentialLaneOperationLink', '', '');
+    }
+
     setMessage(
       'confidentialLaneOperation',
       lines.operation,
       lines.operationTone,
-    );
-    setLink(
-      'confidentialLaneOperationLink',
-      operation?.portal_url || '',
-      'continue in browser →',
     );
     setText('confidentialNotice', lines.notice.text);
     setHidden('confidentialNotice', lines.notice.hidden);

@@ -287,9 +287,70 @@ fn collect_plan<'a>(
                 }
                 add_file(&mut plan, dest, *mode, Cow::Owned(bytes))?;
             }
+            Entry::PinnedMembers {
+                input,
+                staged,
+                ignored,
+                targets,
+                ..
+            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+                let entry_name = staged
+                    .first()
+                    .map(|m| m.dest.as_str())
+                    .unwrap_or("pinned-members");
+                let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
+                    entry_name,
+                    checkout,
+                    WINDOWS_PAYLOAD_TARGET,
+                    input,
+                )
+                .map_err(|e| e.to_string())?;
+                let plans = crate::pinned_stage::plan_pinned_input(
+                    entry_name, &bytes, &pin, &filename, staged, ignored,
+                )
+                .map_err(|e| e.to_string())?;
+                let contents = crate::pinned_stage::extract_and_verify_plans(
+                    entry_name, &bytes, &filename, &plans,
+                )
+                .map_err(|e| e.to_string())?;
+                for plan_item in plans {
+                    let file_bytes = contents.get(&plan_item.inner_path).ok_or_else(|| {
+                        format!(
+                            "{entry_name}: missing extracted member bytes for {}",
+                            plan_item.inner_path
+                        )
+                    })?;
+                    add_file(
+                        &mut plan,
+                        &plan_item.dest,
+                        plan_item.mode,
+                        Cow::Owned(file_bytes.clone()),
+                    )?;
+                }
+            }
+            Entry::LicenceTree {
+                source,
+                component,
+                targets,
+            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+                let comp = component
+                    .as_deref()
+                    .ok_or_else(|| format!("licence-tree {source}: missing component"))?;
+                let source_dir = checkout.join(source);
+                let rel_files =
+                    crate::inventory::collect_licence_relative_paths(&source_dir, source)
+                        .map_err(|e| e.to_string())?;
+                let prefix = format!("share/licenses/{comp}/");
+                for rel in rel_files {
+                    let dest = format!("{prefix}{rel}");
+                    let bytes = std::fs::read(source_dir.join(&rel)).map_err(|e| e.to_string())?;
+                    add_file(&mut plan, &dest, 0o644, Cow::Owned(bytes))?;
+                }
+            }
             Entry::Launcher { targets, .. }
             | Entry::OnnxRuntime { targets, .. }
             | Entry::Pdfium { targets, .. }
+            | Entry::PinnedNative { targets, .. }
                 if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) =>
             {
                 return Err("Windows inventory selected a Unix staging entry".into());
@@ -453,6 +514,122 @@ mod tests {
         inventory.entry.clear();
         assert!(
             collect_plan(repo, &inventory_path, &inventory, &products, &native, bytes).is_err()
+        );
+    }
+
+    #[test]
+    fn pinned_members_and_licence_tree_in_windows_plan() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let mut inventory = load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
+        inventory.entry.clear();
+
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path();
+
+        // 1. PinnedMembers setup: archive with weights.bin
+        let weights_content = b"model weights binary data";
+        let mut tar_builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_size(weights_content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar_builder
+            .append_data(&mut header, "weights.bin", &weights_content[..])
+            .unwrap();
+        let tar_bytes = tar_builder.into_inner().unwrap();
+        let mut gz_encoder =
+            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz_encoder.write_all(&tar_bytes).unwrap();
+        let archive_bytes = gz_encoder.finish().unwrap();
+
+        fs::write(root_path.join("ced-weights.tar.gz"), &archive_bytes).unwrap();
+
+        inventory.entry.push(Entry::PinnedMembers {
+            component: None,
+            input: crate::inventory::PinnedInput::Inline {
+                source: "ced-weights.tar.gz".into(),
+                digest: sha256_hex(&archive_bytes),
+            },
+            staged: vec![crate::inventory::StagedMember {
+                relpath: "weights.bin".into(),
+                dest: "lib/solstone_journal_models/ced/weights.bin".into(),
+                mode: 0o644,
+                extracted_sha256: sha256_hex(weights_content),
+                identity: None,
+            }],
+            ignored: vec![],
+            targets: vec![WINDOWS_PAYLOAD_TARGET.into()],
+        });
+
+        // 2. LicenceTree setup: root/licenses/ced/deps/mod@1.2.3/LICENSE
+        let license_dir = root_path.join("licenses/ced");
+        let mod_lic_dir = license_dir.join("deps/mod@1.2.3");
+        fs::create_dir_all(&mod_lic_dir).unwrap();
+        let license_content = b"MIT License for mod@1.2.3";
+        fs::write(mod_lic_dir.join("LICENSE"), license_content).unwrap();
+
+        inventory.entry.push(Entry::LicenceTree {
+            source: "licenses/ced".into(),
+            component: Some("ced".into()),
+            targets: vec![WINDOWS_PAYLOAD_TARGET.into()],
+        });
+
+        inventory.payload = "empty.list".into();
+        fs::write(root_path.join("empty.list"), b"").unwrap();
+        let inventory_path = root_path.join("inventory.toml");
+        let products = BTreeMap::new();
+        let native = AdmittedWindowsNativeInputs::default();
+
+        let plan = collect_plan(
+            root_path,
+            &inventory_path,
+            &inventory,
+            &products,
+            &native,
+            &[],
+        )
+        .unwrap();
+
+        // Assert PinnedMembers file
+        let staged_weights = &plan["lib/solstone_journal_models/ced/weights.bin"];
+        assert_eq!(staged_weights.record.mode, 0o644);
+        assert_eq!(staged_weights.bytes.as_ref(), weights_content);
+
+        // Assert LicenceTree file
+        let staged_lic = &plan["share/licenses/ced/deps/mod@1.2.3/LICENSE"];
+        assert_eq!(staged_lic.record.mode, 0o644);
+        assert_eq!(staged_lic.bytes.as_ref(), license_content);
+
+        // Assert PinnedNative targeting Windows is refused
+        let mut bad_inventory = inventory.clone();
+        bad_inventory.entry.push(Entry::PinnedNative {
+            component: Some("ced".into()),
+            input: crate::inventory::PinnedInput::Inline {
+                source: "dummy".into(),
+                digest: "00".repeat(32),
+            },
+            dest: "bin/ced.dll".into(),
+            mode: 0o755,
+            identity: crate::inventory::NativeIdentity {
+                os: Some("windows".into()),
+                name: Some("ced.dll".into()),
+                aliases: vec![],
+            },
+            targets: vec![WINDOWS_PAYLOAD_TARGET.into()],
+        });
+        assert!(
+            collect_plan(
+                root_path,
+                &inventory_path,
+                &bad_inventory,
+                &products,
+                &native,
+                &[]
+            )
+            .is_err()
         );
     }
 

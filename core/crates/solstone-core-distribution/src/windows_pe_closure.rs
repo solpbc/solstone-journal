@@ -137,6 +137,9 @@ fn search_directory(path: &str, is_dll: bool) -> Result<&str, String> {
     if is_dll && parent == pdf_dir {
         return Ok(parent);
     }
+    if parent.starts_with("lib/solstone-") && !parent["lib/solstone-".len()..].contains('/') {
+        return Ok(parent);
+    }
     Err(format!(
         "no existing loader policy admits PE placement: {path}"
     ))
@@ -341,5 +344,15 @@ mod tests {
                 .unwrap_err()
                 .contains("kind")
         );
+    }
+
+    #[test]
+    fn component_directory_searches_itself() {
+        let tool = "lib/solstone-x/tool.exe";
+        let images = BTreeMap::from([(tool.into(), image(false, &["kernel32.dll"], &[], &[]))]);
+        assert!(inspect_edges(&images).is_ok());
+
+        let images_bad = BTreeMap::from([(tool.into(), image(false, &["custom.dll"], &[], &[]))]);
+        assert!(inspect_edges(&images_bad).is_err());
     }
 }

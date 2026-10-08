@@ -154,10 +154,13 @@ fn assert_interrupted_tail_recovers(tail: Tail) {
         "090000_300",
         &work_and_home("work"),
     );
-    write_sense(&context.journal, "default", "090500_300", &idle());
     let batch_now = NOW + 2 * 86_400_000;
     if !matches!(tail, Tail::Batch) {
         live(&context, "default", "090000_300").unwrap();
+    }
+    // A segment's Sense is written by its own thinking, just before its tail.
+    if !matches!(tail, Tail::Flush) {
+        write_sense(&context.journal, "default", "090500_300", &idle());
     }
     let dying = context.clone().with_boundary(Arc::new(DiesOnFirstRequest));
     let died = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match tail {
@@ -290,10 +293,10 @@ fn an_interrupted_repair_keeps_every_ended_activity_and_its_talent_work() {
     assert_interrupted_tail_recovers(Tail::Batch);
 }
 
-/// The process stops after the ended activities are published but before
-/// the stream's state is saved. The saved state still holds them, so the
-/// stream's next segment ends them again: no published activity is lost,
-/// published twice or thought about twice.
+/// The process stops after the activities end but before the stream's state
+/// is saved, so before anything is written. The saved state still holds them,
+/// and the stream's next segment ends them again: each is written once, from
+/// the day's evidence, and thought about once.
 fn assert_stop_before_saving_state_recovers(tail: Tail) {
     let _serial = INTERLEAVING.lock().unwrap_or_else(|p| p.into_inner());
     let (_journal, _roots, context, recorder) = journal();
@@ -303,9 +306,10 @@ fn assert_stop_before_saving_state_recovers(tail: Tail) {
         "090000_300",
         &work_and_home("work"),
     );
-    write_sense(&context.journal, "default", "090500_300", &idle());
-    write_sense(&context.journal, "default", "091000_300", &idle());
     live(&context, "default", "090000_300").unwrap();
+    if matches!(tail, Tail::Live) {
+        write_sense(&context.journal, "default", "090500_300", &idle());
+    }
     let target = context.journal.clone();
     let snapshot = solstone_core_system::activity_state::activity_state_path(
         &context.journal,
@@ -333,18 +337,15 @@ fn assert_stop_before_saving_state_recovers(tail: Tail) {
     assert_eq!(
         *open_at_stop.lock().unwrap(),
         Some(2),
-        "{tail:?}: both records are published while the saved state still holds them"
+        "{tail:?}: the saved state still holds both activities"
     );
     for facet in ["home", "work"] {
-        assert_eq!(
-            ids(&context, facet),
-            ["work_090000_300"],
-            "{tail:?}: {facet}"
-        );
+        assert!(ids(&context, facet).is_empty(), "{tail:?}: {facet}");
     }
     assert_eq!(recorder.requests.lock().unwrap().len(), 0);
 
     let next = with_clock(&context, NOW + 600_000);
+    write_sense(&context.journal, "default", "091000_300", &idle());
     live(&next, "default", "091000_300").unwrap();
     for facet in ["home", "work"] {
         assert_eq!(

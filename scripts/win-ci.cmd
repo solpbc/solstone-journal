@@ -100,11 +100,10 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wi
 echo === cargo test --locked (Windows portal installer Job ownership) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install::windows::tests::native::windows_installer_job_receipt -- --exact --ignored --nocapture || exit /b 1
-echo === cargo test --locked (confidential processing is not offered on Windows) ===
+echo === cargo test --locked (confidential processing is offered on Windows) ===
 call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::only_a_platform_with_a_verifier_target_offers_confidential_processing" || exit /b 1
-call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::windows_owners_are_held_back_even_with_a_verifier_target" || exit /b 1
-call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::a_held_platform_opens_no_channel" || exit /b 1
-call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::windows_refuses_every_channel_before_connecting" || exit /b 1
+call :run_exact_library "solstone-core-spp-ratls" "nvattest_authority::tests::no_shipped_platform_holds_its_owners_back" || exit /b 1
+call :run_exact_library "solstone-core-spp-ratls" "ratls::channel::tests::no_shipped_platform_is_refused_a_channel" || exit /b 1
 call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_environment_discards_ambient_configuration_case_insensitively" || exit /b 1
 call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_paths_refuse_network_paths_and_count_utf16_units" || exit /b 1
 call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "signed_layout_refuses_missing_or_changed_executable_ca_and_runtime" "test-hooks" || exit /b 1
@@ -116,7 +115,7 @@ call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "expor
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exact_spprat1_preface_nonce_and_exporter_request_establish_channel" "test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_rejection_writes_no_exporter_http_payload_and_closes" "test-hooks" || exit /b 1
 call :run_exact_library "solstone-core-brain" "presentation::tests::a_platform_with_no_hardware_check_says_so_on_every_brain_surface" || exit /b 1
-call :run_exact_library "solstone-core-thinking" "brain::tests::this_platform_offers_confidential_processing_everywhere_but_windows" || exit /b 1
+call :run_exact_library "solstone-core-thinking" "brain::tests::this_platform_offers_confidential_processing" || exit /b 1
 call :run_exact_library "solstone-core-thinking" "brain::tests::with_no_hardware_check_confidential_processing_reads_not_on_platform" || exit /b 1
 call :run_exact_library "solstone-core-convey-shell" "thinking::tests::no_hardware_check_refuses_confidential_turn_on" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-convey-shell" "thinking::tests::a_confidential_lane_turned_on_before_still_turns_off" "full-tests" || exit /b 1

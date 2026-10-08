@@ -108,6 +108,20 @@ fn named_role(
     Ok(role(name.to_owned()))
 }
 
+#[must_use]
+pub fn namespace_root(dest: &str) -> Option<&str> {
+    if let Some(stripped) = dest.strip_prefix("lib/") {
+        let (dir, _) = stripped.split_once('/')?;
+        if dir == "solstone_journal_models" || dir.starts_with("solstone-") {
+            let prefix_len = "lib/".len() + dir.len();
+            return Some(&dest[..prefix_len]);
+        }
+    } else if dest.starts_with("share/solstone-journal/") {
+        return Some("share/solstone-journal");
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

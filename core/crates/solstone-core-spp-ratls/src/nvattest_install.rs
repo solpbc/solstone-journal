@@ -8,13 +8,16 @@ use crate::NvattestEnsureStatus;
 #[cfg(unix)]
 use crate::check_nvattest_readiness;
 #[cfg(unix)]
-use crate::nvattest_authority::{AuthorityError, NvattestArtifactSpec, parse_nvattest_target};
-use crate::nvattest_authority::{NVATTEST_AUTHORITY_JSON, nvattest_platform_key, owner_use_held};
+use crate::nvattest_authority::{AuthorityError, parse_nvattest_target};
+use crate::nvattest_authority::{nvattest_platform_key, owner_use_held};
 #[cfg(unix)]
 use solstone_core_artifact_download::{
     ArchiveError, clear_macos_quarantine, download_verified_origin, make_executable,
 };
 use solstone_core_artifact_download::{DownloadHostPolicy, PRODUCTION_DOWNLOAD_POLICY};
+use solstone_core_nvattest_authority::AUTHORITY_JSON as NVATTEST_AUTHORITY_JSON;
+#[cfg(unix)]
+use solstone_core_nvattest_authority::NvattestArtifactSpec;
 
 /// Installs the verifier for the running platform. A platform whose owners are
 /// held back from confidential processing installs nothing and touches nothing.
@@ -506,8 +509,8 @@ mod tests {
 
     use super::{acquire_lock, ensure_nvattest_installed_with, parent_dir, payload_matches};
     use crate::NvattestEnsureStatus;
-    use crate::nvattest_authority::NVATTEST_AUTHORITY_JSON;
     use crate::test_support::TempDir;
+    use solstone_core_nvattest_authority::AUTHORITY_JSON as NVATTEST_AUTHORITY_JSON;
 
     const PLATFORM: &str = "linux-x86_64";
     const ARTIFACT: &str = "payload.tar.xz";
@@ -548,7 +551,7 @@ mod tests {
 
     fn authority(sha256: &str, size: u64) -> String {
         format!(
-            r#"{{"targets":{{"{PLATFORM}":{{"artifact":{{"name":"{ARTIFACT}","sha256":"{sha256}","size_bytes":{size},"url":"https://updates.solstone.app/providers/nvattest/{ARTIFACT}"}},"inventory":[{{"executable":true,"kind":"regular","relpath":"bin/nvattest","symlink_target":null}},{{"executable":false,"kind":"regular","relpath":"share/ca/ca-bundle.pem","symlink_target":null}}],"source":{{"version":"test"}}}}}}}}"#
+            r#"{{"schema_version":1,"targets":{{"{PLATFORM}":{{"artifact":{{"name":"{ARTIFACT}","sha256":"{sha256}","size_bytes":{size},"url":"https://updates.solstone.app/providers/nvattest/{ARTIFACT}"}},"companion_manifest":{{"name":"{ARTIFACT}.manifest.json","sha256":"0000000000000000000000000000000000000000000000000000000000000000","url":"https://updates.solstone.app/providers/nvattest/{ARTIFACT}.manifest.json"}},"inventory":[{{"executable":true,"kind":"regular","relpath":"bin/nvattest","symlink_target":null}},{{"executable":false,"kind":"regular","relpath":"share/ca/ca-bundle.pem","symlink_target":null}}],"source":{{"fork_commit":"test","upstream_base":"test","url_prefix":"https://updates.solstone.app/providers/nvattest/","version":"test"}}}}}}}}"#
         )
     }
 

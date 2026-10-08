@@ -78,6 +78,9 @@ fn headline(state: &str, reason: Option<&str>, progressing: bool) -> &'static st
         }
         ("blocked", Some("nvattest_platform_unsupported")) => NOT_ON_PLATFORM,
         ("blocked", Some("nvattest_unavailable")) => "processing needs attention",
+        ("blocked", Some("confidential_access_ended")) => {
+            "confidential processing isn't active for this sign-in"
+        }
         ("ready", _) => "processing is ready",
         ("checking", _) => "checking how processing runs",
         ("blocked", _) => "processing needs a setup",
@@ -118,6 +121,9 @@ pub fn brain_reason_text(reason: Option<&str>) -> String {
         Some("chatgpt_not_eligible") => "this ChatGPT account isn't eligible".to_owned(),
         Some("chatgpt_sign_in_required") => "signed out of ChatGPT".to_owned(),
         Some("chatgpt_usage_limit") => "ChatGPT usage limit reached".to_owned(),
+        Some("confidential_access_ended") => {
+            "confidential processing isn't active for this sign-in".to_owned()
+        }
         Some(reason) => reason.replace('_', " "),
     }
 }

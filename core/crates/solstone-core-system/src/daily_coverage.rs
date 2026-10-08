@@ -1741,4 +1741,11 @@ mod tests {
         );
         assert_eq!(unit.earlier_version, None);
     }
+
+    #[test]
+    fn daily_failure_capped_confidential_access_ended() {
+        for count in 0..10 {
+            assert!(!daily_failure_capped("confidential_access_ended", count));
+        }
+    }
 }

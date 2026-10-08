@@ -21,6 +21,7 @@ mod helpers;
 mod phase_process;
 mod run_log;
 mod segment;
+mod settle;
 pub mod snapshot;
 pub use snapshot::compute_daily_evidence_revision;
 mod weekly;
@@ -130,7 +131,7 @@ use crate::args::{
     FACET_REQUIRES_ACTIVITY, FLUSH_INCOMPATIBLE, FLUSH_REQUIRES_SEGMENT,
     MULTI_WORKER_UNLIMITED_JOBS, NO_ACTIVITY_PROMPTS_WITH_ACTIVITY,
     REACTIVATE_INCOMPATIBLE_REFRESH, REACTIVATE_REQUIRES_ACTIVITY, SEGMENT_WORKERS_RANGE,
-    SEGMENTS_INCOMPATIBLE, UPDATED_INCOMPATIBLE, WEEKLY_INCOMPATIBLE,
+    SEGMENTS_INCOMPATIBLE, SETTLE_INCOMPATIBLE, UPDATED_INCOMPATIBLE, WEEKLY_INCOMPATIBLE,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -146,6 +147,12 @@ enum CliError {
     SupervisorSpawnedUnavailable,
     SupervisorUnavailable,
     InvalidDay { message: String },
+}
+
+/// Streams whose next activity settle check is due by `now_ms`; the
+/// supervisor runs `think --settle --stream STREAM` for each.
+pub fn activity_settle_due(journal: &Path, now_ms: i64) -> Vec<String> {
+    settle::due_streams(journal, now_ms)
 }
 
 pub fn run_cli(
@@ -223,6 +230,7 @@ pub fn requires_daily_lifecycle(raw_args: &[String]) -> bool {
         && parsed.facet.is_none()
         && !parsed.reactivate
         && !parsed.flush
+        && !parsed.settle
         && !parsed.segments
         && parsed.segment.is_none()
         && !parsed.weekly
@@ -441,6 +449,17 @@ where
                 &context,
                 &mut log,
                 parsed.segment.as_deref().expect("validated flush segment"),
+                parsed.stream.as_deref(),
+                parsed.jobs,
+                parsed.no_activity_prompts,
+            );
+            return logged_mode_outcome(log, run, result);
+        }
+        if parsed.settle {
+            let (mut log, run) = open_run_log(&parsed, journal, now_ms, &selected_day);
+            let result = settle::run(
+                &context,
+                &mut log,
                 parsed.stream.as_deref(),
                 parsed.jobs,
                 parsed.no_activity_prompts,
@@ -716,6 +735,17 @@ fn validate(
     if args.flush && args.segment.is_none() {
         return usage(FLUSH_REQUIRES_SEGMENT);
     }
+    if args.settle
+        && (args.segment.is_some()
+            || args.segments
+            || args.activity.is_some()
+            || args.flush
+            || args.refresh
+            || args.weekly
+            || args.cadence)
+    {
+        return usage(SETTLE_INCOMPATIBLE);
+    }
     if args.flush && (args.segments || args.refresh) {
         return usage(FLUSH_INCOMPATIBLE);
     }
@@ -758,6 +788,7 @@ mod tests {
     mod search_indexing_observations;
     #[cfg(all(test, feature = "full-tests"))]
     mod segment_publication;
+    mod settle_publication;
     use std::cell::Cell;
     use std::collections::BTreeSet;
     use std::fs;
@@ -3737,10 +3768,14 @@ mod tests {
             .filter(|record| record["id"] == "work_100000_300")
             .collect::<Vec<_>>();
         assert_eq!(live.len(), 1);
-        assert_eq!(
-            live[0]["segments"],
+        // The activity is written from the day's evidence as it now reads: a
+        // repeated segment thought again as idle no longer extends it.
+        let expected_live = if segment == "100500_300" {
+            serde_json::json!(["100000_300"])
+        } else {
             serde_json::json!(["100000_300", "100500_300"])
-        );
+        };
+        assert_eq!(live[0]["segments"], expected_live);
         assert_eq!(
             work_records(journal.path()).len(),
             1 + expected("20260813").len()
@@ -4574,6 +4609,14 @@ mod tests {
         solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
             .unwrap();
         let context = context.with_talent_roots(talent_root, apps_root);
+        // The carried activity's evidence, which its record is written from.
+        let carried = segment_dir(journal.path(), "20260813", "235500_300").join("talents");
+        fs::create_dir_all(&carried).unwrap();
+        fs::write(
+            carried.join("sense.json"),
+            serde_json::to_vec(&work_sense("work")).unwrap(),
+        )
+        .unwrap();
         let path = segment_dir(journal.path(), "20260814", "000000_300").join("talents");
         fs::create_dir_all(&path).unwrap();
         fs::write(
@@ -4820,7 +4863,13 @@ mod tests {
         // Source-derived, not measured: thinking.py:594-634 keeps one
         // in-memory machine per replay stream and does not overwrite the
         // direct-run activity snapshot from a batch replay.
-        assert!(!journal.path().join("awareness").exists());
+        assert!(!journal.path().join("awareness/activity_state").exists());
+        assert!(
+            !journal
+                .path()
+                .join("awareness/activity_state.json")
+                .exists()
+        );
     }
 
     #[test]

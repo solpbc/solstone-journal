@@ -8,13 +8,18 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the journal's thinking app now says when confidential processing is no longer active for your sign-in, and how to get it back.
+- on windows, the thinking page now offers confidential processing, as on mac and linux. before sending anything, your journal checks the service's hardware, and sends nothing if it can't verify it.
 - your journal now signs requests to turn on a service. older journals can still turn on services during the rollout.
 - before your journal sends anything to confidential processing, it now also checks most of the measurements the service reports one by one against their published values, and refuses the service if any one doesn't match.
 - the encrypted backup screen now says up front that restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. restoring from storage sol pbc runs now points you to the services portal.
 - on windows, the setup warning and removal steps now say to move a journal kept inside the program folder before reinstalling or uninstalling. the steps explain how to remove its old background registration and select the moved journal again.
+- your journal now writes an activity once it has ended and nothing new has arrived for it for at least five minutes, so activities from every source except imports appear later than before. an activity written since this update can grow when more of it arrives, and its story is then written again, which means more requests to your thinking provider.
 
 ### Fixed
 
+- audio from your watch that lands in your journal late or out of order now joins the activity it belongs to far more often. before, some of it could still be left out of every activity. activities from before this update stay as they are.
+- on a journal that had never paired a device or turned on another service, turning on confidential processing no longer stops at "confidential processing couldn't be turned on".
 - on mac and linux, "install local model" on the thinking page no longer says "local setup didn't start" when a local model is already installed.
 - on linux, if you installed local transcription before, your journal now installs what it needs when an update changes it. before, transcription could stop until you installed it again.
 

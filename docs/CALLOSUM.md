@@ -215,13 +215,19 @@ observe.described / observe.transcribed (processing complete)
 observe.observed (segment fully processed)
     ↓ supervisor triggers think, tracks flush timer
 think (segment)
-    ↓ activity state updated; an ended activity is written as a record
-    ↓ the same think run dispatches schedule="activity" agents for that record
+    ↓ activity state updated; the stream's day is checked for activities that have settled
+    ↓ a settled activity is written as a record, and schedule="activity" agents run for it
+
+[When a stream's next settle check is due:]
+    ↓ supervisor queues think --settle --stream STREAM
+think --settle (writes each activity whose segments have stayed unchanged for 5 minutes)
 
 [If no new segments for FLUSH_TIMEOUT (1h):]
     ↓ supervisor queues flush
 think --flush (ends activities still open at the last segment, then runs hook.flush agents)
 ```
+
+An activity is written from its stream's day rebuilt in capture order, not where live thinking sees it end, because some sources deliver late and out of order (a phone relaying a watch's recordings sends the newest first). A record written this way can later grow when more of the same activity arrives; its agents then run again.
 
 See `solstone-core/src/supervisor/tick.rs` for the observe→think trigger and the flush timer, and `solstone-core-think-cli` for how an ended activity becomes a record and runs its agents. Activity lifecycle is not broadcast on the bus.
 

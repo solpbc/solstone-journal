@@ -184,11 +184,10 @@ pub fn is_floor_talent_capped<S: HealthLogSource>(
             if terminal.event != TerminalEvent::Fail {
                 break;
             }
-            if terminal
-                .reason_code
-                .as_deref()
-                .is_some_and(solstone_core_generate::is_attestation_family_reason)
-            {
+            if terminal.reason_code.as_deref().is_some_and(|code| {
+                code == "confidential_access_ended"
+                    || solstone_core_generate::is_attestation_family_reason(code)
+            }) {
                 continue;
             }
             count += 1;
@@ -629,6 +628,37 @@ mod tests {
             1000 + 6 * MIN_SPAN_MS
         ));
         write_run_log(temp.path(), day, "run.jsonl", &lines.join("\n"));
+        assert!(
+            !is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+    }
+
+    #[test]
+    fn floor_talent_capping_excludes_confidential_access_ended() {
+        let day = "20260810";
+        let stream = "audio";
+        let segment = "120000_60";
+        let name = "documents";
+
+        let temp = TempDir::new().unwrap();
+        let log = (0..5)
+            .map(|i| {
+                format!(
+                    r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"confidential_access_ended"}}"#,
+                    1000 + i * MIN_SPAN_MS
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        write_run_log(temp.path(), day, "run.jsonl", &log);
         assert!(
             !is_floor_talent_capped(
                 &FilesystemHealthLogSource::new(temp.path()),

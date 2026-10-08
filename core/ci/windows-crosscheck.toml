@@ -5,10 +5,10 @@ target = "x86_64-pc-windows-msvc"
 # Re-derived on 2026-10-08 with:
 # cargo metadata --manifest-path core/Cargo.toml --locked --no-deps --format-version 1
 # Count workspace_members joined to packages, then packages with any target
-# whose kind includes `lib`. solstone-core-installed-payload adds one member
+# whose kind includes `lib`. solstone-core-nvattest-authority adds one member
 # and one library.
-workspace_packages = 133
-library_packages = 126
+workspace_packages = 134
+library_packages = 127
 
 [[exclusions]]
 package = "ring"

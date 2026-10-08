@@ -407,15 +407,10 @@ mod tests {
     }
 
     #[test]
-    fn this_platform_offers_confidential_processing_everywhere_but_windows() {
+    fn this_platform_offers_confidential_processing() {
         let (journal, config) = journal_with(&json!({}));
         let view = presentation(journal.path(), &config, false);
-        let expected = if cfg!(windows) {
-            "not_on_platform"
-        } else {
-            "off"
-        };
-        assert_eq!(view["confidential_attestation"]["state"], expected);
+        assert_eq!(view["confidential_attestation"]["state"], "off");
     }
 
     #[test]

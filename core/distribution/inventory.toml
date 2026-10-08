@@ -67,7 +67,7 @@ lane = "apple-native"
 triple_apple = "aarch64-apple-darwin"
 # Every shipped Mach-O must declare a deployment target at or below this or it
 # refuses to launch on the oldest macOS we claim.
-min_macos = "14.0"
+min_macos = "15.0"
 
 # Windows public commands are real binaries. Native dependency artifacts are
 # admitted separately before the complete payload can be produced.
