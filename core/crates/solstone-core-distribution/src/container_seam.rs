@@ -53,7 +53,7 @@ pub(crate) fn apply(dest: &str, bytes: Vec<u8>) -> Option<Vec<u8>> {
         if dest != seam.path {
             return Some(bytes);
         }
-        return match seam.kind {
+        match seam.kind {
             ContainerSeamKind::Drop => None,
             ContainerSeamKind::Grow => {
                 let mut bytes = bytes;
@@ -67,7 +67,7 @@ pub(crate) fn apply(dest: &str, bytes: Vec<u8>) -> Option<Vec<u8>> {
                 }
                 Some(bytes)
             }
-        };
+        }
     }
     #[cfg(not(test))]
     {

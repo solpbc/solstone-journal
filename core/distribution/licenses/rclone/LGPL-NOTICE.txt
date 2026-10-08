@@ -1,0 +1,12 @@
+rclone includes one library under the GNU Lesser General Public License v3
+(LGPL-3.0): github.com/cloudsoda/sddl, version
+v0.0.0-20250224235906-926454e91efc. Its license text is at
+deps/github.com__cloudsoda__sddl@v0.0.0-20250224235906-926454e91efc/LICENSE
+in this directory, and the GNU GPL v3 text it builds on is at
+supplied/GPL-3.0.txt. To rebuild rclone with a modified copy of that library,
+use rclone 1.74.4's published source (tag v1.74.4, commit
+5bc93a2a7ab0ebd0a11352bc4968eabeffb18027, at https://github.com/rclone/rclone)
+and the library's source at that version (GitHub commit 926454e of
+https://github.com/CloudSoda/sddl, or proxy.golang.org). Point rclone's Go
+module build at your copy, for example with a replace directive in go.mod, and
+rebuild.

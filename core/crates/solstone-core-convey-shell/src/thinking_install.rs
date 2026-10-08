@@ -27,7 +27,7 @@ use solstone_core_system::process::{
 mod windows;
 
 static ADMISSION: Mutex<()> = Mutex::new(());
-#[cfg(any(windows, test))]
+#[cfg(any(windows, all(test, feature = "full-tests")))]
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(5);
 const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 // Before the installer publishes its lease-backed status it checks what is

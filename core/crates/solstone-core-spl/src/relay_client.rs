@@ -1018,14 +1018,13 @@ mod tests {
         ) -> serde_json::Value {
             loop {
                 let notified = self.changed.notified();
-                if let Ok(events) = self.events.lock() {
-                    if let Some((_, fields)) = events
+                if let Ok(events) = self.events.lock()
+                    && let Some((_, fields)) = events
                         .iter()
                         .rev()
                         .find(|(event, fields)| event == "health" && predicate(fields))
-                    {
-                        return fields.clone();
-                    }
+                {
+                    return fields.clone();
                 }
                 notified.await;
             }
