@@ -12,8 +12,9 @@ use solstone_core_user_skill::{
 };
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
-static WARN_COUNT: AtomicUsize = AtomicUsize::new(0);
-static WARN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+thread_local! {
+    static WARN_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 struct TestLogger;
 impl Log for TestLogger {
@@ -22,19 +23,212 @@ impl Log for TestLogger {
     }
     fn log(&self, record: &Record) {
         if record.level() == Level::Warn {
-            WARN_COUNT.fetch_add(1, Ordering::SeqCst);
+            WARN_COUNT.with(|count| count.set(count.get() + 1));
         }
     }
     fn flush(&self) {}
 }
 
 static INIT_LOGGER: std::sync::Once = std::sync::Once::new();
+
+#[test]
+#[ignore = "isolated startup subprocess helper"]
+fn production_startup_child() {
+    let Ok(role) = std::env::var("SOLSTONE_STARTUP_SKILL_HELPER") else {
+        return;
+    };
+    use solstone_core_installation_identity::{
+        ArtifactBindingEvidence, LegacyManifestEvidence, OwnerBase, PlatformTag,
+        SetupAdmissionRequest, admit_setup, journal_token_from_path, root_token_from_path,
+    };
+    use solstone_core_system::lifecycle::DeclaredParent;
+
+    let home = PathBuf::from(std::env::var_os("HOME").expect("isolated home"));
+    let journal = PathBuf::from(std::env::var_os("SOLSTONE_JOURNAL").expect("isolated journal"));
+    let root = crate::installation_context::identity_root_from_current_executable().unwrap();
+    let admission = admit_setup(SetupAdmissionRequest {
+        owner: OwnerBase::at_home(home, PlatformTag::current()).unwrap(),
+        root_token: root_token_from_path(&root).unwrap(),
+        journal_token: journal_token_from_path(&journal).unwrap(),
+        journal_is_explicit: true,
+        accept_prepared_retarget: false,
+        legacy_manifest: LegacyManifestEvidence::Absent,
+        artifacts: ArtifactBindingEvidence::Fresh,
+    })
+    .unwrap();
+    drop(admission);
+
+    init_test_logger();
+    if role == "fault" {
+        set_user_skill_copy_fault(Some(|| Err(std::io::Error::other("injected copy failure"))));
+    }
+    let mut wrong_parent = DeclaredParent::capture_current().unwrap().instance();
+    wrong_parent.pid = std::process::id();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let outcome = runtime.block_on(super::host::run_hosted(
+        &journal,
+        solstone_core_cli::SupervisorOptions {
+            port: 0,
+            journal_override: None,
+            no_daily: true,
+            no_schedule: true,
+            no_convey: true,
+            no_cortex: true,
+            no_spl: true,
+            direct_port: None,
+            hosted_parent: true,
+        },
+        Some(DeclaredParent::from_instance(wrong_parent)),
+    ));
+    assert!(
+        matches!(
+            outcome,
+            super::host::SupervisorHostOutcome::Refused {
+                reason: super::host::SupervisorBootRefusal::ParentLiveness(_)
+            }
+        ),
+        "startup must reach parent admission after optional refresh: {outcome:?}"
+    );
+    if role == "fault" {
+        assert_eq!(WARN_COUNT.with(std::cell::Cell::get), 1);
+    }
+}
+
+fn run_production_startup(home: &Path, journal: &Path, fault: bool) {
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "supervisor::user_skill_refresh::production_startup_child",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("HOME", home)
+        .env("SOLSTONE_JOURNAL", journal)
+        .env(
+            "SOLSTONE_STARTUP_SKILL_HELPER",
+            if fault { "fault" } else { "normal" },
+        )
+        // Existing fixture seam avoids a sibling executable preflight; the
+        // deliberate parent mismatch stops before any runtime child starts.
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_BINARY", "unused")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            child.kill().unwrap();
+            let _ = child.wait();
+            panic!("startup subprocess timed out");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "startup helper failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn production_startup_refreshes_then_leaves_matching_and_removed_skills_alone() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let journal = temp.path().join("journal");
+    fs::create_dir_all(&journal).unwrap();
+    let target = home.join(".claude/skills/solstone");
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join("SKILL.md"), b"---\nname: solstone\n---\nold").unwrap();
+    run_production_startup(&home, &journal, false);
+    let bundled = bundled_user_skill_dir().unwrap();
+    assert!(solstone_core_skill_state::user_skill_copy_matches(&bundled, &target).unwrap());
+    let dir = fs::metadata(&target).unwrap();
+    let file = fs::metadata(target.join("SKILL.md")).unwrap();
+    run_production_startup(&home, &journal, false);
+    let after_dir = fs::metadata(&target).unwrap();
+    let after_file = fs::metadata(target.join("SKILL.md")).unwrap();
+    assert_eq!(
+        (dir.ino(), dir.mtime(), dir.mtime_nsec()),
+        (after_dir.ino(), after_dir.mtime(), after_dir.mtime_nsec())
+    );
+    assert_eq!(
+        (file.ino(), file.mtime(), file.mtime_nsec()),
+        (
+            after_file.ino(),
+            after_file.mtime(),
+            after_file.mtime_nsec()
+        )
+    );
+    fs::remove_dir_all(&target).unwrap();
+    run_production_startup(&home, &journal, false);
+    assert!(!target.exists());
+}
+
+#[test]
+fn production_startup_preserves_a_journal_nested_in_an_old_skill() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let target = home.join(".claude/skills/solstone");
+    let journal = target.join("journal");
+    fs::create_dir_all(&journal).unwrap();
+    let old = b"---\nname: solstone\n---\nold";
+    fs::write(target.join("SKILL.md"), old).unwrap();
+    fs::write(journal.join("owner-material"), b"preserve me").unwrap();
+    run_production_startup(&home, &journal, false);
+    assert_eq!(fs::read(target.join("SKILL.md")).unwrap(), old);
+    assert_eq!(
+        fs::read(journal.join("owner-material")).unwrap(),
+        b"preserve me"
+    );
+}
+
+#[test]
+fn production_startup_retries_after_a_copy_failure_without_losing_old_entries() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let journal = temp.path().join("journal");
+    fs::create_dir_all(&journal).unwrap();
+    let target = home.join(".claude/skills/solstone");
+    fs::create_dir_all(target.join("empty")).unwrap();
+    fs::create_dir_all(target.join("nested")).unwrap();
+    let old = b"---\nname: solstone\n---\nold";
+    fs::write(target.join("SKILL.md"), old).unwrap();
+    fs::write(target.join("nested/extra"), b"old extra bytes").unwrap();
+    let before = collect_all_paths(&target);
+    run_production_startup(&home, &journal, true);
+    assert_eq!(collect_all_paths(&target), before);
+    assert_eq!(fs::read(target.join("SKILL.md")).unwrap(), old);
+    assert_eq!(
+        fs::read(target.join("nested/extra")).unwrap(),
+        b"old extra bytes"
+    );
+    run_production_startup(&home, &journal, false);
+    assert!(
+        solstone_core_skill_state::user_skill_copy_matches(
+            &bundled_user_skill_dir().unwrap(),
+            &target
+        )
+        .unwrap()
+    );
+}
+
 fn init_test_logger() {
     INIT_LOGGER.call_once(|| {
         let _ = log::set_boxed_logger(Box::new(TestLogger));
         log::set_max_level(log::LevelFilter::Warn);
     });
-    WARN_COUNT.store(0, Ordering::SeqCst);
+    WARN_COUNT.with(|count| count.set(0));
 }
 
 fn collect_all_paths(dir: &Path) -> Vec<PathBuf> {
@@ -96,19 +290,11 @@ fn unix_startup_refresh_older_qualifying_tree() {
     content.push_str("\n<!-- modified -->\n");
     fs::write(&skill_file, content).expect("write modified");
 
-    assert_eq!(
-        solstone_core_skill_state::user_skill_ordinary_copy_matches(&bundled, &claude_skill)
-            .unwrap(),
-        false
-    );
+    assert!(!solstone_core_skill_state::user_skill_copy_matches(&bundled, &claude_skill).unwrap());
 
     refresh_installed_user_skills(&home, &journal);
 
-    assert_eq!(
-        solstone_core_skill_state::user_skill_ordinary_copy_matches(&bundled, &claude_skill)
-            .unwrap(),
-        true
-    );
+    assert!(solstone_core_skill_state::user_skill_copy_matches(&bundled, &claude_skill).unwrap());
 
     let _ = fs::remove_dir_all(temp);
 }
@@ -242,12 +428,10 @@ fn unix_startup_refresh_unreadable_skill_directory() {
     let _restorer = Restorer(claude_skill.clone());
     fs::set_permissions(&claude_skill, fs::Permissions::from_mode(0o000)).unwrap();
 
-    let _warn_guard = WARN_LOCK.lock().unwrap();
     init_test_logger();
     refresh_installed_user_skills(&home, &journal);
 
-    assert!(WARN_COUNT.load(Ordering::SeqCst) >= 1);
-    drop(_warn_guard);
+    assert!(WARN_COUNT.with(std::cell::Cell::get) >= 1);
 
     drop(_restorer);
     assert_eq!(fs::read(claude_skill.join("SKILL.md")).unwrap(), b"secret");
@@ -288,11 +472,7 @@ fn unix_startup_refresh_attributed_and_foreign_symlinks() {
     let claude_meta = fs::symlink_metadata(&claude_target).unwrap();
     assert!(!claude_meta.file_type().is_symlink());
     assert!(claude_meta.file_type().is_dir());
-    assert_eq!(
-        solstone_core_skill_state::user_skill_ordinary_copy_matches(&bundled, &claude_target)
-            .unwrap(),
-        true
-    );
+    assert!(solstone_core_skill_state::user_skill_copy_matches(&bundled, &claude_target).unwrap());
 
     // Bundled target bytes and mtime untouched
     let bundled_meta_after = fs::metadata(bundled.join("SKILL.md")).unwrap();
@@ -315,10 +495,7 @@ fn unix_startup_refresh_attributed_and_foreign_symlinks() {
 static FAULT_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
 fn counting_copy_fault() -> std::io::Result<()> {
     if FAULT_CALL_COUNT.fetch_add(1, Ordering::SeqCst) == 0 {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "injected copy fault",
-        ))
+        Err(std::io::Error::other("injected copy fault"))
     } else {
         Ok(())
     }
@@ -367,11 +544,7 @@ fn unix_startup_refresh_fault_handling() {
     set_user_skill_copy_fault(None);
     refresh_installed_user_skills(&home, &journal);
 
-    assert_eq!(
-        solstone_core_skill_state::user_skill_ordinary_copy_matches(&bundled, &claude_skill)
-            .unwrap(),
-        true
-    );
+    assert!(solstone_core_skill_state::user_skill_copy_matches(&bundled, &claude_skill).unwrap());
 
     let _ = fs::remove_dir_all(temp);
 }
@@ -407,7 +580,6 @@ fn unix_startup_refresh_overlap_and_selected_journal() {
     .unwrap();
 
     {
-        let _warn_guard = WARN_LOCK.lock().unwrap();
         refresh_installed_user_skills(&home, &journal);
     }
 
@@ -416,11 +588,7 @@ fn unix_startup_refresh_overlap_and_selected_journal() {
     assert_eq!(fs::read(&marker).unwrap(), b"marker_data");
 
     // Legitimate case: refreshes
-    assert_eq!(
-        solstone_core_skill_state::user_skill_ordinary_copy_matches(&bundled, &codex_skill)
-            .unwrap(),
-        true
-    );
+    assert!(solstone_core_skill_state::user_skill_copy_matches(&bundled, &codex_skill).unwrap());
 
     let _ = fs::remove_dir_all(temp);
 }
@@ -446,7 +614,6 @@ fn unix_startup_refresh_overlap_journal_nested_in_skill() {
     let entries_before = collect_all_paths(&journal);
 
     {
-        let _warn_guard = WARN_LOCK.lock().unwrap();
         refresh_installed_user_skills(&home, &journal);
     }
 
@@ -478,7 +645,6 @@ fn unix_startup_refresh_overlap_same_directory() {
     let entries_before = collect_all_paths(&journal);
 
     {
-        let _warn_guard = WARN_LOCK.lock().unwrap();
         refresh_installed_user_skills(&home, &journal);
     }
 
@@ -517,7 +683,6 @@ fn unix_startup_refresh_overlap_symlink_alias_into_journal() {
     let entries_before = collect_all_paths(&journal);
 
     {
-        let _warn_guard = WARN_LOCK.lock().unwrap();
         refresh_installed_user_skills(&home, &journal);
     }
 
@@ -569,12 +734,10 @@ fn unix_startup_refresh_unknown_census() {
     let _restorer = Restorer(owner.path());
     fs::set_permissions(owner.path(), fs::Permissions::from_mode(0o000)).unwrap();
 
-    let _warn_guard = WARN_LOCK.lock().unwrap();
     init_test_logger();
     refresh_installed_user_skills(&home, &journal);
 
-    assert_eq!(WARN_COUNT.load(Ordering::SeqCst), 1);
-    drop(_warn_guard);
+    assert_eq!(WARN_COUNT.with(std::cell::Cell::get), 1);
     drop(_restorer);
 
     assert_eq!(fs::read(&skill_file).unwrap(), b"old_census_bytes");
@@ -595,13 +758,11 @@ fn unix_startup_refresh_warn_bound() {
     fs::create_dir_all(claude_in_j.join("skills/solstone")).unwrap();
     std::os::unix::fs::symlink(&claude_in_j, home.join(".claude")).unwrap();
 
-    let _warn_guard = WARN_LOCK.lock().unwrap();
     init_test_logger();
     refresh_installed_user_skills(&home, &journal);
 
     // Exactly 1 warn for the single failed destination
-    assert_eq!(WARN_COUNT.load(Ordering::SeqCst), 1);
-    drop(_warn_guard);
+    assert_eq!(WARN_COUNT.with(std::cell::Cell::get), 1);
 
     let _ = fs::remove_dir_all(temp);
 }

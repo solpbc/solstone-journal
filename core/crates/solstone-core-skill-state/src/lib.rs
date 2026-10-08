@@ -5,7 +5,6 @@
 //!
 //! It also compares user-skill directory trees, still read-only.
 
-use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
@@ -121,25 +120,62 @@ pub fn stale_router_skill_links(link_parent: &Path) -> Result<Vec<StaleRouterSki
         .collect())
 }
 
+fn skill_entry_is_link(metadata: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_type().is_symlink() || metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
+}
+
+/// Reject linked, reparse and special entries before a user-skill mutation.
+/// Equality alone cannot distinguish an old ordinary copy from an unsafe tree.
+pub fn validate_user_skill_copy_entries(root: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(root)?;
+    if skill_entry_is_link(&metadata) || !metadata.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "skill tree requires an ordinary directory",
+        ));
+    }
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let child = entry.path();
+        let metadata = fs::symlink_metadata(&child)?;
+        if skill_entry_is_link(&metadata) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "linked entries are not permitted in user skill trees",
+            ));
+        }
+        if metadata.is_dir() {
+            validate_user_skill_copy_entries(&child)?;
+        } else if metadata.is_file() {
+            // A differing entry set must not hide unreadable owner entries.
+            // Stream through a sink instead of retaining another copy in memory.
+            io::copy(&mut fs::File::open(&child)?, &mut io::sink())?;
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "special entries are not permitted in user skill trees",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Match an installed user copy against the complete bundled skill tree.
 /// Extra empty directories, links, reparse points and special entries cannot
 /// establish ownership. Missing/unreadable reference data is never a match.
 pub fn user_skill_copy_matches(bundled: &Path, installed: &Path) -> std::io::Result<bool> {
-    fn is_link(metadata: &fs::Metadata) -> bool {
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::MetadataExt;
-            metadata.file_type().is_symlink() || metadata.file_attributes() & 0x400 != 0
-        }
-        #[cfg(not(windows))]
-        {
-            metadata.file_type().is_symlink()
-        }
-    }
     fn compare(source: &Path, target: &Path) -> std::io::Result<bool> {
         let source_meta = fs::symlink_metadata(source)?;
         let target_meta = fs::symlink_metadata(target)?;
-        if is_link(&source_meta) || is_link(&target_meta) {
+        if skill_entry_is_link(&source_meta) || skill_entry_is_link(&target_meta) {
             return Ok(false);
         }
         if source_meta.is_file() && target_meta.is_file() {
@@ -172,16 +208,16 @@ pub fn user_skill_copy_matches(bundled: &Path, installed: &Path) -> std::io::Res
     let target_meta = fs::symlink_metadata(installed)?;
     let skill_meta = fs::symlink_metadata(bundled.join("SKILL.md"))?;
     if !source_meta.is_dir()
-        || is_link(&source_meta)
+        || skill_entry_is_link(&source_meta)
         || !skill_meta.is_file()
-        || is_link(&skill_meta)
+        || skill_entry_is_link(&skill_meta)
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "bundled skill reference requires a directory with a regular SKILL.md",
         ));
     }
-    if !target_meta.is_dir() || is_link(&target_meta) {
+    if !target_meta.is_dir() || skill_entry_is_link(&target_meta) {
         return Ok(false);
     }
     compare(bundled, installed)
@@ -235,80 +271,6 @@ fn lexical_parts(path: &Path) -> (bool, Vec<OsString>) {
     (rooted, parts)
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum SkillTreeEntry {
-    Directory,
-    File(Vec<u8>),
-}
-
-fn collect_skill_tree(root: &Path) -> io::Result<BTreeMap<PathBuf, SkillTreeEntry>> {
-    let root_meta = fs::symlink_metadata(root)?;
-    if root_meta.file_type().is_symlink() || !root_meta.is_dir() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "root is not an ordinary directory",
-        ));
-    }
-    let mut map = BTreeMap::new();
-    collect_skill_tree_inner(root, Path::new(""), &mut map)?;
-    Ok(map)
-}
-
-fn collect_skill_tree_inner(
-    root: &Path,
-    rel: &Path,
-    map: &mut BTreeMap<PathBuf, SkillTreeEntry>,
-) -> io::Result<()> {
-    let current_dir = if rel.as_os_str().is_empty() {
-        root.to_path_buf()
-    } else {
-        root.join(rel)
-    };
-    for entry in fs::read_dir(current_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let metadata = fs::symlink_metadata(&path)?;
-        let file_type = metadata.file_type();
-        if file_type.is_symlink() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "symlinks are not permitted in user skill trees",
-            ));
-        }
-        let child_rel = if rel.as_os_str().is_empty() {
-            PathBuf::from(entry.file_name())
-        } else {
-            rel.join(entry.file_name())
-        };
-        if file_type.is_dir() {
-            map.insert(child_rel.clone(), SkillTreeEntry::Directory);
-            collect_skill_tree_inner(root, &child_rel, map)?;
-        } else if file_type.is_file() {
-            let bytes = fs::read(&path)?;
-            map.insert(child_rel, SkillTreeEntry::File(bytes));
-        } else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "special files are not permitted in user skill trees",
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Compare two ordinary user-skill directory trees without following symlinks.
-///
-/// Both walks must succeed without encountering symlinks or special files.
-/// Those entries are errors, so a refresh or install leaves them in place.
-/// Directories, including empty ones, and regular-file bytes are compared.
-///
-/// Uninstall ownership stays on [`user_skill_copy_matches`].
-pub fn user_skill_ordinary_copy_matches(left: &Path, right: &Path) -> io::Result<bool> {
-    let left_tree = collect_skill_tree(left)?;
-    let right_tree = collect_skill_tree(right)?;
-    Ok(left_tree == right_tree)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,84 +316,6 @@ mod tests {
         );
         assert!(target.starts_with("../../.."), "{target}");
         assert!(target.ends_with("solstone/talent/journal"), "{target}");
-    }
-
-    #[test]
-    fn user_skill_ordinary_copy_matches_reports_true_for_identical_trees() {
-        let temp =
-            std::env::temp_dir().join(format!("skill-matches-identical-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&temp);
-        let left = temp.join("left");
-        let right = temp.join("right");
-        fs::create_dir_all(left.join("sub")).unwrap();
-        fs::create_dir_all(right.join("sub")).unwrap();
-        fs::write(left.join("SKILL.md"), b"content").unwrap();
-        fs::write(right.join("SKILL.md"), b"content").unwrap();
-        fs::write(left.join("sub/doc.txt"), b"doc").unwrap();
-        fs::write(right.join("sub/doc.txt"), b"doc").unwrap();
-
-        assert_eq!(
-            user_skill_ordinary_copy_matches(&left, &right).unwrap(),
-            true
-        );
-        fs::remove_dir_all(temp).unwrap();
-    }
-
-    #[test]
-    fn user_skill_ordinary_copy_matches_reports_false_for_byte_difference() {
-        let temp =
-            std::env::temp_dir().join(format!("skill-matches-diff-bytes-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&temp);
-        let left = temp.join("left");
-        let right = temp.join("right");
-        fs::create_dir_all(&left).unwrap();
-        fs::create_dir_all(&right).unwrap();
-        fs::write(left.join("SKILL.md"), b"content a").unwrap();
-        fs::write(right.join("SKILL.md"), b"content b").unwrap();
-
-        assert_eq!(
-            user_skill_ordinary_copy_matches(&left, &right).unwrap(),
-            false
-        );
-        fs::remove_dir_all(temp).unwrap();
-    }
-
-    #[test]
-    fn user_skill_ordinary_copy_matches_reports_false_for_extra_empty_directory() {
-        let temp =
-            std::env::temp_dir().join(format!("skill-matches-extra-dir-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&temp);
-        let left = temp.join("left");
-        let right = temp.join("right");
-        fs::create_dir_all(left.join("empty")).unwrap();
-        fs::create_dir_all(&right).unwrap();
-        fs::write(left.join("SKILL.md"), b"content").unwrap();
-        fs::write(right.join("SKILL.md"), b"content").unwrap();
-
-        assert_eq!(
-            user_skill_ordinary_copy_matches(&left, &right).unwrap(),
-            false
-        );
-        fs::remove_dir_all(temp).unwrap();
-    }
-
-    #[test]
-    fn user_skill_ordinary_copy_matches_reports_err_for_internal_symlink() {
-        let temp =
-            std::env::temp_dir().join(format!("skill-matches-symlink-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&temp);
-        let left = temp.join("left");
-        let right = temp.join("right");
-        fs::create_dir_all(&left).unwrap();
-        fs::create_dir_all(&right).unwrap();
-        fs::write(left.join("SKILL.md"), b"content").unwrap();
-        fs::write(right.join("SKILL.md"), b"content").unwrap();
-        #[cfg(unix)]
-        std::os::unix::fs::symlink("target", left.join("link")).unwrap();
-
-        #[cfg(unix)]
-        assert!(user_skill_ordinary_copy_matches(&left, &right).is_err());
-        fs::remove_dir_all(temp).unwrap();
     }
 }
 
@@ -498,6 +382,7 @@ mod user_copy_tests {
         fs::write(&external, "published guide\n").unwrap();
         fs::remove_file(target.join("nested/guide.txt")).unwrap();
         symlink(&external, target.join("nested/guide.txt")).unwrap();
+        assert!(super::validate_user_skill_copy_entries(&target).is_err());
         assert!(!user_skill_copy_matches(&source, &target).unwrap());
         fs::remove_file(target.join("nested/guide.txt")).unwrap();
         fs::remove_file(source.join("nested/guide.txt")).unwrap();
@@ -507,5 +392,23 @@ mod user_copy_tests {
         fs::remove_file(source.join("SKILL.md")).unwrap();
         symlink(&external, source.join("SKILL.md")).unwrap();
         assert!(user_skill_copy_matches(&source, &target).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn entry_validation_rejects_special_files_without_reading_them() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let target = root.path().join("target");
+        tree(&source);
+        tree(&target);
+        assert!(super::validate_user_skill_copy_entries(&target).is_ok());
+        let result = std::process::Command::new("mkfifo")
+            .arg(target.join("pipe"))
+            .status()
+            .unwrap();
+        assert!(result.success());
+        assert!(super::validate_user_skill_copy_entries(&target).is_err());
+        assert!(!user_skill_copy_matches(&source, &target).unwrap());
     }
 }

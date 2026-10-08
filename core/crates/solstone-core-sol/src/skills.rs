@@ -252,11 +252,11 @@ fn real_context() -> Result<RuntimeContext, String> {
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .ok_or_else(|| {
-            "solstone: native skills home is unavailable. Reinstall solstone and solstone-core.\n"
+            "solstone: native skills home is unavailable. Set HOME to your home directory.\n"
                 .to_string()
         })?;
     let cwd = std::env::current_dir().map_err(|error| {
-        format!("solstone: native skills cwd is unavailable: {error}. Reinstall solstone and solstone-core.\n")
+        format!("solstone: native skills cwd is unavailable: {error}. Run this command from an accessible directory.\n")
     })?;
     let root = resolve_project_root().map_err(|error| {
         format!(
@@ -531,7 +531,7 @@ fn cleanup_retired_sol_user_skill(skills_root: &Path, agent: &str, report: &mut 
             action: Action::Warning,
             path: leftover.clone(),
             reason: Some(format!(
-                "does not match the retired sol skill; user content at {} preserved",
+                "does not match the retired sol skill; existing content at {} preserved",
                 leftover.display()
             )),
         }),
@@ -866,7 +866,7 @@ fn install_project_source(
             skill: name.to_string(),
             action: Action::Warning,
             path: link,
-            reason: Some("user content at target preserved".to_string()),
+            reason: Some("existing content at target preserved".to_string()),
         }),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             if let Err(error) = create_symlink(Path::new(&target), &link) {
@@ -926,7 +926,7 @@ fn remove_stale_project_links(
                 skill: name,
                 action: Action::Warning,
                 path: link,
-                reason: Some("user content at stale target preserved".to_string()),
+                reason: Some("existing content at stale target preserved".to_string()),
             }),
             Err(error) => append_error(&mut report.rows, agent, &name, &link, error),
         }
@@ -2053,8 +2053,8 @@ mod tests {
             .env("HOME", &home)
             .env("SOLSTONE_JOURNAL", &journal)
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .expect("spawn child");
 
@@ -2074,10 +2074,83 @@ mod tests {
             panic!("child timed out");
         }
         let status = status.expect("child status");
+        let output = child.wait_with_output().expect("child output");
         assert_eq!(status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("overlaps protected journal"));
         drop(admission);
 
         assert_eq!(fs::read(&marker).expect("marker read"), b"marker_data");
         assert!(!home.join(".claude/skills/solstone").exists());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn admission_holds_lock_while_child_installs_a_separate_skill() {
+        use solstone_core_installation_identity::{
+            ArtifactBindingEvidence, LegacyManifestEvidence, OwnerBase, PlatformTag,
+            SetupAdmissionRequest, admit_setup, journal_token_from_path, root_token_from_path,
+        };
+        let temp = unique_temp("admission-separate-skill");
+        let home = temp.path().join("home");
+        let journal = temp.path().join("journal");
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        fs::create_dir_all(&journal).unwrap();
+        let owner = OwnerBase::at_home(home.clone(), PlatformTag::Linux).unwrap();
+        let root = source_root();
+        let admission = admit_setup(SetupAdmissionRequest {
+            owner,
+            root_token: root_token_from_path(&root).unwrap(),
+            journal_token: journal_token_from_path(&journal).unwrap(),
+            journal_is_explicit: true,
+            accept_prepared_retarget: false,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "skills::tests::admission_child_helper",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("SOLSTONE_ADMISSION_CHILD_ROLE", "helper")
+            .env("HOME", &home)
+            .env("SOLSTONE_JOURNAL", &journal)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if child.try_wait().unwrap().is_some() {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                let _ = child.wait();
+                panic!("skill installation blocked on the parent's admission");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            solstone_core_skill_state::user_skill_copy_matches(
+                &root.join("solstone/talent/solstone"),
+                &home.join(".claude/skills/solstone")
+            )
+            .unwrap()
+        );
+        assert!(!home.join(".codex").exists());
+        assert!(!home.join(".gemini").exists());
+        drop(admission);
     }
 }

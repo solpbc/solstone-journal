@@ -168,7 +168,7 @@ The status should read `Valid`, and the signer certificate's subject should star
 solstone journal setup
 ```
 
-This runs the setup readiness doctor battery and sets up your selected journal (`~/journal` by default). It fetches the local transcription model (~1 GB), installs the `solstone` skill for Claude Code, Codex, and Gemini, and installs the journal-side `solstone` and `journal` router skills so your agents can help tend your journal. It then starts a systemd user service listening on http://localhost:5015. The default port is shared across logins. A second journal on that port, including one started under another login, cannot bind it.
+This runs the setup readiness doctor battery and sets up your selected journal (`~/journal` by default). It fetches the local transcription model (~1 GB), installs the `solstone` skill for Claude Code, Codex, and Gemini when their configuration folders are already present, and installs the journal-side `solstone` and `journal` router skills so your agents can help tend your journal. It then starts a systemd user service listening on http://localhost:5015. The default port is shared across logins. A second journal on that port, including one started under another login, cannot bind it.
 
 Let your human know: **open http://localhost:5015 in a browser**. The first-run wizard walks them through setting their identity and choosing a provider.
 

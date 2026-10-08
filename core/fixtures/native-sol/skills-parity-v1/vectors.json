@@ -407,7 +407,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "installed claude solstone -> ${TEMP_ROOT}/p_user_content/.claude/skills/solstone\ninstalled agents journal -> ${TEMP_ROOT}/p_user_content/.agents/skills/journal\ninstalled agents solstone -> ${TEMP_ROOT}/p_user_content/.agents/skills/solstone\nWarnings:\nwarning claude journal -> ${TEMP_ROOT}/p_user_content/.claude/skills/journal (user content at target preserved)\n"
+        "stdout": "installed claude solstone -> ${TEMP_ROOT}/p_user_content/.claude/skills/solstone\ninstalled agents journal -> ${TEMP_ROOT}/p_user_content/.agents/skills/journal\ninstalled agents solstone -> ${TEMP_ROOT}/p_user_content/.agents/skills/solstone\nWarnings:\nwarning claude journal -> ${TEMP_ROOT}/p_user_content/.claude/skills/journal (existing content at target preserved)\n"
       },
       "home": "${TEMP_ROOT}/p_home_user_content",
       "id": "project_user_content_preserved",
@@ -466,7 +466,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "Warnings:\nwarning claude entities -> ${TEMP_ROOT}/p_stale_content/.claude/skills/entities (user content at stale target preserved)\n"
+        "stdout": "Warnings:\nwarning claude entities -> ${TEMP_ROOT}/p_stale_content/.claude/skills/entities (existing content at stale target preserved)\n"
       },
       "home": "${TEMP_ROOT}/p_home_stale_content",
       "id": "project_stale_non_symlink_preserved",

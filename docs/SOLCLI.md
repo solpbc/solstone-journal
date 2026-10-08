@@ -507,6 +507,8 @@ not the codebase. See [APPS.md](APPS.md).
 
 ## Skill System
 
+User installation (`solstone skills install`) copies the bundled `solstone` skill into `~/.claude/skills/solstone`, `~/.codex/skills/solstone`, and `~/.gemini/skills/solstone` only when the respective agent configuration folder already exists. This also applies to explicit `--agent` selections. On mac and linux, journal startup refreshes existing user skills from the current bundled payload; it leaves matching copies untouched and missing skills absent. Use `solstone skills install` to add the skill after configuring another agent. User installation and refresh preserve locations that overlap your selected or registered journals.
+
 Project skill installation installs exactly two router skills into both `journal/.claude/skills/` and `journal/.agents/skills/`: `solstone` and `journal`. `solstone skills install --project` does not install per-app fragments or every `SKILL.md` as a top-level skill.
 
 **Skill locations:**

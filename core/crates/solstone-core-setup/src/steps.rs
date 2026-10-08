@@ -1650,9 +1650,8 @@ fn step_install_models(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
     Ok(result)
 }
 
-/// Agent skills are not installed on Windows yet: they are symlinked into each
-/// agent's home, and a standard Windows owner cannot create a symlink. Both
-/// skills steps skip there instead of failing setup with a misleading remedy.
+/// Windows setup does not yet install user skill copies or journal router
+/// symlinks. Both skills steps skip instead of failing setup with a misleading remedy.
 #[cfg(windows)]
 fn skipped_windows_skills(context: &SetupContext<'_>, name: StepName) -> StepResult {
     let mut result = StepResult::new(name, StepStatus::Skipped, Vec::new(), (context.now)());
