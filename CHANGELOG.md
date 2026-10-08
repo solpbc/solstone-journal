@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - the encrypted backup screen now says up front that restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. restoring from storage sol pbc runs now points you to the services portal.
+- on windows, the setup warning and removal steps now say to move a journal kept inside the program folder before reinstalling or uninstalling. the steps explain how to remove its old background registration and select the moved journal again.
 
 ### Fixed
 
@@ -31,7 +32,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- on windows, setup requires your journal to be outside the program folder that uninstall removes. if your journal is already there, stop it and move the whole journal folder before uninstalling.
+- on windows, setup requires your journal to be outside the program folder. if your journal is already there, follow the [windows removal steps](https://github.com/solpbc/solstone-journal/blob/main/INSTALL.md#uninstall-on-windows) to remove its old background registration, move the whole journal folder and select its new location before reinstalling or uninstalling.
 - uninstall cleanup now removes more files outside your journal on linux, mac and windows. it keeps your journal's setup record and removes unedited copies of the solstone skill.
 - each time your journal starts, on mac and linux, it replaces existing copies of the solstone skill with its current one, including copies you edited.
 
