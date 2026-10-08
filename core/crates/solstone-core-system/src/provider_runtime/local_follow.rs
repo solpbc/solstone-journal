@@ -126,7 +126,7 @@ impl LocalFollow {
         if decision == FollowDecision::Launch {
             memory.record_launch(now);
             match (self.launcher)(journal) {
-                Ok(()) => log::info!(
+                Ok(()) => log::warn!(
                     "local provider artifacts are behind this release's pins; started the installer"
                 ),
                 Err(error) => log::warn!(

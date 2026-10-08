@@ -10,6 +10,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - the encrypted backup screen now says up front that restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. restoring from storage sol pbc runs now points you to the services portal.
 
+### Fixed
+
+- on mac and linux, "install local model" on the thinking page no longer says "local setup didn't start" when a local model is already installed.
+
 ## [2.0.37] - 2026-10-08
 
 ### Changed
