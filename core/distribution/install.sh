@@ -1564,7 +1564,7 @@ refuse_floor() {
 	_rf_name=$1
 	_rf_detail=$2
 	if [ "${UPGRADE:-0}" -eq 1 ]; then
-		_rf_detail="${_rf_detail}; the current install is untouched and keeps running"
+		_rf_detail="${_rf_detail} The current install is untouched and keeps running."
 	fi
 	refuse "$_rf_name" "$_rf_detail"
 }
@@ -1582,11 +1582,11 @@ require_linux_floor() {
 
 	if [ -n "${SOLSTONE_UNAME_S:-}" ] || [ -n "${SOLSTONE_OS_RELEASE:-}" ]; then
 		if [ -z "${SOLSTONE_LIBC_VERSION:-}" ]; then
-			refuse_floor libc-undetermined "the glibc version could not be determined"
+			refuse_floor libc-undetermined "the glibc version could not be determined, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: run the installer on a glibc-based linux such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release."
 		fi
 		case $SOLSTONE_LIBC_VERSION in
 		*[!0-9.]* | .* | *. | *..* | "")
-			refuse_floor libc-undetermined "the glibc version could not be determined"
+			refuse_floor libc-undetermined "the glibc version could not be determined, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: run the installer on a glibc-based linux such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release."
 			;;
 		esac
 		_libc_version=$SOLSTONE_LIBC_VERSION
@@ -1607,11 +1607,11 @@ require_linux_floor() {
 		_raw_libc=$(getconf GNU_LIBC_VERSION 2>/dev/null || true)
 		_libc_version=${_raw_libc##* }
 		if [ -z "$_libc_version" ]; then
-			refuse_floor libc-undetermined "the glibc version could not be determined"
+			refuse_floor libc-undetermined "the glibc version could not be determined, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: run the installer on a glibc-based linux such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release."
 		fi
 		case $_libc_version in
 		*[!0-9.]* | .* | *. | *..* | "")
-			refuse_floor libc-undetermined "the glibc version could not be determined"
+			refuse_floor libc-undetermined "the glibc version could not be determined, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: run the installer on a glibc-based linux such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release."
 			;;
 		esac
 
@@ -1632,32 +1632,32 @@ require_linux_floor() {
 	fi
 
 	if ! compare_dotted_ge "$_libc_version" "2.34"; then
-		refuse_floor glibc-too-old "detected glibc ${_libc_version}; install glibc 2.34 or newer (Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or later)"
+		refuse_floor glibc-too-old "this system has glibc ${_libc_version}, and the journal needs glibc 2.34 or newer. Nothing was changed. To fix: move to a release that includes it, such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or any newer release, then run this command again."
 	fi
 
 	if [ "$_libstdcxx_symbols" = "missing" ]; then
-		refuse_floor cxx-runtime-missing "libstdc++.so.6 is missing; install the GCC 11 C++ runtime"
+		refuse_floor cxx-runtime-missing "libstdc++.so.6 was not found, and the journal needs the GCC 11 C++ runtime. Nothing was changed. To fix: install libstdc++6 (Debian, Ubuntu) or libstdc++ (Fedora, RHEL), then run this command again."
 	fi
 
 	case $_libstdcxx_symbols in
 	*" GLIBCXX_3.4.29 "*) ;;
 	*)
-		refuse_floor cxx-runtime-too-old "libstdc++.so.6 is missing symbol version GLIBCXX_3.4.29; install the GCC 11 C++ runtime or newer"
+		refuse_floor cxx-runtime-too-old "the C++ runtime on this system (libstdc++.so.6) is older than GCC 11 (no GLIBCXX_3.4.29), and the journal needs GCC 11 or newer. Nothing was changed. To fix: update libstdc++6 (Debian, Ubuntu) or libstdc++ (Fedora, RHEL), then run this command again."
 		;;
 	esac
 
 	if [ "$_has_libgomp" -ne 1 ]; then
-		refuse_floor runtime-library-missing "libgomp.so.1 is missing; install that library"
+		refuse_floor runtime-library-missing "libgomp.so.1 was not found, and the journal needs it. Nothing was changed. To fix: install libgomp1 (Debian, Ubuntu) or libgomp (Fedora, RHEL), then run this command again."
 	fi
 
 	if [ "$_has_libgcc_s" -ne 1 ]; then
-		refuse_floor runtime-library-missing "libgcc_s.so.1 is missing; install that library"
+		refuse_floor runtime-library-missing "libgcc_s.so.1 was not found, and the journal needs it. Nothing was changed. To fix: install libgcc-s1 (Debian, Ubuntu) or libgcc (Fedora, RHEL), then run this command again."
 	fi
 
 	case $_libstdcxx_symbols in
 	*" GLIBCXX_3.4.30 "*) ;;
 	*)
-		printf 'warning: local transcription needs the GCC 12 C++ runtime (Ubuntu 22.04, Debian 12, Fedora 37 or later). Everything else works.\n' >&2
+		printf 'warning: this system does not have the GCC 12 C++ runtime, which local transcription needs (Ubuntu 22.04, Debian 12, Fedora 36 and newer include it). The rest of the journal installs as usual.\n' >&2
 		;;
 	esac
 }

@@ -21,7 +21,7 @@ For an archive installation, run the linux `solstone` commands below through tha
 
 ### Prerequisites
 
-The journal needs glibc 2.34 or newer and the GCC 11 C++ runtime, for example Ubuntu 22.04, Debian 12, RHEL 9, or Fedora 35 or later. Local transcription additionally needs the GCC 12 C++ runtime (Ubuntu 22.04, Debian 12, Fedora 37 or later; not RHEL 9).
+The journal needs glibc 2.34 or newer and the GCC 11 C++ runtime. Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 and newer releases of each include both. Local transcription also needs the GCC 12 C++ runtime, which Ubuntu 22.04, Debian 12 and Fedora 36 or newer include and RHEL 9 does not.
 
 ## Install the journal on linux
 

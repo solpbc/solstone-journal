@@ -2154,7 +2154,7 @@ _text_7=$(cat "$_out_7")
 rm -f "$_out_7"
 if [ "$_st_7" -ne 0 ] && [ ! -e "$FLOOR_PREFIX_7" ]; then
 	case $_text_7 in
-	*glibc-too-old*the\ current\ install\ is\ untouched*keeps\ running*) pass "floor upgrade refusal preserves running install" ;;
+	*glibc-too-old*The\ current\ install\ is\ untouched*keeps\ running*) pass "floor upgrade refusal preserves running install" ;;
 	*) fail "floor upgrade refusal: wanted glibc-too-old, untouched, keeps running in: $_text_7" ;;
 	esac
 else
@@ -2188,7 +2188,7 @@ case $_text_9 in
 *glibc-too-old* | *cxx-runtime-missing* | *cxx-runtime-too-old*)
 	fail "floor passing glibc 2.34 without 3.4.30 had floor refusal: $_text_9"
 	;;
-*"warning: local transcription needs the GCC 12 C++ runtime (Ubuntu 22.04, Debian 12, Fedora 37 or later). Everything else works."*)
+*"warning: this system does not have the GCC 12 C++ runtime, which local transcription needs (Ubuntu 22.04, Debian 12, Fedora 36 and newer include it). The rest of the journal installs as usual."*)
 	pass "floor passing glibc 2.34 without 3.4.30 prints transcription warning"
 	;;
 *)
