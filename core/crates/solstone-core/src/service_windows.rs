@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use solstone_core_cli::{ServiceAction, ServiceInstallationGuardArguments};
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, CleanUninstallPlan, CleanUninstallRequest, CleanupSkip,
-    CleanupTargetDecision, CleanupTargetKind, GuardFields, IdentityError, OwnerBase,
+    CleanupTargetDecision, CleanupTargetKind, GuardFields, IdentityError, OwnerBase, PlatformTag,
     ProtectedJournals, admit_clean_uninstall, journal_token_from_path, load_installation_binding,
     may_remove_cleanup_target, owner_base, parse_service_guard_environment, root_token_from_path,
 };

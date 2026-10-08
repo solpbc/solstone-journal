@@ -84,8 +84,15 @@ fn build_binary(package: &str, binary: &str) -> PathBuf {
         .expect("cargo build runs");
     assert!(
         output.status.success(),
-        "cargo build -p {package} --bin {binary} failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
+        "cargo build -p {package} --bin {binary} failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .filter(|message| message["reason"] == "compiler-message")
+            .filter_map(|message| message["message"]["rendered"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
     String::from_utf8_lossy(&output.stdout)
         .lines()
