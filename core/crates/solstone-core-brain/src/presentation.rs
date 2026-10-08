@@ -45,7 +45,10 @@ pub fn present_brain_inspection(
     BrainPresentation {
         headline: headline(&projection.aggregate_state, reason, progressing).to_owned(),
         progressing,
-        reason_text: brain_reason_text(reason),
+        reason_text: match (reason, refused_register(inspection.record.as_ref())) {
+            (Some("attestation_rejected"), Some(register)) => refused_register_text(register),
+            _ => brain_reason_text(reason),
+        },
         failing_component,
         evidence: BrainEvidencePresentation {
             observed_at,
@@ -117,6 +120,23 @@ pub fn brain_reason_text(reason: Option<&str>) -> String {
         Some("chatgpt_usage_limit") => "ChatGPT usage limit reached".to_owned(),
         Some(reason) => reason.replace('_', " "),
     }
+}
+
+/// The one register a refused confidential service failed on, when the
+/// refusal named one.
+fn refused_register(record: Option<&Value>) -> Option<&str> {
+    record?
+        .get("evidence")?
+        .get("lane_prerequisites")?
+        .get("diagnostic")?
+        .get("register")?
+        .as_str()
+}
+
+/// Owner words for a service refused on one register: what the journal
+/// checked, nothing more.
+fn refused_register_text(register: &str) -> String {
+    format!("the service's measurement {register} doesn't match its published value")
 }
 
 fn evidence_view(record: Option<&Value>) -> (Option<String>, Option<String>) {

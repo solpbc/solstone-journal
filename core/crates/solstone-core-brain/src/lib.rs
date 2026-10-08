@@ -34,7 +34,8 @@ pub use presentation::{
 };
 pub use record::{
     BrainStateRecord, ValidationError, evidence_component_for_reason, is_valid_evidence_reason,
-    valid_spp_reason, validate_brain_state_record, validate_refresh_probe_outcome,
+    spp_reason_diagnostic, valid_spp_reason, validate_brain_state_record,
+    validate_refresh_probe_outcome,
 };
 pub use runtime_health::{
     RuntimeRecordInspection, RuntimeRetryError, RuntimeRetryRecord, inspect_runtime_health,

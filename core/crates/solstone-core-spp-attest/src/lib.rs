@@ -13,17 +13,21 @@ pub mod tlv;
 pub mod tpm_quote;
 
 pub use error::{
-    ApplicationExpectationsError, PcrFingerprintError, PcrPinMismatchError, QuotePcrsError,
+    ApplicationExpectationsError, ApplicationPcrError, PcrFingerprintError, PcrPinMismatchError,
+    QuotePcrsError,
 };
 pub use nvgpu::{
     GpuAppraiser, NVATTEST_TIMEOUT, NvattestCommand, NvattestGpuAppraiser, NvattestInstallation,
     appraise_gpu_leg, build_nvattest_attest_command, locate_nvattest,
 };
 pub use pcr_appraisal::{
-    ApplicationExpectations, PcrAppraisalFailure, PcrAppraisalReason, appraise_application_pcrs,
-    parse_quote_pcrs,
+    ApplicationExpectations, ApplicationPcrPolicy, PcrAppraisalFailure, PcrAppraisalReason,
+    appraise_application_pcrs, check_application_pcrs, parse_quote_pcrs,
 };
-pub use pins::{PRODUCTION_ID_KEY_DIGEST_PINS, PRODUCTION_PCR_SHA256_PINS, production_policy};
+pub use pins::{
+    PRODUCTION_ID_KEY_DIGEST_PINS, PRODUCTION_PCR_SHA256_PINS, PUBLISHED_APPLICATION_PCRS,
+    PUBLISHED_QUOTE_PCR_SELECTION, production_policy, published_application_pcr_policy,
+};
 pub use snp::{
     CpuBundle, PcrMode, Policy, QuoteVerifier, TcbFloor, appraise_cpu_leg, check_pcr_fingerprint,
 };

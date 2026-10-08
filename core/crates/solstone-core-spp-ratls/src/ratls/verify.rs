@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use solstone_core_spp_attest::{
-    CpuBundle, Policy, QuoteVerifier, check_pcr_fingerprint,
+    CpuBundle, Policy, QuoteVerifier, check_application_pcrs, check_pcr_fingerprint,
     error::PcrFingerprintError,
     tpm_quote::{TpmQuoteInput, verify_quote},
 };
@@ -231,15 +231,31 @@ pub fn verify_exporter_proof(
     .map_err(|_| RatlsVerificationError {
         reason_code: "exporter_quote_failed",
     })?;
-    match check_pcr_fingerprint(&proof.quote_pcrs, policy.unwrap_or(&Policy::default())) {
-        Ok(_) => Ok(()),
-        Err(PcrFingerprintError::PinMismatch(_)) => Err(RatlsVerificationError {
-            reason_code: "pcr_pin_mismatch",
-        }),
-        Err(_) => Err(RatlsVerificationError {
-            reason_code: "composite_appraisal_failed",
-        }),
+    let default_policy = Policy::default();
+    let policy = policy.unwrap_or(&default_policy);
+    match check_pcr_fingerprint(&proof.quote_pcrs, policy) {
+        Ok(_) => {}
+        Err(PcrFingerprintError::PinMismatch(_)) => {
+            return Err(RatlsVerificationError {
+                reason_code: "pcr_pin_mismatch",
+            });
+        }
+        Err(_) => {
+            return Err(RatlsVerificationError {
+                reason_code: "composite_appraisal_failed",
+            });
+        }
     }
+    // The exporter proof's quote is appraised register by register exactly as
+    // the certificate's quote was.
+    if let Some(application) = &policy.application_pcrs {
+        check_application_pcrs(&proof.quote_pcrs, application).map_err(|error| {
+            RatlsVerificationError {
+                reason_code: error.reason_code(),
+            }
+        })?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -3,14 +3,14 @@
 
 //! Application PCR appraisal for SPP composite attestation.
 //!
-//! This API is dormant; wiring it into the enforced appraisal path is a separate
-//! gated cutover (G13). PCRs 0 and 2 are the platform half and are intentionally
-//! not appraised here (G13/G16).
+//! Enforced on top of the flat PCR fingerprint pin, never instead of it: the
+//! pin still binds the platform registers 0 and 2, which are intentionally not
+//! appraised here, across both accepted firmware states.
 
 use std::collections::BTreeMap;
 
 use crate::{
-    error::{ApplicationExpectationsError, QuotePcrsError},
+    error::{ApplicationExpectationsError, ApplicationPcrError, QuotePcrsError},
     tpm_quote::parse_quote_pcr_file,
 };
 
@@ -42,6 +42,7 @@ pub struct PcrAppraisalFailure {
 }
 
 /// Verified application PCR expectations for appraisal.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApplicationExpectations {
     digests: BTreeMap<u32, [u8; 32]>,
 }
@@ -55,6 +56,31 @@ impl ApplicationExpectations {
             Err(ApplicationExpectationsError::KeySet)
         }
     }
+}
+
+/// The register selection a published engine build's quote carries, and the
+/// application values each register must hold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplicationPcrPolicy {
+    pub selection: Vec<u32>,
+    pub expectations: ApplicationExpectations,
+}
+
+/// Appraises a quote's registers one by one against a published build.
+///
+/// A quote whose selection is not exactly the published one is refused before
+/// any register is read. Otherwise the first failing register, in appraisal
+/// order, is the refusal.
+pub fn check_application_pcrs(
+    quote_pcrs: &[u8],
+    policy: &ApplicationPcrPolicy,
+) -> Result<(), ApplicationPcrError> {
+    let observed = parse_quote_pcrs(quote_pcrs, &policy.selection)?;
+    appraise_application_pcrs(&observed, &policy.expectations).map_err(|failures| {
+        ApplicationPcrError::Register {
+            pcr: failures[0].pcr,
+        }
+    })
 }
 
 /// Parses a quote.pcrs buffer and verifies that its selection matches the expected list.
