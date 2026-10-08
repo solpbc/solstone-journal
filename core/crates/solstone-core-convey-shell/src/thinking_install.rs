@@ -724,10 +724,10 @@ mod tests {
                 assert!(!lease::is_held(journal.path(), "local").unwrap());
             }
             Ok(_) => {
-                if let Ok(st) = status::read_status(journal.path(), "local") {
-                    if let Some(att) = st.attempt_id {
-                        let _ = cancel(journal.path(), &att);
-                    }
+                if let Ok(st) = status::read_status(journal.path(), "local")
+                    && let Some(att) = st.attempt_id
+                {
+                    let _ = cancel(journal.path(), &att);
                 }
                 panic!("explicit start unexpectedly succeeded without sibling binary");
             }
