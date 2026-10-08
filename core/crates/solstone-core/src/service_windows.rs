@@ -758,6 +758,32 @@ fn admitted_clean_session(
     .map_err(task_error)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UninstallIdentityHold {
+    Release,
+    Reacquire,
+}
+
+/// Stops and removes the service task with the installation identity hold released.
+///
+/// A running supervisor admits `service_stop` only after loading the installation
+/// binding under the owner identity lock, so a stop requested while this process
+/// holds a clean-uninstall admission waits until its timeout and leaves the task
+/// running. Release the hold for the stop and removal, then admit again (the caller
+/// requires the same plan) before anything else is removed, as setup's clean
+/// uninstall does around this command. A failure names the step that failed;
+/// nothing after it runs.
+fn remove_task_with_identity_released(
+    hold: &mut dyn FnMut(UninstallIdentityHold) -> Result<(), String>,
+    stop: &mut dyn FnMut() -> Result<(), String>,
+    delete: &mut dyn FnMut() -> Result<(), String>,
+) -> Result<(), (&'static str, String)> {
+    hold(UninstallIdentityHold::Release).map_err(|reason| ("identity", reason))?;
+    stop().map_err(|reason| ("task", reason))?;
+    delete().map_err(|reason| ("task", reason))?;
+    hold(UninstallIdentityHold::Reacquire).map_err(|reason| ("identity", reason))
+}
+
 fn admitted_protected_journals(
     preflight: &CleanUninstallPreflight,
     plan: &CleanUninstallPlan,
@@ -1336,25 +1362,33 @@ fn run_uninstall_action() -> ExitCode {
     let protected_journals = admitted_protected_journals(&preflight, &plan);
     let platform = owner.platform();
     let mut results = Vec::new();
-    if let Err(code) = stop_task(&ctx) {
+    let mut session = Some(session);
+    let removed = remove_task_with_identity_released(
+        &mut |hold| match hold {
+            UninstallIdentityHold::Release => {
+                session = None;
+                Ok(())
+            }
+            UninstallIdentityHold::Reacquire => {
+                let again = admitted_clean_session(&owner, &root_token, &ctx)
+                    .map_err(|code| format!("ReadmissionFailed: {code:?}"))?;
+                if again.plan() != &plan {
+                    return Err("PlanChangedAfterTaskRemoval".into());
+                }
+                session = Some(again);
+                Ok(())
+            }
+        },
+        &mut || stop_task(&ctx).map_err(|code| format!("TaskStopFailed: {code:?}")),
+        &mut || delete_task(&ctx).map_err(|code| format!("TaskDeleteFailed: {code:?}")),
+    );
+    if let Err((name, reason)) = removed {
         return stop_after_failed_cleanup_step(
             Some(journal),
             results,
-            "task",
+            name,
             None,
-            format!("TaskStopFailed: {code:?}"),
-            &ctx,
-            &home,
-            false,
-        );
-    }
-    if let Err(code) = delete_task(&ctx) {
-        return stop_after_failed_cleanup_step(
-            Some(journal),
-            results,
-            "task",
-            None,
-            format!("TaskDeleteFailed: {code:?}"),
+            reason,
             &ctx,
             &home,
             false,
@@ -2173,4 +2207,71 @@ pub(crate) fn admit_task_action(args: &[OsString]) -> Result<Option<AdmittedTask
             acknowledgement_timeout: Duration::from_secs(3),
         },
     }))
+}
+
+#[cfg(test)]
+mod uninstall_identity_hold_tests {
+    use super::{UninstallIdentityHold, remove_task_with_identity_released};
+    use std::cell::{Cell, RefCell};
+
+    #[test]
+    fn a_running_task_is_stopped_and_removed_while_the_identity_hold_is_released() {
+        let held = Cell::new(true);
+        let order = RefCell::new(Vec::new());
+        let result = remove_task_with_identity_released(
+            &mut |hold| {
+                order.borrow_mut().push(format!("{hold:?}"));
+                held.set(hold == UninstallIdentityHold::Reacquire);
+                Ok(())
+            },
+            // The supervisor's stop admission loads the binding under the same lock.
+            &mut || {
+                order.borrow_mut().push("stop".into());
+                if held.get() {
+                    Err("stop waited on the identity lock".into())
+                } else {
+                    Ok(())
+                }
+            },
+            &mut || {
+                order.borrow_mut().push("delete".into());
+                if held.get() {
+                    Err("delete ran under the identity lock".into())
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(*order.borrow(), ["Release", "stop", "delete", "Reacquire"]);
+        assert!(held.get());
+    }
+
+    #[test]
+    fn a_failed_stop_or_a_refused_readmission_names_its_step_and_runs_nothing_after_it() {
+        let deleted = Cell::new(false);
+        let stopped = remove_task_with_identity_released(
+            &mut |_| Ok(()),
+            &mut || Err("TaskStopFailed".into()),
+            &mut || {
+                deleted.set(true);
+                Ok(())
+            },
+        );
+        assert_eq!(stopped, Err(("task", "TaskStopFailed".to_string())));
+        assert!(!deleted.get());
+
+        let readmitted = remove_task_with_identity_released(
+            &mut |hold| match hold {
+                UninstallIdentityHold::Release => Ok(()),
+                UninstallIdentityHold::Reacquire => Err("PlanChangedAfterTaskRemoval".into()),
+            },
+            &mut || Ok(()),
+            &mut || Ok(()),
+        );
+        assert_eq!(
+            readmitted,
+            Err(("identity", "PlanChangedAfterTaskRemoval".to_string()))
+        );
+    }
 }
