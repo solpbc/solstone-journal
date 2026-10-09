@@ -170,7 +170,7 @@ fn indexer_rescan_full_suppresses_zero_edge_hint_for_nonzero_rebuild_and_reset_c
 }
 
 #[test]
-fn indexer_scan_edge_failure_warns_and_exits_zero() {
+fn indexer_scan_edge_failure_warns_and_only_the_full_rescan_exits_nonzero() {
     let root = temp_path("scan-edge-failure");
     seed_edge_entity(&root, "alice", "Alice Edge");
     seed_edge_entity(&root, "bob", "Bob Edge");
@@ -190,12 +190,23 @@ fn indexer_scan_edge_failure_warns_and_exits_zero() {
         .output()
         .expect("solstone-core should execute");
 
-    assert_eq!(output.status.code(), Some(0));
+    // The operator's full rescan says a file failed; the light rescan the
+    // scheduled callers run keeps exit 0.
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
     assert!(
-        String::from_utf8(output.stderr)
-            .expect("stderr should be utf-8")
+        stderr
             .contains("warning: Skipping edge extraction for facets/work/entities/20260230.jsonl")
     );
+    assert!(stderr.contains("1 update(s) couldn't be indexed"));
+    let light = Command::new(bin())
+        .arg("indexer")
+        .arg("--journal")
+        .arg(&root)
+        .arg("--rescan")
+        .output()
+        .expect("solstone-core should execute");
+    assert_eq!(light.status.code(), Some(0));
     fs::remove_dir_all(root).expect("cleanup scan edge failure root");
 }
 

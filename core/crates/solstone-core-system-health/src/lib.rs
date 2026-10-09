@@ -61,7 +61,7 @@ pub use index_health::{
     INDEX_TEXT_BUILDING, INDEX_TEXT_CLASSIFICATION_STALLED, INDEX_TEXT_FAILED_FILES,
     INDEX_TEXT_NEWER_GENERATION, INDEX_TEXT_OK, INDEX_TEXT_REPAIR, INDEX_TEXT_UNREADABLE,
     IndexFailure, IndexHealth, IndexHealthState, behind_text, evaluate_index_health,
-    evaluate_index_health_recent, evaluate_index_health_with, index_health_from,
+    evaluate_index_health_recent, evaluate_index_health_with, index_health_from, retained_text,
 };
 pub use indexing_observation::{
     IndexingAttemptObservation, IndexingDiagnostics, IndexingObservations,

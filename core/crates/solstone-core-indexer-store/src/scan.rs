@@ -68,6 +68,9 @@ pub struct ScanReport {
     /// does not classify). Never gates `mark_index_build_complete` — unlike
     /// `warnings`, whose presence keeps a full build in `Building`.
     pub benign_skips: Vec<String>,
+    /// Discovered files this scan tried and could not index. Without a row they
+    /// would read as merely missing, so the scan receipt names them.
+    pub failed_paths: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -378,6 +381,53 @@ pub(crate) fn scan_journal_admitted(
     full: bool,
     admission: &IndexAdmission,
 ) -> Result<ScanReport, StoreError> {
+    let result = scan_journal_pass(journal, full, admission);
+    if let Err(error) = &result {
+        // A scan that stops leaves an observation too, so a pass that fails
+        // every night is visible rather than an old receipt aging quietly.
+        record_failed_scan(journal, full, error);
+    }
+    result
+}
+
+fn record_failed_scan(journal: &Path, full: bool, error: &StoreError) {
+    let path = crate::db::db_path(journal);
+    if !crate::generation::has_sqlite_header(&path) {
+        return;
+    }
+    let receipt = ScanReceipt {
+        finished_at_ms: now_ms(),
+        full,
+        error: Some(error.to_string()),
+        writer_version: WRITER_VERSION.to_owned(),
+        ..ScanReceipt::default()
+    };
+    let recorded = Connection::open(&path)
+        .map_err(StoreError::from)
+        .and_then(|mut conn| {
+            conn.execute_batch("PRAGMA busy_timeout=5000;")?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            record_scan(&tx, &receipt)?;
+            tx.commit()?;
+            Ok(())
+        });
+    if let Err(record_error) = recorded {
+        log::warn!(target: "solstone::indexer", "failed scan not recorded: {record_error}");
+    }
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or_default()
+}
+
+fn scan_journal_pass(
+    journal: &Path,
+    full: bool,
+    admission: &IndexAdmission,
+) -> Result<ScanReport, StoreError> {
     prune_authored_chat_paths_admitted(journal, admission)?;
     let mut conn = open_index_admitted(journal, admission)?;
     if !chunk_path_lookup_ready(&conn)? {
@@ -465,6 +515,7 @@ pub(crate) fn scan_journal_admitted(
                         OriginalRead::Corrupt | OriginalRead::Unavailable { .. }
                     ) {
                         report.failed += 1;
+                        report.failed_paths.push(rel.clone());
                         report.warnings.push(format!(
                             "memory original is incomplete for {rel}: {}",
                             original_read_label(&result)
@@ -507,7 +558,9 @@ pub(crate) fn scan_journal_admitted(
             Ok(warnings) => warnings,
             Err(StoreError::Io(error)) => {
                 report.skipped += 1;
+                report.failed += 1;
                 report.warnings.push(error.to_string());
+                report.failed_paths.push(rel.clone());
                 continue;
             }
             Err(error) => return Err(error),
@@ -576,21 +629,19 @@ fn record_scan_receipt(
     report: &ScanReport,
     full: bool,
 ) -> Result<(), StoreError> {
-    let finished_at_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as i64)
-        .unwrap_or_default();
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     record_scan(
         &tx,
         &ScanReceipt {
-            finished_at_ms,
+            finished_at_ms: now_ms(),
             full,
             indexed: report.indexed,
             removed: report.removed,
             skipped: report.skipped,
             failed: report.failed,
             warnings: report.warnings.len(),
+            failed_paths: report.failed_paths.clone(),
+            error: None,
             writer_version: WRITER_VERSION.to_owned(),
         },
     )?;
@@ -2363,8 +2414,8 @@ mod tests {
         fs::write(&bad_path, [0xFFu8, 0xFE, 0x00, 0xFF]).expect("write invalid utf8 content");
         let report = scan_journal(&root, true).expect("scan with real failure");
         assert_eq!(
-            report.failed, 0,
-            "a content read failure is a skip+warning, not report.failed"
+            report.failed, 1,
+            "a content read failure is a skip, a warning and a failed file"
         );
         assert_eq!(
             report.benign_skips.len(),

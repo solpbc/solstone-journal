@@ -229,8 +229,15 @@ pub struct ScanReceipt {
     pub skipped: usize,
     pub failed: usize,
     pub warnings: usize,
+    /// Files the scan could not index, at most [`RECEIPT_FAILED_PATHS`].
+    pub failed_paths: Vec<String>,
+    /// Why the scan stopped, when it did not finish.
+    pub error: Option<String>,
     pub writer_version: String,
 }
+
+/// The most failed paths one receipt names; the count is always exact.
+pub const RECEIPT_FAILED_PATHS: usize = 1000;
 
 pub(crate) fn record_scan(conn: &Connection, receipt: &ScanReceipt) -> Result<(), StoreError> {
     conn.execute(CREATE_INDEX_META, [])?;
@@ -242,6 +249,8 @@ pub(crate) fn record_scan(conn: &Connection, receipt: &ScanReceipt) -> Result<()
         "skipped": receipt.skipped,
         "failed": receipt.failed,
         "warnings": receipt.warnings,
+        "failed_paths": receipt.failed_paths.iter().take(RECEIPT_FAILED_PATHS).collect::<Vec<_>>(),
+        "error": receipt.error,
         "writer_version": receipt.writer_version,
     });
     conn.execute(
@@ -274,6 +283,16 @@ pub fn read_last_scan(conn: &Connection) -> Result<Option<ScanReceipt>, StoreErr
         skipped: count("skipped"),
         failed: count("failed"),
         warnings: count("warnings"),
+        failed_paths: value["failed_paths"]
+            .as_array()
+            .map(|paths| {
+                paths
+                    .iter()
+                    .filter_map(|path| path.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        error: value["error"].as_str().map(str::to_owned),
         writer_version: value["writer_version"].as_str().unwrap_or("").to_owned(),
     }))
 }

@@ -108,7 +108,7 @@ impl fmt::Display for StoreError {
             }
             StoreError::IndexGenerationNewer { found, known } => write!(
                 formatter,
-                "the search index was written by a newer version of solstone (index generation {found}; this version knows {known}), so this version leaves it unchanged"
+                "the search index was written by a newer version of solstone (index generation {found}; this version reads up to {known}), so this version leaves it unchanged"
             ),
         }
     }

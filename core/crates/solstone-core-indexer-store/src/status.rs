@@ -15,6 +15,7 @@ use std::path::Path;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::json;
 use solstone_core_format::content::{ContentResolution, resolve_content_shape};
+use solstone_core_format::segment::day_of;
 use solstone_core_indexer::discovery::discover_indexable_files;
 
 use crate::StoreError;
@@ -71,8 +72,16 @@ pub struct IndexStatus {
     pub stale: BTreeSet<String>,
     /// On disk, eligible, not indexed.
     pub missing: BTreeSet<String>,
-    /// Indexed, no longer on disk.
+    /// Indexed, no longer on disk; the next scan removes these.
     pub orphaned: BTreeSet<String>,
+    /// Indexed, no longer on disk, on a day where nothing else was found. A
+    /// light scan keeps these rows, so only a full rescan removes them.
+    pub retained: BTreeSet<String>,
+    /// Discovered, not indexed, and named as failed by the last scan receipt.
+    pub failed: BTreeSet<String>,
+    /// Indexed, modified since, and no longer indexable: the scan neither
+    /// updates nor removes these rows.
+    pub ineligible_rows: usize,
     /// On disk, but its modification time could not be read.
     pub unreadable: BTreeSet<String>,
     /// On disk, not indexed, and not meant to be (raw media, an unready note).
@@ -80,7 +89,7 @@ pub struct IndexStatus {
 }
 
 impl IndexStatus {
-    /// Changes on disk the index has not taken in yet.
+    /// Changes on disk the next scan takes in.
     #[must_use]
     pub fn pending(&self) -> usize {
         self.stale.len() + self.missing.len() + self.orphaned.len()
@@ -147,6 +156,9 @@ impl IndexStatus {
                 "stale": self.stale.len(),
                 "missing": self.missing.len(),
                 "orphaned": self.orphaned.len(),
+                "retained": self.retained.len(),
+                "failed": self.failed.len(),
+                "ineligible_rows": self.ineligible_rows,
                 "unreadable": self.unreadable.len(),
                 "ineligible": self.ineligible,
             },
@@ -154,6 +166,8 @@ impl IndexStatus {
                 "stale": sample(&self.stale),
                 "missing": sample(&self.missing),
                 "orphaned": sample(&self.orphaned),
+                "retained": sample(&self.retained),
+                "failed": sample(&self.failed),
                 "unreadable": sample(&self.unreadable),
             },
         })
@@ -171,20 +185,22 @@ impl IndexStatus {
         }
         if let Some(stamp) = &self.stamp {
             out.push_str(&format!(
-                "generation: {} (this version knows {}; writable: {})\n",
+                "generation: {} (this version reads up to {}; writable: {})\n",
                 stamp.effective_generation(),
                 INDEX_GENERATION,
                 if stamp.writable() { "yes" } else { "no" }
             ));
         }
         out.push_str(&format!(
-            "files: {} on disk, {} indexed, {} current, {} stale, {} missing, {} orphaned, {} unreadable, {} not indexable\n",
+            "files: {} on disk, {} indexed, {} current, {} stale, {} missing, {} failed, {} orphaned, {} kept until a full rescan, {} unreadable, {} not indexable\n",
             self.discovered,
             self.indexed,
             self.current,
             self.stale.len(),
             self.missing.len(),
+            self.failed.len(),
             self.orphaned.len(),
+            self.retained.len(),
             self.unreadable.len(),
             self.ineligible
         ));
@@ -243,6 +259,9 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
         stale: BTreeSet::new(),
         missing: BTreeSet::new(),
         orphaned: BTreeSet::new(),
+        retained: BTreeSet::new(),
+        failed: BTreeSet::new(),
+        ineligible_rows: 0,
         unreadable: BTreeSet::new(),
         ineligible: 0,
     };
@@ -284,18 +303,37 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
         };
         match stored.get(rel) {
             Some(mtime) if *mtime == observed => status.current += 1,
-            Some(_) => {
+            Some(_) if eligible(path, rel) => {
                 status.stale.insert(rel.clone());
             }
+            Some(_) => status.ineligible_rows += 1,
             None if eligible(path, rel) => {
                 status.missing.insert(rel.clone());
             }
             None => status.ineligible += 1,
         }
     }
+    // The scan's own removal rule: a light scan removes an undiscovered row
+    // only when its day still has a discovered file.
+    let days = files
+        .keys()
+        .filter_map(|rel| day_of(rel))
+        .collect::<BTreeSet<_>>();
     for rel in stored.keys() {
-        if !files.contains_key(rel) {
+        if files.contains_key(rel) {
+            continue;
+        }
+        if day_of(rel).is_none_or(|day| days.contains(day)) {
             status.orphaned.insert(rel.clone());
+        } else {
+            status.retained.insert(rel.clone());
+        }
+    }
+    if let Some(scan) = &status.last_scan {
+        for rel in &scan.failed_paths {
+            if status.missing.remove(rel) {
+                status.failed.insert(rel.clone());
+            }
         }
     }
     Ok(status)
@@ -436,6 +474,71 @@ mod tests {
         let json = status.to_json_value();
         assert_eq!(json["files"]["stale"], 1);
         assert_eq!(json["generation"]["generation"], 1);
+    }
+
+    #[test]
+    fn status_separates_what_the_next_scan_repairs_from_what_it_never_will() {
+        let journal = Journal::new("repairs");
+        journal.write("chronicle/20260717/talents/flow.md", "# Flow\n\none");
+        journal.write("chronicle/20260718/talents/solo.md", "# Solo\n\none");
+        journal.write(
+            "chronicle/20260717/default/090000_300/talents/odd.md",
+            "# Odd",
+        );
+        let bad = journal.0.join("chronicle/20260717/talents/bad.md");
+        fs::write(&bad, [0xff]).expect("write invalid utf8");
+        scan_journal(&journal.0, false).expect("scan");
+
+        // A removed day: a light scan keeps its rows. A file the scan could not
+        // index: named by the receipt. A row whose file is no longer indexable.
+        fs::remove_file(journal.0.join("chronicle/20260718/talents/solo.md")).expect("remove");
+        scan_journal(&journal.0, false).expect("light scan keeps the day's rows");
+        journal.write(
+            "chronicle/20260717/default/090000_300/talents/shape.json",
+            "not json",
+        );
+        let conn = Connection::open(db_path(&journal.0)).expect("open for seeding");
+        conn.execute(
+            "REPLACE INTO files(path, mtime) VALUES ('20260717/default/090000_300/talents/odd.md', 0)",
+            [],
+        )
+        .expect("seed a row for the now-unindexable file");
+        drop(conn);
+
+        let status = inspect_index(&journal.0).expect("status");
+        assert_eq!(
+            status.retained.iter().collect::<Vec<_>>(),
+            ["20260718/talents/solo.md"]
+        );
+        assert!(status.orphaned.is_empty());
+        assert_eq!(
+            status.failed.iter().collect::<Vec<_>>(),
+            ["20260717/talents/bad.md"]
+        );
+        assert!(status.missing.is_empty());
+        assert_eq!(status.ineligible_rows, 1);
+        assert!(status.stale.is_empty());
+        assert_eq!(status.pending(), 0);
+    }
+
+    #[test]
+    fn a_scan_that_stops_leaves_a_receipt_naming_why() {
+        let journal = Journal::new("stopped");
+        journal.write("chronicle/20260717/talents/flow.md", "# Flow\n\none");
+        scan_journal(&journal.0, true).expect("scan");
+        // Every write refuses once classification memberships are gone.
+        Connection::open(db_path(&journal.0))
+            .expect("open")
+            .execute_batch("DROP TABLE chunk_classification_facets;")
+            .expect("drop memberships");
+        assert!(scan_journal(&journal.0, false).is_err());
+        let status = inspect_index(&journal.0).expect("status");
+        let scan = status.last_scan.expect("receipt");
+        assert!(!scan.full);
+        assert!(
+            scan.error
+                .is_some_and(|error| error.contains("memberships"))
+        );
     }
 
     #[test]

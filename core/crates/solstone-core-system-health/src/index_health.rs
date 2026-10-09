@@ -66,6 +66,8 @@ pub enum IndexFailure {
     ClassificationStalled,
     /// Recorded updates failed and those files are still not current.
     FailedFiles,
+    /// The last scan stopped before finishing, or the journal could not be walked.
+    ScanFailed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -78,7 +80,10 @@ pub struct IndexHealth {
     pub stale: usize,
     pub missing: usize,
     pub orphaned: usize,
-    /// Recorded failed updates whose files are still stale or missing.
+    /// Rows for removed entries that only a full rescan removes.
+    pub retained: usize,
+    /// Files that failed to index (recorded updates, or the last scan) and are
+    /// still not current.
     pub failed: usize,
     pub discovered: usize,
     pub indexed: usize,
@@ -100,7 +105,7 @@ pub fn evaluate_index_health_with(
         Ok(status) => index_health_from(&status, observations),
         Err(error) => {
             log::warn!("search index status unavailable: {error}");
-            unreadable()
+            unmeasured()
         }
     }
 }
@@ -182,20 +187,22 @@ pub fn evaluate_index_health_recent(
         Ok(status) => index_health_from(&status, observations),
         Err(error) => {
             log::warn!("search index status unavailable: {error}");
-            unreadable()
+            unmeasured()
         }
     }
 }
 
-fn unreadable() -> IndexHealth {
+/// The journal walk itself failed; the scan's walk fails the same way.
+fn unmeasured() -> IndexHealth {
     IndexHealth {
         state: IndexHealthState::Failing,
-        failure: Some(IndexFailure::Unreadable),
-        text: INDEX_TEXT_UNREADABLE.to_owned(),
+        failure: Some(IndexFailure::ScanFailed),
+        text: INDEX_TEXT_FAILED_FILES.to_owned(),
         pending: 0,
         stale: 0,
         missing: 0,
         orphaned: 0,
+        retained: 0,
         failed: 0,
         discovered: 0,
         indexed: 0,
@@ -207,13 +214,24 @@ fn unreadable() -> IndexHealth {
 /// The health value for a measured status and the recorded update outcomes.
 #[must_use]
 pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservations) -> IndexHealth {
+    let behind = |path: &String| {
+        status.stale.contains(path) || status.missing.contains(path) || status.failed.contains(path)
+    };
     let failed = observations
         .outcomes
         .iter()
         .filter(|o| matches!(o.outcome.as_str(), "failed" | "declined" | "ambiguous"))
-        .filter(|o| status.stale.contains(&o.identity) || status.missing.contains(&o.identity))
-        .count();
+        .map(|o| &o.identity)
+        .filter(|identity| behind(identity))
+        .chain(status.failed.iter())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
     let pending = status.pending();
+    let retained = status.retained.len();
+    let scan_stopped = status
+        .last_scan
+        .as_ref()
+        .is_some_and(|scan| scan.error.is_some());
 
     let failure = if matches!(status.database, IndexDatabase::Unreadable(_)) {
         Some(IndexFailure::Unreadable)
@@ -226,6 +244,8 @@ pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservatio
         ClassificationProgress::Stalled { .. }
     ) {
         Some(IndexFailure::ClassificationStalled)
+    } else if scan_stopped {
+        Some(IndexFailure::ScanFailed)
     } else if failed > 0 {
         Some(IndexFailure::FailedFiles)
     } else {
@@ -236,7 +256,10 @@ pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservatio
         IndexHealthState::Failing
     } else if building(status) {
         IndexHealthState::Building
-    } else if pending > 0 || status.classification == ClassificationProgress::Incomplete {
+    } else if pending > 0
+        || retained > 0
+        || status.classification == ClassificationProgress::Incomplete
+    {
         IndexHealthState::Behind
     } else {
         IndexHealthState::Ok
@@ -249,8 +272,13 @@ pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservatio
         (_, Some(IndexFailure::ClassificationStalled)) => {
             INDEX_TEXT_CLASSIFICATION_STALLED.to_owned()
         }
-        (_, Some(IndexFailure::FailedFiles)) => INDEX_TEXT_FAILED_FILES.to_owned(),
+        (_, Some(IndexFailure::FailedFiles | IndexFailure::ScanFailed)) => {
+            INDEX_TEXT_FAILED_FILES.to_owned()
+        }
         (IndexHealthState::Building, None) => INDEX_TEXT_BUILDING.to_owned(),
+        // Nothing the next scan does removes retained rows, so their line makes
+        // no catching-up promise.
+        (IndexHealthState::Behind, None) if pending == 0 && retained > 0 => retained_text(retained),
         (IndexHealthState::Behind, None) => behind_text(pending),
         _ => INDEX_TEXT_OK.to_owned(),
     };
@@ -263,6 +291,7 @@ pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservatio
         stale: status.stale.len(),
         missing: status.missing.len(),
         orphaned: status.orphaned.len(),
+        retained,
         failed,
         discovered: status.discovered,
         indexed: status.indexed,
@@ -282,6 +311,15 @@ fn building(status: &IndexStatus) -> bool {
     missing > 0
         && (status.current == 0
             || (status.build == Some(IndexBuildLifecycle::Building) && missing > status.current))
+}
+
+/// The line for rows of removed entries that only a full rescan removes.
+#[must_use]
+pub fn retained_text(retained: usize) -> String {
+    match retained {
+        1 => "search still shows 1 entry that is no longer in your journal.".to_owned(),
+        n => format!("search still shows {n} entries that are no longer in your journal."),
+    }
 }
 
 /// The behind line. A classification pass with nothing pending on disk reads
@@ -319,6 +357,9 @@ mod tests {
             stale: BTreeSet::new(),
             missing: BTreeSet::new(),
             orphaned: BTreeSet::new(),
+            retained: BTreeSet::new(),
+            failed: BTreeSet::new(),
+            ineligible_rows: 0,
             unreadable: BTreeSet::new(),
             ineligible: 0,
         }
@@ -408,6 +449,35 @@ mod tests {
         let refused = index_health_from(&newer, &observations(&[]));
         assert_eq!(refused.failure, Some(IndexFailure::NewerGeneration));
         assert_eq!(refused.text, INDEX_TEXT_NEWER_GENERATION);
+
+        // Rows for a removed day that only a full rescan removes: behind, with
+        // a line that promises no catching up.
+        let mut kept = status();
+        kept.retained = set(&["20261001/talents/gone.md"]);
+        let retained = index_health_from(&kept, &observations(&[]));
+        assert_eq!(retained.state, IndexHealthState::Behind);
+        assert_eq!(
+            retained.text,
+            "search still shows 1 entry that is no longer in your journal."
+        );
+
+        // A file the last scan could not index, and a scan that stopped.
+        let mut scan_failed = status();
+        scan_failed.failed = set(&["20261005/bad.md"]);
+        let failed = index_health_from(&scan_failed, &observations(&["20261005/bad.md"]));
+        assert_eq!(
+            (failed.failure, failed.failed),
+            (Some(IndexFailure::FailedFiles), 1)
+        );
+        let mut stopped = status();
+        stopped.last_scan = Some(solstone_core_indexer_store::generation::ScanReceipt {
+            error: Some("disk full".to_owned()),
+            ..Default::default()
+        });
+        assert_eq!(
+            index_health_from(&stopped, &observations(&[])).failure,
+            Some(IndexFailure::ScanFailed)
+        );
 
         let mut hard_stop = status();
         hard_stop.memberships_missing = true;

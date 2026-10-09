@@ -14,6 +14,12 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let (status, fix) = match (health.state, health.failure) {
         (IndexHealthState::Failing, Some(failure)) => (Status::Warn, fix_for(failure)),
         (IndexHealthState::Failing, None) => (Status::Warn, None),
+        // Rows for removed entries stay until a full rescan; nothing else removes
+        // them. Warn only when that is what the detail line says.
+        (IndexHealthState::Behind, None) if health.retained > 0 && health.pending == 0 => (
+            Status::Warn,
+            Some("run solstone journal indexer --rescan-full"),
+        ),
         _ => (Status::Ok, None),
     };
     Ok(make_result(check, status, health.text, fix))
@@ -27,10 +33,15 @@ fn fix_for(failure: IndexFailure) -> Option<&'static str> {
         IndexFailure::ClassificationStalled => {
             Some("run solstone journal indexer --rescan and check its warnings")
         }
-        IndexFailure::FailedFiles => Some("run solstone journal indexer --rescan"),
+        IndexFailure::FailedFiles => {
+            Some("run solstone journal indexer --rescan and check its warnings")
+        }
         IndexFailure::Unreadable => Some(
             "run solstone journal indexer status for details; if it persists, run solstone journal indexer --reset --rescan-full",
         ),
         IndexFailure::NewerGeneration => Some("update solstone to the newest version"),
+        IndexFailure::ScanFailed => {
+            Some("run solstone journal indexer --rescan and check its errors")
+        }
     }
 }
