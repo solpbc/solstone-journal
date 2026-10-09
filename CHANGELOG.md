@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- if you keep your encrypted backup in storage sol pbc runs for you, it no longer carries your computer's name or your username on it. the small files that unlock your backup used to include both, readable without your key. they now say "solstone" instead. a backup you already have changes over at its next daily backup cleanup, and there's nothing for you to do.
 - agents connected to your journal now get guidance on how to search it: a few keywords rather than a sentence, how to write a date, where the things you committed to are kept, and to say so when nothing matched. this helps agents that don't have the solstone skill, such as ChatGPT.
 - when an agent looks up a person or project, it now gets what your journal has noted about them in the facets it may see, and the last day they came up there, not only the name.
 - when an agent searches for a word that matches nothing on its own, such as "commit", it now also finds longer words that start with it, such as "commitment".
