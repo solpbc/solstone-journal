@@ -33,13 +33,13 @@ mod tests {
             let path_bytes = path.as_bytes();
             let mut i = 0;
             while i + 46 + path_bytes.len() <= bytes.len() {
-                if &bytes[i..i + 4] == cd_sig {
+                if bytes[i..i + 4] == cd_sig {
                     let name_len = u16::from_le_bytes([bytes[i + 28], bytes[i + 29]]) as usize;
                     if name_len == path_bytes.len()
                         && &bytes[i + 46..i + 46 + name_len] == path_bytes
                     {
                         bytes[i + 5] = 3; // Unix
-                        let mode_bytes = ((*mode as u32) << 16).to_le_bytes();
+                        let mode_bytes = (*mode << 16).to_le_bytes();
                         bytes[i + 38..i + 42].copy_from_slice(&mode_bytes);
                         break;
                     }
@@ -75,7 +75,7 @@ mod tests {
             SYNTHETIC_RESTIC_BZ2,
             &pin,
             "restic_0.19.0_linux_amd64.bz2",
-            &[staged_member.clone()],
+            std::slice::from_ref(&staged_member),
             &[],
         )
         .expect("plan restic bz2");
@@ -102,7 +102,7 @@ mod tests {
             &corrupted_bz2,
             &pin,
             "restic_0.19.0_linux_amd64.bz2",
-            &[staged_member.clone()],
+            std::slice::from_ref(&staged_member),
             &[],
         )
         .expect_err("tampered archive must fail pin check");
@@ -189,7 +189,7 @@ mod tests {
             &zip_bytes,
             &pin,
             "rclone-v1.74.4-linux-amd64.zip",
-            &[staged_member.clone()],
+            std::slice::from_ref(&staged_member),
             &ignored,
         )
         .expect("plan rclone zip");
@@ -216,7 +216,7 @@ mod tests {
             &corrupted_zip,
             &pin,
             "rclone-v1.74.4-linux-amd64.zip",
-            &[staged_member.clone()],
+            std::slice::from_ref(&staged_member),
             &ignored,
         )
         .expect_err("tampered zip must fail pin check");
