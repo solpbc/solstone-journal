@@ -69,6 +69,12 @@ call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul || ( echo ERROR: vc
 :: and link still resolve to the host toolchain. Nothing is written to this
 :: box's persistent PATH: registry environment changes made through an SSH
 :: session are not picked up by a later SSH session here.
+:: Acquire the complete lockfile before compilation, rather than discovering
+:: a missing dependency late in a native suite on a fresh build host.
+echo === cargo fetch --locked (complete dependency graph) ===
+cargo fetch --manifest-path core\Cargo.toml --locked || exit /b 1
+cargo metadata --manifest-path core\Cargo.toml --locked --offline --all-features --filter-platform x86_64-pc-windows-msvc --format-version 1 >nul || exit /b 1
+
 echo === cargo build --locked (distribution recorder for the FFmpeg toolchain bootstrap) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-distribution --bin solstone-distribution || exit /b 1
 if not defined JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT set "JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT=%USERPROFILE%\sj-ffmpeg-tools"
