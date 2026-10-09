@@ -80,6 +80,7 @@ triple_windows = "x86_64-pc-windows-msvc"
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core"
 bin = "solstone-core"
 dest = "bin/solstone-core.exe"
@@ -89,6 +90,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-journal-bin"
 bin = "solstone-core-journal"
 dest = "bin/journal.exe"
@@ -98,6 +100,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-journal-app"
 bin = "journal-app"
 dest = "bin/journal-app.exe"
@@ -107,6 +110,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-sol-bin"
 bin = "solstone-core-sol"
 dest = "bin/solstone.exe"
@@ -116,6 +120,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-depict"
 bin = "solstone-core-depict"
 dest = "bin/solstone-core-depict.exe"
@@ -125,6 +130,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-retention-cli"
 bin = "solstone-retention"
 dest = "bin/solstone-retention.exe"
@@ -134,6 +140,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-describe"
 bin = "solstone-core-describe"
 dest = "bin/solstone-core-describe.exe"
@@ -143,6 +150,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-speakers-analyze"
 bin = "solstone-core-speakers-analyze"
 dest = "bin/solstone-core-speakers-analyze.exe"
@@ -152,6 +160,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-ced-analyze"
 bin = "solstone-core-ced-analyze"
 dest = "bin/solstone-core-ced-analyze.exe"
@@ -161,6 +170,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-vad-analyze"
 bin = "solstone-core-vad-analyze"
 dest = "bin/solstone-core-vad-analyze.exe"
@@ -170,6 +180,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-pdf"
 bin = "solstone-core-pdf"
 dest = "bin/solstone-core-pdf.exe"
@@ -179,6 +190,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core"
 bin = "solstone-core"
 dest = "bin/solstone-core"
@@ -188,6 +200,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-journal-bin"
 bin = "solstone-core-journal"
 dest = "bin/solstone-core-journal"
@@ -197,6 +210,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-sol-bin"
 bin = "solstone-core-sol"
 dest = "bin/solstone-core-sol"
@@ -206,6 +220,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-depict"
 bin = "solstone-core-depict"
 dest = "bin/solstone-core-depict"
@@ -215,6 +230,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-retention-cli"
 bin = "solstone-retention"
 dest = "bin/solstone-retention"
@@ -224,6 +240,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-describe"
 bin = "solstone-core-describe"
 dest = "bin/solstone-core-describe"
@@ -233,6 +250,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-speakers-analyze"
 bin = "solstone-core-speakers-analyze"
 dest = "bin/solstone-core-speakers-analyze"
@@ -242,6 +260,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-vad-analyze"
 bin = "solstone-core-vad-analyze"
 dest = "bin/solstone-core-vad-analyze"
@@ -251,6 +270,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-vulkan-probe"
 bin = "solstone-core-vulkan-probe"
 dest = "bin/solstone-core-vulkan-probe"
@@ -260,6 +280,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-pdf"
 bin = "solstone-core-pdf"
 dest = "bin/solstone-core-pdf"
@@ -272,6 +293,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 # classification and readiness probing run out of process in this helper.
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-ced-analyze"
 bin = "solstone-core-ced-analyze"
 dest = "bin/solstone-core-ced-analyze"
@@ -281,6 +303,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "pinned-members"
+class = "component"
 component = "ced-engine"
 input = { kind = "catalog-committed", unit = "ced-engine", filename = "ced-v0.1.0-lib-linux-cpu-x64.tar.gz", path = "core/models/assets/ced/ced-v0.1.0-lib-linux-cpu-x64.tar.gz" }
 staged = [
@@ -295,6 +318,7 @@ targets = ["linux-x86_64"]
 
 [[entry]]
 kind = "pinned-members"
+class = "component"
 component = "ced-engine"
 input = { kind = "catalog-committed", unit = "ced-engine", filename = "ced-v0.1.0-lib-linux-cpu-arm64.tar.gz", path = "core/models/assets/ced/ced-v0.1.0-lib-linux-cpu-arm64.tar.gz" }
 staged = [
@@ -309,6 +333,7 @@ targets = ["linux-aarch64"]
 
 [[entry]]
 kind = "pinned-members"
+class = "component"
 component = "ced-engine"
 input = { kind = "catalog-committed", unit = "ced-engine", filename = "ced-v0.1.0-lib-macos-metal-arm64.tar.gz", path = "core/models/assets/ced/ced-v0.1.0-lib-macos-metal-arm64.tar.gz" }
 staged = [
@@ -323,6 +348,7 @@ targets = ["macos-arm64"]
 
 [[entry]]
 kind = "pinned-members"
+class = "component"
 component = "ced-model"
 input = { kind = "catalog-committed", unit = "ced-model", filename = "ced-tiny-q8_0.gguf", path = "core/models/assets/ced/ced-tiny-q8_0.gguf" }
 staged = [
@@ -332,6 +358,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "pinned-members"
+class = "component"
 component = "ced-model"
 input = { kind = "catalog-committed", unit = "ced-model", filename = "ced-tiny-q8_0.gguf", path = "core/models/assets/ced/ced-tiny-q8_0.gguf" }
 staged = [
@@ -341,12 +368,14 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "licence-tree"
+class = "notice"
 source = "core/distribution/licenses/ced"
 component = "ced-engine"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "launcher"
+class = "first-party"
 source = "scripts/root-launchers/solstone"
 dest = "bin/solstone"
 mode = 0o755
@@ -354,6 +383,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "launcher"
+class = "first-party"
 source = "scripts/root-launchers/journal"
 dest = "bin/journal"
 mode = 0o755
@@ -361,6 +391,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "model-asset"
+class = "component"
 source = "core/models/assets/wespeaker-resnet34-256.onnx"
 dest = "lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx"
 mode = 0o644
@@ -370,6 +401,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "model-asset"
+class = "component"
 source = "core/models/assets/pyannote-segmentation-3.0.onnx"
 dest = "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx"
 mode = 0o644
@@ -379,6 +411,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "model-asset"
+class = "component"
 source = "core/models/assets/silero_vad_v6.onnx"
 dest = "lib/solstone_journal_models/assets/silero_vad_v6.onnx"
 mode = 0o644
@@ -388,6 +421,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "model-asset"
+class = "component"
 source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz"
 dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz"
 mode = 0o644
@@ -400,6 +434,7 @@ targets = ["macos-arm64"]
 
 [[entry]]
 kind = "model-asset"
+class = "component"
 source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz"
 dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz"
 mode = 0o644
@@ -412,6 +447,7 @@ targets = ["linux-x86_64"]
 
 [[entry]]
 kind = "model-asset"
+class = "component"
 source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz"
 dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz"
 mode = 0o644
@@ -424,6 +460,7 @@ targets = ["linux-aarch64"]
 
 [[entry]]
 kind = "model-asset"
+class = "component"
 source = "core/models/assets/rfdetr/rfdetr-nano-f16.gguf"
 dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf"
 mode = 0o644
@@ -433,6 +470,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "onnx-runtime"
+class = "component"
 dest_dir = "lib/solstone-core-speakers-analyze"
 mode = 0o755
 identities = [
@@ -443,6 +481,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "pdfium"
+class = "component"
 dest_dir = "lib/solstone-core-pdf"
 mode = 0o755
 identities = [
@@ -453,6 +492,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "copy"
+class = "first-party"
 source = "LICENSE"
 dest = "share/LICENSE"
 mode = 0o644
@@ -463,6 +503,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 # Linux-only: macOS distribution is out of scope for the arc that added this.
 [[entry]]
 kind = "copy"
+class = "first-party"
 source = "core/distribution/README.md"
 dest = "share/README.md"
 mode = 0o644
@@ -474,6 +515,7 @@ targets = ["linux-x86_64", "linux-aarch64"]
 # the same `bin/` every other admitted binary lands in.
 [[entry]]
 kind = "copy"
+class = "first-party"
 source = "core/crates/solstone-core-transcribe/parakeet-helper/.build/release/parakeet-helper"
 dest = "bin/parakeet-helper"
 mode = 0o755
@@ -641,6 +683,7 @@ zig = "0.16.0"
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "ced"
 member = "bin/ced.dll"
 dest = "bin/ced.dll"
@@ -649,6 +692,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "onnx"
 member = "bin/onnxruntime.dll"
 dest = "lib/solstone-core-speakers-analyze/onnxruntime.dll"
@@ -657,6 +701,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "parakeet"
 member = "bin/parakeet-server.exe"
 dest = "bin/parakeet-server.exe"
@@ -665,6 +710,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "parakeet"
 member = "models/tdt-0.6b-v3-q8_0.gguf"
 dest = "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf"
@@ -673,6 +719,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "rfdetr"
 member = "bin/rfdetr-cli.exe"
 dest = "bin/rfdetr-cli.exe"
@@ -681,6 +728,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "pdfium"
 member = "pdfium.dll"
 dest = "lib/solstone-core-pdf/pdfium.dll"
@@ -689,6 +737,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "restic"
 member = "restic.exe"
 dest = "bin/restic.exe"
@@ -697,6 +746,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "rclone"
 member = "rclone.exe"
 dest = "bin/rclone.exe"
@@ -705,6 +755,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "msvc"
 member = "msvcp140.dll"
 dest = "bin/msvcp140.dll"
@@ -713,6 +764,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "msvc"
 member = "vcruntime140.dll"
 dest = "bin/vcruntime140.dll"
@@ -721,6 +773,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "msvc"
 member = "vcruntime140_1.dll"
 dest = "bin/vcruntime140_1.dll"
@@ -729,6 +782,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "msvc"
 member = "vcomp140.dll"
 dest = "bin/vcomp140.dll"
@@ -737,6 +791,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ced"
 member = "receipt.json"
 dest = "share/provenance/ced/receipt.json"
@@ -745,6 +800,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ced"
 member = "build-evidence.json"
 dest = "share/provenance/ced/build-evidence.json"
@@ -753,6 +809,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ced"
 member = "validation.log"
 dest = "share/provenance/ced/validation.log"
@@ -761,6 +818,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "onnx"
 member = "receipt.json"
 dest = "share/provenance/onnx/receipt.json"
@@ -769,6 +827,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "onnx"
 member = "build-evidence.json"
 dest = "share/provenance/onnx/build-evidence.json"
@@ -777,6 +836,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "onnx"
 member = "validation.log"
 dest = "share/provenance/onnx/validation.log"
@@ -785,6 +845,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "parakeet"
 member = "receipt.json"
 dest = "share/provenance/parakeet/receipt.json"
@@ -793,6 +854,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "parakeet"
 member = "build-evidence.json"
 dest = "share/provenance/parakeet/build-evidence.json"
@@ -801,6 +863,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "parakeet"
 member = "validation.log"
 dest = "share/provenance/parakeet/validation.log"
@@ -809,6 +872,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "rfdetr"
 member = "receipt.json"
 dest = "share/provenance/rfdetr/receipt.json"
@@ -817,6 +881,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "rfdetr"
 member = "build-evidence.json"
 dest = "share/provenance/rfdetr/build-evidence.json"
@@ -825,6 +890,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "rfdetr"
 member = "validation.log"
 dest = "share/provenance/rfdetr/validation.log"
@@ -833,6 +899,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "restic"
 member = "LICENSE"
 dest = "share/licenses/restic/LICENSE"
@@ -841,6 +908,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "rclone"
 member = "COPYING"
 dest = "share/licenses/rclone/COPYING"
@@ -849,6 +917,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "restic"
 member = "archive.json"
 dest = "share/provenance/restic/archive.json"
@@ -857,6 +926,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "rclone"
 member = "archive.json"
 dest = "share/provenance/rclone/archive.json"
@@ -865,6 +935,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "msvc"
 member = "archive.json"
 dest = "share/provenance/msvc/archive.json"
@@ -873,6 +944,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "archive.json"
 dest = "share/provenance/pdfium/archive.json"
@@ -881,6 +953,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "abseil.txt"
 dest = "share/licenses/pdfium/abseil.txt"
@@ -889,6 +962,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "agg23.txt"
 dest = "share/licenses/pdfium/agg23.txt"
@@ -897,6 +971,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "fast_float.txt"
 dest = "share/licenses/pdfium/fast_float.txt"
@@ -905,6 +980,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "freetype.txt"
 dest = "share/licenses/pdfium/freetype.txt"
@@ -913,6 +989,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "icu.txt"
 dest = "share/licenses/pdfium/icu.txt"
@@ -921,6 +998,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "lcms.txt"
 dest = "share/licenses/pdfium/lcms.txt"
@@ -929,6 +1007,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "libjpeg_turbo.ijg"
 dest = "share/licenses/pdfium/libjpeg_turbo.ijg"
@@ -937,6 +1016,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "libjpeg_turbo.md"
 dest = "share/licenses/pdfium/libjpeg_turbo.md"
@@ -945,6 +1025,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "libopenjpeg.txt"
 dest = "share/licenses/pdfium/libopenjpeg.txt"
@@ -953,6 +1034,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "libpng.txt"
 dest = "share/licenses/pdfium/libpng.txt"
@@ -961,6 +1043,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "libtiff.txt"
 dest = "share/licenses/pdfium/libtiff.txt"
@@ -969,6 +1052,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "llvm-libc.txt"
 dest = "share/licenses/pdfium/llvm-libc.txt"
@@ -977,6 +1061,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "pdfium.txt"
 dest = "share/licenses/pdfium/pdfium.txt"
@@ -985,6 +1070,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "simdutf.txt"
 dest = "share/licenses/pdfium/simdutf.txt"
@@ -993,6 +1079,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "pdfium"
 member = "zlib.txt"
 dest = "share/licenses/pdfium/zlib.txt"
@@ -1001,6 +1088,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ced"
 member = "LICENSE"
 dest = "share/licenses/ced/LICENSE"
@@ -1009,6 +1097,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ced"
 member = "third_party/ggml/LICENSE"
 dest = "share/licenses/ced/ggml-LICENSE"
@@ -1017,6 +1106,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/ced/ced-tiny-model-LICENSE"
 dest = "share/licenses/ced/ced-tiny-model-LICENSE"
 mode = 0o644
@@ -1024,6 +1114,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/ced/ATTRIBUTION.md"
 dest = "share/licenses/ced/ATTRIBUTION.md"
 mode = 0o644
@@ -1031,6 +1122,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "parakeet"
 member = "LICENSE"
 dest = "share/licenses/parakeet/LICENSE"
@@ -1039,6 +1131,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "parakeet"
 member = "third_party/ggml/LICENSE"
 dest = "share/licenses/parakeet/ggml-LICENSE"
@@ -1047,6 +1140,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/parakeet/YaRN-LICENSE.txt"
 dest = "share/licenses/parakeet/YaRN-LICENSE.txt"
 mode = 0o644
@@ -1054,6 +1148,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/parakeet/cpp-httplib-LICENSE.txt"
 dest = "share/licenses/parakeet/cpp-httplib-LICENSE.txt"
 mode = 0o644
@@ -1061,6 +1156,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "onnx"
 member = "LICENSE"
 dest = "share/licenses/onnx/LICENSE"
@@ -1069,6 +1165,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "onnx"
 member = "ThirdPartyNotices.txt"
 dest = "share/licenses/onnx/ThirdPartyNotices.txt"
@@ -1077,12 +1174,14 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-build-evidence"
+class = "notice"
 dest = "share/provenance/cargo-evidence.json"
 mode = 420
 targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "rfdetr"
 member = "LICENSE"
 dest = "share/licenses/rfdetr/LICENSE"
@@ -1091,6 +1190,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "rfdetr"
 member = "third_party/ggml/LICENSE"
 dest = "share/licenses/rfdetr/ggml-LICENSE"
@@ -1099,6 +1199,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ffmpeg"
 member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv2"
 dest = "share/licenses/ffmpeg/COPYING.GPLv2"
@@ -1107,6 +1208,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ffmpeg"
 member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv3"
 dest = "share/licenses/ffmpeg/COPYING.GPLv3"
@@ -1115,6 +1217,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ffmpeg"
 member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv2.1"
 dest = "share/licenses/ffmpeg/COPYING.LGPLv2.1"
@@ -1123,6 +1226,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ffmpeg"
 member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv3"
 dest = "share/licenses/ffmpeg/COPYING.LGPLv3"
@@ -1131,6 +1235,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ffmpeg"
 member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/LICENSE.md"
 dest = "share/licenses/ffmpeg/LICENSE.md"
@@ -1139,6 +1244,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "ffmpeg"
 member = "archive.json"
 dest = "share/provenance/ffmpeg/archive.json"
@@ -1147,6 +1253,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/model-notices.md"
 dest = "share/licenses/models/NOTICE.md"
 mode = 420
@@ -1154,6 +1261,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "rfdetr"
 member = "notices/stb-LICENSE.txt"
 dest = "share/licenses/rfdetr/stb-LICENSE.txt"
@@ -1162,6 +1270,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "first-party"
 source = "core/distribution/windows-README.md"
 dest = "share/README.md"
 mode = 420
@@ -1169,6 +1278,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "msvc"
 member = "runtime-license.docx"
 dest = "share/provenance/msvc/runtime-license.docx"
@@ -1177,6 +1287,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "msvc"
 member = "runtime-license-source.json"
 dest = "share/provenance/msvc/runtime-license-source.json"
@@ -1185,6 +1296,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/velopack/LICENSE"
 dest = "share/licenses/velopack/LICENSE"
 mode = 0o644
@@ -1192,6 +1304,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/windows-rust-NOTICES.txt"
 dest = "share/licenses/rust/NOTICES.txt"
 mode = 0o644
@@ -1199,6 +1312,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/windows-rust-sources.json"
 dest = "share/provenance/rust-sources.json"
 mode = 0o644
@@ -1206,6 +1320,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/windows-msvc-NOTICE.md"
 dest = "share/licenses/msvc/NOTICE.md"
 mode = 420
@@ -1213,6 +1328,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/windows-webview2-loader-NOTICE.md"
 dest = "share/licenses/webview2-loader/NOTICE.md"
 mode = 420
@@ -1220,6 +1336,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "first-party"
 source = "THIRD_PARTY_NOTICES.md"
 dest = "share/THIRD_PARTY_NOTICES.md"
 mode = 420
@@ -1229,6 +1346,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 # gate checks these against Cargo metadata; routine make ci does not.
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/linux-x86_64-rust-NOTICES.txt"
 dest = "share/licenses/rust/NOTICES.txt"
 mode = 0o644
@@ -1236,6 +1354,7 @@ targets = ["linux-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/linux-x86_64-rust-sources.json"
 dest = "share/provenance/rust-sources.json"
 mode = 0o644
@@ -1243,6 +1362,7 @@ targets = ["linux-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/linux-aarch64-rust-NOTICES.txt"
 dest = "share/licenses/rust/NOTICES.txt"
 mode = 0o644
@@ -1250,6 +1370,7 @@ targets = ["linux-aarch64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/linux-aarch64-rust-sources.json"
 dest = "share/provenance/rust-sources.json"
 mode = 0o644
@@ -1257,6 +1378,7 @@ targets = ["linux-aarch64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/macos-arm64-rust-NOTICES.txt"
 dest = "share/licenses/rust/NOTICES.txt"
 mode = 0o644
@@ -1264,6 +1386,7 @@ targets = ["macos-arm64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/macos-arm64-rust-sources.json"
 dest = "share/provenance/rust-sources.json"
 mode = 0o644
@@ -1273,6 +1396,7 @@ targets = ["macos-arm64"]
 # the same archive used for the non-Windows static build.
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/ffmpeg-source/COPYING.GPLv2"
 dest = "share/licenses/ffmpeg/COPYING.GPLv2"
 mode = 0o644
@@ -1280,6 +1404,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/ffmpeg-source/COPYING.GPLv3"
 dest = "share/licenses/ffmpeg/COPYING.GPLv3"
 mode = 0o644
@@ -1287,6 +1412,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/ffmpeg-source/COPYING.LGPLv2.1"
 dest = "share/licenses/ffmpeg/COPYING.LGPLv2.1"
 mode = 0o644
@@ -1294,6 +1420,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/ffmpeg-source/COPYING.LGPLv3"
 dest = "share/licenses/ffmpeg/COPYING.LGPLv3"
 mode = 0o644
@@ -1301,6 +1428,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/ffmpeg-source/LICENSE.md"
 dest = "share/licenses/ffmpeg/LICENSE.md"
 mode = 0o644
@@ -1308,6 +1436,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/ffmpeg-source-NOTICE.md"
 dest = "share/licenses/ffmpeg/SOURCE-NOTICE.md"
 mode = 0o644
@@ -1317,6 +1446,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 # non-Windows targets; the model attribution is in the shared model notice.
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/licenses/rfdetr/LICENSE"
 dest = "share/licenses/rfdetr/LICENSE"
 mode = 0o644
@@ -1325,6 +1455,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 # Controlled Vulkan local-thinking engine; models are installed separately.
 [[entry]]
 kind = "bin"
+class = "first-party"
 package = "solstone-core-vulkan-probe"
 bin = "solstone-core-vulkan-probe"
 dest = "bin/solstone-core-vulkan-probe.exe"
@@ -1334,6 +1465,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "llama"
 member = "bin/llama-server.exe"
 dest = "bin/llama-server.exe"
@@ -1342,6 +1474,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "llama"
 member = "bin/vulkan-1.dll"
 dest = "bin/vulkan-1.dll"
@@ -1350,6 +1483,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "receipt.json"
 dest = "share/provenance/llama/receipt.json"
@@ -1358,6 +1492,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "build-evidence.json"
 dest = "share/provenance/llama/build-evidence.json"
@@ -1366,6 +1501,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "validation.log"
 dest = "share/provenance/llama/validation.log"
@@ -1374,6 +1510,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "llama/LICENSE"
 dest = "share/licenses/llama/LICENSE"
@@ -1382,6 +1519,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "llama/licenses/LICENSE-jsonhpp"
 dest = "share/licenses/llama/jsonhpp-LICENSE"
@@ -1390,6 +1528,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "llama/vendor/cpp-httplib/LICENSE"
 dest = "share/licenses/llama/cpp-httplib-LICENSE"
@@ -1398,6 +1537,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "loader/LICENSE.txt"
 dest = "share/licenses/llama/Vulkan-Loader-LICENSE.txt"
@@ -1406,6 +1546,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "loader/LICENSES/Apache-2.0.txt"
 dest = "share/licenses/llama/Apache-2.0.txt"
@@ -1414,6 +1555,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "loader/LICENSES/MIT-Khronos-old.txt"
 dest = "share/licenses/llama/MIT-Khronos-old.txt"
@@ -1422,6 +1564,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "loader/LICENSES/MIT.txt"
 dest = "share/licenses/llama/MIT.txt"
@@ -1430,6 +1573,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "notices/cJSON-LICENSE.txt"
 dest = "share/licenses/llama/cJSON-LICENSE.txt"
@@ -1438,6 +1582,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "notices/dirent-LICENSE.txt"
 dest = "share/licenses/llama/dirent-LICENSE.txt"
@@ -1446,6 +1591,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "notices/stb-LICENSE.txt"
 dest = "share/licenses/llama/stb-LICENSE.txt"
@@ -1454,6 +1600,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "llama"
 member = "notices/miniaudio-LICENSE.txt"
 dest = "share/licenses/llama/miniaudio-LICENSE.txt"
@@ -1462,6 +1609,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "nvattest"
 member = "bin/nvattest.exe"
 dest = "bin/nvattest.exe"
@@ -1470,6 +1618,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "component"
 component = "nvattest"
 member = "share/ca/ca-bundle.pem"
 dest = "share/ca/ca-bundle.pem"
@@ -1478,6 +1627,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "nvattest"
 member = "LICENSE"
 dest = "share/licenses/nvattest/LICENSE"
@@ -1486,6 +1636,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "nvattest"
 member = "receipt.json"
 dest = "share/provenance/nvattest/receipt.json"
@@ -1494,6 +1645,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "nvattest"
 member = "build-evidence.json"
 dest = "share/provenance/nvattest/build-evidence.json"
@@ -1502,6 +1654,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
+class = "notice"
 component = "nvattest"
 member = "validation.log"
 dest = "share/provenance/nvattest/validation.log"
@@ -1510,6 +1663,7 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
 source = "core/distribution/nvattest-windows-NOTICES.md"
 dest = "share/licenses/nvattest/NOTICES.md"
 mode = 0o644
@@ -1517,11 +1671,14 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "pinned-members"
+class = "component"
 component = "nvattest"
 targets = ["linux-x86_64"]
 ignored = [
     "lib/libnvat.so",
     "lib/libnvat.so.1.2.2",
+    "LICENSE",
+    "share/THIRD_PARTY_NOTICES.md",
 ]
 
 [entry.input]
@@ -1547,6 +1704,24 @@ dest = "lib/solstone-nvattest/share/ca/ca-bundle.pem"
 mode = 0o644
 extracted_sha256 = "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91"
 
+[[entry]]
+kind = "pinned-members"
+class = "notice"
+component = "nvattest"
+targets = ["linux-x86_64"]
+ignored = [
+    "lib/libnvat.so",
+    "lib/libnvat.so.1.2.2",
+    "bin/nvattest",
+    "lib/libnvat.so.1",
+    "share/ca/ca-bundle.pem",
+]
+
+[entry.input]
+kind = "authority-committed"
+platform = "linux-x86_64"
+path = "core/models/assets/nvattest/libnvat-linux-x86_64-1.2.2-sol.6-archive.tar.xz"
+
 [[entry.staged]]
 relpath = "LICENSE"
 dest = "share/solstone-journal/licenses/nvattest/LICENSE"
@@ -1561,11 +1736,14 @@ extracted_sha256 = "b6f7785f37de5e10aeda2f86435f3e6b7fdabda603b3d04200d91ed00ef7
 
 [[entry]]
 kind = "pinned-members"
+class = "component"
 component = "nvattest"
 targets = ["linux-aarch64"]
 ignored = [
     "lib/libnvat.so",
     "lib/libnvat.so.1.2.2",
+    "LICENSE",
+    "share/THIRD_PARTY_NOTICES.md",
 ]
 
 [entry.input]
@@ -1591,6 +1769,24 @@ dest = "lib/solstone-nvattest/share/ca/ca-bundle.pem"
 mode = 0o644
 extracted_sha256 = "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91"
 
+[[entry]]
+kind = "pinned-members"
+class = "notice"
+component = "nvattest"
+targets = ["linux-aarch64"]
+ignored = [
+    "lib/libnvat.so",
+    "lib/libnvat.so.1.2.2",
+    "bin/nvattest",
+    "lib/libnvat.so.1",
+    "share/ca/ca-bundle.pem",
+]
+
+[entry.input]
+kind = "authority-committed"
+platform = "linux-aarch64"
+path = "core/models/assets/nvattest/libnvat-linux-aarch64-1.2.2-sol.6-archive.tar.xz"
+
 [[entry.staged]]
 relpath = "LICENSE"
 dest = "share/solstone-journal/licenses/nvattest/LICENSE"
@@ -1605,11 +1801,14 @@ extracted_sha256 = "b6f7785f37de5e10aeda2f86435f3e6b7fdabda603b3d04200d91ed00ef7
 
 [[entry]]
 kind = "pinned-members"
+class = "component"
 component = "nvattest"
 targets = ["macos-arm64"]
 ignored = [
     "lib/libnvat.dylib",
     "lib/libnvat.1.2.2.dylib",
+    "LICENSE",
+    "share/THIRD_PARTY_NOTICES.md",
 ]
 
 [entry.input]
@@ -1634,6 +1833,24 @@ relpath = "share/ca/ca-bundle.pem"
 dest = "lib/solstone-nvattest/share/ca/ca-bundle.pem"
 mode = 0o644
 extracted_sha256 = "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91"
+
+[[entry]]
+kind = "pinned-members"
+class = "notice"
+component = "nvattest"
+targets = ["macos-arm64"]
+ignored = [
+    "lib/libnvat.dylib",
+    "lib/libnvat.1.2.2.dylib",
+    "bin/nvattest",
+    "lib/libnvat.1.dylib",
+    "share/ca/ca-bundle.pem",
+]
+
+[entry.input]
+kind = "authority-committed"
+platform = "macos-arm64"
+path = "core/models/assets/nvattest/libnvat-macos-arm64-1.2.2-sol.6-archive.tar.xz"
 
 [[entry.staged]]
 relpath = "LICENSE"

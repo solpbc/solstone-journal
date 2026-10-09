@@ -71,29 +71,38 @@ fn fixture() -> tempfile::TempDir {
     )
     .expect("Parakeet server");
     fs::write(root.path().join(WINDOWS_PARAKEET_MODEL), b"Parakeet model").expect("Parakeet model");
-    let manifest = render_windows_payload_manifest(root.path(), COMMIT, LOCK).expect("manifest");
-    let KeyPair { pk, sk } = KeyPair::generate_unencrypted_keypair().expect("key pair");
-    let pin = root.path().join("payload.pub");
-    fs::write(&pin, pk.to_box().expect("public box").to_bytes()).expect("pin");
+    sign_payload_manifest(root.path());
+    root
+}
+
+fn keypair() -> &'static KeyPair {
+    static KEYPAIR: std::sync::OnceLock<KeyPair> = std::sync::OnceLock::new();
+    KEYPAIR.get_or_init(|| KeyPair::generate_unencrypted_keypair().expect("key pair"))
+}
+
+fn sign_payload_manifest(root: &std::path::Path) {
+    let manifest_path = root.join(WINDOWS_PAYLOAD_MANIFEST);
+    let sig_path = root.join(WINDOWS_PAYLOAD_SIGNATURE);
+    let _ = fs::remove_file(&manifest_path);
+    let _ = fs::remove_file(&sig_path);
+
+    let manifest = render_windows_payload_manifest(root, COMMIT, LOCK).expect("manifest");
+    let kp = keypair();
+    let pin = root.join("payload.pub");
+    fs::write(&pin, kp.pk.to_box().expect("public box").to_bytes()).expect("pin");
     install_test_fixture_pin(&pin).expect("fixture pin");
     fs::remove_file(&pin).expect("remove fixture pin from payload");
     let signature = minisign::sign(
-        Some(&pk),
-        &sk,
+        Some(&kp.pk),
+        &kp.sk,
         Cursor::new(manifest.as_slice()),
         None,
         Some("fixture payload manifest"),
     )
     .expect("signature");
-    let manifest_path = root.path().join(WINDOWS_PAYLOAD_MANIFEST);
     fs::create_dir_all(manifest_path.parent().expect("manifest parent")).expect("provenance");
     fs::write(&manifest_path, manifest).expect("write manifest");
-    fs::write(
-        root.path().join(WINDOWS_PAYLOAD_SIGNATURE),
-        signature.into_string(),
-    )
-    .expect("write signature");
-    root
+    fs::write(sig_path, signature.into_string()).expect("write signature");
 }
 
 #[test]
@@ -278,6 +287,141 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
                 .contains("reparse-or-symlink")
         );
     }
+}
+
+#[test]
+fn windows_component_evidence_error_conditions() {
+    let root = fixture();
+    let out = tempfile::tempdir().unwrap();
+
+    // dirty true: error is windows-evidence-dirty-tree
+    let err = solstone_core_distribution::component_evidence::render_windows_component_evidence(
+        root.path(),
+        COMMIT,
+        true,
+        None,
+        out.path(),
+    )
+    .unwrap_err();
+    assert_eq!(err.message, "windows-evidence-dirty-tree");
+
+    // valid fixture, observed head "0".repeat(40): error starts with windows-evidence-commit-mismatch:
+    let err = solstone_core_distribution::component_evidence::render_windows_component_evidence(
+        root.path(),
+        &"0".repeat(40),
+        false,
+        None,
+        out.path(),
+    )
+    .unwrap_err();
+    assert!(err.message.starts_with("windows-evidence-commit-mismatch:"));
+
+    // valid fixture, observed head equal to COMMIT, requested_version: Some("0.0.0-not-the-workspace"): error starts with windows-evidence-version-mismatch:
+    let err = solstone_core_distribution::component_evidence::render_windows_component_evidence(
+        root.path(),
+        COMMIT,
+        false,
+        Some("0.0.0-not-the-workspace"),
+        out.path(),
+    )
+    .unwrap_err();
+    assert!(
+        err.message
+            .starts_with("windows-evidence-version-mismatch:")
+    );
+}
+
+#[test]
+fn windows_component_evidence_happy_path() {
+    let root = fixture();
+    for comp in ["ced", "llama", "parakeet", "rfdetr", "onnx", "nvattest"] {
+        let dir = root.path().join(format!("share/provenance/{comp}"));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("receipt.json"), b"{}").unwrap();
+    }
+    fs::write(root.path().join("bin/llama-server.exe"), b"llama server").unwrap();
+    fs::write(root.path().join("bin/vulkan-1.dll"), b"vulkan loader").unwrap();
+
+    sign_payload_manifest(root.path());
+
+    let out_dir = tempfile::tempdir().unwrap();
+    solstone_core_distribution::component_evidence::render_windows_component_evidence(
+        root.path(),
+        COMMIT,
+        false,
+        None,
+        out_dir.path(),
+    )
+    .expect("render_windows_component_evidence succeeds");
+
+    let manifest_path = root.path().join(WINDOWS_PAYLOAD_MANIFEST);
+    let manifest_bytes = fs::read(&manifest_path).unwrap();
+    let expected_manifest_sha = solstone_core_distribution::digest::sha256_hex(&manifest_bytes);
+    let manifest: solstone_core_installed_payload::windows_payload::WindowsPayloadManifest =
+        serde_json::from_slice(&manifest_bytes).unwrap();
+
+    let workspace_ver = env!("CARGO_PKG_VERSION");
+
+    let prov_path = out_dir.path().join(
+        solstone_core_distribution::component_evidence::provenance_file_name(
+            &workspace_ver,
+            "windows-x86_64",
+        ),
+    );
+    let prov_text = fs::read_to_string(&prov_path).unwrap();
+    let prov_file: solstone_core_distribution::component_evidence::ProvenanceFile =
+        serde_json::from_str(&prov_text).unwrap();
+
+    assert_eq!(prov_file.basis, "producer-attested");
+    assert_eq!(
+        prov_file.manifests.payload_manifest_sha256,
+        Some(expected_manifest_sha)
+    );
+
+    for record in &prov_file.records {
+        let manifest_file = manifest
+            .files
+            .iter()
+            .find(|f| f.path == record.path)
+            .unwrap_or_else(|| panic!("record path {} not found in manifest", record.path));
+        assert_eq!(record.final_sha256, manifest_file.sha256);
+    }
+
+    let comp_path = out_dir.path().join(
+        solstone_core_distribution::component_evidence::components_file_name(
+            &workspace_ver,
+            "windows-x86_64",
+        ),
+    );
+    let comp_text = fs::read_to_string(&comp_path).unwrap();
+    let comp_file: solstone_core_distribution::component_evidence::ComponentFile =
+        serde_json::from_str(&comp_text).unwrap();
+
+    assert!(!comp_file.components.iter().any(|c| c.id == "ffmpeg"));
+
+    let llama = comp_file
+        .components
+        .iter()
+        .find(|c| c.id == "llama-server")
+        .expect("llama-server present");
+    let vulkan = comp_file
+        .components
+        .iter()
+        .find(|c| c.id == "vulkan-loader")
+        .expect("vulkan-loader present");
+    assert_ne!(llama.id, vulkan.id);
+
+    let parakeet_server = comp_file
+        .components
+        .iter()
+        .find(|c| c.id == "parakeet-server")
+        .expect("parakeet-server present");
+    let parakeet_model = comp_file
+        .components
+        .iter()
+        .find(|c| c.id == "parakeet-model")
+        .expect("parakeet-model present");
+    assert_ne!(parakeet_server.id, parakeet_model.id);
 }
 
 #[test]

@@ -15,6 +15,7 @@ pub mod ced_windows_source;
 pub mod cleanroom;
 #[doc(hidden)]
 pub mod cli_sign;
+pub mod component_evidence;
 mod container_seam;
 pub mod controlled_build;
 pub mod deb;
@@ -991,6 +992,10 @@ fn promotion_is_atomic_after_each_successive_write() {
             },
             fail_after: Some(step.as_str().to_owned()),
             apple: None,
+            inventory: committed_inventory(),
+            fail_evidence_install: false,
+            archives: Vec::new(),
+            stage_mutator: None,
         };
         let result = promote::promote(&request);
         assert!(result.is_err(), "{}", step.as_str());
@@ -1044,6 +1049,10 @@ fn macos_missing_archive_chain_refuses_before_signing_and_preserves_destination(
             xcode: "xcode".into(),
             notarytool: "notarytool".into(),
         }),
+        inventory: committed_inventory(),
+        fail_evidence_install: false,
+        archives: Vec::new(),
+        stage_mutator: None,
     };
 
     // This host has no Apple signing toolchain. Reaching the named chain
@@ -1117,6 +1126,10 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
             },
             fail_after: None,
             apple: None,
+            inventory: inventory.clone(),
+            fail_evidence_install: false,
+            archives: Vec::new(),
+            stage_mutator: None,
         })
         .unwrap();
         let expected = inventory::artifact_set(&basename);

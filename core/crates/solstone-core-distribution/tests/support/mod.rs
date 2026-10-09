@@ -22,6 +22,15 @@ const HEX_LOCK: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 static PUBLISHER_IDENTITY: OnceLock<(PublicKey, PathBuf, PathBuf)> = OnceLock::new();
 
+fn test_inventory() -> inventory::Inventory {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let inv_path = repo_root.join("core/distribution/inventory.toml");
+    let mut inv = inventory::load_inventory(&inv_path).expect("load test inventory");
+    inv.entry
+        .retain(|e| e.class() != Some(inventory::DeliveryClass::Component));
+    inv
+}
+
 pub struct Fixture {
     pub root: PathBuf,
     pub dest: PathBuf,
@@ -87,6 +96,10 @@ pub fn linux_produce_dir(root: &Path, version: &str) -> (PathBuf, String) {
         },
         fail_after: None,
         apple: None,
+        inventory: test_inventory(),
+        fail_evidence_install: false,
+        archives: Vec::new(),
+        stage_mutator: None,
     })
     .expect("promote linux fixture");
     for name in inventory::artifact_set(&basename) {

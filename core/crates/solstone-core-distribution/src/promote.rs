@@ -117,6 +117,11 @@ pub struct PromoteRequest {
     /// without credentials fails closed with a named missing-credential
     /// refusal, which is a blocker to raise rather than a mode to select.
     pub apple: Option<Apple>,
+    pub inventory: crate::inventory::Inventory,
+    pub fail_evidence_install: bool,
+    pub archives: Vec<(String, Vec<u8>)>,
+    #[cfg(test)]
+    pub stage_mutator: Option<fn(&Path)>,
 }
 
 #[derive(Debug)]
@@ -209,6 +214,43 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
     let _ = fs::remove_dir_all(&partial);
     fs::create_dir_all(&partial).map_err(|error| PromoteError::new(error.to_string()))?;
 
+    #[cfg(test)]
+    if let Some(mutator) = request.stage_mutator {
+        mutator(&stage);
+    }
+
+    let mut pre_signing = BTreeMap::new();
+    if request.os == OS_MACOS {
+        fn collect_pre_signing(
+            base: &Path,
+            current: &Path,
+            map: &mut BTreeMap<String, String>,
+        ) -> Result<(), PromoteError> {
+            let entries = fs::read_dir(current).map_err(|e| PromoteError::new(e.to_string()))?;
+            for entry in entries {
+                let entry = entry.map_err(|e| PromoteError::new(e.to_string()))?;
+                let path = entry.path();
+                let meta =
+                    fs::symlink_metadata(&path).map_err(|e| PromoteError::new(e.to_string()))?;
+                if meta.is_dir() {
+                    collect_pre_signing(base, &path, map)?;
+                } else if meta.is_file() {
+                    let rel = path
+                        .strip_prefix(base)
+                        .map_err(|e| PromoteError::new(e.to_string()))?;
+                    let rel_str = rel
+                        .to_str()
+                        .ok_or_else(|| PromoteError::new("non-utf8 path"))?;
+                    let bytes = fs::read(&path).map_err(|e| PromoteError::new(e.to_string()))?;
+                    let digest = crate::digest::sha256_hex(&bytes);
+                    map.insert(rel_str.to_string(), digest);
+                }
+            }
+            Ok(())
+        }
+        collect_pre_signing(&stage, &stage, &mut pre_signing)?;
+    }
+
     // macOS signs the staged tree BEFORE the tarball is written, because the
     // `.tar.gz` Journal.app embeds must carry the signed bytes and notarization
     // registers tickets for exactly those bytes. Signing after the fact would
@@ -283,6 +325,37 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
     }
     write_sidecars(&partial, &request.os, &release, &request.basename)
         .map_err(|error| PromoteError::new(error.to_string()))?;
+
+    let release_manifest = partial.join(format!("{}.manifest.json", request.basename));
+    let evidence_checkout = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let evidence_req = crate::component_evidence::PosixEvidenceRequest {
+        target: &request.arch,
+        version: &request.version,
+        basename: &request.basename,
+        inventory: &request.inventory,
+        stage: &stage,
+        release_manifest: &release_manifest,
+        pre_signing,
+        checkout: &evidence_checkout,
+        injected: Vec::new(),
+        archives: request.archives.clone(),
+    };
+    let evidence = crate::component_evidence::render_posix_evidence(&evidence_req)
+        .map_err(|e| PromoteError::new(e.message))?;
+    let evidence_partial = request.work.join("component-evidence.partial");
+    if evidence_partial.exists() {
+        let _ = fs::remove_dir_all(&evidence_partial);
+    }
+    fs::create_dir_all(&evidence_partial).map_err(|error| PromoteError::new(error.to_string()))?;
+    let comp_name =
+        crate::component_evidence::components_file_name(&request.version, &request.arch);
+    let prov_name =
+        crate::component_evidence::provenance_file_name(&request.version, &request.arch);
+    fs::write(evidence_partial.join(comp_name), evidence.components)
+        .map_err(|error| PromoteError::new(error.to_string()))?;
+    fs::write(evidence_partial.join(prov_name), evidence.provenance)
+        .map_err(|error| PromoteError::new(error.to_string()))?;
+
     checkpoint(request, PromoteStep::Checksums)?;
     checkpoint(request, PromoteStep::Manifest)?;
 
@@ -302,6 +375,13 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         rename_or_copy(&request.dest, &displaced)?;
     }
     rename_or_copy(&partial, &request.dest)?;
+    crate::component_evidence::install_evidence_directory(
+        &request.work,
+        &request.dest,
+        &request.basename,
+        request.fail_evidence_install,
+    )
+    .map_err(|e| PromoteError::new(e.message))?;
     Ok(request.dest.clone())
 }
 
@@ -645,6 +725,15 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    fn test_inventory() -> crate::inventory::Inventory {
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let inv_path = repo_root.join("core/distribution/inventory.toml");
+        let mut inv = crate::inventory::load_inventory(&inv_path).expect("load test inventory");
+        inv.entry
+            .retain(|e| e.class() != Some(crate::inventory::DeliveryClass::Component));
+        inv
+    }
+
     fn scratch(label: &str) -> std::path::PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -734,6 +823,10 @@ mod tests {
             },
             fail_after: None,
             apple: None,
+            inventory: test_inventory(),
+            fail_evidence_install: false,
+            archives: Vec::new(),
+            stage_mutator: None,
         })
         .expect("promote");
         let found = fs::read_dir(&dest)
@@ -746,6 +839,13 @@ mod tests {
         found_sorted.sort();
         assert_eq!(found_sorted, expected);
         assert!(!found.iter().any(|name| name.ends_with(".minisig")));
+        let evidence_dir =
+            dest.parent()
+                .unwrap()
+                .join(crate::component_evidence::evidence_directory_name(
+                    &basename,
+                ));
+        let _ = fs::remove_dir_all(&evidence_dir);
         let _ = fs::remove_dir_all(&dest);
         let _ = fs::remove_dir_all(&work);
     }
@@ -792,6 +892,10 @@ mod tests {
             },
             fail_after: None,
             apple: None,
+            inventory: test_inventory(),
+            fail_evidence_install: false,
+            archives: Vec::new(),
+            stage_mutator: None,
         })
         .expect_err("windows promote refuses");
         assert!(
@@ -890,6 +994,10 @@ mod tests {
             },
             fail_after: None,
             apple: None,
+            inventory: test_inventory(),
+            fail_evidence_install: false,
+            archives: Vec::new(),
+            stage_mutator: None,
         }
     }
 
@@ -1090,6 +1198,10 @@ mod tests {
             },
             fail_after: None,
             apple: None,
+            inventory: test_inventory(),
+            fail_evidence_install: false,
+            archives: Vec::new(),
+            stage_mutator: None,
         };
         super::promote(&request).expect("macos promote");
         let tar = fs::read(request.dest.join(format!("{basename}.tar.gz"))).expect("tar");
@@ -1217,6 +1329,10 @@ mod tests {
             },
             fail_after: None,
             apple: None,
+            inventory: test_inventory(),
+            fail_evidence_install: false,
+            archives: Vec::new(),
+            stage_mutator: None,
         };
         super::promote(&request).expect("macos promote");
         let tar = fs::read(request.dest.join(format!("{basename}.tar.gz"))).expect("tar");

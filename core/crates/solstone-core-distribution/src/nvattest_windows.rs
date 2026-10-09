@@ -278,10 +278,12 @@ const BUILD_TOOLS: &[DownloadSourcePin] = &[
     },
 ];
 
+pub const NVATTEST_SDK_REVISION: &str = "ff957aa1012781d18b68973e370a0188b8ef502d";
+
 pub(crate) const fn production_pins() -> Pins {
     Pins {
         sdk_repo: "https://github.com/solpbc/attestation-sdk",
-        sdk_revision: "ff957aa1012781d18b68973e370a0188b8ef502d",
+        sdk_revision: NVATTEST_SDK_REVISION,
         source_archive: ArchivePin {
             bytes: 5201920,
             sha256: "3ddd77f2af4bb2c149a6de9aa24b38c98786b81af0fe5ef874936e34fb6e13f9",

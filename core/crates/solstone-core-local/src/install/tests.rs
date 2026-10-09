@@ -3914,3 +3914,176 @@ fn cuda_b11429_covered_probe_integrity_is_blocked() {
         }
     }
 }
+
+/// Engine key the runtime fetch set still selects. The installer no longer
+/// downloads CED; this match is the selector the committed fetch-set oracles
+/// were written against.
+fn ced_artifact_key(os_name: &str, arch: &str) -> Option<&'static str> {
+    match (os_name, arch.to_ascii_lowercase().as_str()) {
+        ("linux", "amd64" | "x64" | "x86_64") => Some("linux-cpu-x64"),
+        ("linux", "arm64" | "aarch64") => Some("linux-cpu-arm64"),
+        ("darwin", "arm64") => Some("macos-metal-arm64"),
+        _ => None,
+    }
+}
+
+fn ced_uses_package_engine(os_name: &str, arch: &str) -> bool {
+    matches!(
+        (os_name, arch.to_ascii_lowercase().as_str()),
+        ("windows", "amd64" | "x64" | "x86_64")
+    )
+}
+
+#[test]
+pub fn fetch_set_selectors_request_only_that_targets_local_units() {
+    let local_units = [
+        "ced-engine",
+        "ced-model",
+        "llama-server-vulkan",
+        "llama-server-cuda",
+        "local-model",
+        "parakeet-server",
+        "parakeet-model",
+        "parakeet-coreml",
+    ];
+
+    let targets = [
+        ("linux-x86_64", "linux", "x86_64"),
+        ("linux-aarch64", "linux", "aarch64"),
+        ("macos-arm64", "darwin", "arm64"),
+        ("windows-x86_64", "windows", "x86_64"),
+    ];
+
+    for (target, os, arch) in targets {
+        let mut collected = BTreeSet::new();
+
+        // ced-model on all four targets
+        let art = super::select_artifact("ced-model", None, None, None, Some("ced-tiny-q8_0.gguf"))
+            .expect("ced-model");
+        collected.insert(art.origin_key);
+
+        // ced-engine only when ced_artifact_key(os, arch) is Some
+        if ced_artifact_key(os, arch).is_some() {
+            let (key, platform, backend) = match (os, arch) {
+                ("linux", "x86_64") => ("linux-cpu-x64", Platform::LinuxX64, Backend::Cpu),
+                ("linux", "aarch64") => ("linux-cpu-arm64", Platform::LinuxArm64, Backend::Cpu),
+                ("darwin", "arm64") => ("macos-metal-arm64", Platform::MacosArm64, Backend::Metal),
+                _ => unreachable!(),
+            };
+            let art = super::select_artifact(
+                "ced-engine",
+                Some(platform),
+                Some(backend),
+                Some(key),
+                None,
+            )
+            .expect("ced-engine");
+            collected.insert(art.origin_key);
+        } else {
+            assert!(ced_uses_package_engine(os, arch));
+        }
+
+        // llama-server-vulkan: platform + artifact key, backend None. Not windows.
+        if target != "windows-x86_64" {
+            let (platform, key) = match target {
+                "linux-x86_64" => (Platform::LinuxX64, "x86_64-unknown-linux-gnu"),
+                "linux-aarch64" => (Platform::LinuxArm64, "aarch64-unknown-linux-gnu"),
+                "macos-arm64" => (Platform::MacosArm64, "aarch64-apple-darwin"),
+                _ => unreachable!(),
+            };
+            let art = super::select_artifact(
+                "llama-server-vulkan",
+                Some(platform),
+                None,
+                Some(key),
+                None,
+            )
+            .expect("llama-server-vulkan");
+            collected.insert(art.origin_key);
+        }
+
+        // llama-server-cuda: same linux keys, backend None. Not macOS, not windows.
+        if target.starts_with("linux-") {
+            let (platform, key) = match target {
+                "linux-x86_64" => (Platform::LinuxX64, "x86_64-unknown-linux-gnu"),
+                "linux-aarch64" => (Platform::LinuxArm64, "aarch64-unknown-linux-gnu"),
+                _ => unreachable!(),
+            };
+            let art =
+                super::select_artifact("llama-server-cuda", Some(platform), None, Some(key), None)
+                    .expect("llama-server-cuda");
+            collected.insert(art.origin_key);
+        }
+
+        // local-model: every catalog() row with unit == "local-model", POSIX targets only.
+        if target != "windows-x86_64" {
+            for row in catalog() {
+                if row.unit == "local-model" {
+                    let art =
+                        super::select_artifact("local-model", None, None, None, Some(row.filename))
+                            .expect("local-model");
+                    collected.insert(art.origin_key);
+                }
+            }
+        }
+
+        // parakeet-server: linux only, both Backend::Cpu and Backend::Vulkan, artifact key the linux triple, filename None
+        if target.starts_with("linux-") {
+            let (platform, key) = match target {
+                "linux-x86_64" => (Platform::LinuxX64, "x86_64-unknown-linux-gnu"),
+                "linux-aarch64" => (Platform::LinuxArm64, "aarch64-unknown-linux-gnu"),
+                _ => unreachable!(),
+            };
+            for backend in [Backend::Cpu, Backend::Vulkan] {
+                let art = super::select_artifact(
+                    "parakeet-server",
+                    Some(platform),
+                    Some(backend),
+                    Some(key),
+                    None,
+                )
+                .expect("parakeet-server");
+                collected.insert(art.origin_key);
+            }
+        }
+
+        // parakeet-model: linux only
+        if target.starts_with("linux-") {
+            let art = super::select_artifact(
+                "parakeet-model",
+                None,
+                None,
+                None,
+                Some("tdt-0.6b-v3-q8_0.gguf"),
+            )
+            .expect("parakeet-model");
+            collected.insert(art.origin_key);
+        }
+
+        // parakeet-coreml: macos only, every catalog row of that unit
+        if target == "macos-arm64" {
+            for row in catalog() {
+                if row.unit == "parakeet-coreml" {
+                    let art = super::select_artifact(
+                        "parakeet-coreml",
+                        Some(Platform::MacosArm64),
+                        None,
+                        None,
+                        Some(row.filename),
+                    )
+                    .expect("parakeet-coreml");
+                    collected.insert(art.origin_key);
+                }
+            }
+        }
+
+        let fetch_set = solstone_core_assets::runtime_fetch_set(target).expect("fetch_set");
+        let expected: BTreeSet<&str> = fetch_set
+            .iter()
+            .filter(|f| local_units.contains(&f.unit()))
+            .map(solstone_core_assets::RuntimeFetch::origin_key)
+            .collect();
+
+        assert_eq!(collected, expected, "target {target} origin keys mismatch");
+    }
+}

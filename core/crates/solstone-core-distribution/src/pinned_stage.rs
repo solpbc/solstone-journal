@@ -25,7 +25,7 @@ pub(crate) struct MemberPlan {
 }
 
 #[derive(Debug, Clone)]
-enum ArchiveEntryKind {
+pub(crate) enum ArchiveEntryKind {
     Regular,
     Symlink(String),
     NonRegular,
@@ -147,7 +147,7 @@ pub(crate) fn plan_pinned_input(
     Ok(plans)
 }
 
-fn collect_archive_members(
+pub(crate) fn collect_archive_members(
     entry: &str,
     bytes: &[u8],
     filename: &str,
@@ -290,7 +290,7 @@ fn normalize_archive_path(p: &str) -> String {
     s.trim_end_matches('/').to_string()
 }
 
-fn resolve_symlink(
+pub(crate) fn resolve_symlink(
     entry: &str,
     alias: &str,
     target: &str,
@@ -1537,10 +1537,10 @@ mod tests {
                 .unwrap();
 
         for target_id in ["linux-x86_64", "linux-aarch64", "macos-arm64"] {
-            let entry = inventory
+            let entries: Vec<_> = inventory
                 .entry
                 .iter()
-                .find(|e| match e {
+                .filter(|e| match e {
                     crate::inventory::Entry::PinnedMembers {
                         component, targets, ..
                     } => {
@@ -1549,61 +1549,78 @@ mod tests {
                     }
                     _ => false,
                 })
-                .unwrap_or_else(|| panic!("find nvattest entry for {target_id}"));
+                .collect();
+            assert_eq!(
+                entries.len(),
+                2,
+                "nvattest for {target_id} is a component entry and a notice entry"
+            );
 
-            let (input, staged, ignored) = match entry {
-                crate::inventory::Entry::PinnedMembers {
-                    component,
-                    input,
-                    staged,
-                    ignored,
-                    ..
-                } => {
-                    assert_eq!(component.as_deref(), Some("nvattest"));
-                    (input, staged.as_slice(), ignored.as_slice())
-                }
+            let input = match entries[0] {
+                crate::inventory::Entry::PinnedMembers { input, .. } => input,
                 _ => unreachable!(),
             };
-
-            for m in staged {
-                assert!(
-                    !m.dest.starts_with("bin/"),
-                    "dest {} must not be under package-root bin/",
-                    m.dest
-                );
-                assert!(
-                    !m.dest.starts_with("share/licenses/"),
-                    "dest {} must not be under share/licenses/",
-                    m.dest
-                );
-                assert!(
-                    !m.dest.starts_with("share/provenance/"),
-                    "dest {} must not be under share/provenance/",
-                    m.dest
-                );
-            }
-
-            if target_id.starts_with("linux") {
-                assert!(ignored.contains(&"lib/libnvat.so".to_string()));
-                assert!(ignored.contains(&"lib/libnvat.so.1.2.2".to_string()));
-            } else {
-                assert!(ignored.contains(&"lib/libnvat.dylib".to_string()));
-                assert!(ignored.contains(&"lib/libnvat.1.2.2.dylib".to_string()));
-            }
-            assert_eq!(ignored.len(), 2);
-            for ign in ignored {
-                assert!(
-                    !staged.iter().any(|m| m.dest == *ign || m.relpath == *ign),
-                    "ignored name {ign} must not be a dest or relpath in staged"
-                );
-            }
-
             let (bytes, pin, filename) =
                 resolve_pinned_input("nvattest", repo_root, target_id, input).unwrap();
-            let plans =
-                plan_pinned_input("nvattest", &bytes, &pin, &filename, staged, ignored).unwrap();
             let tmp = tempfile::tempdir().unwrap();
-            stage_pinned_plans("nvattest", tmp.path(), &bytes, &filename, &plans).unwrap();
+            let mut all_staged = Vec::new();
+            for entry in &entries {
+                let (class, staged, ignored) = match entry {
+                    crate::inventory::Entry::PinnedMembers {
+                        class,
+                        staged,
+                        ignored,
+                        ..
+                    } => (*class, staged.as_slice(), ignored.as_slice()),
+                    _ => unreachable!(),
+                };
+                let notice_dests = staged.iter().all(|member| {
+                    member.dest.starts_with("share/solstone-journal/licenses/")
+                        || member.dest.starts_with("share/licenses/")
+                        || member.dest.starts_with("share/provenance/")
+                });
+                if notice_dests {
+                    assert_eq!(class, Some(crate::inventory::DeliveryClass::Notice));
+                } else {
+                    assert_eq!(class, Some(crate::inventory::DeliveryClass::Component));
+                    if target_id.starts_with("linux") {
+                        assert!(ignored.iter().any(|name| name == "lib/libnvat.so"));
+                        assert!(ignored.iter().any(|name| name == "lib/libnvat.so.1.2.2"));
+                    } else {
+                        assert!(ignored.iter().any(|name| name == "lib/libnvat.dylib"));
+                        assert!(ignored.iter().any(|name| name == "lib/libnvat.1.2.2.dylib"));
+                    }
+                }
+                for member in staged {
+                    assert!(
+                        !member.dest.starts_with("bin/"),
+                        "dest {} must not be under package-root bin/",
+                        member.dest
+                    );
+                    assert!(
+                        !member.dest.starts_with("share/licenses/"),
+                        "dest {} must not be under share/licenses/",
+                        member.dest
+                    );
+                    assert!(
+                        !member.dest.starts_with("share/provenance/"),
+                        "dest {} must not be under share/provenance/",
+                        member.dest
+                    );
+                }
+                for ign in ignored {
+                    assert!(
+                        !staged
+                            .iter()
+                            .any(|member| member.dest == *ign || member.relpath == *ign),
+                        "ignored name {ign} must not be a dest or relpath in staged"
+                    );
+                }
+                let plans = plan_pinned_input("nvattest", &bytes, &pin, &filename, staged, ignored)
+                    .unwrap();
+                stage_pinned_plans("nvattest", tmp.path(), &bytes, &filename, &plans).unwrap();
+                all_staged.extend(staged.iter().cloned());
+            }
 
             let expected_files = if target_id.starts_with("linux") {
                 vec![
@@ -1660,7 +1677,7 @@ mod tests {
             }
             assert_eq!(count_files(tmp.path()), 5);
 
-            for m in staged {
+            for m in &all_staged {
                 let staged_bytes = std::fs::read(tmp.path().join(&m.dest)).unwrap();
                 let actual_hash = sha256_hex(&staged_bytes);
                 assert_eq!(

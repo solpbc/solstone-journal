@@ -107,6 +107,7 @@ pub fn declared_records(
                 mode,
                 lane,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -133,12 +134,14 @@ pub fn declared_records(
                 dest,
                 mode,
                 targets,
+                ..
             }
             | Entry::Copy {
                 source,
                 dest,
                 mode,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -158,6 +161,7 @@ pub fn declared_records(
                 digest_source,
                 targets,
                 archive_slot,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -205,6 +209,7 @@ pub fn declared_records(
                 mode,
                 identity: _,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -246,6 +251,7 @@ pub fn declared_records(
                 staged,
                 ignored,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -278,6 +284,7 @@ pub fn declared_records(
                 source,
                 component,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;

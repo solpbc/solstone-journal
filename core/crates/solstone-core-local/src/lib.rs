@@ -48,3 +48,9 @@ pub use vulkan::{
     detect_gpus, discrete_hardware_gpu_count, enumerate_gpus, gpu_probe_ok, is_discrete,
     is_hardware_device, select_device, vulkan_probe_snapshot,
 };
+
+#[cfg(test)]
+#[test]
+fn fetch_set_selectors_request_only_that_targets_local_units() {
+    install::tests::fetch_set_selectors_request_only_that_targets_local_units();
+}

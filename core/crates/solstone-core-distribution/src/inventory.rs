@@ -6,7 +6,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::archive_taxonomy::ContainerKind;
 
@@ -322,6 +322,32 @@ impl Target {
     }
 }
 
+/// Delivery class declared by every inventory entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DeliveryClass {
+    Component,
+    FirstParty,
+    Notice,
+}
+
+impl fmt::Display for DeliveryClass {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Component => formatter.write_str("component"),
+            Self::FirstParty => formatter.write_str("first-party"),
+            Self::Notice => formatter.write_str("notice"),
+        }
+    }
+}
+
+#[must_use]
+pub fn is_notice_path(dest: &str) -> bool {
+    dest.starts_with("share/licenses/")
+        || dest.starts_with("share/solstone-journal/licenses/")
+        || dest.starts_with("share/provenance/")
+}
+
 /// Native input namespace only; installation destinations stay in each entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -339,15 +365,199 @@ pub enum WindowsNativeComponent {
     Nvattest,
 }
 
+impl WindowsNativeComponent {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Llama => "llama",
+            Self::Ced => "ced",
+            Self::Onnx => "onnx",
+            Self::Parakeet => "parakeet",
+            Self::Rfdetr => "rfdetr",
+            Self::Pdfium => "pdfium",
+            Self::Msvc => "msvc",
+            Self::Restic => "restic",
+            Self::Rclone => "rclone",
+            Self::Ffmpeg => "ffmpeg",
+            Self::Nvattest => "nvattest",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowsNativeMapping {
+    Component(&'static str),
+    Notice,
+    FirstParty,
+}
+
+pub fn windows_native_entry_mapping(
+    component: WindowsNativeComponent,
+    dest: &str,
+) -> Result<WindowsNativeMapping, InventoryError> {
+    match (component, dest) {
+        (WindowsNativeComponent::Llama, "bin/llama-server.exe") => {
+            Ok(WindowsNativeMapping::Component("llama-server"))
+        }
+        (WindowsNativeComponent::Llama, "bin/vulkan-1.dll") => {
+            Ok(WindowsNativeMapping::Component("vulkan-loader"))
+        }
+        (WindowsNativeComponent::Llama, "share/provenance/llama/receipt.json")
+        | (WindowsNativeComponent::Llama, "share/provenance/llama/build-evidence.json")
+        | (WindowsNativeComponent::Llama, "share/provenance/llama/validation.log")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/LICENSE")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/jsonhpp-LICENSE")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/cpp-httplib-LICENSE")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/Vulkan-Loader-LICENSE.txt")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/Apache-2.0.txt")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/MIT-Khronos-old.txt")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/MIT.txt")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/cJSON-LICENSE.txt")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/dirent-LICENSE.txt")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/stb-LICENSE.txt")
+        | (WindowsNativeComponent::Llama, "share/licenses/llama/miniaudio-LICENSE.txt") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Ced, "bin/ced.dll") => {
+            Ok(WindowsNativeMapping::Component("ced-engine"))
+        }
+        (WindowsNativeComponent::Ced, "share/provenance/ced/receipt.json")
+        | (WindowsNativeComponent::Ced, "share/provenance/ced/build-evidence.json")
+        | (WindowsNativeComponent::Ced, "share/provenance/ced/validation.log")
+        | (WindowsNativeComponent::Ced, "share/licenses/ced/LICENSE")
+        | (WindowsNativeComponent::Ced, "share/licenses/ced/ggml-LICENSE") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Onnx, "lib/solstone-core-speakers-analyze/onnxruntime.dll") => {
+            Ok(WindowsNativeMapping::Component("onnxruntime"))
+        }
+        (WindowsNativeComponent::Onnx, "share/provenance/onnx/receipt.json")
+        | (WindowsNativeComponent::Onnx, "share/provenance/onnx/build-evidence.json")
+        | (WindowsNativeComponent::Onnx, "share/provenance/onnx/validation.log")
+        | (WindowsNativeComponent::Onnx, "share/licenses/onnx/LICENSE")
+        | (WindowsNativeComponent::Onnx, "share/licenses/onnx/ThirdPartyNotices.txt") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Parakeet, "bin/parakeet-server.exe") => {
+            Ok(WindowsNativeMapping::Component("parakeet-server"))
+        }
+        (
+            WindowsNativeComponent::Parakeet,
+            "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf",
+        ) => Ok(WindowsNativeMapping::Component("parakeet-model")),
+        (WindowsNativeComponent::Parakeet, "share/provenance/parakeet/receipt.json")
+        | (WindowsNativeComponent::Parakeet, "share/provenance/parakeet/build-evidence.json")
+        | (WindowsNativeComponent::Parakeet, "share/provenance/parakeet/validation.log")
+        | (WindowsNativeComponent::Parakeet, "share/licenses/parakeet/LICENSE")
+        | (WindowsNativeComponent::Parakeet, "share/licenses/parakeet/ggml-LICENSE") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Rfdetr, "bin/rfdetr-cli.exe") => {
+            Ok(WindowsNativeMapping::Component("rfdetr-engine"))
+        }
+        (WindowsNativeComponent::Rfdetr, "share/provenance/rfdetr/receipt.json")
+        | (WindowsNativeComponent::Rfdetr, "share/provenance/rfdetr/build-evidence.json")
+        | (WindowsNativeComponent::Rfdetr, "share/provenance/rfdetr/validation.log")
+        | (WindowsNativeComponent::Rfdetr, "share/licenses/rfdetr/LICENSE")
+        | (WindowsNativeComponent::Rfdetr, "share/licenses/rfdetr/ggml-LICENSE")
+        | (WindowsNativeComponent::Rfdetr, "share/licenses/rfdetr/stb-LICENSE.txt") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Pdfium, "lib/solstone-core-pdf/pdfium.dll") => {
+            Ok(WindowsNativeMapping::Component("pdfium"))
+        }
+        (WindowsNativeComponent::Pdfium, "share/provenance/pdfium/archive.json")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/abseil.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/agg23.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/fast_float.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/freetype.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/icu.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/lcms.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/libjpeg_turbo.ijg")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/libjpeg_turbo.md")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/libopenjpeg.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/libpng.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/libtiff.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/llvm-libc.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/pdfium.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/simdutf.txt")
+        | (WindowsNativeComponent::Pdfium, "share/licenses/pdfium/zlib.txt") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Msvc, "bin/msvcp140.dll")
+        | (WindowsNativeComponent::Msvc, "bin/vcruntime140.dll")
+        | (WindowsNativeComponent::Msvc, "bin/vcruntime140_1.dll")
+        | (WindowsNativeComponent::Msvc, "bin/vcomp140.dll") => {
+            Ok(WindowsNativeMapping::Component("msvc-runtime"))
+        }
+        (WindowsNativeComponent::Msvc, "share/provenance/msvc/archive.json")
+        | (WindowsNativeComponent::Msvc, "share/provenance/msvc/runtime-license.docx")
+        | (WindowsNativeComponent::Msvc, "share/provenance/msvc/runtime-license-source.json") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Restic, "bin/restic.exe") => {
+            Ok(WindowsNativeMapping::Component("restic"))
+        }
+        (WindowsNativeComponent::Restic, "share/licenses/restic/LICENSE")
+        | (WindowsNativeComponent::Restic, "share/provenance/restic/archive.json") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Rclone, "bin/rclone.exe") => {
+            Ok(WindowsNativeMapping::Component("rclone"))
+        }
+        (WindowsNativeComponent::Rclone, "share/licenses/rclone/COPYING")
+        | (WindowsNativeComponent::Rclone, "share/provenance/rclone/archive.json") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Ffmpeg, "share/licenses/ffmpeg/COPYING.GPLv2")
+        | (WindowsNativeComponent::Ffmpeg, "share/licenses/ffmpeg/COPYING.GPLv3")
+        | (WindowsNativeComponent::Ffmpeg, "share/licenses/ffmpeg/COPYING.LGPLv2.1")
+        | (WindowsNativeComponent::Ffmpeg, "share/licenses/ffmpeg/COPYING.LGPLv3")
+        | (WindowsNativeComponent::Ffmpeg, "share/licenses/ffmpeg/LICENSE.md")
+        | (WindowsNativeComponent::Ffmpeg, "share/provenance/ffmpeg/archive.json") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        (WindowsNativeComponent::Nvattest, "bin/nvattest.exe")
+        | (WindowsNativeComponent::Nvattest, "share/ca/ca-bundle.pem") => {
+            Ok(WindowsNativeMapping::Component("nvattest"))
+        }
+        (WindowsNativeComponent::Nvattest, "share/licenses/nvattest/LICENSE")
+        | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/receipt.json")
+        | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/build-evidence.json")
+        | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/validation.log") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
+        _ => Err(InventoryError::new(format!(
+            "unmapped-windows-entry: {} {dest}",
+            component.as_str()
+        ))),
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Entry {
     WindowsBuildEvidence {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         dest: String,
         mode: u32,
         targets: Vec<String>,
     },
     WindowsNative {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         component: WindowsNativeComponent,
         member: String,
         dest: String,
@@ -355,6 +565,8 @@ pub enum Entry {
         targets: Vec<String>,
     },
     Bin {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         package: String,
         bin: String,
         dest: String,
@@ -363,12 +575,16 @@ pub enum Entry {
         targets: Vec<String>,
     },
     Launcher {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         source: String,
         dest: String,
         mode: u32,
         targets: Vec<String>,
     },
     ModelAsset {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         source: String,
         dest: String,
         mode: u32,
@@ -379,6 +595,8 @@ pub enum Entry {
         targets: Vec<String>,
     },
     OnnxRuntime {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         dest_dir: String,
         mode: u32,
         #[serde(default)]
@@ -386,6 +604,8 @@ pub enum Entry {
         targets: Vec<String>,
     },
     Pdfium {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         dest_dir: String,
         mode: u32,
         #[serde(default)]
@@ -393,12 +613,16 @@ pub enum Entry {
         targets: Vec<String>,
     },
     Copy {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         source: String,
         dest: String,
         mode: u32,
         targets: Vec<String>,
     },
     PinnedNative {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         #[serde(default)]
         component: Option<String>,
         input: PinnedInput,
@@ -409,6 +633,8 @@ pub enum Entry {
     },
     PinnedMembers {
         #[serde(default)]
+        class: Option<DeliveryClass>,
+        #[serde(default)]
         component: Option<String>,
         input: PinnedInput,
         staged: Vec<StagedMember>,
@@ -417,11 +643,62 @@ pub enum Entry {
         targets: Vec<String>,
     },
     LicenceTree {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
         source: String,
         #[serde(default)]
         component: Option<String>,
         targets: Vec<String>,
     },
+}
+
+impl Entry {
+    #[must_use]
+    pub fn class(&self) -> Option<DeliveryClass> {
+        match self {
+            Self::WindowsBuildEvidence { class, .. }
+            | Self::WindowsNative { class, .. }
+            | Self::Bin { class, .. }
+            | Self::Launcher { class, .. }
+            | Self::ModelAsset { class, .. }
+            | Self::OnnxRuntime { class, .. }
+            | Self::Pdfium { class, .. }
+            | Self::Copy { class, .. }
+            | Self::PinnedNative { class, .. }
+            | Self::PinnedMembers { class, .. }
+            | Self::LicenceTree { class, .. } => *class,
+        }
+    }
+}
+
+#[must_use]
+pub fn entry_component_id(entry: &Entry) -> Option<&'static str> {
+    match entry {
+        Entry::ModelAsset { source, .. } => {
+            if source.contains("wespeaker") {
+                Some("wespeaker-model")
+            } else if source.contains("pyannote") {
+                Some("pyannote-model")
+            } else if source.contains("silero_vad") {
+                Some("silero-vad-model")
+            } else if source.contains("rfdetr-nano") {
+                Some("rfdetr-model")
+            } else if source.contains("rfdetr-") {
+                Some("rfdetr-engine")
+            } else {
+                None
+            }
+        }
+        Entry::OnnxRuntime { .. } => Some("onnxruntime"),
+        Entry::Pdfium { .. } => Some("pdfium"),
+        Entry::WindowsNative {
+            component, dest, ..
+        } => match windows_native_entry_mapping(*component, dest).ok()? {
+            WindowsNativeMapping::Component(id) => Some(id),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -719,6 +996,152 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
     let mut native_members = BTreeSet::new();
     let mut windows_build_evidence = false;
     for entry in &inventory.entry {
+        let Some(class) = entry.class() else {
+            let (kind, dest_or_source) = match entry {
+                Entry::WindowsBuildEvidence { dest, .. } => {
+                    ("windows-build-evidence", dest.as_str())
+                }
+                Entry::WindowsNative { dest, .. } => ("windows-native", dest.as_str()),
+                Entry::Bin { dest, .. } => ("bin", dest.as_str()),
+                Entry::Launcher { dest, .. } => ("launcher", dest.as_str()),
+                Entry::ModelAsset { dest, .. } => ("model-asset", dest.as_str()),
+                Entry::OnnxRuntime { dest_dir, .. } => ("onnx-runtime", dest_dir.as_str()),
+                Entry::Pdfium { dest_dir, .. } => ("pdfium", dest_dir.as_str()),
+                Entry::Copy { dest, .. } => ("copy", dest.as_str()),
+                Entry::PinnedNative { dest, .. } => ("pinned-native", dest.as_str()),
+                Entry::PinnedMembers { staged, .. } => (
+                    "pinned-members",
+                    staged.first().map(|s| s.dest.as_str()).unwrap_or(""),
+                ),
+                Entry::LicenceTree { source, .. } => ("licence-tree", source.as_str()),
+            };
+            return Err(InventoryError::new(format!(
+                "missing-class: {kind} {dest_or_source}"
+            )));
+        };
+
+        match entry {
+            Entry::WindowsBuildEvidence { dest, .. } => {
+                if class != DeliveryClass::Notice {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: windows-build-evidence {dest} {class}"
+                    )));
+                }
+            }
+            Entry::WindowsNative {
+                component, dest, ..
+            } => {
+                let mapping = windows_native_entry_mapping(*component, dest)?;
+                let expected = match mapping {
+                    WindowsNativeMapping::Component(_) => DeliveryClass::Component,
+                    WindowsNativeMapping::Notice => DeliveryClass::Notice,
+                    WindowsNativeMapping::FirstParty => DeliveryClass::FirstParty,
+                };
+                if class != expected {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: windows-native {dest} {class}"
+                    )));
+                }
+            }
+            Entry::Bin { dest, .. } => {
+                if class != DeliveryClass::FirstParty {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: bin {dest} {class}"
+                    )));
+                }
+            }
+            Entry::Launcher { dest, .. } => {
+                if class != DeliveryClass::FirstParty {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: launcher {dest} {class}"
+                    )));
+                }
+            }
+            Entry::ModelAsset { dest, .. } => {
+                if class != DeliveryClass::Component {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: model-asset {dest} {class}"
+                    )));
+                }
+            }
+            Entry::OnnxRuntime { dest_dir, .. } => {
+                if class != DeliveryClass::Component {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: onnx-runtime {dest_dir} {class}"
+                    )));
+                }
+            }
+            Entry::Pdfium { dest_dir, .. } => {
+                if class != DeliveryClass::Component {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: pdfium {dest_dir} {class}"
+                    )));
+                }
+            }
+            Entry::Copy { dest, .. } => {
+                let expected = if is_notice_path(dest) {
+                    DeliveryClass::Notice
+                } else {
+                    DeliveryClass::FirstParty
+                };
+                if class != expected {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: copy {dest} {class}"
+                    )));
+                }
+            }
+            Entry::PinnedNative { dest, .. } => {
+                if class == DeliveryClass::FirstParty {
+                    return Err(InventoryError::new(format!(
+                        "pinned-input-first-party: {dest}"
+                    )));
+                }
+                let expected = if is_notice_path(dest) {
+                    DeliveryClass::Notice
+                } else {
+                    DeliveryClass::Component
+                };
+                if class != expected {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: pinned-native {dest} {class}"
+                    )));
+                }
+            }
+            Entry::PinnedMembers { staged, .. } => {
+                let dest = staged.first().map(|s| s.dest.as_str()).unwrap_or("");
+                if class == DeliveryClass::FirstParty {
+                    return Err(InventoryError::new(format!(
+                        "pinned-input-first-party: {dest}"
+                    )));
+                }
+                let any_notice = staged.iter().any(|s| is_notice_path(&s.dest));
+                let all_notice =
+                    !staged.is_empty() && staged.iter().all(|s| is_notice_path(&s.dest));
+                if any_notice && !all_notice {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: pinned-members {dest} mixed"
+                    )));
+                }
+                let expected = if all_notice {
+                    DeliveryClass::Notice
+                } else {
+                    DeliveryClass::Component
+                };
+                if class != expected {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: pinned-members {dest} {class}"
+                    )));
+                }
+            }
+            Entry::LicenceTree { source, .. } => {
+                if class != DeliveryClass::Notice {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: licence-tree {source} {class}"
+                    )));
+                }
+            }
+        }
+
         if let Entry::WindowsBuildEvidence { mode, targets, .. } = entry {
             if targets.as_slice() != ["windows-x86_64"] || *mode != 0o644 || windows_build_evidence
             {
@@ -908,6 +1331,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             source,
             component,
             targets,
+            ..
         } = entry
         {
             let Some(comp) = component else {
@@ -2103,6 +2527,7 @@ lane = "msvc-native"
 triple_windows = "x86_64-pc-windows-msvc"
 [[entry]]
 kind = "copy"
+class = "first-party"
 source = "LICENSE"
 dest = "runtime/solstone-core.exe"
 mode = 0o644
@@ -2157,6 +2582,7 @@ targets = ["windows-x86_64"]
         );
 
         let make_pinned = |dest: &str, target: &str| super::Entry::PinnedNative {
+            class: Some(super::DeliveryClass::Component),
             component: None,
             input: super::PinnedInput::Inline {
                 source: "fixture.so".to_owned(),
@@ -2297,7 +2723,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
         std::fs::write(
             t1.path(),
             make_inv(
-                r#"{ kind = "pinned-native", component = "Bad Id", dest = "lib/solstone-foo/libfoo.so.1", mode = 493, targets = ["linux-x86_64"], identity = { name = "libfoo.so.1" }, input = { kind = "inline", source = "foo", digest = "d" } }"#,
+                r#"{ kind = "pinned-native", class = "component", component = "Bad Id", dest = "lib/solstone-foo/libfoo.so.1", mode = 493, targets = ["linux-x86_64"], identity = { name = "libfoo.so.1" }, input = { kind = "inline", source = "foo", digest = "d" } }"#,
             ),
         )
         .unwrap();
@@ -2314,7 +2740,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
         std::fs::write(
             t2.path(),
             make_inv(
-                r#"{ kind = "pinned-members", component = "Bad Id", targets = ["linux-x86_64"], input = { kind = "inline", source = "foo", digest = "d" }, staged = [] }"#,
+                r#"{ kind = "pinned-members", class = "component", component = "Bad Id", targets = ["linux-x86_64"], input = { kind = "inline", source = "foo", digest = "d" }, staged = [] }"#,
             ),
         )
         .unwrap();
@@ -2331,7 +2757,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
         std::fs::write(
             t3.path(),
             make_inv(
-                r#"{ kind = "licence-tree", component = "Bad Id", source = "licenses/foo", targets = ["linux-x86_64"] }"#,
+                r#"{ kind = "licence-tree", class = "notice", component = "Bad Id", source = "licenses/foo", targets = ["linux-x86_64"] }"#,
             ),
         )
         .unwrap();
@@ -2342,5 +2768,251 @@ zig_gnu = "x86_64-linux-gnu.2.28"
                 && !err3.starts_with("Bad Id:"),
             "{err3}"
         );
+    }
+
+    #[test]
+    fn real_inventory_delivery_classes_validate() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let path = repo.join("core/distribution/inventory.toml");
+        let inv = super::load_inventory(&path).expect("real inventory validates");
+        assert_eq!(inv.entry.len(), 160);
+        for entry in &inv.entry {
+            assert!(entry.class().is_some());
+        }
+    }
+
+    #[test]
+    fn missing_class_on_model_asset_and_copy_are_refused() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let path = repo.join("core/distribution/inventory.toml");
+        let original = super::load_inventory(&path).unwrap();
+
+        // 1. Missing class on model-asset
+        let mut inv1 = original.clone();
+        let mut target_dest = None;
+        for entry in &mut inv1.entry {
+            if let Entry::ModelAsset { class, dest, .. } = entry {
+                *class = None;
+                target_dest = Some(dest.clone());
+                break;
+            }
+        }
+        let dest = target_dest.unwrap();
+        let err = super::validate_inventory(&path, &inv1)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("missing-class: model-asset {dest}")),
+            "{err}"
+        );
+
+        // 2. Missing class on copy
+        let mut inv2 = original.clone();
+        let mut target_dest2 = None;
+        for entry in &mut inv2.entry {
+            if let Entry::Copy { class, dest, .. } = entry {
+                *class = None;
+                target_dest2 = Some(dest.clone());
+                break;
+            }
+        }
+        let dest = target_dest2.unwrap();
+        let err = super::validate_inventory(&path, &inv2)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("missing-class: copy {dest}")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn delivery_class_legality_rules_enforce_boundaries() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let path = repo.join("core/distribution/inventory.toml");
+        let original = super::load_inventory(&path).unwrap();
+
+        // PinnedNative with class = first-party
+        let mut inv_pinned = original.clone();
+        inv_pinned.entry.push(Entry::PinnedNative {
+            class: Some(DeliveryClass::FirstParty),
+            component: None,
+            input: PinnedInput::Inline {
+                source: "s".into(),
+                digest: "d".into(),
+            },
+            dest: "lib/solstone-foo/libfoo.so".into(),
+            mode: 0o755,
+            identity: NativeIdentity {
+                os: None,
+                name: Some("libfoo.so".into()),
+                aliases: vec![],
+            },
+            targets: vec!["linux-x86_64".into()],
+        });
+        let err = super::validate_inventory(&path, &inv_pinned)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("pinned-input-first-party: lib/solstone-foo/libfoo.so"),
+            "{err}"
+        );
+
+        // Copy of share/LICENSE with class = notice
+        let mut inv_copy = original.clone();
+        for entry in &mut inv_copy.entry {
+            if let Entry::Copy { class, dest, .. } = entry {
+                if dest == "share/LICENSE" {
+                    *class = Some(DeliveryClass::Notice);
+                    let err = super::validate_inventory(&path, &inv_copy)
+                        .unwrap_err()
+                        .to_string();
+                    assert!(
+                        err.contains("illegal-class: copy share/LICENSE notice"),
+                        "{err}"
+                    );
+                    break;
+                }
+            }
+        }
+
+        // Bin with class = notice
+        let mut inv_bin = original.clone();
+        let mut bin_dest = None;
+        for entry in &mut inv_bin.entry {
+            if let Entry::Bin { class, dest, .. } = entry {
+                *class = Some(DeliveryClass::Notice);
+                bin_dest = Some(dest.clone());
+                break;
+            }
+        }
+        let dest = bin_dest.unwrap();
+        let err = super::validate_inventory(&path, &inv_bin)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("illegal-class: bin {dest} notice")),
+            "{err}"
+        );
+
+        // Unmapped windows dest
+        let mut inv_unmapped = original.clone();
+        for entry in &mut inv_unmapped.entry {
+            if let Entry::WindowsNative { dest, .. } = entry {
+                *dest = "bin/unknown.dll".into();
+                let err = super::validate_inventory(&path, &inv_unmapped)
+                    .unwrap_err()
+                    .to_string();
+                assert!(err.contains("unmapped-windows-entry:"), "{err}");
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn windows_native_mappings_and_distinct_ids() {
+        assert_ne!(
+            windows_native_entry_mapping(WindowsNativeComponent::Llama, "bin/llama-server.exe")
+                .unwrap(),
+            windows_native_entry_mapping(WindowsNativeComponent::Llama, "bin/vulkan-1.dll")
+                .unwrap()
+        );
+        assert_ne!(
+            windows_native_entry_mapping(
+                WindowsNativeComponent::Parakeet,
+                "bin/parakeet-server.exe"
+            )
+            .unwrap(),
+            windows_native_entry_mapping(
+                WindowsNativeComponent::Parakeet,
+                "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf"
+            )
+            .unwrap()
+        );
+
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let path = repo.join("core/distribution/inventory.toml");
+        let original = super::load_inventory(&path).unwrap();
+
+        for entry in &original.entry {
+            if let Some(id) = entry_component_id(entry) {
+                assert_ne!(id, "ffmpeg");
+            }
+        }
+    }
+
+    #[test]
+    fn producer_bundled_ids_and_non_catalog_component_ids() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let path = repo.join("core/distribution/inventory.toml");
+        let inventory = super::load_inventory(&path).unwrap();
+
+        let all_targets = [
+            "linux-x86_64",
+            "linux-aarch64",
+            "macos-arm64",
+            "windows-x86_64",
+        ];
+        for target in all_targets {
+            let mut component_ids = BTreeSet::new();
+            for entry in &inventory.entry {
+                let targets = entry_fields(entry).1;
+                if entry.class() == Some(DeliveryClass::Component)
+                    && targets.iter().any(|t| t == target)
+                {
+                    if let Some(id) = entry_component_id(entry) {
+                        if solstone_core_assets::unit_id(id).is_some() {
+                            component_ids.insert(id);
+                        }
+                    }
+                }
+            }
+            let compiled_bundled = solstone_core_assets::bundled_ids(target);
+            let compiled_set: BTreeSet<&str> = compiled_bundled.iter().copied().collect();
+            assert_eq!(
+                component_ids, compiled_set,
+                "target {target} bundled IDs mismatch"
+            );
+        }
+
+        let mut non_catalog_ids = BTreeSet::new();
+        for entry in &inventory.entry {
+            if entry.class() == Some(DeliveryClass::Component) {
+                if let Some(id) = entry_component_id(entry) {
+                    if solstone_core_assets::unit_id(id).is_none() {
+                        non_catalog_ids.insert(id);
+                    }
+                }
+            }
+        }
+        let expected_non_catalog: BTreeSet<&str> = [
+            "rfdetr-engine",
+            "rfdetr-model",
+            "onnxruntime",
+            "pdfium",
+            "wespeaker-model",
+            "pyannote-model",
+            "silero-vad-model",
+            "vulkan-loader",
+            "msvc-runtime",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(non_catalog_ids, expected_non_catalog);
     }
 }

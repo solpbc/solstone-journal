@@ -3588,6 +3588,7 @@ version = "2.0.37"
 dependencies = [
  "serde",
  "serde_json",
+ "solstone-core-nvattest-authority",
 ]
 
 [[package]]
@@ -3652,6 +3653,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-artifact-download",
+ "solstone-core-assets",
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-body-rebuild",

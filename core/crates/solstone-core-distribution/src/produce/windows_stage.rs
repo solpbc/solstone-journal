@@ -209,6 +209,7 @@ fn collect_plan<'a>(
                 dest,
                 mode,
                 targets,
+                ..
             } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
                 if evidence_selected || build_evidence.is_empty() {
                     return Err("missing or duplicate fresh Cargo evidence mapping".into());
@@ -223,6 +224,7 @@ fn collect_plan<'a>(
                 mode,
                 lane,
                 targets,
+                ..
             } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
                 if inventory.forbidden_bins().contains(bin) {
                     return Err(format!("forbidden Windows binary: {bin}"));
@@ -244,6 +246,7 @@ fn collect_plan<'a>(
                 dest,
                 mode,
                 targets,
+                ..
             } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
                 let key = (*component, member.clone());
                 let bytes = native.members.get(&key).ok_or_else(|| {
@@ -259,6 +262,7 @@ fn collect_plan<'a>(
                 dest,
                 mode,
                 targets,
+                ..
             } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
                 let bytes = source_file(checkout, source, 16 * 1024 * 1024)?;
                 add_file(&mut plan, dest, *mode, Cow::Owned(bytes))?;
@@ -271,6 +275,7 @@ fn collect_plan<'a>(
                 digest_source,
                 archive_slot,
                 targets,
+                ..
             } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
                 if archive_slot.is_some() {
                     return Err("Windows model cannot use a Unix archive slot".into());
@@ -332,6 +337,7 @@ fn collect_plan<'a>(
                 source,
                 component,
                 targets,
+                ..
             } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
                 let comp = component
                     .as_deref()
@@ -548,6 +554,7 @@ mod tests {
         fs::write(root_path.join("ced-weights.tar.gz"), &archive_bytes).unwrap();
 
         inventory.entry.push(Entry::PinnedMembers {
+            class: Some(crate::inventory::DeliveryClass::Component),
             component: None,
             input: crate::inventory::PinnedInput::Inline {
                 source: "ced-weights.tar.gz".into(),
@@ -572,6 +579,7 @@ mod tests {
         fs::write(mod_lic_dir.join("LICENSE"), license_content).unwrap();
 
         inventory.entry.push(Entry::LicenceTree {
+            class: Some(crate::inventory::DeliveryClass::Notice),
             source: "licenses/ced".into(),
             component: Some("ced".into()),
             targets: vec![WINDOWS_PAYLOAD_TARGET.into()],
@@ -606,6 +614,7 @@ mod tests {
         // Assert PinnedNative targeting Windows is refused
         let mut bad_inventory = inventory.clone();
         bad_inventory.entry.push(Entry::PinnedNative {
+            class: Some(crate::inventory::DeliveryClass::Component),
             component: Some("ced".into()),
             input: crate::inventory::PinnedInput::Inline {
                 source: "dummy".into(),
@@ -933,6 +942,7 @@ mod tests {
 
         let mut extra = inventory.clone();
         extra.entry.push(Entry::WindowsNative {
+            class: Some(crate::inventory::DeliveryClass::Component),
             component: WindowsNativeComponent::Nvattest,
             member: "bin/msvcp140.dll".into(),
             dest: "bin/msvcp140.dll".into(),

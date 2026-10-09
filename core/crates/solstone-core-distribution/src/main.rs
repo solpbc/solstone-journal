@@ -22,12 +22,73 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|llama-windows|nvattest-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|llama-windows|nvattest-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
 }
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
+        Some("fetch-set") => {
+            let Some(target) = args.next() else {
+                eprintln!("{}", usage());
+                return ExitCode::from(2);
+            };
+            match solstone_core_assets::runtime_fetch_set(&target) {
+                Ok(fetches) => {
+                    let keys: Vec<String> = fetches
+                        .into_iter()
+                        .map(|f| f.origin_key().to_string())
+                        .collect();
+                    match serde_json::to_string(&keys) {
+                        Ok(json) => {
+                            println!("{json}");
+                            ExitCode::SUCCESS
+                        }
+                        Err(e) => {
+                            eprintln!("{e}");
+                            ExitCode::from(2)
+                        }
+                    }
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("windows-component-evidence") => {
+            let Some(payload_root) = args.next().map(PathBuf::from) else {
+                eprintln!("{}", usage());
+                return ExitCode::from(2);
+            };
+            let Some(out_dir) = args.next().map(PathBuf::from) else {
+                eprintln!("{}", usage());
+                return ExitCode::from(2);
+            };
+            let dirty = std::process::Command::new("git")
+                .args(["status", "--porcelain"])
+                .output()
+                .map(|o| !o.stdout.is_empty())
+                .unwrap_or(false);
+            let head = std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            match solstone_core_distribution::component_evidence::render_windows_component_evidence(
+                &payload_root,
+                &head,
+                dirty,
+                None,
+                &out_dir,
+            ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Some("validate") => {
             let start = args
                 .next()
@@ -385,5 +446,21 @@ fn main() -> ExitCode {
             println!("{}", usage());
             ExitCode::from(2)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_mentions_out_of_scope_technologies() {
+        let u = usage();
+        assert!(u.contains("not an SBOM"));
+        assert!(u.contains("FFmpeg"));
+        assert!(u.contains("WebView2"));
+        assert!(u.contains("Velopack"));
+        assert!(u.contains("Rust crates"));
+        assert!(u.contains("FluidAudio"));
     }
 }
