@@ -1270,6 +1270,12 @@ pub fn render_posix_evidence(
                                 )));
                             }
                         }
+                        // A directory entry in both archives: no bytes to compare.
+                        // Any other non-regular entry still refuses below.
+                        (
+                            crate::pinned_stage::ArchiveEntryKind::Directory,
+                            crate::pinned_stage::ArchiveEntryKind::Directory,
+                        ) => {}
                         _ => {
                             return Err(EvidenceError::new(format!("reseal-mismatch: {inner}")));
                         }
@@ -1416,7 +1422,8 @@ pub fn render_posix_evidence(
                             extracted_info = Some((archive_name.as_str(), None, None, reg_sha));
                             break;
                         }
-                        crate::pinned_stage::ArchiveEntryKind::NonRegular => {}
+                        crate::pinned_stage::ArchiveEntryKind::Directory
+                        | crate::pinned_stage::ArchiveEntryKind::NonRegular => {}
                     }
                 }
             }
@@ -3465,6 +3472,250 @@ mod tests {
         let _ = fs::remove_dir_all(&dest);
         let _ = fs::remove_dir_all(&work);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The published macOS rfdetr archive carries a top-level directory entry,
+    /// and so does its resealed copy. Matching directory entries are not a
+    /// mismatch.
+    #[test]
+    fn reseal_slot_accepts_matching_directory_entries() {
+        use crate::apple::ArchiveMemberSigner;
+        use crate::inventory::{ArchiveExecutable, ArchiveSlot};
+        use crate::promote::{PromoteRequest, promote};
+        use crate::provenance::Provenance;
+
+        let version = env!("CARGO_PKG_VERSION");
+        let target = "linux-x86_64";
+        let basename = format!("solstone-journal-{version}-{target}");
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = PathBuf::from(format!(
+            "/var/tmp/solstone-dist-test-reseal-dir-{}-{nanos}",
+            std::process::id()
+        ));
+        let dest = root.join("dest");
+        let work = root.join("work");
+        let _ = fs::remove_dir_all(&root);
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cli_file = temp_dir.path().join("rfdetr-cli");
+        let cli_bytes = b"original rfdetr-cli binary content";
+        fs::write(&cli_file, cli_bytes).unwrap();
+        let signer = crate::apple::FakeArchiveMemberSigner::new("promote");
+        signer.sign_executable(&cli_file, "pkg/rfdetr-cli").unwrap();
+        let signed_cli_bytes = fs::read(&cli_file).unwrap();
+
+        let notes_bytes = b"notes.txt content";
+        let input_tar_bytes = make_tar_gz(&[
+            ("pkg/", b"", tar::EntryType::Directory, None),
+            ("pkg/notes.txt", notes_bytes, tar::EntryType::Regular, None),
+            ("pkg/rfdetr-cli", cli_bytes, tar::EntryType::Regular, None),
+        ]);
+        let sealed_tar_bytes = make_tar_gz(&[
+            ("pkg", b"", tar::EntryType::Directory, None),
+            ("pkg/notes.txt", notes_bytes, tar::EntryType::Regular, None),
+            (
+                "pkg/rfdetr-cli",
+                &signed_cli_bytes,
+                tar::EntryType::Regular,
+                None,
+            ),
+        ]);
+
+        let source_file_name = "rfdetr-fixture.tar.gz";
+        let member_dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-fixture.tar.gz";
+        let slot = ArchiveSlot {
+            id: "rfdetr-macos-metal-arm64".into(),
+            target: "macos-arm64".into(),
+            container: crate::archive_taxonomy::ContainerKind::GzipTar,
+            inspect_only: false,
+            executables: vec![ArchiveExecutable {
+                path: "pkg/rfdetr-cli".into(),
+                digest_const: "UNUSED".into(),
+                digest_source: "unused".into(),
+            }],
+        };
+
+        let mut inv = test_inventory();
+        inv.entry.push(crate::inventory::Entry::ModelAsset {
+            class: Some(crate::inventory::DeliveryClass::Component),
+            source: format!("assets/{source_file_name}"),
+            dest: member_dest.to_string(),
+            mode: 0o644,
+            digest_const: "UNUSED".to_string(),
+            digest_source: "unused".to_string(),
+            targets: vec![target.to_string()],
+            archive_slot: Some(slot),
+        });
+
+        set_bundled_identity_override(
+            target,
+            "rfdetr-engine",
+            "1.0.0",
+            "https://example.com/rfdetr",
+            vec![InputRef {
+                name: source_file_name.to_string(),
+                sha256: crate::digest::sha256_hex(&input_tar_bytes),
+            }],
+        );
+
+        let req = PromoteRequest {
+            dest: dest.clone(),
+            work: work.clone(),
+            tree: vec![
+                ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
+                (member_dest.into(), sealed_tar_bytes, 0o644),
+            ],
+            version: version.to_owned(),
+            basename: basename.clone(),
+            os: "linux".into(),
+            arch: target.into(),
+            deb_arch: "amd64".into(),
+            rpm_arch: "x86_64".into(),
+            dirty: false,
+            observed: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            expected: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            fail_after: None,
+            apple: None,
+            inventory: inv,
+            archives: vec![(source_file_name.to_string(), input_tar_bytes)],
+            fail_evidence_install: false,
+            stage_mutator: None,
+        };
+
+        let res = promote(&req);
+        clear_bundled_identity_override();
+        let evidence_dir = dest
+            .parent()
+            .unwrap()
+            .join(evidence_directory_name(&basename));
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&evidence_dir);
+        res.expect("promote reseal slot with directory entries");
+    }
+
+    /// Only a directory pair is admitted without a byte comparison. A FIFO or
+    /// device entry, even present in both archives, still refuses.
+    #[test]
+    fn reseal_slot_refuses_a_matching_fifo_or_device_pair() {
+        use crate::inventory::{ArchiveExecutable, ArchiveSlot};
+        use crate::promote::{PromoteRequest, promote};
+        use crate::provenance::Provenance;
+
+        for kind in [
+            tar::EntryType::Fifo,
+            tar::EntryType::Char,
+            tar::EntryType::Block,
+        ] {
+            let version = env!("CARGO_PKG_VERSION");
+            let target = "linux-x86_64";
+            let basename = format!("solstone-journal-{version}-{target}");
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos();
+            let root = PathBuf::from(format!(
+                "/var/tmp/solstone-dist-test-reseal-special-{}-{nanos}",
+                std::process::id()
+            ));
+            let dest = root.join("dest");
+            let work = root.join("work");
+            let _ = fs::remove_dir_all(&root);
+
+            let cli_bytes = b"rfdetr-cli binary content";
+            let archive = make_tar_gz(&[
+                ("pkg/", b"", tar::EntryType::Directory, None),
+                ("pkg/special", b"", kind, None),
+                ("pkg/rfdetr-cli", cli_bytes, tar::EntryType::Regular, None),
+            ]);
+            let source_file_name = "rfdetr-fixture.tar.gz";
+            let member_dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-fixture.tar.gz";
+            let slot = ArchiveSlot {
+                id: "rfdetr-macos-metal-arm64".into(),
+                target: "macos-arm64".into(),
+                container: crate::archive_taxonomy::ContainerKind::GzipTar,
+                inspect_only: false,
+                executables: vec![ArchiveExecutable {
+                    path: "pkg/rfdetr-cli".into(),
+                    digest_const: "UNUSED".into(),
+                    digest_source: "unused".into(),
+                }],
+            };
+            let mut inv = test_inventory();
+            inv.entry.push(crate::inventory::Entry::ModelAsset {
+                class: Some(crate::inventory::DeliveryClass::Component),
+                source: format!("assets/{source_file_name}"),
+                dest: member_dest.to_string(),
+                mode: 0o644,
+                digest_const: "UNUSED".to_string(),
+                digest_source: "unused".to_string(),
+                targets: vec![target.to_string()],
+                archive_slot: Some(slot),
+            });
+            set_bundled_identity_override(
+                target,
+                "rfdetr-engine",
+                "1.0.0",
+                "https://example.com/rfdetr",
+                vec![InputRef {
+                    name: source_file_name.to_string(),
+                    sha256: crate::digest::sha256_hex(&archive),
+                }],
+            );
+            let req = PromoteRequest {
+                dest: dest.clone(),
+                work: work.clone(),
+                tree: vec![
+                    ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
+                    (member_dest.into(), archive.clone(), 0o644),
+                ],
+                version: version.to_owned(),
+                basename: basename.clone(),
+                os: "linux".into(),
+                arch: target.into(),
+                deb_arch: "amd64".into(),
+                rpm_arch: "x86_64".into(),
+                dirty: false,
+                observed: Provenance {
+                    commit: "aaa".into(),
+                    lock_sha256: "bbb".into(),
+                },
+                expected: Provenance {
+                    commit: "aaa".into(),
+                    lock_sha256: "bbb".into(),
+                },
+                fail_after: None,
+                apple: None,
+                inventory: inv,
+                archives: vec![(source_file_name.to_string(), archive)],
+                fail_evidence_install: false,
+                stage_mutator: None,
+            };
+            let res = promote(&req);
+            clear_bundled_identity_override();
+            let evidence_dir = dest
+                .parent()
+                .unwrap()
+                .join(evidence_directory_name(&basename));
+            let _ = fs::remove_dir_all(&root);
+            let _ = fs::remove_dir_all(&evidence_dir);
+            let err = res.expect_err("a special-file pair must refuse");
+            assert!(
+                err.message
+                    .contains("unsupported tar entry type for pkg/special")
+                    || err.message.contains("reseal-mismatch: pkg/special"),
+                "{kind:?}: {}",
+                err.message
+            );
+        }
     }
 
     #[test]

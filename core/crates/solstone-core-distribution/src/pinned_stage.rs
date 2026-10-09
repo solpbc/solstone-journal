@@ -28,6 +28,7 @@ pub(crate) struct MemberPlan {
 pub(crate) enum ArchiveEntryKind {
     Regular,
     Symlink(String),
+    Directory,
     NonRegular,
 }
 
@@ -102,7 +103,10 @@ pub(crate) fn plan_pinned_input(
     }
 
     for (member_name, kind) in &members {
-        if matches!(kind, ArchiveEntryKind::NonRegular) {
+        if matches!(
+            kind,
+            ArchiveEntryKind::Directory | ArchiveEntryKind::NonRegular
+        ) {
             continue;
         }
         if !staged_set.contains(member_name) && !ignored_set.contains(member_name) {
@@ -135,7 +139,7 @@ pub(crate) fn plan_pinned_input(
                     extracted_sha256: s.extracted_sha256.clone(),
                 });
             }
-            ArchiveEntryKind::NonRegular => {
+            ArchiveEntryKind::Directory | ArchiveEntryKind::NonRegular => {
                 return Err(ProduceError::new(format!(
                     "{entry}: staged member {} is not a regular file",
                     s.relpath
@@ -182,7 +186,7 @@ pub(crate) fn collect_archive_members(
             if file.is_dir() || name.ends_with('/') {
                 members
                     .entry(norm_name)
-                    .or_insert(ArchiveEntryKind::NonRegular);
+                    .or_insert(ArchiveEntryKind::Directory);
                 continue;
             }
             if members.contains_key(&norm_name) {
@@ -245,7 +249,7 @@ fn parse_tar_members<R: Read>(
         if entry_type == tar::EntryType::Directory {
             members
                 .entry(norm_name)
-                .or_insert(ArchiveEntryKind::NonRegular);
+                .or_insert(ArchiveEntryKind::Directory);
             continue;
         }
         if members.contains_key(&norm_name) {
@@ -336,9 +340,9 @@ pub(crate) fn resolve_symlink(
         ArchiveEntryKind::Symlink(_) => Err(ProduceError::new(format!(
             "{entry}: symlink {alias} points to symlink {resolved} (symlink-to-symlink chain)"
         ))),
-        ArchiveEntryKind::NonRegular => Err(ProduceError::new(format!(
-            "{entry}: symlink {alias} target is not a regular file: {resolved}"
-        ))),
+        ArchiveEntryKind::Directory | ArchiveEntryKind::NonRegular => Err(ProduceError::new(
+            format!("{entry}: symlink {alias} target is not a regular file: {resolved}"),
+        )),
         ArchiveEntryKind::Regular => Ok(resolved),
     }
 }
