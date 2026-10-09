@@ -935,9 +935,14 @@ pub(crate) fn collect_licence_relative_paths(
             let rel = p
                 .strip_prefix(source_dir)
                 .map_err(|e| InventoryError::new(e.to_string()))?;
-            let rel_str = rel.to_str().ok_or_else(|| {
-                InventoryError::new(format!("licence-tree {source_name}: non-utf8 path"))
-            })?;
+            let rel_str = rel
+                .iter()
+                .map(|part| part.to_str())
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| {
+                    InventoryError::new(format!("licence-tree {source_name}: non-utf8 path"))
+                })?
+                .join("/");
             if meta.file_type().is_symlink() {
                 return Err(InventoryError::new(format!(
                     "licence-tree {source_name}: licence tree contains symlink at {rel_str}"
@@ -946,7 +951,7 @@ pub(crate) fn collect_licence_relative_paths(
             if meta.is_dir() {
                 dirs.push(p);
             } else if meta.is_file() {
-                files.push(rel_str.to_owned());
+                files.push(rel_str);
             }
         }
     }
@@ -1821,6 +1826,20 @@ pub fn repository_inventory_path(start: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn nested_licence_paths_use_the_payload_namespace() {
+        let source = tempfile::tempdir().expect("licence tree");
+        let nested = source.path().join("deps").join("vendor");
+        std::fs::create_dir_all(&nested).expect("nested licence directory");
+        std::fs::write(nested.join("LICENSE"), b"licence").expect("nested licence");
+        std::fs::write(source.path().join("LICENSE"), b"licence").expect("root licence");
+
+        assert_eq!(
+            super::collect_licence_relative_paths(source.path(), "fixture").unwrap(),
+            ["LICENSE", "deps/vendor/LICENSE"]
+        );
+    }
+
     #[test]
     fn windows_native_entries_cannot_target_unix_or_reuse_an_input() {
         let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
