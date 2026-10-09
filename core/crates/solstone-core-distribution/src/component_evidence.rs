@@ -1082,6 +1082,13 @@ pub fn render_runtime_rows(
     Ok(rows)
 }
 
+/// Signing rewrites a Mach-O member and leaves every other file (a model, a CA
+/// bundle) byte-identical, so only a Mach-O member must differ from its
+/// pre-signing digest.
+fn signing_left_member_unchanged(pre_signing: &str, final_sha256: &str, staged: &[u8]) -> bool {
+    pre_signing == final_sha256 && crate::macho::looks_like_macho(staged)
+}
+
 pub fn render_posix_evidence(
     request: &PosixEvidenceRequest<'_>,
 ) -> Result<RenderedEvidence, EvidenceError> {
@@ -1428,7 +1435,7 @@ pub fn render_posix_evidence(
                 if pre != reg_sha {
                     return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
                 }
-                if pre == final_sha256 {
+                if signing_left_member_unchanged(pre, final_sha256, &actual_bytes) {
                     return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
                 }
             } else {
@@ -1458,7 +1465,7 @@ pub fn render_posix_evidence(
                         return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
                     }
                     if let Some(ref pre) = pre_signing
-                        && pre == final_sha256
+                        && signing_left_member_unchanged(pre, final_sha256, &actual_bytes)
                     {
                         return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
                     }
@@ -3205,6 +3212,155 @@ mod tests {
         let _ = fs::remove_dir_all(&dest);
         let _ = fs::remove_dir_all(&work);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn only_a_mach_o_member_must_change_under_signing() {
+        let macho = crate::macho::fixture(&crate::macho::FixtureSpec::default());
+        let model = b"GGUF model bytes signing never touches".to_vec();
+        let same = "ab".repeat(32);
+        let other = "cd".repeat(32);
+        // A Mach-O member whose final digest equals its pre-signing digest was
+        // not signed: still refused.
+        assert!(signing_left_member_unchanged(&same, &same, &macho));
+        assert!(!signing_left_member_unchanged(&same, &other, &macho));
+        // Signing leaves a non-Mach-O member byte-identical: accepted.
+        assert!(!signing_left_member_unchanged(&same, &same, &model));
+    }
+
+    /// The bundled CED model is a component member that signing leaves
+    /// byte-identical. A macOS promote records a pre-signing digest for every
+    /// staged file, and must still accept it.
+    #[test]
+    fn macos_promote_accepts_a_non_mach_o_component_member() {
+        use crate::archive_contract::{DeliveryContract, PrebuildInputIdentity};
+        use crate::macho::{FixtureSpec, MH_DYLIB, fixture};
+        use crate::promote::{PromoteRequest, promote};
+        use crate::provenance::Provenance;
+
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let model = fs::read(repo.join("core/models/assets/ced/ced-tiny-q8_0.gguf")).unwrap();
+        let model_sha = crate::digest::sha256_hex(&model);
+        let member_dest = "lib/solstone-ced/ced-tiny-q8_0.gguf".to_string();
+        let version = env!("CARGO_PKG_VERSION");
+        let target = "macos-arm64";
+        let basename = format!("solstone-journal-{version}-{target}");
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = PathBuf::from(format!(
+            "/var/tmp/solstone-dist-test-macos-model-{}-{nanos}",
+            std::process::id()
+        ));
+        let dest = root.join("dest");
+        let work = root.join("work");
+        let stage = root.join("chain-stage");
+        let _ = fs::remove_dir_all(&root);
+
+        let executable = fixture(&FixtureSpec::default());
+        let dylib = fixture(&FixtureSpec {
+            filetype: MH_DYLIB,
+            install_name: Some("@rpath/libdemo.dylib"),
+            ..FixtureSpec::default()
+        });
+        crate::stage::write_staged_file_mode(&stage, "bin/solstone", &executable, 0o755).unwrap();
+        crate::stage::write_staged_file_mode(
+            &stage,
+            "lib/solstone-runtime/libdemo.dylib",
+            &dylib,
+            0o644,
+        )
+        .unwrap();
+        crate::stage::write_staged_file_mode(&stage, &member_dest, &model, 0o644).unwrap();
+
+        let prebuild = PrebuildInputIdentity {
+            target_id: target.into(),
+            commit: "aaa".into(),
+            lock_sha256: "bbb".into(),
+            inventory_sha256: "ab".repeat(32),
+            slots: Vec::new(),
+        };
+        let delivery = DeliveryContract {
+            target_id: prebuild.target_id.clone(),
+            prebuild_input_sha256: prebuild.digest(),
+            slots: Vec::new(),
+        };
+        crate::archive_contract::stage_chain(&stage, &prebuild, &delivery, "aaa", "bbb").unwrap();
+
+        let mut tree = Vec::new();
+        for record in crate::stage::staged_records(&stage).unwrap() {
+            let bytes = fs::read(stage.join(&record.dest)).unwrap();
+            tree.push((record.dest, bytes, record.mode));
+        }
+
+        let mut inv = test_inventory();
+        inv.entry.push(crate::inventory::Entry::PinnedMembers {
+            class: Some(crate::inventory::DeliveryClass::Component),
+            component: Some("ced-model".to_string()),
+            input: crate::inventory::PinnedInput::CatalogCommitted {
+                unit: "ced-model".into(),
+                filename: "ced-tiny-q8_0.gguf".into(),
+                path: "core/models/assets/ced/ced-tiny-q8_0.gguf".into(),
+            },
+            staged: vec![crate::inventory::StagedMember {
+                relpath: String::new(),
+                dest: member_dest.clone(),
+                mode: 0o644,
+                extracted_sha256: model_sha.clone(),
+                identity: None,
+            }],
+            ignored: Vec::new(),
+            targets: vec![target.to_string()],
+        });
+
+        let _signer_guard = crate::promote::install_fake_macos_sign();
+
+        let req = PromoteRequest {
+            dest: dest.clone(),
+            work: work.clone(),
+            tree,
+            version: version.to_owned(),
+            basename: basename.clone(),
+            os: "macos".into(),
+            arch: target.into(),
+            deb_arch: String::new(),
+            rpm_arch: String::new(),
+            dirty: false,
+            observed: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            expected: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            fail_after: None,
+            apple: None,
+            inventory: inv,
+            archives: vec![("ced-tiny-q8_0.gguf".to_string(), model.clone())],
+            fail_evidence_install: false,
+            stage_mutator: None,
+        };
+
+        let res = promote(&req);
+        let evidence_dir = dest
+            .parent()
+            .unwrap()
+            .join(evidence_directory_name(&basename));
+        let provenance = res.map(|_| {
+            fs::read_to_string(evidence_dir.join(provenance_file_name(version, target))).unwrap()
+        });
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&evidence_dir);
+        let provenance: ProvenanceFile =
+            serde_json::from_str(&provenance.expect("macOS promote with a model member")).unwrap();
+        let rec = provenance
+            .records
+            .iter()
+            .find(|r| r.path == member_dest)
+            .expect("record");
+        assert_eq!(rec.final_sha256, model_sha);
     }
 
     #[test]
