@@ -675,6 +675,54 @@ fn bundled_identity(
     }
 }
 
+/// A pinned entry names its own identity: the catalog row its input pins, or,
+/// for the nvattest verifier, the authority's source for that platform. The
+/// version and source come from those committed records, never from the bytes.
+fn pinned_identity(
+    input: &crate::inventory::PinnedInput,
+    id: &str,
+    checkout: &Path,
+) -> Result<(String, String, Vec<InputRef>), EvidenceError> {
+    match input {
+        crate::inventory::PinnedInput::CatalogCommitted { unit, filename, .. }
+        | crate::inventory::PinnedInput::CatalogAcquired { unit, filename } => {
+            let artifact = solstone_core_assets::catalog()
+                .iter()
+                .find(|a| a.unit == unit && a.filename == filename)
+                .ok_or_else(|| EvidenceError::new(format!("unnamed-input: {id} {filename}")))?;
+            Ok((
+                artifact.version.to_string(),
+                catalog_source(artifact, id, checkout)?,
+                vec![InputRef {
+                    name: filename.clone(),
+                    sha256: artifact.sha256.to_string(),
+                }],
+            ))
+        }
+        crate::inventory::PinnedInput::AuthorityCommitted { platform, .. } => {
+            let authority = solstone_core_nvattest_authority::parse(
+                solstone_core_nvattest_authority::AUTHORITY_JSON,
+            )
+            .map_err(|e| EvidenceError::new(e.to_string()))?;
+            let target = authority
+                .targets
+                .get(platform)
+                .ok_or_else(|| EvidenceError::new(format!("unnamed-input: {id} {platform}")))?;
+            Ok((
+                target.source.version.clone(),
+                target.source.fork_commit.clone(),
+                vec![InputRef {
+                    name: target.artifact.name.clone(),
+                    sha256: target.artifact.sha256.clone(),
+                }],
+            ))
+        }
+        crate::inventory::PinnedInput::Inline { .. } => Err(EvidenceError::new(format!(
+            "unnamed-input: {id} inline pin"
+        ))),
+    }
+}
+
 fn entry_targets(entry: &crate::inventory::Entry) -> &[String] {
     match entry {
         crate::inventory::Entry::WindowsBuildEvidence { targets, .. }
@@ -1111,8 +1159,13 @@ pub fn render_posix_evidence(
             return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
         }
 
-        let (row_version, row_source, row_inputs) =
-            bundled_identity(request.checkout, request.target, id)?;
+        let (row_version, row_source, row_inputs) = match entry {
+            crate::inventory::Entry::PinnedMembers { input, .. }
+            | crate::inventory::Entry::PinnedNative { input, .. } => {
+                pinned_identity(input, id, request.checkout)?
+            }
+            _ => bundled_identity(request.checkout, request.target, id)?,
+        };
 
         let pre_signing = request.pre_signing.get(path).cloned();
 
@@ -1270,9 +1323,20 @@ pub fn render_posix_evidence(
             continue;
         }
 
-        // Case 2: Archive member extraction
+        // Case 2: Archive member extraction. A pinned entry reads only its own
+        // input: a single-file input (a bz2 or a model) answers to the empty
+        // member name, so any other archive would also match it.
+        let own_input_only = matches!(
+            entry,
+            crate::inventory::Entry::PinnedMembers { .. }
+                | crate::inventory::Entry::PinnedNative { .. }
+        );
         let mut extracted_info = None;
-        for (archive_name, archive_bytes) in &request.archives {
+        for (archive_name, archive_bytes) in request
+            .archives
+            .iter()
+            .filter(|(name, _)| !own_input_only || row_inputs.iter().any(|i| i.name == *name))
+        {
             if let Ok(members) = crate::pinned_stage::collect_archive_members(
                 archive_name,
                 archive_bytes,
@@ -2592,6 +2656,131 @@ mod tests {
         let _ = fs::remove_dir_all(&work);
         let _ = fs::remove_dir_all(&evidence_dir);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A pinned single-file input (a model, a bz2) answers to the empty member
+    /// name, as does every other single-file input in the release. Its row is
+    /// named from its own catalog pin and its member is read from its own input
+    /// only, never from the first single-file input that happens to match.
+    #[test]
+    fn pinned_single_file_member_reads_its_own_input_and_names_its_catalog_pin() {
+        use crate::promote::{PromoteRequest, promote};
+        use crate::provenance::Provenance;
+
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let model = fs::read(repo.join("core/models/assets/ced/ced-tiny-q8_0.gguf")).unwrap();
+        let model_sha = crate::digest::sha256_hex(&model);
+        let row = solstone_core_assets::catalog()
+            .iter()
+            .find(|a| a.unit == "ced-model" && a.filename == "ced-tiny-q8_0.gguf")
+            .expect("catalog row");
+        assert_eq!(row.sha256, model_sha);
+        let member_dest = "lib/solstone-ced/ced-tiny-q8_0.gguf".to_string();
+        let version = env!("CARGO_PKG_VERSION");
+        let target = "linux-x86_64";
+        let basename = format!("solstone-journal-{version}-{target}");
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = PathBuf::from(format!(
+            "/var/tmp/solstone-dist-test-pinned-single-{}-{nanos}",
+            std::process::id()
+        ));
+        let dest = root.join("dest");
+        let work = root.join("work");
+        let _ = fs::remove_dir_all(&root);
+
+        let mut inv = test_inventory();
+        inv.entry.push(crate::inventory::Entry::PinnedMembers {
+            class: Some(crate::inventory::DeliveryClass::Component),
+            component: Some("ced-model".to_string()),
+            input: crate::inventory::PinnedInput::CatalogCommitted {
+                unit: "ced-model".into(),
+                filename: "ced-tiny-q8_0.gguf".into(),
+                path: "core/models/assets/ced/ced-tiny-q8_0.gguf".into(),
+            },
+            staged: vec![crate::inventory::StagedMember {
+                relpath: String::new(),
+                dest: member_dest.clone(),
+                mode: 0o644,
+                extracted_sha256: model_sha.clone(),
+                identity: None,
+            }],
+            ignored: Vec::new(),
+            targets: vec![target.to_string()],
+        });
+
+        let req = PromoteRequest {
+            dest: dest.clone(),
+            work: work.clone(),
+            tree: vec![
+                ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
+                (member_dest.clone(), model.clone(), 0o644),
+            ],
+            version: version.to_owned(),
+            basename: basename.clone(),
+            os: "linux".into(),
+            arch: target.into(),
+            deb_arch: "amd64".into(),
+            rpm_arch: "x86_64".into(),
+            dirty: false,
+            observed: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            expected: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            fail_after: None,
+            apple: None,
+            inventory: inv,
+            archives: vec![
+                (
+                    "decoy-model.gguf".to_string(),
+                    b"not this input".to_vec(),
+                ),
+                ("ced-tiny-q8_0.gguf".to_string(), model.clone()),
+            ],
+            fail_evidence_install: false,
+            stage_mutator: None,
+        };
+
+        let res = promote(&req);
+        let evidence_dir = dest
+            .parent()
+            .unwrap()
+            .join(evidence_directory_name(&basename));
+        let read = |name: String| fs::read_to_string(evidence_dir.join(name));
+        let outcome = res.map(|_| {
+            (
+                read(components_file_name(version, target)).unwrap(),
+                read(provenance_file_name(version, target)).unwrap(),
+            )
+        });
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&evidence_dir);
+        let (components, provenance) = outcome.expect("promote pinned single-file member");
+
+        let components: serde_json::Value = serde_json::from_str(&components).unwrap();
+        let ced = components["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == "ced-model")
+            .expect("ced-model row");
+        assert_eq!(ced["version"], row.version);
+        assert_eq!(ced["inputs"][0]["name"], "ced-tiny-q8_0.gguf");
+        assert_eq!(ced["inputs"][0]["sha256"], model_sha.as_str());
+        let provenance: ProvenanceFile = serde_json::from_str(&provenance).unwrap();
+        let rec = provenance
+            .records
+            .iter()
+            .find(|r| r.path == member_dest)
+            .expect("record");
+        assert_eq!(rec.input.name, "ced-tiny-q8_0.gguf");
+        assert_eq!(rec.final_sha256, model_sha);
     }
 
     #[test]
