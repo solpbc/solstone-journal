@@ -910,7 +910,13 @@ verify_artifact_set() {
 	is_lower_hex "$lock" 64 || refuse "release lock digest is invalid"
 	[ "$epoch" = journal-v2 ] || refuse "release upgrade epoch is invalid"
 	[ "$window" = 3 ] || refuse "release retention window is invalid"
-	[ "$min_bootstrap" = 2 ] || refuse "release minimum bootstrap revision is invalid"
+	# The release's floor is the revision of the installer it ships with
+	# (inspect.rs MIN_BOOTSTRAP_REVISION mirrors install.sh BOOTSTRAP_REVISION).
+	bootstrap_revision=$(awk -F= '$1 == "BOOTSTRAP_REVISION" { print $2; exit }' "$ARTIFACTS/$bootstrap")
+	case $bootstrap_revision in
+	'' | *[!0-9]*) refuse "delivered installer declares no bootstrap revision" ;;
+	esac
+	[ "$min_bootstrap" = "$bootstrap_revision" ] || refuse "release minimum bootstrap revision is invalid"
 	[ "$(awk -F= '$1 == "bootstrap_contract_version" { print $2 }' "$release")" = 2 ] \
 		|| refuse "release bootstrap contract version is invalid"
 	[ "$(awk -F= '$1 == "bootstrap_filename" { print $2 }' "$release")" = "$bootstrap" ] \
@@ -1070,7 +1076,7 @@ self_test() {
 	git -C "$test_root/source" init -q
 	git -C "$test_root/source" config user.name cleanroom-self-test
 	git -C "$test_root/source" config user.email cleanroom-self-test@invalid
-	printf '%s\n' '#!/bin/sh' 'printf original-installer\\n' \
+	printf '%s\n' '#!/bin/sh' 'BOOTSTRAP_REVISION=2' 'printf original-installer\\n' \
 		>"$test_root/source/core/distribution/install.sh"
 	git -C "$test_root/source" add core/distribution/install.sh
 	git -C "$test_root/source" commit -q -m original
