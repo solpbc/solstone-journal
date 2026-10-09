@@ -449,6 +449,10 @@ fn record_failed_scan(journal: &Path, full: bool, error: &StoreError) {
     }
 }
 
+fn is_not_found(error: &StoreError) -> bool {
+    matches!(error, StoreError::Io(io) if io.kind() == std::io::ErrorKind::NotFound)
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -498,7 +502,8 @@ fn scan_journal_pass(
                     .push(format!("mtime read failed for {rel}: {error}"));
                 if memory_note {
                     to_index.push((rel.clone(), path.clone(), 0));
-                } else {
+                } else if !is_not_found(&error) {
+                    // A file removed since discovery is gone, not failed.
                     report.fail(Some(rel), None);
                 }
             }
@@ -949,9 +954,19 @@ fn reconcile_edges(
 
     let db_mtimes = edge_file_mtimes(conn)?;
     let mut to_index = Vec::new();
+    let mut unreadable = Vec::new();
     for (rel, path) in &files {
-        let Ok(mtime) = file_mtime_secs(path) else {
-            continue;
+        let mtime = match file_mtime_secs(path) {
+            Ok(mtime) => mtime,
+            Err(error) => {
+                if !is_not_found(&error) {
+                    unreadable.push(ScanFailure {
+                        path: Some(rel.clone()),
+                        mtime: None,
+                    });
+                }
+                continue;
+            }
         };
         if db_mtimes.get(rel) != Some(&mtime) {
             to_index.push((rel.clone(), path.clone(), mtime));
@@ -959,7 +974,10 @@ fn reconcile_edges(
     }
 
     let mut resolver = EdgeResolver::new(journal);
-    let mut report = EdgeScanReport::default();
+    let mut report = EdgeScanReport {
+        failures: unreadable,
+        ..EdgeScanReport::default()
+    };
     if let Err(error) = resolver.preflight_owner_timezone() {
         report.failures.push(ScanFailure::default());
         report.warnings.push(error.to_string());

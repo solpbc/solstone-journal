@@ -328,6 +328,8 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
         };
         let observed = match observed {
             Ok(mtime) => mtime,
+            // Removed since discovery: gone, as the next walk will show.
+            Err(StoreError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(_) => {
                 if failed_at.remove(rel).is_some() {
                     status.failed.insert(rel.clone());

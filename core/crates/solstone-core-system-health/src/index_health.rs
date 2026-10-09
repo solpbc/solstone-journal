@@ -130,10 +130,25 @@ fn measurements() -> &'static Mutex<HashMap<PathBuf, Measured>> {
 
 fn measure(journal: &Path) -> Result<Arc<IndexStatus>, String> {
     let started = Instant::now();
-    let status = Arc::new(inspect_index(journal).map_err(|error| error.to_string())?);
+    let measured = inspect_index(journal);
     let mut cache = measurements()
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
+    // A measurement that began before the stored one finished is older than
+    // it: it neither replaces nor removes it.
+    let superseded = cache.get(journal).is_some_and(|entry| entry.at > started);
+    let status = match measured {
+        Ok(status) => Arc::new(status),
+        Err(error) => {
+            if !superseded {
+                cache.remove(journal);
+            }
+            return Err(error.to_string());
+        }
+    };
+    if superseded {
+        return Ok(status);
+    }
     if started.elapsed() >= EXPENSIVE_MEASUREMENT
         && !matches!(status.database, IndexDatabase::Unreadable(_))
     {
@@ -174,14 +189,10 @@ pub fn evaluate_index_health_recent(
                     entry.refreshing = true;
                     let journal = journal.to_path_buf();
                     std::thread::spawn(move || {
+                        // A failed refresh drops the entry (in `measure`), so the
+                        // next read measures for itself.
                         if let Err(error) = measure(&journal) {
-                            // Never keep serving a measurement that could not be
-                            // renewed: the next read measures for itself.
                             log::warn!("search index status refresh failed: {error}");
-                            measurements()
-                                .lock()
-                                .unwrap_or_else(PoisonError::into_inner)
-                                .remove(&journal);
                         }
                     });
                 }
