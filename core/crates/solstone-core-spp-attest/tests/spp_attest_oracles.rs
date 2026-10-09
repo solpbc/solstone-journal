@@ -224,6 +224,9 @@ fn gpu_reason_name(reason: solstone_core_spp_attest::error::GpuAppraisalReason) 
         solstone_core_spp_attest::error::GpuAppraisalReason::StatusProofsMissing => {
             "gpu_status_proofs_missing"
         }
+        solstone_core_spp_attest::error::GpuAppraisalReason::OnlineCheckUnreachable => {
+            "online_check_unreachable"
+        }
     }
 }
 

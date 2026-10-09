@@ -1751,17 +1751,17 @@ mod tests {
 
                 for need in &bin_info.verneed {
                     for name in &need.names {
-                        if let Some(rest) = name.strip_prefix("GLIBC_") {
-                            if !name.starts_with("GLIBC_PRIVATE") && !name.starts_with("GLIBC_ABI_")
-                            {
-                                let parts: Vec<u32> =
-                                    rest.split('.').filter_map(|s| s.parse().ok()).collect();
-                                if parts.len() >= 2 {
-                                    assert!(
-                                        parts[0] < 2 || (parts[0] == 2 && parts[1] <= 28),
-                                        "glibc version {name} exceeds 2.28 in {target_id}"
-                                    );
-                                }
+                        if let Some(rest) = name.strip_prefix("GLIBC_")
+                            && !name.starts_with("GLIBC_PRIVATE")
+                            && !name.starts_with("GLIBC_ABI_")
+                        {
+                            let parts: Vec<u32> =
+                                rest.split('.').filter_map(|s| s.parse().ok()).collect();
+                            if parts.len() >= 2 {
+                                assert!(
+                                    parts[0] < 2 || (parts[0] == 2 && parts[1] <= 28),
+                                    "glibc version {name} exceeds 2.28 in {target_id}"
+                                );
                             }
                         }
                     }
