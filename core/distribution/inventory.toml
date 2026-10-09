@@ -1886,6 +1886,7 @@ staged = [
     { relpath = "rclone-v1.74.4-linux-amd64/rclone", dest = "lib/solstone-rclone/rclone", mode = 0o755, extracted_sha256 = "9f56ca5edfac24a3ed37226c2ba1de69f1ec9e05fa2526cddee5cd97e202be6b" }
 ]
 ignored = [
+    "rclone-v1.74.4-linux-amd64/git-log.txt",
     "rclone-v1.74.4-linux-amd64/README.html",
     "rclone-v1.74.4-linux-amd64/README.txt",
     "rclone-v1.74.4-linux-amd64/rclone.1",
@@ -1901,6 +1902,7 @@ staged = [
     { relpath = "rclone-v1.74.4-linux-arm64/rclone", dest = "lib/solstone-rclone/rclone", mode = 0o755, extracted_sha256 = "e062d30596c386046c8471f3035611d0438c22ef5fa42d3d6128dbf48ed5c76c" }
 ]
 ignored = [
+    "rclone-v1.74.4-linux-arm64/git-log.txt",
     "rclone-v1.74.4-linux-arm64/README.html",
     "rclone-v1.74.4-linux-arm64/README.txt",
     "rclone-v1.74.4-linux-arm64/rclone.1",
@@ -1916,6 +1918,7 @@ staged = [
     { relpath = "rclone-v1.74.4-osx-arm64/rclone", dest = "lib/solstone-rclone/rclone", mode = 0o755, extracted_sha256 = "79dde6096c8d92c31495faac36fc764e3b3d557ee8569ce16c9fb07ce808024e" }
 ]
 ignored = [
+    "rclone-v1.74.4-osx-arm64/git-log.txt",
     "rclone-v1.74.4-osx-arm64/README.html",
     "rclone-v1.74.4-osx-arm64/README.txt",
     "rclone-v1.74.4-osx-arm64/rclone.1",
