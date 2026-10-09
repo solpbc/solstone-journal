@@ -68,6 +68,8 @@ pub enum IndexFailure {
     FailedFiles,
     /// The last scan stopped before finishing, or the journal could not be walked.
     ScanFailed,
+    /// The index's generation stamp cannot be read; every write refuses.
+    StampUnreadable,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -164,6 +166,9 @@ pub fn evaluate_index_health_recent(
             .unwrap_or_else(PoisonError::into_inner);
         match cache.get_mut(journal) {
             Some(entry) if entry.at.elapsed() < REUSE_FOR => Some(Arc::clone(&entry.status)),
+            // A refresh that has not come back in two more periods is not
+            // waited on: measure here instead of serving an old reading.
+            Some(entry) if entry.at.elapsed() >= REUSE_FOR * 3 => None,
             Some(entry) => {
                 if !entry.refreshing {
                     entry.refreshing = true;
@@ -230,7 +235,8 @@ pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservatio
         // and warns about every time.
         .chain(status.unreadable.iter())
         .collect::<std::collections::BTreeSet<_>>()
-        .len();
+        .len()
+        + status.unattributed_failures;
     let pending = status.pending();
     let retained = status.retained.len();
     let scan_stopped = status
@@ -240,6 +246,8 @@ pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservatio
 
     let failure = if matches!(status.database, IndexDatabase::Unreadable(_)) {
         Some(IndexFailure::Unreadable)
+    } else if status.stamp_error.is_some() {
+        Some(IndexFailure::StampUnreadable)
     } else if !status.writable() {
         Some(IndexFailure::NewerGeneration)
     } else if status.memberships_missing {
@@ -273,7 +281,9 @@ pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservatio
     let text = match (state, failure) {
         (_, Some(IndexFailure::Unreadable)) => INDEX_TEXT_UNREADABLE.to_owned(),
         (_, Some(IndexFailure::NewerGeneration)) => INDEX_TEXT_NEWER_GENERATION.to_owned(),
-        (_, Some(IndexFailure::MembershipsMissing)) => INDEX_TEXT_REPAIR.to_owned(),
+        (_, Some(IndexFailure::MembershipsMissing | IndexFailure::StampUnreadable)) => {
+            INDEX_TEXT_REPAIR.to_owned()
+        }
         (_, Some(IndexFailure::ClassificationStalled)) => {
             INDEX_TEXT_CLASSIFICATION_STALLED.to_owned()
         }
@@ -364,6 +374,8 @@ mod tests {
             orphaned: BTreeSet::new(),
             retained: BTreeSet::new(),
             failed: BTreeSet::new(),
+            unattributed_failures: 0,
+            stamp_error: None,
             ineligible_rows: 0,
             unreadable: BTreeSet::new(),
             ineligible: 0,

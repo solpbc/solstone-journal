@@ -25,6 +25,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, pa
 
 use crate::StoreError;
 use crate::db::sqlite_table_exists;
+use crate::scan::ScanFailure;
 
 /// `PRAGMA application_id` of a journal search index ("SSJI").
 pub const INDEX_APPLICATION_ID: i32 = 0x5353_4A49;
@@ -107,13 +108,28 @@ pub fn read_stamp(conn: &Connection) -> Result<IndexStamp, StoreError> {
         user_version,
         ..IndexStamp::default()
     };
-    if sqlite_table_exists(conn, "index_meta")? {
-        stamp.generation = read_meta(conn, META_GENERATION)?.and_then(|v| v.parse().ok());
-        stamp.last_compatible_generation =
-            read_meta(conn, META_LAST_COMPATIBLE)?.and_then(|v| v.parse().ok());
-        stamp.writer_version = read_meta(conn, META_WRITER_VERSION)?;
+    let meta = (|| -> Result<_, StoreError> {
+        if !sqlite_table_exists(conn, "index_meta")? {
+            return Ok((None, None, None));
+        }
+        Ok((
+            read_meta(conn, META_GENERATION)?.and_then(|v| v.parse().ok()),
+            read_meta(conn, META_LAST_COMPATIBLE)?.and_then(|v| v.parse().ok()),
+            read_meta(conn, META_WRITER_VERSION)?,
+        ))
+    })();
+    match meta {
+        Ok((generation, last_compatible_generation, writer_version)) => {
+            stamp.generation = generation;
+            stamp.last_compatible_generation = last_compatible_generation;
+            stamp.writer_version = writer_version;
+            Ok(stamp)
+        }
+        // The header alone already says the file is from a newer generation,
+        // whatever shape that generation gave its metadata.
+        Err(_) if user_version > INDEX_GENERATION => Ok(stamp),
+        Err(error) => Err(error),
     }
-    Ok(stamp)
 }
 
 fn read_meta(conn: &Connection, key: &str) -> Result<Option<String>, StoreError> {
@@ -177,7 +193,12 @@ pub(crate) fn admit_writer(db_path: &Path, operation: &str) -> Result<(), StoreE
     match stamp_existing(db_path) {
         Ok(()) => Ok(()),
         Err(error @ StoreError::IndexGenerationNewer { .. }) => Err(error),
-        Err(error) if matches!(operation, "reset" | "remove-legacy-index") => {
+        Err(error)
+            if matches!(
+                operation,
+                "reset" | "remove-legacy-index" | "migrate-index-stream"
+            ) =>
+        {
             log::warn!(
                 target: "solstone::indexer",
                 "index generation stamp unreadable, proceeding with {operation} path={} cause={error}",
@@ -232,8 +253,9 @@ pub struct ScanReceipt {
     pub skipped: usize,
     pub failed: usize,
     pub warnings: usize,
-    /// Files the scan could not index, at most [`RECEIPT_FAILED_PATHS`].
-    pub failed_paths: Vec<String>,
+    /// The failures the scan attributed to a file, at most
+    /// [`RECEIPT_FAILED_PATHS`]. `failed` beyond these is unattributed.
+    pub failures: Vec<ScanFailure>,
     /// Why the scan stopped, when it did not finish.
     pub error: Option<String>,
     pub writer_version: String,
@@ -252,7 +274,17 @@ pub(crate) fn record_scan(conn: &Connection, receipt: &ScanReceipt) -> Result<()
         "skipped": receipt.skipped,
         "failed": receipt.failed,
         "warnings": receipt.warnings,
-        "failed_paths": receipt.failed_paths.iter().take(RECEIPT_FAILED_PATHS).collect::<Vec<_>>(),
+        "failures": receipt
+            .failures
+            .iter()
+            .filter_map(|failure| {
+                failure
+                    .path
+                    .as_ref()
+                    .map(|path| serde_json::json!({"path": path, "mtime": failure.mtime}))
+            })
+            .take(RECEIPT_FAILED_PATHS)
+            .collect::<Vec<_>>(),
         "error": receipt.error,
         "writer_version": receipt.writer_version,
     });
@@ -286,12 +318,17 @@ pub fn read_last_scan(conn: &Connection) -> Result<Option<ScanReceipt>, StoreErr
         skipped: count("skipped"),
         failed: count("failed"),
         warnings: count("warnings"),
-        failed_paths: value["failed_paths"]
+        failures: value["failures"]
             .as_array()
-            .map(|paths| {
-                paths
+            .map(|failures| {
+                failures
                     .iter()
-                    .filter_map(|path| path.as_str().map(str::to_owned))
+                    .filter_map(|failure| {
+                        Some(ScanFailure {
+                            path: Some(failure["path"].as_str()?.to_owned()),
+                            mtime: failure["mtime"].as_i64(),
+                        })
+                    })
                     .collect()
             })
             .unwrap_or_default(),
@@ -385,6 +422,10 @@ mod tests {
             Err(StoreError::Sql(_))
         ));
         assert_eq!(fs::read(db_path(&journal.0)).expect("bytes"), before);
+        // Search and the file table still read, so status keeps its counts.
+        let status = inspect_index(&journal.0).expect("status");
+        assert!(status.stamp_error.is_some());
+        assert_eq!((status.current, status.missing.len()), (1, 0));
 
         reset_index(&journal.0).expect("a reset rebuilds past a damaged stamp");
         let stamp = read_stamp(&Connection::open(db_path(&journal.0)).expect("open"))
@@ -428,5 +469,18 @@ mod tests {
         assert!(!stamp.writable());
         assert!(stamp.readable());
         assert_eq!(status.current, 1);
+
+        // The header decides even when the newer metadata cannot be parsed:
+        // neither the rebuilding reset nor legacy removal touches the file.
+        Connection::open(db_path(&journal.0))
+            .expect("open")
+            .execute_batch("DROP TABLE index_meta; CREATE TABLE index_meta(key TEXT PRIMARY KEY);")
+            .expect("give the newer generation a metadata shape this binary cannot read");
+        let newer_shape = fs::read(db_path(&journal.0)).expect("bytes");
+        refused(reset_index(&journal.0));
+        refused(
+            crate::migrations::index_stream::remove_legacy_index_artifacts(&journal.0).map(|_| ()),
+        );
+        assert_eq!(fs::read(db_path(&journal.0)).expect("bytes"), newer_shape);
     }
 }

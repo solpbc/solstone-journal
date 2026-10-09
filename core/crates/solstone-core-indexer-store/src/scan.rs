@@ -68,9 +68,29 @@ pub struct ScanReport {
     /// does not classify). Never gates `mark_index_build_complete` — unlike
     /// `warnings`, whose presence keeps a full build in `Building`.
     pub benign_skips: Vec<String>,
-    /// Discovered files this scan tried and could not index. Without a row they
-    /// would read as merely missing, so the scan receipt names them.
-    pub failed_paths: Vec<String>,
+    /// Every counted failure: the file and the modification time it failed
+    /// at, or no file for a failure of the pass itself. `failed` always equals
+    /// its length, so the count, the receipt and the exit code agree.
+    pub failures: Vec<ScanFailure>,
+}
+
+/// One failure a scan counted.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ScanFailure {
+    /// Journal-relative path, or `None` for a failure of the pass itself.
+    pub path: Option<String>,
+    /// The file's modification time when it failed, when it could be read.
+    pub mtime: Option<i64>,
+}
+
+impl ScanReport {
+    fn fail(&mut self, path: Option<&str>, mtime: Option<i64>) {
+        self.failed += 1;
+        self.failures.push(ScanFailure {
+            path: path.map(str::to_owned),
+            mtime,
+        });
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -88,7 +108,7 @@ struct EdgeScanReport {
     indexed: usize,
     removed: usize,
     rows_inserted: usize,
-    failed: usize,
+    failures: Vec<ScanFailure>,
     warnings: Vec<String>,
 }
 
@@ -395,6 +415,19 @@ fn record_failed_scan(journal: &Path, full: bool, error: &StoreError) {
     if !crate::generation::has_sqlite_header(&path) {
         return;
     }
+    // A newer generation is not this binary's to annotate, and a scan stopped
+    // by a lock would only wait on the same lock to say so.
+    let locked = matches!(
+        error,
+        StoreError::Sql(rusqlite::Error::SqliteFailure(failure, _))
+            if matches!(
+                failure.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            )
+    );
+    if locked || matches!(error, StoreError::IndexGenerationNewer { .. }) {
+        return;
+    }
     let receipt = ScanReceipt {
         finished_at_ms: now_ms(),
         full,
@@ -465,6 +498,8 @@ fn scan_journal_pass(
                     .push(format!("mtime read failed for {rel}: {error}"));
                 if memory_note {
                     to_index.push((rel.clone(), path.clone(), 0));
+                } else {
+                    report.fail(Some(rel), None);
                 }
             }
         }
@@ -514,8 +549,7 @@ fn scan_journal_pass(
                         result,
                         OriginalRead::Corrupt | OriginalRead::Unavailable { .. }
                     ) {
-                        report.failed += 1;
-                        report.failed_paths.push(rel.clone());
+                        report.fail(Some(rel), Some(*mtime));
                         report.warnings.push(format!(
                             "memory original is incomplete for {rel}: {}",
                             original_read_label(&result)
@@ -558,9 +592,8 @@ fn scan_journal_pass(
             Ok(warnings) => warnings,
             Err(StoreError::Io(error)) => {
                 report.skipped += 1;
-                report.failed += 1;
+                report.fail(Some(rel), Some(*mtime));
                 report.warnings.push(error.to_string());
-                report.failed_paths.push(rel.clone());
                 continue;
             }
             Err(error) => return Err(error),
@@ -602,7 +635,8 @@ fn scan_journal_pass(
     report.edges_indexed = edge_report.indexed;
     report.edges_removed = edge_report.removed;
     report.edge_rows_inserted = edge_report.rows_inserted;
-    report.failed += edge_report.failed;
+    report.failed += edge_report.failures.len();
+    report.failures.extend(edge_report.failures);
     report.warnings.extend(edge_report.warnings);
     if full && report.failed == 0 && report.warnings.is_empty() {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -640,7 +674,7 @@ fn record_scan_receipt(
             skipped: report.skipped,
             failed: report.failed,
             warnings: report.warnings.len(),
-            failed_paths: report.failed_paths.clone(),
+            failures: report.failures.clone(),
             error: None,
             writer_version: WRITER_VERSION.to_owned(),
         },
@@ -927,7 +961,7 @@ fn reconcile_edges(
     let mut resolver = EdgeResolver::new(journal);
     let mut report = EdgeScanReport::default();
     if let Err(error) = resolver.preflight_owner_timezone() {
-        report.failed = 1;
+        report.failures.push(ScanFailure::default());
         report.warnings.push(error.to_string());
         return Ok(report);
     }
@@ -944,7 +978,10 @@ fn reconcile_edges(
             Err(error) => {
                 tx.rollback()?;
                 report.indexed += 1;
-                report.failed += 1;
+                report.failures.push(ScanFailure {
+                    path: Some(rel.clone()),
+                    mtime: Some(*mtime),
+                });
                 report
                     .warnings
                     .push(format!("Skipping edge extraction for {rel}: {error}"));
@@ -954,7 +991,10 @@ fn reconcile_edges(
         report.indexed += 1;
         if result.failed {
             tx.rollback()?;
-            report.failed += 1;
+            report.failures.push(ScanFailure {
+                path: Some(rel.clone()),
+                mtime: Some(*mtime),
+            });
             report.warnings.extend(result.warnings);
             continue;
         }

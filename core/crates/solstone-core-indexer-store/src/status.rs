@@ -77,8 +77,15 @@ pub struct IndexStatus {
     /// Indexed, no longer on disk, on a day where nothing else was found. A
     /// light scan keeps these rows, so only a full rescan removes them.
     pub retained: BTreeSet<String>,
-    /// Discovered, not indexed, and named as failed by the last scan receipt.
+    /// Named failed by the last scan receipt and unchanged since: discovered
+    /// files at the modification time they failed at (or one that cannot be
+    /// read), and named files outside this walk, such as edge sources.
     pub failed: BTreeSet<String>,
+    /// Failures the last scan counted without a file (a failure of the pass
+    /// itself), plus any beyond the receipt's list.
+    pub unattributed_failures: usize,
+    /// The stamp could not be read: every admitted write refuses.
+    pub stamp_error: Option<String>,
     /// Indexed, modified since, and no longer indexable: the scan neither
     /// updates nor removes these rows.
     pub ineligible_rows: usize,
@@ -98,7 +105,7 @@ impl IndexStatus {
     /// Whether this binary may write the index.
     #[must_use]
     pub fn writable(&self) -> bool {
-        self.stamp.as_ref().is_none_or(IndexStamp::writable)
+        self.stamp_error.is_none() && self.stamp.as_ref().is_none_or(IndexStamp::writable)
     }
 
     #[must_use]
@@ -149,6 +156,7 @@ impl IndexStatus {
             "last_scan": last_scan,
             "classification": classification,
             "memberships_missing": self.memberships_missing,
+            "stamp_error": self.stamp_error,
             "path_lookup_ready": self.path_lookup_ready,
             "files": {
                 "discovered": self.discovered,
@@ -159,6 +167,7 @@ impl IndexStatus {
                 "orphaned": self.orphaned.len(),
                 "retained": self.retained.len(),
                 "failed": self.failed.len(),
+                "unattributed_failures": self.unattributed_failures,
                 "ineligible_rows": self.ineligible_rows,
                 "unreadable": self.unreadable.len(),
                 "ineligible": self.ineligible,
@@ -270,6 +279,8 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
         orphaned: BTreeSet::new(),
         retained: BTreeSet::new(),
         failed: BTreeSet::new(),
+        unattributed_failures: 0,
+        stamp_error: None,
         ineligible_rows: 0,
         unreadable: BTreeSet::new(),
         ineligible: 0,
@@ -297,6 +308,18 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
     };
     status.indexed = stored.len();
 
+    // What the last scan failed on, and at which modification time. A file
+    // changed since is an ordinary pending change: the next scan retries it.
+    let mut failed_at = BTreeMap::new();
+    if let Some(scan) = &status.last_scan {
+        for failure in &scan.failures {
+            if let Some(path) = &failure.path {
+                failed_at.insert(path.clone(), failure.mtime);
+            }
+        }
+        status.unattributed_failures = scan.failed.saturating_sub(failed_at.len());
+    }
+
     for (rel, path) in &files {
         let observed = if is_memory_note(rel) {
             memory_file_mtime_secs(path)
@@ -306,10 +329,20 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
         let observed = match observed {
             Ok(mtime) => mtime,
             Err(_) => {
-                status.unreadable.insert(rel.clone());
+                if failed_at.remove(rel).is_some() {
+                    status.failed.insert(rel.clone());
+                } else {
+                    status.unreadable.insert(rel.clone());
+                }
                 continue;
             }
         };
+        if let Some(failed_mtime) = failed_at.remove(rel)
+            && failed_mtime.is_none_or(|mtime| mtime == observed)
+        {
+            status.failed.insert(rel.clone());
+            continue;
+        }
         match stored.get(rel) {
             Some(mtime) if *mtime == observed => status.current += 1,
             Some(_) if eligible(path, rel) => {
@@ -338,13 +371,11 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
             status.retained.insert(rel.clone());
         }
     }
-    if let Some(scan) = &status.last_scan {
-        for rel in &scan.failed_paths {
-            if status.missing.remove(rel) | status.stale.remove(rel) {
-                status.failed.insert(rel.clone());
-            }
-        }
-    }
+    // Named files this walk does not cover (edge sources outside it, or files
+    // removed since): failed until the next scan retries or forgets them.
+    status
+        .failed
+        .extend(failed_at.into_keys().filter(|rel| !files.contains_key(rel)));
     Ok(status)
 }
 
@@ -369,9 +400,15 @@ fn eligible(path: &Path, rel: &str) -> bool {
 fn read_index(path: &Path, status: &mut IndexStatus) -> Result<BTreeMap<String, i64>, StoreError> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000;")?;
-    status.stamp = Some(read_stamp(&conn)?);
+    // A stamp that cannot be read refuses every write, but search and the
+    // file table still read: keep measuring.
+    match read_stamp(&conn) {
+        Ok(stamp) => status.stamp = Some(stamp),
+        Err(error) => status.stamp_error = Some(error.to_string()),
+    }
     status.build = read_index_build_state(&conn)?.map(|build| build.state);
-    status.last_scan = read_last_scan(&conn)?;
+    // The receipt lives in the same metadata table as the stamp.
+    status.last_scan = read_last_scan(&conn).unwrap_or(None);
     status.memberships_missing = classification_facets_missing(&conn)?;
     status.path_lookup_ready = chunk_path_lookup_ready(&conn)?;
     status.classification = match read_chunk_classification_backfill(&conn)? {
@@ -543,6 +580,48 @@ mod tests {
         assert_eq!(status.ineligible_rows, 1);
         assert!(status.stale.is_empty());
         assert_eq!(status.pending(), 0);
+
+        // Fixed since they failed: pending again, and the next scan clears them.
+        // (Modification times are whole seconds, so the fix moves them.)
+        for rel in ["talents/bad.md", "talents/later.md"] {
+            journal.write(&format!("chronicle/20260717/{rel}"), "# Fixed\n\nfixed");
+            fs::File::options()
+                .write(true)
+                .open(journal.0.join(format!("chronicle/20260717/{rel}")))
+                .expect("open fixed file")
+                .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(10))
+                .expect("move its modification time");
+        }
+        let fixed = inspect_index(&journal.0).expect("status after the fix");
+        assert!(fixed.failed.is_empty());
+        assert_eq!(fixed.pending(), 2);
+        scan_journal(&journal.0, false).expect("scan after the fix");
+        let clean = inspect_index(&journal.0).expect("status after the scan");
+        assert!(clean.failed.is_empty());
+        assert_eq!(clean.pending(), 0);
+        let receipt = clean.last_scan.expect("receipt");
+        assert!(receipt.failures.is_empty() && receipt.error.is_none());
+    }
+
+    #[test]
+    fn every_failure_a_scan_counts_is_one_the_status_reports() {
+        let journal = Journal::new("edge-failure");
+        journal.write("chronicle/20260717/talents/flow.md", "# Flow\n\none");
+        // An observation whose relation note is an object fails edge extraction.
+        journal.write(
+            "facets/work/entities/source/observations.jsonl",
+            r#"{"observed_at":1777556100000,"source_day":"20260430","relation":{"kind":"works-with","target_entity_id":"other","target_name":"Other","note":{"bad":true}}}
+"#,
+        );
+        let report = scan_journal(&journal.0, true).expect("scan");
+        assert_eq!(report.failed, 1);
+        assert_eq!(report.failed, report.failures.len());
+        let status = inspect_index(&journal.0).expect("status");
+        assert_eq!(
+            status.failed.iter().collect::<Vec<_>>(),
+            ["facets/work/entities/source/observations.jsonl"]
+        );
+        assert_eq!(status.unattributed_failures, 0);
     }
 
     #[test]

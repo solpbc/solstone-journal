@@ -27,7 +27,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
 
 fn fix_for(failure: IndexFailure) -> Option<&'static str> {
     match failure {
-        IndexFailure::MembershipsMissing => {
+        IndexFailure::MembershipsMissing | IndexFailure::StampUnreadable => {
             Some("run solstone journal indexer --reset --rescan-full")
         }
         IndexFailure::ClassificationStalled => {
