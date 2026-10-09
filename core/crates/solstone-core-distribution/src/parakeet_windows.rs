@@ -36,7 +36,7 @@ pub const PARAKEET_WINDOWS_BUILD_PROFILE: &str = "Release";
 pub const PARAKEET_ATT_CONTEXT_ENV: &str = "PARAKEET_ATT_CONTEXT";
 pub const PARAKEET_ATT_CONTEXT: u32 = 128;
 
-/// Catalog identity for the GGUF model. Unlike `ced_windows::CED_MODEL_*`,
+/// Catalog identity for the GGUF model.
 /// sha256 is declared locally: this admission surface must compare a digest,
 /// and `solstone-core-distribution` has no `solstone-core-assets` /
 /// `solstone-core-local` dependency to defer to. Values are cross-checked

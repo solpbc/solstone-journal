@@ -13,8 +13,6 @@
 
 pub mod archive;
 pub mod capability_status;
-pub mod ced_fixture;
-pub mod ced_install;
 pub mod ced_readiness;
 pub mod ced_runtime;
 pub mod coreml_install;
@@ -209,55 +207,6 @@ pub mod test_hooks {
         model: &ModelSpec,
     ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
         check_rfdetr_model_with_artifacts(journal, key, engine, model)
-    }
-}
-
-#[cfg(all(test, unix))]
-pub(crate) mod test_support {
-    use std::fs;
-    use std::path::{Path, PathBuf};
-
-    pub fn leaked_temps(root: &Path) -> Vec<PathBuf> {
-        let mut leaked = Vec::new();
-        let mut pending = vec![root.to_path_buf()];
-        while let Some(directory) = pending.pop() {
-            for entry in fs::read_dir(directory).unwrap().filter_map(Result::ok) {
-                let path = entry.path();
-                let name = path.file_name().unwrap().to_string_lossy();
-                if (name.starts_with('.') && name.ends_with(".part"))
-                    || name.ends_with(".tmp")
-                    || (name.starts_with('.') && name.ends_with(".extract"))
-                    || (name.starts_with('.') && name.ends_with(".stage"))
-                    || name.starts_with("tmp")
-                {
-                    leaked.push(path.clone());
-                }
-                if path.is_dir() {
-                    pending.push(path);
-                }
-            }
-        }
-        leaked
-    }
-
-    pub fn prove_temp_sweep(root: &Path, filename: &str, key: &str) {
-        let paths = [
-            root.join(format!(".{filename}.part")),
-            root.join(format!("{filename}.tmp")),
-            root.join(format!(".{key}.extract")),
-            root.join(format!(".{key}.stage")),
-            root.join(".extract"),
-            root.join("tmp-sidecar"),
-        ];
-        for path in &paths {
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, b"deliberate temporary").unwrap();
-        }
-        assert_eq!(leaked_temps(root).len(), paths.len());
-        for path in &paths {
-            fs::remove_file(path).unwrap();
-        }
-        assert!(leaked_temps(root).is_empty());
     }
 }
 

@@ -15,6 +15,7 @@ const HEADER_SKIP_FIELDS: &[&str] = &[
     "imported",
     "_solstone_processing",
     "sound_tags",
+    "sound_tag_status",
 ];
 
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {

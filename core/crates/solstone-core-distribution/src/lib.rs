@@ -128,6 +128,17 @@ fn inventory_requires_every_runtime_layout_anchor() {
     )
     .expect("write digest source");
     fs::create_dir_all(&distribution).expect("create distribution fixture");
+    let repo_ced = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("repo root")
+        .join("core/distribution/licenses/ced");
+    let dist_ced = distribution.join("licenses/ced");
+    fs::create_dir_all(&dist_ced).expect("create ced licenses fixture");
+    for entry in fs::read_dir(&repo_ced).expect("read ced licenses") {
+        let entry = entry.expect("entry");
+        fs::copy(entry.path(), dist_ced.join(entry.file_name())).expect("copy licence file");
+    }
     fs::write(
         distribution.join("inventory.toml"),
         include_str!("../../../distribution/inventory.toml"),

@@ -74,10 +74,7 @@ fn flipped_origin_artifacts() -> Vec<&'static Artifact> {
 #[test]
 fn installer_modules_do_not_read_compile_time_host_platform() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let modules = [
-        manifest_dir.join("src/install/ced_install.rs"),
-        manifest_dir.join("src/install/rfdetr_install.rs"),
-    ];
+    let modules = [manifest_dir.join("src/install/rfdetr_install.rs")];
     assert!(modules.iter().all(|path| path.is_file()));
     let texts = modules
         .iter()
@@ -95,22 +92,6 @@ fn installer_modules_do_not_read_compile_time_host_platform() {
             .unwrap()
             .contains("std::env::consts")
     );
-}
-
-#[test]
-fn ced_does_not_construct_fit_reports() {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let modules = [manifest_dir.join("src/install/ced_install.rs")];
-    assert!(modules.iter().all(|path| path.is_file()));
-    let texts = modules
-        .iter()
-        .map(|path| fs::read_to_string(path).unwrap())
-        .collect::<Vec<_>>();
-    assert!(texts.iter().all(|text| !text.is_empty()));
-    assert!(texts.iter().all(|text| !text.contains("fit_report")));
-
-    let rfdetr = manifest_dir.join("src/install/rfdetr_install.rs");
-    assert!(fs::read_to_string(rfdetr).unwrap().contains("fit_report"));
 }
 
 #[test]

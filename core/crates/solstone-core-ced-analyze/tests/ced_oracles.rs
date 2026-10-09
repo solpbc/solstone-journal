@@ -230,6 +230,59 @@ fn real_subprocess_classify_matches_the_two_window_contract() {
     assert_eq!(response["windows"][1]["tags"]["Music"], json!(0.9));
 }
 
+#[test]
+fn real_ced_probe_roundtrip_with_committed_assets() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("repo root");
+    let archive_path = repo_root.join("core/models/assets/ced/ced-v0.1.0-lib-linux-cpu-x64.tar.gz");
+    let model_path = repo_root.join("core/models/assets/ced/ced-tiny-q8_0.gguf");
+    assert!(archive_path.exists(), "archive exists: {archive_path:?}");
+    assert!(model_path.exists(), "model exists: {model_path:?}");
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let tar_gz = fs::File::open(&archive_path).expect("open archive");
+    let decoder = flate2::read::GzDecoder::new(tar_gz);
+    let mut archive = tar::Archive::new(decoder);
+    let mut extracted_lib: Option<PathBuf> = None;
+    for entry in archive.entries().expect("entries") {
+        let mut entry = entry.expect("entry");
+        let path = entry.path().expect("entry path");
+        if path.ends_with("libced.so") {
+            let dest = dir.path().join("libced.so");
+            entry.unpack(&dest).expect("unpack libced.so");
+            extracted_lib = Some(dest);
+            break;
+        }
+    }
+    let library_path = extracted_lib.expect("extracted libced.so");
+
+    let request = json!({
+        "schema": PROBE_REQUEST_SCHEMA,
+        "models": {
+            "ced_library_path": library_path,
+            "ced_model_path": model_path,
+        },
+    });
+
+    let (ok, response, stderr, code) = run_helper(&[PROBE_COMMAND], &request);
+    let has_libgomp = Path::new("/usr/lib64/libgomp.so.1").exists()
+        || Path::new("/usr/lib/x86_64-linux-gnu/libgomp.so.1").exists();
+    if has_libgomp {
+        assert!(ok, "probe should succeed with libgomp present: {stderr}");
+        assert_eq!(code, Some(0));
+        assert_eq!(response["ok"], json!(true));
+        assert_eq!(response["schema"], json!(PROBE_RESPONSE_SCHEMA));
+    } else {
+        assert!(!ok, "probe must fail when libgomp is absent");
+        assert!(
+            response["reason"].is_string(),
+            "must report named failure reason: {response:?}"
+        );
+    }
+}
+
 // The usage-error path (`evaluate_args` rejects an unknown argument) exits
 // before the helper ever reads stdin, which races this test harness's stdin
 // write against the child's exit -- `argv_accepts_bare_and_probe_and_rejects_unknown`

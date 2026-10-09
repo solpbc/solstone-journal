@@ -8,6 +8,8 @@ use serde_json::Value;
 use solstone_core_check::{
     CheckInputs, Severity, build_check_report, exit_code, human_output, json_output,
 };
+use solstone_core_installed_payload::{code, guidance};
+use solstone_core_local::install::capability_status::CapabilityStatus;
 
 #[derive(Deserialize)]
 struct Corpus {
@@ -41,6 +43,32 @@ fn python_corpus_matches_the_pure_native_verdict() {
             "Use `solstone journal install-models`",
         ))
         .expect("project canonical CED repair command");
+
+        const OLD_GUIDANCE: &str = "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `solstone journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.";
+        if case.human_stdout.contains(OLD_GUIDANCE) {
+            let detail = format!(
+                "{} {}",
+                code::UNSUPPORTED_LOCATION,
+                guidance::UNSUPPORTED_LOCATION
+            );
+            case.inputs.ced = Some(CapabilityStatus::ResourceOrOwnerScopeUnavailable {
+                capability: "ced".into(),
+                detail: detail.clone(),
+            });
+            case.human_stdout = case.human_stdout.replace(OLD_GUIDANCE, &detail);
+            let json_str = case.json_payload.to_string().replace(OLD_GUIDANCE, &detail);
+            let mut payload: Value =
+                serde_json::from_str(&json_str).expect("project CED detail in json_payload");
+            if let Some(checks) = payload.get_mut("checks").and_then(Value::as_array_mut) {
+                for c in checks {
+                    if c.get("name").and_then(Value::as_str) == Some("ced") {
+                        c["cause"] = Value::String("resource_or_owner_scope_unavailable".into());
+                    }
+                }
+            }
+            case.json_payload = payload;
+        }
+
         let report = build_check_report(&case.inputs);
         assert_eq!(
             human_output(&report),

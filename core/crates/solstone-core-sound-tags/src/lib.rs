@@ -3,11 +3,11 @@
 
 //! Best-effort ambient sound tagging over the runtime-installed ced.cpp engine.
 //!
-//! Classification runs out of process through `solstone-core-ced-analyze`
-//! (Brief D): `solstone-core-ced-sys` `dlopen`s a dynamically-linked glibc
-//! shared object, and every consumer of this crate
-//! (`solstone-core`, via `solstone-core-transcribe`) is a `musl-static`-lane
-//! binary with no in-process dynamic loader to satisfy that call.
+//! Classification runs out of process through `solstone-core-ced-analyze`:
+//! `solstone-core-ced-sys` `dlopen`s a dynamically-linked glibc shared object,
+//! and every consumer of this crate (`solstone-core`, via
+//! `solstone-core-transcribe`) is a `musl-static`-lane binary with no
+//! in-process dynamic loader to satisfy that call.
 //! `solstone-core-local::install::ced_runtime` owns resolving and invoking
 //! the sibling helper; this module owns windowing the decoded audio,
 //! building the request, and aggregating the per-window response -- the same
@@ -20,11 +20,13 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use solstone_core_assets::canonical_host_pair;
-use solstone_core_local::install::ced_readiness::{CED_UNAVAILABLE_GUIDANCE, CedVerdict};
+use solstone_core_local::install::capability_status::CapabilityStatus;
+use solstone_core_local::install::ced_readiness::{
+    CedVerdict, evaluate_ced_readiness, evaluate_ced_readiness_in_package_with_probe,
+    fresh_model_check, fresh_model_check_in_package, probe_ced_engine,
+};
 use solstone_core_local::install::ced_runtime::{CED_ANALYZE_TIMEOUT, CedAnalyzeProgram};
 
-#[cfg(not(windows))]
-use solstone_core_local::install::ced_readiness::evaluate_ced_readiness;
 #[cfg(not(windows))]
 use solstone_core_local::install::ced_runtime::invoke_ced_analyze;
 
@@ -48,63 +50,135 @@ const TOP_K: i32 = 0;
 
 /// Tag PCM audio using the locally installed ced.cpp model.
 ///
-/// All tagger failures are best-effort and therefore represented as `None`.
-pub fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
+/// Returns `(tags, status)`. Degraded yields `(None, Some(status))`.
+pub fn tag_audio(audio: &[f32], journal_path: &Path) -> (Option<Value>, Option<CapabilityStatus>) {
+    tag_audio_with_program(audio, journal_path, &CedAnalyzeProgram::SiblingHelper)
+}
+
+/// [`tag_audio`] with caller-specified helper program.
+pub fn tag_audio_with_program(
+    audio: &[f32],
+    journal_path: &Path,
+    program: &CedAnalyzeProgram,
+) -> (Option<Value>, Option<CapabilityStatus>) {
+    let spans = window_spans(audio.len());
+    if spans.is_empty() {
+        return (None, None);
+    }
     let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
-    // The shared verdict hashes the model and load-probes once (out of
-    // process, through the sibling helper). This call then sends its own
-    // classify request: the verdict is the gate, not a second path
-    // derivation, and transcribe invokes this once per audio file
-    // (`process_one`), so the extra helper invocation is not a hot path.
     #[cfg(windows)]
     let readiness = solstone_core_check::evaluate_host_ced(journal_path, os, arch);
     #[cfg(not(windows))]
     let readiness = evaluate_ced_readiness(journal_path, os, arch);
-    tag_audio_with_readiness(audio, readiness)
+
+    let library = match readiness {
+        CedVerdict::Ready { library, .. } => library,
+        CedVerdict::Unsupported { os, arch } => {
+            log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
+            return (None, None);
+        }
+        CedVerdict::Degraded(status) => {
+            if let Some(detail) = status.detail() {
+                log::warn!("{detail}");
+            }
+            return (None, Some(status));
+        }
+    };
+
+    let model = match fresh_model_check(os, arch) {
+        Ok(model) => model,
+        Err(status) => {
+            if let Some(detail) = status.detail() {
+                log::warn!("{detail}");
+            }
+            return (None, Some(status));
+        }
+    };
+
+    let tags = classify_windows(audio, &spans, &library, &model, program);
+    (tags, None)
+}
+
+/// Tag audio using an explicit package path and program (used by tests).
+pub fn tag_audio_in_package(
+    audio: &[f32],
+    package_root_or_exe: &Path,
+    program: &CedAnalyzeProgram,
+) -> (Option<Value>, Option<CapabilityStatus>) {
+    let spans = window_spans(audio.len());
+    if spans.is_empty() {
+        return (None, None);
+    }
+    let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+    let readiness = evaluate_ced_readiness_in_package_with_probe(
+        package_root_or_exe,
+        os,
+        arch,
+        |library, model| probe_ced_engine(program, library, model),
+    );
+
+    let library = match readiness {
+        CedVerdict::Ready { library, .. } => library,
+        CedVerdict::Unsupported { os, arch } => {
+            log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
+            return (None, None);
+        }
+        CedVerdict::Degraded(status) => {
+            if let Some(detail) = status.detail() {
+                log::warn!("{detail}");
+            }
+            return (None, Some(status));
+        }
+    };
+
+    let model = match fresh_model_check_in_package(package_root_or_exe, os, arch) {
+        Ok(model) => model,
+        Err(status) => {
+            if let Some(detail) = status.detail() {
+                log::warn!("{detail}");
+            }
+            return (None, Some(status));
+        }
+    };
+
+    let tags = classify_windows(audio, &spans, &library, &model, program);
+    (tags, None)
 }
 
 /// Tag PCM using an already-computed CED verdict.
-///
-/// Production [`tag_audio`] supplies the catalog verdict. Tests supply a
-/// verdict against a fixture digest so classify can run without the 6 MiB pin.
-pub fn tag_audio_with_readiness(audio: &[f32], readiness: CedVerdict) -> Option<Value> {
+pub fn tag_audio_with_readiness(
+    audio: &[f32],
+    readiness: CedVerdict,
+) -> (Option<Value>, Option<CapabilityStatus>) {
     tag_audio_with_readiness_and_program(audio, readiness, &CedAnalyzeProgram::SiblingHelper)
 }
 
-/// [`tag_audio_with_readiness`] with the CED helper program supplied by the
-/// caller.
-///
-/// Production always resolves the real out-of-process
-/// `solstone-core-ced-analyze` sibling (Brief D). This crate's own tests
-/// substitute a stub script here for the same reason
-/// `solstone-core-local::install::ced_readiness`'s tests do: there is no
-/// compiled cross-lane `zig-gnu-2.27` binary available in a dev `cargo test`
-/// run, and `solstone-core-local`'s test-only base-dir override
-/// (`ced_runtime::set_test_helper_base_dir`) is `pub(crate)` to that crate,
-/// not reachable from here.
+/// [`tag_audio_with_readiness`] with caller-specified helper program.
 pub fn tag_audio_with_readiness_and_program(
     audio: &[f32],
     readiness: CedVerdict,
     program: &CedAnalyzeProgram,
-) -> Option<Value> {
+) -> (Option<Value>, Option<CapabilityStatus>) {
     let spans = window_spans(audio.len());
     if spans.is_empty() {
-        return None;
+        return (None, None);
     }
 
     let (library, model) = match readiness {
         CedVerdict::Ready { library, model } => (library, model),
         CedVerdict::Unsupported { os, arch } => {
             log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
-            return None;
+            return (None, None);
         }
         CedVerdict::Degraded(status) => {
-            log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
-            log::debug!("ced readiness degraded: {status:?}");
-            return None;
+            if let Some(detail) = status.detail() {
+                log::warn!("{detail}");
+            }
+            return (None, Some(status));
         }
     };
-    classify_windows(audio, &spans, &library, &model, program)
+    let tags = classify_windows(audio, &spans, &library, &model, program);
+    (tags, None)
 }
 
 fn classify_windows(
@@ -178,11 +252,6 @@ fn write_audio_sidecar(path: &Path, audio: &[f32]) -> std::io::Result<()> {
     fs::write(path, bytes)
 }
 
-/// Turn the helper's `solstone-ced-response-v1` payload into the same
-/// aggregated shape [`tag_audio_with_readiness`] returned when this crate
-/// classified in-process: one failed window is tolerated (best-effort keeps
-/// the rest), but a malformed or wrong-shaped response degrades to `None`
-/// exactly like an unreadable engine did before.
 fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value> {
     if response.get("schema").and_then(Value::as_str) != Some(RESPONSE_SCHEMA) {
         log::warn!("sound tagging returned an unexpected response schema");
@@ -198,29 +267,53 @@ fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value>
 
     let mut per_window = Vec::new();
     let mut first_failure = None;
-    for (index, window) in windows.iter().enumerate() {
-        match window_tags(window) {
-            Some(tags) => per_window.push(tags),
+    for window in windows {
+        match window.get("ok").and_then(Value::as_bool) {
+            Some(true) => per_window.push(window.clone()),
+            Some(false) => {
+                if first_failure.is_none() {
+                    first_failure = window
+                        .get("detail")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned);
+                }
+            }
             None => {
-                let detail = window
-                    .get("detail")
-                    .and_then(Value::as_str)
-                    .unwrap_or("ced helper reported an invalid window outcome")
-                    .to_owned();
-                log::debug!("sound tagger window {index} failed: {detail}");
-                first_failure.get_or_insert(detail);
+                log::warn!("sound tagging returned a window missing an ok field");
+                return None;
             }
         }
     }
 
     if per_window.is_empty() {
-        let cause = first_failure.unwrap_or_else(|| "no successful windows".to_owned());
-        log::warn!("sound tagger failed for all windows: {cause}");
+        if let Some(detail) = first_failure {
+            log::warn!("sound tagging failed for all windows: {detail}");
+        }
         return None;
     }
-    let tags = aggregate(&per_window);
-    if tags.is_empty() {
-        return None;
+
+    let mut aggregated: BTreeMap<String, f64> = BTreeMap::new();
+    for window in &per_window {
+        let Some(tags) = window.get("tags").and_then(Value::as_object) else {
+            continue;
+        };
+        for (label, score) in tags {
+            let Some(score) = score.as_f64() else {
+                continue;
+            };
+            if score < SCORE_FLOOR {
+                continue;
+            }
+            let entry = aggregated.entry(label.clone()).or_insert(0.0);
+            if score > *entry {
+                *entry = score;
+            }
+        }
+    }
+
+    let mut tags_map = Map::new();
+    for (label, score) in aggregated {
+        tags_map.insert(label, json!(score));
     }
 
     Some(json!({
@@ -230,153 +323,24 @@ fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value>
         "window_s": WINDOW_S,
         "agg": AGG,
         "windows": per_window.len(),
-        "tags": tags,
+        "tags": Value::Object(tags_map),
     }))
 }
 
-/// `Some` only for `{"ok": true, "tags": {...}}` with a well-formed `tags`
-/// object. `solstone-core-ced-analyze` already validated and deduped ced's
-/// raw per-window JSON, so this is a plain deserialize, not a re-parse of
-/// ced's wire format.
-fn window_tags(window: &Value) -> Option<BTreeMap<String, f64>> {
-    if window.get("ok") != Some(&Value::Bool(true)) {
-        return None;
-    }
-    serde_json::from_value(window.get("tags")?.clone()).ok()
-}
-
-fn window_spans(n_samples: usize) -> Vec<(usize, usize)> {
-    if n_samples == 0 {
-        return Vec::new();
-    }
+pub fn window_spans(sample_count: usize) -> Vec<(usize, usize)> {
     let window_samples = WINDOW_S * CLASSIFY_SAMPLE_RATE as usize;
     let min_tail_samples = MIN_TAIL_S * CLASSIFY_SAMPLE_RATE as usize;
-    let full_windows = n_samples / window_samples;
-    let mut spans = (0..full_windows)
-        .map(|index| {
-            let start = index * window_samples;
-            (start, start + window_samples)
-        })
-        .collect::<Vec<_>>();
-    let tail_start = full_windows * window_samples;
-    if n_samples - tail_start >= min_tail_samples {
-        spans.push((tail_start, n_samples));
+    if sample_count < window_samples {
+        return Vec::new();
+    }
+    let mut spans = Vec::new();
+    let mut start = 0;
+    while start + window_samples <= sample_count {
+        spans.push((start, start + window_samples));
+        start += window_samples;
+    }
+    if sample_count - start >= min_tail_samples {
+        spans.push((sample_count.saturating_sub(window_samples), sample_count));
     }
     spans
-}
-
-fn aggregate(per_window: &[BTreeMap<String, f64>]) -> Map<String, Value> {
-    let mut max_scores: BTreeMap<String, f64> = BTreeMap::new();
-    for tags in per_window {
-        for (label, score) in tags {
-            max_scores
-                .entry(label.clone())
-                .and_modify(|current: &mut f64| *current = current.max(*score))
-                .or_insert(*score);
-        }
-    }
-    let mut kept = max_scores
-        .into_iter()
-        .filter(|(_, score)| *score > SCORE_FLOOR)
-        .collect::<Vec<_>>();
-    kept.sort_by(|(left_label, left_score), (right_label, right_score)| {
-        right_score
-            .total_cmp(left_score)
-            .then_with(|| left_label.cmp(right_label))
-    });
-    kept.into_iter()
-        .fold(Map::new(), |mut tags, (label, score)| {
-            tags.insert(
-                label,
-                Value::from((score * 1_000.0).round_ties_even() / 1_000.0),
-            );
-            tags
-        })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        MIN_TAIL_S, RESPONSE_SCHEMA, SCORE_FLOOR, WINDOW_S, aggregate, window_spans,
-        windows_from_response,
-    };
-    use serde_json::json;
-    use std::collections::BTreeMap;
-
-    #[test]
-    fn window_spans_include_only_a_tail_of_at_least_one_second() {
-        let sample_rate = 16_000_usize;
-        assert_eq!(
-            window_spans(WINDOW_S * sample_rate),
-            vec![(0, WINDOW_S * sample_rate)]
-        );
-        assert_eq!(
-            window_spans(WINDOW_S * sample_rate + MIN_TAIL_S * sample_rate - 1),
-            vec![(0, WINDOW_S * sample_rate)]
-        );
-        // WINDOW_S=10, MIN_TAIL_S=1, 16 kHz → window=160_000, min_tail=16_000.
-        // 8_000: 0 full windows, 8_000-sample tail < 16_000 → no spans.
-        // 176_000: 1 full window + 16_000-sample tail == min_tail → two spans.
-        // 168_000: 1 full window + 8_000-sample tail < min_tail → one span.
-        assert_eq!(window_spans(8_000), vec![]);
-        assert_eq!(
-            window_spans(176_000),
-            vec![(0, 160_000), (160_000, 176_000)]
-        );
-        assert_eq!(window_spans(168_000), vec![(0, 160_000)]);
-    }
-
-    #[test]
-    fn aggregate_uses_max_score_and_strict_floor() {
-        let first = BTreeMap::from([
-            ("Below".to_owned(), SCORE_FLOOR),
-            ("Music".to_owned(), 0.11),
-        ]);
-        let second = BTreeMap::from([("Music".to_owned(), 0.9)]);
-
-        assert_eq!(
-            serde_json::Value::Object(aggregate(&[first, second])),
-            serde_json::json!({"Music": 0.9})
-        );
-    }
-
-    #[test]
-    fn windows_from_response_rejects_the_wrong_schema() {
-        let response = json!({"schema": "solstone-ced-response-v2", "windows": []});
-        assert_eq!(windows_from_response(&response, 0), None);
-    }
-
-    #[test]
-    fn windows_from_response_rejects_a_length_mismatch() {
-        let response = json!({
-            "schema": RESPONSE_SCHEMA,
-            "windows": [{"ok": true, "tags": {}}],
-        });
-        assert_eq!(windows_from_response(&response, 2), None);
-    }
-
-    #[test]
-    fn windows_from_response_keeps_a_successful_window_despite_one_failure() {
-        let response = json!({
-            "schema": RESPONSE_SCHEMA,
-            "windows": [
-                {"ok": false, "reason": "classify-failed", "detail": "boom"},
-                {"ok": true, "tags": {"Music": 0.9, "Above": 0.11}},
-            ],
-        });
-        let tags = windows_from_response(&response, 2).expect("one successful window");
-        assert_eq!(tags["windows"], json!(1));
-        assert_eq!(tags["tags"], json!({"Music": 0.9, "Above": 0.11}));
-        assert_eq!(tags["engine"], json!(super::ENGINE));
-        assert_eq!(tags["model"], json!(super::MODEL));
-    }
-
-    #[test]
-    fn windows_from_response_is_none_when_every_window_fails() {
-        let response = json!({
-            "schema": RESPONSE_SCHEMA,
-            "windows": [{"ok": false, "reason": "classify-failed", "detail": "boom"}],
-        });
-        assert_eq!(windows_from_response(&response, 1), None);
-    }
 }

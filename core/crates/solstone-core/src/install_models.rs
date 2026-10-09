@@ -15,61 +15,6 @@ use solstone_core_journal_config::{
     parakeet_coreml::{parakeet_coreml_cache_dir, parakeet_coreml_model_root},
     read_journal_config,
 };
-/// The native ced installer resolves both artifacts through the catalog's
-/// `origin_key` against a single-element host allowlist, revalidated per
-/// redirect hop -- so naming github.com and huggingface.co here named two
-/// parties this path never contacts, on the surface whose whole job is to say
-/// where bytes come from.
-///
-/// ⛔ The REFERENCE's copy of this sentence still names both hosts and that is
-/// still TRUE, because `ced_install.py` still builds the upstream URLs. The
-/// string and the code it introduces drift in both directions; the check is
-/// per-site -- trace the sentence to the code that follows it and read what
-/// THAT code fetches.
-fn ced_download_disclosure(os_name: &str, arch: &str) -> String {
-    if ced_install::ced_uses_package_engine(os_name, arch) {
-        "ced assets: downloading the ced-tiny-q8_0 model (Apache-2.0) from updates.solstone.app. The CED engine is provided by the signed journal app package. see THIRD_PARTY_NOTICES.md.".to_owned()
-    } else {
-        format!(
-            "ced assets: downloading the ced.cpp {} engine (MIT) and the ced-tiny-q8_0 model (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.",
-            ced_install::ENGINE_VERSION
-        )
-    }
-}
-
-/// The fixed owner-facing CED guidance stays the fixed sentence a person
-/// reads (`CED_UNAVAILABLE_GUIDANCE`'s own doc comment), but a `Degraded`
-/// verdict carries a specific `CapabilityStatus::detail()` -- a digest
-/// mismatch, a missing file, a probe helper's stderr -- that is otherwise
-/// discarded before it reaches `install-models`' own stderr, even though the
-/// same detail is already the operator-facing diagnostic on `journal check`
-/// (`cause` field). Appending it here closes that gap without changing the
-/// fixed sentence a person reads first.
-///
-/// ⛔ On Windows the CED engine is a member of the signed app package, and the
-/// package verifies as a whole: a changed runtime DLL, VAD model or helper
-/// fails the same check, and CED is only the first step to run it. Blaming
-/// "CED assets" there sends the owner after the wrong part, so a package that
-/// does not verify is named as the package.
-fn ced_unavailable_message(status: &CapabilityStatus, os_name: &str, arch: &str) -> String {
-    let guidance = if ced_install::ced_uses_package_engine(os_name, arch)
-        && matches!(
-            status,
-            CapabilityStatus::ResourceOrOwnerScopeUnavailable { .. }
-        ) {
-        WINDOWS_PACKAGE_UNVERIFIED_GUIDANCE
-    } else {
-        CED_UNAVAILABLE_GUIDANCE
-    };
-    match status.detail() {
-        Some(detail) => format!("{guidance} ({detail})"),
-        None => guidance.to_owned(),
-    }
-}
-
-/// The owner-facing sentence for a Windows app package that fails its own
-/// signed-manifest verification. The detail appended after it names the file.
-const WINDOWS_PACKAGE_UNVERIFIED_GUIDANCE: &str = "The installed journal app doesn't match its signed contents, so its models can't be checked. Reinstall the journal app.";
 
 /// RF-DETR assets are verified from the release tree, so this disclosure must
 /// describe the bundled payload rather than an upstream or mirror endpoint.
@@ -81,12 +26,10 @@ fn rfdetr_bundled_asset_disclosure() -> String {
 }
 
 use solstone_core_assets::canonical_host_pair;
-use solstone_core_local::install::capability_status::CapabilityStatus;
-use solstone_core_local::install::ced_readiness::{CED_UNAVAILABLE_GUIDANCE, CedVerdict};
 use solstone_core_local::install::rfdetr_readiness::RfdetrReadiness;
 use solstone_core_local::install::{
-    DispatchError, ced_install, coreml_install, fingerprint, fit_report,
-    install_parakeet_with_lease, lease, pins, rfdetr_install, status,
+    DispatchError, coreml_install, fingerprint, fit_report, install_parakeet_with_lease, lease,
+    pins, rfdetr_install, status,
 };
 use solstone_core_transcribe::resolve_model_asset;
 
@@ -144,19 +87,6 @@ enum InstallerAction {
     Install { force: bool },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CedInstallDisposition {
-    Installed,
-    Unsupported,
-}
-
-type CedInstaller<'a> = dyn FnMut(
-        &Path,
-        &str,
-        &str,
-        InstallerAction,
-    ) -> Result<CedInstallDisposition, ced_install::CedInstallError>
-    + 'a;
 type RfdetrInstaller<'a> = dyn FnMut(
         &Path,
         &str,
@@ -172,7 +102,6 @@ type CoremlInstaller<'a> = dyn FnMut(
     + 'a;
 
 struct ProviderInstallers<'a> {
-    ced: Box<CedInstaller<'a>>,
     rfdetr: Box<RfdetrInstaller<'a>>,
     coreml: Box<CoremlInstaller<'a>>,
 }
@@ -235,7 +164,6 @@ fn install_required_rfdetr(
 struct InstallModelsHooks<A> {
     asset_gate: A,
     report_override: Option<fit_report::FitReport>,
-    ced_verdict: fn(&Path, &str, &str) -> CedVerdict,
 }
 
 fn install_models_hooks<A>(
@@ -248,7 +176,6 @@ where
     InstallModelsHooks {
         asset_gate,
         report_override,
-        ced_verdict: solstone_core_check::evaluate_host_ced,
     }
 }
 
@@ -357,30 +284,6 @@ where
             None,
         ),
         ProviderInstallers {
-            ced: Box::new(|journal, os_name, arch, action| match action {
-                InstallerAction::Check if ced_install::ced_uses_package_engine(os_name, arch) => {
-                    ced_install::check_ced_model(journal).map(|_| CedInstallDisposition::Installed)
-                }
-                InstallerAction::Install { force }
-                    if ced_install::ced_uses_package_engine(os_name, arch) =>
-                {
-                    ced_install::install_ced_model(journal, force)
-                        .map(|_| CedInstallDisposition::Installed)
-                }
-                InstallerAction::Check => ced_install::check_ced_assets(journal, os_name, arch)
-                    .map(|record| match record {
-                        Some(_) => CedInstallDisposition::Installed,
-                        None => CedInstallDisposition::Unsupported,
-                    }),
-                InstallerAction::Install { force } => {
-                    ced_install::install_ced_assets(journal, os_name, arch, force).map(|record| {
-                        match record {
-                            Some(_) => CedInstallDisposition::Installed,
-                            None => CedInstallDisposition::Unsupported,
-                        }
-                    })
-                }
-            }),
             rfdetr: Box::new(|journal, os_name, arch, action| match action {
                 InstallerAction::Check => {
                     rfdetr_install::check_rfdetr_model(journal, os_name, arch)
@@ -487,86 +390,6 @@ where
         }
     };
     let mut provider_stdout = Vec::new();
-    match (hooks.ced_verdict)(&journal, &host.os_name, &host.arch) {
-        CedVerdict::Unsupported { os, arch } => {
-            provider_stdout.push(format!(
-                "ced install: unsupported platform {os}/{arch}; skipping ced sound-tag assets"
-            ));
-        }
-        CedVerdict::Ready { .. } if options.check || !options.force => {
-            provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal)));
-        }
-        CedVerdict::Degraded(status) if options.check => {
-            return InstallModelsOutcome::failure_with_stdout(
-                variant,
-                EXIT_DATAERR,
-                ced_unavailable_message(&status, &host.os_name, &host.arch),
-                provider_stdout,
-            );
-        }
-        CedVerdict::Ready { .. } | CedVerdict::Degraded(_) => {
-            provider_stdout.push(ced_download_disclosure(&host.os_name, &host.arch));
-            // 🔴 `force: true` below is deliberate and load-bearing -- do not
-            // "simplify" it to `options.force`. This arm is reached two ways:
-            // `Ready` only falls through when `options.force` is already true,
-            // and `Degraded` falls through unconditionally because the verdict
-            // above used the full readiness probe (catalog digest + engine
-            // probe), which is strictly stronger than the installer's own
-            // `check_ced_assets` idempotency gate (sidecar match + size +
-            // nonempty files). Passing `options.force` verbatim let a Degraded
-            // verdict reach the installer with `force` false, so the weaker
-            // gate saw its own checks pass and skipped reinstalling entirely --
-            // silently returning the same broken assets and making
-            // `journal install-models` a no-op against exactly the "present but
-            // not actually working" case it exists to repair.
-            match (providers.ced)(
-                &journal,
-                &host.os_name,
-                &host.arch,
-                // 🔴 Force is deliberate on the download/repair path -- see the note
-                // above. The Windows package engine is the exception: its engine ships
-                // inside the signed app payload rather than being downloaded, so this
-                // step installs only the model and forcing has nothing to repair.
-                InstallerAction::Install {
-                    force: !ced_install::ced_uses_package_engine(&host.os_name, &host.arch),
-                },
-            ) {
-                Ok(CedInstallDisposition::Unsupported) => provider_stdout.push(format!(
-                    "ced install: unsupported platform {}/{}; skipping ced sound-tag assets",
-                    host.os_name, host.arch
-                )),
-                Err(error) => {
-                    return InstallModelsOutcome::failure_with_stdout(
-                        variant,
-                        error.exit_code,
-                        error.to_string(),
-                        provider_stdout,
-                    );
-                }
-                Ok(CedInstallDisposition::Installed) => {
-                    match (hooks.ced_verdict)(&journal, &host.os_name, &host.arch) {
-                        CedVerdict::Ready { .. } => {
-                            provider_stdout
-                                .push(ready_line(&ced_install::ced_model_path(&journal)));
-                        }
-                        CedVerdict::Degraded(status) => {
-                            return InstallModelsOutcome::failure_with_stdout(
-                                variant,
-                                EXIT_DATAERR,
-                                ced_unavailable_message(&status, &host.os_name, &host.arch),
-                                provider_stdout,
-                            );
-                        }
-                        CedVerdict::Unsupported { os, arch } => {
-                            provider_stdout.push(format!(
-                            "ced install: unsupported platform {os}/{arch}; skipping ced sound-tag assets"
-                        ));
-                        }
-                    }
-                }
-            }
-        }
-    }
     if let Err(error) = install_required_rfdetr(
         &journal,
         &host,
@@ -1056,7 +879,7 @@ fn ready_line(path: &Path) -> String {
 
 #[cfg(test)]
 mod disclosure_tests {
-    use super::{ced_download_disclosure, rfdetr_bundled_asset_disclosure};
+    use super::rfdetr_bundled_asset_disclosure;
     use solstone_core_local::install::coreml_install::PARAKEET_COREML_DOWNLOAD_DISCLOSURE;
 
     /// Every artifact this verb fetches resolves through one primitive with a
@@ -1065,29 +888,20 @@ mod disclosure_tests {
     /// that named all three.
     #[test]
     fn native_download_disclosures_name_only_the_fetching_origin() {
-        for line in [
-            ced_download_disclosure("linux", "x86_64").as_str(),
-            PARAKEET_COREML_DOWNLOAD_DISCLOSURE,
-        ] {
-            assert!(line.contains("updates.solstone.app"), "{line}");
-            for third_party in ["github.com", "huggingface.co", "hf.co", "githubusercontent"] {
-                assert!(!line.contains(third_party), "{line} names {third_party}");
-            }
+        let line = PARAKEET_COREML_DOWNLOAD_DISCLOSURE;
+        assert!(line.contains("updates.solstone.app"), "{line}");
+        for third_party in ["github.com", "huggingface.co", "hf.co", "githubusercontent"] {
+            assert!(!line.contains(third_party), "{line} names {third_party}");
         }
         let rfdetr = rfdetr_bundled_asset_disclosure();
         assert!(rfdetr.contains("verifying the bundled"));
         assert!(!rfdetr.contains("downloading"));
-        let windows = ced_download_disclosure("windows", "x86_64");
-        assert!(windows.contains("ced-tiny-q8_0 model"));
-        assert!(!windows.contains("ced.cpp v0.1.0 engine"));
-        assert!(windows.contains("signed journal app package"));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solstone_core_local::install::ced_readiness::evaluate_ced_readiness_against_with_probe;
     use std::fs;
 
     macro_rules! run_inner_with_test {
@@ -1098,7 +912,6 @@ mod tests {
             $journal:expr,
             $asset_gate:expr,
             $report:expr,
-            $ced:expr,
             $rfdetr:expr,
             $coreml:expr,
             $executor:expr $(,)?
@@ -1109,13 +922,8 @@ mod tests {
                 $probe,
                 $options,
                 $journal,
-                {
-                    let mut hooks = install_models_hooks($asset_gate, $report);
-                    hooks.ced_verdict = fixture_ced_verdict;
-                    hooks
-                },
+                install_models_hooks($asset_gate, $report),
                 ProviderInstallers {
-                    ced: Box::new($ced),
                     rfdetr: Box::new($rfdetr),
                     coreml: Box::new($coreml),
                 },
@@ -1148,7 +956,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| panic!("required-only must not verify optional model assets"),
             None,
-            |_, _, _, _| panic!("required-only must not inspect or install CED"),
             |_, _, _, action| {
                 actions.borrow_mut().push(action);
                 match action {
@@ -1185,37 +992,6 @@ mod tests {
             arch: arch.to_owned(),
             journal_variant: journal_variant.map(ToOwned::to_owned),
         }
-    }
-
-    fn seed_ready_ced(journal: &Path, os: &str, arch: &str) {
-        let key = ced_install::ced_artifact_key(os, arch).expect("supported CED host");
-        solstone_core_local::install::ced_fixture::write_complete_ced_install(journal, key)
-            .expect("write complete CED install");
-    }
-
-    /// CED's deep engine probe runs **out of process**: `solstone-core-ced-sys`
-    /// `dlopen`s a glibc shared object that this `musl-static` binary can never
-    /// load in-process. This module only exercises `install_models`'s branching
-    /// on a verdict, not the probe itself, so it supplies the deep probe
-    /// directly via `evaluate_ced_readiness_against_with_probe` rather than
-    /// spawning `solstone-core-ced-analyze`. The closure only runs once the
-    /// fixture has already passed the digest check, so it stands in exactly for
-    /// "the engine loaded".
-    fn fixture_ced_verdict(journal: &Path, os: &str, arch: &str) -> CedVerdict {
-        match solstone_core_local::install::ced_fixture::ced_model_digest(journal) {
-            Ok(digest) => evaluate_ced_readiness_against_with_probe(
-                journal,
-                os,
-                arch,
-                &digest,
-                |_library, _model| Ok(()),
-            ),
-            Err(_) => solstone_core_check::evaluate_host_ced(journal, os, arch),
-        }
-    }
-
-    fn ced_installed() -> Result<CedInstallDisposition, ced_install::CedInstallError> {
-        Ok(CedInstallDisposition::Installed)
     }
 
     #[test]
@@ -1288,7 +1064,6 @@ mod tests {
             || Err(()),
             |_| panic!("asset gate must not run"),
             None,
-            |_, _, _, _| ced_installed(),
             |_, _, _, _| panic!("rf-detr installer must not run"),
             |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
@@ -1317,7 +1092,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _, _, _| ced_installed(),
             |_, _, _, _| panic!("rf-detr installer must not run on an unmapped host"),
             |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
@@ -1326,7 +1100,6 @@ mod tests {
         assert_eq!(
             outcome.stdout,
             [
-                "ced install: unsupported platform macos/aarch64; skipping ced sound-tag assets",
                 "rf-detr install: unsupported platform macos/aarch64; skipping rf-detr object-detection assets",
                 "parakeet install: unsupported platform macos/aarch64; supported: darwin/arm64, linux/x86_64"
             ]
@@ -1411,7 +1184,6 @@ mod tests {
     #[test]
     fn rfdetr_not_ready_supported_host_discloses_bundled_assets() {
         let journal = tempfile::tempdir().unwrap();
-        seed_ready_ced(journal.path(), "darwin", "arm64");
         let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
@@ -1419,7 +1191,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _, _, _| ced_installed(),
             |_, _, _, action| match action {
                 InstallerAction::Check => {
                     Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable)
@@ -1448,7 +1219,6 @@ mod tests {
     #[test]
     fn rfdetr_check_on_installed_model_has_no_bundled_asset_disclosure() {
         let journal = tempfile::tempdir().unwrap();
-        seed_ready_ced(journal.path(), "darwin", "arm64");
         let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
@@ -1459,10 +1229,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _, _, action| {
-                assert_eq!(action, InstallerAction::Check);
-                ced_installed()
-            },
             |_, _, _, action| {
                 assert_eq!(action, InstallerAction::Check);
                 Ok(rfdetr_install::RfdetrInstallRecord::Installed)
@@ -1480,7 +1246,6 @@ mod tests {
     #[test]
     fn rfdetr_ready_model_skips_reinstall() {
         let journal = tempfile::tempdir().unwrap();
-        seed_ready_ced(journal.path(), "darwin", "arm64");
         let mut actions = Vec::new();
         let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
@@ -1489,7 +1254,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _, _, _| ced_installed(),
             |_, _, _, action| {
                 actions.push(action);
                 Ok(rfdetr_install::RfdetrInstallRecord::Installed)
@@ -1508,7 +1272,6 @@ mod tests {
     #[test]
     fn rfdetr_probe_error_falls_through_to_install() {
         let journal = tempfile::tempdir().unwrap();
-        seed_ready_ced(journal.path(), "darwin", "arm64");
         let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
@@ -1516,7 +1279,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _, _, _| ced_installed(),
             |_, _, _, action| match action {
                 InstallerAction::Check => Err(rfdetr_install::RfdetrInstallError::new(
                     "sidecar_missing",
@@ -1551,11 +1313,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |journal, os, arch, action| {
-                assert!(matches!(action, InstallerAction::Install { force: true }));
-                seed_ready_ced(journal, os, arch);
-                ced_installed()
-            },
             |_, _, _, action| {
                 assert_eq!(action, InstallerAction::Install { force: true });
                 Ok(rfdetr_install::RfdetrInstallRecord::Installed)
@@ -1571,106 +1328,8 @@ mod tests {
     }
 
     #[test]
-    fn windows_installs_only_the_ced_model_before_package_readiness() {
-        let journal = tempfile::tempdir().unwrap();
-        let actions = std::cell::RefCell::new(Vec::new());
-        let outcome = run_inner_with_test!(
-            host("windows", "x86_64", None),
-            || panic!("probe must not run"),
-            options(InstallModelsVariant::Auto),
-            || Ok(journal.path().to_path_buf()),
-            |_| Ok(()),
-            None,
-            |_, os, arch, action| {
-                assert_eq!((os, arch), ("windows", "x86_64"));
-                actions.borrow_mut().push(action);
-                ced_installed()
-            },
-            |_, _, _, _| panic!("unready CED must short-circuit rf-detr"),
-            |_, _, _| panic!("windows must skip coreml"),
-            |_, _, _| panic!("unready CED must short-circuit parakeet"),
-        );
-        assert_eq!(
-            actions.into_inner(),
-            [InstallerAction::Install { force: false }]
-        );
-        assert_eq!(outcome.exit_code, EXIT_DATAERR);
-        assert_eq!(
-            outcome.stdout,
-            [ced_download_disclosure("windows", "x86_64")]
-        );
-        // A package that does not verify is named as the package, not as CED,
-        // and the specific CapabilityStatus detail is still appended -- here,
-        // "not a real Windows package layout under test".
-        assert_eq!(outcome.stderr.len(), 1);
-        assert!(outcome.stderr[0].starts_with(WINDOWS_PACKAGE_UNVERIFIED_GUIDANCE));
-        assert!(outcome.stderr[0].len() > WINDOWS_PACKAGE_UNVERIFIED_GUIDANCE.len());
-    }
-
-    #[test]
-    fn ced_orchestration_uses_pre_normalized_host_values() {
-        let journal = tempfile::tempdir().unwrap();
-        let mut called = false;
-        let outcome = run_inner_with_test!(
-            host("darwin", "arm64", None),
-            || panic!("probe must not run"),
-            options(InstallModelsVariant::Auto),
-            || Ok(journal.path().to_path_buf()),
-            |_| Ok(()),
-            None,
-            |_, os_name, arch, action| {
-                called = true;
-                assert_eq!(
-                    ced_install::ced_artifact_key(os_name, arch),
-                    Some("macos-metal-arm64")
-                );
-                match action {
-                    InstallerAction::Check => Err(ced_install::CedInstallError::new(
-                        "sidecar_missing",
-                        "not ready",
-                        EXIT_DATAERR,
-                    )),
-                    InstallerAction::Install { .. } => ced_installed(),
-                }
-            },
-            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
-            |_, _, _| Ok(journal.path().join("coreml")),
-            |_, _, _| panic!("parakeet installer must not run"),
-        );
-        assert!(called);
-        assert!(
-            !outcome
-                .stdout
-                .iter()
-                .any(|line| line.starts_with("ced install: unsupported"))
-        );
-
-        let raw_journal = tempfile::tempdir().unwrap();
-        let outcome = run_inner_with_test!(
-            host("macos", "aarch64", None),
-            || panic!("probe must not run"),
-            options(InstallModelsVariant::Auto),
-            || Ok(raw_journal.path().to_path_buf()),
-            |_| Ok(()),
-            None,
-            |_, _, _, _| panic!("raw platform must skip ced"),
-            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
-            |_, _, _| panic!("coreml installer must not run"),
-            |_, _, _| panic!("unsupported platform must not install parakeet"),
-        );
-        assert_eq!(outcome.exit_code, 0);
-        assert!(
-            outcome.stdout.contains(
-                &"ced install: unsupported platform macos/aarch64; skipping ced sound-tag assets"
-                    .to_owned()
-            )
-        );
-    }
-
-    #[test]
     fn darwin_resolves_coreml_after_the_asset_gate_without_probing_nvidia() {
         let journal = tempfile::tempdir().unwrap();
-        seed_ready_ced(journal.path(), "darwin", "arm64");
         let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
@@ -1678,7 +1337,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _, _, _| ced_installed(),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, action| {
                 assert_eq!(action, InstallerAction::Install { force: false });
@@ -1712,7 +1370,6 @@ mod tests {
                 }
             },
             None,
-            |_, _, _, _| ced_installed(),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
@@ -1749,11 +1406,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
-            |journal, os, arch, action| {
-                assert!(matches!(action, InstallerAction::Install { force: true }));
-                seed_ready_ced(journal, os, arch);
-                ced_installed()
-            },
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
@@ -1785,11 +1437,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
-            |journal, os, arch, action| {
-                assert!(matches!(action, InstallerAction::Install { force: true }));
-                seed_ready_ced(journal, os, arch);
-                ced_installed()
-            },
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| {
@@ -1843,11 +1490,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
-            |journal, os, arch, action| {
-                assert!(matches!(action, InstallerAction::Install { force: true }));
-                seed_ready_ced(journal, os, arch);
-                ced_installed()
-            },
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("coreml installer must not run"),
             |_, delegated_host, _| {
@@ -1860,9 +1502,8 @@ mod tests {
     }
 
     #[test]
-    fn posix_default_runs_ced_and_parakeet() {
+    fn posix_default_runs_parakeet() {
         let journal = tempfile::tempdir().unwrap();
-        seed_ready_ced(journal.path(), "linux", "x86_64");
         let mut parakeet_called = false;
         let outcome = run_inner_with_test!(
             host("linux", "x86_64", None),
@@ -1871,7 +1512,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _, _, _| panic!("ready CED must not install"),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::Installed),
             |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| {
@@ -1881,18 +1521,11 @@ mod tests {
         );
         assert_eq!(outcome.exit_code, 0, "{outcome:?}");
         assert!(parakeet_called);
-        assert!(
-            outcome
-                .stdout
-                .iter()
-                .any(|line| line.contains("ced-tiny-q8_0.gguf"))
-        );
     }
 
     #[test]
-    fn posix_check_runs_ced_and_coreml() {
+    fn posix_check_runs_coreml() {
         let journal = tempfile::tempdir().unwrap();
-        seed_ready_ced(journal.path(), "darwin", "arm64");
         let mut coreml_called = false;
         let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
@@ -1904,7 +1537,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _, _, _| panic!("ready CED must not install"),
             |_, _, _, action| {
                 assert_eq!(action, InstallerAction::Check);
                 Ok(rfdetr_install::RfdetrInstallRecord::Installed)
@@ -1918,18 +1550,11 @@ mod tests {
         );
         assert_eq!(outcome.exit_code, 0, "{outcome:?}");
         assert!(coreml_called);
-        assert!(
-            outcome
-                .stdout
-                .iter()
-                .any(|line| line.contains("ced-tiny-q8_0.gguf"))
-        );
     }
 
     #[test]
-    fn darwin_default_runs_ced_and_coreml() {
+    fn darwin_default_runs_coreml() {
         let journal = tempfile::tempdir().unwrap();
-        seed_ready_ced(journal.path(), "darwin", "arm64");
         let mut coreml_called = false;
         let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
@@ -1938,7 +1563,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _, _, _| panic!("ready CED must not install"),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::Installed),
             |_, _, action| {
                 coreml_called = true;
@@ -1949,136 +1573,6 @@ mod tests {
         );
         assert_eq!(outcome.exit_code, 0, "{outcome:?}");
         assert!(coreml_called);
-    }
-
-    #[test]
-    fn check_degraded_is_exit_dataerr_and_short_circuits() {
-        let journal = tempfile::tempdir().unwrap();
-        let outcome = run_inner_with_test!(
-            host("linux", "x86_64", None),
-            || false,
-            InstallModelsOptions {
-                check: true,
-                ..options(InstallModelsVariant::Auto)
-            },
-            || Ok(journal.path().to_path_buf()),
-            |_| Ok(()),
-            None,
-            |_, _, _, _| panic!("--check must not install CED"),
-            |_, _, _, _| panic!("degraded CED must short-circuit rf-detr"),
-            |_, _, _| panic!("coreml installer must not run"),
-            |_, _, _| panic!("degraded CED must short-circuit parakeet"),
-        );
-        assert_eq!(outcome.exit_code, EXIT_DATAERR);
-        // The specific sidecar_missing detail is now appended after the
-        // fixed guidance sentence rather than discarded.
-        assert_eq!(outcome.stderr.len(), 1);
-        assert!(outcome.stderr[0].starts_with(CED_UNAVAILABLE_GUIDANCE));
-        assert!(outcome.stderr[0].contains("ced sidecar missing"));
-    }
-
-    #[test]
-    fn failed_repair_never_prints_ready() {
-        let journal = tempfile::tempdir().unwrap();
-        let outcome = run_inner_with_test!(
-            host("linux", "x86_64", None),
-            || false,
-            options(InstallModelsVariant::Auto),
-            || Ok(journal.path().to_path_buf()),
-            |_| Ok(()),
-            None,
-            |_, _, _, action| {
-                assert!(matches!(action, InstallerAction::Install { .. }));
-                Err(ced_install::CedInstallError::new(
-                    "download_failed",
-                    "ced download failed",
-                    EXIT_IOERR,
-                ))
-            },
-            |_, _, _, _| panic!("failed CED repair must not reach rf-detr"),
-            |_, _, _| panic!("coreml installer must not run"),
-            |_, _, _| panic!("failed CED repair must not reach parakeet"),
-        );
-        assert_eq!(outcome.exit_code, EXIT_IOERR);
-        assert!(
-            !outcome
-                .stdout
-                .iter()
-                .any(|line| line.starts_with("model ready:"))
-        );
-    }
-
-    /// Regression test for the CED repair no-op: `check_ced_assets` (sidecar
-    /// match + size + nonempty files) is strictly weaker than the readiness
-    /// verdict that got us into this branch (catalog digest + library
-    /// ABI/symbols + `load_model`). Before the fix, a plain
-    /// `journal install-models` (no `--force`) forwarded `options.force`
-    /// (false) straight into the installer, so whenever the weak check
-    /// happened to pass despite the strong verdict saying Degraded, the
-    /// installer's own `!force && check_ced_assets(...).is_ok()` guard
-    /// skipped any real repair and silently returned the stale, still-broken
-    /// record -- the documented repair command doing nothing at all.
-    #[test]
-    fn degraded_ced_repair_always_forces_a_real_reinstall_attempt() {
-        let journal = tempfile::tempdir().unwrap();
-        let mut seen_force = None;
-        let outcome = run_inner_with_test!(
-            host("linux", "x86_64", None),
-            || false,
-            options(InstallModelsVariant::Auto),
-            || Ok(journal.path().to_path_buf()),
-            |_| Ok(()),
-            None,
-            |_, _, _, action| {
-                if let InstallerAction::Install { force } = action {
-                    seen_force = Some(force);
-                }
-                Err(ced_install::CedInstallError::new(
-                    "download_failed",
-                    "ced download failed",
-                    EXIT_IOERR,
-                ))
-            },
-            |_, _, _, _| panic!("failed CED repair must not reach rf-detr"),
-            |_, _, _| panic!("coreml installer must not run"),
-            |_, _, _| panic!("failed CED repair must not reach parakeet"),
-        );
-        assert_eq!(outcome.exit_code, EXIT_IOERR);
-        assert_eq!(
-            seen_force,
-            Some(true),
-            "a Degraded CED verdict must force a real reinstall attempt \
-             even when the caller did not pass --force, or the installer's \
-             own weaker idempotency check can silently no-op the repair"
-        );
-    }
-
-    #[test]
-    fn successful_repair_reprimes_verdict_before_ready_line() {
-        let journal = tempfile::tempdir().unwrap();
-        let outcome = run_inner_with_test!(
-            host("linux", "x86_64", None),
-            || false,
-            options(InstallModelsVariant::Auto),
-            || Ok(journal.path().to_path_buf()),
-            |_| Ok(()),
-            None,
-            |journal, os, arch, action| {
-                assert!(matches!(action, InstallerAction::Install { .. }));
-                seed_ready_ced(journal, os, arch);
-                ced_installed()
-            },
-            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::Installed),
-            |_, _, _| panic!("coreml installer must not run"),
-            |_, _, _| Ok(journal.path().join("model.gguf")),
-        );
-        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
-        assert!(
-            outcome
-                .stdout
-                .iter()
-                .any(|line| line.contains("ced-tiny-q8_0.gguf"))
-        );
     }
 
     fn assert_journal_empty(journal: &Path) {

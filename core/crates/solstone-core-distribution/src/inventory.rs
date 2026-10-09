@@ -1546,6 +1546,11 @@ mod tests {
                 .any(|entry| matches!(entry, Entry::ModelAsset { dest, .. }
             if dest.contains("ced")))
         );
+        assert!(
+            entries.iter().any(|entry| matches!(entry,
+                Entry::PinnedMembers { staged, .. }
+                    if staged.iter().any(|s| s.dest == crate::windows_payload::WINDOWS_CED_MODEL)))
+        );
     }
 
     #[test]
@@ -1661,25 +1666,54 @@ mod tests {
         // admit at all — there is no Linux binary for this to match, by
         // design, not by drift. The RF-DETR engine archives are likewise
         // target-specific payloads: each target receives its own archive.
+        // `libced.so` / `libced.dylib` are the same engine with a platform
+        // library filename, same reason as the RF-DETR archives.
+        // `linux-aarch64` shares `lib/solstone-ced/libced.so` with
+        // `linux-x86_64`. The shared GGUF dest stays in the compared set.
         // share/README.md is a Linux-only exception too: it is the
         // agent-facing install/crossover README for the Linux v1-to-v2
         // crossover arc, and macOS distribution is out of scope for that arc.
         const MACOS_ONLY: &[&str] = &[
             "bin/parakeet-helper",
+            "lib/solstone-ced/libced.dylib",
             "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
         ];
         const LINUX_ONLY: &[&str] = &[
+            "lib/solstone-ced/libced.so",
             "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
             "share/README.md",
         ];
         let inventory = committed();
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
         let dests_for = |id: &str| {
-            inventory
-                .entry
-                .iter()
-                .filter(|entry| entry_fields(entry).1.iter().any(|target| target == id))
-                .map(|entry| entry_fields(entry).0[0].to_owned())
-                .collect::<BTreeSet<_>>()
+            let mut set = BTreeSet::new();
+            for entry in &inventory.entry {
+                let (dests, targets, _) = entry_fields(entry);
+                if !targets.iter().any(|target| target == id) {
+                    continue;
+                }
+                if let Entry::LicenceTree {
+                    source, component, ..
+                } = entry
+                {
+                    let comp = component.as_deref().expect("licence-tree component");
+                    let source_dir = repo.join(source);
+                    let rel_files =
+                        collect_licence_relative_paths(&source_dir, source).expect("licence files");
+                    let prefix = format!("share/solstone-journal/licenses/{comp}/");
+                    for rel in rel_files {
+                        set.insert(format!("{prefix}{rel}"));
+                    }
+                } else {
+                    for dest in dests {
+                        set.insert(dest.to_owned());
+                    }
+                }
+            }
+            set
         };
         let mut linux = dests_for("linux-x86_64");
         let mut macos = dests_for("macos-arm64");

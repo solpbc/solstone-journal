@@ -28,7 +28,6 @@ use std::process::Command;
 use crate::inventory::Apple;
 use crate::macho::{self, MachoInfo};
 
-const CED_HELPER: &str = "bin/solstone-core-ced-analyze";
 const DISABLE_LIBRARY_VALIDATION_ENTITLEMENTS: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
     "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
@@ -329,7 +328,7 @@ pub fn sign_tree(stage: &Path, apple: &Apple) -> Result<Vec<SignedMember>, Apple
         .filter(|member| member.payload)
         .chain(members.iter().filter(|member| !member.payload))
     {
-        let library_validation_disabled = member.relative == CED_HELPER;
+        let library_validation_disabled = false;
         codesign_at(&member.path, library_validation_disabled, apple)?;
         signed.push(verify_signed(
             &member.relative,
@@ -740,5 +739,75 @@ mod tests {
         assert_eq!(first_signature.sha256, second_signature.sha256);
         assert_ne!(fs::read(&first).unwrap(), fs::read(&third).unwrap());
         assert_ne!(first_signature.sha256, third_signature.sha256);
+    }
+
+    #[test]
+    fn helper_member_does_not_permit_disabled_library_validation() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let script_path = temp_dir.path().join("codesign_stub.sh");
+        let entitlements_path = temp_dir.path().join("entitlements.plist");
+        let binary_path = temp_dir.path().join("solstone-core-ced-analyze");
+        fs::write(&binary_path, b"dummy binary payload").unwrap();
+
+        let script = format!(
+            "#!/bin/sh\ncase \"$*\" in\n  *--verify*)\n    exit 0\n    ;;\n  *-dv*)\n    printf 'Authority=Test Identity\\nTeamIdentifier=TEAM123\\nflags=0x10000(runtime)\\nTimestamp=2026-10-08 12:00:00\\n'\n    exit 0\n    ;;\n  *--entitlements*)\n    cat '{}'\n    exit 0\n    ;;\nesac\n",
+            entitlements_path.display()
+        );
+        fs::write(&script_path, script).unwrap();
+        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let apple = Apple {
+            team_id: "TEAM123".into(),
+            app_identity: "Test Identity".into(),
+            codesign_path: script_path.display().to_string(),
+            ..Apple::default()
+        };
+
+        // Call 1: disable-library-validation is true in entitlements, expect verify_signed to fail
+        let plist_true = concat!(
+            "<plist version=\"1.0\"><dict>\n",
+            "<key>com.apple.security.cs.disable-library-validation</key>\n",
+            "<true/>\n",
+            "</dict></plist>\n",
+        );
+        fs::write(&entitlements_path, plist_true).unwrap();
+        let result_true = verify_signed(
+            "bin/solstone-core-ced-analyze",
+            &binary_path,
+            false,
+            false,
+            &apple,
+        );
+        assert!(result_true.is_err());
+        let err_msg = result_true.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("want false"),
+            "error should contain 'want false': {err_msg}"
+        );
+
+        // Call 2: disable-library-validation is false in entitlements, expect verify_signed to succeed
+        let plist_false = concat!(
+            "<plist version=\"1.0\"><dict>\n",
+            "<key>com.apple.security.cs.disable-library-validation</key>\n",
+            "<false/>\n",
+            "</dict></plist>\n",
+        );
+        fs::write(&entitlements_path, plist_false).unwrap();
+        let result_false = verify_signed(
+            "bin/solstone-core-ced-analyze",
+            &binary_path,
+            false,
+            false,
+            &apple,
+        );
+        assert!(
+            result_false.is_ok(),
+            "verify_signed should succeed: {:?}",
+            result_false.err()
+        );
+        let signed = result_false.unwrap();
+        assert!(!signed.library_validation_disabled);
     }
 }

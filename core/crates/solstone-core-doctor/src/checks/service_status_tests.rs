@@ -289,11 +289,22 @@ fn actual_doctor_entry_shares_only_within_each_call() {
 #[test]
 fn expiry_uses_the_existing_status_budget() {
     let mut staged = context();
-    staged.context.service_status_timeout = Duration::from_millis(120);
+    staged.context.service_status_timeout = Duration::from_secs(10);
     let _bus = Bus::start(&staged.callosum_socket_path, Duration::from_millis(20));
     let _scope = share_for_run();
     let first = sample(fetch(&staged).unwrap());
-    thread::sleep(staged.service_status_timeout + Duration::from_millis(10));
+    assert_eq!(sample(fetch(&staged).unwrap()), first);
+    // Age the cached sample directly: expiry must use the configured budget,
+    // while a loaded native host still gets that budget for its pipe fetch.
+    super::RUN_SAMPLES.with(|slot| {
+        slot.borrow_mut()
+            .as_mut()
+            .unwrap()
+            .supervisor
+            .as_mut()
+            .unwrap()
+            .received = Instant::now() - staged.service_status_timeout;
+    });
     assert!(sample(fetch(&staged).unwrap()) > first);
 }
 

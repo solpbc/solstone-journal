@@ -3803,9 +3803,11 @@ dependencies = [
 name = "solstone-core-ced-analyze"
 version = "2.0.37"
 dependencies = [
+ "flate2",
  "serde_json",
  "solstone-core-ced-sys",
  "solstone-core-local",
+ "tar",
  "tempfile",
 ]
 
@@ -3842,6 +3844,7 @@ dependencies = [
  "serde_json",
  "solstone-core-assets",
  "solstone-core-distribution",
+ "solstone-core-installed-payload",
  "solstone-core-local",
  "solstone-core-system",
 ]
@@ -4695,6 +4698,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-cli",
  "solstone-core-installation-identity",
+ "solstone-core-installed-payload",
  "solstone-core-journal",
  "solstone-core-journal-cli",
  "solstone-core-service-unit",
@@ -4810,6 +4814,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-distribution",
+ "solstone-core-installed-payload",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "tar",
@@ -5389,6 +5394,7 @@ dependencies = [
  "serde_json",
  "solstone-core-assets",
  "solstone-core-check",
+ "solstone-core-installed-payload",
  "solstone-core-local",
  "tempfile",
 ]
@@ -5817,6 +5823,7 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-distribution",
  "solstone-core-installation-identity",
+ "solstone-core-installed-payload",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",

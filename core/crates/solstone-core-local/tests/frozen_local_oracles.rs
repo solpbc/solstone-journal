@@ -11,7 +11,6 @@ use std::time::Duration;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use solstone_core_assets::{Artifact, Backend, Platform, catalog, resolve};
-use solstone_core_local::install::ced_install::{ENGINE_VERSION, ced_artifact_key, ced_model_path};
 use solstone_core_local::install::rfdetr_install::{
     ENGINE_VERSION as RFDETR_ENGINE_VERSION, RFDETR_ENGINE_LINUX_CPU_ARM64_BINARY_SHA256,
     RFDETR_ENGINE_LINUX_CPU_ARM64_TARBALL_SHA256, RFDETR_ENGINE_LINUX_CPU_X64_BINARY_SHA256,
@@ -470,17 +469,6 @@ fn sibling_helper_is_empty_failure_or_well_formed_success() {
 #[test]
 fn installer_specs_match_the_pinned_sources() {
     let journal = Path::new("/synthetic/journal");
-
-    assert_eq!(ENGINE_VERSION, "v0.1.0");
-    assert_eq!(ced_artifact_key("linux", "x86_64"), Some("linux-cpu-x64"));
-    assert_eq!(
-        ced_artifact_key("linux", "aarch64"),
-        Some("linux-cpu-arm64")
-    );
-    assert_eq!(
-        ced_artifact_key("darwin", "arm64"),
-        Some("macos-metal-arm64")
-    );
     let ced_model = resolve("ced-model", None, None);
     assert_eq!(ced_model.len(), 1);
     assert_eq!(ced_model[0].filename, "ced-tiny-q8_0.gguf");
@@ -525,12 +513,6 @@ fn installer_specs_match_the_pinned_sources() {
         assert_eq!(rows[0].size_bytes, size, "{key}");
         assert_eq!(catalog_row(sha).artifact_key, Some(key));
     }
-    assert_eq!(
-        ced_model_path(journal),
-        PathBuf::from(
-            "/synthetic/journal/cache/providers/ced/v0.1.0/models/mudler__ced-gguf/b5e9a4aad6438763c8da16079d77563fbed35c65/ced-tiny-q8_0.gguf"
-        )
-    );
 
     assert_eq!(RFDETR_ENGINE_VERSION, "v0.1.0-solpbc.5");
     assert!(rfdetr_platform_supported("linux", "x86_64"));

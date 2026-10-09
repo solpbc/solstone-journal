@@ -38,6 +38,8 @@ pub(crate) struct FullTranscriptWrite<'a> {
     pub(crate) speaker_evidence_version: &'a str,
     pub(crate) processing: &'a Value,
     pub(crate) sound_tags: Option<&'a Value>,
+    pub(crate) sound_tag_status:
+        Option<&'a solstone_core_local::install::capability_status::CapabilityStatus>,
     pub(crate) speaker_analysis_producer: Option<&'a str>,
     pub(crate) redo: bool,
 }
@@ -339,6 +341,10 @@ fn build_header(request: &FullTranscriptWrite<'_>) -> Value {
     }
     if let Some(sound_tags) = request.sound_tags {
         header.insert("sound_tags".to_owned(), sound_tags.clone());
+    } else if let Some(sound_tag_status) = request.sound_tag_status
+        && let Ok(val) = serde_json::to_value(sound_tag_status)
+    {
+        header.insert("sound_tag_status".to_owned(), val);
     }
     Value::Object(header)
 }
@@ -390,6 +396,7 @@ mod tests {
             speaker_evidence_version: "windowed-slots-v1",
             processing,
             sound_tags: None,
+            sound_tag_status: None,
             speaker_analysis_producer: Some("speakers-analyze-v1"),
             redo: false,
         }

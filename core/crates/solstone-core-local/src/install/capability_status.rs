@@ -55,6 +55,20 @@ impl CapabilityStatus {
             | CapabilityStatus::ResourceOrOwnerScopeUnavailable { detail, .. } => Some(detail),
         }
     }
+
+    /// The cause token identifying the degradation classification.
+    pub fn cause_token(&self) -> Option<&'static str> {
+        match self {
+            CapabilityStatus::Ready => None,
+            CapabilityStatus::Absent { .. } => Some("absent"),
+            CapabilityStatus::IntegrityInvalid { .. } => Some("integrity_invalid"),
+            CapabilityStatus::UnloadableOrUnrunnable { .. } => Some("unloadable"),
+            CapabilityStatus::WrongAbiOrProtocol { .. } => Some("wrong_abi_or_protocol"),
+            CapabilityStatus::ResourceOrOwnerScopeUnavailable { .. } => {
+                Some("resource_or_owner_scope_unavailable")
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -572,7 +572,7 @@ fn build_header(value: &Value) -> Result<Value, SpeakerTranscriptWriteError> {
             detail: "segment_meta must be an object".to_owned(),
         });
     }
-    for key in ["_solstone_processing", "sound_tags"] {
+    for key in ["_solstone_processing", "sound_tags", "sound_tag_status"] {
         if let Some(value) = input.get(key).filter(|value| !value.is_null()) {
             header.insert(key.to_owned(), value.clone());
         }

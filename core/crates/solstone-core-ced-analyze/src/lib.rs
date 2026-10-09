@@ -30,7 +30,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 use solstone_core_ced_sys::{CedContext, CedLibrary};
@@ -259,59 +259,93 @@ struct ClassifyRequest {
     windows: Vec<Window>,
 }
 
+/// Match and select declared package members against requested paths.
+pub fn select_declared_members(
+    requested_library: &Path,
+    requested_model: &Path,
+    declared_library: &Path,
+    declared_model: &Path,
+) -> Result<(PathBuf, PathBuf), AnalyzeError> {
+    fn matches_path(requested: &Path, declared: &Path) -> bool {
+        #[cfg(windows)]
+        {
+            solstone_core_local::install::windows_member_path::matches_declared_member_path(
+                requested, declared,
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            let norm_req: Vec<_> = requested
+                .components()
+                .filter(|c| {
+                    !matches!(
+                        c,
+                        std::path::Component::CurDir | std::path::Component::ParentDir
+                    )
+                })
+                .collect();
+            let norm_dec: Vec<_> = declared
+                .components()
+                .filter(|c| {
+                    !matches!(
+                        c,
+                        std::path::Component::CurDir | std::path::Component::ParentDir
+                    )
+                })
+                .collect();
+            if norm_req == norm_dec {
+                return true;
+            }
+            if let (Ok(can_req), Ok(can_dec)) = (requested.canonicalize(), declared.canonicalize())
+                && can_req == can_dec
+            {
+                return true;
+            }
+            false
+        }
+    }
+
+    if !matches_path(requested_library, declared_library) {
+        return Err(AnalyzeError::LibraryUnloadable {
+            path: requested_library.display().to_string(),
+            detail: "CED library is not the declared member of the signed app payload".to_owned(),
+        });
+    }
+    if !matches_path(requested_model, declared_model) {
+        return Err(AnalyzeError::ModelLoadFailed {
+            path: requested_model.display().to_string(),
+            detail: "CED model is not the declared member of the signed app payload".to_owned(),
+        });
+    }
+    Ok((declared_library.to_path_buf(), declared_model.to_path_buf()))
+}
+
 /// Open the engine and load the model only; used by both commands.
-///
-/// This is exactly the pair of calls
-/// `solstone-core-local::install::ced_readiness::probe_integrity_and_load`
-/// used to make in-process before this crate existed.
 fn open_and_load<'library>(
     library: &'library CedLibrary,
-    model_path: &str,
+    model_path: &Path,
 ) -> Result<CedContext<'library>, AnalyzeError> {
-    if !Path::new(model_path).is_file() {
+    if !model_path.is_file() {
         return Err(AnalyzeError::ModelUnreadable {
-            path: model_path.to_owned(),
+            path: model_path.display().to_string(),
         });
     }
     library
-        .load_model(Path::new(model_path))
+        .load_model(model_path)
         .map_err(|error| AnalyzeError::ModelLoadFailed {
-            path: model_path.to_owned(),
+            path: model_path.display().to_string(),
             detail: error.to_string(),
         })
 }
 
-fn open_library(library_path: &str) -> Result<CedLibrary, AnalyzeError> {
-    if !Path::new(library_path).is_file() {
+fn open_library(library_path: &Path) -> Result<CedLibrary, AnalyzeError> {
+    if !library_path.is_file() {
         return Err(AnalyzeError::LibraryUnreadable {
-            path: library_path.to_owned(),
+            path: library_path.display().to_string(),
         });
     }
-    #[cfg(windows)]
-    let admitted_library = {
-        let package = solstone_core_local::install::ced_readiness::verified_windows_ced_package()
-            .map_err(|detail| AnalyzeError::LibraryUnloadable {
-            path: library_path.to_owned(),
-            detail,
-        })?;
-        if !solstone_core_local::install::windows_member_path::matches_declared_member_path(
-            Path::new(library_path),
-            &package.library,
-        ) {
-            return Err(AnalyzeError::LibraryUnloadable {
-                path: library_path.to_owned(),
-                detail: "CED library is not the declared member of the signed app payload"
-                    .to_owned(),
-            });
-        }
-        package.library
-    };
-    #[cfg(windows)]
-    let selected_library = admitted_library.as_path();
-    #[cfg(not(windows))]
-    let selected_library = Path::new(library_path);
-    CedLibrary::open(selected_library).map_err(|error| AnalyzeError::LibraryUnloadable {
-        path: library_path.to_owned(),
+    CedLibrary::open(library_path).map_err(|error| AnalyzeError::LibraryUnloadable {
+        path: library_path.display().to_string(),
         detail: error.to_string(),
     })
 }
@@ -320,8 +354,27 @@ fn open_library(library_path: &str) -> Result<CedLibrary, AnalyzeError> {
 /// that succeeded. No audio is read or classified.
 pub fn run_probe_request(input: &str) -> Result<Value, AnalyzeError> {
     let request = parse_probe_request(input)?;
-    let library = open_library(&request.models.ced_library_path)?;
-    let _context = open_and_load(&library, &request.models.ced_model_path)?;
+    #[cfg(windows)]
+    let (selected_library, selected_model) = {
+        let package = solstone_core_local::install::ced_readiness::verified_windows_ced_package()
+            .map_err(|detail| AnalyzeError::LibraryUnloadable {
+            path: request.models.ced_library_path.clone(),
+            detail,
+        })?;
+        select_declared_members(
+            Path::new(&request.models.ced_library_path),
+            Path::new(&request.models.ced_model_path),
+            &package.library,
+            &package.model,
+        )?
+    };
+    #[cfg(not(windows))]
+    let (selected_library, selected_model) = (
+        PathBuf::from(&request.models.ced_library_path),
+        PathBuf::from(&request.models.ced_model_path),
+    );
+    let library = open_library(&selected_library)?;
+    let _context = open_and_load(&library, &selected_model)?;
     Ok(json!({
         "schema": PROBE_RESPONSE_SCHEMA,
         "ok": true,
@@ -348,8 +401,27 @@ pub fn run_classify_request(input: &str) -> Result<Value, AnalyzeError> {
             });
         }
     }
-    let library = open_library(&request.models.ced_library_path)?;
-    let context = open_and_load(&library, &request.models.ced_model_path)?;
+    #[cfg(windows)]
+    let (selected_library, selected_model) = {
+        let package = solstone_core_local::install::ced_readiness::verified_windows_ced_package()
+            .map_err(|detail| AnalyzeError::LibraryUnloadable {
+            path: request.models.ced_library_path.clone(),
+            detail,
+        })?;
+        select_declared_members(
+            Path::new(&request.models.ced_library_path),
+            Path::new(&request.models.ced_model_path),
+            &package.library,
+            &package.model,
+        )?
+    };
+    #[cfg(not(windows))]
+    let (selected_library, selected_model) = (
+        PathBuf::from(&request.models.ced_library_path),
+        PathBuf::from(&request.models.ced_model_path),
+    );
+    let library = open_library(&selected_library)?;
+    let context = open_and_load(&library, &selected_model)?;
 
     let mut windows = Vec::with_capacity(request.windows.len());
     for window in &request.windows {
@@ -731,5 +803,34 @@ mod tests {
     fn parse_ced_tags_rejects_empty_label() {
         let error = parse_ced_tags(r#"[{"label":"","score":0.2}]"#).unwrap_err();
         assert!(error.contains("non-empty string"), "{error}");
+    }
+
+    #[test]
+    fn select_declared_members_accepts_declared_and_normalizes_refuses_mismatch() {
+        let temp = tempfile::tempdir().unwrap();
+        let lib = temp.path().join("libced.so");
+        let model = temp.path().join("model.gguf");
+        fs::write(&lib, b"stub").unwrap();
+        fs::write(&model, b"stub").unwrap();
+
+        let (sel_lib, sel_model) =
+            select_declared_members(&lib, &model, &lib, &model).expect("exact match");
+        assert_eq!(sel_lib, lib);
+        assert_eq!(sel_model, model);
+
+        let rel_lib = temp.path().join("./libced.so");
+        let rel_model = temp.path().join("./model.gguf");
+        let (sel_lib, sel_model) =
+            select_declared_members(&rel_lib, &rel_model, &lib, &model).expect("normalized match");
+        assert_eq!(sel_lib, lib);
+        assert_eq!(sel_model, model);
+
+        let other_lib = temp.path().join("other.so");
+        let err = select_declared_members(&other_lib, &model, &lib, &model).unwrap_err();
+        assert_eq!(err.reason(), "library-unloadable");
+
+        let other_model = temp.path().join("other.gguf");
+        let err = select_declared_members(&lib, &other_model, &lib, &model).unwrap_err();
+        assert_eq!(err.reason(), "model-load-failed");
     }
 }

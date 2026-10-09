@@ -48,6 +48,7 @@ nix = { workspace = true, features = ["process", "signal"] }
 
 [dev-dependencies]
 socket2 = { workspace = true }
+solstone-core-installed-payload = { workspace = true }
 solstone-core-spp-attest = { workspace = true }
 solstone-core-spp-ratls = { workspace = true }
 
