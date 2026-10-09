@@ -184,7 +184,7 @@ fn restore_validates_snapshot_identity_and_principal_uniqueness() {
     let principal_version = save_entity_identity(
         principal.path(),
         "alice",
-        &json!({"id": "alice", "name": "Alice", "is_principal": true}),
+        &json!({"id": "alice", "name": "Alice", "type": "Person", "is_principal": true}),
         None,
     )
     .unwrap()
@@ -193,14 +193,14 @@ fn restore_validates_snapshot_identity_and_principal_uniqueness() {
     save_entity_identity(
         principal.path(),
         "alice",
-        &json!({"id": "alice", "name": "Alice", "is_principal": false}),
+        &json!({"id": "alice", "name": "Alice", "type": "Person", "is_principal": false}),
         None,
     )
     .unwrap();
     save_entity_identity(
         principal.path(),
         "bob",
-        &json!({"id": "bob", "name": "Bob", "is_principal": true}),
+        &json!({"id": "bob", "name": "Bob", "type": "Person", "is_principal": true}),
         None,
     )
     .unwrap();
@@ -221,7 +221,7 @@ fn restore_validates_snapshot_identity_and_principal_uniqueness() {
     let self_version = save_entity_identity(
         self_principal.path(),
         "alice",
-        &json!({"id": "alice", "name": "Before", "is_principal": true}),
+        &json!({"id": "alice", "name": "Before", "type": "Person", "is_principal": true}),
         None,
     )
     .unwrap()
@@ -230,7 +230,7 @@ fn restore_validates_snapshot_identity_and_principal_uniqueness() {
     save_entity_identity(
         self_principal.path(),
         "alice",
-        &json!({"id": "alice", "name": "After", "is_principal": true}),
+        &json!({"id": "alice", "name": "After", "type": "Person", "is_principal": true}),
         None,
     )
     .unwrap();
@@ -299,7 +299,7 @@ fn principal_reads_are_empty_or_return_the_principal() {
     save_entity_identity(
         temporary.path(),
         "owner",
-        &json!({"id": "owner", "is_principal": true}),
+        &json!({"id": "owner", "type": "Person", "is_principal": true}),
         None,
     )
     .unwrap();
@@ -308,6 +308,148 @@ fn principal_reads_are_empty_or_return_the_principal() {
         "owner"
     );
     assert!(has_journal_principal(temporary.path()).unwrap());
+}
+
+/// Writes an identity file as it might sit at rest, bypassing the writer.
+fn write_identity_file(root: &Path, directory: &str, identity: Value) {
+    let path = root.join("entities").join(directory).join("entity.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, identity.to_string()).unwrap();
+}
+
+#[test]
+fn a_principal_flag_on_anything_but_a_person_names_no_one() {
+    for stray in [
+        json!({"id": "office", "name": "Office", "type": "Tool", "is_principal": true}),
+        json!({"id": "office", "name": "Office", "is_principal": true}),
+        json!({"id": "office", "name": "Office", "type": "Person", "is_principal": "yes"}),
+        json!({"id": "office", "name": "Office", "type": "Person", "is_principal": 1}),
+    ] {
+        let temporary = TempDir::new();
+        write_identity_file(temporary.path(), "office", stray.clone());
+        assert_eq!(
+            read_journal_principal(temporary.path()).unwrap(),
+            None,
+            "{stray}"
+        );
+        assert!(!has_journal_principal(temporary.path()).unwrap(), "{stray}");
+        let snapshot = read_entity_identity(temporary.path(), "office")
+            .unwrap()
+            .unwrap();
+        assert!(snapshot.value().get("is_principal").is_none(), "{stray}");
+        assert!(snapshot.had_stray_principal_flag(), "{stray}");
+        // Nothing at rest is rewritten by a read.
+        assert_eq!(
+            serde_json::from_slice::<Value>(
+                &fs::read(temporary.path().join("entities/office/entity.json")).unwrap()
+            )
+            .unwrap(),
+            stray
+        );
+    }
+}
+
+#[test]
+fn a_stray_principal_flag_does_not_block_a_person_from_becoming_principal() {
+    let temporary = TempDir::new();
+    write_identity_file(
+        temporary.path(),
+        "office",
+        json!({"id": "office", "name": "Jer", "type": "Project", "is_principal": true}),
+    );
+    assert!(!has_journal_principal(temporary.path()).unwrap());
+    create_journal_entity(
+        temporary.path(),
+        "jer",
+        "Jer",
+        "Person",
+        None,
+        None,
+        &["Jer".to_owned()],
+        false,
+        None,
+    )
+    .unwrap();
+    let principal = read_journal_principal(temporary.path()).unwrap().unwrap();
+    assert_eq!(principal["id"], "jer");
+    assert_eq!(principal["type"], "Person");
+}
+
+#[test]
+fn two_marked_people_resolve_no_principal_and_still_block_a_third() {
+    let temporary = TempDir::new();
+    for id in ["ada", "bea"] {
+        write_identity_file(
+            temporary.path(),
+            id,
+            json!({"id": id, "name": id, "type": "Person", "is_principal": true}),
+        );
+    }
+    assert_eq!(read_journal_principal(temporary.path()).unwrap(), None);
+    assert!(has_journal_principal(temporary.path()).unwrap());
+}
+
+#[test]
+fn a_blocked_principal_resolves_no_principal_and_blocks_another() {
+    let temporary = TempDir::new();
+    write_identity_file(
+        temporary.path(),
+        "ada",
+        json!({"id": "ada", "name": "Ada", "type": "Person", "is_principal": true, "blocked": true}),
+    );
+    assert_eq!(read_journal_principal(temporary.path()).unwrap(), None);
+    assert!(has_journal_principal(temporary.path()).unwrap());
+    // Beside an unblocked one, the blocked principal is passed over, as
+    // speaker admission does.
+    write_identity_file(
+        temporary.path(),
+        "bea",
+        json!({"id": "bea", "name": "Bea", "type": "Person", "is_principal": true}),
+    );
+    assert_eq!(
+        read_journal_principal(temporary.path()).unwrap().unwrap()["id"],
+        "bea"
+    );
+}
+
+#[test]
+fn a_type_change_drops_the_principal_flag_in_either_direction() {
+    let temporary = TempDir::new();
+    save_entity_identity(
+        temporary.path(),
+        "ada",
+        &json!({"id": "ada", "name": "Ada", "type": "Person", "is_principal": true}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        temporary.path(),
+        "ada",
+        &json!({"id": "ada", "name": "Ada", "type": "Project", "is_principal": true}),
+        None,
+    )
+    .unwrap();
+    let on_disk = |root: &Path| {
+        serde_json::from_slice::<Value>(&fs::read(root.join("entities/ada/entity.json")).unwrap())
+            .unwrap()
+    };
+    assert!(on_disk(temporary.path()).get("is_principal").is_none());
+    assert!(!has_journal_principal(temporary.path()).unwrap());
+
+    write_identity_file(
+        temporary.path(),
+        "ada",
+        json!({"id": "ada", "name": "Ada", "type": "Project", "is_principal": true}),
+    );
+    save_entity_identity(
+        temporary.path(),
+        "ada",
+        &json!({"id": "ada", "name": "Ada", "type": "Person", "is_principal": true}),
+        None,
+    )
+    .unwrap();
+    assert!(on_disk(temporary.path()).get("is_principal").is_none());
+    assert_eq!(read_journal_principal(temporary.path()).unwrap(), None);
 }
 
 #[test]

@@ -220,13 +220,11 @@ pub async fn review(
                 json!({
                     "entity_id": entity_id,
                     "name": entity.get("name").cloned().unwrap_or_else(|| json!(entity_id)),
-                    "is_principal": entity.get("is_principal") == Some(&Value::Bool(true)),
+                    "is_principal": principal_id.as_deref() == Some(entity_id.as_str()),
                 })
             })
             .collect::<Vec<_>>();
-        if !entities
-            .iter()
-            .any(|(_, entity)| entity.get("is_principal") == Some(&Value::Bool(true)))
+        if principal_id.is_none()
             && let Some((entity_id, name)) = configured_principal_identity(&root.0)
             && !entities.iter().any(|(id, _)| id == &entity_id)
         {

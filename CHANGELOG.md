@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - activity settling no longer appears as an extra daily run for yesterday in your journal's health records. its run is recorded separately under today, while each activity keeps its own day.
+- if your own lines read "unknown voice" because something in your journal that isn't a person had been marked as you, your journal no longer counts that mark. the next time it starts, it marks you when exactly one person in your journal has the name in your settings, so your voice can then be set up and your lines can show you.
 - on windows, installing the local model from the thinking page works again. in 2.0.38 it stopped almost as soon as it started and the page said "local setup didn't finish". if that happened to you, choose "try setup again" on the thinking page.
 - on windows, `solstone journal service logs` now shows the journal's recent output, as on mac and linux.
 - on windows, when a local model install ends partway, the thinking page now says "installation stopped" instead of still showing "setting up".

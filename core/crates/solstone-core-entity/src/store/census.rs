@@ -106,7 +106,8 @@ pub fn scan_identity_census(journal_root: &Path) -> Result<IdentityCensus, Entit
                     .filter(|t| !t.is_empty())
                     .map(str::to_owned);
                 let blocked = object.get("blocked").is_some_and(value_is_truthy);
-                let is_principal = object.get("is_principal").is_some_and(value_is_truthy);
+                let is_principal = object.get("is_principal") == Some(&Value::Bool(true))
+                    && entity_type.as_deref() == Some("Person");
                 let name = object
                     .get("name")
                     .and_then(Value::as_str)

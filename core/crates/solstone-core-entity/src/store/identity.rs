@@ -12,12 +12,15 @@ use solstone_core_journal_io::{ReadError, contained_path, path_lexists};
 use super::error::EntityStoreError;
 use super::paths::identity_path;
 
-/// One effective entity identity with its durable JSON object intact.
+/// One effective entity identity with its durable JSON object intact, except
+/// that a principal flag naming no one is left out (see
+/// `drop_stray_principal_flag`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdentitySnapshot {
     entity_id: String,
     written: bool,
     value: Value,
+    stray_principal_flag: bool,
 }
 
 impl IdentitySnapshot {
@@ -34,6 +37,12 @@ impl IdentitySnapshot {
     /// Full identity object, including the effective stamped id.
     pub fn value(&self) -> &Value {
         &self.value
+    }
+
+    /// Whether the file sets a principal flag that `value` leaves out: one on
+    /// an entity that is not a `Person`, or a truthy value that is not `true`.
+    pub fn had_stray_principal_flag(&self) -> bool {
+        self.stray_principal_flag
     }
 }
 
@@ -122,10 +131,12 @@ fn identity_snapshot(
         .map(str::to_owned);
     let entity_id = written.clone().unwrap_or_else(|| entity_dir.to_owned());
     object.insert("id".to_owned(), Value::String(entity_id.clone()));
+    let stray_principal_flag = super::lifecycle::drop_stray_principal_flag(None, &mut value);
     Ok(Some(IdentitySnapshot {
         entity_id,
         written: written.is_some(),
         value,
+        stray_principal_flag,
     }))
 }
 

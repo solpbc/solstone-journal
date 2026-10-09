@@ -2177,7 +2177,7 @@ fn journal_assembly_fixture() -> Journal {
         ),
         (
             "principal_one",
-            json!({"id":"principal_one","name":"Principal One","is_principal":true}),
+            json!({"id":"principal_one","name":"Principal One","type":"Person","is_principal":true}),
         ),
         (
             "blocked_one",
@@ -2444,7 +2444,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
         (
             "principal_one",
             "Principal One",
-            "",
+            "Person",
             json!([]),
             true,
             false,
@@ -5091,6 +5091,16 @@ async fn classifier_refusal_sites_cover_remaining_message_branches() {
     assert_oracle_refusal(
         "_entity_operation_error:286",
         response_value(crate::router::classify_merge_error(&invalid_request)).await,
+        "invalid_request_value",
+        400,
+    );
+
+    let not_a_person = solstone_core_entity::EntityMergeError::Refused(
+        "can't merge you into something that isn't a person.".to_owned(),
+    );
+    assert_oracle_refusal(
+        "_entity_operation_error:286",
+        response_value(crate::router::classify_merge_error(&not_a_person)).await,
         "invalid_request_value",
         400,
     );

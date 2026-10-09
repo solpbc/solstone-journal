@@ -148,32 +148,84 @@ impl From<EntityWriteError> for EntityLifecycleError {
     }
 }
 
-/// Return the first principal identity in deterministic entity-directory order.
-pub fn read_journal_principal(journal_root: &Path) -> Result<Option<Value>, EntityLifecycleError> {
-    let mut entity_dirs = read_identity_group_map(journal_root)?
-        .groups
-        .into_values()
-        .flatten()
-        .collect::<Vec<_>>();
-    entity_dirs.sort();
-    for entity_dir in entity_dirs {
+/// Whether an identity is the journal's principal: marked `is_principal: true`
+/// and of type `Person`. A flag on any other type, or any value other than
+/// JSON `true`, names no one.
+pub fn identity_is_principal(identity: &Value) -> bool {
+    identity.get("is_principal") == Some(&Value::Bool(true))
+        && identity.get("type").and_then(Value::as_str) == Some("Person")
+}
+
+/// Remove an `is_principal` that names no one: anything but `true` on a
+/// `Person`. For a write, `before` is the identity it replaces, and a flag
+/// does not survive a change of type in either direction. Every identity read
+/// applies this with no `before`, and every identity write with one, so a flag
+/// left at rest on another type is never seen and is dropped when the entity
+/// is next written. Returns whether a set flag (any truthy value) was removed.
+pub(crate) fn drop_stray_principal_flag(before: Option<&Value>, identity: &mut Value) -> bool {
+    let Some(object) = identity.as_object_mut() else {
+        return false;
+    };
+    let Some(flag) = object.get("is_principal") else {
+        return false;
+    };
+    let is_person = |value: Option<&Value>| value.and_then(Value::as_str) == Some("Person");
+    let keeps = flag == &Value::Bool(true)
+        && is_person(object.get("type"))
+        && before.is_none_or(|before| is_person(before.get("type")));
+    if keeps {
+        return false;
+    }
+    object
+        .remove("is_principal")
+        .is_some_and(|flag| value_is_truthy(&flag))
+}
+
+/// Every live entity marked as the principal, with its folder, in folder
+/// order. Each identity carries its effective id in `id`.
+fn principal_identities(journal_root: &Path) -> Result<Vec<(String, Value)>, EntityStoreError> {
+    let mut found = Vec::new();
+    for (entity_id, entity_dir) in read_identity_map(journal_root)?.resolved {
         let Some(identity) = read_entity_identity(journal_root, &entity_dir)? else {
             continue;
         };
-        if identity
-            .value()
-            .get("is_principal")
-            .is_some_and(value_is_truthy)
-        {
-            return Ok(Some(identity.value().clone()));
+        if identity_is_principal(identity.value()) {
+            let mut value = identity.value().clone();
+            if let Some(object) = value.as_object_mut() {
+                object.insert("id".to_owned(), Value::String(entity_id));
+            }
+            found.push((entity_dir, value));
         }
     }
-    Ok(None)
+    found.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(found)
 }
 
-/// Whether any journal entity is marked as the principal.
+/// The journal's principal and the folder that holds it: the one live,
+/// unblocked `Person` marked as the principal, as speaker admission resolves
+/// it. With none, or with more than one, no one is the principal.
+pub fn journal_principal_entry(
+    journal_root: &Path,
+) -> Result<Option<(String, Value)>, EntityStoreError> {
+    let mut found = principal_identities(journal_root)?
+        .into_iter()
+        .filter(|(_, identity)| !identity.get("blocked").is_some_and(value_is_truthy))
+        .collect::<Vec<_>>();
+    if found.len() != 1 {
+        return Ok(None);
+    }
+    Ok(Some(found.remove(0)))
+}
+
+/// The journal's principal identity, as [`journal_principal_entry`] resolves it.
+pub fn read_journal_principal(journal_root: &Path) -> Result<Option<Value>, EntityLifecycleError> {
+    Ok(journal_principal_entry(journal_root)?.map(|(_, identity)| identity))
+}
+
+/// Whether any live `Person` is marked as the principal, blocked or not, so
+/// that no second one is marked beside it.
 pub fn has_journal_principal(journal_root: &Path) -> Result<bool, EntityLifecycleError> {
-    Ok(read_journal_principal(journal_root)?.is_some())
+    Ok(!principal_identities(journal_root)?.is_empty())
 }
 
 /// Mark the one person named as the owner as the journal's principal, when
@@ -313,7 +365,7 @@ pub fn restore_journal_entity_version(
             snapshot_id,
         });
     }
-    if snapshot.get("is_principal").is_some_and(value_is_truthy) {
+    if identity_is_principal(&snapshot) {
         guard_restore_principal(journal_root, entity_id)?;
     }
 
@@ -354,12 +406,7 @@ fn guard_restore_principal(
         let Some(identity) = read_entity_identity(journal_root, &entity_dir)? else {
             continue;
         };
-        if identity.entity_id() != entity_id
-            && identity
-                .value()
-                .get("is_principal")
-                .is_some_and(value_is_truthy)
-        {
+        if identity.entity_id() != entity_id && identity_is_principal(identity.value()) {
             return Err(EntityLifecycleError::RestoreWouldCreateSecondPrincipal {
                 entity_id: entity_id.to_owned(),
                 existing_entity_id: identity.entity_id().to_owned(),

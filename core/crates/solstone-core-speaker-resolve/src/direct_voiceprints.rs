@@ -13,12 +13,15 @@ use solstone_core_entity::{
     remove_voiceprints_by_key, save_voiceprints_batch,
 };
 use solstone_core_journal_io::SegmentLayout;
+use solstone_core_speaker_id::calibration::NOISY_FLYWHEEL_OVERLAP_MAX;
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 
 use crate::identify_operations::{ForwardPhase, MemberProvenance};
 use crate::owner_admission::{OWNER_IDENTITY_INVALID_REASON, OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
+use crate::voice_members::VoiceAnchor;
+use crate::voiceprint_accumulation::read_overlap_fraction;
 use crate::voiceprint_metadata::{VoiceprintMetadata, owner_timezone, segment_start_ts_ms};
 
 /// The six metadata values that identify a direct voiceprint row.
@@ -119,16 +122,22 @@ pub enum DirectVoiceprintsError {
     },
 }
 
-/// Failure while applying an authenticated, unguarded single-row voiceprint mutation.
+/// Failure while applying an authenticated single-row voiceprint mutation.
 #[derive(Debug, Error)]
 pub enum DirectVoiceprintMutationError {
     #[error("voiceprint metadata must contain day, segment_key, source, and sentence_id")]
     InvalidMetadata,
+    #[error("only a person can have a voiceprint")]
+    NotPerson,
+    #[error("entity store failed: {0}")]
+    Entity(#[from] solstone_core_entity::EntityStoreError),
     #[error("voiceprint operation failed: {0}")]
     Voiceprint(#[from] solstone_core_entity::VoiceprintOperationError),
 }
 
-/// Append exactly one caller-supplied voiceprint without identify/accumulation guards.
+/// Append exactly one caller-supplied voiceprint without identify/accumulation
+/// guards. The entity must still be an admissible person: no writer gives a
+/// voiceprint to anything else.
 pub fn write_voiceprint(
     journal_root: &Path,
     entity_id: &str,
@@ -138,6 +147,16 @@ pub fn write_voiceprint(
 ) -> Result<(), DirectVoiceprintMutationError> {
     if !has_direct_key(&metadata) {
         return Err(DirectVoiceprintMutationError::InvalidMetadata);
+    }
+    let is_person = solstone_core_entity::read_entity_identity(journal_root, entity_id)?
+        .is_some_and(|snapshot| {
+            solstone_core_entity::is_admissible_person(&solstone_core_entity::JournalEntity {
+                id: snapshot.entity_id().to_owned(),
+                value: snapshot.value().clone(),
+            })
+        });
+    if !is_person {
+        return Err(DirectVoiceprintMutationError::NotPerson);
     }
     save_voiceprints_batch(
         journal_root,
@@ -183,10 +202,17 @@ fn has_direct_key(metadata: &Value) -> bool {
 }
 
 /// Snapshot direct cluster-member voiceprints that are not already on the target.
+///
+/// A member from a recording whose overlapping speech exceeds
+/// `NOISY_FLYWHEEL_OVERLAP_MAX` writes no voiceprint, as with every other
+/// voiceprint writer, unless it is in the recording the owner picked
+/// (`owner_picked`). This filters voiceprints only: the caller still names every
+/// member.
 pub fn plan_direct_voiceprints(
     journal_root: &Path,
     target_entity_id: &str,
     cluster_members: &[MemberProvenance],
+    owner_picked: Option<&VoiceAnchor>,
     added_at: i64,
 ) -> Result<DirectVoiceprintsPlanning, DirectVoiceprintsError> {
     let existing_keys = load_existing_voiceprint_keys(journal_root, target_entity_id)
@@ -200,10 +226,16 @@ pub fn plan_direct_voiceprints(
     members.sort();
     let mut entries_to_add = Vec::new();
     let mut items = Vec::new();
+    let mut overlapping = BTreeMap::<(String, String, String, String), bool>::new();
 
     for member in members {
         let key = direct_key(&member);
         if working_keys.contains(&key) {
+            continue;
+        }
+        if !in_picked_recording(owner_picked, &member)
+            && recording_overlaps(journal_root, &member, &mut overlapping)?
+        {
             continue;
         }
         let Some(embedding) = load_member_embedding(journal_root, &member, owner.as_ref())? else {
@@ -314,6 +346,47 @@ pub fn execute_direct_voiceprints_phase(
         saved_keys,
         skipped_existing_count,
     })
+}
+
+fn in_picked_recording(owner_picked: Option<&VoiceAnchor>, member: &MemberProvenance) -> bool {
+    owner_picked.is_some_and(|picked| {
+        picked.day == member.day
+            && picked.stream == member.stream
+            && picked.segment_key == member.segment_key
+            && picked.source == member.source
+    })
+}
+
+/// Whether the member's recording has more overlapping speech than a
+/// voiceprint may be taken from. A recording that can't be found reads as
+/// clear; the embedding lookup skips it anyway.
+fn recording_overlaps(
+    journal_root: &Path,
+    member: &MemberProvenance,
+    seen: &mut BTreeMap<(String, String, String, String), bool>,
+) -> Result<bool, DirectVoiceprintsError> {
+    let recording = (
+        member.day.clone(),
+        member.stream.clone(),
+        member.segment_key.clone(),
+        member.source.clone(),
+    );
+    if let Some(overlaps) = seen.get(&recording) {
+        return Ok(*overlaps);
+    }
+    let overlaps = crate::segment_catalog::resolve_exact(
+        journal_root,
+        &member.day,
+        &member.stream,
+        &member.segment_key,
+        member.stream_layout,
+    )?
+    .is_some_and(|segment| {
+        read_overlap_fraction(&segment.join(format!("{}.jsonl", member.source)))
+            > NOISY_FLYWHEEL_OVERLAP_MAX
+    });
+    seen.insert(recording, overlaps);
+    Ok(overlaps)
 }
 
 pub(crate) fn current_owner_centroid(

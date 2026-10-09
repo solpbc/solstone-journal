@@ -157,11 +157,13 @@ impl Journal {
     }
 
     fn voiceprint(&self, entity_id: &str, embedding: Vec<f32>) {
-        solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+        solstone_core_entity::save_voiceprints_batch(
             &self.0,
             entity_id,
-            embedding,
-            json!({"day":DAY,"stream":STREAM,"segment_key":"fixture","source":SOURCE,"sentence_id":1}),
+            &[solstone_core_entity::VoiceprintItem {
+                embedding,
+                metadata: json!({"day":DAY,"stream":STREAM,"segment_key":"fixture","source":SOURCE,"sentence_id":1}),
+            }],
             &solstone_core_entity::EncoderIdentity {
                 id: "unresolved".to_owned(),
                 sha256: "0".repeat(64),
@@ -1897,17 +1899,19 @@ async fn correct_repairs_legacy_invalid_old_speakers_into_an_admitted_person() {
     for old_speaker in ["tool", "blocked_person", "malformed", "deleted"] {
         let journal = build_person_admission_journal(PersonAdmissionMode::Valid);
         if old_speaker == "tool" {
-            solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
-                journal.root(),
-                old_speaker,
-                unit(0.0, 1.0),
-                json!({"day":DAY,"stream":STREAM,"segment_key":SEGMENT,"source":SOURCE,"sentence_id":1}),
-                &solstone_core_entity::EncoderIdentity {
+            solstone_core_entity::save_voiceprints_batch(
+            journal.root(),
+            old_speaker,
+            &[solstone_core_entity::VoiceprintItem {
+                embedding: unit(0.0, 1.0),
+                metadata: json!({"day":DAY,"stream":STREAM,"segment_key":SEGMENT,"source":SOURCE,"sentence_id":1}),
+            }],
+            &solstone_core_entity::EncoderIdentity {
                     id: "unresolved".to_owned(),
                     sha256: "0".repeat(64),
                     width: 256,
                 },
-            )
+        )
             .expect("legacy tool voiceprint writes");
         }
         set_labels(

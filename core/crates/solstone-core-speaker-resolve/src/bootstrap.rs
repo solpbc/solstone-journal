@@ -16,6 +16,7 @@ use solstone_core_entity::{
 use solstone_core_journal_io::{
     PathOrDay, SegmentIdentityError, SegmentLayout, day_dirs, iter_segments,
 };
+use solstone_core_speaker_id::calibration::NOISY_FLYWHEEL_OVERLAP_MAX;
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 
@@ -25,6 +26,7 @@ use crate::admission::{
 use crate::evidence::load_segment_speakers_with_gaps;
 use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
+use crate::voiceprint_accumulation::read_overlap_fraction;
 use crate::voiceprint_metadata::{VoiceprintMetadata, owner_timezone, segment_start_ts_ms};
 
 /// Preserved from the retired Python speaker bootstrap; consumed by the
@@ -232,6 +234,9 @@ pub fn bootstrap_voiceprints(
             continue;
         };
         for source in &segment.sources {
+            if overlaps(&segment.path, source) {
+                continue;
+            }
             let Ok(Some(embeddings)) =
                 load_embeddings_file(&segment.path.join(format!("{source}.npz")))
             else {
@@ -338,6 +343,9 @@ pub fn seed_from_imports(
         };
 
         for source in &segment.sources {
+            if overlaps(&segment.path, source) {
+                continue;
+            }
             let source_path = segment.path.join(format!("{source}.jsonl"));
             let statement_times = if !source_path.exists() {
                 HashMap::new()
@@ -483,6 +491,12 @@ enum BootstrapOwner {
     IdentityInvalid,
     NoOwnerCentroid,
     Resolved(OwnerCentroid),
+}
+
+/// Whether a recording has more overlapping speech than any voiceprint writer
+/// takes a voiceprint from.
+fn overlaps(segment: &Path, source: &str) -> bool {
+    read_overlap_fraction(&segment.join(format!("{source}.jsonl"))) > NOISY_FLYWHEEL_OVERLAP_MAX
 }
 
 fn bootstrap_owner(journal_root: &Path) -> Result<BootstrapOwner, BootstrapError> {

@@ -212,7 +212,9 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                         && journal_entity.entity_type() == Some("Person")
                     {
                         EntityClassification::ProtectedBlockedPerson
-                    } else if journal_entity.is_principal() {
+                    } else if snapshot.had_stray_principal_flag() {
+                        // A principal flag at rest on an entity that is not a
+                        // person names no one, but repair still leaves it be.
                         EntityClassification::ProtectedInvalidPrincipal
                     } else {
                         EntityClassification::RepairableNonPerson
@@ -551,11 +553,12 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
             .as_ref()
             .and_then(|v| v.get("type").and_then(Value::as_str))
             .map(str::to_owned);
-        let is_principal = dir
-            .value
-            .as_ref()
-            .and_then(|v| v.get("is_principal").and_then(Value::as_bool))
-            .unwrap_or(false);
+        let is_principal = dir.classification == EntityClassification::ProtectedInvalidPrincipal
+            || dir
+                .value
+                .as_ref()
+                .and_then(|v| v.get("is_principal").and_then(Value::as_bool))
+                .unwrap_or(false);
         let is_blocked = dir
             .value
             .as_ref()

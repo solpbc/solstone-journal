@@ -151,7 +151,8 @@ fn ac8_direct_voiceprint_replay_reports_a_crash_saved_key_without_rewriting() {
     entity(temporary.path(), "target");
     let member = member_embeddings(temporary.path());
     let encoder = encoder();
-    let planned = plan_direct_voiceprints(temporary.path(), "target", &[member], 123).unwrap();
+    let planned =
+        plan_direct_voiceprints(temporary.path(), "target", &[member], None, 123).unwrap();
     assert_eq!(planned.plan.entries_to_add.len(), 1);
     save_voiceprints_batch(temporary.path(), "target", &planned.items, &encoder).unwrap();
     let path = temporary.path().join("entities/target/voiceprints.npz");
@@ -160,6 +161,7 @@ fn ac8_direct_voiceprint_replay_reports_a_crash_saved_key_without_rewriting() {
         temporary.path(),
         "target",
         &[planned.plan.entries_to_add[0].source_member.clone()],
+        None,
         123,
     )
     .unwrap();
@@ -191,7 +193,8 @@ fn ac8_direct_voiceprint_replay_writes_a_new_key_and_reports_it_saved() {
     entity(temporary.path(), "target");
     let member = member_embeddings(temporary.path());
     let encoder = encoder();
-    let planned = plan_direct_voiceprints(temporary.path(), "target", &[member], 123).unwrap();
+    let planned =
+        plan_direct_voiceprints(temporary.path(), "target", &[member], None, 123).unwrap();
     assert_eq!(planned.items[0].metadata["added_at"], 123);
     // Last heard when the 20260808 12:00:00 segment started.
     assert_eq!(
@@ -223,7 +226,7 @@ fn direct_voiceprints_refuse_invalid_owner_identity_before_writing() {
     let member = member_embeddings(temporary.path());
     let before = content_snapshot(temporary.path());
 
-    let error = plan_direct_voiceprints(temporary.path(), "target", &[member], 123)
+    let error = plan_direct_voiceprints(temporary.path(), "target", &[member], None, 123)
         .expect_err("missing admitted owner refuses planning");
 
     assert!(matches!(

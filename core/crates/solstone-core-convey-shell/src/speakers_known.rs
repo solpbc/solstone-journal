@@ -269,11 +269,13 @@ mod tests {
                 serde_json::to_vec(&entity).expect("entity json"),
             )
             .expect("entity writes");
-            solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+            solstone_core_entity::save_voiceprints_batch(
                 &root,
                 id,
-                vec![1.0; 256],
-                json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+                &[solstone_core_entity::VoiceprintItem {
+                    embedding: vec![1.0; 256],
+                    metadata: json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+                }],
                 &solstone_core_entity::EncoderIdentity {
                     id: "test".to_owned(),
                     sha256: "0".repeat(64),
@@ -317,11 +319,13 @@ mod tests {
             .expect("entity writes");
         }
         for id in ["bee", "cee"] {
-            solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+            solstone_core_entity::save_voiceprints_batch(
                 &root,
                 id,
-                vec![1.0; 256],
-                json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+                &[solstone_core_entity::VoiceprintItem {
+                    embedding: vec![1.0; 256],
+                    metadata: json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+                }],
                 &solstone_core_entity::EncoderIdentity {
                     id: "test".to_owned(),
                     sha256: "0".repeat(64),

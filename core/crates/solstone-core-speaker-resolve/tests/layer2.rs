@@ -173,6 +173,36 @@ fn ac2_setting_non_person_is_not_labeled_or_admitted() {
 }
 
 #[test]
+fn screen_and_meeting_names_never_admit_a_non_person() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "tool", "Terminal", Some("Tool"), false);
+    write_entity(temporary.path(), "alice", "Alice", Some("Person"), false);
+    let entities = journal_entities(temporary.path());
+    let names = ["Terminal".to_owned(), "Alice".to_owned()];
+    let result = apply_structural_heuristics(
+        labels(&[1]),
+        Layer2Inputs {
+            speakers: &[],
+            setting_names: &[],
+            screen_names: &names,
+            meeting_names: &names,
+            entities: &entities,
+            all_entities: &entities,
+            non_owner_sids: &[1],
+            margin_declined_sids: &HashSet::new(),
+            journal_root: temporary.path(),
+            day: "20260808",
+            segment_key: "120000_300",
+            read_only: true,
+        },
+    )
+    .expect("apply layer 2");
+    assert!(!result.candidate_entity_ids.contains("tool"));
+    assert!(result.candidate_entity_ids.contains("alice"));
+    assert_ne!(result.labels[&1].speaker.as_deref(), Some("tool"));
+}
+
+#[test]
 fn ac5_principal_person_remains_admissible() {
     let temporary = TempDir::new();
     write_entity(temporary.path(), "owner", "Avery", Some("Person"), true);

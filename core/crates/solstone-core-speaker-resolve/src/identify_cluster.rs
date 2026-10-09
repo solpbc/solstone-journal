@@ -539,16 +539,26 @@ fn plan_identify_members(
     }
     let planned_at = Utc::now().to_rfc3339();
     let added_at = Utc::now().timestamp_millis();
-    let direct =
-        match plan_direct_voiceprints(&request.journal_root, &target.entity_id, &members, added_at)
-        {
-            Ok(plan) => plan,
-            Err(error) => {
-                return Ok(Err(
-                    json!({"status":"recoverable","error":error.to_string()}),
-                ));
-            }
-        };
+    // Naming a voice from a sentence the owner tapped keeps that recording's
+    // voiceprints even when it overlaps; a discovered voice has no such pick.
+    let owner_picked = match source {
+        MemberSource::Voice(_, anchor) => anchor,
+        MemberSource::Discovery => None,
+    };
+    let direct = match plan_direct_voiceprints(
+        &request.journal_root,
+        &target.entity_id,
+        &members,
+        owner_picked,
+        added_at,
+    ) {
+        Ok(plan) => plan,
+        Err(error) => {
+            return Ok(Err(
+                json!({"status":"recoverable","error":error.to_string()}),
+            ));
+        }
+    };
     let planning_owner_entity_id = match admitted_owner_id(&request.journal_root) {
         OwnerAdmission::Admitted(id) => id,
         OwnerAdmission::Invalid => {
@@ -692,6 +702,33 @@ fn run_phase(
     plan: &Value,
     encoder: &EncoderIdentity,
 ) -> Result<Value, ExecuteError> {
+    // A resumed operation replays its stored plan, so every phase that names
+    // the target or gives it voiceprints first checks it is still a person.
+    if matches!(
+        phase,
+        ForwardPhase::DirectVoiceprints
+            | ForwardPhase::Corrections
+            | ForwardPhase::Labels
+            | ForwardPhase::RetroTracker
+    ) {
+        let target = entity_phase_plan(plan)?.target_entity_id;
+        let admissible = read_entity_identity(root, &target)
+            .map_err(|error| ExecuteError::Unexpected(error.to_string()))?
+            .is_some_and(|snapshot| {
+                solstone_core_entity::is_admissible_person(&solstone_core_entity::JournalEntity {
+                    id: snapshot.entity_id().to_owned(),
+                    value: snapshot.value().clone(),
+                })
+            });
+        if !admissible {
+            return Err(ExecuteError::Repair {
+                phase,
+                code: "target_not_person",
+                categories: BTreeMap::from([("target".to_owned(), 1)]),
+                partial_report: None,
+            });
+        }
+    }
     if phase == ForwardPhase::DirectVoiceprints {
         return execute_direct_voiceprints_phase(root, &direct_phase_plan(plan)?, encoder)
             .map(|value| value.checkpoint_fields())
@@ -1878,6 +1915,107 @@ mod tests {
         assert_eq!(c_labels[&2]["speaker"], "ryan");
     }
 
+    /// Marks one recording's speech as more than the voiceprint writers allow
+    /// to overlap.
+    fn overlapping(segment: &Path, source: &str) {
+        fs::write(
+            segment.join(format!("{source}.jsonl")),
+            format!("{}\n", json!({"overlap_fraction": 0.4})),
+        )
+        .unwrap();
+    }
+
+    fn voiceprint_segments(root: &Path, entity_id: &str) -> BTreeSet<String> {
+        crate::identify_forward_phases::voiceprint_metadata(root, entity_id)
+            .keys()
+            .map(|key| key.segment_key.clone())
+            .collect()
+    }
+
+    #[test]
+    fn naming_a_discovered_voice_takes_no_voiceprint_from_an_overlapping_recording() {
+        let temporary = Temp::new();
+        let root = temporary.path();
+        entity(root, "ryan", "Ryan");
+        write_embeddings(root);
+        let crowded = segment_path(root, "20260808", "120500_300", "mic", true).unwrap();
+        fs::create_dir_all(crowded.join("talents")).unwrap();
+        write_npz(&crowded, "audio", &[(3, vector())]);
+        overlapping(&crowded, "audio");
+        let crowded_member = MemberProvenance {
+            segment_key: "120500_300".into(),
+            sentence_id: 3,
+            ..member()
+        };
+        fs::create_dir_all(root.join("awareness")).unwrap();
+        fs::write(
+            root.join("awareness/discovery_clusters.json"),
+            json!({"clusters":{"1":[member_json(&member()), member_json(&crowded_member)]}})
+                .to_string(),
+        )
+        .unwrap();
+
+        let result =
+            identify_cluster(&request(root, "overlap-discovery", "ryan"), &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert_eq!(result["voiceprints_saved"], 1, "{result}");
+        assert_eq!(
+            voiceprint_segments(root, "ryan"),
+            BTreeSet::from(["120000_300".to_owned()]),
+            "no voiceprint from the overlapping recording"
+        );
+        // The name is written on both recordings either way.
+        assert_eq!(labels_of(&crowded)[&3]["speaker"], "ryan");
+        let clear = segment_path(root, "20260808", "120000_300", "mic", true).unwrap();
+        assert_eq!(labels_of(&clear)[&7]["speaker"], "ryan");
+    }
+
+    #[test]
+    fn naming_a_voice_everywhere_takes_no_voiceprint_from_an_overlapping_recording() {
+        let (temporary, a, b) = voice_journal();
+        let root = temporary.path();
+        overlapping(&b, "audio");
+        let result =
+            identify_voice(&request(root, "overlap-voice", "ryan"), 5, None, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert_eq!(
+            voiceprint_segments(root, "ryan"),
+            BTreeSet::from(["100000_300".to_owned()]),
+            "no voiceprint from the overlapping recording"
+        );
+        let b_labels = labels_of(&b);
+        assert_eq!(b_labels[&1]["speaker"], "ryan");
+        assert_eq!(b_labels[&2]["speaker"], "ryan");
+        assert_eq!(labels_of(&a)[&1]["speaker"], "ryan");
+    }
+
+    #[test]
+    fn naming_a_voice_from_an_overlapping_recording_keeps_that_recordings_voiceprints() {
+        let (temporary, _a, b) = voice_journal();
+        let root = temporary.path();
+        overlapping(&b, "audio");
+        let tapped = crate::voice_members::VoiceAnchor {
+            day: "20260808".into(),
+            stream: "mic".into(),
+            segment_key: "100500_300".into(),
+            source: "audio".into(),
+            sentence_id: 1,
+        };
+        let result = identify_voice(
+            &request(root, "overlap-tapped", "ryan"),
+            5,
+            Some(&tapped),
+            &encoder(),
+        )
+        .unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert_eq!(
+            voiceprint_segments(root, "ryan"),
+            BTreeSet::from(["100000_300".to_owned(), "100500_300".to_owned()]),
+            "the recording the owner picked is still written"
+        );
+    }
+
     #[test]
     fn naming_a_voice_writes_the_person_on_exactly_its_unnamed_sentences() {
         let (temporary, a, b) = voice_journal();
@@ -2300,6 +2438,70 @@ mod tests {
         let retry = identify_cluster(&request, &encoder()).unwrap();
         assert_eq!(retry["status"], "repair_required");
         assert_eq!(fs::read(&path).unwrap(), repair_ledger);
+    }
+
+    #[test]
+    fn a_resumed_identify_names_nothing_once_its_target_is_no_longer_a_person() {
+        let temporary = Temp::new();
+        entity(temporary.path(), "target", "Target");
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let request = request(temporary.path(), "request-retyped-target", "target");
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let planned = plan_identify(&request, &operation_id).unwrap().unwrap();
+        let path = identify_ledger_path(temporary.path());
+        append_prepared(&path, &request, &operation_id, &planned).unwrap();
+        for phase in FORWARD_PHASE_ORDER[..2].iter().copied() {
+            append_phase_checkpoint(
+                &path,
+                &request,
+                &operation_id,
+                &planned.prepared_plan,
+                phase,
+            );
+        }
+        fs::write(
+            temporary.path().join("entities/target/entity.json"),
+            json!({"id":"target","name":"Target","type":"Tool"}).to_string(),
+        )
+        .unwrap();
+        materialize_entity_trust_lock(temporary.path());
+        let before = snapshot_without_identify_ledger(temporary.path());
+
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "repair_required", "{result}");
+        assert_eq!(result["repair_code"], "target_not_person");
+        assert_eq!(snapshot_without_identify_ledger(temporary.path()), before);
+        assert!(
+            !temporary
+                .path()
+                .join("entities/target/voiceprints.npz")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn identifying_as_an_entity_that_is_not_a_person_writes_nothing() {
+        let temporary = Temp::new();
+        let path = temporary.path().join("entities/terminal");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(
+            path.join("entity.json"),
+            json!({"id":"terminal","name":"Terminal","type":"Tool"}).to_string(),
+        )
+        .unwrap();
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        materialize_entity_trust_lock(temporary.path());
+        let before = snapshot_files(temporary.path());
+
+        let result = identify_cluster(
+            &request(temporary.path(), "request-tool", "terminal"),
+            &encoder(),
+        )
+        .unwrap();
+        assert_ne!(result["status"], "identified", "{result}");
+        assert_eq!(snapshot_files(temporary.path()), before);
     }
 
     #[test]

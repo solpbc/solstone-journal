@@ -27,9 +27,10 @@ impl JournalEntity {
         self.value.get("type").and_then(Value::as_str)
     }
 
-    /// Return whether the durable identity is marked as the journal principal.
+    /// Return whether the durable identity is the journal principal: a
+    /// `Person` marked `is_principal: true` (see `identity_is_principal`).
     pub fn is_principal(&self) -> bool {
-        self.value.get("is_principal").is_some_and(value_is_truthy)
+        super::lifecycle::identity_is_principal(&self.value)
     }
 
     /// Return whether the durable identity is blocked.

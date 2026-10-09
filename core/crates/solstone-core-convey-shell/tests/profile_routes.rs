@@ -306,7 +306,7 @@ async fn cadence_truthy_mentions_values_are_exact_and_trimmed() {
 async fn facet_filter_changes_display_only_and_self_flag_tracks_principal() {
     let fixture = Fixture::new();
     fixture.established();
-    fixture.entity("pat", "Pat", &[], "person", true);
+    fixture.entity("pat", "Pat", &[], "Person", true);
     fixture.entity("other", "Other", &[], "person", false);
     for (facet, description) in [("work", "Work friend"), ("math", "Math friend")] {
         fixture.facet(facet, false);
@@ -552,7 +552,7 @@ async fn what_the_owner_said_by_voice_leads_open_loops_and_decisions_and_nothing
     let fixture = Fixture::new();
     fixture.established();
     fixture.entity("pat", "Pat", &[], "person", false);
-    fixture.entity("owner", "Owner", &[], "person", true);
+    fixture.entity("owner", "Owner", &[], "Person", true);
     fixture.facet("work", false);
     let oldest = day_ago(12);
     let older = day_ago(9);

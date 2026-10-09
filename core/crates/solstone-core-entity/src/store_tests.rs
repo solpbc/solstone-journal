@@ -2579,7 +2579,9 @@ fn direct_journal_entity_scan_preserves_identity_fields_and_sorts_ids() {
         ["alpha", "middle", "zeta"]
     );
     assert_eq!(entities[0].entity_type(), Some("Person"));
-    assert!(entities[0].is_principal());
+    // Only `true` marks a principal; a truthy string names no one.
+    assert!(!entities[0].is_principal());
+    assert!(entities[0].value.get("is_principal").is_none());
     assert!(!entities[0].is_blocked());
     assert_eq!(entities[0].resolution_entity().aka, ["A"]);
     assert_eq!(entities[0].resolution_entity().emails, ["a@example.test"]);

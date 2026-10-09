@@ -56,6 +56,38 @@ fn creates_principal_claiming_entity_without_adopting_principal() {
 }
 
 #[test]
+fn a_source_principal_flag_never_reaches_the_target_in_any_form() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    for (id, identity) in [
+        (
+            "office",
+            json!({"id":"office","name":"Office","type":"Tool","is_principal":true}),
+        ),
+        (
+            "ada",
+            json!({"id":"ada","name":"Ada","type":"Person","is_principal":"yes"}),
+        ),
+    ] {
+        let directory = source.join("entities").join(id);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("entity.json"), identity.to_string()).unwrap();
+    }
+    let archive = archive_from(&source, &tree.path);
+    let options = options(&tree);
+    merge_journal_archive(&archive, &target, &options, None).unwrap();
+    for id in ["office", "ada"] {
+        let written: Value = serde_json::from_slice(
+            &fs::read(target.join("entities").join(id).join("entity.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(written.get("is_principal").is_none(), "{id}: {written}");
+    }
+    assert_eq!(read_journal_principal(&target).unwrap(), None);
+}
+
+#[test]
 fn identical_retry_is_noop_and_different_segment_lands_on_a_new_key() {
     let tree = TempTree::new();
     let source = tree.path.join("source");

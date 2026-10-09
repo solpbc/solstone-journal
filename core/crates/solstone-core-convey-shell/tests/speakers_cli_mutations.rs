@@ -394,11 +394,13 @@ async fn backfill_last_seen_skips_ineligible_speaker_voiceprints() {
         width: 256,
     };
     for entity_id in ["person", "tool"] {
-        solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+        solstone_core_entity::save_voiceprints_batch(
             journal.root(),
             entity_id,
-            vec![1.0; 256],
-            json!({"day":PERSON_ADMISSION_DAY,"stream":PERSON_ADMISSION_STREAM,"segment_key":PERSON_ADMISSION_SEGMENT,"source":PERSON_ADMISSION_SOURCE,"sentence_id":1}),
+            &[solstone_core_entity::VoiceprintItem {
+                embedding: vec![1.0; 256],
+                metadata: json!({"day":PERSON_ADMISSION_DAY,"stream":PERSON_ADMISSION_STREAM,"segment_key":PERSON_ADMISSION_SEGMENT,"source":PERSON_ADMISSION_SOURCE,"sentence_id":1}),
+            }],
             &encoder,
         )
         .expect("voiceprint writes");
