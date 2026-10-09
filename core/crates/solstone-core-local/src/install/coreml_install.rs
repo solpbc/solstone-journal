@@ -102,14 +102,8 @@ pub fn install_parakeet_coreml_model(
     force: bool,
 ) -> Result<PathBuf, CoremlInstallError> {
     let (os_name, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
-    install_parakeet_coreml_model_with_policy(
-        home_dir,
-        config,
-        force,
-        &archive::PRODUCTION_DOWNLOAD_POLICY,
-        os_name,
-        arch,
-    )
+    let rows = rows()?;
+    install_with_rows(home_dir, config, force, (os_name, arch), &rows)
 }
 
 /// Verify the model tree and install sentinel without fetching.
@@ -121,23 +115,33 @@ pub fn check_parakeet_coreml_install(
     check_parakeet_coreml_install_with_platform(home_dir, os_name, arch)
 }
 
-fn install_parakeet_coreml_model_with_policy(
-    home_dir: &Path,
-    config: &JournalConfigRead,
-    force: bool,
-    policy: &archive::DownloadHostPolicy<'_>,
-    os_name: &str,
-    arch: &str,
-) -> Result<PathBuf, CoremlInstallError> {
-    let rows = rows()?;
-    install_with_rows(home_dir, config, force, policy, (os_name, arch), &rows)
+fn fetch_runtime_member(
+    query: &solstone_core_assets::RuntimeFetchQuery<'_>,
+    destination: &Path,
+) -> Result<(), CoremlInstallError> {
+    let handle = solstone_core_assets::mint_runtime_fetch(query).map_err(|err| {
+        CoremlInstallError::new(
+            solstone_core_assets::FetchMintError::REASON_CODE,
+            err.to_string(),
+            65,
+        )
+    })?;
+    solstone_core_artifact_download::download_runtime_fetch(&handle, destination, |_, _| {})
+        .map_err(archive_error)?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CoremlAdmission {
+    Mint,
+    #[cfg(feature = "runtime-fetch-test")]
+    Fixture,
 }
 
 fn install_with_rows(
     home_dir: &Path,
     config: &JournalConfigRead,
     force: bool,
-    policy: &archive::DownloadHostPolicy<'_>,
     platform: (&str, &str),
     rows: &[&Artifact],
 ) -> Result<PathBuf, CoremlInstallError> {
@@ -147,9 +151,9 @@ fn install_with_rows(
         home_dir,
         config,
         force,
-        policy,
         platform,
         rows,
+        CoremlAdmission::Mint,
         &mut publish,
         &mut write,
     )
@@ -161,9 +165,9 @@ pub(crate) fn install_with_rows_and_seams(
     home_dir: &Path,
     config: &JournalConfigRead,
     force: bool,
-    policy: &archive::DownloadHostPolicy<'_>,
     platform: (&str, &str),
     rows: &[&Artifact],
+    admission: CoremlAdmission,
     publish: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
     write: &mut impl FnMut(&Path, &ParakeetCoremlSentinel) -> std::io::Result<()>,
 ) -> Result<PathBuf, CoremlInstallError> {
@@ -186,8 +190,31 @@ pub(crate) fn install_with_rows_and_seams(
         fs::create_dir(&staging)
             .map_err(|error| CoremlInstallError::new("install_failed", error.to_string(), 74))?;
         for row in rows {
-            archive::download_verified(row, &staging.join(row.filename), policy, |_, _| {})
-                .map_err(archive_error)?;
+            match admission {
+                CoremlAdmission::Mint => {
+                    let query = solstone_core_assets::RuntimeFetchQuery {
+                        unit: Some(row.unit),
+                        origin_key: Some(row.origin_key),
+                        ..Default::default()
+                    };
+                    fetch_runtime_member(&query, &staging.join(row.filename))?;
+                }
+                #[cfg(feature = "runtime-fetch-test")]
+                CoremlAdmission::Fixture => {
+                    let handle = solstone_core_assets::runtime_fetch_handle_fixture(
+                        row.unit,
+                        row.origin_key,
+                        row.sha256,
+                        row.size_bytes,
+                    );
+                    solstone_core_artifact_download::download_runtime_fetch(
+                        &handle,
+                        &staging.join(row.filename),
+                        |_, _| {},
+                    )
+                    .map_err(archive_error)?;
+                }
+            }
         }
         publish(&staging, &target)
             .map_err(|error| CoremlInstallError::new("publish_failed", error.to_string(), 74))?;
@@ -252,16 +279,46 @@ fn check_with_rows(
     Ok(())
 }
 
-/// Internal fixture seam: install rows on the darwin/arm64 host the production guard accepts.
 #[cfg(feature = "test-hooks")]
 pub(crate) fn install_with_rows_for_test(
     home_dir: &Path,
     config: &JournalConfigRead,
     force: bool,
-    policy: &archive::DownloadHostPolicy<'_>,
     rows: &[&Artifact],
 ) -> Result<PathBuf, CoremlInstallError> {
-    install_with_rows(home_dir, config, force, policy, ("darwin", "arm64"), rows)
+    let mut publish = |staging: &Path, target: &Path| publish_staged_tree(staging, target);
+    let mut write = write_sentinel;
+    install_with_rows_and_seams(
+        home_dir,
+        config,
+        force,
+        ("darwin", "arm64"),
+        rows,
+        CoremlAdmission::Fixture,
+        &mut publish,
+        &mut write,
+    )
+}
+
+#[cfg(feature = "test-hooks")]
+pub(crate) fn install_minted_rows_for_test(
+    home_dir: &Path,
+    config: &JournalConfigRead,
+    force: bool,
+    rows: &[&Artifact],
+) -> Result<PathBuf, CoremlInstallError> {
+    let mut publish = |staging: &Path, target: &Path| publish_staged_tree(staging, target);
+    let mut write = write_sentinel;
+    install_with_rows_and_seams(
+        home_dir,
+        config,
+        force,
+        ("darwin", "arm64"),
+        rows,
+        CoremlAdmission::Mint,
+        &mut publish,
+        &mut write,
+    )
 }
 
 #[cfg(test)]
@@ -392,37 +449,17 @@ mod tests {
     }
 
     #[test]
-    fn install_refuses_a_non_solstone_origin_without_writing() {
+    fn install_refuses_unminted_artifact_without_writing() {
         let temporary = tempfile::tempdir().unwrap();
         let home = temporary.path().join("home");
         let config = config(&temporary.path().join("cache"));
         let artifact = row("model.mil", b"model");
         let rows = [&artifact];
-        let denied = archive::DownloadHostPolicy {
-            allowed_hosts: &["updates.solstone.app"],
-            allow_http: true,
-            origin_base_url: "http://[::1]:9",
-        };
-        let error = install_with_rows(&home, &config, false, &denied, ("darwin", "arm64"), &rows)
-            .unwrap_err();
-        assert_eq!(error.reason_code, "download_host_refused");
+        let error =
+            install_with_rows(&home, &config, false, ("darwin", "arm64"), &rows).unwrap_err();
+        assert_eq!(error.reason_code, "component_packaged");
         assert!(!parakeet_coreml_model_root(&parakeet_coreml_cache_dir(&config, &home)).exists());
         assert!(!parakeet_coreml_sentinel_path(&home).exists());
-    }
-
-    #[test]
-    fn production_policy_is_used_for_the_public_installer_path() {
-        // The public entry point passes this exact static policy. Inspecting it
-        // avoids a network request while binding the production authority.
-        assert_eq!(
-            archive::PRODUCTION_DOWNLOAD_POLICY.origin_base_url,
-            "https://updates.solstone.app"
-        );
-        assert_eq!(
-            archive::PRODUCTION_DOWNLOAD_POLICY.allowed_hosts,
-            &["updates.solstone.app"]
-        );
-        const { assert!(!archive::PRODUCTION_DOWNLOAD_POLICY.allow_http) };
     }
 
     #[test]

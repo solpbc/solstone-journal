@@ -7,9 +7,6 @@ use std::path::{Path, PathBuf};
 #[cfg(test)]
 use solstone_core_assets::{Platform, resolve};
 
-#[cfg(test)]
-use super::archive;
-
 pub const LLAMA_SERVER_PINS: &[(&str, &str, &str, &str, &str)] = &[
     (
         "aarch64-apple-darwin",
@@ -532,12 +529,7 @@ pub(crate) fn origin_url_for_arch_key(unit: &str, arch_key: &str) -> Option<Stri
     resolve(unit, Some(platform), None)
         .into_iter()
         .find(|artifact| artifact.artifact_key == Some(arch_key))
-        .map(|artifact| {
-            archive::origin_url(
-                archive::PRODUCTION_DOWNLOAD_POLICY.origin_base_url,
-                artifact.origin_key,
-            )
-        })
+        .map(|artifact| format!("https://updates.solstone.app/{}", artifact.origin_key))
 }
 
 pub fn cache_root(journal: &Path) -> PathBuf {

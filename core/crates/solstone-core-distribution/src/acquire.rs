@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use serde::Serialize;
-use solstone_core_artifact_download::{BUILDER_INPUT_DOWNLOAD_POLICY, ensure_verified_url};
+use solstone_core_artifact_download::ensure_verified_url;
 
 use crate::onnx_runtime;
 use crate::pdfium;
@@ -198,7 +198,6 @@ pub fn run(args: &[String]) -> Result<(), AcquireError> {
                     row.sha256,
                     Some(row.size_bytes),
                     &temp_file,
-                    &BUILDER_INPUT_DOWNLOAD_POLICY,
                     |_, _| {},
                 )
                 .map_err(|e| e.to_string())?;
@@ -371,16 +370,7 @@ fn fetch_verified(
             )
         },
         std::thread::sleep,
-        || {
-            ensure_verified_url(
-                url,
-                sha256,
-                size,
-                dest,
-                &BUILDER_INPUT_DOWNLOAD_POLICY,
-                |_, _| {},
-            )
-        },
+        || ensure_verified_url(url, sha256, size, dest, |_, _| {}),
     )?)
 }
 

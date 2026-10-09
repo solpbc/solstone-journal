@@ -4990,7 +4990,6 @@ dependencies = [
  "sha1 0.10.7",
  "sha2 0.10.9",
  "solstone-core-assets",
- "solstone-core-local",
  "solstone-core-nvattest-authority",
  "tempfile",
  "thiserror 2.0.20",

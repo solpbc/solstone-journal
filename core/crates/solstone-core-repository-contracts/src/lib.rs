@@ -134,3 +134,7 @@ mod talent_config_reader_architecture;
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/workspace_reachability.rs"]
 mod workspace_reachability;
+
+#[cfg(test)]
+#[path = "contracts/owner_origin_host.rs"]
+mod owner_origin_host;

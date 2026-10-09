@@ -6,9 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use solstone_core_local::install::archive::{
-    ArchiveError, DownloadHostPolicy, download_verified_origin,
-};
+use crate::mirror::{OriginDownloadError, UpstreamHostPolicy, download_origin};
 use thiserror::Error;
 
 use crate::pins::{
@@ -38,7 +36,7 @@ pub enum GateError {
     Download {
         origin_key: String,
         #[source]
-        source: ArchiveError,
+        source: OriginDownloadError,
     },
     #[error("invalid HEAD target derivation: {detail}")]
     HeadTargetInvariant { detail: String },
@@ -54,7 +52,8 @@ pub fn head_gate_targets() -> Result<Vec<GateTarget>, GateError> {
 pub fn verify_targets(
     targets: &[GateTarget],
     destination_dir: &Path,
-    policy: &DownloadHostPolicy<'_>,
+    origin_base_url: &str,
+    policy: &UpstreamHostPolicy<'_>,
 ) -> Result<(), GateError> {
     std::fs::create_dir_all(destination_dir).map_err(|source| GateError::DestinationCreate {
         path: destination_dir.to_path_buf(),
@@ -64,13 +63,13 @@ pub fn verify_targets(
         let destination = destination_dir.join(format!("origin-target-{index}"));
         // nvattest companion manifests have an authority pin but no declared
         // size, so only their streamed SHA-256 is mandatory.
-        download_verified_origin(
+        download_origin(
+            origin_base_url,
             &target.origin_key,
             &target.sha256,
             target.size_bytes,
             &destination,
             policy,
-            |_, _| {},
         )
         .map_err(|source| GateError::Download {
             origin_key: target.origin_key.clone(),

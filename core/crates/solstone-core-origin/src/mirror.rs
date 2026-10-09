@@ -13,7 +13,6 @@ use serde::Serialize;
 use serde_json::Value;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
-use solstone_core_local::install::archive::DownloadHostPolicy;
 use thiserror::Error;
 
 use crate::gate::{GateError, GateTarget, verify_targets};
@@ -188,7 +187,8 @@ pub fn mirror_current_catalog(
     backend: &impl PublishBackend,
     staging_dir: &Path,
     provenance_log: &Path,
-    origin_policy: &DownloadHostPolicy<'_>,
+    origin_base_url: &str,
+    origin_policy: &UpstreamHostPolicy<'_>,
     upstream_policy: &UpstreamHostPolicy<'_>,
 ) -> Result<Vec<MirrorOutcome>, MirrorError> {
     let mut outcomes = Vec::new();
@@ -206,6 +206,7 @@ pub fn mirror_current_catalog(
             backend,
             staging_dir,
             provenance_log,
+            origin_base_url,
             origin_policy,
             upstream_policy,
         )?);
@@ -218,7 +219,8 @@ pub fn mirror_one(
     backend: &impl PublishBackend,
     staging_dir: &Path,
     provenance_log: &Path,
-    origin_policy: &DownloadHostPolicy<'_>,
+    origin_base_url: &str,
+    origin_policy: &UpstreamHostPolicy<'_>,
     upstream_policy: &UpstreamHostPolicy<'_>,
 ) -> Result<MirrorOutcome, MirrorError> {
     let verification = verify_upstream_metadata(target, upstream_policy)?;
@@ -240,7 +242,7 @@ pub fn mirror_one(
             source: &source,
         },
     )?;
-    read_back_before_logging(target, staging_dir, origin_policy)?;
+    read_back_before_logging(target, staging_dir, origin_base_url, origin_policy)?;
     append_provenance(provenance_log, target, verification.verification)?;
     Ok(MirrorOutcome::Mirrored {
         origin_key: target.origin_key.clone(),
@@ -251,7 +253,8 @@ pub fn mirror_one(
 fn read_back_before_logging(
     target: &MirrorTarget,
     staging_dir: &Path,
-    origin_policy: &DownloadHostPolicy<'_>,
+    origin_base_url: &str,
+    origin_policy: &UpstreamHostPolicy<'_>,
 ) -> Result<(), MirrorError> {
     let read_back = GateTarget {
         origin_key: target.origin_key.clone(),
@@ -261,7 +264,91 @@ fn read_back_before_logging(
         version: Some(target.version.clone()),
         upstream_url: Some(target.upstream_url.clone()),
     };
-    verify_targets(&[read_back], &staging_dir.join("read-back"), origin_policy)?;
+    verify_targets(
+        &[read_back],
+        &staging_dir.join("read-back"),
+        origin_base_url,
+        origin_policy,
+    )?;
+    Ok(())
+}
+
+#[derive(Debug, Error)]
+pub enum OriginDownloadError {
+    #[error("cannot create staging file {path}: {source}")]
+    DestinationOpen {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("cannot write staging file {path}: {source}")]
+    DestinationWrite {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("request failed: {0}")]
+    Request(String),
+    #[error("origin object size mismatch: expected {expected}, got {actual}")]
+    SizeMismatch { expected: u64, actual: u64 },
+    #[error("origin object digest mismatch: expected {expected}, got {actual}")]
+    DigestMismatch { expected: String, actual: String },
+}
+
+pub fn download_origin(
+    origin_base_url: &str,
+    origin_key: &str,
+    expected_sha256: &str,
+    expected_size: Option<u64>,
+    destination: &Path,
+    policy: &UpstreamHostPolicy<'_>,
+) -> Result<(), OriginDownloadError> {
+    let base = origin_base_url.trim_end_matches('/');
+    let key = origin_key.trim_start_matches('/');
+    let url = format!("{base}/{key}");
+    let response =
+        request(&url, policy).map_err(|err| OriginDownloadError::Request(err.to_string()))?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(destination)
+        .map_err(|source| OriginDownloadError::DestinationOpen {
+            path: destination.to_path_buf(),
+            source,
+        })?;
+    let mut digest = Sha256::new();
+    let mut actual_bytes = 0_u64;
+    let mut body = response.into_body().into_reader();
+    let mut chunk = [0_u8; 64 * 1024];
+    loop {
+        let read = body
+            .read(&mut chunk)
+            .map_err(|error| OriginDownloadError::Request(error.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        file.write_all(&chunk[..read])
+            .map_err(|source| OriginDownloadError::DestinationWrite {
+                path: destination.to_path_buf(),
+                source,
+            })?;
+        digest.update(&chunk[..read]);
+        actual_bytes += read as u64;
+    }
+    if let Some(expected) = expected_size
+        && actual_bytes != expected
+    {
+        return Err(OriginDownloadError::SizeMismatch {
+            expected,
+            actual: actual_bytes,
+        });
+    }
+    let actual_sha = format!("{:x}", digest.finalize());
+    if actual_sha != expected_sha256 {
+        return Err(OriginDownloadError::DigestMismatch {
+            expected: expected_sha256.to_owned(),
+            actual: actual_sha,
+        });
+    }
     Ok(())
 }
 

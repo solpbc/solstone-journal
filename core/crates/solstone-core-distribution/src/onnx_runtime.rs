@@ -9,7 +9,7 @@ use std::fs;
 use std::path::Path;
 
 #[cfg(not(windows))]
-use solstone_core_artifact_download::{BUILDER_INPUT_DOWNLOAD_POLICY, ensure_verified_url};
+use solstone_core_artifact_download::ensure_verified_url;
 
 #[cfg(not(windows))]
 use crate::acquire::{ACQUIRE_RETRY_ATTEMPTS, retry_transient};
@@ -205,16 +205,7 @@ pub fn fetch_origin(url: &str) -> Result<Vec<u8>, StageError> {
             )
         },
         std::thread::sleep,
-        || {
-            ensure_verified_url(
-                spec.wheel_url,
-                spec.wheel_sha256,
-                None,
-                &dest,
-                &BUILDER_INPUT_DOWNLOAD_POLICY,
-                |_, _| {},
-            )
-        },
+        || ensure_verified_url(spec.wheel_url, spec.wheel_sha256, None, &dest, |_, _| {}),
     )
     .map_err(|error| StageError::new(error.to_string()))?;
     fs::read(&dest).map_err(|error| StageError::new(error.to_string()))

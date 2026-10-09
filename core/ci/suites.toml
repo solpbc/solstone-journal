@@ -239,8 +239,9 @@ areas = ["core"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["runtime-fetch-test"]
 
 [[package_suites]]
 id = "package::solstone-core-auth-flow"
@@ -261,8 +262,9 @@ areas = ["formats"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["runtime-fetch-test"]
 
 [[package_suites]]
 id = "package::solstone-core-backfill-cli"
@@ -1033,7 +1035,7 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 runtime = "none"
-features = ["full-tests"]
+features = ["full-tests", "runtime-fetch-test"]
 
 [[package_suites]]
 id = "package::solstone-core-maintenance"

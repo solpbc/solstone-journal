@@ -10,7 +10,7 @@ publish = false
 solstone-core-journal.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-sol-link = { workspace = true, default-features = true }
-proc-macro2 = "1.0.107"
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 quote = "1.0.47"
 regex.workspace = true
 serde.workspace = true

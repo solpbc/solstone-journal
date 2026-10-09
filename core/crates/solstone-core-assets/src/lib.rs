@@ -8,7 +8,14 @@ use std::sync::LazyLock;
 
 use serde::Serialize;
 
+pub mod fetch_mint;
 pub mod fetch_set;
+pub use fetch_mint::{FetchMintError, RuntimeFetchHandle, RuntimeFetchQuery, mint_runtime_fetch};
+#[cfg(feature = "runtime-fetch-test")]
+pub use fetch_mint::{
+    mint_runtime_fetch_for_target, runtime_fetch_handle_fixture, with_runtime_fetch_target,
+    without_runtime_fetch_unit,
+};
 #[cfg(test)]
 pub use fetch_set::with_bundled_ids_override;
 pub use fetch_set::{
@@ -1144,6 +1151,12 @@ fn override_inventory() -> Option<&'static [Artifact]> {
 
 fn inventory() -> &'static [Artifact] {
     override_inventory().unwrap_or(ARTIFACTS)
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn inventory_for_tests() -> &'static [Artifact] {
+    ARTIFACTS
 }
 
 fn shipped_view(inventory: &'static [Artifact]) -> &'static [Artifact] {
