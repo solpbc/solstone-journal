@@ -371,7 +371,11 @@ where
             });
         }
 
-        let selected_day = day::selected_day(parsed.day.as_deref(), parsed.cadence, today);
+        let selected_day = day::selected_day(
+            parsed.day.as_deref(),
+            parsed.cadence || parsed.settle,
+            today,
+        );
         let day_dir = day::create_day(journal, &selected_day)
             .map_err(|message| CliError::InvalidDay { message })?;
         let (uses_local, endpoint) = endpoint();
@@ -2572,6 +2576,35 @@ mod tests {
                 .iter()
                 .any(|event| event["event"] == "group.start" && event["mode"] == "weekly")
         );
+    }
+
+    #[test]
+    fn settle_logs_today_without_claiming_a_daily_run_and_honors_an_explicit_day() {
+        for (args, day) in [
+            (&["--settle", "--stream", "watch"][..], "20260814"),
+            (
+                &["--settle", "--stream", "watch", "--day", "20260813"][..],
+                "20260813",
+            ),
+        ] {
+            let journal = tempdir().unwrap();
+            let result = run_at(journal.path(), args);
+            assert_eq!(result.exit_code, 0, "{}", result.stderr);
+            let events = sidecar_events(journal.path(), day, "settle");
+            let start = events.first().expect("run.start");
+            let complete = events.last().expect("run.complete");
+            assert_eq!(start["event"], "run.start");
+            assert_eq!(complete["event"], "run.complete");
+            for record in [start, complete] {
+                assert_eq!(record["mode"], "settle");
+                assert_eq!(record["day"], day);
+            }
+            assert!(sidecar_events(journal.path(), "20260813", "daily").is_empty());
+            assert!(sidecar_events(journal.path(), "20260814", "daily").is_empty());
+            if day == "20260814" {
+                assert!(!journal.path().join("chronicle/20260813").exists());
+            }
+        }
     }
 
     #[test]

@@ -17,7 +17,8 @@ use solstone_core_format::agent_memory::{
 use solstone_core_indexer_query::{
     AdmittedCategory, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest,
     ConnectionStartAfter, IndexedEntry, MemoryOriginalRow, OwnMemoryOpenError, QueryBoundary,
-    open_own_memory_index, read_indexed_entry, read_own_memory_row, search_connection,
+    open_own_memory_index, read_indexed_entry, read_indexed_path_entries, read_own_memory_row,
+    search_connection,
 };
 use solstone_core_indexer_store::classification::{FacetDeclarationSet, classify_source};
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
@@ -42,6 +43,10 @@ use crate::tools::{
 pub(crate) const MAX_SEARCH_EXAMINED_ROWS: usize = 1_000;
 const MAX_INDEXED_ENTRY_BYTES: u64 = 64 * 1024;
 const MAX_SNIPPET_CHARS: usize = 800;
+/// What `get_entity` returns of an entity's notes in the requested facet.
+const MAX_ENTITY_NOTES: usize = 50;
+const MAX_ENTITY_NOTE_BYTES: u64 = 4 * 1024;
+const MAX_ENTITY_DESCRIPTION_CHARS: usize = 2_000;
 
 static REFERENCES: OnceLock<ReferenceCodec> = OnceLock::new();
 
@@ -1094,15 +1099,66 @@ fn get_entity(
             .into_iter()
             .find(|item| item.entity_id == reference.entity_id)
             .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-    let target = format!(
+    let mut targets = vec![format!(
         "facet:{}/entity:{}",
         reference.facet_id, reference.entity_id
-    );
-    Ok(Prepared::new(
-        json!({"name": entity_name(&item.identity)}),
-        1,
-        vec![target],
-    ))
+    )];
+    // 🔑 Only what this facet holds about the entity: its relationship here and
+    // its notes here. ⛔ Never the journal-level aliases or description, nor
+    // anything from another facet, even when the entity is shared.
+    let mut value = json!({"name": entity_name(&item.identity)});
+    let text = |object: &Value, key: &str| {
+        object
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+    };
+    if let Some(kind) = text(&item.identity, "type") {
+        value["type"] = json!(kind);
+    }
+    if let Some(description) = text(&item.relationship, "description") {
+        value["description"] = json!(
+            description
+                .chars()
+                .take(MAX_ENTITY_DESCRIPTION_CHARS)
+                .collect::<String>()
+        );
+    }
+    if let Some(last_seen) = text(&item.relationship, "last_seen") {
+        value["last_seen"] = json!(last_seen);
+    }
+    // Notes are read from the index, as `fetch` reads, never from the live file.
+    let notes_path =
+        solstone_core_facets::facet_links::LinkDirs::for_facet(journal_root, &facet_dir)
+            .observations_rel(&item.relationship_dir);
+    let notes = read_indexed_path_entries(
+        journal_root,
+        &boundary(
+            snapshot,
+            Some(AdmittedCategory::Entities),
+            Some(&reference.facet_id),
+        ),
+        &notes_path,
+        MAX_ENTITY_NOTES,
+        MAX_ENTITY_NOTE_BYTES,
+    )
+    .map_err(index_error)?;
+    let notes_list = notes
+        .entries
+        .iter()
+        .map(|note| note.trim().trim_start_matches("- ").trim().to_owned())
+        .filter(|note| !note.is_empty())
+        .collect::<Vec<_>>();
+    if !notes_list.is_empty() {
+        targets.push(notes_path);
+    }
+    value["notes"] = json!(notes_list);
+    if notes.truncated {
+        value["notes_truncated"] = json!(true);
+    }
+    Ok(Prepared::new(value, 1, targets))
 }
 
 fn list_transcripts(

@@ -108,7 +108,7 @@ fn inspect_local_with(
                 "reason_code": "cuda_runtime_integrity",
                 "cache_hit": false
             });
-            let install = status::read_status(&journal, "local")
+            let install = status::read_observed_status(&journal, "local")
                 .map(|value| serde_json::to_value(value).unwrap())
                 .unwrap_or(Value::Null);
             return json!({
@@ -238,7 +238,7 @@ fn inspect_local_with(
     } else {
         ("ready", "ready")
     };
-    let install = status::read_status(&journal, "local")
+    let install = status::read_observed_status(&journal, "local")
         .map(|value| serde_json::to_value(value).unwrap())
         .unwrap_or(Value::Null);
     let target = if key == "x86_64-windows" {
@@ -374,7 +374,7 @@ pub fn inspect_parakeet(input: Map<String, Value>) -> Value {
         .join("models")
         .join(repo.replace('/', "__"))
         .join(revision);
-    let install = match status::read_status(&journal, "parakeet") {
+    let install = match status::read_observed_status(&journal, "parakeet") {
         Ok(value) => serde_json::to_value(value).expect("install status serializes"),
         Err(_) => {
             return parakeet_unavailable("status_unavailable", Value::String(artifact_key));

@@ -765,9 +765,11 @@ fn windows_follow_launches_once_for_an_abandoned_install() {
     seam.dispatch_truth(&state, &fence);
     let obs = shared.wait_for_truth_result(&fence);
     assert_eq!(obs.phase, RuntimePhase::ArtifactNotReady);
+    // Nothing holds the lease, so the abandoned record is not reported as an
+    // install in progress; the follow starts the one that will be.
     assert_eq!(
         obs.reason_code.as_ref().map(ReasonCode::as_str),
-        Some("install-in-progress")
+        Some("artifact-stale")
     );
     assert_eq!(launched.lock().unwrap().len(), 1);
     let _ = std::fs::remove_dir_all(root);

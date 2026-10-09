@@ -11,7 +11,6 @@ use std::mem::size_of;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::fs::MetadataExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Output};
 use std::thread;
@@ -298,14 +297,13 @@ fn partial_destination_mutation_is_observed_as_unverified() {
         result.unwrap(),
         DetailedAtomicOutcome::PublishedParentPathUnverified { .. }
     ));
-    let partial_is_rejected = catch_unwind(AssertUnwindSafe(|| {
-        assert!(b"partial" == OLD || b"partial" == NEW)
-    }));
+    let observed = fs::read(target).unwrap();
+    assert_eq!(observed, b"partial");
+    // The mutation is neither version, so an old-or-new check would reject it.
     assert!(
-        partial_is_rejected.is_err(),
+        observed != OLD && observed != NEW,
         "old-or-new assertion is a no-op"
     );
-    assert_eq!(fs::read(target).unwrap(), b"partial");
     assert_sentinel_unchanged(&sentinel);
 }
 

@@ -196,11 +196,16 @@ pub(crate) fn classify_method(request: &JsonRpcRequest) -> Result<McpMethod, Jso
     }
 }
 
+/// How to work from a journal, for an agent that brings no skills of its own.
+/// Each tool's description carries the detail; this is the overview.
+pub(crate) const SERVER_INSTRUCTIONS: &str = "This is the owner's journal: their record of their days, conversations, and the people and projects in them. You can read what the owner allowed this connection to see.\n\n- search takes a few keywords, not a sentence. Days are YYYYMMDD or YYYY-MM-DD.\n- For commitments, search `commitment` with day_from and day_to, then fetch the entries. Each says who made the promise.\n- For a day, search with `day` set. For what was said, use list_transcripts and get_transcript.\n- For a person or project, call list_entities, then get_entity, and search the name.\n- Use save_memory only when the owner asks you to remember something; recall_memory returns what this connection saved.\n- When a tool reports that nothing matched, tell the owner that. Never fill a gap with a guess.";
+
 pub(crate) fn initialize_result() -> Value {
     json!({
         "protocolVersion": "2025-03-26",
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": "solstone-journal", "version": "2.0" }
+        "serverInfo": { "name": "solstone-journal", "version": "2.0" },
+        "instructions": SERVER_INSTRUCTIONS
     })
 }
 

@@ -667,6 +667,78 @@ pub fn read_indexed_entry(
     })
 }
 
+/// The indexed entries one source file produced, in file order, inside a
+/// connection's boundary.
+pub struct IndexedPathEntries {
+    pub entries: Vec<String>,
+    /// More entries exist than were returned, or one was too large to return.
+    pub truncated: bool,
+}
+
+/// Read up to `max_entries` indexed entries of one path, without opening its
+/// source file, admitting only rows the connection's boundary admits.
+///
+/// An absent or empty index is no entries: the path has nothing indexed yet.
+pub fn read_indexed_path_entries(
+    journal: &Path,
+    boundary: &ConnectionBoundary,
+    path: &str,
+    max_entries: usize,
+    max_entry_bytes: u64,
+) -> Result<IndexedPathEntries, IndexAccessError> {
+    let query_boundary = QueryBoundary::Connection(boundary.clone());
+    let reader = match open_index_reader(journal, &query_boundary) {
+        Ok(reader) => reader,
+        Err(IndexAccessError::Absent { .. } | IndexAccessError::Empty { .. }) => {
+            return Ok(IndexedPathEntries {
+                entries: Vec::new(),
+                truncated: false,
+            });
+        }
+        Err(error) => return Err(error),
+    };
+    let mut plan = SqlPlan {
+        where_clause: visible_rows("path=?"),
+        params: Vec::new(),
+        has_live_match_expression: false,
+    };
+    append_connection_prefilter(&mut plan, boundary);
+    let mut values = vec![
+        Value::Integer(i64::try_from(max_entry_bytes).unwrap_or(i64::MAX)),
+        Value::Text(path.to_string()),
+    ];
+    values.extend(plan.params.into_iter().map(Value::Text));
+    values.push(Value::Integer(
+        i64::try_from(max_entries.saturating_add(1)).unwrap_or(i64::MAX),
+    ));
+    let mut statement = reader
+        .connection
+        .prepare(&format!(
+            "SELECT CASE WHEN length(CAST(content AS BLOB)) <= ? THEN content ELSE NULL END
+             FROM chunks WHERE {} ORDER BY idx LIMIT ?",
+            plan.where_clause
+        ))
+        .map_err(|error| reader.classify(error))?;
+    let rows = statement
+        .query_map(params_from_iter(values.iter()), |row| {
+            row.get::<_, Option<String>>(0)
+        })
+        .map_err(|error| reader.classify(error))?;
+    let mut entries = Vec::new();
+    let mut truncated = false;
+    for row in rows {
+        match row.map_err(|error| reader.classify(error))? {
+            _ if entries.len() == max_entries => {
+                truncated = true;
+                break;
+            }
+            Some(content) => entries.push(content),
+            None => truncated = true,
+        }
+    }
+    Ok(IndexedPathEntries { entries, truncated })
+}
+
 impl QueryConnection {
     pub(crate) fn new(connection: Connection, path: PathBuf) -> Self {
         Self {

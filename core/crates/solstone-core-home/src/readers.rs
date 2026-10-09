@@ -864,7 +864,7 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
         let mode = match run.as_str() {
             "daily" => Some("daily"),
             "activity" => Some("activity"),
-            "segment" | "segments" => Some("on_demand"),
+            "segment" | "segments" | "settle" => Some("on_demand"),
             _ => None,
         };
         let Some(mode) = mode else {
@@ -2534,6 +2534,40 @@ mod tests {
             load_connections_network(&context, &json!({"id":""})),
             Ok(None)
         ));
+    }
+
+    #[test]
+    fn pipeline_reader_keeps_settle_activity_events_without_masking_a_missing_daily_run() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        write_oplog(
+            root.path(),
+            "20260601",
+            "think",
+            "settle",
+            r#"{"day":"20260601","event":"run.start","mode":"settle"}
+{"day":"20260601","event":"activity.detected","mode":"segment"}
+{"day":"20260601","event":"activity.persisted","mode":"segment"}
+{"day":"20260601","event":"talent.dispatch","mode":"activity"}
+{"day":"20260601","event":"talent.complete","mode":"activity"}
+{"day":"20260601","event":"run.complete","mode":"settle","duration_ms":100}"#,
+        );
+        let summary = summarize_pipeline_day(&context, "20260601");
+        assert_eq!(summary["runs"]["daily"]["count"], 0);
+        assert_eq!(summary["runs"]["on_demand"]["count"], 1);
+        assert_eq!(summary["runs"]["on_demand"]["duration_ms_total"], 100);
+        assert_eq!(summary["activities"]["detected"], 1);
+        assert_eq!(summary["activities"]["persisted"], 1);
+        assert_eq!(summary["activities"]["talents_fired"], true);
+        assert_eq!(summary["talents"]["dispatched"], 1);
+        assert_eq!(summary["talents"]["completed"], 1);
+        assert!(
+            summary["anomalies"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|anomaly| { anomaly["kind"] == "daily_agents_missing" })
+        );
     }
 
     #[test]

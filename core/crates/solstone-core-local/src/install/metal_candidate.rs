@@ -86,7 +86,7 @@ fn inspect_with_checks(
     let (readiness, reason_code, failed_component) =
         readiness_status(&runtime_proof, &model_proof, &projector_proof, &probe);
     let target = current_target(&journal)?;
-    let install = status::read_status(&journal, "local")
+    let install = status::read_observed_status(&journal, "local")
         .ok()
         .filter(status_targets_native)
         .map(|value| serde_json::to_value(value).expect("install status serializes"))

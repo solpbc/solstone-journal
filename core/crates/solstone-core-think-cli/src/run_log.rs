@@ -19,6 +19,8 @@ pub(crate) fn mode(args: &ThinkArgs) -> &'static str {
         "activity"
     } else if args.flush {
         "flush"
+    } else if args.settle {
+        "settle"
     } else if args.segments {
         "segments"
     } else if args.segment.is_some() {
