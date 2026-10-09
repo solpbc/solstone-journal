@@ -1646,6 +1646,17 @@
   margin-top: 4px;
 }
 
+.tr-location-section {
+  margin-top: 16px;
+}
+
+.tr-location-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 [data-location-notice] {
   margin-top: 16px;
   font-size: 13px;
@@ -2087,6 +2098,13 @@
 
 .tr-panel > .surface-state {
   min-height: 100%;
+}
+
+/* When the day's location list follows the empty state, the empty state
+   gives up the full height so the list is visible without scrolling. */
+.tr-panel > .surface-state:has(~ [data-location-section]),
+.tr-panel > .surface-state:has(~ [data-location-notice]) {
+  min-height: 0;
 }
 
 .tr-warning-notice {
@@ -6434,10 +6452,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     if (locationLoad === 'ready' && locationSegments.length > 0) {
       const count = locationSegments.length;
       const collapsedText = count === 1 ? 'show 1 location segment' : `show ${count} location segments`;
-      const toggleText = locationSectionExpanded ? 'location' : collapsedText;
+      // Name each row's device only when more than one sent location this day.
+      const manyLocationStreams = new Set(locationSegments.map(s => s.stream)).size > 1;
       const rowsHtml = locationSectionExpanded ? `
         <div class="tr-location-rows">
           ${locationSegments.map(s => {
+            const deviceSuffix = manyLocationStreams ? ` · ${humanizeStreamName(s.stream)}` : '';
             const hasReadings = typeof s.location_readings === 'number';
             const readings = hasReadings ? s.location_readings : null;
             let text = s.start;
@@ -6447,14 +6467,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
               text = `${s.start} · ${readings} readings`;
             }
             const dataReadingsAttr = hasReadings ? ` data-readings="${readings}"` : '';
-            return `<button type="button" class="tr-location-row" data-key="${escapeHtml(s.key)}" data-stream="${escapeHtml(s.stream)}"${dataReadingsAttr}>${escapeHtml(text)}</button>`;
+            return `<button type="button" class="tr-location-row" data-key="${escapeHtml(s.key)}" data-stream="${escapeHtml(s.stream)}"${dataReadingsAttr}>${escapeHtml(text + deviceSuffix)}</button>`;
           }).join('')}
         </div>
       ` : '';
       return `
         <div class="tr-location-section" data-location-section="true">
+          <h3 class="tr-location-heading">location</h3>
           <button type="button" class="tr-location-toggle" aria-expanded="${locationSectionExpanded}">
-            ${escapeHtml(toggleText)}
+            ${escapeHtml(locationSectionExpanded ? 'hide location segments' : collapsedText)}
           </button>
           ${rowsHtml}
         </div>
