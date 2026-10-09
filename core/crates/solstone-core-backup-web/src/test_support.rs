@@ -1,9 +1,5 @@
 use serde_json::{Map, Value, json};
 use solstone_core_backup::{HostedBinding, save_hosted_binding, set_mode};
-use solstone_core_backup_runtime::readiness::{
-    RESTIC_SCHEMA_VERSION, RESTIC_TOOL, RESTIC_VERSION, binary_path, file_sha256, platform_info,
-    sentinel_path,
-};
 use solstone_core_offload::{OffloadFile, append_offload_event, ledger_path_for_day};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -167,23 +163,28 @@ pub fn unreadable_offload_root() -> TempDir {
     root
 }
 
+fn write_file(root: &Path, relative: &str, bytes: &[u8]) {
+    let path = root.join(relative);
+    fs::create_dir_all(path.parent().expect("parent dir")).expect("create parent dir");
+    fs::write(&path, bytes).expect("write fixture file");
+}
+
 pub fn write_ready_restic(dir: &Path) -> PathBuf {
-    let binary = binary_path(dir);
-    fs::write(&binary, b"restic-fixture").expect("restic fixture");
-    let digest = file_sha256(&binary).expect("digest");
-    let (os, arch) = platform_info().expect("platform");
-    fs::write(
-        sentinel_path(dir),
-        serde_json::to_vec(&json!({
-            "schema_version": RESTIC_SCHEMA_VERSION,
-            "tool": RESTIC_TOOL,
-            "version": RESTIC_VERSION,
-            "sha256": digest,
-            "platform": {"os": os, "arch": arch},
-            "binary_path": binary,
-        }))
-        .expect("sentinel"),
+    use solstone_core_installed_payload::{
+        COMPILED_VERSION, INSTALLED_PAYLOAD_MANIFEST, PRODUCT, compiled_target,
+        render_installed_payload,
+    };
+    write_file(dir, "bin/solstone", b"launcher");
+    write_file(dir, "lib/solstone-restic/restic", b"restic-fixture");
+    write_file(dir, "lib/solstone-rclone/rclone", b"rclone-fixture");
+    let manifest = render_installed_payload(
+        dir,
+        PRODUCT,
+        COMPILED_VERSION,
+        compiled_target(),
+        "fixture-commit",
     )
-    .expect("write sentinel");
-    binary
+    .expect("render installed payload");
+    write_file(dir, INSTALLED_PAYLOAD_MANIFEST, &manifest);
+    dir.join("lib/solstone-restic/restic")
 }

@@ -740,7 +740,7 @@ kind = "windows-native"
 class = "component"
 component = "restic"
 member = "restic.exe"
-dest = "bin/restic.exe"
+dest = "lib/solstone-restic/restic.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
 
@@ -749,7 +749,7 @@ kind = "windows-native"
 class = "component"
 component = "rclone"
 member = "rclone.exe"
-dest = "bin/rclone.exe"
+dest = "lib/solstone-rclone/rclone.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
 
@@ -894,24 +894,6 @@ class = "notice"
 component = "rfdetr"
 member = "validation.log"
 dest = "share/provenance/rfdetr/validation.log"
-mode = 0o644
-targets = ["windows-x86_64"]
-
-[[entry]]
-kind = "windows-native"
-class = "notice"
-component = "restic"
-member = "LICENSE"
-dest = "share/licenses/restic/LICENSE"
-mode = 0o644
-targets = ["windows-x86_64"]
-
-[[entry]]
-kind = "windows-native"
-class = "notice"
-component = "rclone"
-member = "COPYING"
-dest = "share/licenses/rclone/COPYING"
 mode = 0o644
 targets = ["windows-x86_64"]
 
@@ -1863,3 +1845,92 @@ relpath = "share/THIRD_PARTY_NOTICES.md"
 dest = "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md"
 mode = 0o644
 extracted_sha256 = "199a52ad0726e35c4ae82ed6b8fb80b75ac89aa0d2303e38755a67136a15db56"
+
+[[entry]]
+kind = "pinned-members"
+class = "component"
+component = "restic"
+targets = ["linux-x86_64"]
+input = { kind = "catalog-acquired", unit = "restic", filename = "restic_0.19.0_linux_amd64.bz2" }
+staged = [
+    { relpath = "", dest = "lib/solstone-restic/restic", mode = 0o755, extracted_sha256 = "ae7fe58ab3511f830fd31d157158620b209522ff1332b119199d2e938d72338c" }
+]
+
+[[entry]]
+kind = "pinned-members"
+class = "component"
+component = "restic"
+targets = ["linux-aarch64"]
+input = { kind = "catalog-acquired", unit = "restic", filename = "restic_0.19.0_linux_arm64.bz2" }
+staged = [
+    { relpath = "", dest = "lib/solstone-restic/restic", mode = 0o755, extracted_sha256 = "e5277c64460889e289c061a41191427127daadaed200910431b4284cf8c87172" }
+]
+
+[[entry]]
+kind = "pinned-members"
+class = "component"
+component = "restic"
+targets = ["macos-arm64"]
+input = { kind = "catalog-acquired", unit = "restic", filename = "restic_0.19.0_darwin_arm64.bz2" }
+staged = [
+    { relpath = "", dest = "lib/solstone-restic/restic", mode = 0o755, extracted_sha256 = "f6c965a0f7f59464614130d79246479d48e2aa6780c34d27df6e48c8ee0308bd" }
+]
+
+[[entry]]
+kind = "pinned-members"
+class = "component"
+component = "rclone"
+targets = ["linux-x86_64"]
+input = { kind = "catalog-acquired", unit = "rclone", filename = "rclone-v1.74.4-linux-amd64.zip" }
+staged = [
+    { relpath = "rclone-v1.74.4-linux-amd64/rclone", dest = "lib/solstone-rclone/rclone", mode = 0o755, extracted_sha256 = "9f56ca5edfac24a3ed37226c2ba1de69f1ec9e05fa2526cddee5cd97e202be6b" }
+]
+ignored = [
+    "rclone-v1.74.4-linux-amd64/README.html",
+    "rclone-v1.74.4-linux-amd64/README.txt",
+    "rclone-v1.74.4-linux-amd64/rclone.1",
+]
+
+[[entry]]
+kind = "pinned-members"
+class = "component"
+component = "rclone"
+targets = ["linux-aarch64"]
+input = { kind = "catalog-acquired", unit = "rclone", filename = "rclone-v1.74.4-linux-arm64.zip" }
+staged = [
+    { relpath = "rclone-v1.74.4-linux-arm64/rclone", dest = "lib/solstone-rclone/rclone", mode = 0o755, extracted_sha256 = "e062d30596c386046c8471f3035611d0438c22ef5fa42d3d6128dbf48ed5c76c" }
+]
+ignored = [
+    "rclone-v1.74.4-linux-arm64/README.html",
+    "rclone-v1.74.4-linux-arm64/README.txt",
+    "rclone-v1.74.4-linux-arm64/rclone.1",
+]
+
+[[entry]]
+kind = "pinned-members"
+class = "component"
+component = "rclone"
+targets = ["macos-arm64"]
+input = { kind = "catalog-acquired", unit = "rclone", filename = "rclone-v1.74.4-osx-arm64.zip" }
+staged = [
+    { relpath = "rclone-v1.74.4-osx-arm64/rclone", dest = "lib/solstone-rclone/rclone", mode = 0o755, extracted_sha256 = "79dde6096c8d92c31495faac36fc764e3b3d557ee8569ce16c9fb07ce808024e" }
+]
+ignored = [
+    "rclone-v1.74.4-osx-arm64/README.html",
+    "rclone-v1.74.4-osx-arm64/README.txt",
+    "rclone-v1.74.4-osx-arm64/rclone.1",
+]
+
+[[entry]]
+kind = "licence-tree"
+class = "notice"
+source = "core/distribution/licenses/restic"
+component = "restic"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+
+[[entry]]
+kind = "licence-tree"
+class = "notice"
+source = "core/distribution/licenses/rclone"
+component = "rclone"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]

@@ -1130,7 +1130,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
         assert!(!part_file.exists());
         assert_eq!(std::fs::read(&cached_file).unwrap(), b"corrupted cache");
 
-        // Zero calls for committed core/distribution/inventory.toml
+        // Committed core/distribution/inventory.toml catalog-acquired inputs
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(3)
@@ -1138,13 +1138,109 @@ zig_gnu = "x86_64-linux-gnu.2.28"
         let committed_inv =
             crate::inventory::load_inventory(&repo_root.join("core/distribution/inventory.toml"))
                 .unwrap();
-        let committed_fetch_count = std::cell::Cell::new(0);
-        let mut committed_fetcher = |_url: &str| {
-            committed_fetch_count.set(committed_fetch_count.get() + 1);
-            Ok(vec![])
-        };
-        acquire_catalog_inputs(repo, "linux-x86_64", &committed_inv, &mut committed_fetcher)
-            .unwrap();
-        assert_eq!(committed_fetch_count.get(), 0);
+
+        let expected_catalog_acquired = [
+            (
+                "restic",
+                "restic_0.19.0_linux_amd64.bz2",
+                "linux-x86_64",
+                "lib/solstone-restic/restic",
+                "restic",
+                "ae7fe58ab3511f830fd31d157158620b209522ff1332b119199d2e938d72338c",
+            ),
+            (
+                "restic",
+                "restic_0.19.0_linux_arm64.bz2",
+                "linux-aarch64",
+                "lib/solstone-restic/restic",
+                "restic",
+                "e5277c64460889e289c061a41191427127daadaed200910431b4284cf8c87172",
+            ),
+            (
+                "restic",
+                "restic_0.19.0_darwin_arm64.bz2",
+                "macos-arm64",
+                "lib/solstone-restic/restic",
+                "restic",
+                "f6c965a0f7f59464614130d79246479d48e2aa6780c34d27df6e48c8ee0308bd",
+            ),
+            (
+                "rclone",
+                "rclone-v1.74.4-linux-amd64.zip",
+                "linux-x86_64",
+                "lib/solstone-rclone/rclone",
+                "rclone",
+                "9f56ca5edfac24a3ed37226c2ba1de69f1ec9e05fa2526cddee5cd97e202be6b",
+            ),
+            (
+                "rclone",
+                "rclone-v1.74.4-linux-arm64.zip",
+                "linux-aarch64",
+                "lib/solstone-rclone/rclone",
+                "rclone",
+                "e062d30596c386046c8471f3035611d0438c22ef5fa42d3d6128dbf48ed5c76c",
+            ),
+            (
+                "rclone",
+                "rclone-v1.74.4-osx-arm64.zip",
+                "macos-arm64",
+                "lib/solstone-rclone/rclone",
+                "rclone",
+                "79dde6096c8d92c31495faac36fc764e3b3d557ee8569ce16c9fb07ce808024e",
+            ),
+        ];
+
+        for (unit, filename, target, dest, component, digest) in expected_catalog_acquired {
+            let found = committed_inv.entry.iter().any(|entry| {
+                if let crate::inventory::Entry::PinnedMembers {
+                    component: c,
+                    input:
+                        crate::inventory::PinnedInput::CatalogAcquired {
+                            unit: u,
+                            filename: f,
+                        },
+                    staged,
+                    targets,
+                    ..
+                } = entry
+                {
+                    c.as_deref() == Some(component)
+                        && u == unit
+                        && f == filename
+                        && targets.iter().any(|t| t == target)
+                        && staged
+                            .iter()
+                            .any(|s| s.dest == dest && s.extracted_sha256 == digest)
+                } else {
+                    false
+                }
+            });
+            assert!(
+                found,
+                "missing expected catalog-acquired entry for ({unit}, {filename}, {target})"
+            );
+        }
+
+        let empty_repo = tempfile::tempdir().unwrap();
+        for (unit, filename) in [
+            ("restic", "restic_0.19.0_linux_amd64.bz2"),
+            ("rclone", "rclone-v1.74.4-linux-amd64.zip"),
+        ] {
+            let input = crate::inventory::PinnedInput::CatalogAcquired {
+                unit: unit.to_owned(),
+                filename: filename.to_owned(),
+            };
+            let err = crate::pinned_stage::resolve_pinned_input(
+                "committed-test",
+                empty_repo.path(),
+                "linux-x86_64",
+                &input,
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("missing catalog input cache file"),
+                "expected missing cache refusal for ({unit}, {filename}), got: {err}"
+            );
+        }
     }
 }

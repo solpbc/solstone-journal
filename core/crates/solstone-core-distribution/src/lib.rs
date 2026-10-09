@@ -52,6 +52,7 @@ pub mod provenance;
 pub mod publish;
 pub mod record;
 pub mod relocate;
+mod restic_rclone_stage;
 pub mod rfdetr_windows;
 pub mod rfdetr_windows_source;
 pub mod rpm;
@@ -148,6 +149,18 @@ fn inventory_requires_every_runtime_layout_anchor() {
     let payload = include_str!("../../../distribution/payload.txt")
         .replace("solstone/think/contract/layout.json\n", "");
     fs::write(distribution.join("payload.txt"), payload).expect("write payload");
+    fs::create_dir_all(distribution.join("licenses/restic")).expect("create restic license dir");
+    fs::write(
+        distribution.join("licenses/restic/LICENSE"),
+        "restic license",
+    )
+    .expect("write restic license");
+    fs::create_dir_all(distribution.join("licenses/rclone")).expect("create rclone license dir");
+    fs::write(
+        distribution.join("licenses/rclone/LICENSE"),
+        "rclone license",
+    )
+    .expect("write rclone license");
     let error = validate_distribution_inventory(&distribution.join("inventory.toml"))
         .expect_err("missing anchor must fail");
     assert!(

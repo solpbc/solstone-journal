@@ -6,8 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[lints]
-workspace = true
+# std::env::set_var is unsafe. The fallback-plant tests are the only callers,
+# and each one carries its own allow.
+[lints.rust]
+unsafe_code = "deny"
 
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
@@ -15,9 +17,9 @@ chrono.workspace = true
 getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-solstone-core-artifact-download.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-runtime.workspace = true
+solstone-core-installed-payload.workspace = true
 solstone-core-callosum.workspace = true
 solstone-core-convey-http.workspace = true
 solstone-core-journal-config.workspace = true

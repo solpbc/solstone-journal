@@ -11,8 +11,9 @@ use serde_json::Value;
 use solstone_core_backup::BackupError;
 
 use crate::engine::RestoreRecorder;
-use crate::readiness::RESTIC_VERSION;
 use crate::runner::{ToolOutput, ToolRequest, ToolRunner};
+
+const RESTIC_VERSION: &str = "0.19.0";
 
 const REFUSED_LATEST_EXIT: i32 = 97;
 const REFUSED_UNEXPECTED_EXIT: i32 = 98;

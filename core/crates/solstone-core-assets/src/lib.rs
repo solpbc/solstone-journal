@@ -997,10 +997,9 @@ static ARTIFACTS: &[Artifact] = &[
         backend: None,
         extracted_binary_sha256: None,
     },
-    // restic backs the BYO backup engine. Its own os/arch resolution
-    // (solstone-core-backup-runtime::readiness) predates and is independent of
-    // the Platform enum, so these entries carry no Platform/Backend — they
-    // exist so restic mirrors and reads back like every other artifact.
+    // restic backs the BYO backup engine. POSIX packages ship
+    // lib/solstone-restic/restic. darwin-amd64 stays a catalog row and is not
+    // a ship target.
     Artifact {
         unit: "restic",
         version: "0.19.0",
@@ -1055,9 +1054,9 @@ static ARTIFACTS: &[Artifact] = &[
     },
     // rclone is the operated backup tier's append-only transport (restic
     // reaches the hosted repository through `rclone serve restic --stdio
-    // --append-only`). Like restic it resolves its own os/arch, so these
-    // entries carry no Platform/Backend; they put the macOS/Linux download on
-    // the origin. Windows ships rclone.exe inside the signed package instead.
+    // --append-only`). POSIX packages ship lib/solstone-rclone/rclone.
+    // osx-amd64 stays a catalog row and is not a ship target. Windows rclone
+    // stays on its archive pin.
     Artifact {
         unit: "rclone",
         version: "1.74.4",

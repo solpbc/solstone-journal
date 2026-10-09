@@ -180,17 +180,18 @@ pub fn record_backup_result(
     time: Value,
     snapshot_id: Value,
     error_reason: Value,
+    detail: Option<&str>,
 ) -> Result<(), BackupError> {
-    record(
-        journal,
-        "last_backup",
-        Map::from_iter([
-            ("time".into(), time),
-            ("snapshot_id".into(), snapshot_id),
-            ("status".into(), Value::String(status.into())),
-            ("error_reason".into(), error_reason),
-        ]),
-    )
+    let mut map = Map::from_iter([
+        ("time".into(), time),
+        ("snapshot_id".into(), snapshot_id),
+        ("status".into(), Value::String(status.into())),
+        ("error_reason".into(), error_reason),
+    ]);
+    if let Some(detail) = detail {
+        map.insert("detail".into(), Value::String(detail.into()));
+    }
+    record(journal, "last_backup", map)
 }
 
 pub fn record_prune_result(
@@ -694,12 +695,31 @@ mod tests {
             json!(5),
             json!("snap"),
             Value::Null,
+            None,
         )
         .unwrap();
         record_prune_result(journal.path(), "anything", json!(6), Value::Null).unwrap();
         let config = get_backup_config(journal.path()).unwrap();
         assert_eq!(config["last_backup"]["status"], "anything");
+        assert!(
+            !config["last_backup"]
+                .as_object()
+                .unwrap()
+                .contains_key("detail")
+        );
         assert_eq!(config["last_prune"]["status"], "anything");
+
+        record_backup_result(
+            journal.path(),
+            "error",
+            json!(6),
+            Value::Null,
+            json!("reason"),
+            Some("detail-code"),
+        )
+        .unwrap();
+        let config2 = get_backup_config(journal.path()).unwrap();
+        assert_eq!(config2["last_backup"]["detail"], "detail-code");
     }
 
     #[test]

@@ -185,6 +185,7 @@ pub struct BackupResult {
     /// line is holding -- and it is a guess: a vanished file, an I/O error and a
     /// mode problem all land here and only one of them is a permission problem.
     pub unreadable: Option<UnreadableSources>,
+    pub detail: Option<String>,
 }
 
 /// The source-read failures behind a partial backup, as restic reported them.
@@ -376,7 +377,13 @@ struct Runtime {
 ///     clock: &dyn Clock,
 /// ) {
 ///     let _ = capability.execute(services);
-///     let _ = capability.record_tool_error(clock, ClosedToolError::ResticUnavailable);
+///     let _ = capability.record_tool_error(
+///         clock,
+///         ClosedToolError::ResticUnavailable {
+///             detail: "d".into(),
+///             guidance: "g".into(),
+///         },
+///     );
 /// }
 /// ```
 ///
@@ -390,7 +397,13 @@ struct Runtime {
 ///     services: &BackupServices<'_>,
 ///     clock: &dyn Clock,
 /// ) {
-///     let _ = capability.record_tool_error(clock, ClosedToolError::RcloneUnavailable);
+///     let _ = capability.record_tool_error(
+///         clock,
+///         ClosedToolError::RcloneUnavailable {
+///             detail: "d".into(),
+///             guidance: "g".into(),
+///         },
+///     );
 ///     let _ = capability.execute(services);
 /// }
 /// ```
@@ -419,7 +432,6 @@ pub(crate) enum AdmittedBackupMode {
     Operated { binding: HostedBinding },
 }
 
-#[derive(Debug)]
 /// Tool-resolution failure closed to restic or rclone unavailability.
 ///
 /// The vocabulary is externally exhaustive:
@@ -429,22 +441,39 @@ pub(crate) enum AdmittedBackupMode {
 ///
 /// fn reason(error: ClosedToolError) -> &'static str {
 ///     match error {
-///         ClosedToolError::ResticUnavailable => "restic_unavailable",
-///         ClosedToolError::RcloneUnavailable => "rclone_unavailable",
+///         ClosedToolError::ResticUnavailable { .. } => "restic_unavailable",
+///         ClosedToolError::RcloneUnavailable { .. } => "rclone_unavailable",
 ///     }
 /// }
-/// # assert_eq!(reason(ClosedToolError::ResticUnavailable), "restic_unavailable");
+/// # assert_eq!(reason(ClosedToolError::ResticUnavailable { detail: "missing".into(), guidance: solstone_core_installed_payload::guidance::MANIFEST_MISSING.into() }), "restic_unavailable");
 /// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ClosedToolError {
-    ResticUnavailable,
-    RcloneUnavailable,
+    ResticUnavailable { detail: String, guidance: String },
+    RcloneUnavailable { detail: String, guidance: String },
+}
+
+impl ClosedToolError {
+    pub fn detail(&self) -> &str {
+        match self {
+            Self::ResticUnavailable { detail, .. } => detail,
+            Self::RcloneUnavailable { detail, .. } => detail,
+        }
+    }
+
+    pub fn guidance(&self) -> &str {
+        match self {
+            Self::ResticUnavailable { guidance, .. } => guidance,
+            Self::RcloneUnavailable { guidance, .. } => guidance,
+        }
+    }
 }
 
 impl fmt::Display for ClosedToolError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
-            Self::ResticUnavailable => "restic_unavailable",
-            Self::RcloneUnavailable => "rclone_unavailable",
+            Self::ResticUnavailable { .. } => "restic_unavailable",
+            Self::RcloneUnavailable { .. } => "rclone_unavailable",
         })
     }
 }
@@ -996,6 +1025,7 @@ fn record_backup(journal: &Path, clock: &dyn Clock, result: &BackupResult) {
             .error_reason
             .clone()
             .map_or(Value::Null, Value::String),
+        result.detail.as_deref(),
     );
 }
 
@@ -1006,6 +1036,7 @@ pub fn record_backup_error(journal: &Path, clock: &dyn Clock, reason: &str) -> B
         snapshot_id: None,
         error_reason: Some(reason.to_owned()),
         unreadable: None,
+        detail: None,
     };
     record_backup(journal, clock, &result);
     result
@@ -1015,27 +1046,26 @@ pub fn record_backup_error(journal: &Path, clock: &dyn Clock, reason: &str) -> B
 ///
 /// ```
 /// use std::path::Path;
-/// use solstone_core_artifact_download::ByteDownload;
 /// use solstone_core_backup_runtime::{
-///     prepare, resolve_tools, Clock, ToolInstallDirs, ToolRunner,
+///     prepare, resolve_tools, Clock, ToolRunner,
 /// };
 ///
 /// fn prepares_then_borrows_for_tool_resolution(
 ///     journal: &Path,
 ///     clock: &dyn Clock,
 ///     runner: &dyn ToolRunner,
-///     downloader: &dyn ByteDownload,
+///     executable: &Path,
 /// ) {
 ///     if let Ok(capability) = prepare(journal, clock) {
 ///         let _ = resolve_tools(
 ///             &capability,
 ///             runner,
-///             downloader,
-///             ToolInstallDirs::default(),
+///             executable,
 ///         );
 ///     }
 /// }
 /// ```
+#[allow(clippy::result_large_err)] // The refusal record is the Err. It carries the run status and the resolver code.
 pub fn prepare(journal: &Path, clock: &dyn Clock) -> Result<AdmittedCapability, BackupResult> {
     match prepare_backup_run(journal) {
         Ok(capability) => Ok(capability),
@@ -1044,12 +1074,14 @@ pub fn prepare(journal: &Path, clock: &dyn Clock) -> Result<AdmittedCapability, 
             snapshot_id: None,
             error_reason: None,
             unreadable: None,
+            detail: None,
         }),
         Err(BackupAdmissionTerminal::Unresolved) => Err(BackupResult {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some("journal_path_unresolved".into()),
             unreadable: None,
+            detail: None,
         }),
         Err(BackupAdmissionTerminal::Error {
             record_journal,
@@ -1141,6 +1173,7 @@ impl AdmittedCapability {
                                 snapshot_id: Some(id),
                                 error_reason: None,
                                 unreadable: None,
+                                detail: None,
                             },
                             // 🔴 restic exit 3 means a snapshot WAS written and
                             // some source files could not be read. That is a
@@ -1160,6 +1193,7 @@ impl AdmittedCapability {
                                 snapshot_id: Some(id),
                                 error_reason: Some("incomplete".into()),
                                 unreadable: unreadable_sources(&output),
+                                detail: None,
                             },
                             // ⛔ No snapshot means no backup, whatever the code.
                             // ⛔ Reaching here on code 3 means the summary did
@@ -1179,6 +1213,7 @@ impl AdmittedCapability {
                                 unreadable: (code == 3)
                                     .then(|| unreadable_sources(&output))
                                     .flatten(),
+                                detail: None,
                             },
                         }
                     }
@@ -1187,6 +1222,7 @@ impl AdmittedCapability {
                         snapshot_id: None,
                         error_reason: Some(reason),
                         unreadable: None,
+                        detail: None,
                     },
                 }
             }
@@ -1195,6 +1231,7 @@ impl AdmittedCapability {
                 snapshot_id: None,
                 error_reason: Some(reason),
                 unreadable: None,
+                detail: None,
             },
         };
         // 🔴 `binding_superseded` can only reach this branch through the
@@ -1218,6 +1255,7 @@ impl AdmittedCapability {
                     snapshot_id: None,
                     error_reason: Some("binding_superseded".into()),
                     unreadable: None,
+                    detail: None,
                 },
                 // Clearing failed -- keep the original error so the run is
                 // retried rather than silently going quiet on a state we
@@ -1233,15 +1271,16 @@ impl AdmittedCapability {
 
     /// Consume the capability and record a tool-resolution failure at its resolved journal.
     pub fn record_tool_error(self, clock: &dyn Clock, error: ClosedToolError) -> BackupResult {
-        let reason = match error {
-            ClosedToolError::ResticUnavailable => "restic_unavailable",
-            ClosedToolError::RcloneUnavailable => "rclone_unavailable",
+        let (reason, detail) = match error {
+            ClosedToolError::ResticUnavailable { detail, .. } => ("restic_unavailable", detail),
+            ClosedToolError::RcloneUnavailable { detail, .. } => ("rclone_unavailable", detail),
         };
         let result = BackupResult {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some(reason.into()),
             unreadable: None,
+            detail: Some(detail),
         };
         record_backup(&self.resolved_journal, clock, &result);
         result
@@ -1410,6 +1449,7 @@ pub fn run_archive_backup(
                 snapshot_id: None,
                 error_reason: None,
                 unreadable: None,
+                detail: None,
             };
         }
         Ok(Some(runtime)) => runtime,
@@ -1419,6 +1459,7 @@ pub fn run_archive_backup(
                 snapshot_id: None,
                 error_reason: Some(reason),
                 unreadable: None,
+                detail: None,
             };
         }
     };
@@ -1440,12 +1481,14 @@ pub fn run_archive_backup(
                 snapshot_id: None,
                 error_reason: Some("unknown".into()),
                 unreadable: None,
+                detail: None,
             },
             |id| BackupResult {
                 status: "ok".into(),
                 snapshot_id: Some(id),
                 error_reason: None,
                 unreadable: None,
+                detail: None,
             },
         ),
         Ok(output) => BackupResult {
@@ -1453,12 +1496,14 @@ pub fn run_archive_backup(
             snapshot_id: None,
             error_reason: Some(reason_for_returncode(output.returncode).into()),
             unreadable: None,
+            detail: None,
         },
         Err(reason) => BackupResult {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some(reason),
             unreadable: None,
+            detail: None,
         },
     }
 }
@@ -2914,14 +2959,26 @@ mod tests {
         std::env::set_current_dir("/").expect("working directory changes after admission");
         let replacement_before = fs::read(replacement.path().join("config/journal.json"))
             .expect("replacement config reads");
-        let result = capability.record_tool_error(&clock, ClosedToolError::ResticUnavailable);
+        let result = capability.record_tool_error(
+            &clock,
+            ClosedToolError::ResticUnavailable {
+                detail: "missing".into(),
+                guidance: solstone_core_installed_payload::guidance::MANIFEST_MISSING.into(),
+            },
+        );
 
         assert_eq!(result.status, "error");
         assert_eq!(result.error_reason.as_deref(), Some("restic_unavailable"));
+        assert_eq!(result.detail.as_deref(), Some("missing"));
         assert_eq!(
             solstone_core_backup::get_backup_config(source.path()).expect("source state reads")["last_backup"]
                 ["error_reason"],
             "restic_unavailable"
+        );
+        assert_eq!(
+            solstone_core_backup::get_backup_config(source.path()).expect("source state reads")["last_backup"]
+                ["detail"],
+            "missing"
         );
         assert_eq!(
             fs::read(replacement.path().join("config/journal.json"))
@@ -2940,6 +2997,7 @@ mod tests {
             snapshot_id: None,
             error_reason: Some("restic_unavailable".into()),
             unreadable: None,
+            detail: None,
         };
 
         record_backup(journal.path(), &clock, &result);
@@ -2960,6 +3018,7 @@ mod tests {
             snapshot_id: None,
             error_reason: Some("restic_unavailable".into()),
             unreadable: None,
+            detail: None,
         };
         arm_backup_record_failure_hook(expected.path().to_path_buf());
 
@@ -2993,6 +3052,7 @@ mod tests {
             snapshot_id: None,
             error_reason: Some("restic_unavailable".into()),
             unreadable: None,
+            detail: None,
         };
         reset_backup_record_failure_hook();
         install_backup_record_failure_hook(journal.path().to_path_buf());
@@ -3033,7 +3093,13 @@ mod tests {
         fs::remove_file(&lock).expect("admission lock releases");
         symlink(&sentinel, &lock).expect("lock sentinel links");
 
-        let result = capability.record_tool_error(&clock, ClosedToolError::ResticUnavailable);
+        let result = capability.record_tool_error(
+            &clock,
+            ClosedToolError::ResticUnavailable {
+                detail: "missing".into(),
+                guidance: solstone_core_installed_payload::guidance::MANIFEST_MISSING.into(),
+            },
+        );
 
         assert_eq!(result.status, "error");
         assert_eq!(result.snapshot_id, None);

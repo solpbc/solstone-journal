@@ -46,6 +46,9 @@ fn run_bounded<T: Send + 'static>(body: impl FnOnce() -> T + Send + 'static) -> 
 }
 
 fn write_fixture(path: &Path, body: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
     fs::write(path, body).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
@@ -79,7 +82,8 @@ fn read_pid(path: &Path) -> i32 {
 fn real_fixture_process_observes_whitelisted_environment() {
     run_bounded(|| {
         let directory = tempfile::tempdir().unwrap();
-        let fixture = directory.path().join("fixture");
+        let fixture = directory.path().join("lib/solstone-restic/restic");
+        fs::create_dir_all(fixture.parent().unwrap()).unwrap();
         write_fixture(
             &fixture,
             "#!/bin/sh\nprintf '%s' \"$RESTIC_REPOSITORY:$RESTIC_PASSWORD:$LEAK\"\n",
@@ -109,7 +113,8 @@ fn timeout_scrubs_partial_output_and_passes_live_key_fd() {
         #[cfg(not(target_os = "macos"))]
         let (timeout, return_ceiling) = (Duration::from_millis(200), Duration::from_millis(400));
         let directory = tempfile::tempdir().unwrap();
-        let fixture = directory.path().join("fixture");
+        let fixture = directory.path().join("lib/solstone-restic/restic");
+        fs::create_dir_all(fixture.parent().unwrap()).unwrap();
         let pidfile = directory.path().join("sleep.pid");
         write_fixture(
             &fixture,
@@ -151,7 +156,8 @@ fn timeout_scrubs_partial_output_and_passes_live_key_fd() {
 fn natural_exit_terminates_orphaned_descendant() {
     run_bounded(|| {
         let directory = tempfile::tempdir().unwrap();
-        let fixture = directory.path().join("fixture");
+        let fixture = directory.path().join("lib/solstone-restic/restic");
+        fs::create_dir_all(fixture.parent().unwrap()).unwrap();
         let pidfile = directory.path().join("sleep.pid");
         write_fixture(&fixture, "#!/bin/sh\nsleep 5 &\necho $! > \"$1\"\n");
         let started = Instant::now();

@@ -1715,7 +1715,7 @@ pub fn stage_inventory_tree(
 }
 
 #[derive(Debug)]
-struct SourceArchiveBytes {
+pub(crate) struct SourceArchiveBytes {
     name: String,
     bytes: Vec<u8>,
 }
@@ -1842,7 +1842,7 @@ fn check_authority_inventory(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn stage_layout(
+pub(crate) fn stage_layout(
     repo: &Path,
     inventory_path: &Path,
     inventory: &Inventory,
@@ -3321,7 +3321,16 @@ class = "notice"
     fn linux_fail_closed_uses_the_same_missing_and_unexpected_shape() {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
         let inventory_path = repo.join("core/distribution/inventory.toml");
-        let inventory = crate::inventory::load_inventory(&inventory_path).expect("committed");
+        let mut inventory = crate::inventory::load_inventory(&inventory_path).expect("committed");
+        inventory.entry.retain(|entry| {
+            !matches!(
+                entry,
+                Entry::PinnedMembers {
+                    input: crate::inventory::PinnedInput::CatalogAcquired { .. },
+                    ..
+                }
+            )
+        });
         let artifacts_root = tempfile::Builder::new()
             .prefix("solstone-distribution-linux-stage-artifacts-")
             .tempdir_in("/var/tmp")

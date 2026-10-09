@@ -290,8 +290,7 @@ pub fn hosted_session(
         global_options: vec![],
     })
 }
-#[cfg(any(windows, test))]
-fn quote_windows_rclone_program(rclone: &Path) -> Result<String, RunnerError> {
+fn quote_rclone_program(rclone: &Path) -> Result<String, RunnerError> {
     let path_str = rclone.to_str().ok_or(RunnerError::BareProgram)?;
     if path_str.contains('"') {
         return Err(RunnerError::BareProgram);
@@ -311,12 +310,7 @@ pub fn hosted_append_only_session(
     if !is_explicit_program_path(rclone) {
         return Err(RunnerError::BareProgram);
     }
-    #[cfg(unix)]
-    let program_opt = format!("rclone.program={}", rclone.display());
-    #[cfg(windows)]
-    let program_opt = quote_windows_rclone_program(rclone)?;
-    #[cfg(not(any(unix, windows)))]
-    let program_opt = format!("rclone.program={}", rclone.display());
+    let program_opt = quote_rclone_program(rclone)?;
 
     let args_opt = format!(
         "rclone.args=serve restic --stdio --append-only --config {}",
@@ -450,7 +444,7 @@ mod tests {
             assert!(
                 session
                     .global_options
-                    .contains(&"rclone.program=/fixture/bin/rclone".into())
+                    .contains(&"rclone.program=\"/fixture/bin/rclone\"".into())
             );
             assert!(session.global_options.contains(
                 &"rclone.args=serve restic --stdio --append-only --config /dev/null".into()
@@ -651,14 +645,107 @@ mod tests {
     }
 
     #[test]
-    fn quote_windows_rclone_program_quotes_and_rejects_embedded_quotes() {
+    fn quote_rclone_program_quotes_and_rejects_embedded_quotes() {
         assert_eq!(
-            quote_windows_rclone_program(Path::new(r"C:\Program Files\solstone\bin\rclone.exe"))
-                .unwrap(),
+            quote_rclone_program(Path::new(r"C:\Program Files\solstone\bin\rclone.exe")).unwrap(),
             r#"rclone.program="C:\Program Files\solstone\bin\rclone.exe""#
         );
+        assert_eq!(
+            quote_rclone_program(Path::new("/opt/solstone app/lib/solstone-rclone/rclone"))
+                .unwrap(),
+            r#"rclone.program="/opt/solstone app/lib/solstone-rclone/rclone""#
+        );
         assert!(matches!(
-            quote_windows_rclone_program(Path::new(r#"C:\injected"payload\rclone.exe"#)),
+            quote_rclone_program(Path::new(r#"C:\injected"payload\rclone.exe"#)),
+            Err(RunnerError::BareProgram)
+        ));
+        assert!(matches!(
+            quote_rclone_program(Path::new(r#"/injected"payload/rclone"#)),
+            Err(RunnerError::BareProgram)
+        ));
+    }
+
+    fn split_shell_strings(input: &str) -> Result<Vec<String>, String> {
+        let mut words = Vec::new();
+        let mut current = String::new();
+        let mut in_quotes = false;
+        let mut in_word = false;
+        let mut chars = input.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if in_quotes {
+                if c == '"' {
+                    in_quotes = false;
+                } else if c == '\\' {
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    } else {
+                        return Err("trailing escape inside quote".to_string());
+                    }
+                } else {
+                    current.push(c);
+                }
+            } else if c == '\\' {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                    in_word = true;
+                } else {
+                    return Err("trailing escape".to_string());
+                }
+            } else if c == '"' {
+                in_quotes = true;
+                in_word = true;
+            } else if c == ' ' || c == '\t' || c == '\n' {
+                if in_word {
+                    words.push(std::mem::take(&mut current));
+                    in_word = false;
+                }
+            } else {
+                current.push(c);
+                in_word = true;
+            }
+        }
+
+        if in_quotes {
+            return Err("unclosed quote".to_string());
+        }
+        if in_word {
+            words.push(current);
+        }
+        Ok(words)
+    }
+
+    #[test]
+    fn split_shell_strings_oracle_semantics_and_acceptance() {
+        // Oracle edge cases
+        assert_eq!(
+            split_shell_strings("a b\tc\nd").unwrap(),
+            vec!["a", "b", "c", "d"]
+        );
+        assert_eq!(
+            split_shell_strings(r#"hello "world with spaces" test"#).unwrap(),
+            vec!["hello", "world with spaces", "test"]
+        );
+        assert_eq!(
+            split_shell_strings("escaped\\ space and\\\tab").unwrap(),
+            vec!["escaped space", "and\tab"]
+        );
+        assert!(split_shell_strings(r#""unclosed quote"#).is_err());
+        assert!(split_shell_strings(r#"trailing escape\"#).is_err());
+
+        // Acceptance: a package root containing a space produces an rclone.program= value
+        // that the oracle splits into exactly one argument, equal to the verified rclone member path.
+        let member_path = Path::new("/opt/solstone package root/lib/solstone-rclone/rclone");
+        let program_opt = quote_rclone_program(member_path).unwrap();
+        let raw_val = program_opt.strip_prefix("rclone.program=").unwrap();
+        let split = split_shell_strings(raw_val).expect("splits cleanly");
+        assert_eq!(split.len(), 1);
+        assert_eq!(split[0], member_path.to_str().unwrap());
+
+        // A path containing `"` refuses and does not spawn.
+        let injected = Path::new(r#"/opt/solstone"bad/lib/solstone-rclone/rclone"#);
+        assert!(matches!(
+            quote_rclone_program(injected),
             Err(RunnerError::BareProgram)
         ));
     }

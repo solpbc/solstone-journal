@@ -2,35 +2,33 @@
 // Copyright (c) 2026 sol pbc
 
 use super::*;
-use solstone_core_artifact_download::{ByteDownload, ByteDownloadError};
-use solstone_core_backup_runtime::{ensure_rclone, ensure_restic};
 use solstone_core_system::process::{
     InstanceVerdict, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
 };
 
-pub(super) fn installed_tools(restic: &Path, rclone: &Path, workspace: &Path) {
-    struct NoDownload;
-    impl ByteDownload for NoDownload {
-        fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
-            panic!("installed Windows tool attempted a download");
-        }
-    }
-    let unrelated = workspace.join("unrelated tool cache");
-    for force in [false, true] {
-        let found = ensure_restic(&SystemToolRunner, force, Some(&unrelated), &NoDownload).unwrap();
-        assert_eq!(
-            fs::canonicalize(found).unwrap(),
-            fs::canonicalize(restic).unwrap()
-        );
-        let found = ensure_rclone(&SystemToolRunner, force, Some(&unrelated), &NoDownload).unwrap();
-        assert_eq!(
-            fs::canonicalize(found).unwrap(),
-            fs::canonicalize(rclone).unwrap()
-        );
-        assert!(!unrelated.exists());
-    }
+#[cfg(windows)]
+pub(super) fn installed_tools(restic: &Path, rclone: &Path, _workspace: &Path) {
+    let found = solstone_core_backup_runtime::windows_tool::verify_package_and_get_tool(
+        solstone_core_distribution::windows_payload::WINDOWS_RESTIC_WORKER,
+    )
+    .unwrap();
+    assert_eq!(
+        fs::canonicalize(found).unwrap(),
+        fs::canonicalize(restic).unwrap()
+    );
+    let found = solstone_core_backup_runtime::windows_tool::verify_package_and_get_tool(
+        solstone_core_distribution::windows_payload::WINDOWS_RCLONE_WORKER,
+    )
+    .unwrap();
+    assert_eq!(
+        fs::canonicalize(found).unwrap(),
+        fs::canonicalize(rclone).unwrap()
+    );
     println!("NATIVE_BACKUP_PACKAGE_TOOLS_NO_DOWNLOAD_OK");
 }
+
+#[cfg(not(windows))]
+pub(super) fn installed_tools(_restic: &Path, _rclone: &Path, _workspace: &Path) {}
 
 pub(super) fn poisoned_payload(restic: &Path, rclone: &Path, repository: &str) {
     use std::io::Write;
@@ -356,16 +354,22 @@ fn backup_native_job_helper() {
     .unwrap();
     let _child = if name == "restic" {
         Some(OwnedChild(
-            Command::new(exe.with_file_name("rclone.exe"))
-                .args([
-                    "--exact",
-                    "process::backup_native_job_helper",
-                    "--ignored",
-                    "--nocapture",
-                ])
-                .stdin(Stdio::null())
-                .spawn()
-                .unwrap(),
+            Command::new(
+                exe.parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .join("lib/solstone-rclone/rclone.exe"),
+            )
+            .args([
+                "--exact",
+                "process::backup_native_job_helper",
+                "--ignored",
+                "--nocapture",
+            ])
+            .stdin(Stdio::null())
+            .spawn()
+            .unwrap(),
         ))
     } else {
         None
@@ -394,7 +398,11 @@ fn backup_native_job_driver() {
         ],
         directory.to_str().unwrap(),
         "synthetic-job-password",
-        &exe.with_file_name("restic.exe"),
+        &exe.parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("lib/solstone-restic/restic.exe"),
         None,
         false,
         None,
