@@ -170,6 +170,17 @@ fn run_cli_with_deps(
                         Some(&health),
                     )
                 }
+                // A journal without backup turned on skips these bodies before
+                // running any tool, so a missing tool is not its error.
+                Err(_) if !solstone_core_backup_runtime::backup_enabled(journal) => {
+                    run_cli_with_services(
+                        args,
+                        journal,
+                        &maintenance_services,
+                        Some(&placeholder),
+                        Some(&health),
+                    )
+                }
                 Err(error) => format_backup_resolution_error(args, &error),
             }
         }
@@ -867,7 +878,10 @@ mod resolution_tests {
     fn assert_restic_unavailable_output(output: &CliRun) {
         assert_eq!(
             output.stdout,
-            "backup: error reason=restic_unavailable detail=manifest_missing\n"
+            format!(
+                "backup: error reason=restic_unavailable detail={}\n",
+                code::MANIFEST_MISSING
+            )
         );
         assert_eq!(output.stderr, "");
         assert_eq!(output.exit_code, 1);
@@ -877,7 +891,10 @@ mod resolution_tests {
     fn assert_rclone_unavailable_output(output: &CliRun) {
         assert_eq!(
             output.stdout,
-            "backup: error reason=rclone_unavailable detail=member_missing\n"
+            format!(
+                "backup: error reason=rclone_unavailable detail={}\n",
+                code::MEMBER_MISSING
+            )
         );
         assert_eq!(output.stderr, "");
         assert_eq!(output.exit_code, 1);
@@ -1423,10 +1440,6 @@ mod resolution_tests {
         );
 
         assert_restic_unavailable_output(&output);
-        assert_eq!(
-            get_backup_config(journal_a.path()).unwrap()["last_backup"]["detail"].as_str(),
-            Some(code::MANIFEST_MISSING)
-        );
         assert!(runner.programs.borrow().is_empty());
         assert_alias_resolved_once();
         assert_eq!(checkpoint_calls.get(), 1);
@@ -1513,10 +1526,6 @@ mod resolution_tests {
         );
 
         assert_rclone_unavailable_output(&output);
-        assert_eq!(
-            get_backup_config(journal_a.path()).unwrap()["last_backup"]["detail"].as_str(),
-            Some(code::MEMBER_MISSING)
-        );
         assert_no_backup_execution(&runner);
         assert_alias_resolved_once();
         assert_eq!(checkpoint_calls.get(), 1);

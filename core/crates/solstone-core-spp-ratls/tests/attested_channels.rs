@@ -1691,9 +1691,12 @@ fn qualification_starts_no_request_past_the_offline_admission_window() {
 // the helper on this device's (fixed) clock, the claim parser and admission.
 // It is evidence of client compatibility, not a qualified successor image.
 
+#[cfg(feature = "nvattest-directory")]
 const REAL_HELPER_PIN: &str = "5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa";
 // One hour after the captured NVIDIA responses were signed.
+#[cfg(feature = "nvattest-directory")]
 const REAL_PROOFS_VERIFIED_AT: u64 = 1_790_996_649;
+#[cfg(feature = "nvattest-directory")]
 const REAL_PROOFS_DEADLINE: u64 = 1_790_993_048 + 86_400;
 
 #[cfg(feature = "nvattest-directory")]
@@ -1779,18 +1782,18 @@ fn real_helper_profiles(
 /// NRAS endpoints. The operator points all three at one loopback port
 /// (`NVAT_OCSP_BASE_URL`, `NVAT_RIM_SERVICE_BASE_URL`, `NVAT_NRAS_BASE_URL`);
 /// the helper inherits that environment.
-#[cfg(unix)]
+#[cfg(all(unix, feature = "nvattest-directory"))]
 struct EndpointTrap {
     attempts: Arc<std::sync::atomic::AtomicUsize>,
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "nvattest-directory"))]
 fn endpoint_trap() -> &'static EndpointTrap {
     static TRAP: std::sync::OnceLock<EndpointTrap> = std::sync::OnceLock::new();
     TRAP.get_or_init(bind_endpoint_trap)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "nvattest-directory"))]
 fn bind_endpoint_trap() -> EndpointTrap {
     let urls = [
         "NVAT_OCSP_BASE_URL",

@@ -119,6 +119,14 @@ fn run_cli_with_deps(
                     };
                     run_cli_with(args, journal, &services, recorder, executable)
                 }
+                // Restore needs a real tool even before backup is turned on.
+                Err(_)
+                    if !solstone_core_backup_runtime::backup_enabled(journal)
+                        && normalize_global_flags(args).first().map(String::as_str)
+                            != Some("restore") =>
+                {
+                    run_cli_with(args, journal, &placeholder, recorder, executable)
+                }
                 Err(error) => format_resolution_error(args, journal, &clock, recorder, &error),
             }
         }
@@ -3937,10 +3945,6 @@ mod resolution_tests {
         );
 
         assert_restic_unavailable_output(&output);
-        assert_eq!(
-            get_backup_config(journal_a.path()).unwrap()["last_backup"]["detail"].as_str(),
-            Some(solstone_core_installed_payload::code::MANIFEST_MISSING)
-        );
         assert!(runner.programs.borrow().is_empty());
         assert_alias_resolved_once();
         assert_eq!(checkpoint_calls.get(), 1);
@@ -4027,10 +4031,6 @@ mod resolution_tests {
         );
 
         assert_rclone_unavailable_output(&output);
-        assert_eq!(
-            get_backup_config(journal_a.path()).unwrap()["last_backup"]["detail"].as_str(),
-            Some(solstone_core_installed_payload::code::MEMBER_MISSING)
-        );
         assert_no_backup_execution(&runner);
         assert_alias_resolved_once();
         assert_eq!(checkpoint_calls.get(), 1);

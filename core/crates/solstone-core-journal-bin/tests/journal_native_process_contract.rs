@@ -23,7 +23,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 mod production_processes;
 
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
-use sha2::{Digest, Sha256};
 use solstone_core_cli::{
     CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, HEALTH_USAGE, INSTALL_MODELS_HELP,
     INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, MCP_USAGE, SCHEDULE_USAGE,
@@ -842,21 +841,13 @@ fn make_executable(path: &Path) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("make fixture executable");
 }
 
-fn install_ready_restic_fixture(home: &Path) -> PathBuf {
-    let (tool_dir, platform_os) = if cfg!(target_os = "macos") {
-        (
-            home.join("Library/Application Support/solstone/restic"),
-            "darwin",
-        )
-    } else {
-        (home.join(".cache/solstone/restic"), "linux")
-    };
-    let platform_arch = match env::consts::ARCH {
-        "x86_64" | "amd64" => "amd64",
-        "aarch64" | "arm64" => "arm64",
-        other => panic!("unsupported Restic fixture architecture: {other}"),
-    };
-    fs::create_dir_all(&tool_dir).expect("create Restic fixture directory");
+/// Installs a release-shaped Restic fixture as the package member the journal
+/// runs: `lib/solstone-restic/restic` beside the copied `bin/`, bound by a
+/// rendered installed-payload manifest for this build.
+fn install_packaged_restic_fixture(sibling_dir: &Path) -> PathBuf {
+    let root = sibling_dir.parent().expect("package root above bin");
+    let tool_dir = root.join("lib/solstone-restic");
+    fs::create_dir_all(&tool_dir).expect("create Restic member directory");
     let binary = tool_dir.join("restic");
     fs::write(
         &binary,
@@ -864,23 +855,26 @@ fn install_ready_restic_fixture(home: &Path) -> PathBuf {
     )
     .expect("write Restic fixture");
     make_executable(&binary);
-    let digest = format!(
-        "{:x}",
-        Sha256::digest(fs::read(&binary).expect("read Restic fixture"))
-    );
-    fs::write(
-        tool_dir.join(".install-complete"),
-        serde_json::to_vec(&serde_json::json!({
-            "schema_version": 1,
-            "tool": "restic",
-            "version": "0.19.0",
-            "sha256": digest,
-            "platform": {"os": platform_os, "arch": platform_arch},
-            "binary_path": binary.to_string_lossy(),
-        }))
-        .expect("encode Restic fixture sentinel"),
+    // The manifest binds only the private namespaces, so render it from a root
+    // holding just that member: the harness's `bin/` carries a symlink the
+    // renderer refuses.
+    let scratch = TempDir::new("restic-manifest");
+    let scratch_member = scratch.path.join("lib/solstone-restic/restic");
+    fs::create_dir_all(scratch_member.parent().expect("scratch member parent"))
+        .expect("create scratch member directory");
+    fs::copy(&binary, &scratch_member).expect("copy Restic fixture into scratch root");
+    let manifest = solstone_core_installed_payload::render_installed_payload(
+        &scratch.path,
+        solstone_core_installed_payload::PRODUCT,
+        solstone_core_installed_payload::COMPILED_VERSION,
+        solstone_core_installed_payload::compiled_target(),
+        "fixture-commit",
     )
-    .expect("write Restic fixture sentinel");
+    .expect("render installed payload manifest");
+    let manifest_path = root.join(solstone_core_installed_payload::INSTALLED_PAYLOAD_MANIFEST);
+    fs::create_dir_all(manifest_path.parent().expect("manifest parent"))
+        .expect("create manifest directory");
+    fs::write(&manifest_path, manifest).expect("write installed payload manifest");
     binary
 }
 
@@ -1395,8 +1389,8 @@ fn native_backup_grammar_never_reaches_a_poisoned_interpreter() {
     fs::write(&shell, POISON_INTERPRETER).expect("write poison shell");
     make_executable(&shell);
     fs::create_dir_all(context.journal).expect("create backup journal root");
-    let restic = install_ready_restic_fixture(context.home);
-    assert!(restic.starts_with(context.home));
+    let restic = install_packaged_restic_fixture(context.sibling_dir);
+    assert!(restic.starts_with(context.sibling_dir.parent().expect("package root")));
 
     // These cover every owner-facing backup leaf under the same sibling/PATH
     // interpreter poison as the registration contract. The success cases use

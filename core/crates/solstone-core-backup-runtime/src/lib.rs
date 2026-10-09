@@ -30,6 +30,7 @@ pub mod runner;
 pub mod s3_wipe;
 pub mod schedule;
 pub mod teardown;
+pub use engine::backup_enabled;
 pub use schedule::effective_backup_schedule;
 #[cfg(windows)]
 pub mod windows_cleanup;
