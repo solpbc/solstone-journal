@@ -2284,7 +2284,7 @@ mod tests {
             .expect("repository root")
             .to_path_buf();
         // Every schema a model is asked to fill, not only talents': describe
-        // categories and the transcript importer's two steps reach the same engine.
+        // categories and the transcript importer's topics reach the same engine.
         let mut schema_dirs = vec![
             repository_root.join("core/payload/solstone/talent"),
             repository_root.join("core/crates/solstone-core-describe-categories/assets/categories"),

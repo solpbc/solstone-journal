@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when an agent looks up a person or project, it now gets what your journal has noted about them in the facets it may see, and the last day they came up there, not only the name.
 - when an agent searches for a word that matches nothing on its own, such as "commit", it now also finds longer words that start with it, such as "commitment".
 - the agents app's ChatGPT steps now name the exact place to add your journal on chatgpt.com, and say that your journal added in ChatGPT's desktop app settings works only in Codex.
+- when a text or markdown transcript marks times with headings counted from the start, such as `## 00:05:12`, and names speakers as `**Ana Lima:** …`, each turn now lands at the import's start time plus its heading, word for word, with or without a model. any other text file lands as one segment at its start time, each line as written. before, a model chose the segments and could change the times, speakers and wording.
 
 ### Fixed
 

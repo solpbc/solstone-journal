@@ -13,8 +13,8 @@ use solstone_core_generate::{
     ClientError, GenerateRequest, GenerateResponse, OneShotClient, SessionClient,
 };
 use solstone_core_import::{
-    CreatedSegment, PublicationOperations, SystemWireClient, TextImportError, TextImportOutcome,
-    WireClient, process_transcript_with_wire,
+    CreatedSegment, PublicationOperations, SystemWireClient, TextImportOutcome, WireClient,
+    process_transcript_with_wire,
 };
 use solstone_core_import_sources::document::{
     DocumentImportRequest, DocumentModelClient, PdfPage, PdfPayload, PdfWorker, PdfWorkerRequest,
@@ -24,6 +24,32 @@ use solstone_core_indexer_store::scan::RescanFileStatus;
 use solstone_core_segment::StreamAdvance;
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// A synthetic transcript in the v1 layout whose two turns fall in two segments, so a
+/// text import asks the model twice, once per segment, for topics and setting only.
+const TWO_SEGMENTS: &str =
+    "## 00:00:00\n**Ana Lima:** alpha\n\n## 00:05:00\n**Ben Okafor:** beta\n";
+
+/// The request the text importer sends for one segment's topics.
+fn topics_request(text: &str) -> GenerateRequest {
+    GenerateRequest {
+        id: None,
+        context: "observe.detect.topics".to_owned(),
+        contents: vec![solstone_core_generate::ContentPart::Text {
+            text: text.to_owned(),
+        }],
+        system_instruction: None,
+        temperature: 0.3,
+        max_output_tokens: 256,
+        timeout_s: None,
+        json_output: true,
+        json_schema: None,
+        enforce_responsiveness: true,
+        attempt_index: 0,
+        exclusive_admission: false,
+        transport_retries: None,
+    }
+}
 static WARN_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 struct TestLogger;
@@ -207,7 +233,7 @@ fn oracle_13_one_child_and_same_branches() {
     // 1. Text transcript import in import_context mode
     let temp = temp_dir("oracle_13_text");
     let source_path = temp.join("source.txt");
-    fs::write(&source_path, "alpha\nbeta\n").unwrap();
+    fs::write(&source_path, TWO_SEGMENTS).unwrap();
     let day_dir = temp.join("chronicle/20260311");
     let pid_path = temp.join("session.pid");
     let reqs_path = temp.join("requests.jsonl");
@@ -232,7 +258,6 @@ fn oracle_13_one_child_and_same_branches() {
         "import.text",
         None,
         None,
-        None,
         &wire,
     );
     let TextImportOutcome::Success(work) = outcome else {
@@ -245,17 +270,16 @@ fn oracle_13_one_child_and_same_branches() {
     let reqs = read_request_log(&reqs_path);
     assert_eq!(
         reqs.len(),
-        3,
-        "request log must have 3 lines: segment + 2 normalize"
+        2,
+        "request log must have 2 lines: one topics request per segment"
     );
-    assert_eq!(reqs[0]["context"], "observe.detect.segment");
-    assert_eq!(reqs[1]["context"], "observe.detect.json");
-    assert_eq!(reqs[2]["context"], "observe.detect.json");
+    assert_eq!(reqs[0]["context"], "observe.detect.topics");
+    assert_eq!(reqs[1]["context"], "observe.detect.topics");
 
     // Compare written transcript files byte-for-byte with OneShotClient
     let temp_oneshot = temp_dir("oracle_13_oneshot");
     let source_oneshot = temp_oneshot.join("source.txt");
-    fs::write(&source_oneshot, "alpha\nbeta\n").unwrap();
+    fs::write(&source_oneshot, TWO_SEGMENTS).unwrap();
     let day_oneshot = temp_oneshot.join("chronicle/20260311");
     let oneshot_client = OneShotClient::at_path(one_shot_stub_path())
         .with_env("SOLSTONE_GENERATE_ONE_SHOT_STUB_MODE", "import_context");
@@ -267,7 +291,6 @@ fn oracle_13_one_child_and_same_branches() {
         "12:00:00",
         "20260311_120000",
         "import.text",
-        None,
         None,
         None,
         &oneshot_wire,
@@ -287,24 +310,22 @@ fn oracle_13_one_child_and_same_branches() {
     }
     wire.finish();
 
-    // 2. Both stubs in import_refuse_segment mode -> whole-file path and match
+    // 2. Both stubs refuse the model -> the same files, without topics
     let temp_refuse_session = temp_dir("oracle_13_refuse_session");
     let source_refuse_session = temp_refuse_session.join("source.txt");
-    fs::write(&source_refuse_session, "alpha\nbeta\n").unwrap();
+    fs::write(&source_refuse_session, TWO_SEGMENTS).unwrap();
     let day_refuse_session = temp_refuse_session.join("chronicle/20260311");
 
-    let wire_refuse_session =
-        SystemWireClient::new(OneShotClient::at_path(session_stub_path()).with_env(
-            "SOLSTONE_GENERATE_SESSION_STUB_MODE",
-            "import_refuse_segment",
-        ));
+    let wire_refuse_session = SystemWireClient::new(
+        OneShotClient::at_path(session_stub_path())
+            .with_env("SOLSTONE_GENERATE_SESSION_STUB_MODE", "import_refuse_model"),
+    );
     let outcome_refuse_session = process_transcript_with_wire(
         &source_refuse_session,
         &day_refuse_session,
         "12:00:00",
         "20260311_120000",
         "import.text",
-        None,
         None,
         None,
         &wire_refuse_session,
@@ -315,13 +336,13 @@ fn oracle_13_one_child_and_same_branches() {
 
     let temp_refuse_oneshot = temp_dir("oracle_13_refuse_oneshot");
     let source_refuse_oneshot = temp_refuse_oneshot.join("source.txt");
-    fs::write(&source_refuse_oneshot, "alpha\nbeta\n").unwrap();
+    fs::write(&source_refuse_oneshot, TWO_SEGMENTS).unwrap();
     let day_refuse_oneshot = temp_refuse_oneshot.join("chronicle/20260311");
 
     let wire_refuse_oneshot =
         OneShotWireClient(OneShotClient::at_path(one_shot_stub_path()).with_env(
             "SOLSTONE_GENERATE_ONE_SHOT_STUB_MODE",
-            "import_refuse_segment",
+            "import_refuse_model",
         ));
     let outcome_refuse_oneshot = process_transcript_with_wire(
         &source_refuse_oneshot,
@@ -329,7 +350,6 @@ fn oracle_13_one_child_and_same_branches() {
         "12:00:00",
         "20260311_120000",
         "import.text",
-        None,
         None,
         None,
         &wire_refuse_oneshot,
@@ -351,7 +371,7 @@ fn oracle_13_one_child_and_same_branches() {
         let bytes_b = fs::read(&b.path).unwrap();
         assert_eq!(
             bytes_a, bytes_b,
-            "whole-file transcript files must match byte-for-byte"
+            "transcript files without topics must match byte-for-byte"
         );
     }
     wire_refuse_session.finish();
@@ -364,14 +384,13 @@ fn oracle_13_one_child_and_same_branches() {
     let sibling_wire = SystemWireClient::sibling();
     let temp_sibling = temp_dir("oracle_13_sibling");
     let source_sibling = temp_sibling.join("source.txt");
-    fs::write(&source_sibling, "alpha\nbeta\n").unwrap();
+    fs::write(&source_sibling, TWO_SEGMENTS).unwrap();
     let outcome_sibling = process_transcript_with_wire(
         &source_sibling,
         &temp_sibling.join("chronicle/20260311"),
         "12:00:00",
         "20260311_120000",
         "import.text",
-        None,
         None,
         None,
         &sibling_wire,
@@ -382,7 +401,7 @@ fn oracle_13_one_child_and_same_branches() {
     let missing_wire = SystemWireClient::new(OneShotClient::at_path(temp.join("no-such-binary")));
     let temp_missing = temp_dir("oracle_13_missing");
     let source_missing = temp_missing.join("source.txt");
-    fs::write(&source_missing, "alpha\nbeta\n").unwrap();
+    fs::write(&source_missing, TWO_SEGMENTS).unwrap();
     let outcome_missing = process_transcript_with_wire(
         &source_missing,
         &temp_missing.join("chronicle/20260311"),
@@ -391,16 +410,16 @@ fn oracle_13_one_child_and_same_branches() {
         "import.text",
         None,
         None,
-        None,
         &missing_wire,
     );
-    let TextImportOutcome::Failed {
-        error: TextImportError::Wire { source: err, .. },
-        ..
-    } = outcome_missing
-    else {
-        panic!("expected Failed(TextImportError::Wire)");
+    // A model that cannot start changes nothing the file carries: the import lands.
+    let TextImportOutcome::Success(work_missing) = outcome_missing else {
+        panic!("expected success without a model");
     };
+    assert_eq!(work_missing.created.len(), 2);
+    let err = missing_wire
+        .execute(&topics_request("alpha"))
+        .expect_err("a missing executable is a client error");
     let err_display = format!("{err}");
     assert!(!err_display.contains("session-req-"));
     assert!(!err_display.contains("solstone-generate-session-terminal-v2"));
@@ -611,11 +630,10 @@ fn oracle_13_one_child_and_same_branches() {
             ..PdfPayload::default()
         },
     ]);
-    let doc_model_refused =
-        SystemDocumentModelClient::new(OneShotClient::at_path(session_stub_path()).with_env(
-            "SOLSTONE_GENERATE_SESSION_STUB_MODE",
-            "import_refuse_segment",
-        ));
+    let doc_model_refused = SystemDocumentModelClient::new(
+        OneShotClient::at_path(session_stub_path())
+            .with_env("SOLSTONE_GENERATE_SESSION_STUB_MODE", "import_refuse_model"),
+    );
     let doc_req_refused = DocumentImportRequest {
         source: &doc_source_refused,
         journal_root: &temp_doc_refused,
@@ -654,7 +672,7 @@ fn oracle_14_resubmit_once() {
     // 1. Text import in import_closed_once mode
     let temp = temp_dir("oracle_14_text");
     let source_path = temp.join("source.txt");
-    fs::write(&source_path, "alpha\nbeta\n").unwrap();
+    fs::write(&source_path, TWO_SEGMENTS).unwrap();
     let day_dir = temp.join("chronicle/20260311");
     let pid_path = temp.join("session.pid");
     let reqs_path = temp.join("requests.jsonl");
@@ -680,7 +698,6 @@ fn oracle_14_resubmit_once() {
         "import.text",
         None,
         None,
-        None,
         &wire,
     );
     assert!(matches!(outcome, TextImportOutcome::Success(_)));
@@ -688,13 +705,13 @@ fn oracle_14_resubmit_once() {
     let reqs = read_request_log(&reqs_path);
     assert_eq!(
         reqs.len(),
-        4,
-        "log length must be 4: attempt 0 + attempt 1 for segment + 2 normalize"
+        3,
+        "log length must be 3: attempt 0 + attempt 1 for the first segment + the second segment"
     );
     assert_eq!(reqs[0]["attempt_index"], 0);
-    assert_eq!(reqs[0]["context"], "observe.detect.segment");
+    assert_eq!(reqs[0]["context"], "observe.detect.topics");
     assert_eq!(reqs[1]["attempt_index"], 1);
-    assert_eq!(reqs[1]["context"], "observe.detect.segment");
+    assert_eq!(reqs[1]["context"], "observe.detect.topics");
     assert_ne!(reqs[0]["id"], reqs[1]["id"]);
 
     let pid = read_pid_file(&pid_path);
@@ -704,14 +721,14 @@ fn oracle_14_resubmit_once() {
     assert_eq!(warns.len(), 1);
     assert_eq!(
         warns[0],
-        "confidential channel closed before a response: reason_code=confidential_channel_closed context=observe.detect.segment attempt_index=1"
+        "confidential channel closed before a response: reason_code=confidential_channel_closed context=observe.detect.topics attempt_index=1"
     );
     wire.finish();
 
-    // 2. Mode refuse_confidential_closed_always on segment call
+    // 2. Mode refuse_confidential_closed_always on every topics call
     let temp_always = temp_dir("oracle_14_always");
     let source_always = temp_always.join("source.txt");
-    fs::write(&source_always, "alpha\nbeta\n").unwrap();
+    fs::write(&source_always, TWO_SEGMENTS).unwrap();
     let reqs_always = temp_always.join("requests.jsonl");
 
     let wire_always = SystemWireClient::new(
@@ -734,7 +751,6 @@ fn oracle_14_resubmit_once() {
         "import.text",
         None,
         None,
-        None,
         &wire_always,
     );
     assert!(matches!(outcome_always, TextImportOutcome::Success(_)));
@@ -742,24 +758,21 @@ fn oracle_14_resubmit_once() {
     assert_eq!(
         reqs_always_log.len(),
         4,
-        "log length must be 4: attempt 0 + attempt 1 for segment, attempt 0 + attempt 1 for normalize"
+        "log length must be 4: attempt 0 + attempt 1 for each of the two segments"
     );
     let warns_always = take_warn_lines();
     assert_eq!(warns_always.len(), 2);
     wire_always.finish();
 
-    // 3. Mode import_refuse_segment: log length 1, not resubmitted, no warn
+    // 3. Mode import_refuse_model: each segment refused once, not resubmitted, no warn
     let temp_refuse = temp_dir("oracle_14_refuse");
     let source_refuse = temp_refuse.join("source.txt");
-    fs::write(&source_refuse, "alpha\nbeta\n").unwrap();
+    fs::write(&source_refuse, TWO_SEGMENTS).unwrap();
     let reqs_refuse = temp_refuse.join("requests.jsonl");
 
     let wire_refuse = SystemWireClient::new(
         OneShotClient::at_path(session_stub_path())
-            .with_env(
-                "SOLSTONE_GENERATE_SESSION_STUB_MODE",
-                "import_refuse_segment",
-            )
+            .with_env("SOLSTONE_GENERATE_SESSION_STUB_MODE", "import_refuse_model")
             .with_env(
                 "SOLSTONE_GENERATE_SESSION_STUB_REQUESTS_PATH",
                 reqs_refuse.to_str().unwrap(),
@@ -773,14 +786,13 @@ fn oracle_14_resubmit_once() {
         "import.text",
         None,
         None,
-        None,
         &wire_refuse,
     );
     let reqs_refuse_log = read_request_log(&reqs_refuse);
     assert_eq!(
         reqs_refuse_log.len(),
         2,
-        "log length must be 2: 1 segment refusal (no resubmit) + 1 normalize"
+        "log length must be 2: one refusal per segment, no resubmit"
     );
     assert_eq!(reqs_refuse_log[0]["attempt_index"], 0);
     assert_eq!(reqs_refuse_log[1]["attempt_index"], 0);
@@ -963,10 +975,7 @@ fn oracle_14_resubmit_once() {
 
     let doc_model_ref = SystemDocumentModelClient::new(
         OneShotClient::at_path(session_stub_path())
-            .with_env(
-                "SOLSTONE_GENERATE_SESSION_STUB_MODE",
-                "import_refuse_segment",
-            )
+            .with_env("SOLSTONE_GENERATE_SESSION_STUB_MODE", "import_refuse_model")
             .with_env(
                 "SOLSTONE_GENERATE_SESSION_STUB_REQUESTS_PATH",
                 doc_reqs_ref.to_str().unwrap(),
@@ -1015,7 +1024,7 @@ fn oracle_15_child_death_respawns_later() {
     // 1. Text import with exit_once
     let temp = temp_dir("oracle_15_text");
     let source_path = temp.join("source.txt");
-    fs::write(&source_path, "alpha\nbeta\n").unwrap();
+    fs::write(&source_path, TWO_SEGMENTS).unwrap();
     let day_dir = temp.join("chronicle/20260311");
     let exit_once_path = temp.join("exit_once_marker");
     let pid_path = temp.join("session.pid");
@@ -1038,27 +1047,10 @@ fn oracle_15_child_death_respawns_later() {
             ),
     );
 
-    let outcome1 = process_transcript_with_wire(
-        &source_path,
-        &day_dir,
-        "12:00:00",
-        "20260311_120000",
-        "import.text",
-        None,
-        None,
-        None,
-        &wire,
-    );
-
-    let TextImportOutcome::Failed {
-        error: TextImportError::Wire {
-            source: client_err, ..
-        },
-        ..
-    } = outcome1
-    else {
-        panic!("expected Failed(TextImportError::Wire)");
-    };
+    // The child exits on its first request: a client error, and no resubmit.
+    let client_err = wire
+        .execute(&topics_request("alpha"))
+        .expect_err("expected a client error from the exited child");
     assert!(
         matches!(client_err, ClientError::UnexpectedChild(_)),
         "source error must be UnexpectedChild"
@@ -1080,7 +1072,6 @@ fn oracle_15_child_death_respawns_later() {
         "12:00:00",
         "20260311_120000",
         "import.text",
-        None,
         None,
         None,
         &wire,
