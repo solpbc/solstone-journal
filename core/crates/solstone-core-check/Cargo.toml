@@ -25,5 +25,8 @@ nix.workspace = true
 # needs to re-verify the signed payload.
 solstone-core-distribution.workspace = true
 
+[dev-dependencies]
+solstone-core-installed-payload.workspace = true
+
 [features]
 full-tests = []

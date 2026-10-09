@@ -34,6 +34,8 @@ pub const WINDOWS_PAYLOAD_SIGNATURE: &str = "share/provenance/windows-payload.js
 /// journal state.
 pub const WINDOWS_CED_WORKER: &str = "bin/solstone-core-ced-analyze.exe";
 pub const WINDOWS_CED_LIBRARY: &str = "bin/ced.dll";
+/// The CED model is a signed package member.
+pub const WINDOWS_CED_MODEL: &str = "lib/solstone_journal_models/assets/ced/ced-tiny-q8_0.gguf";
 /// The PDFium engine is a signed private-library payload, never a system or
 /// mutable-journal lookup.
 pub const WINDOWS_PDFIUM_LIBRARY: &str = "lib/solstone-core-pdf/pdfium.dll";
@@ -152,6 +154,11 @@ impl VerifiedWindowsPayload {
     /// Return the CED engine only when the verified package declares it.
     pub fn ced_library_path(&self) -> Result<PathBuf, WindowsPayloadError> {
         self.declared_path(WINDOWS_CED_LIBRARY)
+    }
+
+    /// Return the CED model only when the verified package declares it.
+    pub fn ced_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_CED_MODEL)
     }
 
     /// Return the PDFium engine only when the verified package declares it.

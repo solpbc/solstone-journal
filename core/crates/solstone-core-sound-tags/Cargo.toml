@@ -21,3 +21,6 @@ workspace = true
 
 [target.'cfg(windows)'.dependencies]
 solstone-core-check.workspace = true
+
+[dev-dependencies]
+solstone-core-installed-payload.workspace = true

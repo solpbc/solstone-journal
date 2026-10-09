@@ -132,7 +132,13 @@ pub(crate) fn reduce_audio_if_needed(
 }
 
 /// Sound tagging is intentionally best-effort.
-pub(crate) fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
+pub(crate) fn tag_audio(
+    audio: &[f32],
+    journal_path: &Path,
+) -> (
+    Option<Value>,
+    Option<solstone_core_local::install::capability_status::CapabilityStatus>,
+) {
     solstone_core_sound_tags::tag_audio(audio, journal_path)
 }
 

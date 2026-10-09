@@ -12,9 +12,7 @@ use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketConnection};
-use solstone_core_local::install::ced_readiness::{
-    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict,
-};
+use solstone_core_local::install::ced_readiness::{CED_READY_DETAIL, CedVerdict};
 use solstone_core_local::install::rfdetr_readiness::{RFDETR_READY_DETAIL, RfdetrReadiness};
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{
@@ -135,7 +133,11 @@ fn should_rescan_sync(fetch: &Result<SupervisorStatus, PresentedHealthError>) ->
 fn ced_line(ced: &CedVerdict) -> String {
     match ced {
         CedVerdict::Ready { .. } => CED_READY_DETAIL.to_owned(),
-        CedVerdict::Degraded(_) => CED_UNAVAILABLE_GUIDANCE.to_owned(),
+        CedVerdict::Degraded(status) => {
+            let detail = status.detail().unwrap_or_default();
+            let cause = status.cause_token().unwrap_or_default();
+            format!("{detail} ({cause})")
+        }
         CedVerdict::Unsupported { os, arch } => {
             format!("ced install: unsupported platform {os}/{arch}; skipping ced sound-tag assets")
         }
@@ -880,7 +882,7 @@ mod tests {
         );
         assert_eq!(
             stdout,
-            format!("{CED_UNAVAILABLE_GUIDANCE}\n{RFDETR_READY_DETAIL}\n")
+            format!("sidecar missing (absent)\n{RFDETR_READY_DETAIL}\n")
         );
         assert_eq!(
             stderr,

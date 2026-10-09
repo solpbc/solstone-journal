@@ -13,9 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::capability_status::CapabilityStatus;
-use solstone_core_local::install::ced_readiness::{
-    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict,
-};
+use solstone_core_local::install::ced_readiness::{CED_READY_DETAIL, CedVerdict};
 #[cfg(test)]
 use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
 use solstone_core_local::install::rfdetr_readiness::{
@@ -124,11 +122,10 @@ pub struct Check {
     pub available_bytes: Option<u64>,
     /// The specific reason a `ced`/`rfdetr` check is Degraded (`absent`,
     /// `integrity_invalid`, `unloadable`/`unrunnable`) -- `None` for every
-    /// other check and for a non-Degraded ced/rfdetr check. `detail` stays
-    /// the fixed owner-facing sentence (`CED_UNAVAILABLE_GUIDANCE` /
-    /// `RFDETR_UNAVAILABLE_GUIDANCE` on Unix; `RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE` on Windows package platforms) regardless of which cause fired, so
-    /// this is the only place the three causes are distinguishable; owner
-    /// copy is a separate, out-of-bounds change.
+    /// other check and for a non-Degraded ced/rfdetr check. CED detail is
+    /// now the status detail; RF-DETR detail stays the fixed owner-facing
+    /// sentence (`RFDETR_UNAVAILABLE_GUIDANCE` on Unix; `RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE`
+    /// on Windows package platforms) regardless of which cause fired.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cause: Option<&'static str>,
 }
@@ -589,11 +586,9 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
     }
 }
 /// Stable diagnostic string for each CED degraded cause. Not owner-facing
-/// copy -- `CED_UNAVAILABLE_GUIDANCE` is the fixed sentence a person reads;
-/// this is what a future investigator (or `journal check --json`) reads to
-/// tell `Absent`, `IntegrityInvalid` and `Unloadable` apart, which the
-/// shared guidance sentence alone cannot do.
-/// The specific reason a CED capability is not Ready, as a stable snake_case token.
+/// copy -- CED detail is now the status detail; this is what a future
+/// investigator (or `journal check --json`) reads to tell `Absent`,
+/// `IntegrityInvalid` and `Unloadable` apart as a stable snake_case token.
 ///
 /// `main` models CED readiness with the richer [`CapabilityStatus`] (it carries a
 /// `capability` and a free-text `detail`), but its check builder discarded that
@@ -602,16 +597,7 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
 /// that, mapped onto the newer vocabulary. `Ready` has no cause and is handled by
 /// the caller before this is reached.
 fn ced_cause_str(status: &CapabilityStatus) -> &'static str {
-    match status {
-        CapabilityStatus::Ready => "ready",
-        CapabilityStatus::Absent { .. } => "absent",
-        CapabilityStatus::IntegrityInvalid { .. } => "integrity_invalid",
-        CapabilityStatus::UnloadableOrUnrunnable { .. } => "unloadable",
-        CapabilityStatus::WrongAbiOrProtocol { .. } => "wrong_abi_or_protocol",
-        CapabilityStatus::ResourceOrOwnerScopeUnavailable { .. } => {
-            "resource_or_owner_scope_unavailable"
-        }
-    }
+    status.cause_token().unwrap_or("ready")
 }
 /// Same as [`ced_cause_str`], for RF-DETR's degraded causes.
 fn rfdetr_cause_str(cause: RfdetrDegradedCause) -> &'static str {
@@ -628,13 +614,8 @@ fn ced_check(inputs: &CheckInputs) -> Option<Check> {
             Some(check("ced", Severity::Ok, CED_READY_DETAIL, None, None))
         }
         Some(status) => {
-            let mut item = check(
-                "ced",
-                Severity::Warning,
-                CED_UNAVAILABLE_GUIDANCE,
-                None,
-                None,
-            );
+            let detail = status.detail().expect("non-ready status carries detail");
+            let mut item = check("ced", Severity::Warning, detail, None, None);
             item.cause = Some(ced_cause_str(status));
             Some(item)
         }
@@ -1244,7 +1225,7 @@ mod tests {
             let inputs = check_inputs(Some(status.clone()), RfdetrCheckInput::Omit);
             let ced = ced_check(&inputs).expect("degraded CED check");
             assert_eq!(ced.severity, Severity::Warning, "{status:?}");
-            assert_eq!(ced.detail, CED_UNAVAILABLE_GUIDANCE);
+            assert_eq!(ced.detail, detail);
             assert_eq!(ced.cause, Some(expected_cause_str), "{status:?}");
         }
     }

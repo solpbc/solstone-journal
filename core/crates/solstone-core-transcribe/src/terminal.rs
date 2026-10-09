@@ -22,6 +22,8 @@ pub(crate) struct TerminalWrite<'a> {
     pub(crate) npz_path: &'a Path,
     pub(crate) processing: &'a Value,
     pub(crate) sound_tags: Option<&'a Value>,
+    pub(crate) sound_tag_status:
+        Option<&'a solstone_core_local::install::capability_status::CapabilityStatus>,
     pub(crate) segment_meta: Option<&'a Map<String, Value>>,
     pub(crate) redo: bool,
 }
@@ -140,6 +142,15 @@ fn build_terminal_request(
     ]);
     if let Some(sound_tags) = request.sound_tags {
         header.insert("sound_tags".to_owned(), sound_tags.clone());
+    } else if let Some(sound_tag_status) = request.sound_tag_status {
+        header.insert(
+            "sound_tag_status".to_owned(),
+            serde_json::to_value(sound_tag_status).map_err(|error| {
+                TranscribeError::TerminalWrite {
+                    detail: error.to_string(),
+                }
+            })?,
+        );
     }
     if let Some(meta) = request.segment_meta.filter(|meta| !meta.is_empty()) {
         header.insert("segment_meta".to_owned(), Value::Object(meta.clone()));
@@ -197,6 +208,7 @@ mod tests {
                 npz_path: &npz_path,
                 processing: &processing,
                 sound_tags: None,
+                sound_tag_status: None,
                 segment_meta: None,
                 redo: false,
             },
@@ -236,7 +248,8 @@ mod tests {
         let npz_path = temporary.path().join("clip.npz");
         fs::write(&raw_path, b"owner-media").unwrap();
         let processing = json!({"state": "empty"});
-        let sound_tags = crate::audio::tag_audio(&vec![0.0; 16_000], temporary.path());
+        let (sound_tags, sound_tag_status) =
+            crate::audio::tag_audio(&vec![0.0; 16_000], temporary.path());
         let meta = Map::from_iter([(
             "audio_capture".to_owned(),
             json!({"version": 1, "state": "partial"}),
@@ -248,6 +261,7 @@ mod tests {
             npz_path: &npz_path,
             processing: &processing,
             sound_tags: sound_tags.as_ref(),
+            sound_tag_status: sound_tag_status.as_ref(),
             segment_meta: Some(&meta),
             redo: false,
         })

@@ -271,40 +271,50 @@ fn health_and_service_log_real_native_bodies_survive_live_interpreter_poisons() 
             probe.token,
             String::from_utf8_lossy(&output.stderr)
         );
-        let (expected_stdout, expected_stderr) = match probe.token {
-            "health" => (
-                concat!(
-                    "Sound tagging is degraded because its CED assets are unavailable. ",
-                    "Transcription will continue. Use `solstone journal install-models` to check or repair the CED assets. ",
-                    "If the signed CED app payload is unavailable on Windows, reinstall the journal app.\n",
-                    "Object detection is degraded because its RF-DETR assets are unavailable. ",
-                    "Screen descriptions will continue. Use `solstone journal install-models` to check or repair the RF-DETR assets.\n",
-                )
-                .as_bytes()
-                .to_vec(),
-                format!(
-                    "Cannot connect: callosum socket not found at {}/health/callosum.sock\n",
-                    harness.journal.display()
-                ),
-            ),
-            "health-logs" => (Vec::new(), "No log files found.\n".to_owned()),
-            "service-logs" => (
-                b"=== service logs === (no oplog leaves)\n".to_vec(),
-                String::new(),
-            ),
+        match probe.token {
+            "health" => {
+                let stdout_str = String::from_utf8_lossy(&output.stdout);
+                let (first_line, rest) = stdout_str.split_once('\n').unwrap();
+                // The copied executable's parent directory is named `bin`, so
+                // resolution looks for a package manifest and reports it missing.
+                assert!(
+                    first_line.contains(solstone_core_installed_payload::code::MANIFEST_MISSING)
+                );
+                assert!(
+                    first_line
+                        .contains(solstone_core_installed_payload::guidance::MANIFEST_MISSING)
+                );
+                assert!(first_line.contains("resource_or_owner_scope_unavailable"));
+                assert!(!first_line.contains("install-models"));
+                assert_eq!(
+                    rest,
+                    concat!(
+                        "Object detection is degraded because its RF-DETR assets are unavailable. ",
+                        "Screen descriptions will continue. Use `solstone journal install-models` to check or repair the RF-DETR assets.\n",
+                    )
+                );
+                assert_eq!(
+                    output.stderr,
+                    format!(
+                        "Cannot connect: callosum socket not found at {}/health/callosum.sock\n",
+                        harness.journal.display()
+                    )
+                    .as_bytes()
+                );
+            }
+            "health-logs" => {
+                assert!(output.stdout.is_empty());
+                assert_eq!(output.stderr, b"No log files found.\n");
+            }
+            "service-logs" => {
+                assert_eq!(
+                    output.stdout,
+                    b"=== service logs === (no oplog leaves)\n".to_vec()
+                );
+                assert!(output.stderr.is_empty());
+            }
             other => panic!("unregistered probe {other}"),
         };
-        assert_eq!(
-            output.stdout, expected_stdout,
-            "{}: body stdout",
-            probe.token
-        );
-        assert_eq!(
-            output.stderr,
-            expected_stderr.as_bytes(),
-            "{}: body output",
-            probe.token
-        );
         assert!(
             !harness.poison_marker.exists(),
             "{}: native body invoked an interpreter",

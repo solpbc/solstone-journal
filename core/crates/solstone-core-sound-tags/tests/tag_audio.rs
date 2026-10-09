@@ -1,218 +1,42 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Classification runs out of process now (Brief D). These tests exercise
+//! Classification runs out of process. These tests exercise
 //! the request/response wiring and readiness dispatch with a stub script
-//! standing in for the compiled `solstone-core-ced-analyze` sibling -- there
-//! is no compiled cross-lane `zig-gnu-2.27` binary available in a dev
-//! `cargo test` run. Genuine `dlopen`/model-load/classify proof against a
-//! real compiled `libced.so` lives in `solstone-core-ced-analyze`'s own
-//! tests, which own that boundary now.
+//! standing in for the compiled `solstone-core-ced-analyze` sibling.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::json;
-use solstone_core_assets::canonical_host_pair;
+use solstone_core_installed_payload::{
+    COMPILED_VERSION, PRODUCT, TARGET_LINUX_X86_64, code, guidance, render_installed_payload,
+};
 use solstone_core_local::install::capability_status::CapabilityStatus;
-use solstone_core_local::install::ced_fixture::{
-    write_ced_model_bytes, write_complete_ced_install,
-};
-use solstone_core_local::install::ced_install::{
-    ced_artifact_key, ced_library_path, ced_model_path,
-};
 use solstone_core_local::install::ced_readiness::{
-    CedVerdict, evaluate_ced_readiness, evaluate_ced_readiness_against_with_probe,
+    CedVerdict, LINUX_CED_LIBRARY, POSIX_CED_MODEL, evaluate_ced_readiness_in_package_with_probe,
+    fresh_model_check_in_package,
 };
 use solstone_core_local::install::ced_runtime::CedAnalyzeProgram;
-use solstone_core_sound_tags::{tag_audio, tag_audio_with_readiness_and_program};
+use solstone_core_sound_tags::{
+    CLASSIFY_SAMPLE_RATE, WINDOW_S, tag_audio, tag_audio_in_package,
+    tag_audio_with_readiness_and_program,
+};
 
-#[test]
-fn missing_assets_degrade_to_none() {
-    let journal = tempfile::tempdir().expect("temporary journal");
-    assert_eq!(tag_audio(&one_second(), journal.path()), None);
+fn enough_audio() -> Vec<f32> {
+    vec![0.0; WINDOW_S * CLASSIFY_SAMPLE_RATE as usize]
 }
 
-#[test]
-fn integrity_invalid_model_degrades() {
-    let Some(key) = host_key() else {
-        return;
-    };
-    let journal = tempfile::tempdir().expect("temporary journal");
-    write_complete_ced_install(journal.path(), key).expect("complete install");
-    match evaluate_ced_readiness(journal.path(), host_os(), host_arch()) {
-        CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid { .. }) => {}
-        other => panic!("expected integrity-invalid, got {other:?}"),
-    }
-    assert_eq!(tag_audio(&one_second(), journal.path()), None);
+fn one_second() -> Vec<f32> {
+    vec![0.0; 16_000]
 }
 
-#[test]
-fn unloadable_ready_verdict_degrades_tag_audio_to_none() {
-    let readiness = CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable {
-        capability: "ced".to_owned(),
-        detail: "stub: engine refused to load".to_owned(),
-    });
-    assert_eq!(
-        tag_audio_with_readiness_and_program(
-            &one_second(),
-            readiness,
-            &CedAnalyzeProgram::Explicit {
-                executable: PathBuf::from("/should/never/run"),
-                args: Vec::new(),
-            },
-        ),
-        None,
-        "a Degraded verdict must never invoke the helper at all"
-    );
-}
-
-#[test]
-fn successful_tags_match_the_stub_contract() {
-    let Some(assets) = assets() else {
-        return;
-    };
-    let (_root, program) = stub_program(
-        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-response-v1\",\"windows\":[{\"ok\":true,\"tags\":{\"Music\":0.9,\"Above\":0.11}}]}'\n",
-    );
-    let tags =
-        tag_audio_with_readiness_and_program(&one_second(), ready_verdict(&assets), &program)
-            .expect("stub tags");
-    assert_eq!(
-        tags,
-        json!({
-            "engine": "ced.cpp v0.1.0",
-            "model": "ced-tiny-q8_0",
-            "threshold": 0.1,
-            "window_s": 10,
-            "agg": "max",
-            "windows": 1,
-            "tags": {"Music": 0.9, "Above": 0.11},
-        })
-    );
-}
-
-#[test]
-fn a_failed_window_keeps_successful_windows() {
-    let Some(assets) = assets() else {
-        return;
-    };
-    let (_root, program) = stub_program(
-        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-response-v1\",\"windows\":[{\"ok\":false,\"reason\":\"classify-failed\",\"detail\":\"stub failure\"},{\"ok\":true,\"tags\":{\"Music\":0.9}}]}'\n",
-    );
-    let mut audio = vec![-1.0; 160_000];
-    audio.extend(one_second());
-
-    let tags = tag_audio_with_readiness_and_program(&audio, ready_verdict(&assets), &program)
-        .expect("one successful window");
-    assert_eq!(tags["windows"], 1);
-    assert_eq!(tags["tags"]["Music"], 0.9);
-}
-
-#[test]
-fn helper_process_failure_degrades_to_none() {
-    let Some(assets) = assets() else {
-        return;
-    };
-    let (_root, program) = stub_program(
-        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"library-unloadable\",\"detail\":\"boom\"}' >&2\nexit 69\n",
-    );
-    assert_eq!(
-        tag_audio_with_readiness_and_program(&one_second(), ready_verdict(&assets), &program),
-        None
-    );
-}
-
-#[test]
-fn malformed_helper_response_degrades_to_none() {
-    let Some(assets) = assets() else {
-        return;
-    };
-    let (_root, program) = stub_program("#!/bin/sh\ncat >/dev/null\nprintf 'not json'\n");
-    assert_eq!(
-        tag_audio_with_readiness_and_program(&one_second(), ready_verdict(&assets), &program),
-        None
-    );
-}
-
-#[test]
-fn window_count_mismatch_degrades_to_none() {
-    let Some(assets) = assets() else {
-        return;
-    };
-    // One window worth of audio requested; the stub reports two.
-    let (_root, program) = stub_program(
-        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-response-v1\",\"windows\":[{\"ok\":true,\"tags\":{}},{\"ok\":true,\"tags\":{}}]}'\n",
-    );
-    assert_eq!(
-        tag_audio_with_readiness_and_program(&one_second(), ready_verdict(&assets), &program),
-        None
-    );
-}
-
-#[test]
-fn ready_layout_maps_linux_x64_linux_arm64_and_macos_metal() {
-    let Some(_) = host_key() else {
-        return;
-    };
-    for (os, arch, key) in [
-        ("linux", "x86_64", "linux-cpu-x64"),
-        ("linux", "arm64", "linux-cpu-arm64"),
-        ("darwin", "arm64", "macos-metal-arm64"),
-    ] {
-        let journal = tempfile::tempdir().expect("temporary journal");
-        write_complete_ced_install(journal.path(), key).expect("complete install");
-        let library = ced_library_path(journal.path(), key);
-        let digest = solstone_core_local::install::ced_fixture::ced_model_digest(journal.path())
-            .expect("fixture digest");
-        match evaluate_ced_readiness_against_with_probe(
-            journal.path(),
-            os,
-            arch,
-            &digest,
-            |_library, _model| Ok(()),
-        ) {
-            CedVerdict::Ready {
-                library: ready_library,
-                model,
-            } => {
-                assert_eq!(ready_library, library);
-                assert_eq!(model, ced_model_path(journal.path()));
-            }
-            other => panic!("{os}/{arch} expected ready, got {other:?}"),
-        }
-        assert_eq!(ced_artifact_key(os, arch), Some(key));
-    }
-}
-
-struct Assets {
-    _journal: tempfile::TempDir,
-    library: PathBuf,
-    model: PathBuf,
-}
-
-fn assets() -> Option<Assets> {
-    let journal = tempfile::tempdir().expect("temporary journal");
-    let key = host_key()?;
-    write_complete_ced_install(journal.path(), key).expect("complete install");
-    // Real bytes never matter here -- the stub program answers every
-    // classify request without touching them -- but a real path on disk
-    // keeps the request payload honest.
-    write_ced_model_bytes(journal.path(), b"stub model bytes").expect("model bytes");
-    let library = ced_library_path(journal.path(), key);
-    let model = ced_model_path(journal.path());
-    Some(Assets {
-        _journal: journal,
-        library,
-        model,
-    })
-}
-
-fn ready_verdict(assets: &Assets) -> CedVerdict {
-    CedVerdict::Ready {
-        library: assets.library.clone(),
-        model: assets.model.clone(),
-    }
+fn write_rendered_manifest(root: &Path, target: &str) {
+    let manifest_bytes =
+        render_installed_payload(root, PRODUCT, COMPILED_VERSION, target, "commit_aaa").unwrap();
+    let manifest_path = root.join(solstone_core_installed_payload::INSTALLED_PAYLOAD_MANIFEST);
+    fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
+    fs::write(manifest_path, manifest_bytes).unwrap();
 }
 
 fn stub_program(body: &str) -> (tempfile::TempDir, CedAnalyzeProgram) {
@@ -233,19 +57,238 @@ fn stub_program(body: &str) -> (tempfile::TempDir, CedAnalyzeProgram) {
     )
 }
 
-fn host_key() -> Option<&'static str> {
-    let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
-    ced_artifact_key(os, arch)
+#[test]
+fn audio_too_short_yields_neither_tags_nor_status() {
+    let journal = tempfile::tempdir().expect("temporary journal");
+    let (tags, status) = tag_audio(&one_second(), journal.path());
+    assert!(tags.is_none());
+    assert!(status.is_none());
 }
 
-fn host_os() -> &'static str {
-    canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).0
+#[test]
+fn missing_member_in_package_yields_absent_status() {
+    let root = tempfile::tempdir().unwrap();
+    let lib_path = root.path().join(LINUX_CED_LIBRARY);
+    let model_path = root.path().join(POSIX_CED_MODEL);
+    fs::create_dir_all(lib_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(model_path.parent().unwrap()).unwrap();
+    fs::write(&lib_path, b"lib_bytes").unwrap();
+    fs::write(&model_path, b"model_bytes").unwrap();
+
+    write_rendered_manifest(root.path(), TARGET_LINUX_X86_64);
+
+    fs::remove_file(&model_path).unwrap();
+
+    let (_stub_dir, program) = stub_program("#!/bin/sh\nexit 0\n");
+
+    let (tags, status) = tag_audio_in_package(&enough_audio(), root.path(), &program);
+    assert!(tags.is_none());
+    match status {
+        Some(CapabilityStatus::Absent { detail, .. }) => {
+            assert!(
+                detail.contains(code::MEMBER_MISSING),
+                "detail must contain member-missing: {detail}"
+            );
+            assert!(detail.contains(guidance::PACKAGE_MISMATCH));
+        }
+        other => panic!("expected Absent status, got {other:?}"),
+    }
 }
 
-fn host_arch() -> &'static str {
-    canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).1
+#[test]
+fn model_changed_after_admission_yields_integrity_invalid_and_does_not_invoke_worker() {
+    let root = tempfile::tempdir().unwrap();
+    let lib_path = root.path().join(LINUX_CED_LIBRARY);
+    let model_path = root.path().join(POSIX_CED_MODEL);
+    fs::create_dir_all(lib_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(model_path.parent().unwrap()).unwrap();
+    fs::write(&lib_path, b"lib_bytes").unwrap();
+    fs::write(&model_path, b"initial_model_bytes").unwrap();
+
+    // 1. Render the package with the model bytes that admission will accept.
+    write_rendered_manifest(root.path(), TARGET_LINUX_X86_64);
+
+    // 2. evaluate_ced_readiness_in_package_with_probe(..., |_, _| Ok(())) and assert Ready.
+    let readiness =
+        evaluate_ced_readiness_in_package_with_probe(root.path(), "linux", "x86_64", |_, _| Ok(()));
+    assert!(matches!(readiness, CedVerdict::Ready { .. }));
+
+    // 3. Overwrite the model file.
+    fs::write(&model_path, b"altered_model_bytes").unwrap();
+
+    // 4. fresh_model_check_in_package returns IntegrityInvalid whose detail contains code::MEMBER_CHANGED and guidance::PACKAGE_MISMATCH, and does not contain tamper.
+    let check = fresh_model_check_in_package(root.path(), "linux", "x86_64");
+    match check {
+        Err(CapabilityStatus::IntegrityInvalid { detail, .. }) => {
+            assert!(
+                detail.contains(code::MEMBER_CHANGED),
+                "detail must contain member-changed: {detail}"
+            );
+            assert!(detail.contains(guidance::PACKAGE_MISMATCH));
+            assert!(!detail.contains("tamper"));
+        }
+        other => {
+            panic!("expected IntegrityInvalid from fresh_model_check_in_package, got {other:?}")
+        }
+    }
+
+    // 5. tag_audio_in_package with a stub that touches a marker on any invocation does not create that marker.
+    let marker = root.path().join("invoked.marker");
+    let script = format!(
+        "#!/bin/sh\ntouch '{}'\nprintf '%s\\n' '{{\"schema\":\"solstone-ced-response-v1\",\"windows\":[{{\"ok\":true,\"tags\":{{\"Music\":0.9}}}}]}}'\n",
+        marker.display()
+    );
+    let (_stub_dir, program) = stub_program(&script);
+
+    let (tags, status) = tag_audio_in_package(&enough_audio(), root.path(), &program);
+    assert!(tags.is_none());
+    match status {
+        Some(CapabilityStatus::IntegrityInvalid { detail, .. }) => {
+            assert!(detail.contains(code::MEMBER_CHANGED));
+            assert!(detail.contains(guidance::PACKAGE_MISMATCH));
+            assert!(!detail.contains("tamper"));
+        }
+        other => panic!("expected IntegrityInvalid status, got {other:?}"),
+    }
+    assert!(
+        !marker.exists(),
+        "worker must not be invoked when model is changed"
+    );
 }
 
-fn one_second() -> Vec<f32> {
-    vec![0.0; 16_000]
+#[test]
+fn successful_package_classification_returns_tags_and_no_status() {
+    let root = tempfile::tempdir().unwrap();
+    let lib_path = root.path().join(LINUX_CED_LIBRARY);
+    let model_path = root.path().join(POSIX_CED_MODEL);
+    fs::create_dir_all(lib_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(model_path.parent().unwrap()).unwrap();
+    fs::write(&lib_path, b"lib_bytes").unwrap();
+    fs::write(&model_path, b"model_bytes").unwrap();
+
+    write_rendered_manifest(root.path(), TARGET_LINUX_X86_64);
+
+    let (_stub_dir, program) = stub_program(
+        "#!/bin/sh\ninput=$(cat)\ncase \"$input\" in\n  *solstone-ced-probe-request-v1*)\n    printf '%s\\n' '{\"schema\":\"solstone-ced-probe-response-v1\",\"ok\":true}'\n    ;;\n  *)\n    printf '%s\\n' '{\"schema\":\"solstone-ced-response-v1\",\"windows\":[{\"ok\":true,\"tags\":{\"Music\":0.9,\"Above\":0.11}}]}'\n    ;;\nesac\n",
+    );
+
+    let (tags, status) = tag_audio_in_package(&enough_audio(), root.path(), &program);
+    assert!(status.is_none());
+    assert_eq!(
+        tags.unwrap(),
+        json!({
+            "engine": "ced.cpp v0.1.0",
+            "model": "ced-tiny-q8_0",
+            "threshold": 0.1,
+            "window_s": 10,
+            "agg": "max",
+            "windows": 1,
+            "tags": {"Music": 0.9, "Above": 0.11},
+        })
+    );
+}
+
+#[test]
+fn unloadable_ready_verdict_degrades_tag_audio_to_none() {
+    let readiness = CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable {
+        capability: "ced".to_owned(),
+        detail: "stub: engine refused to load".to_owned(),
+    });
+    let (tags, status) = tag_audio_with_readiness_and_program(
+        &enough_audio(),
+        readiness,
+        &CedAnalyzeProgram::Explicit {
+            executable: PathBuf::from("/should/never/run"),
+            args: Vec::new(),
+        },
+    );
+    assert!(tags.is_none());
+    assert!(matches!(
+        status,
+        Some(CapabilityStatus::UnloadableOrUnrunnable { .. })
+    ));
+}
+
+#[test]
+fn successful_tags_match_the_stub_contract() {
+    let (_root, program) = stub_program(
+        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-response-v1\",\"windows\":[{\"ok\":true,\"tags\":{\"Music\":0.9,\"Above\":0.11}}]}'\n",
+    );
+    let readiness = CedVerdict::Ready {
+        library: PathBuf::from("/fake/libced.so"),
+        model: PathBuf::from("/fake/model.gguf"),
+    };
+    let (tags, status) = tag_audio_with_readiness_and_program(&enough_audio(), readiness, &program);
+    assert!(status.is_none());
+    assert_eq!(
+        tags.expect("stub tags"),
+        json!({
+            "engine": "ced.cpp v0.1.0",
+            "model": "ced-tiny-q8_0",
+            "threshold": 0.1,
+            "window_s": 10,
+            "agg": "max",
+            "windows": 1,
+            "tags": {"Music": 0.9, "Above": 0.11},
+        })
+    );
+}
+
+#[test]
+fn a_failed_window_keeps_successful_windows() {
+    let (_root, program) = stub_program(
+        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-response-v1\",\"windows\":[{\"ok\":false,\"reason\":\"classify-failed\",\"detail\":\"stub failure\"},{\"ok\":true,\"tags\":{\"Music\":0.9}}]}'\n",
+    );
+    let readiness = CedVerdict::Ready {
+        library: PathBuf::from("/fake/libced.so"),
+        model: PathBuf::from("/fake/model.gguf"),
+    };
+    let mut audio = vec![0.0; 160_000];
+    audio.extend(vec![0.0; 160_000]);
+
+    let (tags, status) = tag_audio_with_readiness_and_program(&audio, readiness, &program);
+    assert!(status.is_none());
+    let tags = tags.expect("one successful window");
+    assert_eq!(tags["windows"], 1);
+    assert_eq!(tags["tags"]["Music"], 0.9);
+}
+
+#[test]
+fn helper_process_failure_degrades_to_none() {
+    let (_root, program) = stub_program(
+        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"library-unloadable\",\"detail\":\"boom\"}' >&2\nexit 69\n",
+    );
+    let readiness = CedVerdict::Ready {
+        library: PathBuf::from("/fake/libced.so"),
+        model: PathBuf::from("/fake/model.gguf"),
+    };
+    let (tags, status) = tag_audio_with_readiness_and_program(&enough_audio(), readiness, &program);
+    assert!(tags.is_none());
+    assert!(status.is_none());
+}
+
+#[test]
+fn malformed_helper_response_degrades_to_none() {
+    let (_root, program) = stub_program("#!/bin/sh\ncat >/dev/null\nprintf 'not json'\n");
+    let readiness = CedVerdict::Ready {
+        library: PathBuf::from("/fake/libced.so"),
+        model: PathBuf::from("/fake/model.gguf"),
+    };
+    let (tags, status) = tag_audio_with_readiness_and_program(&enough_audio(), readiness, &program);
+    assert!(tags.is_none());
+    assert!(status.is_none());
+}
+
+#[test]
+fn window_count_mismatch_degrades_to_none() {
+    let (_root, program) = stub_program(
+        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-response-v1\",\"windows\":[{\"ok\":true,\"tags\":{}},{\"ok\":true,\"tags\":{}}]}'\n",
+    );
+    let readiness = CedVerdict::Ready {
+        library: PathBuf::from("/fake/libced.so"),
+        model: PathBuf::from("/fake/model.gguf"),
+    };
+    let (tags, status) = tag_audio_with_readiness_and_program(&enough_audio(), readiness, &program);
+    assert!(tags.is_none());
+    assert!(status.is_none());
 }

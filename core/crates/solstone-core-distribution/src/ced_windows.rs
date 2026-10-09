@@ -69,14 +69,6 @@ pub const CED_WINDOWS_EXPORTS: &[&str] = &[
 /// link this document so the produced DLL has precisely the reviewed ABI.
 pub const CED_WINDOWS_EXPORT_DEFINITION: &str = "LIBRARY ced\nEXPORTS\n    ced_capi_abi_version\n    ced_capi_load\n    ced_capi_free\n    ced_capi_last_error\n    ced_capi_classify_pcm_json\n    ced_capi_free_string\n";
 
-/// Catalog identity for the GGUF model. `solstone-core-assets::ARTIFACTS`'s
-/// `ced-model` row is the sole authority for that unit's sha256 and it is
-/// deliberately not duplicated here.
-pub const CED_MODEL_UNIT: &str = "ced-model";
-pub const CED_MODEL_VERSION: &str = "b5e9a4aad6438763c8da16079d77563fbed35c65";
-pub const CED_MODEL_FILENAME: &str = "ced-tiny-q8_0.gguf";
-pub const CED_MODEL_SIZE_BYTES: u64 = 6_211_616;
-
 pub const CED_DLL_OUTPUT_LABEL: &str = "bin/ced.dll";
 
 const FORBIDDEN_IMPORT_NEEDLES: &[&str] = &[

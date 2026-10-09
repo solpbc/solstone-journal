@@ -267,12 +267,9 @@ mode = 0o755
 lane = "zig-gnu-2.27"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
-# Brief D: CED's ced.cpp engine is a dynamically-linked glibc shared object
-# (`libced.so`) that `solstone-core-ced-sys` `dlopen`s at runtime. A
-# musl-static process has no in-process dynamic loader and can never satisfy
-# that call, so -- like speakers-analyze and vad-analyze -- CED classification
-# and readiness probing run out of process in this gnu-lane helper instead of
-# inside `solstone-core`.
+# CED's ced.cpp engine is a dynamically-linked shared object (`libced.so` /
+# `libced.dylib`) that `solstone-core-ced-sys` dlopens at runtime. CED
+# classification and readiness probing run out of process in this helper.
 [[entry]]
 kind = "bin"
 package = "solstone-core-ced-analyze"
@@ -280,6 +277,72 @@ bin = "solstone-core-ced-analyze"
 dest = "bin/solstone-core-ced-analyze"
 mode = 0o755
 lane = "zig-gnu-2.27"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
+kind = "pinned-members"
+component = "ced-engine"
+input = { kind = "catalog-committed", unit = "ced-engine", filename = "ced-v0.1.0-lib-linux-cpu-x64.tar.gz", path = "core/models/assets/ced/ced-v0.1.0-lib-linux-cpu-x64.tar.gz" }
+staged = [
+  { relpath = "ced-v0.1.0-lib-linux-cpu-x64/libced.so", dest = "lib/solstone-ced/libced.so", mode = 0o755, extracted_sha256 = "184d3fd2ba7d939a0093f4db1e7d41697754f19024d3a5824faf6580a96dfe65", identity = { name = "libced.so" } },
+]
+ignored = [
+  "ced-v0.1.0-lib-linux-cpu-x64/LICENSE",
+  "ced-v0.1.0-lib-linux-cpu-x64/README.md",
+  "ced-v0.1.0-lib-linux-cpu-x64/ced_capi.h",
+]
+targets = ["linux-x86_64"]
+
+[[entry]]
+kind = "pinned-members"
+component = "ced-engine"
+input = { kind = "catalog-committed", unit = "ced-engine", filename = "ced-v0.1.0-lib-linux-cpu-arm64.tar.gz", path = "core/models/assets/ced/ced-v0.1.0-lib-linux-cpu-arm64.tar.gz" }
+staged = [
+  { relpath = "ced-v0.1.0-lib-linux-cpu-arm64/libced.so", dest = "lib/solstone-ced/libced.so", mode = 0o755, extracted_sha256 = "1aa97f176c8f81ed9c436e4b9fb7d2ff95cd405a13611c2e256686b9a5fc144f", identity = { name = "libced.so" } },
+]
+ignored = [
+  "ced-v0.1.0-lib-linux-cpu-arm64/LICENSE",
+  "ced-v0.1.0-lib-linux-cpu-arm64/README.md",
+  "ced-v0.1.0-lib-linux-cpu-arm64/ced_capi.h",
+]
+targets = ["linux-aarch64"]
+
+[[entry]]
+kind = "pinned-members"
+component = "ced-engine"
+input = { kind = "catalog-committed", unit = "ced-engine", filename = "ced-v0.1.0-lib-macos-metal-arm64.tar.gz", path = "core/models/assets/ced/ced-v0.1.0-lib-macos-metal-arm64.tar.gz" }
+staged = [
+  { relpath = "ced-v0.1.0-lib-macos-metal-arm64/libced.dylib", dest = "lib/solstone-ced/libced.dylib", mode = 0o755, extracted_sha256 = "38d95ae58fb288868aa0a725075aff4efbf82aa62c5f237a0235e11de065610d", identity = { name = "@rpath/libced.dylib" } },
+]
+ignored = [
+  "ced-v0.1.0-lib-macos-metal-arm64/LICENSE",
+  "ced-v0.1.0-lib-macos-metal-arm64/README.md",
+  "ced-v0.1.0-lib-macos-metal-arm64/ced_capi.h",
+]
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "pinned-members"
+component = "ced-model"
+input = { kind = "catalog-committed", unit = "ced-model", filename = "ced-tiny-q8_0.gguf", path = "core/models/assets/ced/ced-tiny-q8_0.gguf" }
+staged = [
+  { relpath = "", dest = "lib/solstone-ced/ced-tiny-q8_0.gguf", mode = 0o644, extracted_sha256 = "48bee4e2fc3cc85d7806e03471db24e77fda6c2a2e81ffe9ef67caebaf2bd674" },
+]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
+kind = "pinned-members"
+component = "ced-model"
+input = { kind = "catalog-committed", unit = "ced-model", filename = "ced-tiny-q8_0.gguf", path = "core/models/assets/ced/ced-tiny-q8_0.gguf" }
+staged = [
+  { relpath = "", dest = "lib/solstone_journal_models/assets/ced/ced-tiny-q8_0.gguf", mode = 0o644, extracted_sha256 = "48bee4e2fc3cc85d7806e03471db24e77fda6c2a2e81ffe9ef67caebaf2bd674" },
+]
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "licence-tree"
+source = "core/distribution/licenses/ced"
+component = "ced-engine"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
@@ -950,6 +1013,20 @@ component = "ced"
 member = "third_party/ggml/LICENSE"
 dest = "share/licenses/ced/ggml-LICENSE"
 mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/ced/ced-tiny-model-LICENSE"
+dest = "share/licenses/ced/ced-tiny-model-LICENSE"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/ced/ATTRIBUTION.md"
+dest = "share/licenses/ced/ATTRIBUTION.md"
+mode = 0o644
 targets = ["windows-x86_64"]
 
 [[entry]]

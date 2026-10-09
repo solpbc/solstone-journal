@@ -374,11 +374,13 @@ License notice: Apache License 2.0 (Apache-2.0).
 Apache-2.0 permits sol pbc's redistribution of these model files with its
 required notice and license terms.
 
-## runtime-downloaded provider artifacts (ced.cpp sound-tag engine)
+## bundled provider artifacts (ced.cpp sound-tag engine)
 
-sol pbc redistributes these artifacts from `updates.solstone.app` on demand
-into the journal provider cache for local ambient sound tagging. They are not
-bundled in this repository.
+sol pbc redistributes these engine binaries inside every package for local
+ambient sound tagging: POSIX `lib/solstone-ced/libced.{so,dylib}` and Windows
+`bin/ced.dll`. Licences from `core/distribution/licenses/ced/` are staged at
+`share/solstone-journal/licenses/ced-engine/` (POSIX) and `share/licenses/ced/`
+(Windows).
 
 ### ced.cpp v0.1.0 engine
 
@@ -399,11 +401,14 @@ License notice: MIT.
 
 The MIT license permits sol pbc's redistribution of this engine binary.
 
-## runtime-downloaded provider artifacts (ced-tiny sound-tag model)
+## bundled provider artifacts (ced-tiny sound-tag model)
 
-sol pbc redistributes this artifact from `updates.solstone.app` on demand into
-the journal provider cache for local ambient sound tagging. It is not bundled
-in this repository.
+sol pbc redistributes this model file inside every package for local ambient
+sound tagging: POSIX `lib/solstone-ced/ced-tiny-q8_0.gguf` and Windows
+`lib/solstone_journal_models/assets/ced/ced-tiny-q8_0.gguf`. Licences from
+`core/distribution/licenses/ced/` are staged at
+`share/solstone-journal/licenses/ced-engine/` (POSIX) and `share/licenses/ced/`
+(Windows).
 
 ### ced-tiny-q8_0 GGUF model
 

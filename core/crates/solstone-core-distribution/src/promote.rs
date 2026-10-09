@@ -1122,4 +1122,122 @@ mod tests {
                 .any(|window| window == b"SOLSTONE-FAKE-ARCHIVE-SIGNATURE:promote:")
         );
     }
+
+    #[test]
+    fn macos_signer_seam_records_real_ced_post_sign_digest() {
+        use crate::archive_contract::{DeliveryContract, PrebuildInputIdentity};
+        use crate::provenance::Provenance;
+        use std::io::Read;
+        use std::path::Path;
+
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("repo root");
+        let archive_path =
+            repo_root.join("core/models/assets/ced/ced-v0.1.0-lib-macos-metal-arm64.tar.gz");
+        assert!(
+            archive_path.exists(),
+            "macos archive exists: {archive_path:?}"
+        );
+
+        let tar_gz = fs::File::open(&archive_path).expect("open macos archive");
+        let decoder = flate2::read::GzDecoder::new(tar_gz);
+        let mut archive = tar::Archive::new(decoder);
+        let mut ced_dylib: Option<Vec<u8>> = None;
+        for entry in archive.entries().expect("entries") {
+            let mut entry = entry.expect("entry");
+            let path = entry.path().expect("entry path");
+            if path.ends_with("libced.dylib") {
+                let mut bytes = Vec::new();
+                entry.read_to_end(&mut bytes).expect("read dylib");
+                ced_dylib = Some(bytes);
+                break;
+            }
+        }
+        let dylib = ced_dylib.expect("dylib found in archive");
+        let pre_sign_digest = crate::digest::sha256_hex(&dylib);
+        assert_eq!(
+            pre_sign_digest,
+            "38d95ae58fb288868aa0a725075aff4efbf82aa62c5f237a0235e11de065610d"
+        );
+
+        let root = promotion_root("macos-ced-sign");
+        let stage = root.path().join("chain-stage");
+        let executable = crate::macho::fixture(&crate::macho::FixtureSpec::default());
+        crate::stage::write_staged_file_mode(&stage, "bin/solstone", &executable, 0o755)
+            .expect("stage executable");
+        crate::stage::write_staged_file_mode(
+            &stage,
+            "lib/solstone-ced/libced.dylib",
+            &dylib,
+            0o644,
+        )
+        .expect("stage dylib");
+        let prebuild = PrebuildInputIdentity {
+            target_id: "macos-arm64".into(),
+            commit: "aaa".into(),
+            lock_sha256: "bbb".into(),
+            inventory_sha256: "ab".repeat(32),
+            slots: Vec::new(),
+        };
+        let delivery = DeliveryContract {
+            target_id: prebuild.target_id.clone(),
+            prebuild_input_sha256: prebuild.digest(),
+            slots: Vec::new(),
+        };
+        crate::archive_contract::stage_chain(&stage, &prebuild, &delivery, "aaa", "bbb")
+            .expect("stage chain");
+        let mut tree = Vec::new();
+        for record in crate::stage::staged_records(&stage).expect("staged records") {
+            let bytes = fs::read(stage.join(&record.dest)).expect("staged bytes");
+            tree.push((record.dest, bytes, record.mode));
+        }
+        let version = env!("CARGO_PKG_VERSION");
+        let basename = format!("solstone-journal-{version}-macos-arm64");
+        let _guard = super::install_fake_macos_sign();
+        let request = super::PromoteRequest {
+            dest: root.path().join("dest"),
+            work: root.path().join("work"),
+            tree,
+            version: version.to_owned(),
+            basename: basename.clone(),
+            os: "macos".into(),
+            arch: "macos-arm64".into(),
+            deb_arch: String::new(),
+            rpm_arch: String::new(),
+            dirty: false,
+            observed: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            expected: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            fail_after: None,
+            apple: None,
+        };
+        super::promote(&request).expect("macos promote");
+        let tar = fs::read(request.dest.join(format!("{basename}.tar.gz"))).expect("tar");
+        let members = crate::tar::tar_members(&tar).expect("tar members");
+        let manifest = manifest_bytes(&members);
+        let shipped = members
+            .iter()
+            .find(|member| member.path == "lib/solstone-ced/libced.dylib")
+            .expect("dylib");
+        let value: serde_json::Value = serde_json::from_slice(&manifest).expect("json");
+        let listed = value["files"]
+            .as_array()
+            .expect("files")
+            .iter()
+            .find(|file| file["path"] == "lib/solstone-ced/libced.dylib")
+            .expect("listed dylib");
+        assert_eq!(
+            listed["sha256"].as_str().expect("sha"),
+            crate::digest::sha256_hex(&shipped.bytes)
+        );
+        assert_ne!(shipped.bytes, dylib);
+        assert_ne!(listed["sha256"].as_str().expect("sha"), pre_sign_digest);
+    }
 }

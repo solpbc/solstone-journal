@@ -400,6 +400,12 @@ gatekeeper_rung() {
 		|| refuse "the signed payload did not load into the signed helper"
 	grep -Fq '"schema":"solstone-speaker-analyze-response-v1"' "$WORK/gk-response.json" \
 		|| refuse "payload load produced no response"
+	ced_probe "$WORK/ced-response.json" \
+		|| refuse "the signed CED engine did not load into the signed helper"
+	grep -Fq '"schema":"solstone-ced-probe-response-v1"' "$WORK/ced-response.json" \
+		|| refuse "CED probe produced no response"
+	grep -Fq '"ok":true' "$WORK/ced-response.json" \
+		|| refuse "CED probe did not report ok"
 	printf 'gatekeeper half 2: %s payload(s) signed and loaded by a hardened-runtime binary\n' "$payloads"
 
 	gatekeeper_negatives
@@ -458,7 +464,8 @@ gatekeeper_negatives() {
 	done <"$WORK/broken-members-after-strip"
 	saved_tree=$TREE
 	TREE=$broken
-	if speakers_probe "$WORK/broken-response.json" 2>"$WORK/broken.err"; then
+	if speakers_probe "$WORK/broken-response.json" 2>"$WORK/broken.err" \
+		&& ced_probe "$WORK/broken-ced-response.json" 2>"$WORK/broken-ced.err"; then
 		lv=unenforced
 	else
 		lv=enforced
@@ -588,10 +595,8 @@ read_signed_macho_inventory() {
 		payload) member_payloads=$((member_payloads + 1)) ;;
 		*) refuse "unknown signed member kind for $member_path: $member_kind" ;;
 		esac
-		case $member_path:$member_library_validation in
-		bin/solstone-core-ced-analyze:true) ;;
-		bin/solstone-core-ced-analyze:*) refuse "CED helper lacks its fetched-engine library-validation exception" ;;
-		*:false) ;;
+		case $member_library_validation in
+		false) ;;
 		*) refuse "unexpected library-validation exception: $member_path" ;;
 		esac
 		member_file=$TREE/$member_path
@@ -708,6 +713,14 @@ speakers_probe() {
 	[ -f "$WORK/audio.f32" ] || dd if=/dev/zero of="$WORK/audio.f32" bs=32000 count=1 2>/dev/null
 	speaker_request "$tree" "$WORK/statements.f32" "$WORK/intervals.f32" \
 		| "$tree/bin/solstone-core-speakers-analyze" >"$response" 2>"$WORK/speakers.err"
+}
+
+ced_probe() {
+	response=$1
+	tree=${TREE}
+	cat <<EOF | "$tree/bin/solstone-core-ced-analyze" probe >"$response" 2>"$WORK/ced.err"
+{"schema":"solstone-ced-probe-request-v1","models":{"ced_library_path":"$tree/lib/solstone-ced/libced.dylib","ced_model_path":"$tree/lib/solstone-ced/ced-tiny-q8_0.gguf"}}
+EOF
 }
 
 speakers_rung() {

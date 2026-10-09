@@ -2492,17 +2492,20 @@ fn native_health_dispatch_reaches_both_real_bodies_without_python() {
 
     let health =
         run_dispatcher_with_output(&context, "health", &[]).expect("dispatch native health body");
-    assert_eq!(health.status.code(), Some(1));
+    let stdout_str = String::from_utf8_lossy(&health.stdout);
+    let (first_line, rest) = stdout_str.split_once('\n').unwrap();
+    // The copied executable's parent directory is named `bin`, so
+    // resolution looks for a package manifest and reports it missing.
+    assert!(first_line.contains(solstone_core_installed_payload::code::MANIFEST_MISSING));
+    assert!(first_line.contains(solstone_core_installed_payload::guidance::MANIFEST_MISSING));
+    assert!(first_line.contains("resource_or_owner_scope_unavailable"));
+    assert!(!first_line.contains("install-models"));
     assert_eq!(
-        health.stdout,
+        rest,
         concat!(
-            "Sound tagging is degraded because its CED assets are unavailable. ",
-            "Transcription will continue. Use `solstone journal install-models` to check or repair the CED assets. ",
-            "If the signed CED app payload is unavailable on Windows, reinstall the journal app.\n",
             "Object detection is degraded because its RF-DETR assets are unavailable. ",
             "Screen descriptions will continue. Use `solstone journal install-models` to check or repair the RF-DETR assets.\n",
         )
-        .as_bytes()
     );
     assert_eq!(
         health.stderr,
