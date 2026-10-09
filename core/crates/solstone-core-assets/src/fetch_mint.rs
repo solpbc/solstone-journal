@@ -278,6 +278,7 @@ fn mint_runtime_fetch_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "runtime-fetch-test")]
     use crate::RuntimeFetch;
 
     #[test]

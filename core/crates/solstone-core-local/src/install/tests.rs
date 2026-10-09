@@ -21,7 +21,6 @@ use super::{
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use solstone_core_assets::{Artifact, Backend, Platform, catalog, resolve};
 
 use crate::nvidia::NVIDIA_PROBE_SCHEMA;

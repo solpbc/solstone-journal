@@ -132,10 +132,10 @@ fn item_attrs(item: &syn::Item) -> &[syn::Attribute] {
 }
 
 fn is_test_item(item: &syn::Item) -> bool {
-    if let syn::Item::Mod(m) = item {
-        if m.ident == "tests" {
-            return true;
-        }
+    if let syn::Item::Mod(m) = item
+        && m.ident == "tests"
+    {
+        return true;
     }
     let attrs = item_attrs(item);
     attrs
@@ -312,24 +312,22 @@ fn discover_inventory_packages(inventory_path: &Path) -> BTreeSet<String> {
     fn walk_item(item: &toml_edit::Item, out: &mut BTreeSet<String>) {
         if let Some(table) = item.as_table_like() {
             for (key, val) in table.iter() {
-                if key == "package" {
-                    if let Some(s) = val.as_str() {
-                        if s.starts_with("solstone-core-") || s == "solstone-core" {
-                            out.insert(s.to_string());
-                        }
-                    }
+                if key == "package"
+                    && let Some(s) = val.as_str()
+                    && (s.starts_with("solstone-core-") || s == "solstone-core")
+                {
+                    out.insert(s.to_string());
                 }
                 walk_item(val, out);
             }
         } else if let Some(aot) = item.as_array_of_tables() {
             for table in aot.iter() {
                 for (key, val) in table.iter() {
-                    if key == "package" {
-                        if let Some(s) = val.as_str() {
-                            if s.starts_with("solstone-core-") || s == "solstone-core" {
-                                out.insert(s.to_string());
-                            }
-                        }
+                    if key == "package"
+                        && let Some(s) = val.as_str()
+                        && (s.starts_with("solstone-core-") || s == "solstone-core")
+                    {
+                        out.insert(s.to_string());
                     }
                     walk_item(val, out);
                 }
@@ -338,12 +336,11 @@ fn discover_inventory_packages(inventory_path: &Path) -> BTreeSet<String> {
     }
 
     for (key, val) in doc.iter() {
-        if key == "package" {
-            if let Some(s) = val.as_str() {
-                if s.starts_with("solstone-core-") || s == "solstone-core" {
-                    packages.insert(s.to_string());
-                }
-            }
+        if key == "package"
+            && let Some(s) = val.as_str()
+            && (s.starts_with("solstone-core-") || s == "solstone-core")
+        {
+            packages.insert(s.to_string());
         }
         walk_item(val, &mut packages);
     }

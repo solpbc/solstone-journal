@@ -845,7 +845,7 @@ mod tests {
         // Builder fetch of owner origin records nothing and refuses
         let err = ensure_verified_url(
             "https://updates.solstone.app/assets/test-key",
-            &sha256,
+            sha256,
             Some(size),
             &bad_path,
             |_, _| {},
