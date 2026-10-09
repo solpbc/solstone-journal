@@ -2046,15 +2046,15 @@ mod tests {
         assert_ne!(state2, "off");
         assert_ne!(state2, "inactive");
 
-        // 3. Record nvattest_install_in_progress -> verifying
+        // 3. Record attestation_not_verified -> unreachable
         solstone_core_brain::record_confidential_attestation_refusal(
             mid_check_path,
             &config_map,
-            "nvattest_install_in_progress",
+            "attestation_not_verified",
         );
         let p3 = super::payload(mid_check_path, &config_map, "served-model", Value::Null);
         let state3 = &p3["active_lane"]["confidential_attestation"]["state"];
-        assert_eq!(state3, "verifying");
+        assert_eq!(state3, "unreachable");
         assert_ne!(state3, "verified");
         assert_ne!(state3, "off");
         assert_ne!(state3, "inactive");
@@ -2111,17 +2111,34 @@ mod tests {
         assert_eq!(att2["state"], "failed");
         assert_eq!(att2["reason"], "attestation_rejected");
 
-        // 3. nvattest_install_in_progress -> verifying / nvattest_install_in_progress
+        // 3. attestation_not_verified -> unreachable / attestation_not_verified
         solstone_core_brain::record_transcription_verification(
             journal,
-            "nvattest_install_in_progress",
+            "attestation_not_verified",
             "https://attested.example",
         )
         .unwrap();
         let p3 = super::payload(journal, &config_map, "gpt-4o", Value::Null);
         let att3 = &p3["active_lane"]["confidential_attestation"];
-        assert_eq!(att3["state"], "verifying");
-        assert_eq!(att3["reason"], "nvattest_install_in_progress");
+        assert_eq!(att3["state"], "unreachable");
+        assert_eq!(att3["reason"], "attestation_not_verified");
+
+        // 3b. Stored retired code -> stale
+        let tv_path = solstone_core_brain::transcription_verification_path(journal);
+        std::fs::write(
+            &tv_path,
+            serde_json::to_vec(&serde_json::json!({
+                "reason": "nvattest_install_in_progress",
+                "observed_at": "2026-01-01T00:00:00Z",
+                "endpoint": "https://attested.example",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let p3b = super::payload(journal, &config_map, "gpt-4o", Value::Null);
+        let att3b = &p3b["active_lane"]["confidential_attestation"];
+        assert_eq!(att3b["state"], "stale");
+        assert_eq!(att3b["reason"], "nvattest_install_in_progress");
 
         // 4. No status file -> inactive / confidential_not_active
         solstone_core_brain::clear_transcription_verification(journal).unwrap();

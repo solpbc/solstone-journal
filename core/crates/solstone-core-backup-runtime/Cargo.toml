@@ -31,6 +31,7 @@ thiserror.workspace = true
 ureq.workspace = true
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 solstone-core-artifact-download.workspace = true
+solstone-core-assets.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-body-rebuild.workspace = true
 solstone-core-indexer-store.workspace = true

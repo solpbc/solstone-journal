@@ -84,6 +84,10 @@ path = "tests/supervisor_tick.rs"
 name = "provider_install_component"
 path = "tests/provider_install_component.rs"
 
+[[test]]
+name = "generate_wire"
+path = "tests/generate_wire.rs"
+
 # Real parent-death, kqueue, and process-tree signal state cannot safely share
 # an in-process harness with the ordinary integration tests.
 [[test]]
@@ -214,6 +218,7 @@ solstone-core-win-owner-rail = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_Threading", "Win32_System_SystemInformation"] }
 
 [dev-dependencies]
+solstone-core-installed-payload.workspace = true
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 solstone-core-journal-cli.workspace = true
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }

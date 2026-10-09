@@ -15,7 +15,8 @@ pub use appraise::{
 };
 pub use binary::{
     NvattestCommand, NvattestInstallation, build_nvattest_attest_command,
-    build_nvattest_offline_attest_command, locate_nvattest,
+    build_nvattest_attest_command_with_installation, build_nvattest_offline_attest_command,
+    build_nvattest_offline_attest_command_with_installation, locate_nvattest,
 };
 pub use claims::{
     GpuAppraisal, GpuStatusAuthorization, NvattestAcceptance, NvattestRejection, NvattestVerdict,

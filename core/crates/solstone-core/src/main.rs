@@ -3066,10 +3066,12 @@ fn generate_response_for_request(
                         request_id.clone(),
                     )?
                 }
-                solstone_core_generate_wire::ConfidentialResult::AttestationNotVerified => {
+                solstone_core_generate_wire::ConfidentialResult::AttestationNotVerified(detail) => {
                     solstone_core_generate::GenerateResponse::Refused(
                         solstone_core_generate_wire::refusal_for(
-                            &solstone_core_generate_wire::LaneOutcome::AttestationNotVerified,
+                            &solstone_core_generate_wire::LaneOutcome::AttestationNotVerified(
+                                detail,
+                            ),
                             &provider,
                             request_id.clone(),
                         ),
@@ -3291,7 +3293,7 @@ fn generate_response_for_request(
             }
         }
         solstone_core_generate_wire::LaneOutcome::NoEngine
-        | solstone_core_generate_wire::LaneOutcome::AttestationNotVerified
+        | solstone_core_generate_wire::LaneOutcome::AttestationNotVerified(_)
         | solstone_core_generate_wire::LaneOutcome::AttestationFailed(_)
         | solstone_core_generate_wire::LaneOutcome::AttestationStale
         | solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {

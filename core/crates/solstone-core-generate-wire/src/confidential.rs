@@ -12,13 +12,16 @@ use std::{
 use serde_json::{Map, Value};
 use solstone_core_generate::GenerateRequest;
 use solstone_core_local::{ByoEndpoint, HttpResponse};
+#[cfg(not(windows))]
+use solstone_core_spp_ratls::resolve_nvattest_from_current_exe;
 use solstone_core_spp_ratls::{
-    AttestationSession, AttestedChannel, AttestedHttpError, AttestedIo, ChannelAdmission,
-    CompositeVerdict, NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure,
-    classify_nvattest_prerequisite, ensure_nvattest_installed,
-    establish_production_attested_channel_with_clock, resolve_nvattest_dir, resolve_ratls_target,
-    send_json_request,
+    AttestationFailure, AttestationSession, AttestedChannel, AttestedHttpError, AttestedIo,
+    ChannelAdmission, CompositeVerdict, NvattestEnsureStatus, RatlsEndpoint,
+    classify_channel_failure, classify_nvattest_prerequisite,
+    establish_production_attested_channel_with_clock, resolve_ratls_target, send_json_request,
 };
+#[cfg(windows)]
+use solstone_core_spp_ratls::{check_nvattest_readiness, resolve_nvattest_dir};
 
 use crate::endpoint::{
     EndpointFailure, EndpointGenerated, EndpointResult, EndpointRuntime, EndpointTransport,
@@ -31,7 +34,7 @@ const ATTESTED_CHANNEL_TIMEOUT: Duration = Duration::from_secs(120);
 pub enum ConfidentialResult {
     Generated(EndpointGenerated),
     Failed(EndpointFailure),
-    AttestationNotVerified,
+    AttestationNotVerified(&'static str),
     AttestationFailed(&'static str),
 }
 
@@ -55,11 +58,61 @@ pub fn confidential_generate(
             runtime,
             now: SystemTime::now(),
         },
-        ensure_nvattest_installed,
+        #[cfg(not(windows))]
+        |_| {
+            resolve_nvattest_from_current_exe()
+                .map(|_| std::path::PathBuf::new())
+                .map_err(|refusal| refusal.failure)
+        },
+        #[cfg(windows)]
+        |_| {
+            let nvattest_dir = resolve_nvattest_dir(Some(config), journal_path);
+            match classify_nvattest_prerequisite(check_nvattest_readiness(&nvattest_dir)) {
+                Some(failure) => Err(failure),
+                None => Ok(nvattest_dir),
+            }
+        },
         |ratls_endpoint, nvattest_dir, epoch, clock| {
             establish_production_attested_channel_with_clock(
                 ratls_endpoint,
                 nvattest_dir,
+                ATTESTED_CHANNEL_TIMEOUT,
+                epoch,
+                clock,
+            )
+            .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
+            .map_err(|error| error.reason_code)
+        },
+    )
+}
+
+#[cfg(not(windows))]
+pub fn confidential_generate_in_package(
+    request: &GenerateRequest,
+    journal_path: &Path,
+    endpoint: &ByoEndpoint,
+    config: &Map<String, Value>,
+    runtime: &EndpointRuntime,
+    package: &solstone_core_installed_payload::InstalledPackage,
+) -> ConfidentialResult {
+    confidential_generate_with(
+        ConfidentialCall {
+            request,
+            journal_path,
+            endpoint,
+            config,
+            runtime,
+            now: SystemTime::now(),
+        },
+        |_| {
+            solstone_core_spp_ratls::resolve_installed_nvattest(package)
+                .map(|_| std::path::PathBuf::new())
+                .map_err(|refusal| refusal.failure)
+        },
+        |ratls_endpoint, _nvattest_dir, epoch, clock| {
+            solstone_core_spp_ratls::establish_production_attested_channel_in_package_with_clock(
+                ratls_endpoint,
+                package,
                 ATTESTED_CHANNEL_TIMEOUT,
                 epoch,
                 clock,
@@ -106,13 +159,33 @@ fn attestation_refusal_is_health_probe(request: &GenerateRequest) -> bool {
     request.context == solstone_core_generate::HEALTH_BRAIN_GENERATE_CONTEXT
 }
 
-fn confidential_generate_with<R, E>(
+trait IntoReadinessOutcome {
+    fn into_readiness_outcome(self) -> Result<std::path::PathBuf, AttestationFailure>;
+}
+
+impl IntoReadinessOutcome for Result<std::path::PathBuf, AttestationFailure> {
+    fn into_readiness_outcome(self) -> Result<std::path::PathBuf, AttestationFailure> {
+        self
+    }
+}
+
+impl IntoReadinessOutcome for NvattestEnsureStatus {
+    fn into_readiness_outcome(self) -> Result<std::path::PathBuf, AttestationFailure> {
+        match classify_nvattest_prerequisite(self) {
+            Some(failure) => Err(failure),
+            None => Ok(std::path::PathBuf::from("/mock/nvattest")),
+        }
+    }
+}
+
+fn confidential_generate_with<R, O, E>(
     call: ConfidentialCall<'_>,
     readiness: R,
     establish: E,
 ) -> ConfidentialResult
 where
-    R: FnOnce(&Path) -> NvattestEnsureStatus,
+    R: FnOnce(&Path) -> O,
+    O: IntoReadinessOutcome,
     E: FnOnce(
         &RatlsEndpoint,
         &Path,
@@ -128,20 +201,22 @@ where
         runtime,
         now,
     } = call;
-    let nvattest_dir = resolve_nvattest_dir(Some(config), journal_path);
-    if let Some(failure) = classify_nvattest_prerequisite(readiness(&nvattest_dir)) {
-        if !attestation_refusal_is_health_probe(request) {
-            solstone_core_brain::record_confidential_attestation_refusal(
-                journal_path,
-                config,
-                failure.reason_code,
-            );
+    let nvattest_dir = match readiness(journal_path).into_readiness_outcome() {
+        Ok(dir) => dir,
+        Err(failure) => {
+            if !attestation_refusal_is_health_probe(request) {
+                solstone_core_brain::record_confidential_attestation_refusal(
+                    journal_path,
+                    config,
+                    failure.reason_code,
+                );
+            }
+            runtime
+                .attestation_state()
+                .record_attestation_failed(failure.kind, failure.reason_code);
+            return ConfidentialResult::AttestationNotVerified(failure.reason_code);
         }
-        runtime
-            .attestation_state()
-            .record_attestation_failed(failure.kind, failure.reason_code);
-        return ConfidentialResult::AttestationNotVerified;
-    }
+    };
 
     let (target_endpoint, target_host) = match resolve_ratls_target(&endpoint.base_url) {
         Some(target) => target,
@@ -165,7 +240,6 @@ where
         journal_path: journal_path.to_path_buf(),
         authority: format!("{}:{}", target_endpoint.host, target_endpoint.port),
         credential: endpoint.credential.clone().map(RedactedCredential),
-        nvattest_dir: nvattest_dir.clone(),
     };
 
     let is_health_probe = attestation_refusal_is_health_probe(request);
@@ -504,7 +578,57 @@ pub mod test_support {
                 runtime,
                 now: SystemTime::now(),
             },
-            |_| readiness_status,
+            |_| match classify_nvattest_prerequisite(readiness_status) {
+                Some(failure) => Err(failure),
+                None => Ok(std::path::PathBuf::from("/mock/nvattest")),
+            },
+            |ratls_endpoint, nvattest_dir, epoch, clock| {
+                let mut owner_nonce = [0u8; 32];
+                ring::rand::SystemRandom::new()
+                    .fill(&mut owner_nonce)
+                    .map_err(|_| "random_failed")?;
+                solstone_core_spp_ratls::establish_attested_channel_with_clock(
+                    ratls_endpoint,
+                    &owner_nonce,
+                    nvattest_dir,
+                    SystemTime::now(),
+                    None,
+                    None,
+                    None,
+                    verifier,
+                    ATTESTED_CHANNEL_TIMEOUT,
+                    epoch,
+                    clock,
+                )
+                .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
+                .map_err(|error| error.reason_code)
+            },
+        )
+    }
+
+    pub fn confidential_generate_attested_with_package(
+        request: &GenerateRequest,
+        journal_path: &Path,
+        endpoint: &ByoEndpoint,
+        config: &Map<String, Value>,
+        runtime: &EndpointRuntime,
+        verifier: &dyn CompositeVerifier,
+        package: &solstone_core_installed_payload::InstalledPackage,
+    ) -> ConfidentialResult {
+        confidential_generate_with(
+            ConfidentialCall {
+                request,
+                journal_path,
+                endpoint,
+                config,
+                runtime,
+                now: SystemTime::now(),
+            },
+            |_| {
+                solstone_core_spp_ratls::resolve_installed_nvattest(package)
+                    .map(|_| std::path::PathBuf::new())
+                    .map_err(|refusal| refusal.failure)
+            },
             |ratls_endpoint, nvattest_dir, epoch, clock| {
                 let mut owner_nonce = [0u8; 32];
                 ring::rand::SystemRandom::new()
@@ -995,13 +1119,21 @@ mod tests {
                 runtime: &runtime,
                 now: UNIX_EPOCH,
             },
-            |_| NvattestEnsureStatus::Unavailable,
+            |_| {
+                Err(solstone_core_spp_ratls::AttestationFailure {
+                    kind: solstone_core_spp_ratls::AttestationFailureKind::Unreachable,
+                    reason_code: "nvattest_unavailable",
+                })
+            },
             |_, _, _, _| {
                 attempts.fetch_add(1, Ordering::SeqCst);
                 Err("tls_handshake_failed")
             },
         );
-        assert!(matches!(result, ConfidentialResult::AttestationNotVerified));
+        assert!(matches!(
+            result,
+            ConfidentialResult::AttestationNotVerified("nvattest_unavailable")
+        ));
         assert_eq!(attempts.load(Ordering::SeqCst), 0);
         assert_eq!(
             runtime
@@ -1234,20 +1366,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(windows))]
-    fn nvattest_directory_uses_explicit_confidential_config() {
-        let journal = Path::new("/journal");
-        let explicit = json!({"services": {"confidential": {"nvattest_dir": "/explicit"}}})
-            .as_object()
-            .expect("config")
-            .clone();
-        assert_eq!(
-            resolve_nvattest_dir(Some(&explicit), journal),
-            PathBuf::from("/explicit")
-        );
-    }
-
-    #[test]
     #[cfg(windows)]
     fn nvattest_directory_refuses_config_outside_an_installed_windows_package() {
         // Cargo's test process is not an installed journal in payload/bin.
@@ -1407,22 +1525,30 @@ mod tests {
                 runtime: &runtime,
                 now: UNIX_EPOCH,
             },
-            |_| NvattestEnsureStatus::InstallInFlight,
+            |_| {
+                Err(solstone_core_spp_ratls::AttestationFailure {
+                    kind: solstone_core_spp_ratls::AttestationFailureKind::Unreachable,
+                    reason_code: "nvattest_unavailable",
+                })
+            },
             |_, _, _, _| Err("gateway_unreachable"),
         );
-        assert!(matches!(result, ConfidentialResult::AttestationNotVerified));
+        assert!(matches!(
+            result,
+            ConfidentialResult::AttestationNotVerified("nvattest_unavailable")
+        ));
 
         let now = chrono::Utc::now() + chrono::Duration::seconds(1);
         let inspection = solstone_core_brain::inspect_brain_state(&path, &config_map, now);
         assert_eq!(inspection.projection.aggregate_state, "blocked");
         assert_eq!(
             inspection.projection.reason_code.as_deref(),
-            Some("nvattest_install_in_progress")
+            Some("nvattest_unavailable")
         );
         let record = inspection.record.expect("record exists");
         assert_eq!(
             record["evidence"]["lane_prerequisites"]["reason_code"],
-            "nvattest_install_in_progress"
+            "nvattest_unavailable"
         );
 
         let _ = std::fs::remove_dir_all(path);

@@ -2816,13 +2816,19 @@ mod tests {
         assert_eq!(issues2[0]["href"], "/app/thinking/#main");
         assert_eq!(issues2[0]["text"], expected_headline2);
 
-        // 3. nvattest_install_in_progress -> no issue with href /app/thinking/#main
+        // 3. Stored retired code -> stale -> no issue with href /app/thinking/#main
         let temp3 = tempfile::tempdir_in("/var/tmp").unwrap();
         let path3 = temp3.path();
-        solstone_core_brain::record_transcription_verification(
-            path3,
-            "nvattest_install_in_progress",
-            "http://127.0.0.1:9099",
+        let tv_path3 = solstone_core_brain::transcription_verification_path(path3);
+        std::fs::create_dir_all(tv_path3.parent().unwrap()).unwrap();
+        std::fs::write(
+            &tv_path3,
+            serde_json::to_vec(&serde_json::json!({
+                "reason": "nvattest_install_in_progress",
+                "observed_at": "2026-01-01T00:00:00Z",
+                "endpoint": "http://127.0.0.1:9099",
+            }))
+            .unwrap(),
         )
         .unwrap();
 

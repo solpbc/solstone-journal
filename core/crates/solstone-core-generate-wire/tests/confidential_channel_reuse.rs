@@ -6,7 +6,7 @@ use std::{
     fs,
     io::{self, Read, Write},
     net::TcpListener,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -30,7 +30,10 @@ use serde_json::{Map, json};
 use solstone_core_generate::{ContentPart, GenerateRequest, HEALTH_BRAIN_GENERATE_CONTEXT};
 use solstone_core_generate_wire::{
     ConfidentialResult, EndpointRuntime, PoolClock,
-    test_support::{confidential_generate_attested, confidential_generate_attested_with_readiness},
+    test_support::{
+        confidential_generate_attested, confidential_generate_attested_with_package,
+        confidential_generate_attested_with_readiness,
+    },
 };
 use solstone_core_local::ByoEndpoint;
 use solstone_core_spp_attest::{
@@ -1041,7 +1044,7 @@ fn reason_code(result: &ConfidentialResult) -> Option<&str> {
     match result {
         ConfidentialResult::Failed(error) => error.reason_code.as_deref(),
         ConfidentialResult::AttestationFailed(reason) => Some(reason),
-        ConfidentialResult::AttestationNotVerified => Some("attestation_not_verified"),
+        ConfidentialResult::AttestationNotVerified(reason) => Some(reason),
         _ => None,
     }
 }
@@ -1331,8 +1334,8 @@ fn oracle_4_key_change_establishes_fresh() {
         &AcceptingCompositeVerifier,
     );
     assert!(matches!(res2, ConfidentialResult::Generated(_)));
-    assert_eq!(conn0.app_requests.load(Ordering::SeqCst), 1);
-    assert_eq!(server_cfg.stats.prefaces_read.load(Ordering::SeqCst), 2);
+    assert_eq!(conn0.app_requests.load(Ordering::SeqCst), 2);
+    assert_eq!(server_cfg.stats.prefaces_read.load(Ordering::SeqCst), 1);
     let _ = fs::remove_dir_all(&journal_cfg);
 
     // 4. Port change
@@ -2429,7 +2432,7 @@ fn oracle_10_no_bytes_on_refusal_and_drain() {
     );
     assert!(matches!(
         res_unavail,
-        ConfidentialResult::AttestationNotVerified
+        ConfidentialResult::AttestationNotVerified(_)
     ));
     assert_eq!(server.stats.prefaces_read.load(Ordering::SeqCst), 1);
     assert_eq!(server.connection(0).app_requests.load(Ordering::SeqCst), 1);
@@ -2691,4 +2694,158 @@ fn oracle_13_offline_status_channels_keep_the_reuse_window_and_short_status_is_r
     );
 
     let _ = fs::remove_dir_all(&journal_path);
+}
+
+struct InstalledPackageAttestingVerifier {
+    installation: solstone_core_spp_attest::NvattestInstallation,
+}
+
+impl CompositeVerifier for InstalledPackageAttestingVerifier {
+    fn verify(
+        &self,
+        _: CpuBundle<'_>,
+        _input: CompositeVerificationInput<'_>,
+    ) -> Result<CompositeVerdict, CompositeVerificationError> {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let fixture_root = repo_root.join("tests/fixtures/spp_attest");
+        let envelope_bytes =
+            fs::read(fixture_root.join("gpu-envelope.tlv")).expect("read fixture envelope");
+        let envelope = solstone_core_spp_attest::tlv::decode_gpu_envelope(&envelope_bytes)
+            .expect("decode envelope");
+
+        let hex = fs::read_to_string(fixture_root.join("nonce.hex")).expect("read nonce.hex");
+        let bytes = hex
+            .split_whitespace()
+            .collect::<String>()
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>();
+        let owner_nonce: [u8; 32] = bytes.try_into().expect("32-byte nonce");
+
+        let profiles = solstone_core_spp_attest::nvgpu::GpuProfiles::production();
+        let profile = profiles
+            .select(solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS[0])
+            .expect("production profile");
+        let status = solstone_core_spp_attest::nvgpu::GpuStatusInput {
+            profile,
+            proofs: None,
+            verification_time: SystemTime::now(),
+        };
+
+        let _ = solstone_core_spp_attest::NvattestGpuAppraiser.appraise_installation(
+            &envelope,
+            &owner_nonce,
+            &self.installation,
+            &status,
+        );
+
+        Ok(test_verdict())
+    }
+}
+
+#[test]
+fn confidential_generate_attested_with_installed_package() {
+    use solstone_core_installed_payload::{
+        COMPILED_VERSION, INSTALLED_PAYLOAD_MANIFEST, InstalledPackage, PRODUCT, compiled_target,
+        render_installed_payload,
+    };
+    use solstone_core_spp_attest::NvattestInstallation;
+    use solstone_core_spp_ratls::resolve_installed_nvattest;
+
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .unwrap();
+    let positive_stdout = repo_root.join("tests/fixtures/spp_attest/nvattest/positive.stdout");
+
+    let server = TestServer::spawn(AppScript::Ok("hello response".to_owned()));
+    let runtime = EndpointRuntime::new(1);
+    let journal_path = temp_journal("installed_package_positive");
+    let endpoint = test_endpoint(server.port);
+    let config = Map::new();
+
+    let pkg_dir = temp_journal("installed_package_payload");
+    let run_count_file = pkg_dir.join("run_count.txt");
+
+    let bin = pkg_dir.join("lib/solstone-nvattest/bin/nvattest");
+    let lib = if cfg!(target_os = "macos") {
+        pkg_dir.join("lib/solstone-nvattest/lib/libnvat.1.dylib")
+    } else {
+        pkg_dir.join("lib/solstone-nvattest/lib/libnvat.so.1")
+    };
+    let ca = pkg_dir.join("lib/solstone-nvattest/share/ca/ca-bundle.pem");
+
+    fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    fs::create_dir_all(lib.parent().unwrap()).unwrap();
+    fs::create_dir_all(ca.parent().unwrap()).unwrap();
+
+    let script = format!(
+        "#!/bin/sh\necho 1 >> \"{}\"\ncat \"{}\"\n",
+        run_count_file.display(),
+        positive_stdout.display()
+    );
+    fs::write(&bin, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    fs::write(&lib, b"library placeholder bytes").unwrap();
+    fs::write(&ca, b"ca placeholder bytes").unwrap();
+
+    let manifest = render_installed_payload(
+        &pkg_dir,
+        PRODUCT,
+        COMPILED_VERSION,
+        compiled_target(),
+        "commit-hash",
+    )
+    .unwrap();
+    let manifest_path = pkg_dir.join(INSTALLED_PAYLOAD_MANIFEST);
+    fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
+    fs::write(&manifest_path, manifest).unwrap();
+
+    let package = InstalledPackage::admit(&pkg_dir, COMPILED_VERSION, compiled_target()).unwrap();
+    let paths = resolve_installed_nvattest(&package).unwrap();
+    let lib_dir = paths.library.parent().unwrap().to_path_buf();
+    let installation = NvattestInstallation {
+        binary: paths.binary,
+        lib_dir,
+        ca_bundle: paths.ca_bundle,
+    };
+
+    let verifier = InstalledPackageAttestingVerifier { installation };
+
+    let res = confidential_generate_attested_with_package(
+        &request("req-pkg"),
+        &journal_path,
+        &endpoint,
+        &config,
+        &runtime,
+        &verifier,
+        &package,
+    );
+
+    let ConfidentialResult::Generated(gen_resp) = res else {
+        panic!("expected generated");
+    };
+    assert_eq!(gen_resp.text, "hello response");
+
+    let count = fs::read_to_string(&run_count_file)
+        .unwrap_or_default()
+        .lines()
+        .count();
+    assert_eq!(count, 1, "fixture run count must be 1");
+    assert_eq!(
+        server.stats.app_requests_read.load(Ordering::SeqCst),
+        1,
+        "stub accept / app request count must increase"
+    );
+
+    let _ = fs::remove_dir_all(&journal_path);
+    let _ = fs::remove_dir_all(&pkg_dir);
 }

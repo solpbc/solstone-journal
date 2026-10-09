@@ -43,7 +43,6 @@ pub struct PoolKey {
     pub journal_path: PathBuf,
     pub authority: String,
     pub credential: Option<RedactedCredential>,
-    pub nvattest_dir: PathBuf,
 }
 
 pub trait PoolClock: Send + Sync {
@@ -348,7 +347,6 @@ mod tests {
             journal_path: PathBuf::from("/test/journal"),
             authority: "127.0.0.1:9000".to_owned(),
             credential: None,
-            nvattest_dir: PathBuf::from("/test/nvattest"),
         };
         match pool.checkout_or_slot(&key) {
             PoolAcquisition::FreshSlot(guard, epoch) => {
@@ -367,7 +365,6 @@ mod tests {
             journal_path: PathBuf::from("/test/journal"),
             authority: "127.0.0.1:9000".to_owned(),
             credential: None,
-            nvattest_dir: PathBuf::from("/test/nvattest"),
         };
         let _guard = match pool.checkout_or_slot(&key) {
             PoolAcquisition::FreshSlot(guard, _) => guard,

@@ -903,7 +903,7 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
     let stage = work.join("stage");
     let _ = fs::remove_dir_all(&stage);
     fs::create_dir_all(&stage)?;
-    write_stage(
+    let staged = write_stage(
         &selection,
         checkout,
         inventory_path,
@@ -1112,6 +1112,15 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         },
         fail_after: None,
         apple: target.is_macos().then(|| inventory.apple.clone()),
+        inventory: inventory.clone(),
+        archives: staged
+            .archives
+            .into_iter()
+            .map(|item| (item.name, item.bytes))
+            .collect(),
+        fail_evidence_install: false,
+        #[cfg(test)]
+        stage_mutator: None,
     })
     .map_err(|error| ProduceError::new(error.to_string()))?;
 
@@ -1688,7 +1697,7 @@ pub fn stage_inventory_tree(
         .map_err(|error| ProduceError::new(error.to_string()))?;
     let _ = fs::remove_dir_all(stage);
     fs::create_dir_all(stage)?;
-    let records = write_stage(
+    let staged = write_stage(
         &selection,
         repo,
         inventory_path,
@@ -1699,7 +1708,22 @@ pub fn stage_inventory_tree(
         sealed_archives,
         stage,
     )?;
-    Ok(StageInventoryTree { selection, records })
+    Ok(StageInventoryTree {
+        selection,
+        records: staged.records,
+    })
+}
+
+#[derive(Debug)]
+struct SourceArchiveBytes {
+    name: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct StagedWrite {
+    records: Vec<crate::record::FileRecord>,
+    archives: Vec<SourceArchiveBytes>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1713,9 +1737,9 @@ fn write_stage(
     pdfium: Option<(&pdfium::TargetSpec, &pdfium::StagedRuntime)>,
     sealed_archives: Option<&SealedArchiveSet>,
     stage: &Path,
-) -> Result<Vec<crate::record::FileRecord>, ProduceError> {
+) -> Result<StagedWrite, ProduceError> {
     select::stage_selected(selection, stage)?;
-    stage_layout(
+    let archives = stage_layout(
         repo,
         inventory_path,
         inventory,
@@ -1755,7 +1779,7 @@ fn write_stage(
     .map_err(ProduceError::new)?;
     record::compare_records("declared", &declared, "staged", &records)
         .map_err(ProduceError::new)?;
-    Ok(records)
+    Ok(StagedWrite { records, archives })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1827,7 +1851,8 @@ fn stage_layout(
     pdfium: Option<(&pdfium::TargetSpec, &pdfium::StagedRuntime)>,
     sealed_archives: Option<&SealedArchiveSet>,
     stage: &Path,
-) -> Result<(), ProduceError> {
+) -> Result<Vec<SourceArchiveBytes>, ProduceError> {
+    let mut archives = Vec::new();
     for entry in &inventory.entry {
         match entry {
             Entry::WindowsNative { targets, .. } | Entry::WindowsBuildEvidence { targets, .. } => {
@@ -1843,12 +1868,14 @@ fn stage_layout(
                 dest,
                 mode,
                 targets,
+                ..
             }
             | Entry::Copy {
                 source,
                 dest,
                 mode,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -1866,6 +1893,19 @@ fn stage_layout(
                 archive_slot,
                 ..
             } => {
+                if targets.iter().any(|item| item == target_id)
+                    && let Ok(bytes) = fs::read(repo.join(source))
+                {
+                    let filename = Path::new(source)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(source)
+                        .to_string();
+                    archives.push(SourceArchiveBytes {
+                        name: filename,
+                        bytes,
+                    });
+                }
                 stage_model_asset(
                     repo,
                     stage,
@@ -1887,6 +1927,7 @@ fn stage_layout(
                 mode,
                 identity,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -1894,6 +1935,10 @@ fn stage_layout(
                 validate_identity_basename(dest, identity)?;
                 let (bytes, pin, filename) =
                     crate::pinned_stage::resolve_pinned_input(dest, repo, target_id, input)?;
+                archives.push(SourceArchiveBytes {
+                    name: filename.clone(),
+                    bytes: bytes.clone(),
+                });
                 let staged_member = crate::inventory::StagedMember {
                     relpath: String::new(),
                     dest: dest.clone(),
@@ -1917,6 +1962,7 @@ fn stage_layout(
                 staged,
                 ignored,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -1932,6 +1978,10 @@ fn stage_layout(
                     .unwrap_or("pinned-members");
                 let (bytes, pin, filename) =
                     crate::pinned_stage::resolve_pinned_input(entry_name, repo, target_id, input)?;
+                archives.push(SourceArchiveBytes {
+                    name: filename.clone(),
+                    bytes: bytes.clone(),
+                });
                 if let crate::inventory::PinnedInput::AuthorityCommitted { platform, .. } = input {
                     check_authority_inventory(entry_name, platform, staged, ignored)?;
                 }
@@ -1946,6 +1996,7 @@ fn stage_layout(
                 source,
                 component,
                 targets,
+                ..
             } => {
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
@@ -2011,7 +2062,7 @@ fn stage_layout(
         let bytes = fs::read(repo.join(&inventory.payload_src_root).join(&source))?;
         stage::write_staged_file_mode(stage, &dest, &bytes, 0o644)?;
     }
-    Ok(())
+    Ok(archives)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2078,7 +2129,7 @@ fn tree_from_stage(stage: &Path) -> Result<Vec<(String, Vec<u8>, u32)>, ProduceE
     Ok(tree)
 }
 
-fn workspace_version(path: &Path) -> Result<String, ProduceError> {
+pub(crate) fn workspace_version(path: &Path) -> Result<String, ProduceError> {
     let text = fs::read_to_string(path)?;
     let mut in_package = false;
     for line in text.lines() {
@@ -3033,12 +3084,14 @@ dest = "bin/test-fixture-bin.exe"
 mode = 0o755
 lane = "musl-static"
 targets = ["windows-x86_64"]
+class = "first-party"
 [[entry]]
 kind = "copy"
 source = "LICENSE.txt"
 dest = "share/licenses/solstone/LICENSE"
 mode = 0o644
 targets = ["windows-x86_64"]
+class = "notice"
 "#,
         )
         .unwrap();
@@ -3484,6 +3537,7 @@ zig_gnu = "x86_64-linux-gnu.2.27"
 
         // 1. Digest mismatch refuses
         let bad_digest_entry = Entry::PinnedNative {
+            class: Some(crate::inventory::DeliveryClass::Component),
             component: None,
             input: PinnedInput::Inline {
                 source: source.to_owned(),
@@ -3518,6 +3572,7 @@ zig_gnu = "x86_64-linux-gnu.2.27"
 
         // 2. Filename that is neither identity name nor alias refuses
         let bad_name_entry = Entry::PinnedNative {
+            class: Some(crate::inventory::DeliveryClass::Component),
             component: None,
             input: PinnedInput::Inline {
                 source: source.to_owned(),
@@ -3551,6 +3606,7 @@ zig_gnu = "x86_64-linux-gnu.2.27"
 
         // 3. Passing twin matches
         let good_entry = Entry::PinnedNative {
+            class: Some(crate::inventory::DeliveryClass::Component),
             component: None,
             input: PinnedInput::Inline {
                 source: source.to_owned(),

@@ -3914,3 +3914,137 @@ fn cuda_b11429_covered_probe_integrity_is_blocked() {
         }
     }
 }
+
+#[test]
+pub fn fetch_set_selectors_request_only_that_targets_local_units() {
+    // CED ships inside every package, so the installer selects no CED unit and the
+    // fetch set carries none (asserted below).
+    let local_units = [
+        "llama-server-vulkan",
+        "llama-server-cuda",
+        "local-model",
+        "parakeet-server",
+        "parakeet-model",
+        "parakeet-coreml",
+    ];
+
+    let targets = [
+        "linux-x86_64",
+        "linux-aarch64",
+        "macos-arm64",
+        "windows-x86_64",
+    ];
+
+    for target in targets {
+        let mut collected = BTreeSet::new();
+
+        // llama-server-vulkan: platform + artifact key, backend None. Not windows.
+        if target != "windows-x86_64" {
+            let (platform, key) = match target {
+                "linux-x86_64" => (Platform::LinuxX64, "x86_64-unknown-linux-gnu"),
+                "linux-aarch64" => (Platform::LinuxArm64, "aarch64-unknown-linux-gnu"),
+                "macos-arm64" => (Platform::MacosArm64, "aarch64-apple-darwin"),
+                _ => unreachable!(),
+            };
+            let art = super::select_artifact(
+                "llama-server-vulkan",
+                Some(platform),
+                None,
+                Some(key),
+                None,
+            )
+            .expect("llama-server-vulkan");
+            collected.insert(art.origin_key);
+        }
+
+        // llama-server-cuda: same linux keys, backend None. Not macOS, not windows.
+        if target.starts_with("linux-") {
+            let (platform, key) = match target {
+                "linux-x86_64" => (Platform::LinuxX64, "x86_64-unknown-linux-gnu"),
+                "linux-aarch64" => (Platform::LinuxArm64, "aarch64-unknown-linux-gnu"),
+                _ => unreachable!(),
+            };
+            let art =
+                super::select_artifact("llama-server-cuda", Some(platform), None, Some(key), None)
+                    .expect("llama-server-cuda");
+            collected.insert(art.origin_key);
+        }
+
+        // local-model: every catalog() row with unit == "local-model", POSIX targets only.
+        if target != "windows-x86_64" {
+            for row in catalog() {
+                if row.unit == "local-model" {
+                    let art =
+                        super::select_artifact("local-model", None, None, None, Some(row.filename))
+                            .expect("local-model");
+                    collected.insert(art.origin_key);
+                }
+            }
+        }
+
+        // parakeet-server: linux only, both Backend::Cpu and Backend::Vulkan, artifact key the linux triple, filename None
+        if target.starts_with("linux-") {
+            let (platform, key) = match target {
+                "linux-x86_64" => (Platform::LinuxX64, "x86_64-unknown-linux-gnu"),
+                "linux-aarch64" => (Platform::LinuxArm64, "aarch64-unknown-linux-gnu"),
+                _ => unreachable!(),
+            };
+            for backend in [Backend::Cpu, Backend::Vulkan] {
+                let art = super::select_artifact(
+                    "parakeet-server",
+                    Some(platform),
+                    Some(backend),
+                    Some(key),
+                    None,
+                )
+                .expect("parakeet-server");
+                collected.insert(art.origin_key);
+            }
+        }
+
+        // parakeet-model: linux only
+        if target.starts_with("linux-") {
+            let art = super::select_artifact(
+                "parakeet-model",
+                None,
+                None,
+                None,
+                Some("tdt-0.6b-v3-q8_0.gguf"),
+            )
+            .expect("parakeet-model");
+            collected.insert(art.origin_key);
+        }
+
+        // parakeet-coreml: macos only, every catalog row of that unit
+        if target == "macos-arm64" {
+            for row in catalog() {
+                if row.unit == "parakeet-coreml" {
+                    let art = super::select_artifact(
+                        "parakeet-coreml",
+                        Some(Platform::MacosArm64),
+                        None,
+                        None,
+                        Some(row.filename),
+                    )
+                    .expect("parakeet-coreml");
+                    collected.insert(art.origin_key);
+                }
+            }
+        }
+
+        let fetch_set = solstone_core_assets::runtime_fetch_set(target).expect("fetch_set");
+        let expected: BTreeSet<&str> = fetch_set
+            .iter()
+            .filter(|f| local_units.contains(&f.unit()))
+            .map(solstone_core_assets::RuntimeFetch::origin_key)
+            .collect();
+
+        assert_eq!(collected, expected, "target {target} origin keys mismatch");
+        assert!(
+            !fetch_set
+                .iter()
+                .any(|f| matches!(f.unit(), "ced-engine" | "ced-model")),
+            "target {target} fetch set carries a CED unit"
+        );
+    }
+}

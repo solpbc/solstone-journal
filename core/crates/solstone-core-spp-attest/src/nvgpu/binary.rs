@@ -30,7 +30,8 @@ pub struct NvattestCommand {
     pub executable: PathBuf,
     /// Includes `executable` as argv[0], matching Python's subprocess argv.
     pub argv: Vec<OsString>,
-    /// Environment additions; the process otherwise inherits its environment.
+    /// Environment variables. On POSIX, the child process does not inherit
+    /// the parent environment; its environment is exactly `PATH=/usr/bin:/bin`.
     pub env: BTreeMap<OsString, OsString>,
 }
 
@@ -79,6 +80,24 @@ pub fn build_nvattest_attest_command(
     rim_store: &str,
     rim_dir: Option<&Path>,
 ) -> Result<NvattestCommand, GpuAppraisalReason> {
+    let installation = locate_nvattest(nvattest_dir)?;
+    build_nvattest_attest_command_with_installation(
+        &installation,
+        evidence_file,
+        owner_nonce,
+        rim_store,
+        rim_dir,
+    )
+}
+
+/// Builds the local-verifier GPU-attestation invocation with a resolved installation.
+pub fn build_nvattest_attest_command_with_installation(
+    installation: &NvattestInstallation,
+    evidence_file: &Path,
+    owner_nonce: &[u8],
+    rim_store: &str,
+    rim_dir: Option<&Path>,
+) -> Result<NvattestCommand, GpuAppraisalReason> {
     if owner_nonce.len() != SPDM_NONCE_SIZE {
         return Err(GpuAppraisalReason::GpuAppraisalFailed);
     }
@@ -89,7 +108,6 @@ pub fn build_nvattest_attest_command(
         return Err(GpuAppraisalReason::GpuAppraisalFailed);
     }
 
-    let installation = locate_nvattest(nvattest_dir)?;
     let mut argv = vec![installation.binary.clone().into_os_string()];
     argv.extend(
         [
@@ -122,7 +140,7 @@ pub fn build_nvattest_attest_command(
     argv.push(OsString::from(hex_lower(owner_nonce)));
 
     Ok(NvattestCommand {
-        executable: installation.binary,
+        executable: installation.binary.clone(),
         argv,
         env: child_environment(&installation.lib_dir)?,
     })
@@ -142,10 +160,29 @@ pub fn build_nvattest_offline_attest_command(
     proof_bundle_file: &Path,
     verification_time_unix: i64,
 ) -> Result<NvattestCommand, GpuAppraisalReason> {
+    let installation = locate_nvattest(nvattest_dir)?;
+    build_nvattest_offline_attest_command_with_installation(
+        &installation,
+        evidence_file,
+        owner_nonce,
+        rim_dir,
+        proof_bundle_file,
+        verification_time_unix,
+    )
+}
+
+/// Builds the offline signed-age invocation with a resolved installation.
+pub fn build_nvattest_offline_attest_command_with_installation(
+    installation: &NvattestInstallation,
+    evidence_file: &Path,
+    owner_nonce: &[u8],
+    rim_dir: &Path,
+    proof_bundle_file: &Path,
+    verification_time_unix: i64,
+) -> Result<NvattestCommand, GpuAppraisalReason> {
     if owner_nonce.len() != SPDM_NONCE_SIZE || verification_time_unix <= 0 {
         return Err(GpuAppraisalReason::GpuAppraisalFailed);
     }
-    let installation = locate_nvattest(nvattest_dir)?;
     let mut argv = vec![installation.binary.clone().into_os_string()];
     argv.extend(
         [
@@ -176,7 +213,7 @@ pub fn build_nvattest_offline_attest_command(
     argv.push(OsString::from(hex_lower(owner_nonce)));
 
     Ok(NvattestCommand {
-        executable: installation.binary,
+        executable: installation.binary.clone(),
         argv,
         env: child_environment(&installation.lib_dir)?,
     })
@@ -201,9 +238,10 @@ fn child_environment(lib_dir: &Path) -> Result<BTreeMap<OsString, OsString>, Gpu
     }
     #[cfg(not(windows))]
     {
+        let _ = lib_dir;
         Ok(BTreeMap::from([(
-            OsString::from("LD_LIBRARY_PATH"),
-            lib_dir.as_os_str().to_owned(),
+            OsString::from("PATH"),
+            OsString::from("/usr/bin:/bin"),
         )]))
     }
 }
@@ -221,7 +259,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 #[cfg(all(test, not(windows)))]
 mod tests {
     use std::{
-        ffi::OsStr,
+        ffi::{OsStr, OsString},
         fs,
         path::{Path, PathBuf},
         sync::atomic::{AtomicU64, Ordering},
@@ -342,9 +380,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            command.env.get(OsStr::new("LD_LIBRARY_PATH")),
-            Some(&installed.join("lib").into_os_string())
+            command.env.get(OsStr::new("PATH")),
+            Some(&OsString::from("/usr/bin:/bin"))
         );
+        assert!(!command.env.contains_key(OsStr::new("LD_LIBRARY_PATH")));
     }
 
     #[test]

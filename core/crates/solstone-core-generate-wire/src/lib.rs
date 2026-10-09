@@ -31,6 +31,8 @@ pub use bundled::{
     BundledError, LOCAL_MODEL_ID, bundled_generate, bundled_generate_with_authority, bundled_input,
 };
 pub use chatgpt::{ChatGptFailure, ChatGptResult, chatgpt_generate};
+#[cfg(not(windows))]
+pub use confidential::confidential_generate_in_package;
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub use confidential::test_support;

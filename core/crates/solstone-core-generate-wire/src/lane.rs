@@ -18,7 +18,7 @@ use crate::overrides::{configured_provider_with, non_blank_process_env};
 pub enum LaneOutcome {
     NoEngine,
     BundledLocal,
-    AttestationNotVerified,
+    AttestationNotVerified(&'static str),
     AttestationFailed(&'static str),
     AttestationStale,
     ByoEndpoint(ByoEndpoint),

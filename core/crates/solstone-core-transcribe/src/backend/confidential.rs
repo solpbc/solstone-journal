@@ -13,7 +13,7 @@ use solstone_core_local::{ByoEndpoint, LocalEndpointResolution, resolve_local_en
 use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes};
 use solstone_core_spp_ratls::{
     AttestationFailureKind, AttestationState, AttestationStateStore, AttestedIo,
-    NvattestEnsureStatus, ensure_nvattest_installed, establish_fresh_production_channel,
+    NvattestEnsureStatus, establish_fresh_production_channel,
 };
 
 use crate::TranscribeError;
@@ -147,6 +147,9 @@ where
     let wav = audio_to_wav_bytes(audio, SAMPLE_RATE)
         .map_err(|error| deferred("confidential_audio_encode_failed", error.to_string()))?;
     let now = SystemTime::now();
+    #[cfg(not(windows))]
+    let nvattest_dir = std::path::PathBuf::new();
+    #[cfg(windows)]
     let nvattest_dir =
         solstone_core_spp_ratls::resolve_nvattest_dir(config.config.as_ref(), journal_path);
     let mut channel = solstone_core_spp_ratls::perform_fresh_reattest_with(
@@ -208,12 +211,22 @@ pub(crate) fn transcribe(
     config: &JournalConfigRead,
     state: &AttestationStateStore,
 ) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
+    #[cfg(not(windows))]
+    let readiness = |_: &Path| match solstone_core_spp_ratls::resolve_nvattest_from_current_exe() {
+        Ok(_) => NvattestEnsureStatus::AlreadyInstalled,
+        Err(refusal) => match refusal.failure.reason_code {
+            "nvattest_integrity_failed" => NvattestEnsureStatus::IntegrityFailed,
+            _ => NvattestEnsureStatus::Unavailable,
+        },
+    };
+    #[cfg(windows)]
+    let readiness = |dir: &Path| solstone_core_spp_ratls::check_nvattest_readiness(dir);
     transcribe_with(
         audio,
         journal_path,
         config,
         state,
-        ensure_nvattest_installed,
+        readiness,
         establish_fresh_production_channel,
     )
 }
@@ -588,7 +601,7 @@ mod tests {
             &store,
             |_| {
                 readiness_attempts.fetch_add(1, Ordering::SeqCst);
-                NvattestEnsureStatus::InstallInFlight
+                NvattestEnsureStatus::Unavailable
             },
             |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
                 channel_attempts.fetch_add(1, Ordering::SeqCst);
@@ -602,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    fn unavailable_nvattest_records_its_cause_before_an_endpoint_request() {
+    fn integrity_failed_nvattest_records_its_cause_before_an_endpoint_request() {
         let store = AttestationStateStore::new();
         let channel_attempts = AtomicUsize::new(0);
         let active = active_config();
@@ -612,7 +625,7 @@ mod tests {
             Path::new("/journal"),
             &active,
             &store,
-            |_| NvattestEnsureStatus::Unavailable,
+            |_| NvattestEnsureStatus::IntegrityFailed,
             |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
                 channel_attempts.fetch_add(1, Ordering::SeqCst);
                 Err("gateway_unreachable")
@@ -627,7 +640,7 @@ mod tests {
                 .failure
                 .as_ref()
                 .map(|failure| failure.reason_code),
-            Some("nvattest_unavailable")
+            Some("nvattest_integrity_failed")
         );
     }
 
@@ -762,7 +775,7 @@ mod tests {
     }
 
     #[test]
-    fn attestation_refusal_readiness_install_failed_records_install_failed() {
+    fn attestation_refusal_readiness_unavailable_records_unavailable() {
         let store = AttestationStateStore::new();
         let active = active_config();
         let audio = [0.0_f32; 160];
@@ -781,7 +794,7 @@ mod tests {
             journal_path,
             &active,
             &store,
-            |_| NvattestEnsureStatus::InstallFailed,
+            |_| NvattestEnsureStatus::Unavailable,
             |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
                 Ok((
                     verdict(),
@@ -795,20 +808,20 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert_deferred_reason(error, "attestation_failed");
+        assert_deferred_reason(error, "attestation_unreachable");
 
         let now = chrono::Utc::now() + chrono::Duration::seconds(1);
         let config_map = active.config.as_ref().unwrap();
         let inspection = solstone_core_brain::inspect_brain_state(journal_path, config_map, now);
-        assert_eq!(inspection.projection.aggregate_state, "unhealthy");
+        assert_eq!(inspection.projection.aggregate_state, "blocked");
         assert_eq!(
             inspection.projection.reason_code.as_deref(),
-            Some("nvattest_install_failed")
+            Some("nvattest_unavailable")
         );
         let record = inspection.record.expect("record exists");
         assert_eq!(
             record["evidence"]["lane_prerequisites"]["reason_code"],
-            "nvattest_install_failed"
+            "nvattest_unavailable"
         );
     }
 
@@ -1558,7 +1571,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(!establish_called);
-        assert_deferred_reason(error, "attestation_failed");
+        assert_deferred_reason(error, "attestation_unreachable");
 
         let status = solstone_core_brain::read_transcription_verification(journal_path)
             .expect("status written");

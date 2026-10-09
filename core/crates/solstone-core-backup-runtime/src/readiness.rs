@@ -223,4 +223,66 @@ mod tests {
             None
         );
     }
+
+    #[test]
+    fn backup_asset_selectors_match_runtime_fetch_set() {
+        let cases = [
+            ("linux", "amd64", "linux-x86_64"),
+            ("linux", "arm64", "linux-aarch64"),
+            ("darwin", "arm64", "macos-arm64"),
+        ];
+        for (os, arch, target) in cases {
+            let (restic_filename, _, _) = select_restic_asset(Some(os), Some(arch)).unwrap();
+            let (rclone_filename, _, _) =
+                crate::rclone_install::select_rclone_asset(Some(os), Some(arch)).unwrap();
+            let restic_key = format!("assets/restic/{RESTIC_VERSION}/{restic_filename}");
+            let rclone_key = format!(
+                "assets/rclone/{}/{rclone_filename}",
+                crate::rclone_install::RCLONE_VERSION
+            );
+            let selected_keys =
+                std::collections::BTreeSet::from([restic_key.as_str(), rclone_key.as_str()]);
+
+            let fetch_set = solstone_core_assets::runtime_fetch_set(target).unwrap();
+            let expected_keys: std::collections::BTreeSet<&str> = fetch_set
+                .iter()
+                .filter(|f| f.unit() == "restic" || f.unit() == "rclone")
+                .map(|f| f.origin_key())
+                .collect();
+
+            assert_eq!(selected_keys, expected_keys, "mismatch for target {target}");
+        }
+
+        let (darwin_amd64_restic, _, _) =
+            select_restic_asset(Some("darwin"), Some("amd64")).unwrap();
+        let (darwin_amd64_rclone, _, _) =
+            crate::rclone_install::select_rclone_asset(Some("darwin"), Some("amd64")).unwrap();
+        let darwin_restic_key = format!("assets/restic/{RESTIC_VERSION}/{darwin_amd64_restic}");
+        let darwin_rclone_key = format!(
+            "assets/rclone/{}/{darwin_amd64_rclone}",
+            crate::rclone_install::RCLONE_VERSION
+        );
+        for target in [
+            "linux-x86_64",
+            "linux-aarch64",
+            "macos-arm64",
+            "windows-x86_64",
+        ] {
+            let set = solstone_core_assets::runtime_fetch_set(target).unwrap();
+            assert!(!set.iter().any(|f| f.origin_key() == darwin_restic_key));
+            assert!(!set.iter().any(|f| f.origin_key() == darwin_rclone_key));
+        }
+
+        assert!(select_restic_asset(Some("windows"), Some("amd64")).is_err());
+        assert!(
+            crate::rclone_install::select_rclone_asset(Some("windows"), Some("amd64")).is_err()
+        );
+
+        let win_set = solstone_core_assets::runtime_fetch_set("windows-x86_64").unwrap();
+        assert!(
+            !win_set
+                .iter()
+                .any(|f| f.unit() == "restic" || f.unit() == "rclone")
+        );
+    }
 }

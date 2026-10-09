@@ -337,6 +337,7 @@ pub enum GpuAppraisalReason {
     StatusProfileMissing,
     /// The profile requires offline status proofs and the engine sent none.
     StatusProofsMissing,
+    OnlineCheckUnreachable,
 }
 
 /// Fail-closed errors raised while appraising nvattest JSON claims.

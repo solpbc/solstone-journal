@@ -7,15 +7,12 @@ license.workspace = true
 publish = false
 
 [dependencies]
-lzma-rs = { workspace = true }
 ring = "=0.17.14"
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-solstone-core-artifact-download = { workspace = true }
-solstone-core-nvattest-authority = { workspace = true }
+solstone-core-installed-payload = { workspace = true }
 solstone-core-spp-attest = { workspace = true }
-tar = { workspace = true }
 thiserror = { workspace = true }
 x509-parser = "=0.16.0"
 
@@ -23,12 +20,8 @@ x509-parser = "=0.16.0"
 nix = { workspace = true, features = ["fs"] }
 
 [features]
-# Exposes the injectable install seam for the loopback download harness.
-# CI topology forbids TcpListener in the routine lib unit harness.
 test-hooks = []
-# Operator-run real-helper tests: on Windows they verify a privately signed
-# app-local payload, which needs the verifier's fixture signing key.
-real-helper-tests = ["test-hooks", "solstone-core-spp-attest/test-hooks"]
+nvattest-directory = ["test-hooks", "solstone-core-spp-attest/test-hooks"]
 
 [dev-dependencies]
 rcgen = { workspace = true }
@@ -39,10 +32,10 @@ socket2.workspace = true
 name = "attested_channels"
 path = "tests/attested_channels.rs"
 
-[[test]]
-name = "nvattest_install"
-path = "tests/nvattest_install.rs"
-required-features = ["test-hooks"]
+[[example]]
+name = "qualification_probe"
+path = "examples/qualification_probe.rs"
+required-features = ["nvattest-directory"]
 
 [lints]
 workspace = true

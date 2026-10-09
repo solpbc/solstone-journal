@@ -4898,6 +4898,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core::generate_wire"
+package = "solstone-core"
+target = "generate_wire"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-generate-wire::provider_environment_isolation"
 package = "solstone-core-generate-wire"
 target = "provider_environment_isolation"
@@ -5118,19 +5132,6 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-spp-ratls::nvattest_install"
-package = "solstone-core-spp-ratls"
-target = "nvattest_install"
-set = "component"
-areas = ["trust"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]

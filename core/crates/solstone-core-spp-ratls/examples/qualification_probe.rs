@@ -14,7 +14,7 @@ use solstone_core_spp_ratls::qualification::{
     QualificationRequest, qualification_policy, run_qualification,
 };
 use solstone_core_spp_ratls::{
-    ProductionCompositeVerifier, classify_nvattest_prerequisite, ensure_nvattest_installed,
+    ProductionCompositeVerifier, check_nvattest_readiness, classify_nvattest_prerequisite,
 };
 
 struct RecordingVerifier {
@@ -73,7 +73,7 @@ Options:
   --output-dir <DIR>      Output directory for evidence files (required)
   --model <MODEL>         Model name for qualification chat probe (required unless --no-content)
   --credential-file <PATH> File holding the owner credential sent as the bearer (required unless --no-content)
-  --nvattest-dir <DIR>    Path to nvattest directory (defaults to SPP_NVATTEST_DIR env var)
+  --nvattest-dir <DIR>    Path to nvattest directory (required)
   --request-json <PATH>   Send one custom chat JSON body after admission; save JSON status/body or bounded streaming HTTP wire bytes (no fixed chat/audio probes)\n  --no-content            Captures evidence and does not send chat or transcription
   --offline-status-profile Stages the packaged 595.71.05 manifests and OfflineSignedAge for --pin only; requires --pcr-mode pin, never changes production admission
   --help                  Show this help message and exit
@@ -301,16 +301,13 @@ fn main() {
 
     let resolved_nvattest_dir = match nvattest_dir {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
-        _ => match std::env::var("SPP_NVATTEST_DIR") {
-            Ok(val) if !val.trim().is_empty() => PathBuf::from(val.trim()),
-            _ => {
-                eprintln!("error: nvattest_dir_missing");
-                std::process::exit(1);
-            }
-        },
+        _ => {
+            eprintln!("error: --nvattest-dir is required");
+            std::process::exit(1);
+        }
     };
 
-    let ensure_status = ensure_nvattest_installed(&resolved_nvattest_dir);
+    let ensure_status = check_nvattest_readiness(&resolved_nvattest_dir);
     if let Some(failure) = classify_nvattest_prerequisite(ensure_status) {
         eprintln!("{}", failure.reason_code);
         std::process::exit(1);

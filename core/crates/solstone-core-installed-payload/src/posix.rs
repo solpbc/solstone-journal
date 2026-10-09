@@ -218,7 +218,7 @@ struct ParsedFile {
     sha256: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ListedFile {
     bytes: u64,
     sha256: String,
@@ -229,6 +229,16 @@ pub struct InstalledPackage {
     root: PathBuf,
     files: BTreeMap<String, ListedFile>,
     seen: Mutex<BTreeMap<String, String>>,
+}
+
+impl Clone for InstalledPackage {
+    fn clone(&self) -> Self {
+        Self {
+            root: self.root.clone(),
+            files: self.files.clone(),
+            seen: Mutex::new(self.seen.lock().expect("seen lock").clone()),
+        }
+    }
 }
 
 struct LooseHeader {

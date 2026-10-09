@@ -359,7 +359,7 @@ fn projection_corpus_has_exact_count_and_coverage() {
 #[test]
 fn reason_to_aggregate_corpus_has_exact_count_and_partition() {
     let vocabulary = &local_contract().brain_state;
-    assert_eq!(vocabulary.reason_to_aggregate.len(), 45);
+    assert_eq!(vocabulary.reason_to_aggregate.len(), 43);
     for (reason, aggregate) in &vocabulary.reason_to_aggregate {
         assert!(
             vocabulary
@@ -384,7 +384,7 @@ fn reason_to_aggregate_corpus_has_exact_count_and_partition() {
         .iter()
         .collect::<std::collections::BTreeSet<_>>();
     assert!(evidence.is_disjoint(&projection));
-    assert_eq!(evidence.union(&projection).count(), 45);
+    assert_eq!(evidence.union(&projection).count(), 43);
     assert!(
         vocabulary
             .aggregate_states

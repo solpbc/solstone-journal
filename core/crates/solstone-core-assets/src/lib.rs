@@ -8,6 +8,13 @@ use std::sync::LazyLock;
 
 use serde::Serialize;
 
+pub mod fetch_set;
+#[cfg(test)]
+pub use fetch_set::with_bundled_ids_override;
+pub use fetch_set::{
+    FetchSetError, RuntimeFetch, bundled_ids, cmp_utf16_code_units, runtime_fetch_set, unit_id,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Platform {

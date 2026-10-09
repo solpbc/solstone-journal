@@ -3512,6 +3512,7 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-ingest-contract",
  "solstone-core-installation-identity",
+ "solstone-core-installed-payload",
  "solstone-core-journal",
  "solstone-core-journal-cli",
  "solstone-core-journal-config",
@@ -3587,6 +3588,7 @@ version = "2.0.37"
 dependencies = [
  "serde",
  "serde_json",
+ "solstone-core-nvattest-authority",
 ]
 
 [[package]]
@@ -3651,6 +3653,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-artifact-download",
+ "solstone-core-assets",
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-body-rebuild",
@@ -3761,6 +3764,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-chatgpt-auth",
+ "solstone-core-installed-payload",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
 ]
@@ -4306,6 +4310,7 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-chatgpt-auth",
  "solstone-core-generate",
+ "solstone-core-installed-payload",
  "solstone-core-journal-config",
  "solstone-core-local",
  "solstone-core-spp-attest",
@@ -5515,7 +5520,6 @@ dependencies = [
 name = "solstone-core-spp-ratls"
 version = "2.0.37"
 dependencies = [
- "lzma-rs",
  "nix",
  "rcgen",
  "ring",
@@ -5524,10 +5528,8 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "socket2",
- "solstone-core-artifact-download",
- "solstone-core-nvattest-authority",
+ "solstone-core-installed-payload",
  "solstone-core-spp-attest",
- "tar",
  "thiserror 2.0.20",
  "x509-parser",
 ]

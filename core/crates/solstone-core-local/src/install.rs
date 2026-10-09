@@ -213,7 +213,7 @@ pub mod test_hooks {
 static PUBLISH_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -98,6 +98,7 @@ pub fn select_artifacts(
             mode,
             lane,
             targets,
+            ..
         } = entry
         else {
             continue;

@@ -24,21 +24,21 @@ impl AdmittedArchiveInput {
 }
 
 #[derive(serde::Serialize)]
-struct ArchivePin {
-    version: &'static str,
-    url: &'static str,
-    bytes: u64,
-    sha256: &'static str,
-    members: &'static [MemberPin],
+pub(crate) struct ArchivePin {
+    pub(crate) version: &'static str,
+    pub(crate) url: &'static str,
+    pub(crate) bytes: u64,
+    pub(crate) sha256: &'static str,
+    pub(crate) members: &'static [MemberPin],
 }
 
 #[derive(serde::Serialize)]
-struct MemberPin {
-    label: &'static str,
-    path: &'static str,
-    bytes: u64,
-    sha256: &'static str,
-    dll: bool,
+pub(crate) struct MemberPin {
+    pub(crate) label: &'static str,
+    pub(crate) path: &'static str,
+    pub(crate) bytes: u64,
+    pub(crate) sha256: &'static str,
+    pub(crate) dll: bool,
 }
 
 pub fn admit_restic(archive: &Path, license: &Path) -> Result<AdmittedArchiveInput, String> {
@@ -189,7 +189,7 @@ fn admit_zip(path: &Path, pin: &ArchivePin) -> Result<BTreeMap<String, Vec<u8>>,
 }
 
 // Upstream descriptors supplied by the backup lane, exact pinned release bytes.
-const RESTIC: ArchivePin = ArchivePin {
+pub(crate) const RESTIC: ArchivePin = ArchivePin {
     version: "0.19.0",
     url: "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_windows_amd64.zip",
     bytes: 11234817,
@@ -204,7 +204,7 @@ const RESTIC: ArchivePin = ArchivePin {
 };
 
 // Upstream descriptors supplied by the backup lane, exact pinned release bytes.
-const RCLONE: ArchivePin = ArchivePin {
+pub(crate) const RCLONE: ArchivePin = ArchivePin {
     version: "1.74.4",
     url: "https://downloads.rclone.org/v1.74.4/rclone-v1.74.4-windows-amd64.zip",
     bytes: 29347029,
@@ -219,7 +219,7 @@ const RCLONE: ArchivePin = ArchivePin {
 };
 
 // Measured VSIX size, rather than its inconsistent catalog size; digest is identical.
-const MSVC: ArchivePin = ArchivePin {
+pub(crate) const MSVC: ArchivePin = ArchivePin {
     version: "14.44.35211.0",
     url: "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5/Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
     bytes: 3224191,

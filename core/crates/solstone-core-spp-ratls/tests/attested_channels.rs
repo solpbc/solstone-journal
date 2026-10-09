@@ -1682,7 +1682,7 @@ fn qualification_starts_no_request_past_the_offline_admission_window() {
 // check:
 //
 //   SOLSTONE_SPP_TEST_NVATTEST_DIR=<payload root> SOLSTONE_SPP_TEST_PAYLOAD_PIN=<minisign .pub>
-//   cargo test -p solstone-core-spp-ratls --features real-helper-tests \
+//   cargo test -p solstone-core-spp-ratls --features nvattest-directory \
 //     --test attested_channels -- --ignored --test-threads 1 --exact <one real_helper test>
 //
 // The gateway is synthetic and cannot reproduce an AMD-signed CPU leg, so the
@@ -1696,7 +1696,7 @@ const REAL_HELPER_PIN: &str = "5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5
 const REAL_PROOFS_VERIFIED_AT: u64 = 1_790_996_649;
 const REAL_PROOFS_DEADLINE: u64 = 1_790_993_048 + 86_400;
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 struct SyntheticCpuRealGpu {
     nvattest_dir: std::path::PathBuf,
     profiles: solstone_core_spp_attest::nvgpu::GpuProfiles,
@@ -1706,7 +1706,7 @@ struct SyntheticCpuRealGpu {
     gpu_nonce: Option<[u8; 32]>,
 }
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 impl CompositeVerifier for SyntheticCpuRealGpu {
     fn verify(
         &self,
@@ -1733,7 +1733,7 @@ impl CompositeVerifier for SyntheticCpuRealGpu {
     }
 }
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 fn real_helper_dir() -> std::path::PathBuf {
     let dir = std::env::var_os("SOLSTONE_SPP_TEST_NVATTEST_DIR")
         .map(std::path::PathBuf::from)
@@ -1748,7 +1748,7 @@ fn real_helper_dir() -> std::path::PathBuf {
     dir
 }
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 fn real_helper(mode: solstone_core_spp_attest::nvgpu::StatusMode, now: u64) -> SyntheticCpuRealGpu {
     SyntheticCpuRealGpu {
         nvattest_dir: real_helper_dir(),
@@ -1758,7 +1758,7 @@ fn real_helper(mode: solstone_core_spp_attest::nvgpu::StatusMode, now: u64) -> S
     }
 }
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 fn real_helper_profiles(
     mode: solstone_core_spp_attest::nvgpu::StatusMode,
 ) -> solstone_core_spp_attest::nvgpu::GpuProfiles {
@@ -1820,7 +1820,7 @@ fn bind_endpoint_trap() -> EndpointTrap {
 
 /// The helper's endpoint attempts so far, where this process can count them.
 /// On Windows the harness counts them outside the process.
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 fn helper_contacts() -> Option<usize> {
     #[cfg(unix)]
     {
@@ -1836,7 +1836,7 @@ fn helper_contacts() -> Option<usize> {
     }
 }
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 fn assert_no_helper_contact(before: Option<usize>) {
     assert_eq!(
         helper_contacts(),
@@ -1845,7 +1845,7 @@ fn assert_no_helper_contact(before: Option<usize>) {
     );
 }
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 #[test]
 #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
 fn real_helper_offline_exchange_admits_with_signed_age_and_contacts_no_one() {
@@ -1878,7 +1878,7 @@ fn real_helper_offline_exchange_admits_with_signed_age_and_contacts_no_one() {
     assert_no_helper_contact(before);
 }
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 #[test]
 #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
 fn real_helper_offline_refusals_contact_no_one() {
@@ -1950,7 +1950,7 @@ fn real_helper_offline_refusals_contact_no_one() {
 
 /// The python certificate's composite extension, re-issued on a fresh key:
 /// the evidence then binds an SPKI the presented certificate does not have.
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 fn python_evidence_on_a_fresh_key() -> ServerConfig {
     let der = exchange_fixture("exchange/certificate.der");
     let (_, certificate) = x509_parser::prelude::X509Certificate::from_der(&der).expect("cert");
@@ -1985,7 +1985,7 @@ fn python_evidence_on_a_fresh_key() -> ServerConfig {
 
 /// An exporter proof for the python evidence whose exporter value is not this
 /// session's: the certificate and the real helper both admit first.
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 fn python_wrong_exporter_response() -> Vec<u8> {
     let evidence = python_evidence();
     let proof = ExporterProof {
@@ -2007,7 +2007,7 @@ fn python_wrong_exporter_response() -> Vec<u8> {
     .collect()
 }
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 #[test]
 #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
 fn real_helper_composite_refusals_send_no_application_content() {
@@ -2144,7 +2144,7 @@ fn real_helper_composite_refusals_send_no_application_content() {
     assert_no_helper_contact(before);
 }
 
-#[cfg(any(unix, feature = "real-helper-tests"))]
+#[cfg(feature = "nvattest-directory")]
 #[test]
 #[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
 fn real_helper_trap_control_counts_the_online_path() {
@@ -2201,7 +2201,7 @@ fn fixture_seam_refuses_every_non_loopback_endpoint_before_resolution() {
 // (`offline/gpu-evidence.json`, `offline/rims`, `offline/bundle.der`). Each
 // mutation of the named payload is restored before the next case.
 
-#[cfg(all(windows, feature = "real-helper-tests"))]
+#[cfg(all(windows, feature = "nvattest-directory"))]
 mod windows_payload {
     use super::*;
     use solstone_core_spp_attest::error::GpuAppraisalReason;

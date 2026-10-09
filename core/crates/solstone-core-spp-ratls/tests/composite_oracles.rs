@@ -315,3 +315,116 @@ fn composite_fixture_corpus_matches_the_accept_reject_table() {
         );
     }
 }
+
+#[test]
+fn resolve_installed_nvattest_refuses_tampered_library_before_spawn() {
+    use solstone_core_installed_payload::{
+        COMPILED_VERSION, INSTALLED_PAYLOAD_MANIFEST, InstalledPackage, PRODUCT, compiled_target,
+        render_installed_payload,
+    };
+    use solstone_core_spp_attest::{
+        NvattestGpuAppraiser, NvattestInstallation,
+        nvgpu::{GpuProfiles, GpuStatusInput},
+        tlv::decode_gpu_envelope,
+    };
+    use solstone_core_spp_ratls::resolve_installed_nvattest;
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time is available")
+        .as_nanos();
+    let temp_pkg_dir = std::env::temp_dir().join(format!(
+        "solstone-installed-pkg-{}-{stamp}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&temp_pkg_dir).unwrap();
+
+    let run_count_file = temp_pkg_dir.join("run_count.txt");
+    let positive_stdout = fixture_root().join("nvattest/positive.stdout");
+
+    let bin = temp_pkg_dir.join("lib/solstone-nvattest/bin/nvattest");
+    let lib = if cfg!(target_os = "macos") {
+        temp_pkg_dir.join("lib/solstone-nvattest/lib/libnvat.1.dylib")
+    } else {
+        temp_pkg_dir.join("lib/solstone-nvattest/lib/libnvat.so.1")
+    };
+    let ca = temp_pkg_dir.join("lib/solstone-nvattest/share/ca/ca-bundle.pem");
+
+    fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    fs::create_dir_all(lib.parent().unwrap()).unwrap();
+    fs::create_dir_all(ca.parent().unwrap()).unwrap();
+
+    let script = format!(
+        "#!/bin/sh\necho 1 >> \"{}\"\ncat \"{}\"\n",
+        run_count_file.display(),
+        positive_stdout.display()
+    );
+    fs::write(&bin, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    fs::write(&lib, b"library placeholder bytes for test 1234567890").unwrap();
+    fs::write(&ca, b"ca placeholder bytes for test 1234567890").unwrap();
+
+    let manifest = render_installed_payload(
+        &temp_pkg_dir,
+        PRODUCT,
+        COMPILED_VERSION,
+        compiled_target(),
+        "commit-hash",
+    )
+    .unwrap();
+    let manifest_path = temp_pkg_dir.join(INSTALLED_PAYLOAD_MANIFEST);
+    fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
+    fs::write(&manifest_path, manifest).unwrap();
+
+    let package =
+        InstalledPackage::admit(&temp_pkg_dir, COMPILED_VERSION, compiled_target()).unwrap();
+    let paths = resolve_installed_nvattest(&package).unwrap();
+
+    let envelope_bytes = fs::read(fixture_root().join("gpu-envelope.tlv")).unwrap();
+    let envelope = decode_gpu_envelope(&envelope_bytes).unwrap();
+    let owner_nonce = nonce(&fixture_root());
+    let lib_dir = paths.library.parent().unwrap().to_path_buf();
+    let installation = NvattestInstallation {
+        binary: paths.binary,
+        lib_dir,
+        ca_bundle: paths.ca_bundle,
+    };
+    let profiles = GpuProfiles::production();
+    let profile = profiles
+        .select(solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS[0])
+        .unwrap();
+    let status = GpuStatusInput {
+        profile,
+        proofs: None,
+        verification_time: SystemTime::now(),
+    };
+
+    let _ =
+        NvattestGpuAppraiser.appraise_installation(&envelope, &owner_nonce, &installation, &status);
+
+    let count1 = fs::read_to_string(&run_count_file)
+        .unwrap_or_default()
+        .lines()
+        .count();
+    assert_eq!(count1, 1, "expected run count 1 after first appraise");
+
+    // Overwrite one byte of the library, same length
+    let mut lib_bytes = fs::read(&lib).unwrap();
+    lib_bytes[0] ^= 0xff;
+    fs::write(&lib, lib_bytes).unwrap();
+
+    let err = resolve_installed_nvattest(&package).unwrap_err();
+    assert_eq!(err.failure.reason_code, "nvattest_integrity_failed");
+
+    let count2 = fs::read_to_string(&run_count_file)
+        .unwrap_or_default()
+        .lines()
+        .count();
+    assert_eq!(count2, 1, "expected run count to stay 1 without spawning");
+
+    let _ = fs::remove_dir_all(&temp_pkg_dir);
+}
