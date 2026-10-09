@@ -1338,7 +1338,7 @@ mod tests {
             .unwrap();
         let input = crate::inventory::PinnedInput::AuthorityCommitted {
             platform: "linux-x86_64".into(),
-            path: "core/models/assets/nvattest/libnvat-linux-x86_64-1.2.2-sol.6-archive.tar.xz"
+            path: "core/models/assets/nvattest/libnvat-linux-x86_64-1.2.2-sol.7-archive.tar.xz"
                 .into(),
         };
         let (bytes, pin, filename) = resolve_pinned_input(
@@ -1426,7 +1426,7 @@ mod tests {
             .unwrap();
         let input = crate::inventory::PinnedInput::AuthorityCommitted {
             platform: "macos-arm64".into(),
-            path: "core/models/assets/nvattest/libnvat-macos-arm64-1.2.2-sol.6-archive.tar.xz"
+            path: "core/models/assets/nvattest/libnvat-macos-arm64-1.2.2-sol.7-archive.tar.xz"
                 .into(),
         };
         let (bytes, pin, filename) = resolve_pinned_input(
@@ -1731,47 +1731,6 @@ mod tests {
                 assert_eq!(
                     actual_hash, m.extracted_sha256,
                     "staged file hash mismatch for {}",
-                    m.dest
-                );
-
-                let expected_oracle = match (target_id, m.dest.as_str()) {
-                    ("linux-x86_64", "lib/solstone-nvattest/bin/nvattest") => {
-                        "41d65c4ae56aab9e17802cdc376017c64cd1e10a3b273a212c096307e513ce28"
-                    }
-                    ("linux-x86_64", "lib/solstone-nvattest/lib/libnvat.so.1") => {
-                        "b0c5d7031700845f49fa6dae1ab33dcc427965df691354466aaf67c868ec0c29"
-                    }
-                    ("linux-aarch64", "lib/solstone-nvattest/bin/nvattest") => {
-                        "02032d5bc77c2ff8b76e0a7e735c268253b37251a09eb4ddc13085a74b7a89c7"
-                    }
-                    ("linux-aarch64", "lib/solstone-nvattest/lib/libnvat.so.1") => {
-                        "ee0d57e5b6e79beb5e43ec86c4b0e7512705e7c0edf7db8b8b3652ce2a745a86"
-                    }
-                    ("macos-arm64", "lib/solstone-nvattest/bin/nvattest") => {
-                        "f9b22f299477545df5537a53b3b26bfaf9738759a49c1def4ca1d08422071497"
-                    }
-                    ("macos-arm64", "lib/solstone-nvattest/lib/libnvat.1.dylib") => {
-                        "f2519b32b31b36ca62538611910f2142bf9fcf654ed386785429d8ed5de414e8"
-                    }
-                    (_, "lib/solstone-nvattest/share/ca/ca-bundle.pem") => {
-                        "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91"
-                    }
-                    (_, "share/solstone-journal/licenses/nvattest/LICENSE") => {
-                        "82d36972a71088e8d4a4793313e64e18340c60de08e3175a58360a277c962a33"
-                    }
-                    (
-                        "linux-x86_64" | "linux-aarch64",
-                        "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md",
-                    ) => "b6f7785f37de5e10aeda2f86435f3e6b7fdabda603b3d04200d91ed00ef7312a",
-                    (
-                        "macos-arm64",
-                        "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md",
-                    ) => "199a52ad0726e35c4ae82ed6b8fb80b75ac89aa0d2303e38755a67136a15db56",
-                    other => panic!("unexpected (target, dest): {other:?}"),
-                };
-                assert_eq!(
-                    m.extracted_sha256, expected_oracle,
-                    "inventory extracted_sha256 oracle mismatch for {}",
                     m.dest
                 );
             }

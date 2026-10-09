@@ -19,6 +19,7 @@ pub mod component_evidence;
 mod container_seam;
 pub mod controlled_build;
 pub mod deb;
+pub mod dev_package;
 pub mod digest;
 pub mod elf;
 pub mod elf_gcc11;

@@ -11,9 +11,15 @@
 //! A model may add each segment's topics and setting, and nothing else; when it refuses or
 //! fails, the segment is written without them.
 //!
-//! Recognized layout (v1): an optional preamble (a date or title heading, for example),
-//! then relative `## HH:MM:SS` headings counted from the start of the conversation, each
-//! followed by one or more `**Full Name:** text` lines. Hours may run past `01`.
+//! Recognized layouts (v1), each after an optional preamble such as a date or title:
+//! - relative `## HH:MM:SS` headings counted from the start of the conversation, each
+//!   followed by one or more `**Full Name:** text` lines;
+//! - `[HH:MM:SS] Name: text` lines;
+//! - `Name (HH:MM:SS)` lines, the words following on that line or the lines below.
+//!
+//! Hours may run past `01`. In the two single-line layouts a first time under an hour is
+//! counted from the import's start and any other is a time of day on the import's day; a
+//! file that is neither is untimed, never guessed.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
@@ -311,8 +317,10 @@ fn import(
     let mut model_available = true;
     let mut created = Vec::new();
 
-    for (tile, turns) in tiles(read_turns(&text)) {
-        let tile_start = start_seconds + tile * TILE_SECONDS;
+    let reading = read_turns(&text);
+    let base = reading.clock_start.unwrap_or(start_seconds);
+    for (tile, turns) in tiles(reading.turns) {
+        let tile_start = base + tile * TILE_SECONDS;
         let tile_day = match tile_start / DAY_SECONDS {
             0 => day.to_owned(),
             later => match next_day(day, later) {
@@ -436,9 +444,154 @@ struct Turn {
 
 /// Read the file's turns: timed when the layout is recognized, otherwise every line at
 /// the start, untimed.
-fn read_turns(text: &str) -> Vec<Turn> {
+fn read_turns(text: &str) -> Reading {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    timed_turns(text).unwrap_or_else(|| untimed_turns(text))
+    if let Some(turns) = timed_turns(text) {
+        return Reading {
+            clock_start: None,
+            turns,
+        };
+    }
+    inline_turns(text).unwrap_or_else(|| Reading {
+        clock_start: None,
+        turns: untimed_turns(text),
+    })
+}
+
+/// A transcript's turns, and where they are counted from.
+struct Reading {
+    /// The time of day the file's first turn names, when its times are clock times; the
+    /// turns are then counted from it. `None` counts them from the import's start.
+    clock_start: Option<u64>,
+    turns: Vec<Turn>,
+}
+
+/// The two single-line turn layouts: `[HH:MM:SS] Name: text` and `Name (HH:MM:SS)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InlineLayout {
+    Bracketed,
+    Parenthesized,
+}
+
+/// A file whose turns each start with a time on the speaker's line, or `None` when it is
+/// not one.
+///
+/// Recognized when at least two lines start a turn, all in the same layout, and no time
+/// runs backwards. A first time under an hour counts every time from the import's start;
+/// otherwise the times are clock times on the import's day, and each must be one, or the
+/// file is not recognized. Lines before the first turn are kept as one entry at the start
+/// of the conversation; other lines continue the turn above them, except a markdown
+/// heading, which starts an entry with no speaker. No text is dropped.
+fn inline_turns(text: &str) -> Option<Reading> {
+    let mut layout = None;
+    let mut turns: Vec<(Option<u64>, Turn)> = Vec::new();
+    let mut last_time: Option<u64> = None;
+    let mut spoken = 0_usize;
+    let mut continues = false;
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Some((kind, time, speaker, said)) = inline_turn(line) {
+            if layout.is_some_and(|known| known != kind)
+                || last_time.is_some_and(|last| time < last)
+            {
+                return None;
+            }
+            layout = Some(kind);
+            last_time = Some(time);
+            turns.push((
+                Some(time),
+                Turn {
+                    offset: 0,
+                    speaker: Some(speaker.to_owned()),
+                    text: said.to_owned(),
+                },
+            ));
+            spoken += 1;
+            continues = true;
+            continue;
+        }
+        if layout.is_some() && line.trim_start().starts_with('#') {
+            continues = false;
+        }
+        match turns.last_mut() {
+            Some((_, turn)) if continues => {
+                if !turn.text.is_empty() {
+                    turn.text.push('\n');
+                }
+                turn.text.push_str(line);
+            }
+            _ => {
+                turns.push((
+                    last_time,
+                    Turn {
+                        offset: 0,
+                        speaker: None,
+                        text: line.to_owned(),
+                    },
+                ));
+                continues = true;
+            }
+        }
+    }
+    if spoken < 2 {
+        return None;
+    }
+    let first = turns.iter().find_map(|(time, _)| *time)?;
+    let clock_start = if first < FIRST_HEADING_LIMIT_SECONDS {
+        None
+    } else if last_time? < DAY_SECONDS {
+        Some(first)
+    } else {
+        return None;
+    };
+    let base = clock_start.unwrap_or(0);
+    Some(Reading {
+        clock_start,
+        turns: turns
+            .into_iter()
+            .map(|(time, turn)| Turn {
+                offset: time.unwrap_or(base) - base,
+                ..turn
+            })
+            .collect(),
+    })
+}
+
+/// A line that starts a turn in one of the inline layouts: its layout, time, speaker and
+/// the words after them.
+fn inline_turn(line: &str) -> Option<(InlineLayout, u64, &str, &str)> {
+    let speaker_ok = |speaker: &str| {
+        !speaker.is_empty()
+            && speaker.chars().count() <= 80
+            && !speaker.contains(['[', ']', '(', ')', '*'])
+            && !speaker.starts_with(['#', '-', '>', '|'])
+    };
+    if let Some(rest) = line.strip_prefix('[') {
+        let (time, rest) = rest.split_once(']')?;
+        let (speaker, said) = rest.split_once(':')?;
+        let speaker = speaker.trim();
+        return speaker_ok(speaker).then_some((
+            InlineLayout::Bracketed,
+            duration_seconds(time)?,
+            speaker,
+            said.trim_start_matches([' ', '\t']),
+        ));
+    }
+    if line.starts_with([' ', '\t']) {
+        return None;
+    }
+    let (speaker, rest) = line.split_once('(')?;
+    let (time, rest) = rest.split_once(')')?;
+    let speaker = speaker.trim();
+    let said = rest.strip_prefix(':').unwrap_or(rest);
+    speaker_ok(speaker).then_some((
+        InlineLayout::Parenthesized,
+        duration_seconds(time)?,
+        speaker,
+        said.trim_start_matches([' ', '\t']),
+    ))
 }
 
 /// Each non-blank line, at the start, as written. Nothing here carries a time.
@@ -515,13 +668,18 @@ fn timed_turns(text: &str) -> Option<Vec<Turn>> {
     (offset.is_some() && spoken).then_some(turns)
 }
 
-/// Seconds counted by a `## H:MM:SS` heading, hours one to three digits.
+/// Seconds counted by a `## H:MM:SS` heading.
 fn heading_offset(line: &str) -> Option<u64> {
     let rest = line.trim_start().strip_prefix("##")?;
     if !rest.starts_with([' ', '\t']) {
         return None;
     }
-    let mut parts = rest.trim().split(':');
+    duration_seconds(rest.trim())
+}
+
+/// Seconds in an `H:MM:SS` time, hours one to three digits.
+fn duration_seconds(value: &str) -> Option<u64> {
+    let mut parts = value.split(':');
     let hours = parts
         .next()
         .filter(|part| (1..=3).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit()))?
@@ -813,7 +971,7 @@ mod tests {
     fn the_v1_layout_reads_times_speakers_and_words_from_the_file() {
         let file = "# 2026-03-11\n# Weekly sync\n\n## 00:00:00\n**Ana Lima:** Hello all.\n**Ben Ode:**   Morning.\nsecond line\n\n## 01:02:03\n**Ana Lima**: Bye.\n\n## Summary\nWe met.\n";
         assert_eq!(
-            read_turns(file),
+            read_turns(file).turns,
             vec![
                 turn(0, None, "# 2026-03-11\n# Weekly sync"),
                 turn(0, Some("Ana Lima"), "Hello all."),
@@ -833,7 +991,9 @@ mod tests {
             "## 14:30:00\n**Ana:** a time of day, not an offset\n",
             "[00:00:05] **Ana:** another layout\n",
         ] {
-            let turns = read_turns(file);
+            let reading = read_turns(file);
+            assert_eq!(reading.clock_start, None);
+            let turns = reading.turns;
             assert!(
                 turns
                     .iter()
@@ -842,6 +1002,56 @@ mod tests {
             let lines = file.lines().filter(|line| !line.trim().is_empty());
             assert!(
                 turns.iter().map(|turn| turn.text.as_str()).eq(lines),
+                "{file}"
+            );
+        }
+    }
+
+    #[test]
+    fn bracketed_lines_read_relative_times_speakers_and_words() {
+        let file = "Standup\n[00:00:00] Ana Lima: Morning.\n[00:00:04] Ben Okafor:  Hi,\nsecond line\n[01:00:10] Ana Lima: Bye.\n";
+        let reading = read_turns(file);
+        assert_eq!(reading.clock_start, None);
+        assert_eq!(
+            reading.turns,
+            vec![
+                turn(0, None, "Standup"),
+                turn(0, Some("Ana Lima"), "Morning."),
+                turn(4, Some("Ben Okafor"), "Hi,\nsecond line"),
+                turn(3610, Some("Ana Lima"), "Bye."),
+            ]
+        );
+    }
+
+    #[test]
+    fn parenthesized_clock_times_count_from_the_first_turn() {
+        let file = "# Granola notes\nAna Lima (14:30:05)\nWe should start.\nBen Okafor (14:31:00): Agreed.\n\n## Summary\nStarted.\n";
+        let reading = read_turns(file);
+        assert_eq!(reading.clock_start, Some(14 * 3600 + 30 * 60 + 5));
+        assert_eq!(
+            reading.turns,
+            vec![
+                turn(0, None, "# Granola notes"),
+                turn(0, Some("Ana Lima"), "We should start."),
+                turn(55, Some("Ben Okafor"), "Agreed."),
+                turn(55, None, "## Summary\nStarted."),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_inline_file_the_rules_cannot_settle_is_untimed() {
+        for file in [
+            "[00:00:01] Ana: only one turn\n",
+            "[00:00:01] Ana: one\nBen (00:00:02) mixed layouts\n",
+            "[00:05:00] Ana: later\n[00:01:00] Ben: earlier\n",
+            "[23:59:00] Ana: before midnight\n[24:00:30] Ben: not a clock time\n",
+            "Lunch (at noon) Ana\nDinner (later) Ben\n",
+        ] {
+            let reading = read_turns(file);
+            assert_eq!(reading.clock_start, None, "{file}");
+            assert!(
+                reading.turns.iter().all(|turn| turn.speaker.is_none()),
                 "{file}"
             );
         }

@@ -355,6 +355,77 @@ fn a_meeting_that_crosses_midnight_continues_into_the_next_day() {
 }
 
 #[test]
+fn a_bracketed_transcript_counts_its_times_from_the_start_with_no_model() {
+    let file = "[00:00:00] Ana Lima: Let's begin.\n[00:04:10] Ben Okafor: The file keeps  my words.\n[00:06:02] Ana Lima: Good.\n";
+    let (_temporary, source, day) = setup("bracketed.txt", file);
+    let created = run_ok(&source, &day, "09:00:00", &RecordingWire::always(no_engine));
+    let placed: Vec<_> = placed(&created)
+        .into_iter()
+        .map(|(_, segment, at, speaker, text)| (segment, at, speaker.unwrap(), text))
+        .collect();
+    let at = |offset: u64| 9 * 3600 + offset;
+    assert_eq!(
+        placed,
+        [
+            (
+                "090000_300".to_owned(),
+                at(0),
+                "Ana Lima".to_owned(),
+                "Let's begin.".to_owned()
+            ),
+            (
+                "090000_300".to_owned(),
+                at(250),
+                "Ben Okafor".to_owned(),
+                "The file keeps  my words.".to_owned()
+            ),
+            (
+                "090500_300".to_owned(),
+                at(362),
+                "Ana Lima".to_owned(),
+                "Good.".to_owned()
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_granola_transcript_with_clock_times_lands_at_those_times_with_no_model() {
+    let file = "Weekly sync\nAna Lima (14:30:05)\nWe should start.\nIt carries on.\nBen Okafor (14:36:00)\nAgreed.\n";
+    let (_temporary, source, day) = setup("granola.md", file);
+    // The start the import was given is not the file's: the file's clock times win.
+    let created = run_ok(&source, &day, "09:00:00", &RecordingWire::always(no_engine));
+    let placed = placed(&created);
+    let at = |h: u64, m: u64, s: u64| h * 3600 + m * 60 + s;
+    assert_eq!(
+        placed,
+        [
+            (
+                "20260311".to_owned(),
+                "143005_300".to_owned(),
+                at(14, 30, 5),
+                None,
+                "Weekly sync".to_owned()
+            ),
+            (
+                "20260311".to_owned(),
+                "143005_300".to_owned(),
+                at(14, 30, 5),
+                Some("Ana Lima".to_owned()),
+                "We should start.\nIt carries on.".to_owned()
+            ),
+            (
+                "20260311".to_owned(),
+                "143505_300".to_owned(),
+                at(14, 36, 0),
+                Some("Ben Okafor".to_owned()),
+                "Agreed.".to_owned()
+            ),
+        ]
+    );
+}
+
+#[test]
 fn an_untimed_transcript_is_one_segment_at_its_start_with_no_time_invented() {
     let untimed = "Weekly sync notes\n\nAna: Morning, everyone.\nBen: Morning.\n\n[00:12] a time in a layout this does not read\n## 00:00:05\nnobody speaks under this heading\n";
     let (_temporary, source, day) = setup("notes.txt", untimed);
