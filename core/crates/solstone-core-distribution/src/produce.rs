@@ -1933,87 +1933,12 @@ pub(crate) fn stage_layout(
                     sealed_archives,
                 )?;
             }
-            Entry::PinnedNative {
-                component: _,
-                input,
-                dest,
-                mode,
-                identity,
-                targets,
-                ..
-            } => {
-                if !targets.iter().any(|item| item == target_id) {
-                    continue;
+            Entry::PinnedNative { .. } | Entry::PinnedMembers { .. } => {
+                if let Some(archive) =
+                    stage_pinned_entry(entry, repo, catalog_cache, target_id, stage)?
+                {
+                    archives.push(archive);
                 }
-                validate_identity_basename(dest, identity)?;
-                let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
-                    dest,
-                    repo,
-                    catalog_cache,
-                    target_id,
-                    input,
-                )?;
-                archives.push(SourceArchiveBytes {
-                    name: filename.clone(),
-                    bytes: bytes.clone(),
-                });
-                let staged_member = crate::inventory::StagedMember {
-                    relpath: String::new(),
-                    dest: dest.clone(),
-                    mode: *mode,
-                    extracted_sha256: pin.sha256_hex.clone(),
-                    identity: Some(identity.clone()),
-                };
-                let plans = crate::pinned_stage::plan_pinned_input(
-                    dest,
-                    &bytes,
-                    &pin,
-                    &filename,
-                    &[staged_member],
-                    &[],
-                )?;
-                crate::pinned_stage::stage_pinned_plans(dest, stage, &bytes, &filename, &plans)?;
-            }
-            Entry::PinnedMembers {
-                component: _,
-                input,
-                staged,
-                ignored,
-                targets,
-                ..
-            } => {
-                if !targets.iter().any(|item| item == target_id) {
-                    continue;
-                }
-                for m in staged {
-                    if let Some(ref ident) = m.identity {
-                        validate_identity_basename(&m.dest, ident)?;
-                    }
-                }
-                let entry_name = staged
-                    .first()
-                    .map(|m| m.dest.as_str())
-                    .unwrap_or("pinned-members");
-                let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
-                    entry_name,
-                    repo,
-                    catalog_cache,
-                    target_id,
-                    input,
-                )?;
-                archives.push(SourceArchiveBytes {
-                    name: filename.clone(),
-                    bytes: bytes.clone(),
-                });
-                if let crate::inventory::PinnedInput::AuthorityCommitted { platform, .. } = input {
-                    check_authority_inventory(entry_name, platform, staged, ignored)?;
-                }
-                let plans = crate::pinned_stage::plan_pinned_input(
-                    entry_name, &bytes, &pin, &filename, staged, ignored,
-                )?;
-                crate::pinned_stage::stage_pinned_plans(
-                    entry_name, stage, &bytes, &filename, &plans,
-                )?;
             }
             Entry::LicenceTree {
                 source,
@@ -2086,6 +2011,101 @@ pub(crate) fn stage_layout(
         stage::write_staged_file_mode(stage, &dest, &bytes, 0o644)?;
     }
     Ok(archives)
+}
+
+/// Stage one pinned inventory entry's members for `target_id`, verified against
+/// their pins. Returns the source archive it read, or `None` when the entry is not
+/// pinned or does not ship on this target.
+pub(crate) fn stage_pinned_entry(
+    entry: &Entry,
+    repo: &Path,
+    catalog_cache: &Path,
+    target_id: &str,
+    stage: &Path,
+) -> Result<Option<SourceArchiveBytes>, ProduceError> {
+    match entry {
+        Entry::PinnedNative {
+            component: _,
+            input,
+            dest,
+            mode,
+            identity,
+            targets,
+            ..
+        } => {
+            if !targets.iter().any(|item| item == target_id) {
+                return Ok(None);
+            }
+            validate_identity_basename(dest, identity)?;
+            let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
+                dest,
+                repo,
+                catalog_cache,
+                target_id,
+                input,
+            )?;
+            let staged_member = crate::inventory::StagedMember {
+                relpath: String::new(),
+                dest: dest.clone(),
+                mode: *mode,
+                extracted_sha256: pin.sha256_hex.clone(),
+                identity: Some(identity.clone()),
+            };
+            let plans = crate::pinned_stage::plan_pinned_input(
+                dest,
+                &bytes,
+                &pin,
+                &filename,
+                &[staged_member],
+                &[],
+            )?;
+            crate::pinned_stage::stage_pinned_plans(dest, stage, &bytes, &filename, &plans)?;
+            Ok(Some(SourceArchiveBytes {
+                name: filename,
+                bytes,
+            }))
+        }
+        Entry::PinnedMembers {
+            component: _,
+            input,
+            staged,
+            ignored,
+            targets,
+            ..
+        } => {
+            if !targets.iter().any(|item| item == target_id) {
+                return Ok(None);
+            }
+            for m in staged {
+                if let Some(ref ident) = m.identity {
+                    validate_identity_basename(&m.dest, ident)?;
+                }
+            }
+            let entry_name = staged
+                .first()
+                .map(|m| m.dest.as_str())
+                .unwrap_or("pinned-members");
+            let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
+                entry_name,
+                repo,
+                catalog_cache,
+                target_id,
+                input,
+            )?;
+            if let crate::inventory::PinnedInput::AuthorityCommitted { platform, .. } = input {
+                check_authority_inventory(entry_name, platform, staged, ignored)?;
+            }
+            let plans = crate::pinned_stage::plan_pinned_input(
+                entry_name, &bytes, &pin, &filename, staged, ignored,
+            )?;
+            crate::pinned_stage::stage_pinned_plans(entry_name, stage, &bytes, &filename, &plans)?;
+            Ok(Some(SourceArchiveBytes {
+                name: filename,
+                bytes,
+            }))
+        }
+        _ => Ok(None),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
