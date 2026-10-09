@@ -19,6 +19,34 @@ pub(crate) const MAX_OPAQUE_REFERENCE_BYTES: usize = 2_048;
 pub(crate) const MAX_DAY_BYTES: usize = 32;
 pub(crate) const MAX_FACET_BYTES: usize = 256;
 
+/// The day forms an agent may send, as written in every day argument's schema.
+pub(crate) const DAY_PATTERN: &str = r"^([0-9]{8}|[0-9]{4}-[0-9]{2}-[0-9]{2})$";
+pub(crate) const DAY_DESCRIPTION: &str =
+    "a day in the owner's time zone, as YYYYMMDD or YYYY-MM-DD";
+
+/// Bring an agent's day argument to the journal's `YYYYMMDD` day key.
+///
+/// ⚠ Day filters reach the index as plain string comparisons, so a day in any
+/// other shape filtered every entry out and read back as an honest-looking
+/// "nothing matched". Hosted agents send ISO dates by default. Anything that
+/// is not a real calendar day is refused, never passed through.
+pub(crate) fn normalize_day(value: Option<String>) -> Result<Option<String>, ToolError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let format = if value.len() == 10 {
+        "%Y-%m-%d"
+    } else {
+        "%Y%m%d"
+    };
+    if !(value.len() == 8 || value.len() == 10) || !value.is_ascii() {
+        return Err(ToolError::InvalidInput);
+    }
+    chrono::NaiveDate::parse_from_str(&value, format)
+        .map(|day| Some(day.format("%Y%m%d").to_string()))
+        .map_err(|_| ToolError::InvalidInput)
+}
+
 pub(crate) fn optional_string_within_limit(value: &Option<String>, maximum: usize) -> bool {
     value
         .as_ref()
@@ -85,7 +113,35 @@ pub(crate) fn execute_after_audit<A, T, E>(
 mod tests {
     use std::cell::Cell;
 
-    use super::{ToolError, execute_after_audit};
+    use super::{ToolError, execute_after_audit, normalize_day};
+
+    #[test]
+    fn a_day_argument_is_the_journal_day_key_in_either_written_form() {
+        assert_eq!(normalize_day(None), Ok(None));
+        assert_eq!(
+            normalize_day(Some("20261005".into())),
+            Ok(Some("20261005".into()))
+        );
+        assert_eq!(
+            normalize_day(Some("2026-10-05".into())),
+            Ok(Some("20261005".into()))
+        );
+        for refused in [
+            "",
+            "2026-9-05",
+            "2026/10/05",
+            "20261305",
+            "2026-02-30",
+            "yesterday",
+            "２０２６１００５",
+        ] {
+            assert_eq!(
+                normalize_day(Some(refused.into())),
+                Err(ToolError::InvalidInput),
+                "{refused}"
+            );
+        }
+    }
 
     #[test]
     fn audit_failure_prevents_native_execution() {

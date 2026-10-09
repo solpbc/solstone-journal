@@ -271,7 +271,7 @@ async fn enable_flow_opens_the_solstone_me_consent_link_and_polls_its_nonce() {
 }
 
 #[tokio::test]
-async fn enable_flow_needs_subscription_is_terminal_and_leaves_the_capability_off() {
+async fn enable_flow_needs_subscription_turns_the_capability_on_to_wait_for_the_purchase() {
     let root = journal();
     plant_committed_identity(&root);
     let registry = Arc::new(OperationRegistry::default());
@@ -295,17 +295,19 @@ async fn enable_flow_needs_subscription_is_terminal_and_leaves_the_capability_of
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(body["service"], "sme");
 
-    let op = wait_operation(app, "needs_subscription").await;
-    assert_eq!(op["phase"], "needs_subscription");
+    // Consent is saved on the portal; the journal turns on and its service
+    // waits on the subscription, so paying needs no second turn-on.
+    let op = wait_operation(app, "enabled").await;
+    assert_eq!(op["phase"], "enabled");
     let subscribe_url = op["subscribe_url"].as_str().expect("subscribe_url");
     assert!(subscribe_url.starts_with("https://"));
 
-    // Verify capability was NOT enabled in journal.json
+    // The capability is on, so the service picks up the purchase by itself.
     let config: Value = serde_json::from_str(
         &fs::read_to_string(root.join("config/journal.json")).expect("journal.json"),
     )
     .expect("json");
-    assert_ne!(
+    assert_eq!(
         config.get("mcp_endpoint").and_then(|m| m.get("enabled")),
         Some(&json!(true))
     );

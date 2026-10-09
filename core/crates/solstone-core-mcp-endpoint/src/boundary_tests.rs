@@ -1210,3 +1210,91 @@ fn ac8_ac11_ac12_ac30_bad_live_scope_and_references_fail_closed() {
         Err(McpProbeError::PermissionDenied)
     );
 }
+
+fn result_count(result: &Value, key: &str) -> usize {
+    result[key].as_array().unwrap().len()
+}
+
+#[test]
+fn an_iso_day_finds_what_the_journal_day_key_finds() {
+    // Hosted agents send ISO dates. Before this, `2026-09-14` reached the index
+    // as a string comparison and every entry fell outside it: a full journal
+    // read back as "nothing matched".
+    let journal = fixture();
+    for (day_key, iso) in [
+        ("day", "day"),
+        ("day_from", "day_from"),
+        ("day_to", "day_to"),
+    ] {
+        let keyed = probe(
+            &journal,
+            "search",
+            json!({"query": "indexed", day_key: DAY}),
+        )
+        .unwrap();
+        let dashed = probe(
+            &journal,
+            "search",
+            json!({"query": "indexed", iso: "2026-09-14"}),
+        )
+        .unwrap();
+        assert_eq!(result_count(&keyed, "results"), 1, "{day_key}");
+        assert_eq!(
+            visible_search_page(&keyed),
+            visible_search_page(&dashed),
+            "{iso}"
+        );
+    }
+    assert_eq!(
+        result_count(
+            &probe(&journal, "list_transcripts", json!({"day": "2026-09-14"})).unwrap(),
+            "transcripts"
+        ),
+        1
+    );
+}
+
+#[test]
+fn a_day_that_is_not_a_calendar_day_is_refused_rather_than_matching_nothing() {
+    let journal = fixture();
+    for day in [
+        "Sept 14",
+        "2026-9-14",
+        "20261340",
+        "2026-02-30",
+        "14/09/2026",
+    ] {
+        assert_eq!(
+            probe(&journal, "search", json!({"query": "indexed", "day": day})),
+            Err(McpProbeError::InvalidInput),
+            "{day}"
+        );
+        assert_eq!(
+            probe(&journal, "list_transcripts", json!({"day": day})),
+            Err(McpProbeError::InvalidInput),
+            "{day}"
+        );
+    }
+}
+
+#[test]
+fn a_sentence_with_no_whole_match_falls_back_to_its_words_and_says_so() {
+    let journal = fixture();
+    let strict = probe(&journal, "search", json!({"query": "indexed"})).unwrap();
+    assert_eq!(strict["relaxed"], false);
+    let sentence = probe(
+        &journal,
+        "search",
+        json!({"query": "what indexed notes did I write about the launch"}),
+    )
+    .unwrap();
+    assert_eq!(result_count(&sentence, "results"), 1);
+    assert_eq!(sentence["relaxed"], true);
+    let absent = probe(
+        &journal,
+        "search",
+        json!({"query": "zzzznotpresent qqqqmissing"}),
+    )
+    .unwrap();
+    assert_eq!(result_count(&absent, "results"), 0);
+}

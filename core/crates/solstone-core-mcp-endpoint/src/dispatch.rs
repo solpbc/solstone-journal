@@ -665,6 +665,7 @@ fn search(
     let mut live_dropped = false;
     let mut index_coverage_complete = true;
     let mut degraded = false;
+    let mut relaxed = false;
     let mut has_more = false;
     let mut anchor = None;
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
@@ -679,6 +680,10 @@ fn search(
                 day: request.day.clone(),
                 day_from: request.day_from.clone(),
                 day_to: request.day_to.clone(),
+                // A hosted agent sends a sentence as often as keywords. When every
+                // word must match and none does, the index retries on the content
+                // words; `relaxed` tells the agent the hits match only some of them.
+                relax: true,
                 ..ConnectionSearchRequest::default()
             },
             // Journal days are the owner's days, so relative dates resolve against
@@ -690,6 +695,7 @@ fn search(
         .map_err(index_error)?;
         index_coverage_complete &= response.coverage_complete;
         degraded |= response.degraded.is_some();
+        relaxed |= response.relaxed;
         let batch_len = response.results.len();
         if batch_len == 0 {
             break;
@@ -805,6 +811,7 @@ fn search(
                 "transcript_index": "Raw transcript JSONL is not covered by index search.",
             },
             "degraded": degraded,
+            "relaxed": relaxed,
         }),
         count,
         targets,
