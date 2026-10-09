@@ -82,6 +82,14 @@ pub fn compiled_target() -> &'static str {
     TARGET_WINDOWS_X86_64
 }
 
+/// The iOS build is compile-only (`make check-rust-ios`): no package ships for
+/// it, so this id is not canonical and every package admission refuses it.
+#[cfg(all(target_os = "ios", target_arch = "aarch64"))]
+#[must_use]
+pub fn compiled_target() -> &'static str {
+    "ios-arm64-unshipped"
+}
+
 #[cfg(not(any(
     all(
         target_os = "linux",
@@ -89,5 +97,6 @@ pub fn compiled_target() -> &'static str {
     ),
     all(target_os = "macos", target_arch = "aarch64"),
     all(target_os = "windows", target_arch = "x86_64"),
+    all(target_os = "ios", target_arch = "aarch64"),
 )))]
 compile_error!("installed payload has no target id for this platform");

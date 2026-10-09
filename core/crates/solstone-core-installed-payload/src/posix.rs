@@ -46,7 +46,7 @@ pub fn host_executable_platform() -> ExecutablePlatform {
     {
         ExecutablePlatform::Linux
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         ExecutablePlatform::Macos
     }
