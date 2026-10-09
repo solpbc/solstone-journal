@@ -131,7 +131,7 @@ fn generic_text_timestamp_writes_a_segment_from_the_stamp() {
     assert!(
         journal
             .path()
-            .join("chronicle/20260818/import.text/062652_5/conversation_transcript.jsonl")
+            .join("chronicle/20260818/import.text/062652_300/conversation_transcript.jsonl")
             .is_file()
     );
     let marker: serde_json::Value = serde_json::from_slice(
@@ -149,6 +149,59 @@ fn generic_text_timestamp_writes_a_segment_from_the_stamp() {
             .path()
             .join("chronicle/20260819/health/stream.updated")
             .exists()
+    );
+}
+
+#[test]
+fn generic_text_v1_transcript_takes_its_times_from_the_file_with_no_model() {
+    let journal = tempfile::tempdir().unwrap();
+    let note = journal.path().join("meeting.md");
+    fs::write(
+        &note,
+        "# Planning sync\n\n## 00:00:00\n**Ana Lima:** Let's begin.\n\n## 00:07:30\n**Ben Okafor:** The file keeps  my words.\n",
+    )
+    .unwrap();
+    let result = run_at(
+        journal.path(),
+        &[
+            "--timestamp",
+            "20260818_100000",
+            note.to_str().expect("utf-8 note path"),
+        ],
+        |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+        || false,
+    );
+    assert_eq!(result.exit_code, 0, "stderr={}", result.stderr);
+    assert!(
+        result
+            .stdout
+            .contains("Generic text import complete: segments=2"),
+        "stdout={}",
+        result.stdout
+    );
+    let rows = |segment: &str| -> Vec<serde_json::Value> {
+        fs::read_to_string(journal.path().join(format!(
+            "chronicle/20260818/import.text/{segment}/conversation_transcript.jsonl"
+        )))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+    };
+    let first = rows("100000_300");
+    assert_eq!(
+        first[1..],
+        [
+            serde_json::json!({"start": "00:00:00", "text": "# Planning sync", "source": "import"}),
+            serde_json::json!({"start": "00:00:00", "speaker": "Ana Lima", "text": "Let's begin.", "source": "import"}),
+        ]
+    );
+    let second = rows("100500_300");
+    assert_eq!(
+        second[1..],
+        [
+            serde_json::json!({"start": "00:02:30", "speaker": "Ben Okafor", "text": "The file keeps  my words.", "source": "import"})
+        ]
     );
 }
 
@@ -180,7 +233,7 @@ fn generic_text_marker_failure_is_nonzero_and_retains_created_content() {
     assert!(
         journal
             .path()
-            .join("chronicle/20260818/import.text/062652_5/conversation_transcript.jsonl")
+            .join("chronicle/20260818/import.text/062652_300/conversation_transcript.jsonl")
             .is_file()
     );
 }

@@ -126,8 +126,8 @@ fn main() {
             inference: None,
             hints_applied: Vec::new(),
         }))),
-        "import_refuse_segment" => {
-            if request.context == "observe.detect.segment"
+        "import_refuse_model" => {
+            if request.context == "observe.detect.topics"
                 || request.context.starts_with("import.document")
             {
                 respond(GenerateResponse::Refused(RefusedResponse {
@@ -166,10 +166,7 @@ fn main() {
 
 fn import_context_body(context: &str) -> &'static str {
     match context {
-        "observe.detect.segment" => {
-            r#"{"segments":[{"start_at":"00:00:00","line":1},{"start_at":"00:00:01","line":2}]}"#
-        }
-        "observe.detect.json" => r#"{"entries":[{"text":"same"}]}"#,
+        "observe.detect.topics" => r#"{"topics":"same","setting":"same"}"#,
         "import.document.describe" | "import.document.vision" => "page text from the model",
         other => panic!("unsupported import_context {other}"),
     }

@@ -2,14 +2,27 @@
 // Copyright (c) 2026 sol pbc
 
 //! Generic `.txt` and `.md` transcript import.
+//!
+//! Times, speakers and words come from the file, never from a model. A transcript in a
+//! recognized layout keeps every turn at the import's start plus its heading offset, on
+//! the ~300-second segments the conversation spans, with the speaker its label names and
+//! its words exactly as written. Any other file is untimed: it lands whole in the one
+//! ~300-second segment at its start, with no duration estimated and no turn time invented.
+//! A model may add each segment's topics and setting, and nothing else; when it refuses or
+//! fails, the segment is written without them.
+//!
+//! Recognized layout (v1): an optional preamble (a date or title heading, for example),
+//! then relative `## HH:MM:SS` headings counted from the start of the conversation, each
+//! followed by one or more `**Full Name:** text` lines. Hours may run past `01`.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{Map, Value, json};
+use chrono::{Days, NaiveDate};
+use serde_json::{Map, Value};
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, GenerateSessionAdapter,
 };
@@ -20,7 +33,7 @@ use solstone_core_journal_io::{
 
 use solstone_core_segment::{ImportSource, Kind, StreamHints};
 
-use crate::{CreatedSegment, ModelDetectionError};
+use crate::CreatedSegment;
 
 /// One segment created and written to disk during text import.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -71,17 +84,16 @@ impl TextImportOutcome {
 }
 
 const PRIVATE_IMPORT_FILE_MODE: u32 = 0o600;
-const SEGMENT_PROMPT: &str = include_str!("text_assets/detect_transcript_segment.md");
-const SEGMENT_SCHEMA: &str = include_str!("text_assets/detect_transcript_segment.schema.json");
-const JSON_PROMPT: &str = include_str!("text_assets/detect_transcript_json.md");
-const JSON_SCHEMA: &str = include_str!("text_assets/detect_transcript_json.schema.json");
-
-/// Which model-boundary call failed to communicate with the sibling process.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TextWirePhase {
-    SegmentBoundary,
-    SegmentJson,
-}
+/// The journal's ordinary segment length. A timed transcript tiles it from its start.
+const TILE_SECONDS: u64 = 300;
+const DAY_SECONDS: u64 = 86_400;
+/// The first heading of a relative layout is counted from the start. One an hour or more
+/// in reads as a time of day, which this layout does not carry.
+const FIRST_HEADING_LIMIT_SECONDS: u64 = 3_600;
+/// Only the start of a very long segment is shown to the model for its topics.
+const TOPICS_INPUT_LIMIT_BYTES: usize = 32 * 1024;
+const TOPICS_PROMPT: &str = include_str!("text_assets/detect_transcript_topics.md");
+const TOPICS_SCHEMA: &str = include_str!("text_assets/detect_transcript_topics.schema.json");
 
 /// Failure while importing a generic transcript.
 #[derive(Debug)]
@@ -99,24 +111,15 @@ pub enum TextImportError {
     InvalidTime {
         value: String,
     },
-    Wire {
-        phase: TextWirePhase,
-        source: ClientError,
-    },
-    NegativeDuration {
-        duration: i128,
-        time_part: String,
+    /// A timed transcript runs past midnight, but its day directory is not a `YYYYMMDD` day
+    /// the next one can be named from.
+    NextDay {
+        day: String,
     },
     SegmentDeconflict(SegmentDeconflictError),
     SegmentKeyUnavailable {
         candidate: String,
     },
-    /// The segmentation adapter is absent, so no segment boundary could be decided.
-    ///
-    /// This is deliberately an error rather than an empty success. Returning zero segments
-    /// here would print a completion banner over an import that wrote nothing, which an owner
-    /// cannot tell apart from a transcript that genuinely had no segments.
-    SegmentationUnavailable,
     Write {
         path: PathBuf,
         source: AtomicWriteError,
@@ -145,23 +148,14 @@ impl fmt::Display for TextImportError {
                 )
             }
             Self::InvalidTime { value } => write!(formatter, "invalid transcript time: {value}"),
-            Self::Wire { phase, source } => {
-                write!(formatter, "{phase:?} generate wire failed: {source}")
-            }
-            Self::NegativeDuration {
-                duration,
-                time_part,
-            } => write!(
+            Self::NextDay { day } => write!(
                 formatter,
-                "Invalid segment duration: {duration}s for segment at {time_part}. Timestamps may be out of order or audio_duration is incorrect."
+                "the transcript runs past midnight, but {day} is not a day the next one can follow"
             ),
             Self::SegmentDeconflict(source) => source.fmt(formatter),
             Self::SegmentKeyUnavailable { candidate } => {
                 write!(formatter, "no available segment key for {candidate}")
             }
-            Self::SegmentationUnavailable => formatter.write_str(
-                "generic text import requires a native segmentation adapter; nothing was imported",
-            ),
             Self::Write { path, source } => write!(formatter, "{}: {source}", path.display()),
             Self::StreamMarker { path, day, source } => write!(
                 formatter,
@@ -184,15 +178,13 @@ impl Error for TextImportError {
             Self::UnsupportedFormat { .. }
             | Self::RawFilename { .. }
             | Self::InvalidTime { .. }
-            | Self::Wire { .. }
-            | Self::NegativeDuration { .. }
-            | Self::SegmentKeyUnavailable { .. }
-            | Self::SegmentationUnavailable => None,
+            | Self::NextDay { .. }
+            | Self::SegmentKeyUnavailable { .. } => None,
         }
     }
 }
 
-/// Model-boundary seam shared by transcript segmentation and normalization.
+/// Model-boundary seam for the topics and setting of each imported segment.
 pub trait WireClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError>;
 }
@@ -230,12 +222,11 @@ impl WireClient for SystemWireClient {
 
 /// Process a generic transcript using the production generate boundary.
 ///
-/// `start_time` remains a raw `HH:MM:SS` value to preserve the Python import
-/// contract exactly. `audio_duration` is currently supplied by no native
-/// dispatcher, but remains public so the final-segment duration contract is
-/// available to its future owner. A refused or unparseable boundary-detection
-/// response returns an empty outcome without writing files; a refused or
-/// unparseable per-segment response skips only that segment and continues.
+/// `start_time` is the import's start as a `HH:MM:SS` clock on `day_dir`'s day. Turn
+/// times, speakers and words are read from the file alone, so the import is the same
+/// with any model or none. The model is asked only for each segment's topics and setting:
+/// a refusal, an unreadable reply or a failed call leaves those out and changes nothing
+/// else, and once the model is unavailable it is not asked again in this import.
 #[allow(clippy::too_many_arguments)]
 pub fn process_transcript(
     path: &Path,
@@ -245,19 +236,10 @@ pub fn process_transcript(
     stream: &str,
     facet: Option<&str>,
     setting: Option<&str>,
-    audio_duration: Option<u64>,
 ) -> TextImportOutcome {
     let wire = SystemWireClient::sibling();
     let outcome = process_transcript_with_wire(
-        path,
-        day_dir,
-        start_time,
-        import_id,
-        stream,
-        facet,
-        setting,
-        audio_duration,
-        &wire,
+        path, day_dir, start_time, import_id, stream, facet, setting, &wire,
     );
     wire.finish();
     outcome
@@ -265,7 +247,7 @@ pub fn process_transcript(
 
 /// Process a generic transcript with an injected generate-boundary client.
 ///
-/// This has the same refusal behavior as [`process_transcript`].
+/// This behaves exactly as [`process_transcript`].
 #[allow(clippy::too_many_arguments)]
 pub fn process_transcript_with_wire(
     path: &Path,
@@ -275,165 +257,112 @@ pub fn process_transcript_with_wire(
     stream: &str,
     facet: Option<&str>,
     setting: Option<&str>,
-    audio_duration: Option<u64>,
     wire: &dyn WireClient,
 ) -> TextImportOutcome {
-    let text = match read_transcript(path) {
-        Ok(text) => text,
-        Err(error) => {
-            return TextImportOutcome::Failed {
-                created: TextImportWork::default(),
-                error,
-            };
-        }
-    };
-    let raw_filename = match path.file_name().and_then(|name| name.to_str()) {
-        Some(name) => name,
-        None => {
-            return TextImportOutcome::Failed {
-                created: TextImportWork::default(),
-                error: TextImportError::RawFilename {
-                    path: path.to_path_buf(),
-                },
-            };
-        }
-    };
-    let (journal_root, day) = match journal_marker_context(day_dir) {
-        Ok(ctx) => ctx,
-        Err(error) => {
-            return TextImportOutcome::Failed {
-                created: TextImportWork::default(),
-                error,
-            };
-        }
-    };
-    if let Err(error) = stage_raw_source(day_dir, import_id, path, raw_filename) {
-        return TextImportOutcome::Failed {
-            created: TextImportWork::default(),
+    match import(
+        path, day_dir, start_time, import_id, stream, facet, setting, wire,
+    ) {
+        Ok(created) => TextImportOutcome::Success(TextImportWork { created }),
+        Err((created, error)) => TextImportOutcome::Failed {
+            created: TextImportWork { created },
             error,
-        };
+        },
     }
-    let (segments, native_fallback) = match segment_transcript(wire, &text, start_time) {
-        Ok(segments) => (segments, false),
-        Err(ModelDetectionError::Unavailable) => (whole_file_segment(&text, start_time), true),
-        Err(ModelDetectionError::Failed(ClientError::Resolve(_))) => {
-            (whole_file_segment(&text, start_time), true)
-        }
-        Err(ModelDetectionError::Failed(source)) => {
-            return TextImportOutcome::Failed {
-                created: TextImportWork::default(),
-                error: TextImportError::Wire {
-                    phase: TextWirePhase::SegmentBoundary,
-                    source,
-                },
-            };
-        }
-    };
+}
 
-    let recording_start_seconds = match time_to_seconds(start_time) {
-        Ok(s) => s,
-        Err(error) => {
-            return TextImportOutcome::Failed {
-                created: TextImportWork::default(),
-                error,
-            };
-        }
+type ImportResult = Result<Vec<TextCreated>, (Vec<TextCreated>, TextImportError)>;
+
+#[allow(clippy::too_many_arguments)]
+fn import(
+    path: &Path,
+    day_dir: &Path,
+    start_time: &str,
+    import_id: &str,
+    stream: &str,
+    facet: Option<&str>,
+    setting: Option<&str>,
+    wire: &dyn WireClient,
+) -> ImportResult {
+    let early = |error| (Vec::new(), error);
+    let text = read_transcript(path).map_err(early)?;
+    let raw_filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            early(TextImportError::RawFilename {
+                path: path.to_path_buf(),
+            })
+        })?;
+    let (journal_root, day) = journal_marker_context(day_dir).map_err(early)?;
+    let start_seconds = clock_seconds(start_time).ok_or_else(|| {
+        early(TextImportError::InvalidTime {
+            value: start_time.to_owned(),
+        })
+    })?;
+    stage_raw_source(day_dir, import_id, path, raw_filename).map_err(early)?;
+
+    let chronicle = day_dir.parent().unwrap_or(day_dir);
+    let hints = StreamHints {
+        kind: Some(Kind::Imported(ImportSource::Named("text".to_owned()))),
+        host: None,
+        platform: None,
     };
-    let parent = day_dir.join(stream);
-    let mut occupied = HashSet::new();
+    let mut occupied: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut model_available = true;
     let mut created = Vec::new();
 
-    for (index, segment) in segments.iter().enumerate() {
-        let wrapper = match normalize_segment(wire, &segment.text, &segment.start_at) {
-            Ok(wrapper) => wrapper,
-            Err(ModelDetectionError::Unavailable)
-            | Err(ModelDetectionError::Failed(ClientError::Resolve(_)))
-                if native_fallback =>
-            {
-                raw_text_wrapper(segment)
-            }
-            Err(ModelDetectionError::Unavailable) => continue,
-            Err(ModelDetectionError::Failed(source)) => {
-                return TextImportOutcome::Failed {
-                    created: TextImportWork { created },
-                    error: TextImportError::Wire {
-                        phase: TextWirePhase::SegmentJson,
-                        source,
-                    },
-                };
-            }
-        };
-
-        let segment_start_seconds = match time_to_seconds(&segment.start_at) {
-            Ok(s) => s,
-            Err(error) => {
-                return TextImportOutcome::Failed {
-                    created: TextImportWork { created },
-                    error,
-                };
-            }
-        };
-        let mut entries = wrapper.entries;
-        relativize_entries(&mut entries, segment_start_seconds);
-
-        let duration = if let Some(next) = segments.get(index + 1) {
-            let next_start = match time_to_seconds(&next.start_at) {
-                Ok(s) => s,
-                Err(error) => {
-                    return TextImportOutcome::Failed {
-                        created: TextImportWork { created },
-                        error,
-                    };
+    for (tile, turns) in tiles(read_turns(&text)) {
+        let tile_start = start_seconds + tile * TILE_SECONDS;
+        let tile_day = match tile_start / DAY_SECONDS {
+            0 => day.to_owned(),
+            later => match next_day(day, later) {
+                Some(next) => next,
+                None => {
+                    return Err((
+                        created,
+                        TextImportError::NextDay {
+                            day: day.to_owned(),
+                        },
+                    ));
                 }
-            };
-            i128::from(next_start) - i128::from(segment_start_seconds)
-        } else if let Some(audio_duration) = audio_duration.filter(|duration| *duration != 0) {
-            i128::from(audio_duration)
-                - (i128::from(segment_start_seconds) - i128::from(recording_start_seconds))
-        } else {
-            5
+            },
         };
-        let time_part = segment.start_at.replace(':', "");
-        if duration < 0 {
-            return TextImportOutcome::Failed {
-                created: TextImportWork { created },
-                error: TextImportError::NegativeDuration {
-                    duration,
-                    time_part,
-                },
-            };
-        }
-        let candidate = format!("{time_part}_{}", duration.max(1));
+        let tile_day_dir = if tile_day == day {
+            day_dir.to_path_buf()
+        } else {
+            chronicle.join(&tile_day)
+        };
+        let parent = tile_day_dir.join(stream);
+        let candidate = format!("{}_{TILE_SECONDS}", clock_key(tile_start % DAY_SECONDS));
+        let day_occupied = occupied.entry(tile_day.clone()).or_default();
         let segment_key =
-            match find_available_segment_with_occupied(&parent, &candidate, 100, &occupied)
-                .map_err(TextImportError::SegmentDeconflict)
-            {
+            match find_available_segment_with_occupied(&parent, &candidate, 100, day_occupied) {
                 Ok(Some(key)) => key,
                 Ok(None) => {
-                    return TextImportOutcome::Failed {
-                        created: TextImportWork { created },
-                        error: TextImportError::SegmentKeyUnavailable { candidate },
-                    };
+                    return Err((
+                        created,
+                        TextImportError::SegmentKeyUnavailable { candidate },
+                    ));
                 }
-                Err(error) => {
-                    return TextImportOutcome::Failed {
-                        created: TextImportWork { created },
-                        error,
-                    };
-                }
+                Err(error) => return Err((created, TextImportError::SegmentDeconflict(error))),
             };
 
+        let context = if model_available {
+            tile_context(wire, &turns, &mut model_available)
+        } else {
+            None
+        };
         let output = parent
             .join(&segment_key)
             .join("conversation_transcript.jsonl");
         let rows = jsonl_rows(
-            entries,
+            &turns,
+            tile * TILE_SECONDS,
             import_id,
             raw_filename,
             facet,
             setting,
-            wrapper.topics.as_deref(),
-            wrapper.setting.as_deref(),
+            context.as_ref(),
         );
         if let Err(source) = write_jsonl(
             &output,
@@ -442,43 +371,36 @@ pub fn process_transcript_with_wire(
                 mode: Some(PRIVATE_IMPORT_FILE_MODE),
             },
         ) {
-            return TextImportOutcome::Failed {
-                created: TextImportWork { created },
-                error: TextImportError::Write {
+            return Err((
+                created,
+                TextImportError::Write {
                     path: output,
                     source,
                 },
-            };
+            ));
         }
-
-        let hints = StreamHints {
-            kind: Some(Kind::Imported(ImportSource::Named("text".to_owned()))),
-            host: None,
-            platform: None,
-        };
 
         created.push(TextCreated {
-            day: day.to_owned(),
+            day: tile_day.clone(),
             segment: segment_key.clone(),
             stream: stream.to_owned(),
-            hints,
+            hints: hints.clone(),
             path: output,
         });
-
-        if let Err(source) = bump_stream_marker(journal_root, day) {
-            return TextImportOutcome::Failed {
-                created: TextImportWork { created },
-                error: TextImportError::StreamMarker {
-                    path: health_marker_path(journal_root, day, HealthMarkerKind::Stream),
-                    day: day.to_owned(),
+        if let Err(source) = bump_stream_marker(journal_root, &tile_day) {
+            return Err((
+                created,
+                TextImportError::StreamMarker {
+                    path: health_marker_path(journal_root, &tile_day, HealthMarkerKind::Stream),
+                    day: tile_day,
                     source,
                 },
-            };
+            ));
         }
-        occupied.insert(segment_key);
+        day_occupied.insert(segment_key);
     }
 
-    TextImportOutcome::Success(TextImportWork { created })
+    Ok(created)
 }
 
 fn journal_marker_context(day_dir: &Path) -> Result<(&Path, &str), TextImportError> {
@@ -503,33 +425,189 @@ fn journal_marker_context(day_dir: &Path) -> Result<(&Path, &str), TextImportErr
     Ok((journal_root, day))
 }
 
-struct Segment {
-    start_at: String,
+/// One entry of the transcript as the file gives it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Turn {
+    /// Seconds from the start of the import.
+    offset: u64,
+    speaker: Option<String>,
     text: String,
 }
 
-fn whole_file_segment(text: &str, start_time: &str) -> Vec<Segment> {
-    vec![Segment {
-        start_at: start_time.to_owned(),
-        text: text.to_owned(),
-    }]
+/// Read the file's turns: timed when the layout is recognized, otherwise every line at
+/// the start, untimed.
+fn read_turns(text: &str) -> Vec<Turn> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    timed_turns(text).unwrap_or_else(|| untimed_turns(text))
 }
 
-fn raw_text_wrapper(segment: &Segment) -> TranscriptWrapper {
-    TranscriptWrapper {
-        entries: vec![json!({
-            "start": segment.start_at,
-            "text": segment.text,
-        })],
-        topics: None,
-        setting: None,
+/// Each non-blank line, at the start, as written. Nothing here carries a time.
+fn untimed_turns(text: &str) -> Vec<Turn> {
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| Turn {
+            offset: 0,
+            speaker: None,
+            text: line.to_owned(),
+        })
+        .collect()
+}
+
+/// The v1 layout, or `None` when the file is not in it.
+///
+/// Recognized when it has at least one relative time heading, the first under an hour,
+/// none running backwards, and at least one speaker line under a heading. Lines before the
+/// first heading are kept as one entry at the start. A line under a heading that is not a
+/// speaker line continues the turn above it; one with no turn above it, or a markdown
+/// heading (a closing summary, say), starts an entry with no speaker. No text is dropped.
+fn timed_turns(text: &str) -> Option<Vec<Turn>> {
+    let mut turns: Vec<Turn> = Vec::new();
+    let mut offset: Option<u64> = None;
+    let mut continues = false;
+    let mut spoken = false;
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Some(next) = heading_offset(line) {
+            match offset {
+                None if next >= FIRST_HEADING_LIMIT_SECONDS => return None,
+                Some(current) if next < current => return None,
+                _ => {}
+            }
+            offset = Some(next);
+            continues = false;
+            continue;
+        }
+        let at = offset.unwrap_or(0);
+        if offset.is_some() {
+            if let Some((speaker, said)) = speaker_line(line) {
+                turns.push(Turn {
+                    offset: at,
+                    speaker: Some(speaker.to_owned()),
+                    text: said.to_owned(),
+                });
+                spoken = true;
+                continues = true;
+                continue;
+            }
+            if line.trim_start().starts_with('#') {
+                continues = false;
+            }
+        }
+        match turns.last_mut() {
+            Some(turn) if continues => {
+                if !turn.text.is_empty() {
+                    turn.text.push('\n');
+                }
+                turn.text.push_str(line);
+            }
+            _ => {
+                turns.push(Turn {
+                    offset: at,
+                    speaker: None,
+                    text: line.to_owned(),
+                });
+                continues = true;
+            }
+        }
     }
+    (offset.is_some() && spoken).then_some(turns)
 }
 
-struct TranscriptWrapper {
-    entries: Vec<Value>,
-    topics: Option<String>,
-    setting: Option<String>,
+/// Seconds counted by a `## H:MM:SS` heading, hours one to three digits.
+fn heading_offset(line: &str) -> Option<u64> {
+    let rest = line.trim_start().strip_prefix("##")?;
+    if !rest.starts_with([' ', '\t']) {
+        return None;
+    }
+    let mut parts = rest.trim().split(':');
+    let hours = parts
+        .next()
+        .filter(|part| (1..=3).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit()))?
+        .parse::<u64>()
+        .ok()?;
+    let mut sexagesimal = || {
+        parts
+            .next()
+            .filter(|part| part.len() == 2 && part.bytes().all(|b| b.is_ascii_digit()))
+            .and_then(|part| part.parse::<u64>().ok())
+            .filter(|value| *value < 60)
+    };
+    let (minutes, seconds) = (sexagesimal()?, sexagesimal()?);
+    parts
+        .next()
+        .is_none()
+        .then_some(hours * 3600 + minutes * 60 + seconds)
+}
+
+/// `**Full Name:** text` (or `**Full Name**: text`): the label, and the words after it.
+fn speaker_line(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix("**")?;
+    let end = match (rest.find(":**"), rest.find("**:")) {
+        (Some(inside), Some(outside)) => inside.min(outside),
+        (Some(at), None) | (None, Some(at)) => at,
+        (None, None) => return None,
+    };
+    let speaker = rest[..end].trim();
+    if speaker.is_empty() || speaker.contains('*') {
+        return None;
+    }
+    Some((speaker, rest[end + 3..].trim_start_matches([' ', '\t'])))
+}
+
+/// Group turns by the ~300-second tile of the import they fall in, in order.
+fn tiles(turns: Vec<Turn>) -> BTreeMap<u64, Vec<Turn>> {
+    let mut tiles: BTreeMap<u64, Vec<Turn>> = BTreeMap::new();
+    for turn in turns {
+        tiles
+            .entry(turn.offset / TILE_SECONDS)
+            .or_default()
+            .push(turn);
+    }
+    tiles
+}
+
+fn next_day(day: &str, days: u64) -> Option<String> {
+    NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()?
+        .checked_add_days(Days::new(days))
+        .map(|next| next.format("%Y%m%d").to_string())
+}
+
+fn clock_key(seconds: u64) -> String {
+    format!(
+        "{:02}{:02}{:02}",
+        seconds / 3600,
+        seconds % 3600 / 60,
+        seconds % 60
+    )
+}
+
+fn clock_text(seconds: u64) -> String {
+    format!(
+        "{:02}:{:02}:{:02}",
+        seconds / 3600,
+        seconds % 3600 / 60,
+        seconds % 60
+    )
+}
+
+/// Seconds since midnight for a strict `HH:MM:SS` time of day.
+fn clock_seconds(value: &str) -> Option<u64> {
+    let mut parts = value.split(':');
+    let mut field = |limit: u64| {
+        parts
+            .next()
+            .filter(|part| part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|part| part.parse::<u64>().ok())
+            .filter(|number| *number <= limit)
+    };
+    let (hours, minutes, seconds) = (field(23)?, field(59)?, field(59)?);
+    parts
+        .next()
+        .is_none()
+        .then_some(hours * 3600 + minutes * 60 + seconds)
 }
 
 fn read_transcript(path: &Path) -> Result<String, TextImportError> {
@@ -548,206 +626,81 @@ fn read_transcript(path: &Path) -> Result<String, TextImportError> {
     })
 }
 
-fn segment_transcript(
-    wire: &dyn WireClient,
-    text: &str,
-    start_time: &str,
-) -> Result<Vec<Segment>, ModelDetectionError<ClientError>> {
-    let lines: Vec<&str> = text.lines().collect();
-    let numbered = lines
-        .iter()
-        .enumerate()
-        .map(|(index, line)| format!("{}: {line}", index + 1))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let request = generate_request(
-        "observe.detect.segment",
-        format!("START_TIME: {start_time}\n{numbered}"),
-        SEGMENT_PROMPT,
-        SEGMENT_SCHEMA,
-        1024,
-    );
-    let response = generated_text(wire.execute(&request))?;
-    parse_segments(&response, &lines).ok_or(ModelDetectionError::Unavailable)
+/// What a model may add to a segment.
+struct TileContext {
+    topics: Option<String>,
+    setting: Option<String>,
 }
 
-fn normalize_segment(
+/// Ask the model for one segment's topics and setting. A failed call or a blocking
+/// refusal marks the model unavailable for the rest of the import.
+fn tile_context(
     wire: &dyn WireClient,
-    text: &str,
-    segment_start: &str,
-) -> Result<TranscriptWrapper, ModelDetectionError<ClientError>> {
-    let request = generate_request(
-        "observe.detect.json",
-        format!("SEGMENT_START: {segment_start}\n{text}"),
-        JSON_PROMPT,
-        JSON_SCHEMA,
-        3840,
-    );
-    let response = generated_text(wire.execute(&request))?;
-    parse_wrapper(&response).ok_or(ModelDetectionError::Unavailable)
-}
-
-fn generated_text(
-    response: Result<GenerateResponse, ClientError>,
-) -> Result<String, ModelDetectionError<ClientError>> {
-    match response {
-        Ok(GenerateResponse::Generated(response)) => Ok(response.text),
-        Ok(GenerateResponse::Refused(_)) => Err(ModelDetectionError::Unavailable),
-        Err(source) => Err(ModelDetectionError::Failed(source)),
+    turns: &[Turn],
+    model_available: &mut bool,
+) -> Option<TileContext> {
+    let mut contents = String::new();
+    for turn in turns {
+        if let Some(speaker) = &turn.speaker {
+            contents.push_str(speaker);
+            contents.push_str(": ");
+        }
+        contents.push_str(&turn.text);
+        contents.push('\n');
     }
-}
-
-fn generate_request(
-    context: &str,
-    contents: String,
-    prompt: &str,
-    schema: &str,
-    max_output_tokens: u64,
-) -> GenerateRequest {
-    GenerateRequest {
+    if contents.len() > TOPICS_INPUT_LIMIT_BYTES {
+        let mut end = TOPICS_INPUT_LIMIT_BYTES;
+        while !contents.is_char_boundary(end) {
+            end -= 1;
+        }
+        contents.truncate(end);
+    }
+    let request = GenerateRequest {
         id: None,
-        context: context.to_owned(),
+        context: "observe.detect.topics".to_owned(),
         contents: vec![ContentPart::Text { text: contents }],
-        system_instruction: Some(prompt.to_owned()),
+        system_instruction: Some(TOPICS_PROMPT.to_owned()),
         temperature: 0.3,
-        max_output_tokens,
+        max_output_tokens: 256,
         timeout_s: None,
         json_output: true,
-        json_schema: serde_json::from_str(schema)
+        json_schema: serde_json::from_str(TOPICS_SCHEMA)
             .expect("vendored transcript schema is valid JSON"),
         enforce_responsiveness: true,
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
-    }
-}
-
-fn parse_segments(response: &str, lines: &[&str]) -> Option<Vec<Segment>> {
-    let value: Value = serde_json::from_str(response).ok()?;
-    let boundaries = match value {
-        Value::Object(mut object) => object.remove("segments")?,
-        Value::Array(_) => value,
-        _ => return None,
     };
-    let boundaries = boundaries.as_array()?;
-    if boundaries.is_empty() {
-        return None;
-    }
-    let mut parsed = Vec::with_capacity(boundaries.len());
-    let mut last_line = 0_usize;
-    let mut last_seconds = 0_i64;
-    for boundary in boundaries {
-        let object = boundary.as_object()?;
-        let start_at = object.get("start_at")?.as_str()?.to_owned();
-        let line = usize::try_from(object.get("line")?.as_u64()?).ok()?;
-        if line < 1 || line > lines.len() || line <= last_line {
-            return None;
+    match wire.execute(&request) {
+        Ok(GenerateResponse::Generated(response)) => parse_context(&response.text),
+        Ok(GenerateResponse::Refused(refused)) => {
+            if refused.blocking {
+                *model_available = false;
+            }
+            None
         }
-        // A plan whose times are not clock times, or run backwards, cannot name
-        // segments. It is treated as no plan, so the whole file is imported as
-        // one segment and no transcript line is lost.
-        let seconds = clock_seconds(&start_at)?;
-        if seconds < last_seconds {
-            return None;
+        Err(_) => {
+            *model_available = false;
+            None
         }
-        parsed.push((start_at, line));
-        last_line = line;
-        last_seconds = seconds;
     }
-    Some(
-        parsed
-            .iter()
-            .enumerate()
-            .map(|(index, (start_at, start_line))| {
-                let end_line = parsed
-                    .get(index + 1)
-                    .map_or(lines.len(), |(_, next_line)| next_line - 1);
-                Segment {
-                    start_at: start_at.clone(),
-                    text: lines[start_line - 1..end_line].join("\n").trim().to_owned(),
-                }
-            })
-            .collect(),
-    )
 }
 
-/// Seconds since midnight for a strict `HH:MM:SS` time of day.
-fn clock_seconds(value: &str) -> Option<i64> {
-    let mut parts = value.split(':');
-    let mut field = |limit: i64| {
-        parts
-            .next()
-            .filter(|part| part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit()))
-            .and_then(|part| part.parse::<i64>().ok())
-            .filter(|number| *number <= limit)
-    };
-    let (hours, minutes, seconds) = (field(23)?, field(59)?, field(59)?);
-    parts
-        .next()
-        .is_none()
-        .then_some(hours * 3600 + minutes * 60 + seconds)
-}
-
-fn parse_wrapper(response: &str) -> Option<TranscriptWrapper> {
-    let mut object = serde_json::from_str::<Value>(response)
-        .ok()?
-        .as_object()?
-        .clone();
-    let entries = object.remove("entries")?.as_array()?.clone();
-    if entries.iter().any(|entry| !entry.is_object()) {
-        return None;
-    }
-    let mut text_field = |field: &str| {
+fn parse_context(response: &str) -> Option<TileContext> {
+    let object = serde_json::from_str::<Value>(response).ok()?;
+    let object = object.as_object()?;
+    let field = |name: &str| {
         object
-            .remove(field)
-            .and_then(|value| value.as_str().map(str::to_owned))
+            .get(name)
+            .and_then(Value::as_str)
+            .map(str::trim)
             .filter(|value| !value.is_empty())
+            .map(str::to_owned)
     };
-    Some(TranscriptWrapper {
-        entries,
-        topics: text_field("topics"),
-        setting: text_field("setting"),
+    Some(TileContext {
+        topics: field("topics"),
+        setting: field("setting"),
     })
-}
-
-fn time_to_seconds(value: &str) -> Result<i64, TextImportError> {
-    let mut parts = value.split(':');
-    let parse = |part: Option<&str>| part.and_then(|part| part.parse::<i64>().ok());
-    let (Some(hours), Some(minutes), Some(seconds), None) = (
-        parse(parts.next()),
-        parse(parts.next()),
-        parse(parts.next()),
-        parts.next(),
-    ) else {
-        return Err(TextImportError::InvalidTime {
-            value: value.to_owned(),
-        });
-    };
-    Ok(hours * 3600 + minutes * 60 + seconds)
-}
-
-fn relativize_entries(entries: &mut [Value], segment_start_seconds: i64) {
-    for entry in entries {
-        let Some(object) = entry.as_object_mut() else {
-            continue;
-        };
-        let Some(start) = object.get("start").and_then(Value::as_str) else {
-            continue;
-        };
-        let Ok(entry_seconds) = time_to_seconds(start) else {
-            continue;
-        };
-        let offset = (entry_seconds - segment_start_seconds).max(0);
-        object.insert(
-            "start".to_owned(),
-            Value::String(format!(
-                "{:02}:{:02}:{:02}",
-                offset / 3600,
-                offset % 3600 / 60,
-                offset % 60
-            )),
-        );
-    }
 }
 
 /// Copy the owner's source next to the destination-independent `raw` pointer.
@@ -791,14 +744,16 @@ fn stage_raw_source(
     Ok(())
 }
 
+/// The segment file: a header, then one entry per turn, its `start` counted from the
+/// segment's own start.
 fn jsonl_rows(
-    mut entries: Vec<Value>,
+    turns: &[Turn],
+    tile_offset: u64,
     import_id: &str,
     raw_filename: &str,
     facet: Option<&str>,
     caller_setting: Option<&str>,
-    topics: Option<&str>,
-    detected_setting: Option<&str>,
+    context: Option<&TileContext>,
 ) -> Vec<Value> {
     let mut imported = Map::new();
     imported.insert("id".to_owned(), Value::String(import_id.to_owned()));
@@ -815,23 +770,97 @@ fn jsonl_rows(
         "raw".to_owned(),
         Value::String(format!("../../../imports/{import_id}/{raw_filename}")),
     );
-    if let Some(topics) = topics.filter(|value| !value.is_empty()) {
-        header.insert("topics".to_owned(), Value::String(topics.to_owned()));
-    }
-    if let Some(setting) = detected_setting.filter(|value| !value.is_empty()) {
-        header.insert("setting".to_owned(), Value::String(setting.to_owned()));
-    }
-
-    let mut rows = Vec::with_capacity(entries.len() + 1);
-    rows.push(Value::Object(header));
-    for entry in &mut entries {
-        if let Some(object) = entry.as_object_mut()
-            && object.contains_key("text")
-            && !object.contains_key("source")
-        {
-            object.insert("source".to_owned(), Value::String("import".to_owned()));
+    if let Some(context) = context {
+        if let Some(topics) = &context.topics {
+            header.insert("topics".to_owned(), Value::String(topics.clone()));
+        }
+        if let Some(setting) = &context.setting {
+            header.insert("setting".to_owned(), Value::String(setting.clone()));
         }
     }
-    rows.extend(entries);
+
+    let mut rows = Vec::with_capacity(turns.len() + 1);
+    rows.push(Value::Object(header));
+    for turn in turns {
+        let mut entry = Map::new();
+        entry.insert(
+            "start".to_owned(),
+            Value::String(clock_text(turn.offset - tile_offset)),
+        );
+        if let Some(speaker) = &turn.speaker {
+            entry.insert("speaker".to_owned(), Value::String(speaker.clone()));
+        }
+        entry.insert("text".to_owned(), Value::String(turn.text.clone()));
+        entry.insert("source".to_owned(), Value::String("import".to_owned()));
+        rows.push(Value::Object(entry));
+    }
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn turn(offset: u64, speaker: Option<&str>, text: &str) -> Turn {
+        Turn {
+            offset,
+            speaker: speaker.map(str::to_owned),
+            text: text.to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_v1_layout_reads_times_speakers_and_words_from_the_file() {
+        let file = "# 2026-03-11\n# Weekly sync\n\n## 00:00:00\n**Ana Lima:** Hello all.\n**Ben Ode:**   Morning.\nsecond line\n\n## 01:02:03\n**Ana Lima**: Bye.\n\n## Summary\nWe met.\n";
+        assert_eq!(
+            read_turns(file),
+            vec![
+                turn(0, None, "# 2026-03-11\n# Weekly sync"),
+                turn(0, Some("Ana Lima"), "Hello all."),
+                turn(0, Some("Ben Ode"), "Morning.\nsecond line"),
+                turn(3723, Some("Ana Lima"), "Bye."),
+                turn(3723, None, "## Summary\nWe met."),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_outside_the_v1_layout_is_untimed_line_by_line() {
+        for file in [
+            "Ana: hello\n\nBen: hi\n",
+            "## 00:00:00\njust notes, nobody speaks\n",
+            "## 00:05:00\n**Ana:** later\n## 00:01:00\n**Ben:** earlier\n",
+            "## 14:30:00\n**Ana:** a time of day, not an offset\n",
+            "[00:00:05] **Ana:** another layout\n",
+        ] {
+            let turns = read_turns(file);
+            assert!(
+                turns
+                    .iter()
+                    .all(|turn| turn.offset == 0 && turn.speaker.is_none())
+            );
+            let lines = file.lines().filter(|line| !line.trim().is_empty());
+            assert!(
+                turns.iter().map(|turn| turn.text.as_str()).eq(lines),
+                "{file}"
+            );
+        }
+    }
+
+    #[test]
+    fn heading_and_speaker_shapes() {
+        assert_eq!(heading_offset("## 00:00:00"), Some(0));
+        assert_eq!(heading_offset("##\t1:00:01 "), Some(3601));
+        assert_eq!(heading_offset("## 101:00:00"), Some(363_600));
+        assert_eq!(heading_offset("### 00:00:01"), None);
+        assert_eq!(heading_offset("##00:00:01"), None);
+        assert_eq!(heading_offset("## 00:60:00"), None);
+        assert_eq!(heading_offset("## 00:00"), None);
+        assert_eq!(heading_offset("## 00:00:00 intro"), None);
+        assert_eq!(speaker_line("**A B:** x"), Some(("A B", "x")));
+        assert_eq!(speaker_line("**A B**: x:** y"), Some(("A B", "x:** y")));
+        assert_eq!(speaker_line("**:** x"), None);
+        assert_eq!(speaker_line("**bold** text"), None);
+        assert_eq!(speaker_line(" **A:** x"), None);
+    }
 }

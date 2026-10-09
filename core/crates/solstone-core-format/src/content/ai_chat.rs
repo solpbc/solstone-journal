@@ -37,8 +37,13 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         if text.is_empty() {
             continue;
         }
+        let content = if speaker.is_empty() {
+            text.to_owned()
+        } else {
+            format!("**{speaker}:** {text}")
+        };
         chunks.push(recorded_chunk(
-            format!("**{speaker}:** {text}"),
+            content,
             ai_chat_timestamp(rel, record),
             record,
         ));

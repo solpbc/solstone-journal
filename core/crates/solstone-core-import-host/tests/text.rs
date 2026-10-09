@@ -11,10 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use serde_json::{Map, Value, json};
-use solstone_core_generate::{
-    ClientError, GenerateRequest, GenerateResponse, GeneratedResponse, RefusalReason,
-    RefusedResponse,
-};
+use solstone_core_generate::{ClientError, GenerateRequest, GenerateResponse, GeneratedResponse};
 use solstone_core_import::metadata::{
     AttemptState, IMPORT_FAILED_REASON, admit_running_attempt, read_attempt_facts, read_provenance,
 };
@@ -23,7 +20,7 @@ use solstone_core_import::publish::{
     PublishError, publish_with_operations, read_publication_record,
 };
 use solstone_core_import::text::{
-    TextCreated, TextImportError, TextImportOutcome, TextWirePhase, process_transcript_with_wire,
+    TextCreated, TextImportError, TextImportOutcome, process_transcript_with_wire,
 };
 use solstone_core_import::{ImportError, ProjectionStatus, RUNNING_ATTEMPT_BOUND_MS, WireClient};
 use solstone_core_import_host::cli_argv;
@@ -75,30 +72,13 @@ fn generated(text: Value) -> Result<GenerateResponse, ClientError> {
     })))
 }
 
-fn refused() -> Result<GenerateResponse, ClientError> {
-    Ok(GenerateResponse::Refused(RefusedResponse {
-        id: None,
-        reason: RefusalReason::NoEngineConfigured,
-        reason_code: None,
-        retryable: false,
-        blocking: true,
-        reset_at_ms: None,
-        provider: None,
-        detail: "no engine".to_owned(),
-    }))
+fn context(topics: &str, setting: &str) -> Result<GenerateResponse, ClientError> {
+    generated(json!({"topics": topics, "setting": setting}))
 }
 
-fn boundaries(times: &[&str]) -> Value {
-    json!({
-        "segments": times.iter().enumerate().map(|(index, start_at)| {
-            json!({"start_at": start_at, "line": index + 1})
-        }).collect::<Vec<_>>()
-    })
-}
-
-fn wrapper(entries: Value, topics: &str, setting: &str) -> Value {
-    json!({"entries": entries, "topics": topics, "setting": setting})
-}
+/// A synthetic two-turn transcript whose turns sit five minutes apart, so it fills two segments.
+const TWO_SEGMENTS: &str =
+    "## 00:00:00\n**Ana Lima:** part one\n\n## 00:05:00\n**Ben Okafor:** part two\n";
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -253,7 +233,7 @@ async fn ac1_text_import_n_greater_than_one_success_direct_and_routes() {
     fs::create_dir_all(&journal).unwrap();
 
     let note = journal.join("note.md");
-    fs::write(&note, "part one\npart two").unwrap();
+    fs::write(&note, TWO_SEGMENTS).unwrap();
     let timestamp = "20260818_100000";
     let day_dir = journal.join("chronicle/20260818");
     fs::create_dir_all(&day_dir).unwrap();
@@ -264,17 +244,8 @@ async fn ac1_text_import_n_greater_than_one_success_direct_and_routes() {
         .generation;
 
     let wire = RecordingWire::new(vec![
-        generated(boundaries(&["10:00:00", "10:05:00"])),
-        generated(wrapper(
-            json!([{"start": "10:00:00", "text": "part one"}]),
-            "topic 1",
-            "setting 1",
-        )),
-        generated(wrapper(
-            json!([{"start": "10:05:00", "text": "part two"}]),
-            "topic 2",
-            "setting 2",
-        )),
+        context("topic 1", "setting 1"),
+        context("topic 2", "setting 2"),
     ]);
 
     let outcome = process_transcript_with_wire(
@@ -283,7 +254,6 @@ async fn ac1_text_import_n_greater_than_one_success_direct_and_routes() {
         "10:00:00",
         timestamp,
         "import.text",
-        None,
         None,
         None,
         &wire,
@@ -445,12 +415,10 @@ async fn ac2_zero_segment_through_producer_routes_success_zero_events_zero() {
         .generation;
 
     let note = journal.join("empty.md");
-    fs::write(&note, "some text that normalizes to unavailable").unwrap();
+    fs::write(&note, "\n\n").unwrap();
 
-    let wire = RecordingWire::new(vec![
-        generated(boundaries(&["12:00:00"])),
-        refused(), // normalizes to Unavailable
-    ]);
+    // A file with no text writes no segment and asks no model.
+    let wire = RecordingWire::new(Vec::new());
 
     let outcome = process_transcript_with_wire(
         &note,
@@ -458,7 +426,6 @@ async fn ac2_zero_segment_through_producer_routes_success_zero_events_zero() {
         "12:00:00",
         import_id,
         "import.text",
-        None,
         None,
         None,
         &wire,
@@ -567,29 +534,21 @@ async fn ac3_1_error_after_n_writes_partial_publication() {
         .generation;
 
     let note = journal.join("note.md");
-    fs::write(&note, "part one\npart two").unwrap();
+    fs::write(&note, TWO_SEGMENTS).unwrap();
 
-    // Wire succeeds on boundary and segment 1, fails on segment 2
+    // The second segment runs past midnight into a day that cannot be written.
+    fs::write(journal.join("chronicle/20260819"), "blocking file").unwrap();
     let wire = RecordingWire::new(vec![
-        generated(boundaries(&["12:00:00", "12:05:00"])),
-        generated(wrapper(
-            json!([{"start": "12:00:00", "text": "part one"}]),
-            "topic 1",
-            "setting 1",
-        )),
-        Err(ClientError::Io {
-            primary: "process died".to_owned(),
-            cleanup: None,
-        }),
+        context("topic 1", "setting 1"),
+        context("topic 2", "setting 2"),
     ]);
 
     let outcome = process_transcript_with_wire(
         &note,
         &day_dir,
-        "12:00:00",
+        "23:58:00",
         import_id,
         "import.text",
-        None,
         None,
         None,
         &wire,
@@ -599,13 +558,10 @@ async fn ac3_1_error_after_n_writes_partial_publication() {
         panic!("expected Failed outcome, got {:?}", outcome);
     };
     assert_eq!(created.created.len(), 1);
-    assert!(matches!(
-        error,
-        TextImportError::Wire {
-            phase: TextWirePhase::SegmentJson,
-            ..
-        }
-    ));
+    assert!(
+        matches!(error, TextImportError::SegmentDeconflict(_)),
+        "{error:?}"
+    );
 
     let finish = finish_import_attempt(
         &journal,
@@ -707,14 +663,7 @@ async fn ac3_2_marker_failure_identities_published() {
     // Create stream.updated as a directory with read-only permissions or invalid to cause failure
     fs::create_dir(&marker_path).unwrap();
 
-    let wire = RecordingWire::new(vec![
-        generated(boundaries(&["13:00:00"])),
-        generated(wrapper(
-            json!([{"start": "13:00:00", "text": "marker note"}]),
-            "topic",
-            "setting",
-        )),
-    ]);
+    let wire = RecordingWire::new(vec![context("topic", "setting")]);
 
     let outcome = process_transcript_with_wire(
         &note,
@@ -722,7 +671,6 @@ async fn ac3_2_marker_failure_identities_published() {
         "13:00:00",
         import_id,
         "import.text",
-        None,
         None,
         None,
         &wire,
@@ -780,19 +728,15 @@ async fn ac3_3_error_before_write_failed_empty_no_publication() {
     let note = journal.join("note.md");
     fs::write(&note, "failed note").unwrap();
 
-    // Boundary detection fails immediately
-    let wire = RecordingWire::new(vec![Err(ClientError::Io {
-        primary: "server down".to_owned(),
-        cleanup: None,
-    })]);
+    // A start that is not a clock fails before anything is written.
+    let wire = RecordingWire::new(Vec::new());
 
     let outcome = process_transcript_with_wire(
         &note,
         &day_dir,
-        "14:00:00",
+        "140000",
         import_id,
         "import.text",
-        None,
         None,
         None,
         &wire,
@@ -1314,20 +1258,11 @@ async fn ac6_callosum_exact_events_and_stream_record_on_text_import() {
         .generation;
 
     let note = journal.join("note.md");
-    fs::write(&note, "part 1\npart 2").unwrap();
+    fs::write(&note, TWO_SEGMENTS).unwrap();
 
     let wire = RecordingWire::new(vec![
-        generated(boundaries(&["20:00:00", "20:05:00"])),
-        generated(wrapper(
-            json!([{"start": "20:00:00", "text": "part 1"}]),
-            "topic 1",
-            "setting 1",
-        )),
-        generated(wrapper(
-            json!([{"start": "20:05:00", "text": "part 2"}]),
-            "topic 2",
-            "setting 2",
-        )),
+        context("topic 1", "setting 1"),
+        context("topic 2", "setting 2"),
     ]);
 
     let outcome = process_transcript_with_wire(
@@ -1336,7 +1271,6 @@ async fn ac6_callosum_exact_events_and_stream_record_on_text_import() {
         "20:00:00",
         timestamp,
         "import.text",
-        None,
         None,
         None,
         &wire,

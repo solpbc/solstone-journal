@@ -91,8 +91,8 @@ pub use sync_state::{
     SyncStateWriteError, read_sync_state, state_path, write_sync_state,
 };
 pub use text::{
-    SystemWireClient, TextCreated, TextImportError, TextImportOutcome, TextImportWork,
-    TextWirePhase, WireClient, process_transcript, process_transcript_with_wire,
+    SystemWireClient, TextCreated, TextImportError, TextImportOutcome, TextImportWork, WireClient,
+    process_transcript, process_transcript_with_wire,
 };
 pub use timestamp::{
     AutoTimestamp, DetectedTimestamp, Timestamp, TimestampError, validate_timestamp,

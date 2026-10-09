@@ -102,7 +102,7 @@ fn shipped_schema_files() -> Vec<PathBuf> {
         .nth(3)
         .expect("repository root");
     // Every schema a model is asked to fill: talents, describe categories, and the
-    // transcript importer's two steps.
+    // transcript importer's topics.
     let mut roots = vec![
         repository_root.join("core/payload/solstone/talent"),
         repository_root.join("core/crates/solstone-core-describe-categories/assets/categories"),

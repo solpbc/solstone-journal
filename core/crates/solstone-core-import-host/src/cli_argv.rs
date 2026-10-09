@@ -509,7 +509,6 @@ fn run_text(
         stream,
         options.facet.as_deref(),
         options.setting.as_deref(),
-        None,
     );
     let input = match &outcome {
         TextImportOutcome::Success(work) => ImportTerminalInput::Success(&work.created),

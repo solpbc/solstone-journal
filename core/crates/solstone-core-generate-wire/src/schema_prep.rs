@@ -261,7 +261,7 @@ mod tests {
     }
 
     /// Every schema a model is asked to fill: talents (core and app), describe and its
-    /// categories, and the transcript importer's two steps. A new directory of
+    /// categories, and the transcript importer's topics. A new directory of
     /// model-output schemas belongs here.
     fn shipped_model_output_schemas() -> Vec<std::path::PathBuf> {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
