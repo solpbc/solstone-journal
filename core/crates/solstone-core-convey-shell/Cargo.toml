@@ -231,7 +231,7 @@ temp-env = "0.3.6"
 rcgen.workspace = true
 rustls.workspace = true
 sha2.workspace = true
-solstone-core-local.workspace = true
+solstone-core-local = { workspace = true, features = ["test-hooks"] }
 spl-transport.workspace = true
 solstone-core-system = { workspace = true, features = ["test-hooks"] }
 tokio = { workspace = true, features = ["macros", "rt"] }

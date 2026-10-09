@@ -143,8 +143,8 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
 }
 
 pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
-    match read_status(journal, "local") {
-        Ok(mut status) => {
+    match solstone_core_local::install::status::read_observed_status(journal, "local") {
+        Ok(status) => {
             let held = match is_held(journal, "local") {
                 Ok(held) => held,
                 Err(_) => return unavailable_bootstrap_status("lease_unreadable"),
@@ -152,22 +152,21 @@ pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
             if !held
                 && cfg!(target_os = "macos")
                 && !metal_candidate::status_targets_native(&status)
+                && !(status.install_state == "failed" && status.target_fingerprint_json.is_none())
             {
                 return idle_bootstrap_status();
             }
-            if is_in_flight(&status.install_state) && !held {
-                status.install_state = "failed".to_owned();
-                status.install_error = Some("install_interrupted".to_owned());
-            }
             json!({
                 "name": status.provider,
+                "revision": status.revision,
                 "install_state": status.install_state,
                 "attempt_id": if is_in_flight(&status.install_state) { status.attempt_id } else { None },
                 "last_transition_at": status.last_transition_at,
                 "last_progress_at": status.last_progress_at,
                 "progress_bytes_received": if is_in_flight(&status.install_state) { status.progress_bytes_received } else { None },
                 "progress_bytes_total": if is_in_flight(&status.install_state) { status.progress_bytes_total } else { None },
-                "install_error": status.install_error
+                "install_error": status.install_error,
+                "error_code": status.error_code
             })
         }
         Err(solstone_core_local::install::status::StatusError::Io(err))
@@ -311,20 +310,32 @@ fn classify_bootstrap(journal: &Path, readiness: &Value) -> BootstrapResponse {
     };
     let readiness_status = readiness["status"].as_str().unwrap_or("");
     if readiness_status == "host-ineligible" {
-        return BootstrapResponse::HostIneligible(
-            readiness["reason_code"]
-                .as_str()
-                .unwrap_or(readiness_status)
-                .to_owned(),
-        );
+        let reason_code = readiness["reason_code"]
+            .as_str()
+            .unwrap_or(readiness_status);
+        if let Err(error) = solstone_core_local::install::status::record_terminal_refusal(
+            journal,
+            "local",
+            reason_code,
+            reason_code,
+        ) {
+            return BootstrapResponse::Unavailable(error.to_string());
+        }
+        return BootstrapResponse::HostIneligible(reason_code.to_owned());
     }
     if readiness_status == "proof-unavailable" {
-        return BootstrapResponse::Unavailable(
-            readiness["reason_code"]
-                .as_str()
-                .unwrap_or("proof_unavailable")
-                .to_owned(),
-        );
+        let reason_code = readiness["reason_code"]
+            .as_str()
+            .unwrap_or("proof_unavailable");
+        if let Err(error) = solstone_core_local::install::status::record_terminal_refusal(
+            journal,
+            "local",
+            reason_code,
+            reason_code,
+        ) {
+            return BootstrapResponse::Unavailable(error.to_string());
+        }
+        return BootstrapResponse::Unavailable(reason_code.to_owned());
     }
     let held = match is_held(journal, "local") {
         Ok(held) => held,
@@ -565,6 +576,31 @@ mod tests {
     }
 
     #[test]
+    fn bootstrap_reports_a_failure_to_persist_the_refusal() {
+        for readiness_status in ["proof-unavailable", "host-ineligible"] {
+            let journal = temporary_journal("refusal-write-failed");
+            fs::create_dir_all(solstone_core_local::install::lease::lease_path(
+                &journal, "local",
+            ))
+            .unwrap();
+            let response = classify_bootstrap(
+                &journal,
+                &json!({"status": readiness_status, "reason_code": "binary_exit"}),
+            );
+            assert!(
+                matches!(response, BootstrapResponse::Unavailable(ref error) if error != "binary_exit")
+            );
+            assert_eq!(
+                solstone_core_local::install::status::read_status(&journal, "local")
+                    .unwrap()
+                    .install_state,
+                "idle"
+            );
+            fs::remove_dir_all(journal).unwrap();
+        }
+    }
+
+    #[test]
     fn bootstrap_reports_installed_when_readiness_is_ready() {
         let journal = temporary_journal("already-installed");
         let response = classify_bootstrap(&journal, &json!({"ready": true}));
@@ -590,6 +626,49 @@ mod tests {
             &json!({"ready": false, "status": "missing-artifacts"}),
         );
         assert_eq!(response, BootstrapResponse::Start);
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn bootstrap_status_projects_error_code_and_synthetic_interruption() {
+        let journal = temporary_journal("bootstrap-status-error-code");
+        let initial = solstone_core_local::install::status::transition(
+            solstone_core_local::install::status::idle_status("local"),
+            "downloading",
+            None,
+            None,
+        )
+        .expect("transition to downloading");
+        solstone_core_local::install::status::write_status(&journal, initial)
+            .expect("write status");
+
+        let status = super::bootstrap_status(&journal, default_model());
+        assert_eq!(status["install_state"], "failed");
+        assert_eq!(status["install_error"], "install_interrupted");
+        assert_eq!(status["error_code"], "install_interrupted");
+
+        let on_disk = solstone_core_local::install::status::read_status(&journal, "local")
+            .expect("read status");
+        assert_eq!(on_disk.install_state, "downloading");
+        assert_eq!(on_disk.install_error, None);
+        assert_eq!(on_disk.error_code, None);
+
+        let mut failed = solstone_core_local::install::status::transition(
+            on_disk,
+            "failed",
+            Some("gpu_memory_insufficient".to_owned()),
+            None,
+        )
+        .expect("transition to failed");
+        failed.error_code = Some("gpu_memory_insufficient".to_owned());
+        solstone_core_local::install::status::write_status(&journal, failed)
+            .expect("write failed status");
+
+        let status2 = super::bootstrap_status(&journal, default_model());
+        assert_eq!(status2["install_state"], "failed");
+        assert_eq!(status2["install_error"], "gpu_memory_insufficient");
+        assert_eq!(status2["error_code"], "gpu_memory_insufficient");
+
         let _ = fs::remove_dir_all(journal);
     }
 

@@ -136,6 +136,25 @@ call :run_exact_library "solstone-core-thinking" "brain::tests::this_platform_of
 call :run_exact_library "solstone-core-thinking" "brain::tests::with_no_hardware_check_confidential_processing_reads_not_on_platform" || exit /b 1
 call :run_exact_library "solstone-core-convey-shell" "thinking::tests::no_hardware_check_refuses_confidential_turn_on" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-convey-shell" "thinking::tests::a_confidential_lane_turned_on_before_still_turns_off" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-check" "tests::windows_gpu_verdict_rows_and_linux_probe_failure" || exit /b 1
+call :run_exact_library "solstone-core-local" "vulkan::tests::verdict_table_enforces_6_gib_device_local_minimum" || exit /b 1
+call :run_exact_library "solstone-core-local" "install::fit_report::tests::windows_gpu_fit_verdicts" || exit /b 1
+call :run_exact_library "solstone-core-local" "install::fit_report::tests::windows_gpu_fit_downgrades_ok_when_package_not_ready" || exit /b 1
+call :run_exact_library "solstone-core-local" "install::tests::windows_admission_enforces_gpu_verdict_before_local_target" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-local" "install::tests::windows_admission_early_refusal_terminal_status" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-local" "install::tests::windows_admission_reaches_acquirer_at_floor" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-local" "install::tests::windows_admission_package_failure_is_a_new_terminal_attempt" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-setup" "steps::tests::windows_setup_readiness_enforces_6_gib_minimum" || exit /b 1
+call :run_exact_library "solstone-core-thinking" "local::tests::bootstrap_status_projects_error_code_and_synthetic_interruption" || exit /b 1
+call :run_exact_library "solstone-core-thinking" "local::tests::bootstrap_reports_a_failure_to_persist_the_refusal" || exit /b 1
+call :run_exact_library "solstone-core-system" "provider_runtime::launch::tests::windows_is_vulkan_allocation_failure_matching" || exit /b 1
+call :run_exact_library "solstone-core-system" "provider_runtime::launch::tests::windows_startup_collector_is_bounded_and_retires" || exit /b 1
+call :run_exact_library "solstone-core-system" "provider_runtime::launch::tests::windows_host_reports_gpu_unavailable_for_empty_vulkan_or_package_unavailable" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-system" "provider_runtime::launch::tests::windows_launch_vulkan_admission_and_allocation" "full-tests" || exit /b 1
+call :run_exact_integration "solstone-core-convey-shell" "thinking_runs_dom" "thinking_runs_dom_contract" || exit /b 1
+call :run_exact_integration "solstone-core-convey-shell" "thinking_runs_dom" "thinking_failed_installs_dom_from_persisted_status" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "install_provider::tests::local_unavailable_readiness_refuses_without_executor" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "install_provider::tests::local_refusal_reports_persistence_failure" "full-tests" || exit /b 1
 echo === cargo test --locked (Windows paired-device door listens on this computer by default) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests local_network || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests windows_firewall || exit /b 1

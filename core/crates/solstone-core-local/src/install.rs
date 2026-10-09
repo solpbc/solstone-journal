@@ -470,6 +470,9 @@ fn download_artifact_reason_code<'a>(
             "download_redirect_hop_limit_exceeded"
         }
         archive::ArchiveError::OriginUnavailable { .. } => "download_origin_unreachable",
+        archive::ArchiveError::Io(error) if error.kind() == std::io::ErrorKind::StorageFull => {
+            "disk_space_insufficient"
+        }
         archive::ArchiveError::Io(_) | archive::ArchiveError::Download(_) => fallback_reason_code,
         archive::ArchiveError::PathEscape(_) => fallback_reason_code,
     }
@@ -481,6 +484,15 @@ fn fetch_runtime_member(
     progress: impl FnMut(u64, Option<u64>),
     fallback_reason_code: &str,
 ) -> Result<bool, DispatchError> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(count.get() + 1));
+    #[cfg(any(test, feature = "test-hooks"))]
+    TEST_ACQUIRE_MINT_COUNT.with(|count| count.set(count.get() + 1));
+    #[cfg(any(test, feature = "test-hooks"))]
+    if TEST_ACQUIRER_SHORT_CIRCUIT.with(|c| c.get()) {
+        return Ok(true);
+    }
+
     let handle = solstone_core_assets::mint_runtime_fetch(query).map_err(|err| {
         failure(
             "package",
@@ -557,8 +569,120 @@ impl RunKind {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WindowsGpuAdmission {
+    Observed {
+        probe_ok: bool,
+        devices: Vec<crate::VulkanDevice>,
+        override_index: Option<u32>,
+    },
+    Unobserved,
+    NotWindows,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    pub static TEST_FETCH_RUNTIME_MEMBER_COUNT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    pub static TEST_INSTALL_MODEL_COUNT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    pub static TEST_ACQUIRE_MINT_COUNT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    pub static TEST_ACQUIRER_SHORT_CIRCUIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A thread-scoped acquisition receipt. No production build exposes this seam.
+#[cfg(any(test, feature = "test-hooks"))]
+pub struct AcquisitionTestGuard {
+    previous: bool,
+    previous_counts: (u64, u64, u64),
+    thread_bound: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+impl AcquisitionTestGuard {
+    pub fn new(short_circuit: bool) -> Self {
+        let previous_counts = (
+            TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.replace(0)),
+            TEST_INSTALL_MODEL_COUNT.with(|count| count.replace(0)),
+            TEST_ACQUIRE_MINT_COUNT.with(|count| count.replace(0)),
+        );
+        Self {
+            previous: TEST_ACQUIRER_SHORT_CIRCUIT.with(|flag| flag.replace(short_circuit)),
+            previous_counts,
+            thread_bound: std::marker::PhantomData,
+        }
+    }
+    pub fn acquisitions(&self) -> u64 {
+        TEST_ACQUIRE_MINT_COUNT.with(std::cell::Cell::get)
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+impl Drop for AcquisitionTestGuard {
+    fn drop(&mut self) {
+        TEST_ACQUIRER_SHORT_CIRCUIT.with(|flag| flag.set(self.previous));
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(self.previous_counts.0));
+        TEST_INSTALL_MODEL_COUNT.with(|count| count.set(self.previous_counts.1));
+        TEST_ACQUIRE_MINT_COUNT.with(|count| count.set(self.previous_counts.2));
+    }
+}
+
+pub fn run_local_with_gpu_admission(
+    object: &Map<String, Value>,
+    admission: WindowsGpuAdmission,
+) -> Result<Value, DispatchError> {
+    let journal = journal(object)?;
+
+    let refusal = match admission {
+        WindowsGpuAdmission::NotWindows => None,
+        WindowsGpuAdmission::Observed {
+            probe_ok,
+            devices,
+            override_index,
+        } => match crate::vulkan::gpu_device_local_verdict(probe_ok, &devices, override_index) {
+            crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => None,
+            crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => Some((
+                "gpu_memory_insufficient",
+                format!("device-local VRAM below 6 GiB minimum: {available_bytes} bytes"),
+            )),
+            crate::vulkan::GpuDeviceLocalVerdict::Unknown => Some((
+                "gpu_memory_unknown",
+                "Vulkan probe failed to report memory".to_owned(),
+            )),
+            crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => {
+                Some(("gpu_unavailable", "no hardware Vulkan GPU found".to_owned()))
+            }
+        },
+        WindowsGpuAdmission::Unobserved => Some((
+            "gpu_memory_unknown",
+            "Vulkan GPU observation required on Windows".to_owned(),
+        )),
+    };
+    if let Some((reason_code, message)) = refusal {
+        status::record_terminal_refusal(&journal, "local", reason_code, &message)
+            .map_err(|error| failure("state", "terminal_write_failed", error, 74))?;
+        return Err(failure("gpu", reason_code, message, 65));
+    }
+
+    let provider = RunKind::Local.status_provider();
+    let Some(lease) = lease::acquire(&journal, provider)
+        .map_err(|error| failure("io", "lease_error", error, 74))?
+    else {
+        return Err(failure(
+            "busy",
+            "install_busy",
+            format!("{provider} install lease is held"),
+            lease::BUSY_EXIT_CODE,
+        ));
+    };
+    run_with_lease(object, RunKind::Local, journal, lease, None)
+}
+
 fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
-    run(object, RunKind::Local)
+    let admission = if pins::platform_key() == "x86_64-windows" {
+        WindowsGpuAdmission::Unobserved
+    } else {
+        WindowsGpuAdmission::NotWindows
+    };
+    run_local_with_gpu_admission(object, admission)
 }
 fn run_parakeet(object: &Map<String, Value>) -> Result<Value, DispatchError> {
     run(object, RunKind::Parakeet)
@@ -604,19 +728,45 @@ fn run_with_lease(
     object: &Map<String, Value>,
     kind: RunKind,
     journal: PathBuf,
-    _lease: lease::InstallLease,
+    lease: lease::InstallLease,
     parakeet_platform: Option<(&str, &str)>,
 ) -> Result<Value, DispatchError> {
     let provider = kind.status_provider();
-    let fingerprint = match kind {
-        RunKind::Local => local_target(
-            &journal,
-            &string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned()),
-            local_backend(object)?,
-        )?,
-        RunKind::Parakeet => parakeet_target_for_install(&journal, parakeet_platform)?,
+    let resolved = (|| {
+        let fingerprint = match kind {
+            RunKind::Local => local_target(
+                &journal,
+                &string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned()),
+                local_backend(object)?,
+            )?,
+            RunKind::Parakeet => parakeet_target_for_install(&journal, parakeet_platform)?,
+        };
+        resolved_fingerprint(fingerprint)
+    })();
+    let resolved = match resolved {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            if kind == RunKind::Local {
+                let code = error
+                    .envelope
+                    .error
+                    .as_ref()
+                    .map_or("install_failed", |e| e.reason_code.as_str());
+                let message = error
+                    .envelope
+                    .error
+                    .as_ref()
+                    .map_or("install failed", |e| e.message.as_str());
+                status::record_terminal_refusal_with_lease(
+                    &journal, provider, code, message, &lease,
+                )
+                .map_err(|write_error| {
+                    failure("state", "terminal_write_failed", write_error, 74)
+                })?;
+            }
+            return Err(error);
+        }
     };
-    let resolved = resolved_fingerprint(fingerprint)?;
     let fingerprint_json = resolved["target_fingerprint_json"]
         .as_str()
         .expect("resolved fingerprint JSON")
@@ -657,6 +807,12 @@ fn run_with_lease(
             Ok(json!({"status":terminal,"install":result}))
         }
         Err(error) => {
+            let reason_code = error
+                .envelope
+                .error
+                .as_ref()
+                .map(|e| e.reason_code.clone())
+                .unwrap_or_else(|| "install_failed".to_owned());
             let terminal = status::transition(
                 state,
                 "failed",
@@ -668,7 +824,7 @@ fn run_with_lease(
                         .map_or("install failed", |value| &value.message)
                         .to_owned(),
                 ),
-                Some("install_failed".to_owned()),
+                Some(reason_code),
             )
             .and_then(|value| status::write_status(&journal, value));
             if terminal.is_err() {
@@ -1672,6 +1828,9 @@ fn install_model(
     model_id: &str,
     status_value: &mut status::InstallStatus,
 ) -> Result<(), DispatchError> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    TEST_INSTALL_MODEL_COUNT.with(|count| count.set(count.get() + 1));
+
     let identity = pins::model_identity(model_id)
         .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
     let root = pins::cache_root(journal)

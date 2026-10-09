@@ -102,6 +102,8 @@
           "duplicate-owned-process",
           "gpu-probe-failed",
           "gpu-unavailable",
+          "gpu-memory-insufficient",
+          "gpu-allocation-failed",
           "host-admission-blocked",
           "install-idle",
           "install-in-progress",
@@ -168,6 +170,8 @@
           "duplicate-owned-process",
           "gpu-probe-failed",
           "gpu-unavailable",
+          "gpu-memory-insufficient",
+          "gpu-allocation-failed",
           "host-admission-blocked",
           "install-idle",
           "install-in-progress",
@@ -255,6 +259,8 @@
           "duplicate-owned-process",
           "gpu-probe-failed",
           "gpu-unavailable",
+          "gpu-memory-insufficient",
+          "gpu-allocation-failed",
           "host-admission-blocked",
           "install-idle",
           "install-in-progress",
@@ -321,6 +327,8 @@
           "duplicate-owned-process",
           "gpu-probe-failed",
           "gpu-unavailable",
+          "gpu-memory-insufficient",
+          "gpu-allocation-failed",
           "host-admission-blocked",
           "install-idle",
           "install-in-progress",
@@ -388,6 +396,8 @@
           "duplicate-owned-process",
           "gpu-probe-failed",
           "gpu-unavailable",
+          "gpu-memory-insufficient",
+          "gpu-allocation-failed",
           "host-admission-blocked",
           "install-idle",
           "install-in-progress",
@@ -454,6 +464,8 @@
           "duplicate-owned-process",
           "gpu-probe-failed",
           "gpu-unavailable",
+          "gpu-memory-insufficient",
+          "gpu-allocation-failed",
           "host-admission-blocked",
           "install-idle",
           "install-in-progress",
@@ -594,6 +606,14 @@
       [
         "ready",
         "gpu-unavailable"
+      ],
+      [
+        "ready",
+        "gpu-memory-insufficient"
+      ],
+      [
+        "ready",
+        "gpu-allocation-failed"
       ],
       [
         "ready",
@@ -876,6 +896,8 @@
       "duplicate-owned-process",
       "gpu-probe-failed",
       "gpu-unavailable",
+      "gpu-memory-insufficient",
+      "gpu-allocation-failed",
       "host-admission-blocked",
       "install-idle",
       "install-in-progress",

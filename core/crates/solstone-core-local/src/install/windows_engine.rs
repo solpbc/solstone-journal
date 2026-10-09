@@ -48,11 +48,13 @@ impl From<WindowsPayloadError> for WindowsLlamaPackageError {
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
-static TEST_PACKAGE: std::sync::Mutex<Option<WindowsLlamaPackage>> = std::sync::Mutex::new(None);
+thread_local! {
+    static TEST_PACKAGE: std::cell::RefCell<Option<WindowsLlamaPackage>> = const { std::cell::RefCell::new(None) };
+}
 
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn set_test_windows_llama_package(pkg: Option<WindowsLlamaPackage>) {
-    *TEST_PACKAGE.lock().unwrap() = pkg;
+    TEST_PACKAGE.with(|current| *current.borrow_mut() = pkg);
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -75,7 +77,7 @@ impl WindowsLlamaPackage {
 #[cfg(windows)]
 pub fn verified_windows_llama_package() -> Result<WindowsLlamaPackage, WindowsLlamaPackageError> {
     #[cfg(any(test, feature = "test-hooks"))]
-    if let Some(pkg) = TEST_PACKAGE.lock().unwrap().clone() {
+    if let Some(pkg) = TEST_PACKAGE.with(|current| current.borrow().clone()) {
         return Ok(pkg);
     }
     let executable = std::env::current_exe().map_err(|error| {
@@ -89,7 +91,7 @@ pub fn verified_windows_llama_package() -> Result<WindowsLlamaPackage, WindowsLl
 #[cfg(not(windows))]
 pub fn verified_windows_llama_package() -> Result<WindowsLlamaPackage, WindowsLlamaPackageError> {
     #[cfg(any(test, feature = "test-hooks"))]
-    if let Some(pkg) = TEST_PACKAGE.lock().unwrap().clone() {
+    if let Some(pkg) = TEST_PACKAGE.with(|current| current.borrow().clone()) {
         return Ok(pkg);
     }
     Err(WindowsLlamaPackageError::Missing(

@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when a text or markdown transcript marks times with headings counted from the start, such as `## 00:05:12`, and names speakers as `**Ana Lima:** …`, each turn now lands at the import's start time plus its heading, word for word, with or without a model. any other text file lands as one segment at its start time, each line as written. before, a model chose the segments and could change the times, speakers and wording.
 
 ### Fixed
+- on windows, a local install now refuses before downloading if the GPU has less than 6 GB of memory or its memory cannot be checked. a new setup leaves thinking unchosen on those computers. the thinking page now explains failed installs and GPU memory failures at start.
 
 - activity settling no longer appears as an extra daily run for yesterday in your journal's health records. its run is recorded separately under today, while each activity keeps its own day.
 - on windows, installing the local model from the thinking page works again. in 2.0.38 it stopped almost as soon as it started and the page said "local setup didn't finish". if that happened to you, choose "try setup again" on the thinking page.

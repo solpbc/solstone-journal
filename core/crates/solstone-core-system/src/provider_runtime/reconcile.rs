@@ -1132,8 +1132,8 @@ mod tests {
     }
 
     #[test]
-    fn all_43_reason_codes_recognized() {
-        assert_eq!(KNOWN_REASON_CODES.len(), 43);
+    fn all_known_reason_codes_recognized() {
+        assert_eq!(KNOWN_REASON_CODES.len(), 45);
         assert!(
             KNOWN_REASON_CODES
                 .into_iter()

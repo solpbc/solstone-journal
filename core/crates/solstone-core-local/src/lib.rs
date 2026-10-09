@@ -34,8 +34,8 @@ pub use generate::{
     serialized_message_text,
 };
 pub use install::{
-    DispatchError as InstallDispatchError, InstallEnvelope, InstallVerb,
-    dispatch as dispatch_install,
+    DispatchError as InstallDispatchError, InstallEnvelope, InstallVerb, WindowsGpuAdmission,
+    dispatch as dispatch_install, run_local_with_gpu_admission,
 };
 pub use nvidia::{
     ArtifactTrust, Backend, BackendChoice, BackendSelection, CUDA_EMBEDDED_ARCH_SET,
@@ -44,9 +44,10 @@ pub use nvidia::{
 };
 pub use plan::{LaunchPlan, PlanInput, PlanOutcome, Platform, VulkanDevice, plan};
 pub use vulkan::{
-    CPU_PLACEMENT_COPY, VulkanProbeConfig, VulkanProbeProgram, classify, cpu_placement_suffix,
-    detect_gpus, discrete_hardware_gpu_count, enumerate_gpus, gpu_probe_ok, is_discrete,
-    is_hardware_device, select_device, vulkan_probe_snapshot,
+    CPU_PLACEMENT_COPY, GPU_DEVICE_LOCAL_MIN_BYTES, GpuDeviceLocalVerdict, VulkanProbeConfig,
+    VulkanProbeProgram, classify, cpu_placement_suffix, detect_gpus, discrete_hardware_gpu_count,
+    enumerate_gpus, gpu_device_local_verdict, gpu_probe_ok, is_discrete, is_hardware_device,
+    select_device, vulkan_probe_snapshot,
 };
 
 #[cfg(test)]

@@ -20,12 +20,12 @@ use solstone_core_local::install::rfdetr_readiness::{
     RFDETR_READY_DETAIL, RfdetrDegradedCause, RfdetrReadiness, evaluate_rfdetr_readiness,
 };
 use solstone_core_local::{
-    VulkanDevice, cpu_placement_suffix, discrete_hardware_gpu_count, is_discrete, select_device,
+    GPU_DEVICE_LOCAL_MIN_BYTES, GpuDeviceLocalVerdict, VulkanDevice, cpu_placement_suffix,
+    discrete_hardware_gpu_count, gpu_device_local_verdict, is_discrete, select_device,
 };
 use solstone_core_system::provider_runtime::decide_parakeet_auto_placement;
 
 const GIB: u64 = 1024 * 1024 * 1024;
-const GPU_MIN: u64 = 6 * GIB;
 const DISK_MIN: u64 = 20 * GIB;
 const MAC_MEMORY_MIN: u64 = 16 * GIB;
 const MAC_AVAILABLE_MIN: u64 = 13 * GIB;
@@ -722,48 +722,86 @@ fn gpu(inputs: &CheckInputs) -> Check {
             return check("gpu", Severity::Unknown, RENDER_HINT, None, None);
         }
         if !inputs.vulkan.probe_ok {
-            return check(
-                "gpu",
-                Severity::Unknown,
-                "no NVIDIA GPU found and the Vulkan probe did not complete — GPU readiness is unknown",
+            let (detail, expected) = if inputs.platform.os == "Windows" {
+                (
+                    "couldn't read GPU memory. local thinking needs at least 6 GB".to_string(),
+                    Some(GPU_DEVICE_LOCAL_MIN_BYTES),
+                )
+            } else {
+                (
+                    "no NVIDIA GPU found and the Vulkan probe did not complete — GPU readiness is unknown".to_string(),
+                    None,
+                )
+            };
+            return check("gpu", Severity::Unknown, detail, expected, None);
+        }
+        if inputs.platform.os == "Windows" {
+            return match gpu_device_local_verdict(
+                inputs.vulkan.probe_ok,
+                &inputs.vulkan.devices,
                 None,
-                None,
-            );
+            ) {
+                GpuDeviceLocalVerdict::Eligible { available_bytes } => {
+                    let selected = selected.expect("eligible verdict requires a selected device");
+                    check(
+                        "gpu",
+                        Severity::Ok,
+                        format!(
+                            "Vulkan GPU {} with {} GB{}",
+                            selected.name,
+                            label(available_bytes),
+                            placement_suffix(
+                                &inputs.vulkan.devices,
+                                Some(&selected),
+                                Some(selected.vram_mib),
+                                false,
+                            )
+                        ),
+                        Some(GPU_DEVICE_LOCAL_MIN_BYTES),
+                        Some(available_bytes),
+                    )
+                }
+                GpuDeviceLocalVerdict::BelowBar { available_bytes } => {
+                    let selected = selected.expect("below-bar verdict requires a selected device");
+                    check(
+                        "gpu",
+                        Severity::Blocked,
+                        format!(
+                            "GPU {} has {} GB; the bundled local models need at least 6 GB",
+                            selected.name,
+                            label(available_bytes)
+                        ),
+                        Some(GPU_DEVICE_LOCAL_MIN_BYTES),
+                        Some(available_bytes),
+                    )
+                }
+                GpuDeviceLocalVerdict::Unknown => check(
+                    "gpu",
+                    Severity::Unknown,
+                    "couldn't read GPU memory. local thinking needs at least 6 GB",
+                    Some(GPU_DEVICE_LOCAL_MIN_BYTES),
+                    None,
+                ),
+                GpuDeviceLocalVerdict::NoHardwareDevice => check(
+                    "gpu",
+                    Severity::Blocked,
+                    "no usable GPU found — the bundled local models need a hardware GPU",
+                    None,
+                    None,
+                ),
+            };
         }
         let Some(selected) = selected else {
-            let detail = if inputs.platform.os == "Windows" {
-                "no usable GPU found — the bundled local models need a hardware GPU".to_string()
-            } else {
-                "no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB".to_string()
-            };
-            let expected = if inputs.platform.os == "Windows" {
-                None
-            } else {
-                Some(GPU_MIN)
-            };
-            return check("gpu", Severity::Blocked, detail, expected, None);
-        };
-        let bytes = selected.vram_mib * 1024 * 1024;
-        if inputs.platform.os == "Windows" {
             return check(
                 "gpu",
-                Severity::Ok,
-                format!(
-                    "Vulkan GPU {} with {} GB{}",
-                    selected.name,
-                    label(bytes),
-                    placement_suffix(
-                        &inputs.vulkan.devices,
-                        Some(&selected),
-                        Some(selected.vram_mib),
-                        false
-                    )
-                ),
+                Severity::Blocked,
+                "no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB",
+                Some(GPU_DEVICE_LOCAL_MIN_BYTES),
                 None,
-                Some(bytes),
             );
-        }
-        if bytes < GPU_MIN {
+        };
+        let bytes = selected.vram_mib * 1024 * 1024;
+        if bytes < GPU_DEVICE_LOCAL_MIN_BYTES {
             return check(
                 "gpu",
                 Severity::Blocked,
@@ -772,7 +810,7 @@ fn gpu(inputs: &CheckInputs) -> Check {
                     selected.name,
                     label(bytes)
                 ),
-                Some(GPU_MIN),
+                Some(GPU_DEVICE_LOCAL_MIN_BYTES),
                 Some(bytes),
             );
         }
@@ -790,7 +828,7 @@ fn gpu(inputs: &CheckInputs) -> Check {
                     false
                 )
             ),
-            Some(GPU_MIN),
+            Some(GPU_DEVICE_LOCAL_MIN_BYTES),
             Some(bytes),
         );
     }
@@ -800,12 +838,12 @@ fn gpu(inputs: &CheckInputs) -> Check {
             "gpu",
             Severity::Unknown,
             "NVIDIA GPU detected but its memory could not be read — GPU readiness is unknown",
-            Some(GPU_MIN),
+            Some(GPU_DEVICE_LOCAL_MIN_BYTES),
             None,
         );
     };
     let bytes = mib * 1024 * 1024;
-    if bytes < GPU_MIN {
+    if bytes < GPU_DEVICE_LOCAL_MIN_BYTES {
         return check(
             "gpu",
             Severity::Blocked,
@@ -813,7 +851,7 @@ fn gpu(inputs: &CheckInputs) -> Check {
                 "the NVIDIA GPU has {} GB — the bundled local models need at least 6 GB",
                 label(bytes)
             ),
-            Some(GPU_MIN),
+            Some(GPU_DEVICE_LOCAL_MIN_BYTES),
             Some(bytes),
         );
     }
@@ -828,7 +866,13 @@ fn gpu(inputs: &CheckInputs) -> Check {
         Some(mib),
         unified,
     ));
-    check("gpu", Severity::Ok, detail, Some(GPU_MIN), Some(bytes))
+    check(
+        "gpu",
+        Severity::Ok,
+        detail,
+        Some(GPU_DEVICE_LOCAL_MIN_BYTES),
+        Some(bytes),
+    )
 }
 fn ram(memory: &MemoryInput) -> Check {
     match memory.total_bytes {
@@ -1492,5 +1536,91 @@ mod tests {
                 "Windows check report must render gpu row"
             );
         }
+    }
+
+    #[test]
+    fn windows_gpu_verdict_rows_and_linux_probe_failure() {
+        let base_inputs = |os: &str, probe_ok: bool, devices: Vec<VulkanDevice>| -> CheckInputs {
+            let mut inputs = check_inputs(Some(CapabilityStatus::Ready), RfdetrCheckInput::Ready);
+            inputs.platform.os = os.into();
+            inputs.platform.arch = "x86_64".into();
+            inputs.nvidia.detected = false;
+            inputs.vulkan.probe_ok = probe_ok;
+            inputs.vulkan.devices = devices;
+            inputs
+        };
+
+        for mib in [4096, 6143] {
+            let dev = vec![VulkanDevice {
+                index: 0,
+                name: "RTX".into(),
+                device_type: Some(1),
+                vram_mib: mib,
+            }];
+            let report = build_check_report(&base_inputs("Windows", true, dev));
+            let gpu = report
+                .checks
+                .iter()
+                .find(|c| c.name == "gpu")
+                .expect("gpu check");
+            assert_eq!(gpu.severity, Severity::Blocked, "mib: {mib}");
+            assert_eq!(
+                gpu.required_bytes,
+                Some(GPU_DEVICE_LOCAL_MIN_BYTES),
+                "mib: {mib}"
+            );
+            assert_eq!(gpu.available_bytes, Some(mib * 1024 * 1024), "mib: {mib}");
+        }
+
+        let dev_6144 = vec![VulkanDevice {
+            index: 0,
+            name: "RTX".into(),
+            device_type: Some(1),
+            vram_mib: 6144,
+        }];
+        let report = build_check_report(&base_inputs("Windows", true, dev_6144));
+        let gpu = report
+            .checks
+            .iter()
+            .find(|c| c.name == "gpu")
+            .expect("gpu check");
+        assert_eq!(gpu.severity, Severity::Ok);
+        assert_eq!(gpu.required_bytes, Some(GPU_DEVICE_LOCAL_MIN_BYTES));
+        assert_eq!(gpu.available_bytes, Some(6144 * 1024 * 1024));
+
+        let report_zero = build_check_report(&base_inputs(
+            "Windows",
+            true,
+            vec![VulkanDevice {
+                index: 0,
+                name: "unreadable memory".into(),
+                device_type: Some(1),
+                vram_mib: 0,
+            }],
+        ));
+        let zero_gpu = report_zero.checks.iter().find(|c| c.name == "gpu").unwrap();
+        assert_eq!(zero_gpu.severity, Severity::Unknown);
+        assert_eq!(zero_gpu.available_bytes, None);
+        assert_eq!(zero_gpu.required_bytes, Some(GPU_DEVICE_LOCAL_MIN_BYTES));
+
+        let report_win_failed = build_check_report(&base_inputs("Windows", false, Vec::new()));
+        let gpu_win = report_win_failed
+            .checks
+            .iter()
+            .find(|c| c.name == "gpu")
+            .expect("gpu check");
+        assert_eq!(gpu_win.severity, Severity::Unknown);
+        assert_eq!(gpu_win.required_bytes, Some(GPU_DEVICE_LOCAL_MIN_BYTES));
+        assert_eq!(gpu_win.available_bytes, None);
+
+        let report_linux_failed = build_check_report(&base_inputs("Linux", false, Vec::new()));
+        let gpu_linux = report_linux_failed
+            .checks
+            .iter()
+            .find(|c| c.name == "gpu")
+            .expect("gpu check");
+        assert_eq!(gpu_linux.severity, Severity::Unknown);
+        assert_eq!(gpu_linux.required_bytes, None);
+        assert_eq!(gpu_linux.available_bytes, None);
     }
 }

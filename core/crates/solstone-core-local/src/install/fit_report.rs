@@ -276,6 +276,7 @@ pub fn build_local_fit_report(
     let mut checks = vec![platform, ram, disk];
     if os_name == "linux" || os_name == "windows" {
         let mut gpu = local_gpu_check(
+            os_name,
             nvidia_probe,
             backend_choice,
             vulkan_probe_ok,
@@ -360,6 +361,7 @@ fn local_artifact_key(os_name: &str, arch: &str) -> String {
 }
 
 fn local_gpu_check(
+    os_name: &str,
     probe: &NvidiaProbe,
     choice: &BackendChoice,
     vulkan_probe_ok: bool,
@@ -407,6 +409,54 @@ fn local_gpu_check(
                 "CUDA backend selected: {}{unified_clause}{suffix}",
                 choice.reason
             ),
+        };
+    }
+    if os_name == "windows" {
+        return match crate::vulkan::gpu_device_local_verdict(
+            vulkan_probe_ok,
+            devices,
+            override_index,
+        ) {
+            crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => {
+                let selected = selected.expect("eligible verdict requires a selected device");
+                FitCheck {
+                    name: "gpu",
+                    severity: FitSeverity::Ok,
+                    detail: format!(
+                        "Vulkan GPU selected: {}; resolved backend is {backend}: {}{suffix}",
+                        selected.name, choice.reason
+                    ),
+                }
+            }
+            crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => {
+                let selected = selected.expect("below-bar verdict requires a selected device");
+                FitCheck {
+                    name: "gpu",
+                    severity: FitSeverity::Blocked,
+                    detail: format!(
+                        "GPU {} has {} GB; the bundled local models need at least 6 GB; resolved backend is {backend}: {}{suffix}",
+                        selected.name,
+                        gb_label(available_bytes),
+                        choice.reason
+                    ),
+                }
+            }
+            crate::vulkan::GpuDeviceLocalVerdict::Unknown => FitCheck {
+                name: "gpu",
+                severity: FitSeverity::Unknown,
+                detail: format!(
+                    "GPU memory could not be read; resolved backend is {backend}: {}",
+                    choice.reason
+                ),
+            },
+            crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => FitCheck {
+                name: "gpu",
+                severity: FitSeverity::Blocked,
+                detail: format!(
+                    "no hardware Vulkan GPU selected; resolved backend is {backend}: {}",
+                    choice.reason
+                ),
+            },
         };
     }
     if !vulkan_probe_ok {
@@ -1094,5 +1144,113 @@ mod tests {
         assert_eq!(report.overall(), FitSeverity::Blocked);
         let platform = report.checks.iter().find(|c| c.name == "platform").unwrap();
         assert_eq!(platform.severity, FitSeverity::Blocked);
+    }
+
+    #[test]
+    fn windows_gpu_fit_verdicts() {
+        let probe = probe(false, None, None);
+        let choice = choice(Backend::Vulkan);
+
+        // 1. BelowBar (4096 MiB) -> Blocked
+        let dev_below = vec![VulkanDevice {
+            index: 0,
+            name: "RTX 3050".into(),
+            device_type: Some(2),
+            vram_mib: 4096,
+        }];
+        let check_below =
+            local_gpu_check("windows", &probe, &choice, true, &dev_below, None, false);
+        assert_eq!(check_below.severity, FitSeverity::Blocked);
+
+        // 2. Eligible (6144 MiB) -> Ok
+        let dev_eligible = vec![VulkanDevice {
+            index: 0,
+            name: "RTX 4060".into(),
+            device_type: Some(2),
+            vram_mib: 6144,
+        }];
+        let check_eligible =
+            local_gpu_check("windows", &probe, &choice, true, &dev_eligible, None, false);
+        assert_eq!(check_eligible.severity, FitSeverity::Ok);
+
+        // 3. No hardware device -> Blocked
+        let dev_none = vec![];
+        let check_none = local_gpu_check("windows", &probe, &choice, true, &dev_none, None, false);
+        assert_eq!(check_none.severity, FitSeverity::Blocked);
+
+        // 4. Probe failure -> Unknown
+        let check_unknown = local_gpu_check(
+            "windows",
+            &probe,
+            &choice,
+            false,
+            &dev_eligible,
+            None,
+            false,
+        );
+        assert_eq!(check_unknown.severity, FitSeverity::Unknown);
+    }
+
+    #[test]
+    fn windows_gpu_fit_downgrades_ok_when_package_not_ready() {
+        let journal = tempfile::tempdir().unwrap();
+        let probe = probe(false, None, None);
+        let choice = choice(Backend::Vulkan);
+
+        super::super::windows_engine::set_test_windows_llama_package(None);
+
+        let dev_eligible = vec![VulkanDevice {
+            index: 0,
+            name: "RTX 4060".into(),
+            device_type: Some(2),
+            vram_mib: 6144,
+        }];
+        let report_eligible = build_local_fit_report(
+            journal.path(),
+            "local/qwen3.5-4b",
+            "windows",
+            "x86_64",
+            Ok(u64::MAX),
+            Some(32 * 1024 * 1024 * 1024),
+            &probe,
+            &choice,
+            true,
+            &dev_eligible,
+            None,
+            false,
+        );
+        let gpu_eligible = report_eligible
+            .checks
+            .iter()
+            .find(|c| c.name == "gpu")
+            .unwrap();
+        assert_eq!(gpu_eligible.severity, FitSeverity::Warning);
+
+        let dev_below = vec![VulkanDevice {
+            index: 0,
+            name: "RTX 3050".into(),
+            device_type: Some(2),
+            vram_mib: 4096,
+        }];
+        let report_below = build_local_fit_report(
+            journal.path(),
+            "local/qwen3.5-4b",
+            "windows",
+            "x86_64",
+            Ok(u64::MAX),
+            Some(32 * 1024 * 1024 * 1024),
+            &probe,
+            &choice,
+            true,
+            &dev_below,
+            None,
+            false,
+        );
+        let gpu_below = report_below
+            .checks
+            .iter()
+            .find(|c| c.name == "gpu")
+            .unwrap();
+        assert_eq!(gpu_below.severity, FitSeverity::Blocked);
     }
 }

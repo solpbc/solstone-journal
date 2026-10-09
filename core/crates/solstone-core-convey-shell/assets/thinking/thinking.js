@@ -307,18 +307,59 @@
       };
     }
     if (phase === 'failed') {
-      const stopped = status.install_error === 'install_cancelled' || status.install_error === 'install_interrupted';
-      const verdict = status.install_error === 'install_cancelled' ? text?.cancelled_verdict
-        : status.install_error === 'install_interrupted' ? text?.interrupted_verdict : text?.failed_verdict;
+      const code = typeof status?.error_code === 'string' ? status.error_code.replace(/_/g, '-') : '';
+      const stopped = code === 'install-cancelled' || code === 'install-interrupted'
+        || status.install_error === 'install_cancelled' || status.install_error === 'install_interrupted';
+      if (stopped) {
+        const isCancelled = code === 'install-cancelled' || status.install_error === 'install_cancelled';
+        const verdict = isCancelled ? text?.cancelled_verdict : text?.interrupted_verdict;
+        return {
+          pill: verdict || '',
+          title: 'local',
+          sub: verdict || '',
+          message: '',
+          notice: text?.stopped_reason || '',
+          activate: false,
+          bootstrap: true,
+          bootstrapLabel: text?.retry || '',
+          cancel: true,
+          cancelLabel: text?.cancel || 'cancel',
+          tone: 'bad',
+        };
+      }
+      let classKey = 'unidentified_failed';
+      if (code === 'sha256-mismatch' || code === 'download-digest-mismatch' || code === 'download-size-mismatch') {
+        classKey = 'integrity_failed';
+      } else if (code.startsWith('download-') || code === 'fetch-mint-failed' || code === 'model-download-failed') {
+        classKey = 'download_failed';
+      } else if (code === 'package-unavailable') {
+        classKey = 'package_failed';
+      } else if (code === 'package-invalid') {
+        classKey = 'package_invalid';
+      } else if (code === 'unsupported-platform' || code === 'unsupported-model') {
+        classKey = 'unsupported_failed';
+      } else if (code === 'disk-space-insufficient') {
+        classKey = 'disk_failed';
+      } else if (code === 'memory-insufficient') {
+        classKey = 'memory_failed';
+      } else if (code === 'gpu-memory-insufficient') {
+        classKey = 'gpu_memory_insufficient';
+      } else if (code === 'gpu-memory-unknown' || code === 'gpu-probe-failed') {
+        classKey = 'gpu_memory_unknown';
+      } else if (code === 'gpu-unavailable') {
+        classKey = 'gpu_unavailable';
+      }
       return {
-        pill: stopped ? verdict : (text?.pill_failed || ''),
+        pill: text?.pill_failed || '',
         title: 'local',
-        sub: verdict || '',
+        sub: text?.failed_verdict || '',
         message: '',
-        notice: stopped ? (text?.stopped_reason || '') : (text?.failed_reason || ''),
+        notice: text?.[classKey] || text?.failed_reason || '',
         activate: false,
         bootstrap: true,
         bootstrapLabel: text?.retry || '',
+        cancel: true,
+        cancelLabel: text?.cancel || 'cancel',
         tone: 'bad',
       };
     }
@@ -347,6 +388,9 @@
     if (runtime.status === 'corrupt' || runtime.phase === 'state-corrupt') {
       return view('corrupt', {tone: 'bad'});
     }
+    if (active && runtime.phase === 'ready-proof-unavailable') {
+      return view('ready_proof_unavailable');
+    }
     if (runtime.status === 'unavailable' || runtime.phase === 'state-unavailable') {
       return view('unavailable', {tone: 'bad'});
     }
@@ -359,18 +403,32 @@
         : null;
     }
 
-    if (runtime.phase === 'ready') return view('ready');
-    if (runtime.phase === 'ready-proof-unavailable') {
-      return view('ready_proof_unavailable');
+    if (runtime.reason_code === 'gpu-allocation-failed') {
+      return view('gpu_allocation_failed', {
+        retryRuntime: runtime.can_retry === true || runtime.phase === 'failed',
+        tone: 'bad',
+      });
     }
+
+    if (runtime.phase === 'ready') return view('ready');
     if (runtime.phase === 'starting' || runtime.phase === 'warming') {
       return view('starting');
     }
     if (runtime.phase === 'backoff') return view('recovering');
     if (runtime.phase === 'retry-requested') return view('retrying');
     if (runtime.phase === 'host-blocked') {
-      if (runtime.reason_code === 'platform-unsupported' || runtime.reason_code === 'package-unavailable') {
+      if (runtime.reason_code === 'package-unavailable' || runtime.reason_code === 'package-invalid') {
+        const key = runtime.reason_code === 'package-invalid' ? 'package_invalid' : 'package_failed';
+        return {...view('failed', {tone: 'bad'}), notice: copy.local_install?.[key] || states.failed?.reason || ''};
+      }
+      if (runtime.reason_code === 'platform-unsupported' || runtime.reason_code === 'gpu-unavailable') {
         return view('unsupported', {tone: 'bad'});
+      }
+      if (runtime.reason_code === 'gpu-memory-insufficient') {
+        return view('gpu_memory_insufficient', {tone: 'bad'});
+      }
+      if (runtime.reason_code === 'gpu-probe-failed') {
+        return view('gpu_probe_failed', {tone: 'bad'});
       }
       return view('waiting');
     }
@@ -4254,6 +4312,19 @@
     return err?.status === 409 || err?.reasonCode === 'install_busy' ? 'busy' : 'start';
   }
 
+  async function localInstallAfterStart({startFn, fetchStatus, previousStatus}) {
+    try {
+      return await startFn();
+    } catch (err) {
+      // A refusal before installer admission is already durable. Read that
+      // attempt so its known cause reaches the same page as an admitted failure.
+      const latest = await fetchStatus().catch(() => null);
+      if (latest?.install_state === 'failed' && Number.isInteger(latest.revision)
+        && latest.revision > (Number.isInteger(previousStatus?.revision) ? previousStatus.revision : 0)) return latest;
+      throw localSetupRefusal(err, localStartRefusalKind(err));
+    }
+  }
+
   let bootstrapPending = false;
   async function startLocalBootstrap() {
     if (bootstrapPending) return;
@@ -4263,12 +4334,11 @@
     renderLocal();
     try {
       const model = $('localModelSelect')?.value || '';
-      let status;
-      try {
-        status = await api(`api/local/bootstrap?model=${encodeURIComponent(model)}`, {method: 'POST'});
-      } catch (err) {
-        throw localSetupRefusal(err, localStartRefusalKind(err));
-      }
+      const status = await localInstallAfterStart({
+        startFn: () => api(`api/local/bootstrap?model=${encodeURIComponent(model)}`, {method: 'POST'}),
+        fetchStatus: () => fetchInstallStatus(model),
+        previousStatus: state.install,
+      });
       state.install = status || null;
       renderAll();
       if (installIsInFlight(status)) {

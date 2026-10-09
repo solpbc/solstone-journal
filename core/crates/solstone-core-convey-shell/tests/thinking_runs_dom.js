@@ -250,6 +250,7 @@ async function main() {
     renderLocal,
     localSetupRefusals,
     localSetupRefusal,
+    localInstallAfterStart,
     showLocalSetupFailure,
     api,
     renderMainLanes,
@@ -398,6 +399,16 @@ async function main() {
   make('localLaneStatus');
   make('localBootstrap');
   make('localCancel');
+  make('localNotice');
+  make('localSetupPill');
+  make('localSetupTitle');
+  make('localSetupSub');
+  make('localOverrideNoticeText');
+  make('localOverrideNotice');
+  make('localRuntimeRetry');
+  make('localActivate');
+  make('localRefresh');
+  make('localSetupLinks');
 
   // Brain Glance & Lane nodes
   make('brainGlance');
@@ -1688,6 +1699,121 @@ async function main() {
   thinking.state.providers = savedLocalProviders;
   thinking.state.localAvailability = null;
   thinking.state.install = null;
+
+  const localCopyPayload = {
+    local_install: {
+      gpu_memory_insufficient: 'local thinking needs at least 6 GB of graphics memory on this computer.',
+      unidentified_failed: "local setup couldn't finish. try checking again in a moment.",
+      retry: 'try again',
+      cancel: 'cancel',
+      pill_failed: 'failed',
+      failed_verdict: 'local setup failed',
+      interrupted_verdict: 'setup interrupted',
+      stopped_reason: 'setup was interrupted',
+    },
+  };
+  thinking.applyCopy(localCopyPayload);
+
+  thinking.state.install = {
+    install_state: 'failed',
+    error_code: 'gpu_memory_insufficient',
+    install_error: '<img src=x onerror=alert(1)>',
+  };
+  thinking.renderLocal();
+  const noticeNode = nodes.get('localNotice');
+  assert.strictEqual(
+    noticeNode.textContent,
+    localCopyPayload.local_install.gpu_memory_insufficient,
+    'failed status with gpu_memory_insufficient renders the payload value',
+  );
+  assert.strictEqual(
+    Array.from(nodes.values()).some((n) => (n.children || []).some((c) => c.tag === 'img')),
+    false,
+    'no img element exists in the DOM',
+  );
+  assert.strictEqual(nodes.get('localBootstrap').hidden, false, 'retry control is present');
+  assert.strictEqual(nodes.get('localCancel').hidden, false, 'cancel control is present');
+
+  thinking.state.install = {
+    install_state: 'failed',
+    error_code: 'install_failed',
+    install_error: '<img src=x onerror=alert(1)>',
+  };
+  thinking.renderLocal();
+  assert.strictEqual(
+    noticeNode.textContent,
+    localCopyPayload.local_install.unidentified_failed,
+    'failed status with install_failed renders unidentified_failed payload value',
+  );
+  assert.strictEqual(
+    Array.from(nodes.values()).some((n) => (n.children || []).some((c) => c.tag === 'img')),
+    false,
+    'no img element exists in the DOM',
+  );
+  assert.strictEqual(nodes.get('localBootstrap').hidden, false, 'retry control is present for failed class');
+  assert.strictEqual(nodes.get('localCancel').hidden, false, 'cancel control is present for failed class');
+
+  thinking.state.install = {
+    install_state: 'failed',
+    error_code: 'install_interrupted',
+    install_error: '<img src=x onerror=alert(1)>',
+  };
+  thinking.renderLocal();
+  assert.strictEqual(
+    Array.from(nodes.values()).some((n) => (n.children || []).some((c) => c.tag === 'img')),
+    false,
+    'no img element exists in the DOM',
+  );
+  assert.strictEqual(nodes.get('localBootstrap').hidden, false, 'retry control is present for install_interrupted');
+  assert.strictEqual(nodes.get('localCancel').hidden, false, 'cancel control is present for install_interrupted');
+
+  thinking.state.install = null;
+
+  if (process.argv[3]) {
+    const receipts = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+    thinking.applyCopy(receipts.copy);
+    for (const receipt of receipts.cases) {
+      const statusAfterStart = await thinking.localInstallAfterStart({
+        startFn: () => Promise.reject(new Error('installer exited before admission')),
+        fetchStatus: () => Promise.resolve(receipt.status),
+        previousStatus: {install_state: 'idle', revision: 0},
+      });
+      thinking.state.install = statusAfterStart;
+      thinking.renderLocal();
+      assert.strictEqual(nodes.get('localNotice').textContent, receipts.copy.local_install[receipt.class], 'persisted cause reaches its visible owner-copy class');
+      assert.notStrictEqual(nodes.get('localNotice').textContent, '', 'a failed attempt has a visible reason');
+      assert.strictEqual(nodes.get('localNotice').textContent.includes('<img'), false, 'raw diagnostics are absent');
+      assert.strictEqual(nodes.get('localBootstrap').hidden, false, 'retry remains available');
+    }
+    thinking.state.install = null;
+    const beforeProviders = thinking.state.providers;
+    for (const [reason, expected] of [
+      ['package-unavailable', receipts.copy.local_install.package_failed],
+      ['package-invalid', receipts.copy.local_install.package_invalid],
+      ['gpu-memory-insufficient', receipts.copy.local_recovery.states.gpu_memory_insufficient.reason],
+      ['gpu-probe-failed', receipts.copy.local_recovery.states.gpu_probe_failed.reason],
+      ['gpu-unavailable', receipts.copy.local_recovery.states.unsupported.reason],
+      ['gpu-allocation-failed', receipts.copy.local_recovery.states.gpu_allocation_failed.reason],
+    ]) {
+      thinking.state.providers = {active_lane: {lane: 'local'}, local_runtime: {
+        status: 'blocked', phase: 'host-blocked', reason_code: reason,
+      }};
+      thinking.renderLocal();
+      assert.strictEqual(nodes.get('localNotice').textContent, expected, 'runtime refusals keep the specific diagnosis');
+    }
+    thinking.state.providers = {active_lane: {lane: 'local'}, local_runtime: {
+      status: 'unavailable', phase: 'ready-proof-unavailable', reason_code: 'probe-unavailable',
+    }};
+    thinking.renderLocal();
+    assert.strictEqual(nodes.get('localNotice').textContent, receipts.copy.local_recovery.states.ready_proof_unavailable.reason);
+    thinking.state.providers = beforeProviders;
+    const stale = receipts.cases[0].status;
+    await assert.rejects(thinking.localInstallAfterStart({
+      startFn: () => Promise.reject(new Error('failed to spawn')),
+      fetchStatus: () => Promise.resolve(stale), previousStatus: stale,
+    }), 'a prior failed attempt cannot stand in for a new launch refusal');
+    console.log(`PERSISTED INSTALL CASES: ${receipts.cases.length} passed`);
+  }
 
   // The main view's local card names a blocked state in owner words. It never
   // shows the server's reason phrase or a bare issue code.

@@ -553,3 +553,50 @@ fn new_attempt_id() -> String {
         ATTEMPT_COUNTER.fetch_add(1, Ordering::Relaxed)
     )
 }
+
+/// Record a fresh early refusal while holding the installer lease. A live
+/// install owns its status; an abandoned attempt is retired before replacing it.
+pub fn record_terminal_refusal(
+    journal: &Path,
+    provider: &str,
+    reason_code: &str,
+    message: &str,
+) -> Result<InstallStatus, StatusError> {
+    let Some(lease) = super::lease::acquire(journal, provider)? else {
+        return read_status(journal, provider);
+    };
+    record_terminal_refusal_with_lease(journal, provider, reason_code, message, &lease)
+}
+
+pub(crate) fn record_terminal_refusal_with_lease(
+    journal: &Path,
+    provider: &str,
+    reason_code: &str,
+    message: &str,
+    _lease: &super::lease::InstallLease,
+) -> Result<InstallStatus, StatusError> {
+    let mut current = read_status(journal, provider)?;
+    if is_in_flight(&current.install_state) {
+        current = write_status(
+            journal,
+            transition(
+                current,
+                "failed",
+                Some("install_interrupted".to_owned()),
+                Some("install_interrupted".to_owned()),
+            )?,
+        )?;
+    }
+    current.attempt_id = Some(new_attempt_id());
+    current.owner = None;
+    current.target_fingerprint_json = None;
+    current.target_fingerprint_sha256 = None;
+    current.started_at = Some(now());
+    let failed = transition(
+        current,
+        "failed",
+        Some(message.to_owned()),
+        Some(reason_code.to_owned()),
+    )?;
+    write_status(journal, failed)
+}

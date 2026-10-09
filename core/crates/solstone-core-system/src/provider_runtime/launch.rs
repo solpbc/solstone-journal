@@ -570,24 +570,42 @@ fn observe_truth(
                 false,
             );
         }
-        if !config.vulkan.succeeded || config.vulkan.devices.is_empty() {
-            return truth(
-                super::model::RuntimePhase::HostBlocked,
-                "gpu-unavailable",
-                None,
-                false,
-                false,
-            );
+        match solstone_core_local::gpu_device_local_verdict(
+            config.vulkan.succeeded,
+            &config.vulkan.devices,
+            None,
+        ) {
+            solstone_core_local::GpuDeviceLocalVerdict::Unknown => {
+                return truth(
+                    super::model::RuntimePhase::HostBlocked,
+                    "gpu-probe-failed",
+                    None,
+                    false,
+                    false,
+                );
+            }
+            solstone_core_local::GpuDeviceLocalVerdict::NoHardwareDevice => {
+                return truth(
+                    super::model::RuntimePhase::HostBlocked,
+                    "gpu-unavailable",
+                    None,
+                    false,
+                    false,
+                );
+            }
+            solstone_core_local::GpuDeviceLocalVerdict::BelowBar { .. } => {
+                return truth(
+                    super::model::RuntimePhase::HostBlocked,
+                    "gpu-memory-insufficient",
+                    None,
+                    false,
+                    false,
+                );
+            }
+            solstone_core_local::GpuDeviceLocalVerdict::Eligible { .. } => {}
         }
-        let Some(device) = solstone_core_local::select_device(&config.vulkan.devices, None) else {
-            return truth(
-                super::model::RuntimePhase::HostBlocked,
-                "gpu-unavailable",
-                None,
-                false,
-                false,
-            );
-        };
+        let device = solstone_core_local::select_device(&config.vulkan.devices, None)
+            .expect("eligible verdict guarantees selected hardware device");
         let pkg = match config.windows_package.clone().map(Ok).unwrap_or_else(
             solstone_core_local::install::windows_engine::verified_windows_llama_package,
         ) {
@@ -1240,6 +1258,62 @@ fn verify_launch_artifacts_windows(
         && readiness["artifacts"]["projector_path"].as_str() == plan.mmproj_path.as_deref()
 }
 
+const WINDOWS_STARTUP_LINE_LIMIT: usize = 128;
+const WINDOWS_STARTUP_LINE_BYTES: usize = 4096;
+type WindowsStartupLines =
+    Arc<std::sync::Mutex<Option<std::collections::VecDeque<(String, u32, String)>>>>;
+
+struct WindowsLocalLineCollectorSink {
+    lines: WindowsStartupLines,
+}
+
+impl crate::process::ProcessEventSink for WindowsLocalLineCollectorSink {
+    fn emit(&self, event: crate::process::ProcessEvent) {
+        if let crate::process::ProcessEvent::Line {
+            reference,
+            pid,
+            line,
+            ..
+        } = event
+            && reference == "local-provider"
+            && let Ok(mut state) = self.lines.lock()
+            && let Some(lines) = state.as_mut()
+        {
+            // Keep only bounded startup evidence. The operational log writer
+            // still owns the full output; a ready process stops collecting here.
+            if line.len() > WINDOWS_STARTUP_LINE_BYTES {
+                return;
+            }
+            if lines.len() == WINDOWS_STARTUP_LINE_LIMIT {
+                lines.pop_front();
+            }
+            lines.push_back((reference, pid, line));
+        }
+    }
+}
+
+pub(crate) fn is_vulkan_allocation_failure(
+    lines: &[(String, u32, String)],
+    expected_ref: &str,
+    expected_pid: u32,
+) -> bool {
+    let owned: Vec<_> = lines
+        .iter()
+        .filter(|(reference, pid, _)| reference == expected_ref && *pid == expected_pid)
+        .map(|(_, _, line)| line.trim())
+        .collect();
+    owned.windows(2).any(|pair| {
+        // Both wrappers in ggml-vulkan-buffers.cpp catch every vk::SystemError.
+        // The following exception line must identify device-memory exhaustion;
+        // DeviceLost and host-memory failures have the same allocation prefix.
+        (pair[0].starts_with("ggml_vulkan: Device memory allocation of size ")
+            || pair[0].starts_with("ggml_vulkan: Memory allocation of size "))
+            && pair[0].ends_with(" failed.")
+            && pair[1].starts_with("ggml_vulkan: ")
+            && pair[1].ends_with(": ErrorOutOfDeviceMemory")
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn start_local_windows(
     shared: &LocalRuntimeShared,
@@ -1251,6 +1325,47 @@ fn start_local_windows(
     warmup_timeout: Duration,
     warmup_poll_interval: Duration,
 ) -> ProviderLaunchOutcome {
+    let (selected_gpu_index, selected_gpu_name, selected_vram_mib) = match launch {
+        LocalLaunchConfig::Vulkan {
+            selected_gpu_index,
+            selected_gpu_name,
+            selected_vram_mib,
+            ..
+        } => (*selected_gpu_index, selected_gpu_name, *selected_vram_mib),
+        _ => return launch_failed(),
+    };
+
+    // 1. Re-observe vulkan devices and enforce 6 GiB device-local minimum BEFORE plan() and spawn
+    let vulkan_obs = get_windows_vulkan_observation();
+    match solstone_core_local::gpu_device_local_verdict(
+        vulkan_obs.succeeded,
+        &vulkan_obs.devices,
+        Some(selected_gpu_index),
+    ) {
+        solstone_core_local::GpuDeviceLocalVerdict::Unknown => {
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::HostBlocked,
+                reason_code: ReasonCode::known("gpu-probe-failed"),
+                managed: None,
+            };
+        }
+        solstone_core_local::GpuDeviceLocalVerdict::NoHardwareDevice => {
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::HostBlocked,
+                reason_code: ReasonCode::known("gpu-unavailable"),
+                managed: None,
+            };
+        }
+        solstone_core_local::GpuDeviceLocalVerdict::BelowBar { .. } => {
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::HostBlocked,
+                reason_code: ReasonCode::known("gpu-memory-insufficient"),
+                managed: None,
+            };
+        }
+        solstone_core_local::GpuDeviceLocalVerdict::Eligible { .. } => {}
+    }
+
     let mut reservation = match ReservedPort::reserve() {
         Ok(reservation) => reservation,
         Err(_) => return launch_failed(),
@@ -1265,20 +1380,6 @@ fn start_local_windows(
         return launch_failed();
     };
 
-    // 1. Re-observe vulkan devices
-    let vulkan_obs = get_windows_vulkan_observation();
-    if !vulkan_obs.succeeded || vulkan_obs.devices.is_empty() {
-        return launch_failed();
-    }
-    let (selected_gpu_index, selected_gpu_name, selected_vram_mib) = match launch {
-        LocalLaunchConfig::Vulkan {
-            selected_gpu_index,
-            selected_gpu_name,
-            selected_vram_mib,
-            ..
-        } => (*selected_gpu_index, selected_gpu_name, *selected_vram_mib),
-        _ => return launch_failed(),
-    };
     let Some(current_device) = vulkan_obs
         .devices
         .iter()
@@ -1343,6 +1444,13 @@ fn start_local_windows(
 
     let arguments = plan.argv[1..].to_vec();
 
+    let drained_lines: WindowsStartupLines = Arc::new(std::sync::Mutex::new(Some(
+        std::collections::VecDeque::new(),
+    )));
+    let sink: Arc<dyn crate::process::ProcessEventSink> = Arc::new(WindowsLocalLineCollectorSink {
+        lines: Arc::clone(&drained_lines),
+    });
+
     let request = crate::process::IndependentProviderRequest {
         package_root: package_root.to_path_buf(),
         executable: binary_path.clone(),
@@ -1354,7 +1462,7 @@ fn start_local_windows(
             journal_root: journal_path.to_path_buf(),
             reference: "local-provider".to_owned(),
             day: None,
-            sink: None,
+            sink: Some(sink),
             environment: std::collections::BTreeMap::new(),
         },
     };
@@ -1371,13 +1479,32 @@ fn start_local_windows(
     let deadline = clock.monotonic_seconds() + warmup_timeout.as_secs_f64();
     loop {
         if let Ok(Some(_)) = authority.poll() {
+            let drained =
+                authority.cleanup_until(Instant::now() + crate::process::DRAIN_JOIN_TIMEOUT);
+            let lines: Vec<_> = drained_lines
+                .lock()
+                .ok()
+                .and_then(|mut state| state.take())
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            let is_allocation_failure =
+                drained && is_vulkan_allocation_failure(&lines, "local-provider", pid);
+            let reason = if is_allocation_failure {
+                "gpu-allocation-failed"
+            } else {
+                "process-exited"
+            };
             return ProviderLaunchOutcome {
                 status: LaunchOutcomeStatus::Exited,
-                reason_code: ReasonCode::known("process-exited"),
+                reason_code: ReasonCode::known(reason),
                 managed: None,
             };
         }
         if probe_windows_props_warmup(port, &auth_token) == WarmupHealth::Ready {
+            if let Ok(mut state) = drained_lines.lock() {
+                *state = None;
+            }
             let managed = ManagedProcess {
                 id: process_id.clone(),
                 pid,
@@ -1404,6 +1531,9 @@ fn start_local_windows(
             };
         }
         if clock.monotonic_seconds() >= deadline {
+            if let Ok(mut state) = drained_lines.lock() {
+                *state = None;
+            }
             let managed = ManagedProcess {
                 id: process_id.clone(),
                 pid,
@@ -2010,7 +2140,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_millis(10),
         );
-        assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
+        assert_eq!(outcome.status, LaunchOutcomeStatus::HostBlocked);
+        assert_eq!(outcome.reason_code.as_str(), "gpu-probe-failed");
         assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
 
         // 2. Device type is CPU (type 4) or software ICD name instead of discrete/integrated GPU
@@ -2049,7 +2180,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_millis(10),
         );
-        assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
+        assert_eq!(outcome.status, LaunchOutcomeStatus::HostBlocked);
+        assert_eq!(outcome.reason_code.as_str(), "gpu-unavailable");
         assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
 
         // 3. Name or VRAM changed
@@ -2367,6 +2499,94 @@ mod tests {
     }
 
     #[test]
+    fn windows_startup_collector_is_bounded_and_retires() {
+        use crate::process::{OutputStream, ProcessEvent, ProcessEventSink};
+        let lines = Arc::new(std::sync::Mutex::new(Some(
+            std::collections::VecDeque::new(),
+        )));
+        let sink = WindowsLocalLineCollectorSink {
+            lines: Arc::clone(&lines),
+        };
+        let emit = |reference: &str, line: String| {
+            sink.emit(ProcessEvent::Line {
+                reference: reference.into(),
+                name: "fixture".into(),
+                pid: 7,
+                stream: OutputStream::Stderr,
+                line,
+            })
+        };
+        emit("other-provider", "foreign output".into());
+        emit("local-provider", "x".repeat(WINDOWS_STARTUP_LINE_BYTES + 1));
+        assert!(lines.lock().unwrap().as_ref().unwrap().is_empty());
+        for index in 0..WINDOWS_STARTUP_LINE_LIMIT + 10 {
+            emit("local-provider", index.to_string());
+        }
+        let state = lines.lock().unwrap();
+        let collected = state.as_ref().unwrap();
+        assert_eq!(collected.len(), WINDOWS_STARTUP_LINE_LIMIT);
+        assert_eq!(collected.front().unwrap().2, "10");
+        drop(state);
+        *lines.lock().unwrap() = None;
+        emit("local-provider", "later output".into());
+        assert!(lines.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn windows_is_vulkan_allocation_failure_matching() {
+        let prefix = "ggml_vulkan: Device memory allocation of size 4294967296 failed.";
+        let device_error = "ggml_vulkan: vk::Device::allocateMemory: ErrorOutOfDeviceMemory";
+        let lines = |reference: &str, pid: u32, first: &str, second: &str| {
+            vec![
+                (reference.to_owned(), pid, first.to_owned()),
+                (reference.to_owned(), pid, second.to_owned()),
+            ]
+        };
+        assert!(is_vulkan_allocation_failure(
+            &lines("local-provider", 1234, prefix, device_error),
+            "local-provider",
+            1234
+        ));
+        assert!(is_vulkan_allocation_failure(
+            &lines(
+                "local-provider",
+                1234,
+                "ggml_vulkan: Memory allocation of size 2147483648 failed.",
+                device_error
+            ),
+            "local-provider",
+            1234
+        ));
+        for error in [
+            "ggml_vulkan: vk::Device::allocateMemory: ErrorDeviceLost",
+            "ggml_vulkan: vk::Device::allocateMemory: ErrorOutOfHostMemory",
+            "normal process exit",
+        ] {
+            assert!(!is_vulkan_allocation_failure(
+                &lines("local-provider", 1234, prefix, error),
+                "local-provider",
+                1234
+            ));
+        }
+        assert!(!is_vulkan_allocation_failure(
+            &lines("other", 1234, prefix, device_error),
+            "local-provider",
+            1234
+        ));
+        assert!(!is_vulkan_allocation_failure(
+            &lines("local-provider", 9999, prefix, device_error),
+            "local-provider",
+            1234
+        ));
+        assert!(!is_vulkan_allocation_failure(
+            &[("local-provider".into(), 1234, prefix.into())],
+            "local-provider",
+            1234
+        ));
+        assert!(!is_vulkan_allocation_failure(&[], "local-provider", 1234));
+    }
+
+    #[test]
     #[cfg(all(test, feature = "full-tests"))]
     fn windows_host_reports_gpu_unavailable_for_empty_vulkan_or_package_unavailable() {
         let root = tempfile::tempdir().unwrap();
@@ -2379,30 +2599,81 @@ mod tests {
             device_type: Some(1),
             vram_mib: 16_384,
         };
-        for obs in [
-            crate::vulkan_observe::VulkanObservation {
+
+        // 1. Empty successful probe -> gpu-unavailable
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+            vulkan: crate::vulkan_observe::VulkanObservation {
                 devices: Vec::new(),
                 succeeded: true,
             },
-            crate::vulkan_observe::VulkanObservation {
+            windows_package: None,
+        };
+        let observation = observe_truth(&shared, &config, None);
+        assert_eq!(observation.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            observation.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-unavailable")
+        );
+        assert!(
+            shared
+                .launch_request_for(&observation.desired_fingerprint)
+                .is_none()
+        );
+
+        // 2. Failed probe -> gpu-probe-failed
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+            vulkan: crate::vulkan_observe::VulkanObservation {
                 devices: Vec::new(),
                 succeeded: false,
             },
-        ] {
+            windows_package: None,
+        };
+        let observation = observe_truth(&shared, &config, None);
+        assert_eq!(observation.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            observation.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-probe-failed")
+        );
+        assert!(
+            shared
+                .launch_request_for(&observation.desired_fingerprint)
+                .is_none()
+        );
+
+        // 3. Known below-bar capacity -> gpu-memory-insufficient.
+        for below_vram in [4096, 6143] {
             let shared = LocalRuntimeShared::default();
             let config = LocalTruthConfig {
                 journal_path: root.path().to_path_buf(),
                 platform: LocalHost::Windows,
                 arch: "x86_64",
                 nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
-                vulkan: obs,
+                vulkan: crate::vulkan_observe::VulkanObservation {
+                    devices: vec![solstone_core_local::VulkanDevice {
+                        index: 0,
+                        name: "RTX".into(),
+                        device_type: Some(1),
+                        vram_mib: below_vram,
+                    }],
+                    succeeded: true,
+                },
                 windows_package: None,
             };
             let observation = observe_truth(&shared, &config, None);
             assert_eq!(observation.phase, RuntimePhase::HostBlocked);
             assert_eq!(
                 observation.reason_code.as_ref().map(ReasonCode::as_str),
-                Some("gpu-unavailable")
+                Some("gpu-memory-insufficient")
             );
             assert!(
                 shared
@@ -2411,6 +2682,31 @@ mod tests {
             );
         }
 
+        // 4. Eligible (6144) -> not gpu-memory-insufficient
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX".into(),
+                    device_type: Some(1),
+                    vram_mib: 6144,
+                }],
+                succeeded: true,
+            },
+            windows_package: None,
+        };
+        let observation = observe_truth(&shared, &config, None);
+        assert_ne!(
+            observation.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-memory-insufficient")
+        );
+
+        // aarch64 platform unsupported
         let shared = LocalRuntimeShared::default();
         let config = LocalTruthConfig {
             journal_path: root.path().to_path_buf(),
@@ -2429,6 +2725,263 @@ mod tests {
             observation.reason_code.as_ref().map(ReasonCode::as_str),
             Some("platform-unsupported")
         );
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_launch_vulkan_admission_and_allocation() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let (mut launch, fence, state) = sample_windows_launch_fixture(root.path());
+        if let LocalLaunchConfig::Vulkan {
+            ref mut selected_gpu_name,
+            ref mut selected_vram_mib,
+            ref mut devices,
+            ..
+        } = launch
+        {
+            *selected_gpu_name = "RTX 4060".into();
+            *selected_vram_mib = 6144;
+            *devices = vec![solstone_core_local::VulkanDevice {
+                index: 0,
+                name: "RTX 4060".into(),
+                device_type: Some(2),
+                vram_mib: 6144,
+            }];
+        }
+        let shared = LocalRuntimeShared::default();
+        let clock = TestClock::default();
+
+        // 1. Below 6 GiB floor (4096 MiB) does not call spawn hook and blocks
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX 3050".into(),
+                    device_type: Some(2),
+                    vram_mib: 4096,
+                }],
+                succeeded: true,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(move |_| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(LaunchAuthority::scripted(
+                    9998,
+                    Box::new(|| Ok(Some(0))),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: Some(Box::new(|_, _| WarmupHealth::Loading)),
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::HostBlocked);
+        assert_eq!(outcome.reason_code.as_str(), "gpu-memory-insufficient");
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // 2. Failed probe does not call spawn hook and blocks
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX 4060".into(),
+                    device_type: Some(2),
+                    vram_mib: 6144,
+                }],
+                succeeded: false,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(move |_| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(LaunchAuthority::scripted(
+                    9998,
+                    Box::new(|| Ok(Some(0))),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: Some(Box::new(|_, _| WarmupHealth::Loading)),
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::HostBlocked);
+        assert_eq!(outcome.reason_code.as_str(), "gpu-probe-failed");
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // A successfully enumerated device whose heap size is unreadable is
+        // unknown, even when a previously constructed launch plan was eligible.
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "unreadable heap".into(),
+                    device_type: Some(2),
+                    vram_mib: 0,
+                }],
+                succeeded: true,
+            })),
+            entropy_fn: None,
+            system_root: None,
+            spawn_fn: Some(Box::new(|_| panic!("unknown memory must not spawn"))),
+            warmup_probe_fn: None,
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::HostBlocked);
+        assert_eq!(outcome.reason_code.as_str(), "gpu-probe-failed");
+
+        // At the floor, a real launch reaches spawn. Its terminal-output
+        // evidence arrives only when cleanup polls after the first exit read.
+        for (line_ref, line_pid, exception, drain_complete, expected_reason) in [
+            (
+                "local-provider",
+                9998,
+                "ErrorOutOfDeviceMemory",
+                true,
+                "gpu-allocation-failed",
+            ),
+            (
+                "local-provider",
+                9998,
+                "ErrorDeviceLost",
+                true,
+                "process-exited",
+            ),
+            (
+                "local-provider",
+                9998,
+                "ErrorOutOfHostMemory",
+                true,
+                "process-exited",
+            ),
+            (
+                "different-ref",
+                9998,
+                "ErrorOutOfDeviceMemory",
+                true,
+                "process-exited",
+            ),
+            (
+                "local-provider",
+                9997,
+                "ErrorOutOfDeviceMemory",
+                true,
+                "process-exited",
+            ),
+            ("local-provider", 9998, "", true, "process-exited"),
+            (
+                "local-provider",
+                9998,
+                "ErrorOutOfDeviceMemory",
+                false,
+                "process-exited",
+            ),
+        ] {
+            let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let sc = Arc::clone(&spawn_count);
+            let exception = exception.to_owned();
+            let line_ref = line_ref.to_owned();
+            test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+                vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                    devices: vec![solstone_core_local::VulkanDevice {
+                        index: 0,
+                        name: "RTX 4060".into(),
+                        device_type: Some(2),
+                        vram_mib: 6144,
+                    }],
+                    succeeded: true,
+                })),
+                entropy_fn: None,
+                system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+                spawn_fn: Some(Box::new(move |req| {
+                    sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let sink = req.spawn_options.sink.clone();
+                    let exception = exception.clone();
+                    let line_ref = line_ref.clone();
+                    let mut exited = false;
+                    Ok(LaunchAuthority::scripted(
+                        9998,
+                        Box::new(move || {
+                            if exited {
+                                if let Some(sink) = &sink {
+                                    let lines = if exception.is_empty() {
+                                        vec!["normal process exit".to_owned()]
+                                    } else {
+                                        vec![
+                                    "ggml_vulkan: Device memory allocation of size 4294967296 failed.".to_owned(),
+                                    format!("ggml_vulkan: vk::Device::allocateMemory: {exception}"),
+                                ]
+                                    };
+                                    for line in lines {
+                                        sink.emit(crate::process::ProcessEvent::Line {
+                                            reference: line_ref.clone(),
+                                            name: "local".into(),
+                                            pid: line_pid,
+                                            stream: crate::process::OutputStream::Stderr,
+                                            line,
+                                        });
+                                    }
+                                }
+                                return Ok(drain_complete.then_some(0));
+                            }
+                            exited = true;
+                            Ok(Some(0))
+                        }),
+                        Box::new(|_| Ok(())),
+                    ))
+                })),
+                warmup_probe_fn: Some(Box::new(|_, _| WarmupHealth::Loading)),
+                verify_artifacts_fn: Some(Box::new(|_, _| true)),
+            });
+            let outcome = start_local_windows(
+                &shared,
+                &clock,
+                &launch,
+                &state,
+                &fence,
+                Some(root.path()),
+                Duration::from_secs(1),
+                Duration::from_millis(10),
+            );
+            assert_eq!(outcome.status, LaunchOutcomeStatus::Exited);
+            assert_eq!(outcome.reason_code.as_str(), expected_reason);
+            assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+
+        test_windows_hooks::clear_hooks();
     }
     #[cfg(all(test, feature = "full-tests"))]
     #[test]

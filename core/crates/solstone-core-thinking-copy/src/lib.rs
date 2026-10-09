@@ -863,12 +863,66 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                 CopyValue::String("installation cancelled"),
             ),
             (
+                "download_failed",
+                CopyValue::String("couldn't finish the download for local thinking. try again."),
+            ),
+            (
                 "interrupted_verdict",
                 CopyValue::String("installation stopped"),
             ),
             (
                 "stopped_reason",
                 CopyValue::String("you can try setup again when you're ready."),
+            ),
+            (
+                "gpu_memory_insufficient",
+                CopyValue::String(
+                    "the selected GPU has less than the 6 GB of GPU memory needed for local thinking.",
+                ),
+            ),
+            (
+                "gpu_memory_unknown",
+                CopyValue::String("couldn't check GPU memory on this computer."),
+            ),
+            (
+                "gpu_unavailable",
+                CopyValue::String("couldn't find a supported GPU for local thinking."),
+            ),
+            (
+                "integrity_failed",
+                CopyValue::String("the downloaded files couldn't be verified. try setup again."),
+            ),
+            (
+                "package_failed",
+                CopyValue::String(
+                    "some files needed for local thinking are missing. update the journal and try setup again.",
+                ),
+            ),
+            (
+                "package_invalid",
+                CopyValue::String(
+                    "some files needed for local thinking couldn't be verified. update the journal and try setup again.",
+                ),
+            ),
+            (
+                "unsupported_failed",
+                CopyValue::String("this local model isn't supported on this computer."),
+            ),
+            (
+                "disk_failed",
+                CopyValue::String(
+                    "there isn't enough free disk space for local thinking. free up some space and try again.",
+                ),
+            ),
+            (
+                "memory_failed",
+                CopyValue::String("this computer doesn't have enough memory for local thinking."),
+            ),
+            (
+                "unidentified_failed",
+                CopyValue::String(
+                    "couldn't tell why local setup stopped. check the diagnostic console for details.",
+                ),
             ),
             ("retry", CopyValue::String("try setup again")),
             ("install", CopyValue::String("install local model")),
@@ -950,6 +1004,51 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                                 "reason",
                                 CopyValue::String(
                                     "local thinking needs supported hardware on this computer.",
+                                ),
+                            ),
+                        ]),
+                    ),
+                    (
+                        "gpu_memory_insufficient",
+                        CopyValue::Object(&[
+                            ("pill", CopyValue::String("unavailable")),
+                            (
+                                "verdict",
+                                CopyValue::String("the selected GPU needs more memory"),
+                            ),
+                            (
+                                "reason",
+                                CopyValue::String(
+                                    "local thinking needs a compatible GPU with at least 6 GB of GPU memory.",
+                                ),
+                            ),
+                        ]),
+                    ),
+                    (
+                        "gpu_probe_failed",
+                        CopyValue::Object(&[
+                            ("pill", CopyValue::String("couldn't check")),
+                            ("verdict", CopyValue::String("couldn't check GPU memory")),
+                            (
+                                "reason",
+                                CopyValue::String(
+                                    "couldn't read GPU memory on this computer. try checking again in a moment.",
+                                ),
+                            ),
+                        ]),
+                    ),
+                    (
+                        "gpu_allocation_failed",
+                        CopyValue::Object(&[
+                            ("pill", CopyValue::String("needs attention")),
+                            (
+                                "verdict",
+                                CopyValue::String("local thinking ran out of memory"),
+                            ),
+                            (
+                                "reason",
+                                CopyValue::String(
+                                    "the GPU didn't have enough available memory to start the local model.",
                                 ),
                             ),
                         ]),
@@ -1071,7 +1170,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "couldn't refresh the local file check. it won't start a replacement until the check returns.",
+                                    "couldn't refresh the local status check. it won't start a replacement until the check returns.",
                                 ),
                             ),
                         ]),

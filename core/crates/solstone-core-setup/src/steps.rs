@@ -3436,6 +3436,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn windows_setup_readiness_enforces_6_gib_minimum() {
+        for (mib, expected) in [
+            (4096, LocalProviderReadiness::Unavailable),
+            (6143, LocalProviderReadiness::Unavailable),
+            (0, LocalProviderReadiness::Unavailable),
+            (6144, LocalProviderReadiness::Ready),
+            (8192, LocalProviderReadiness::Ready),
+        ] {
+            let dev = json!([{"index": 0, "name": "RTX", "device_type": 2, "vram_mib": mib}]);
+            let report = check_report("Windows", true, dev, 100);
+            assert_eq!(
+                local_provider_readiness(&report),
+                expected,
+                "Windows setup readiness for mib={mib}"
+            );
+        }
+        let failed_probe = check_report("Windows", false, json!([]), 100);
+        assert_eq!(
+            local_provider_readiness(&failed_probe),
+            LocalProviderReadiness::Unavailable,
+            "Windows setup readiness for failed probe"
+        );
+    }
+
     struct FixedCheck(LocalProviderReadiness);
     impl CheckReportBuilder for FixedCheck {
         fn local_provider_readiness(&self, _journal: &Path) -> LocalProviderReadiness {

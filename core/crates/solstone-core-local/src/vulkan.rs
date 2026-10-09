@@ -247,6 +247,41 @@ pub fn is_hardware_device(device: &VulkanDevice) -> bool {
     )
 }
 
+/// Minimum device-local GPU memory required for local thinking (6 GiB / 6144 MiB).
+pub const GPU_DEVICE_LOCAL_MIN_BYTES: u64 = 6 * 1024 * 1024 * 1024;
+
+/// Result of evaluating device-local GPU memory eligibility against the 6 GiB floor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuDeviceLocalVerdict {
+    Eligible { available_bytes: u64 },
+    BelowBar { available_bytes: u64 },
+    Unknown,
+    NoHardwareDevice,
+}
+
+/// Evaluate device-local GPU memory against the 6 GiB minimum.
+pub fn gpu_device_local_verdict(
+    probe_ok: bool,
+    devices: &[VulkanDevice],
+    override_index: Option<u32>,
+) -> GpuDeviceLocalVerdict {
+    if !probe_ok {
+        return GpuDeviceLocalVerdict::Unknown;
+    }
+    let Some(selected) = select_device(devices, override_index) else {
+        return GpuDeviceLocalVerdict::NoHardwareDevice;
+    };
+    let available_bytes = selected.vram_mib.saturating_mul(1024 * 1024);
+    if available_bytes == 0 {
+        return GpuDeviceLocalVerdict::Unknown;
+    }
+    if available_bytes >= GPU_DEVICE_LOCAL_MIN_BYTES {
+        GpuDeviceLocalVerdict::Eligible { available_bytes }
+    } else {
+        GpuDeviceLocalVerdict::BelowBar { available_bytes }
+    }
+}
+
 /// Select an explicitly overridden hardware index, or the first discrete then integrated device.
 pub fn select_device(
     devices: &[VulkanDevice],
@@ -472,5 +507,110 @@ mod tests {
             timeout: Duration::ZERO,
         };
         assert_eq!(enumerate_gpus(&timeout), (Vec::new(), false));
+    }
+
+    #[test]
+    fn verdict_table_enforces_6_gib_device_local_minimum() {
+        let mib = 1024 * 1024_u64;
+
+        // 0 MiB -> Unknown (no usable device-local memory measurement)
+        let dev0 = vec![device(0, "GPU 0", Some(VK_TYPE_DISCRETE), 0)];
+        assert_eq!(
+            gpu_device_local_verdict(true, &dev0, None),
+            GpuDeviceLocalVerdict::Unknown
+        );
+
+        // 4096 MiB -> BelowBar
+        let dev4096 = vec![device(0, "GPU 4096", Some(VK_TYPE_DISCRETE), 4096)];
+        assert_eq!(
+            gpu_device_local_verdict(true, &dev4096, None),
+            GpuDeviceLocalVerdict::BelowBar {
+                available_bytes: 4096 * mib
+            }
+        );
+
+        // 6143 MiB -> BelowBar
+        let dev6143 = vec![device(0, "GPU 6143", Some(VK_TYPE_DISCRETE), 6143)];
+        assert_eq!(
+            gpu_device_local_verdict(true, &dev6143, None),
+            GpuDeviceLocalVerdict::BelowBar {
+                available_bytes: 6143 * mib
+            }
+        );
+
+        // 6144 MiB -> Eligible
+        let dev6144 = vec![device(0, "GPU 6144", Some(VK_TYPE_DISCRETE), 6144)];
+        assert_eq!(
+            gpu_device_local_verdict(true, &dev6144, None),
+            GpuDeviceLocalVerdict::Eligible {
+                available_bytes: 6144 * mib
+            }
+        );
+
+        // 24000 MiB -> Eligible
+        let dev24000 = vec![device(0, "GPU 24000", Some(VK_TYPE_DISCRETE), 24_000)];
+        assert_eq!(
+            gpu_device_local_verdict(true, &dev24000, None),
+            GpuDeviceLocalVerdict::Eligible {
+                available_bytes: 24_000 * mib
+            }
+        );
+
+        // Probe failed -> Unknown
+        assert_eq!(
+            gpu_device_local_verdict(false, &dev24000, None),
+            GpuDeviceLocalVerdict::Unknown
+        );
+        assert_eq!(
+            gpu_device_local_verdict(false, &[], None),
+            GpuDeviceLocalVerdict::Unknown
+        );
+
+        // Software only -> NoHardwareDevice
+        let dev_sw = vec![device(0, "llvmpipe", Some(VK_TYPE_CPU), 16_384)];
+        assert_eq!(
+            gpu_device_local_verdict(true, &dev_sw, None),
+            GpuDeviceLocalVerdict::NoHardwareDevice
+        );
+
+        // No device -> NoHardwareDevice
+        assert_eq!(
+            gpu_device_local_verdict(true, &[], None),
+            GpuDeviceLocalVerdict::NoHardwareDevice
+        );
+
+        // Integrated device -> Eligible if >= 6144 MiB
+        let dev_igpu = vec![device(0, "Intel Iris", Some(VK_TYPE_INTEGRATED), 6144)];
+        assert_eq!(
+            gpu_device_local_verdict(true, &dev_igpu, None),
+            GpuDeviceLocalVerdict::Eligible {
+                available_bytes: 6144 * mib
+            }
+        );
+
+        // Override index
+        let mixed = vec![
+            device(0, "Small GPU", Some(VK_TYPE_DISCRETE), 4096),
+            device(1, "Big GPU", Some(VK_TYPE_DISCRETE), 8192),
+        ];
+        // Default selects index 0 (lowest index discrete) -> BelowBar
+        assert_eq!(
+            gpu_device_local_verdict(true, &mixed, None),
+            GpuDeviceLocalVerdict::BelowBar {
+                available_bytes: 4096 * mib
+            }
+        );
+        // Override Some(1) selects index 1 -> Eligible
+        assert_eq!(
+            gpu_device_local_verdict(true, &mixed, Some(1)),
+            GpuDeviceLocalVerdict::Eligible {
+                available_bytes: 8192 * mib
+            }
+        );
+        // Override nonexistent index Some(99) -> NoHardwareDevice
+        assert_eq!(
+            gpu_device_local_verdict(true, &mixed, Some(99)),
+            GpuDeviceLocalVerdict::NoHardwareDevice
+        );
     }
 }

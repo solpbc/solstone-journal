@@ -4559,3 +4559,293 @@ mod runtime_fetch_seam_tests {
         assert!(calls[1].0.contains("mmproj-F16.gguf"));
     }
 }
+
+#[test]
+#[cfg(feature = "full-tests")]
+fn windows_admission_enforces_gpu_verdict_before_local_target() {
+    use crate::VulkanDevice;
+    use crate::install::{
+        TEST_ACQUIRER_SHORT_CIRCUIT, TEST_FETCH_RUNTIME_MEMBER_COUNT, TEST_INSTALL_MODEL_COUNT,
+        WindowsGpuAdmission, run_local_with_gpu_admission,
+    };
+
+    let root = temp("win-admission-routine");
+    let mut object = serde_json::Map::new();
+    object.insert(
+        "journal".into(),
+        serde_json::Value::String(root.display().to_string()),
+    );
+
+    TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
+    TEST_INSTALL_MODEL_COUNT.with(|count| count.set(0));
+
+    let below = WindowsGpuAdmission::Observed {
+        probe_ok: true,
+        devices: vec![VulkanDevice {
+            index: 0,
+            name: "RTX 3050".into(),
+            device_type: Some(2),
+            vram_mib: 4096,
+        }],
+        override_index: None,
+    };
+    let err = run_local_with_gpu_admission(&object, below).unwrap_err();
+    assert_eq!(
+        err.envelope.error.as_ref().unwrap().reason_code,
+        "gpu_memory_insufficient"
+    );
+    assert_eq!(
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
+        0
+    );
+    assert_eq!(TEST_INSTALL_MODEL_COUNT.with(std::cell::Cell::get), 0);
+    let st = status::read_status(&root, "local").unwrap();
+    assert_eq!(st.install_state, "failed");
+    assert_eq!(st.error_code.as_deref(), Some("gpu_memory_insufficient"));
+
+    let failed_probe = WindowsGpuAdmission::Observed {
+        probe_ok: false,
+        devices: vec![],
+        override_index: None,
+    };
+    let err = run_local_with_gpu_admission(&object, failed_probe).unwrap_err();
+    assert_eq!(
+        err.envelope.error.as_ref().unwrap().reason_code,
+        "gpu_memory_unknown"
+    );
+    assert_eq!(
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
+        0
+    );
+    assert_eq!(TEST_INSTALL_MODEL_COUNT.with(std::cell::Cell::get), 0);
+
+    let err = run_local_with_gpu_admission(&object, WindowsGpuAdmission::Unobserved).unwrap_err();
+    assert_eq!(
+        err.envelope.error.as_ref().unwrap().reason_code,
+        "gpu_memory_unknown"
+    );
+    assert_eq!(
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
+        0
+    );
+    assert_eq!(TEST_INSTALL_MODEL_COUNT.with(std::cell::Cell::get), 0);
+
+    let in_flight_root = temp("win-admission-inflight");
+    let _ = status::begin(
+        &in_flight_root,
+        "fp".into(),
+        "model".into(),
+        None,
+        "downloading",
+    )
+    .unwrap();
+    let mut if_object = serde_json::Map::new();
+    if_object.insert(
+        "journal".into(),
+        serde_json::Value::String(in_flight_root.display().to_string()),
+    );
+    let err =
+        run_local_with_gpu_admission(&if_object, WindowsGpuAdmission::Unobserved).unwrap_err();
+    assert_eq!(
+        err.envelope.error.as_ref().unwrap().reason_code,
+        "gpu_memory_unknown"
+    );
+    assert_eq!(
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
+        0
+    );
+    let st_if = status::read_status(&in_flight_root, "local").unwrap();
+    assert_eq!(st_if.install_state, "failed");
+    assert_eq!(st_if.error_code.as_deref(), Some("gpu_memory_unknown"));
+
+    struct ResetShortCircuit;
+    impl Drop for ResetShortCircuit {
+        fn drop(&mut self) {
+            TEST_ACQUIRER_SHORT_CIRCUIT.with(|c| c.set(false));
+        }
+    }
+    let _guard = ResetShortCircuit;
+    TEST_ACQUIRER_SHORT_CIRCUIT.with(|c| c.set(true));
+
+    let res_not_win = run_local_with_gpu_admission(&object, WindowsGpuAdmission::NotWindows);
+    if let Err(e) = res_not_win {
+        let code = e
+            .envelope
+            .error
+            .as_ref()
+            .map(|x| x.reason_code.as_str())
+            .unwrap_or("");
+        assert_ne!(code, "gpu_memory_insufficient");
+        assert_ne!(code, "gpu_memory_unknown");
+        assert_ne!(code, "gpu_unavailable");
+    }
+}
+
+#[test]
+#[cfg(feature = "full-tests")]
+fn windows_admission_early_refusal_terminal_status() {
+    use crate::VulkanDevice;
+    use crate::install::{
+        TEST_FETCH_RUNTIME_MEMBER_COUNT, WindowsGpuAdmission, run_local_with_gpu_admission,
+    };
+
+    let root = temp("win-admission-full-early");
+    let mut object = serde_json::Map::new();
+    object.insert(
+        "journal".into(),
+        serde_json::Value::String(root.display().to_string()),
+    );
+
+    let stale = status::transition(
+        status::idle_status("local"),
+        "failed",
+        Some("old error".into()),
+        Some("old_error".into()),
+    )
+    .unwrap();
+    status::write_status(&root, stale).unwrap();
+
+    TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
+
+    let below = WindowsGpuAdmission::Observed {
+        probe_ok: true,
+        devices: vec![VulkanDevice {
+            index: 0,
+            name: "RTX 3050".into(),
+            device_type: Some(2),
+            vram_mib: 4096,
+        }],
+        override_index: None,
+    };
+    let err = run_local_with_gpu_admission(&object, below).unwrap_err();
+    assert_eq!(
+        err.envelope.error.as_ref().unwrap().reason_code,
+        "gpu_memory_insufficient"
+    );
+    assert_eq!(
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
+        0
+    );
+    let current = status::read_status(&root, "local").unwrap();
+    assert_eq!(
+        current.error_code.as_deref(),
+        Some("gpu_memory_insufficient")
+    );
+
+    let unknown = WindowsGpuAdmission::Unobserved;
+    let err = run_local_with_gpu_admission(&object, unknown).unwrap_err();
+    assert_eq!(
+        err.envelope.error.as_ref().unwrap().reason_code,
+        "gpu_memory_unknown"
+    );
+    assert_eq!(
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
+        0
+    );
+    let current = status::read_status(&root, "local").unwrap();
+    assert_eq!(current.error_code.as_deref(), Some("gpu_memory_unknown"));
+
+    let before = current;
+    let held = lease::acquire(&root, "local").unwrap().unwrap();
+    let _ = run_local_with_gpu_admission(
+        &object,
+        WindowsGpuAdmission::Observed {
+            probe_ok: true,
+            devices: vec![VulkanDevice {
+                index: 0,
+                name: "4 GiB".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            }],
+            override_index: None,
+        },
+    )
+    .unwrap_err();
+    let after = status::read_status(&root, "local").unwrap();
+    assert_eq!(before.revision, after.revision);
+    assert_eq!(before.attempt_id, after.attempt_id);
+    assert_eq!(before.error_code, after.error_code);
+    drop(held);
+}
+
+#[test]
+#[cfg(all(feature = "full-tests", target_os = "windows"))]
+fn windows_admission_package_failure_is_a_new_terminal_attempt() {
+    use crate::install::{AcquisitionTestGuard, WindowsGpuAdmission, run_local_with_gpu_admission};
+    let root = temp("win-admission-package-failure");
+    let object = serde_json::Map::from_iter([("journal".into(), json!(root))]);
+    let trace = AcquisitionTestGuard::new(false);
+    let prior = status::record_terminal_refusal(&root, "local", "old_failure", "old").unwrap();
+    let error = run_local_with_gpu_admission(
+        &object,
+        WindowsGpuAdmission::Observed {
+            probe_ok: true,
+            devices: vec![crate::VulkanDevice {
+                index: 0,
+                name: "eligible".into(),
+                device_type: Some(2),
+                vram_mib: 6144,
+            }],
+            override_index: None,
+        },
+    )
+    .unwrap_err();
+    let code = error.envelope.error.unwrap().reason_code;
+    assert!(
+        matches!(code.as_str(), "package_unavailable" | "package_invalid"),
+        "{code}"
+    );
+    assert_eq!(trace.acquisitions(), 0);
+    let current = status::read_status(&root, "local").unwrap();
+    assert_eq!(current.install_state, "failed");
+    assert_eq!(current.error_code.as_deref(), Some(code.as_str()));
+    assert_ne!(current.attempt_id, prior.attempt_id);
+}
+
+#[test]
+#[cfg(all(feature = "full-tests", target_os = "windows"))]
+fn windows_admission_reaches_acquirer_at_floor() {
+    use crate::VulkanDevice;
+    use crate::install::{
+        TEST_ACQUIRER_SHORT_CIRCUIT, TEST_FETCH_RUNTIME_MEMBER_COUNT, WindowsGpuAdmission,
+        run_local_with_gpu_admission,
+        windows_engine::{WindowsLlamaPackage, set_test_windows_llama_package},
+    };
+
+    let root = temp("win-admission-acquirer");
+    let mut object = serde_json::Map::new();
+    object.insert(
+        "journal".into(),
+        serde_json::Value::String(root.display().to_string()),
+    );
+
+    struct ResetFloor;
+    impl Drop for ResetFloor {
+        fn drop(&mut self) {
+            TEST_ACQUIRER_SHORT_CIRCUIT.with(|c| c.set(false));
+            set_test_windows_llama_package(None);
+        }
+    }
+    let _guard = ResetFloor;
+
+    set_test_windows_llama_package(Some(WindowsLlamaPackage::mock()));
+    TEST_ACQUIRER_SHORT_CIRCUIT.with(|c| c.set(true));
+    TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
+
+    let eligible = WindowsGpuAdmission::Observed {
+        probe_ok: true,
+        devices: vec![VulkanDevice {
+            index: 0,
+            name: "RTX 4060".into(),
+            device_type: Some(2),
+            vram_mib: 6144,
+        }],
+        override_index: None,
+    };
+
+    let _ = run_local_with_gpu_admission(&object, eligible);
+    assert!(
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get) > 0,
+        "acquirer hook reached at 6144 MiB floor"
+    );
+}

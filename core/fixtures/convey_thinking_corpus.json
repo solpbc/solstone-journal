@@ -287,11 +287,20 @@
             "local_install": {
               "cancel": "cancel",
               "cancelled_verdict": "installation cancelled",
+              "disk_failed": "there isn't enough free disk space for local thinking. free up some space and try again.",
+              "download_failed": "couldn't finish the download for local thinking. try again.",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
+              "gpu_memory_insufficient": "the selected GPU has less than the 6 GB of GPU memory needed for local thinking.",
+              "gpu_memory_unknown": "couldn't check GPU memory on this computer.",
+              "gpu_unavailable": "couldn't find a supported GPU for local thinking.",
               "install": "install local model",
+              "integrity_failed": "the downloaded files couldn't be verified. try setup again.",
               "interrupted_verdict": "installation stopped",
+              "memory_failed": "this computer doesn't have enough memory for local thinking.",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
+              "package_failed": "some files needed for local thinking are missing. update the journal and try setup again.",
+              "package_invalid": "some files needed for local thinking couldn't be verified. update the journal and try setup again.",
               "phases": {
                 "downloading": "downloading",
                 "installing": "installing",
@@ -301,7 +310,9 @@
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
               "retry": "try setup again",
-              "stopped_reason": "you can try setup again when you're ready."
+              "stopped_reason": "you can try setup again when you're ready.",
+              "unidentified_failed": "couldn't tell why local setup stopped. check the diagnostic console for details.",
+              "unsupported_failed": "this local model isn't supported on this computer."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -331,6 +342,21 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
+                "gpu_allocation_failed": {
+                  "pill": "needs attention",
+                  "reason": "the GPU didn't have enough available memory to start the local model.",
+                  "verdict": "local thinking ran out of memory"
+                },
+                "gpu_memory_insufficient": {
+                  "pill": "unavailable",
+                  "reason": "local thinking needs a compatible GPU with at least 6 GB of GPU memory.",
+                  "verdict": "the selected GPU needs more memory"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't read GPU memory on this computer. try checking again in a moment.",
+                  "verdict": "couldn't check GPU memory"
+                },
                 "local_probe_failed": {
                   "pill": "couldn't check",
                   "reason": "try checking again in a moment.",
@@ -343,7 +369,7 @@
                 },
                 "ready_proof_unavailable": {
                   "pill": "on, needs a check",
-                  "reason": "couldn't refresh the local file check. it won't start a replacement until the check returns.",
+                  "reason": "couldn't refresh the local status check. it won't start a replacement until the check returns.",
                   "verdict": "local thinking is still running"
                 },
                 "recovering": {
@@ -2506,11 +2532,20 @@
             "local_install": {
               "cancel": "cancel",
               "cancelled_verdict": "installation cancelled",
+              "disk_failed": "there isn't enough free disk space for local thinking. free up some space and try again.",
+              "download_failed": "couldn't finish the download for local thinking. try again.",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
+              "gpu_memory_insufficient": "the selected GPU has less than the 6 GB of GPU memory needed for local thinking.",
+              "gpu_memory_unknown": "couldn't check GPU memory on this computer.",
+              "gpu_unavailable": "couldn't find a supported GPU for local thinking.",
               "install": "install local model",
+              "integrity_failed": "the downloaded files couldn't be verified. try setup again.",
               "interrupted_verdict": "installation stopped",
+              "memory_failed": "this computer doesn't have enough memory for local thinking.",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
+              "package_failed": "some files needed for local thinking are missing. update the journal and try setup again.",
+              "package_invalid": "some files needed for local thinking couldn't be verified. update the journal and try setup again.",
               "phases": {
                 "downloading": "downloading",
                 "installing": "installing",
@@ -2520,7 +2555,9 @@
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
               "retry": "try setup again",
-              "stopped_reason": "you can try setup again when you're ready."
+              "stopped_reason": "you can try setup again when you're ready.",
+              "unidentified_failed": "couldn't tell why local setup stopped. check the diagnostic console for details.",
+              "unsupported_failed": "this local model isn't supported on this computer."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -2550,6 +2587,21 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
+                "gpu_allocation_failed": {
+                  "pill": "needs attention",
+                  "reason": "the GPU didn't have enough available memory to start the local model.",
+                  "verdict": "local thinking ran out of memory"
+                },
+                "gpu_memory_insufficient": {
+                  "pill": "unavailable",
+                  "reason": "local thinking needs a compatible GPU with at least 6 GB of GPU memory.",
+                  "verdict": "the selected GPU needs more memory"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't read GPU memory on this computer. try checking again in a moment.",
+                  "verdict": "couldn't check GPU memory"
+                },
                 "local_probe_failed": {
                   "pill": "couldn't check",
                   "reason": "try checking again in a moment.",
@@ -2562,7 +2614,7 @@
                 },
                 "ready_proof_unavailable": {
                   "pill": "on, needs a check",
-                  "reason": "couldn't refresh the local file check. it won't start a replacement until the check returns.",
+                  "reason": "couldn't refresh the local status check. it won't start a replacement until the check returns.",
                   "verdict": "local thinking is still running"
                 },
                 "recovering": {
@@ -4723,11 +4775,20 @@
             "local_install": {
               "cancel": "cancel",
               "cancelled_verdict": "installation cancelled",
+              "disk_failed": "there isn't enough free disk space for local thinking. free up some space and try again.",
+              "download_failed": "couldn't finish the download for local thinking. try again.",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
+              "gpu_memory_insufficient": "the selected GPU has less than the 6 GB of GPU memory needed for local thinking.",
+              "gpu_memory_unknown": "couldn't check GPU memory on this computer.",
+              "gpu_unavailable": "couldn't find a supported GPU for local thinking.",
               "install": "install local model",
+              "integrity_failed": "the downloaded files couldn't be verified. try setup again.",
               "interrupted_verdict": "installation stopped",
+              "memory_failed": "this computer doesn't have enough memory for local thinking.",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
+              "package_failed": "some files needed for local thinking are missing. update the journal and try setup again.",
+              "package_invalid": "some files needed for local thinking couldn't be verified. update the journal and try setup again.",
               "phases": {
                 "downloading": "downloading",
                 "installing": "installing",
@@ -4737,7 +4798,9 @@
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
               "retry": "try setup again",
-              "stopped_reason": "you can try setup again when you're ready."
+              "stopped_reason": "you can try setup again when you're ready.",
+              "unidentified_failed": "couldn't tell why local setup stopped. check the diagnostic console for details.",
+              "unsupported_failed": "this local model isn't supported on this computer."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -4767,6 +4830,21 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
+                "gpu_allocation_failed": {
+                  "pill": "needs attention",
+                  "reason": "the GPU didn't have enough available memory to start the local model.",
+                  "verdict": "local thinking ran out of memory"
+                },
+                "gpu_memory_insufficient": {
+                  "pill": "unavailable",
+                  "reason": "local thinking needs a compatible GPU with at least 6 GB of GPU memory.",
+                  "verdict": "the selected GPU needs more memory"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't read GPU memory on this computer. try checking again in a moment.",
+                  "verdict": "couldn't check GPU memory"
+                },
                 "local_probe_failed": {
                   "pill": "couldn't check",
                   "reason": "try checking again in a moment.",
@@ -4779,7 +4857,7 @@
                 },
                 "ready_proof_unavailable": {
                   "pill": "on, needs a check",
-                  "reason": "couldn't refresh the local file check. it won't start a replacement until the check returns.",
+                  "reason": "couldn't refresh the local status check. it won't start a replacement until the check returns.",
                   "verdict": "local thinking is still running"
                 },
                 "recovering": {
@@ -6924,11 +7002,20 @@
             "local_install": {
               "cancel": "cancel",
               "cancelled_verdict": "installation cancelled",
+              "disk_failed": "there isn't enough free disk space for local thinking. free up some space and try again.",
+              "download_failed": "couldn't finish the download for local thinking. try again.",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
+              "gpu_memory_insufficient": "the selected GPU has less than the 6 GB of GPU memory needed for local thinking.",
+              "gpu_memory_unknown": "couldn't check GPU memory on this computer.",
+              "gpu_unavailable": "couldn't find a supported GPU for local thinking.",
               "install": "install local model",
+              "integrity_failed": "the downloaded files couldn't be verified. try setup again.",
               "interrupted_verdict": "installation stopped",
+              "memory_failed": "this computer doesn't have enough memory for local thinking.",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
+              "package_failed": "some files needed for local thinking are missing. update the journal and try setup again.",
+              "package_invalid": "some files needed for local thinking couldn't be verified. update the journal and try setup again.",
               "phases": {
                 "downloading": "downloading",
                 "installing": "installing",
@@ -6938,7 +7025,9 @@
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
               "retry": "try setup again",
-              "stopped_reason": "you can try setup again when you're ready."
+              "stopped_reason": "you can try setup again when you're ready.",
+              "unidentified_failed": "couldn't tell why local setup stopped. check the diagnostic console for details.",
+              "unsupported_failed": "this local model isn't supported on this computer."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -6968,6 +7057,21 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
+                "gpu_allocation_failed": {
+                  "pill": "needs attention",
+                  "reason": "the GPU didn't have enough available memory to start the local model.",
+                  "verdict": "local thinking ran out of memory"
+                },
+                "gpu_memory_insufficient": {
+                  "pill": "unavailable",
+                  "reason": "local thinking needs a compatible GPU with at least 6 GB of GPU memory.",
+                  "verdict": "the selected GPU needs more memory"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't read GPU memory on this computer. try checking again in a moment.",
+                  "verdict": "couldn't check GPU memory"
+                },
                 "local_probe_failed": {
                   "pill": "couldn't check",
                   "reason": "try checking again in a moment.",
@@ -6980,7 +7084,7 @@
                 },
                 "ready_proof_unavailable": {
                   "pill": "on, needs a check",
-                  "reason": "couldn't refresh the local file check. it won't start a replacement until the check returns.",
+                  "reason": "couldn't refresh the local status check. it won't start a replacement until the check returns.",
                   "verdict": "local thinking is still running"
                 },
                 "recovering": {
@@ -9302,11 +9406,20 @@
             "local_install": {
               "cancel": "cancel",
               "cancelled_verdict": "installation cancelled",
+              "disk_failed": "there isn't enough free disk space for local thinking. free up some space and try again.",
+              "download_failed": "couldn't finish the download for local thinking. try again.",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
+              "gpu_memory_insufficient": "the selected GPU has less than the 6 GB of GPU memory needed for local thinking.",
+              "gpu_memory_unknown": "couldn't check GPU memory on this computer.",
+              "gpu_unavailable": "couldn't find a supported GPU for local thinking.",
               "install": "install local model",
+              "integrity_failed": "the downloaded files couldn't be verified. try setup again.",
               "interrupted_verdict": "installation stopped",
+              "memory_failed": "this computer doesn't have enough memory for local thinking.",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
+              "package_failed": "some files needed for local thinking are missing. update the journal and try setup again.",
+              "package_invalid": "some files needed for local thinking couldn't be verified. update the journal and try setup again.",
               "phases": {
                 "downloading": "downloading",
                 "installing": "installing",
@@ -9316,7 +9429,9 @@
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
               "retry": "try setup again",
-              "stopped_reason": "you can try setup again when you're ready."
+              "stopped_reason": "you can try setup again when you're ready.",
+              "unidentified_failed": "couldn't tell why local setup stopped. check the diagnostic console for details.",
+              "unsupported_failed": "this local model isn't supported on this computer."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -9346,6 +9461,21 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
+                "gpu_allocation_failed": {
+                  "pill": "needs attention",
+                  "reason": "the GPU didn't have enough available memory to start the local model.",
+                  "verdict": "local thinking ran out of memory"
+                },
+                "gpu_memory_insufficient": {
+                  "pill": "unavailable",
+                  "reason": "local thinking needs a compatible GPU with at least 6 GB of GPU memory.",
+                  "verdict": "the selected GPU needs more memory"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't read GPU memory on this computer. try checking again in a moment.",
+                  "verdict": "couldn't check GPU memory"
+                },
                 "local_probe_failed": {
                   "pill": "couldn't check",
                   "reason": "try checking again in a moment.",
@@ -9358,7 +9488,7 @@
                 },
                 "ready_proof_unavailable": {
                   "pill": "on, needs a check",
-                  "reason": "couldn't refresh the local file check. it won't start a replacement until the check returns.",
+                  "reason": "couldn't refresh the local status check. it won't start a replacement until the check returns.",
                   "verdict": "local thinking is still running"
                 },
                 "recovering": {
@@ -12799,11 +12929,20 @@
             "local_install": {
               "cancel": "cancel",
               "cancelled_verdict": "installation cancelled",
+              "disk_failed": "there isn't enough free disk space for local thinking. free up some space and try again.",
+              "download_failed": "couldn't finish the download for local thinking. try again.",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
+              "gpu_memory_insufficient": "the selected GPU has less than the 6 GB of GPU memory needed for local thinking.",
+              "gpu_memory_unknown": "couldn't check GPU memory on this computer.",
+              "gpu_unavailable": "couldn't find a supported GPU for local thinking.",
               "install": "install local model",
+              "integrity_failed": "the downloaded files couldn't be verified. try setup again.",
               "interrupted_verdict": "installation stopped",
+              "memory_failed": "this computer doesn't have enough memory for local thinking.",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
+              "package_failed": "some files needed for local thinking are missing. update the journal and try setup again.",
+              "package_invalid": "some files needed for local thinking couldn't be verified. update the journal and try setup again.",
               "phases": {
                 "downloading": "downloading",
                 "installing": "installing",
@@ -12813,7 +12952,9 @@
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
               "retry": "try setup again",
-              "stopped_reason": "you can try setup again when you're ready."
+              "stopped_reason": "you can try setup again when you're ready.",
+              "unidentified_failed": "couldn't tell why local setup stopped. check the diagnostic console for details.",
+              "unsupported_failed": "this local model isn't supported on this computer."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -12843,6 +12984,21 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
+                "gpu_allocation_failed": {
+                  "pill": "needs attention",
+                  "reason": "the GPU didn't have enough available memory to start the local model.",
+                  "verdict": "local thinking ran out of memory"
+                },
+                "gpu_memory_insufficient": {
+                  "pill": "unavailable",
+                  "reason": "local thinking needs a compatible GPU with at least 6 GB of GPU memory.",
+                  "verdict": "the selected GPU needs more memory"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't read GPU memory on this computer. try checking again in a moment.",
+                  "verdict": "couldn't check GPU memory"
+                },
                 "local_probe_failed": {
                   "pill": "couldn't check",
                   "reason": "try checking again in a moment.",
@@ -12855,7 +13011,7 @@
                 },
                 "ready_proof_unavailable": {
                   "pill": "on, needs a check",
-                  "reason": "couldn't refresh the local file check. it won't start a replacement until the check returns.",
+                  "reason": "couldn't refresh the local status check. it won't start a replacement until the check returns.",
                   "verdict": "local thinking is still running"
                 },
                 "recovering": {

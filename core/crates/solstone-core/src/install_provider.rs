@@ -139,7 +139,7 @@ where
     J: FnOnce() -> Result<PathBuf, ()>,
     R: FnOnce(&Path) -> Value,
     P: FnOnce(&Path, lease::InstallLease) -> Result<Value, Box<DispatchError>>,
-    L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
+    L: FnOnce(&Path, solstone_core_local::WindowsGpuAdmission) -> Result<Value, Box<DispatchError>>,
 {
     let (os_name, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
     run_inner_with(
@@ -169,7 +169,7 @@ where
     J: FnOnce() -> Result<PathBuf, ()>,
     R: FnOnce(&Path) -> Value,
     P: FnOnce(&Path, lease::InstallLease) -> Result<Value, Box<DispatchError>>,
-    L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
+    L: FnOnce(&Path, solstone_core_local::WindowsGpuAdmission) -> Result<Value, Box<DispatchError>>,
 {
     match options.name.as_str() {
         "parakeet" => {}
@@ -308,7 +308,10 @@ fn install_parakeet(
     install_parakeet_with_lease(journal, os_name, arch, held).map_err(Box::new)
 }
 
-fn install_local(journal: &Path) -> Result<Value, Box<DispatchError>> {
+fn install_local(
+    journal: &Path,
+    admission: solstone_core_local::WindowsGpuAdmission,
+) -> Result<Value, Box<DispatchError>> {
     let owner = match solstone_core_system::process::current_process_identity() {
         Some(instance) if instance.birth.is_verifiable() => json!(instance),
         _ => {
@@ -338,10 +341,10 @@ fn install_local(journal: &Path) -> Result<Value, Box<DispatchError>> {
             json!({"journal": journal.display().to_string()})
         };
     payload["owner"] = owner;
-    let envelope = dispatch(InstallVerb::RunLocal, payload).map_err(Box::new)?;
-    Ok(envelope
-        .result
-        .expect("successful install dispatch has a result"))
+    let payload_map = payload.as_object().cloned().unwrap_or_default();
+    let result = solstone_core_local::run_local_with_gpu_admission(&payload_map, admission)
+        .map_err(Box::new)?;
+    Ok(result)
 }
 
 fn run_local_inner_with_platform<J, R, L>(
@@ -355,7 +358,7 @@ fn run_local_inner_with_platform<J, R, L>(
 where
     J: FnOnce() -> Result<PathBuf, ()>,
     R: FnOnce(&Path) -> Value,
-    L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
+    L: FnOnce(&Path, solstone_core_local::WindowsGpuAdmission) -> Result<Value, Box<DispatchError>>,
 {
     run_local_inner_with_platform_and_target_sha(
         journal_resolver,
@@ -380,7 +383,7 @@ fn run_local_inner_with_platform_and_target_sha<J, R, L, T>(
 where
     J: FnOnce() -> Result<PathBuf, ()>,
     R: FnOnce(&Path) -> Value,
-    L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
+    L: FnOnce(&Path, solstone_core_local::WindowsGpuAdmission) -> Result<Value, Box<DispatchError>>,
     T: Fn(&Path) -> Result<String, String>,
 {
     let journal = match journal_resolver() {
@@ -409,12 +412,15 @@ where
         return InstallProviderOutcome::success(vec![render_status(&install)], stderr);
     }
     if matches!(readiness_status, "proof-unavailable" | "host-ineligible") {
-        stderr.push(
-            readiness["reason_code"]
-                .as_str()
-                .unwrap_or("readiness_unavailable")
-                .to_owned(),
-        );
+        let reason_code = readiness["reason_code"]
+            .as_str()
+            .unwrap_or("readiness_unavailable");
+        if let Err(error) =
+            status::record_terminal_refusal(&journal, "local", reason_code, reason_code)
+        {
+            stderr.push(error.to_string());
+        }
+        stderr.push(reason_code.to_owned());
         return InstallProviderOutcome {
             exit_code: 1,
             stdout: Vec::new(),
@@ -448,11 +454,23 @@ where
             };
         }
     }
-    let report = match report_override {
-        Some(report) => report,
+    let (report, admission) = match report_override {
+        Some(report) => {
+            let admission = if os_name.eq_ignore_ascii_case("windows") {
+                solstone_core_local::WindowsGpuAdmission::Unobserved
+            } else {
+                solstone_core_local::WindowsGpuAdmission::NotWindows
+            };
+            (report, admission)
+        }
         None => match build_platform_report(&journal, os_name, arch) {
-            Ok(report) => report,
+            Ok((report, admission)) => (report, admission),
             Err(error) => {
+                if let Err(persistence_error) =
+                    status::record_terminal_refusal(&journal, "local", "install_failed", &error)
+                {
+                    stderr.push(persistence_error.to_string());
+                }
                 stderr.push(error);
                 return InstallProviderOutcome {
                     exit_code: 1,
@@ -463,7 +481,7 @@ where
         },
     };
     stderr.push(fit_report::render_fit_report(&report));
-    match install_executor(&journal) {
+    match install_executor(&journal, admission) {
         Ok(result) => {
             let install = result["status"].clone();
             let exit_code = u8::from(install["install_state"] == "failed");
@@ -495,7 +513,13 @@ fn build_platform_report(
     journal: &Path,
     os_name: &str,
     arch: &str,
-) -> Result<fit_report::FitReport, String> {
+) -> Result<
+    (
+        fit_report::FitReport,
+        solstone_core_local::WindowsGpuAdmission,
+    ),
+    String,
+> {
     build_local_report(journal, os_name, arch)
 }
 
@@ -503,7 +527,13 @@ fn build_local_report(
     journal: &Path,
     os_name: &str,
     arch: &str,
-) -> Result<fit_report::FitReport, String> {
+) -> Result<
+    (
+        fit_report::FitReport,
+        solstone_core_local::WindowsGpuAdmission,
+    ),
+    String,
+> {
     build_local_report_with(
         journal,
         os_name,
@@ -519,7 +549,13 @@ fn build_local_report_with<N, V>(
     arch: &str,
     nvidia_probe_fn: N,
     vulkan_observe_fn: V,
-) -> Result<fit_report::FitReport, String>
+) -> Result<
+    (
+        fit_report::FitReport,
+        solstone_core_local::WindowsGpuAdmission,
+    ),
+    String,
+>
 where
     N: FnOnce() -> solstone_core_local::nvidia::NvidiaProbe,
     V: FnOnce() -> solstone_core_system::vulkan_observe::VulkanObservation,
@@ -552,7 +588,7 @@ where
             return Err("cuda runtime integrity failure".to_string());
         }
     };
-    Ok(fit_report::build_local_fit_report(
+    let report = fit_report::build_local_fit_report(
         journal,
         "local/qwen3.5-4b",
         os_name,
@@ -565,7 +601,17 @@ where
         &devices,
         override_index,
         force_cpu,
-    ))
+    );
+    let admission = if is_windows {
+        solstone_core_local::WindowsGpuAdmission::Observed {
+            probe_ok: vulkan_obs.succeeded,
+            devices,
+            override_index,
+        }
+    } else {
+        solstone_core_local::WindowsGpuAdmission::NotWindows
+    };
+    Ok((report, admission))
 }
 
 fn local_override_and_brain_lane(
@@ -792,7 +838,17 @@ fn install_failure(
     error: DispatchError,
     mut stderr: Vec<String>,
 ) -> InstallProviderOutcome {
-    stderr.push(dispatch_message(provider, error));
+    let failure_line = if provider == "local" {
+        error
+            .envelope
+            .error
+            .as_ref()
+            .map(|err| err.reason_code.clone())
+            .unwrap_or_else(|| dispatch_message(provider, error))
+    } else {
+        dispatch_message(provider, error)
+    };
+    stderr.push(failure_line);
     match status::read_status(journal, provider) {
         Ok(status) => InstallProviderOutcome {
             exit_code: 1,
@@ -911,7 +967,11 @@ mod tests {
         // Exercise the real installer entry, stopping at the OS lease before
         // package checks or downloads. The Unix-only PID inspector used to
         // refuse Windows here before the dispatcher could observe this lease.
-        let error = install_local(journal.path()).unwrap_err();
+        let error = install_local(
+            journal.path(),
+            solstone_core_local::WindowsGpuAdmission::NotWindows,
+        )
+        .unwrap_err();
         assert_eq!(error.exit_code, lease::BUSY_EXIT_CODE);
         assert_eq!(error.envelope.error.unwrap().reason_code, "install_busy");
         assert!(lease::is_held(journal.path(), "local").unwrap());
@@ -1010,7 +1070,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("darwin platform must refuse before the executor"),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "darwin",
             "arm64",
         );
@@ -1023,7 +1083,7 @@ mod tests {
             |_| panic!("windows has nothing to inspect"),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("windows platform must not reach the executor"),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "windows",
             "x86_64",
         );
@@ -1036,7 +1096,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Ok(json!({"status": status_value("installed")})),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1064,7 +1124,7 @@ mod tests {
             |_| missing_readiness(),
             None,
             |_, _| Ok(json!({"status": status_value("installed")})),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "aarch64",
         );
@@ -1085,7 +1145,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Blocked)),
             |_, _| panic!("blocked must not install"),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1103,7 +1163,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Warning)),
             |_, _| Ok(json!({"status": status_value("installed")})),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1125,7 +1185,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Ok(json!({"status": status_value("downloading")})),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1169,7 +1229,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Ok(json!({"status": status_value("failed")})),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1260,7 +1320,7 @@ mod tests {
                 entered.store(true, Ordering::SeqCst);
                 Ok(json!({"status": status_value("installed")}))
             },
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1287,7 +1347,7 @@ mod tests {
             |_| json!({"status": "ready"}),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("ready must not install"),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1319,7 +1379,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Blocked)),
             |_, _| panic!("blocked report proves non-ready reached install path"),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1347,7 +1407,7 @@ mod tests {
                     called.store(true, Ordering::SeqCst);
                     panic!("unavailable must not install")
                 },
-                |_| panic!("local must not install"),
+                |_, _| panic!("local must not install"),
                 "linux",
                 "x86_64",
             );
@@ -1358,6 +1418,106 @@ mod tests {
                 !solstone_core_local::install::pins::parakeet_cache_root(journal.path()).exists()
             );
         }
+    }
+
+    #[test]
+    #[cfg(feature = "full-tests")]
+    fn local_unavailable_readiness_refuses_without_executor() {
+        for (state, reason) in [
+            ("proof-unavailable", "status_unavailable"),
+            ("proof-unavailable", "lease_unavailable"),
+            ("host-ineligible", "binary_exit"),
+        ] {
+            let journal = tempfile::tempdir().unwrap();
+            let entered = Arc::new(AtomicBool::new(false));
+            let called = entered.clone();
+
+            let stale = status::transition(
+                status::idle_status("local"),
+                "failed",
+                Some("old error".into()),
+                Some("old_error".into()),
+            )
+            .unwrap();
+            status::write_status(journal.path(), stale).unwrap();
+
+            let outcome = run_inner_with(
+                options("local"),
+                || Ok(journal.path().to_path_buf()),
+                |_| json!({"status": state, "reason_code": reason}),
+                Some(report(fit_report::FitSeverity::Ok)),
+                |_, _| panic!("parakeet must not install"),
+                move |_, _| {
+                    called.store(true, Ordering::SeqCst);
+                    panic!("local must not install")
+                },
+                "linux",
+                "x86_64",
+            );
+            assert_eq!(outcome.exit_code, 1, "{reason}");
+            assert!(outcome.stderr.iter().any(|line| line == reason));
+            assert!(
+                !outcome
+                    .stderr
+                    .iter()
+                    .any(|line| line.contains("raw message"))
+            );
+            assert!(!entered.load(Ordering::SeqCst));
+
+            let current = status::read_status(journal.path(), "local").unwrap();
+            assert_eq!(current.install_state, "failed");
+            assert_eq!(current.error_code.as_deref(), Some(reason));
+
+            let in_flight = status::transition(current, "downloading", None, None).unwrap();
+            status::write_status(journal.path(), in_flight).unwrap();
+            let _held = lease::acquire(journal.path(), "local").unwrap().unwrap();
+
+            let outcome_inflight = run_inner_with(
+                options("local"),
+                || Ok(journal.path().to_path_buf()),
+                |_| json!({"status": state, "reason_code": reason}),
+                Some(report(fit_report::FitSeverity::Ok)),
+                |_, _| panic!("parakeet must not install"),
+                |_, _| panic!("local must not install"),
+                "linux",
+                "x86_64",
+            );
+            assert_eq!(outcome_inflight.exit_code, 1, "{reason}");
+            assert!(outcome_inflight.stderr.iter().any(|line| line == reason));
+
+            let current_inflight = status::read_status(journal.path(), "local").unwrap();
+            assert_eq!(current_inflight.install_state, "downloading");
+            assert_eq!(current_inflight.error_code, None);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "full-tests")]
+    fn local_refusal_reports_persistence_failure() {
+        let journal = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(lease::lease_path(journal.path(), "local")).unwrap();
+        let outcome = run_inner_with(
+            options("local"),
+            || Ok(journal.path().to_path_buf()),
+            |_| json!({"status":"host-ineligible","reason_code":"binary_exit"}),
+            Some(report(fit_report::FitSeverity::Ok)),
+            |_, _| panic!("parakeet must not install"),
+            |_, _| panic!("local must not install"),
+            "windows",
+            "x86_64",
+        );
+        assert_eq!(outcome.exit_code, 1);
+        assert!(outcome.stderr.iter().any(|line| line == "binary_exit"));
+        assert!(
+            outcome.stderr.len() >= 3,
+            "persistence failure must be reported"
+        );
+        assert_eq!(
+            status::read_status(journal.path(), "local")
+                .unwrap()
+                .install_state,
+            "idle"
+        );
     }
 
     #[test]
@@ -1378,7 +1538,7 @@ mod tests {
                 }],
             }),
             |_, _| panic!("parakeet executor must not run"),
-            move |_| {
+            move |_, _| {
                 called.store(true, Ordering::SeqCst);
                 Ok(json!({"status": status_value("installed")}))
             },
@@ -1402,7 +1562,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("parakeet executor must not run"),
-            |_| Err(dispatch_error("download failed")),
+            |_, _| Err(dispatch_error("download failed")),
             "linux",
             "x86_64",
         );
@@ -1415,7 +1575,7 @@ mod tests {
             persisted
                 .stderr
                 .iter()
-                .any(|line| line == "download failed")
+                .any(|line| line == "download_failed")
         );
 
         fs::create_dir_all(
@@ -1431,7 +1591,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("parakeet executor must not run"),
-            |_| Err(dispatch_error("download failed")),
+            |_, _| Err(dispatch_error("download failed")),
             "linux",
             "x86_64",
         );
@@ -1454,7 +1614,7 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| missing_readiness(),
             None,
-            |_| {
+            |_, _| {
                 entered.set(true);
                 Ok(json!({"status": status_value("installed")}))
             },
@@ -1474,7 +1634,7 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
-            |_| panic!("another writer owns the lease"),
+            |_, _| panic!("another writer owns the lease"),
             |_| Err("observer fingerprint unavailable".to_owned()),
             "windows",
             "x86_64",
@@ -1558,7 +1718,7 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
-            |_| {
+            |_, _| {
                 installed.set(true);
                 Ok(json!({"status": {"install_state": "installed"}}))
             },
@@ -1749,7 +1909,9 @@ mod tests {
         // Darwin now installs the same native llama.cpp runtime family as the
         // other local backends, so the owner-facing disclosure must be present.
         let journal = tempfile::tempdir().unwrap();
-        let executor = |_: &Path| Ok(json!({"status": {"install_state": "installed"}}));
+        let executor = |_: &Path, _: solstone_core_local::WindowsGpuAdmission| {
+            Ok(json!({"status": {"install_state": "installed"}}))
+        };
 
         let darwin = run_local_inner_with_platform(
             || Ok(journal.path().to_path_buf()),
@@ -1805,7 +1967,7 @@ mod tests {
             || panic!("unknown must not resolve journal"),
             |_| panic!("unknown must not inspect"),
             |_, _| panic!("unknown must not install"),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
         );
         assert_eq!(unknown.exit_code, 2);
         assert_eq!(
@@ -1823,7 +1985,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Err(dispatch_error("download failed")),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1846,7 +2008,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Err(dispatch_error("download failed")),
-            |_| panic!("local must not install"),
+            |_, _| panic!("local must not install"),
             "linux",
             "x86_64",
         );
@@ -1946,7 +2108,7 @@ mod tests {
         ] {
             let mut nvidia_calls = 0;
             let mut vulkan_calls = 0;
-            let report = build_local_report_with(
+            let (report, _admission) = build_local_report_with(
                 temp.path(),
                 "windows",
                 "x86_64",
@@ -2013,7 +2175,7 @@ mod tests {
         ] {
             let mut nvidia_calls = 0;
             let mut vulkan_calls = 0;
-            let report = build_local_report_with(
+            let (report, _) = build_local_report_with(
                 temp.path(),
                 "windows",
                 "x86_64",
