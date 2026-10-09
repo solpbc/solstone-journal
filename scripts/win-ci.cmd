@@ -142,6 +142,7 @@ call :run_exact_library "solstone-core-local" "install::fit_report::tests::windo
 call :run_exact_library "solstone-core-local" "install::fit_report::tests::windows_gpu_fit_downgrades_ok_when_package_not_ready" || exit /b 1
 call :run_exact_library "solstone-core-local" "install::tests::windows_admission_enforces_gpu_verdict_before_local_target" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-local" "install::tests::windows_admission_early_refusal_terminal_status" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-local" "install::tests::metal_runtime_requires_the_supported_platform_without_ready_state" || exit /b 1
 call :run_exact_library "solstone-core-local" "install::tests::windows_admission_reaches_acquirer_at_floor" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-local" "install::tests::windows_admission_package_failure_is_a_new_terminal_attempt" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-setup" "steps::tests::windows_setup_readiness_enforces_6_gib_minimum" || exit /b 1

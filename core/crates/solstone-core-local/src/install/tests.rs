@@ -222,9 +222,12 @@ fn local_backend_defaults_to_metal_on_apple_silicon() {
 #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 fn metal_runtime_requires_the_supported_platform_without_ready_state() {
     let root = temp("metal-candidate-platform");
-    let error = dispatch(
-        InstallVerb::RunLocal,
-        json!({"journal": root, "backend": "metal"}),
+    // Isolate the Metal platform check from the separate Windows GPU gate.
+    let error = super::run_local_with_gpu_admission(
+        json!({"journal": root, "backend": "metal"})
+            .as_object()
+            .unwrap(),
+        crate::WindowsGpuAdmission::NotWindows,
     )
     .unwrap_err();
     assert_eq!(error.exit_code, 65);
@@ -232,7 +235,9 @@ fn metal_runtime_requires_the_supported_platform_without_ready_state() {
         error.envelope.error.unwrap().reason_code,
         "unsupported_platform"
     );
-    assert!(!status::status_path(&root, "local").exists());
+    let current = status::read_status(&root, "local").unwrap();
+    assert_eq!(current.install_state, "failed");
+    assert_eq!(current.error_code.as_deref(), Some("unsupported_platform"));
     assert!(lease::lease_path(&root, "local").exists());
     assert!(!lease::is_held(&root, "local").unwrap());
     let _ = fs::remove_dir_all(root);
