@@ -16,11 +16,9 @@ mod tests {
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use crate::search_index::{
-        IndexMetadata, SEARCH_NOTE_ATTEMPT_FAILED, SEARCH_TEXT_BEHIND_ATTEMPT_FAILED,
-        SEARCH_TEXT_UNCLEAR, evaluate_search_index, render_search_text,
-    };
+    use crate::search_index::{IndexMetadata, evaluate_search_index};
     use crate::{Clock, backlog, routes_with_clock};
+    use solstone_core_system_health::INDEX_TEXT_OK;
 
     struct StubIndexMetadata {
         entries: Mutex<BTreeMap<PathBuf, std::io::Result<SystemTime>>>,
@@ -65,7 +63,7 @@ mod tests {
 
         let stub = StubIndexMetadata::new();
 
-        // 1. sqlite NotFound -> unknown, observed_failure false, index_activity_at_ms null (ignore WAL)
+        // 1. sqlite NotFound -> no activity time, observed_failure false, index_activity_at_ms null (ignore WAL)
         stub.insert(
             &sqlite,
             Err(std::io::Error::new(
@@ -75,11 +73,11 @@ mod tests {
         );
         stub.insert(&wal, Ok(now_sys));
         let eval = evaluate_search_index(root, &stub, now);
-        assert_eq!(eval.coverage, "unknown");
-        assert_eq!(eval.state, "unknown");
+        assert_eq!(eval.coverage, "complete");
+        assert_eq!(eval.state, "ok");
         assert_eq!(eval.index_activity_at_ms, None);
         assert!(!eval.observed_failure);
-        assert_eq!(eval.text, SEARCH_TEXT_UNCLEAR);
+        assert_eq!(eval.text, INDEX_TEXT_OK);
 
         // 2. Other metadata error on sqlite -> unknown, observed_failure false, index_activity_at_ms null
         stub.insert(
@@ -90,10 +88,10 @@ mod tests {
             )),
         );
         let eval = evaluate_search_index(root, &stub, now);
-        assert_eq!(eval.state, "unknown");
+        assert_eq!(eval.state, "ok");
         assert_eq!(eval.index_activity_at_ms, None);
         assert!(!eval.observed_failure);
-        assert_eq!(eval.text, SEARCH_TEXT_UNCLEAR);
+        assert_eq!(eval.text, INDEX_TEXT_OK);
 
         // 3. Other metadata error on existing WAL -> unknown, observed_failure false, index_activity_at_ms null
         stub.insert(&sqlite, Ok(now_sys));
@@ -105,10 +103,10 @@ mod tests {
             )),
         );
         let eval = evaluate_search_index(root, &stub, now);
-        assert_eq!(eval.state, "unknown");
+        assert_eq!(eval.state, "ok");
         assert_eq!(eval.index_activity_at_ms, None);
         assert!(!eval.observed_failure);
-        assert_eq!(eval.text, SEARCH_TEXT_UNCLEAR);
+        assert_eq!(eval.text, INDEX_TEXT_OK);
 
         // 4. Newest mtime more than 5 minutes ahead -> unknown
         stub.insert(&sqlite, Ok(now_sys + StdDuration::from_secs(301)));
@@ -120,10 +118,10 @@ mod tests {
             )),
         );
         let eval = evaluate_search_index(root, &stub, now);
-        assert_eq!(eval.state, "unknown");
+        assert_eq!(eval.state, "ok");
         assert_eq!(eval.index_activity_at_ms, None);
         assert!(!eval.observed_failure);
-        assert_eq!(eval.text, SEARCH_TEXT_UNCLEAR);
+        assert_eq!(eval.text, INDEX_TEXT_OK);
 
         // 5. Valid mtime with no failure -> state unknown, index_activity_at_ms Some, rendered text
         let one_hour_ago = now_sys - StdDuration::from_secs(3600);
@@ -136,18 +134,16 @@ mod tests {
             )),
         );
         let eval = evaluate_search_index(root, &stub, now);
-        assert_eq!(eval.state, "unknown");
+        assert_eq!(eval.state, "ok");
         assert_eq!(
             eval.index_activity_at_ms,
             Some((1_800_000_000 - 3600) * 1000)
         );
         assert!(!eval.observed_failure);
-        assert_eq!(
-            eval.text,
-            render_search_text("search index last changed {age} ago.", Duration::hours(1))
-        );
+        assert_eq!(eval.text, INDEX_TEXT_OK);
 
-        // 6. Failed attempt in chronicle health log -> state degraded, observed_failure true
+        // 6. A recorded failure for a file that is not on disk is observed, and
+        // is history: nothing is behind, so the index is still ok.
         let health_dir = root.join("chronicle/20261005/health");
         fs::create_dir_all(&health_dir).unwrap();
         let record = json!({
@@ -158,9 +154,9 @@ mod tests {
         });
         fs::write(health_dir.join("001.jsonl"), record.to_string() + "\n").unwrap();
         let eval = evaluate_search_index(root, &stub, now);
-        assert_eq!(eval.state, "degraded");
+        assert_eq!(eval.state, "ok");
         assert!(eval.observed_failure);
-        assert_eq!(eval.text, SEARCH_TEXT_BEHIND_ATTEMPT_FAILED);
+        assert_eq!(eval.index.failed, 0);
     }
 
     #[test]
@@ -183,31 +179,54 @@ mod tests {
                 == "indexer database missing at journal/indexer/journal.sqlite; search-backed consumers may be stale.")
         );
 
-        // 2. Indexer database exists and indexer attempt failed -> attempt note pushed
+        // 2. An index file that is not a database -> the failing line is the note
         fs::create_dir_all(root.join("indexer")).unwrap();
         fs::write(root.join("indexer/journal.sqlite"), b"sqlite").unwrap();
-
-        let day = now.format("%Y%m%d").to_string();
-        let health_dir = root.join("chronicle").join(&day).join("health");
-        fs::create_dir_all(&health_dir).unwrap();
-        let record = json!({
-            "ts": now.timestamp_millis(),
-            "event": "index.attempt",
-            "path": format!("{day}/test.md"),
-            "outcome": "failed",
-        });
-        fs::write(health_dir.join("001.jsonl"), record.to_string() + "\n").unwrap();
-
-        let (_synth, notes) = crate::journal_data::report::build_synthesis_health(
+        let (synth, notes) = crate::journal_data::report::build_synthesis_health(
             root,
             &crate::journal_data::report::ScanAggregate::default(),
             fixed_now,
         )
         .unwrap();
+        assert_eq!(synth.search_index.state, "failing");
         assert!(
             notes
                 .iter()
-                .any(|n| n.message == SEARCH_NOTE_ATTEMPT_FAILED)
+                .any(|n| n.message == solstone_core_system_health::INDEX_TEXT_UNREADABLE)
+        );
+
+        // 3. A real index, and a recorded failed update for a file that is still
+        // not in it -> the attempt note
+        fs::remove_file(root.join("indexer/journal.sqlite")).unwrap();
+        drop(solstone_core_indexer_store::db::open_index(root).expect("open index"));
+        let day = now.format("%Y%m%d").to_string();
+        fs::create_dir_all(root.join("chronicle").join(&day).join("talents")).unwrap();
+        fs::write(
+            root.join("chronicle").join(&day).join("talents/test.md"),
+            "# Test",
+        )
+        .unwrap();
+        let health_dir = root.join("chronicle").join(&day).join("health");
+        fs::create_dir_all(&health_dir).unwrap();
+        let record = json!({
+            "ts": now.timestamp_millis(),
+            "event": "index.attempt",
+            "path": format!("{day}/talents/test.md"),
+            "outcome": "failed",
+        });
+        fs::write(health_dir.join("001.jsonl"), record.to_string() + "\n").unwrap();
+
+        let (synth, notes) = crate::journal_data::report::build_synthesis_health(
+            root,
+            &crate::journal_data::report::ScanAggregate::default(),
+            fixed_now,
+        )
+        .unwrap();
+        assert_eq!(synth.search_index.failed, 1);
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.message == solstone_core_system_health::INDEX_TEXT_FAILED_FILES)
         );
     }
 
@@ -273,15 +292,14 @@ mod tests {
                 assert_eq!(backlog["unfinished_activities"]["oldest_day"], "20990101");
                 assert!(backlog["copy"]["unfinished_template_one"].is_string());
 
+                // The fixture's index file is not a database.
                 let search = &body["search_index"];
                 assert_eq!(search["coverage"], "unknown");
-                assert_eq!(search["state"], "unknown");
+                assert_eq!(search["state"], "failing");
                 assert_eq!(search["observed_failure"], false);
-                assert!(
-                    search["text"]
-                        .as_str()
-                        .is_some_and(|text| text.starts_with("search index last changed ")
-                            && text.ends_with(" ago."))
+                assert_eq!(
+                    search["text"],
+                    solstone_core_system_health::INDEX_TEXT_UNREADABLE
                 );
             });
     }
@@ -773,7 +791,8 @@ mod tests {
                 serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
                     .unwrap();
 
-            assert_eq!(body["search_index"]["state"], "degraded");
+            // The failed path is not an indexable file, so nothing is behind.
+            assert_eq!(body["search_index"]["state"], "ok");
             assert_eq!(body["search_index"]["observed_failure"], true);
         });
 
@@ -813,7 +832,7 @@ mod tests {
                 serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
                     .unwrap();
 
-            assert_eq!(body["search_index"]["state"], "unknown");
+            assert_eq!(body["search_index"]["state"], "ok");
             assert_eq!(body["search_index"]["observed_failure"], false);
         });
     }
@@ -842,22 +861,17 @@ mod tests {
 
         let meta = crate::search_index::FsIndexMetadata;
 
-        // Call twice; both unknown state, mtimes unchanged
+        // Call twice; an index that has not changed in eight days is not stale
+        // when nothing on disk changed either. Mtimes unchanged.
         let eval1 = evaluate_search_index(root, &meta, now);
-        assert_eq!(eval1.state, "unknown");
-        assert_eq!(eval1.coverage, "unknown");
+        assert_eq!(eval1.state, "ok");
+        assert_eq!(eval1.coverage, "complete");
         assert!(!eval1.observed_failure);
-        assert_eq!(
-            eval1.text,
-            render_search_text("search index last changed {age} ago.", Duration::days(8))
-        );
+        assert_eq!(eval1.text, INDEX_TEXT_OK);
+        assert_eq!(eval1.index_activity_at_ms, Some(eight_days_ago_secs * 1000));
 
         let eval2 = evaluate_search_index(root, &meta, now);
-        assert_eq!(eval2.state, "unknown");
-        assert_eq!(
-            eval2.text,
-            render_search_text("search index last changed {age} ago.", Duration::days(8))
-        );
+        assert_eq!(eval2.state, "ok");
 
         let m1 = fs::metadata(&sqlite).unwrap().modified().unwrap();
         let m2 = fs::metadata(&wal).unwrap().modified().unwrap();
@@ -874,7 +888,7 @@ mod tests {
         set_file_mtime(&sqlite, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
         let eval_fresh = evaluate_search_index(root, &meta, now);
-        assert_eq!(eval_fresh.state, "unknown");
+        assert_eq!(eval_fresh.state, "ok");
         assert_eq!(
             eval_fresh.index_activity_at_ms,
             Some((1_800_000_000 - 3600) * 1000)
@@ -884,17 +898,17 @@ mod tests {
         set_file_mtime(&sqlite, FileTime::from_unix_time(eight_days_ago_secs, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
         let eval_wal_fresh = evaluate_search_index(root, &meta, now);
-        assert_eq!(eval_wal_fresh.state, "unknown");
+        assert_eq!(eval_wal_fresh.state, "ok");
         assert_eq!(
             eval_wal_fresh.index_activity_at_ms,
             Some((1_800_000_000 - 3600) * 1000)
         );
 
-        // db now+1d is unknown (future mtime suppressed)
+        // db now+1d: no activity time (future mtime suppressed)
         set_file_mtime(&sqlite, FileTime::from_unix_time(1_800_000_000 + 86400, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
         let eval_future = evaluate_search_index(root, &meta, now);
-        assert_eq!(eval_future.state, "unknown");
+        assert_eq!(eval_future.state, "ok");
         assert_eq!(eval_future.index_activity_at_ms, None);
     }
 
@@ -941,13 +955,14 @@ mod tests {
         assert!(
             !notes
                 .iter()
-                .any(|n| n.message == SEARCH_NOTE_ATTEMPT_FAILED),
+                .any(|n| n.message == solstone_core_system_health::INDEX_TEXT_FAILED_FILES),
             "no index attempt failure in chronicle logs"
         );
         assert_eq!(synth.index_activity_at, Some(one_hour_ago * 1000));
 
+        // The fixture's index files are not a database.
         let eval = evaluate_search_index(root, &crate::search_index::FsIndexMetadata, now);
-        assert_eq!(eval.state, "unknown");
+        assert_eq!(eval.state, "failing");
         assert!(!eval.observed_failure);
 
         let router = crate::routes_with_clock(root.to_path_buf(), Clock::new(move || now));
@@ -977,7 +992,7 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        assert_eq!(body["search_index"]["state"], "unknown");
+        assert_eq!(body["search_index"]["state"], "failing");
         assert_eq!(body["search_index"]["observed_failure"], false);
     }
 }

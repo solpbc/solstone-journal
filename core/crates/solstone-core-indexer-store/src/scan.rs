@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -44,6 +44,7 @@ use crate::db::{
     read_segment_aggregate_migration, replace_chunk_classification, write_entity_search_watermark,
     write_segment_aggregate_migration,
 };
+use crate::generation::{ScanReceipt, WRITER_VERSION, record_scan};
 use crate::writer_admission::{IndexAdmission, check_test_seam};
 
 const MERGE_STEP: i64 = 32;
@@ -562,7 +563,39 @@ pub(crate) fn scan_journal_admitted(
     if let Some(warning) = merge_warning {
         report.warnings.push(warning);
     }
+    // The receipt is an observation for status and health; failing to record it
+    // never fails the scan.
+    if let Err(error) = record_scan_receipt(&mut conn, &report, full) {
+        log::warn!(target: "solstone::indexer", "scan receipt not recorded: {error}");
+    }
     Ok(report)
+}
+
+fn record_scan_receipt(
+    conn: &mut Connection,
+    report: &ScanReport,
+    full: bool,
+) -> Result<(), StoreError> {
+    let finished_at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or_default();
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    record_scan(
+        &tx,
+        &ScanReceipt {
+            finished_at_ms,
+            full,
+            indexed: report.indexed,
+            removed: report.removed,
+            skipped: report.skipped,
+            failed: report.failed,
+            warnings: report.warnings.len(),
+            writer_version: WRITER_VERSION.to_owned(),
+        },
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 /// Incrementally classify legacy paths. State advances only with the durable
@@ -1031,7 +1064,7 @@ fn edge_value_to_sql(value: &EdgeValue) -> SqlValue {
     }
 }
 
-fn load_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64>, StoreError> {
+pub(crate) fn load_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64>, StoreError> {
     let mut statement =
         conn.prepare("SELECT path, mtime FROM files WHERE path NOT LIKE 'entity_search:%'")?;
     let rows = statement.query_map([], |row| {
@@ -1576,7 +1609,7 @@ fn resolve_rescan_target(journal: &Path, input: &Path) -> Result<(String, PathBu
     }
 }
 
-fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
+pub(crate) fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
     let modified = fs::metadata(path)?.modified()?;
     let duration = modified.duration_since(UNIX_EPOCH).map_err(|error| {
         StoreError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
@@ -1584,12 +1617,12 @@ fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
     Ok(duration.as_secs() as i64)
 }
 
-fn is_memory_note(rel: &str) -> bool {
+pub(crate) fn is_memory_note(rel: &str) -> bool {
     solstone_core_format::content::resolve_spec(rel)
         .is_some_and(|spec| spec.family == Family::AgentMemory)
 }
 
-fn memory_file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
+pub(crate) fn memory_file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
     let segment = path
         .parent()
         .ok_or_else(|| StoreError::MissingFile(path.to_path_buf()))?;

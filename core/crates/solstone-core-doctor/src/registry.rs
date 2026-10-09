@@ -126,6 +126,9 @@ fn skills(c: &CheckContext) -> RunnerResult {
 fn unretryable_transcribe_input(c: &CheckContext) -> RunnerResult {
     checks::unretryable_transcribe_input::run(c, CHECK_UNRETRYABLE_TRANSCRIBE_INPUT)
 }
+fn search_index(c: &CheckContext) -> RunnerResult {
+    checks::search_index::run(c, CHECK_SEARCH_INDEX)
+}
 fn journal_durability(c: &CheckContext) -> RunnerResult {
     checks::journal_durability::run(c, CHECK_JOURNAL_DURABILITY)
 }
@@ -279,6 +282,11 @@ const CHECK_JOURNAL_DURABILITY: Check = Check {
     severity: Severity::Advisory,
     platforms: ALL,
 };
+const CHECK_SEARCH_INDEX: Check = Check {
+    name: "search_index",
+    severity: Severity::Advisory,
+    platforms: ALL,
+};
 const CHECK_TASK_QUEUE_HOLDS: Check = Check {
     name: "task_queue_holds",
     severity: Severity::Advisory,
@@ -423,6 +431,11 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_JOURNAL_DURABILITY,
         runner: journal_durability,
+        deferred: None,
+    },
+    RegistryEntry {
+        check: CHECK_SEARCH_INDEX,
+        runner: search_index,
         deferred: None,
     },
     RegistryEntry {

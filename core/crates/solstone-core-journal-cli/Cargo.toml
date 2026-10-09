@@ -24,6 +24,7 @@ solstone-core-system = { workspace = true }
 solstone-core-indexer-query = { workspace = true }
 solstone-core-indexer-store = { workspace = true }
 solstone-core-import-sources = { workspace = true }
+solstone-core-system-health = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 solstone-core-service-unit = { workspace = true }

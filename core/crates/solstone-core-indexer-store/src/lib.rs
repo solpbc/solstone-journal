@@ -5,11 +5,13 @@ pub mod chunk_sources;
 pub mod classification;
 pub mod classification_batch;
 pub mod db;
+pub mod generation;
 pub mod merge;
 pub mod migrations;
 pub mod reconcile;
 pub mod retention;
 pub mod scan;
+pub mod status;
 pub(crate) mod writer_admission;
 
 pub use chunk_sources::{PathLookupStatus, apply_path_lookup, inspect_path_lookup};
@@ -51,6 +53,10 @@ pub enum StoreError {
     WriterAdmission {
         operation: &'static str,
         cause: String,
+    },
+    IndexGenerationNewer {
+        found: i64,
+        known: i64,
     },
 }
 
@@ -100,6 +106,10 @@ impl fmt::Display for StoreError {
                     "index writer admission failed for {operation}: {cause}"
                 )
             }
+            StoreError::IndexGenerationNewer { found, known } => write!(
+                formatter,
+                "the search index was written by a newer version of solstone (index generation {found}; this version knows {known}), so this version leaves it unchanged"
+            ),
         }
     }
 }

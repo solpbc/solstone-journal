@@ -345,7 +345,7 @@ test('unfinished activities renders multiple activities across multiple days', a
 test('search index line renders when present and hides when absent', async () => {
   const { doc, context } = createEnvironment();
   const searchIndex = {
-    state: 'degraded',
+    state: 'failing',
     text: "some journal updates couldn't be added to search.",
   };
   context.payload = { verdict: "your journal's caught up." };
@@ -417,16 +417,16 @@ test('a stale check-in is not counted as a failing service', async () => {
   assert.strictEqual(none.key, 'HEALTH_GLANCE_OK');
 });
 
-test('known failed or incomplete search prevents an otherwise healthy headline', async () => {
-  for (const searchState of ['degraded', 'incomplete']) {
-    const search = { state: searchState, text: 'search needs attention' };
-    const selection = glanceFor([], [], search);
-    assert.notStrictEqual(selection.key, 'HEALTH_GLANCE_OK');
-    assert.strictEqual(selection.vars.headline, search.text);
+test('failing search prevents an otherwise healthy headline; catching up does not', async () => {
+  const failing = { state: 'failing', text: 'search needs attention' };
+  const selection = glanceFor([], [], failing);
+  assert.notStrictEqual(selection.key, 'HEALTH_GLANCE_OK');
+  assert.strictEqual(selection.vars.headline, failing.text);
+  for (const searchState of ['ok', 'behind', 'building']) {
+    assert.strictEqual(glanceFor([], [], { state: searchState, text: 'search line' }).key, 'HEALTH_GLANCE_OK');
   }
-  assert.strictEqual(glanceFor([], [], { state: 'active', text: 'index activity' }).key, 'HEALTH_GLANCE_OK');
-  assert.strictEqual(glanceFor(['observe'], [], { state: 'degraded', text: 'search needs attention' }).key, 'HEALTH_GLANCE_SERVICE_ATTENTION');
-  const search = { state: 'degraded', text: 'search needs attention' };
+  assert.strictEqual(glanceFor(['observe'], [], { state: 'failing', text: 'search needs attention' }).key, 'HEALTH_GLANCE_SERVICE_ATTENTION');
+  const search = { state: 'failing', text: 'search needs attention' };
   const thinking = glanceFor([], [], search, { brain: { state: 'blocked', headline: 'thinking needs attention' } });
   assert.strictEqual(thinking.vars.headline, 'thinking needs attention');
   const device = { key: 'HEALTH_GLANCE_DEVICE_FAILING', vars: { device: 'work laptop' } };
@@ -449,7 +449,7 @@ test('loaded search status reaches the headline and survives a later state-read 
   context.seedAgentErrors = () => {};
   context.updateStatusSummary = () => { context.selection = glanceFor([], [], context.state.searchIndex); };
   context.renderHealthStateError = (error) => { context.readError = error; };
-  const search = { state: 'degraded', text: 'search needs attention' };
+  const search = { state: 'failing', text: 'search needs attention' };
   context.getJson = async (route) => {
     assert.strictEqual(route, '/app/health/api/state');
     return { backlog: {}, search_index: search, agent_errors: {} };

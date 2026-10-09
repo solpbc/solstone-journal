@@ -85,6 +85,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "skill_state",
     "unretryable_transcribe_input",
     "journal_durability",
+    "search_index",
 ];
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -844,6 +845,13 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 fs::write(health.join("catchup-state.wedged-1700000000.json"), b"{").unwrap();
             }
         }
+        "search_index" => {
+            if !ok {
+                let index = context.journal_path.join("indexer");
+                fs::create_dir_all(&index).unwrap();
+                fs::write(index.join("journal.sqlite"), b"not a database").unwrap();
+            }
+        }
         _ => unreachable!("unknown W3C check {name}"),
     }
     result(name, &context)
@@ -875,6 +883,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "skill_state"
                     | "unretryable_transcribe_input"
                     | "journal_durability"
+                    | "search_index"
             ))
             .all(|e| e.deferred.is_none())
     );
@@ -903,6 +912,7 @@ fn check_severity_table_matches_reference() {
         ("skill_state", Severity::Advisory),
         ("unretryable_transcribe_input", Severity::Advisory),
         ("journal_durability", Severity::Advisory),
+        ("search_index", Severity::Advisory),
     ] {
         assert_eq!(
             registry::lookup(Battery::Journal, name)
@@ -946,6 +956,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
             SecondBranch::DifferentStatus,
         ),
         ("journal_durability", SecondBranch::DifferentStatus),
+        ("search_index", SecondBranch::DifferentStatus),
     ];
     let coverage_names = coverage
         .iter()
