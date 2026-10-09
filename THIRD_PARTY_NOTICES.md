@@ -1,9 +1,10 @@
 # third-party notices
 
 this file records third-party materials used by solstone, including model
-weights bundled with solstone, provider artifacts downloaded at runtime into
-the journal provider cache, and test fixtures derived from permissively
-licensed sources.
+weights bundled with solstone, the restic, rclone, nvattest and CED components
+bundled in every package, provider artifacts downloaded at runtime into the
+journal provider cache, and test fixtures derived from permissively licensed
+sources.
 
 ## FFmpeg
 
@@ -374,57 +375,50 @@ License notice: Apache License 2.0 (Apache-2.0).
 Apache-2.0 permits sol pbc's redistribution of these model files with its
 required notice and license terms.
 
-## bundled provider artifacts (ced.cpp sound-tag engine)
+## bundled sound-tag engine and model (ced.cpp)
 
-sol pbc redistributes these engine binaries inside every package for local
-ambient sound tagging: POSIX `lib/solstone-ced/libced.{so,dylib}` and Windows
-`bin/ced.dll`. Licences from `core/distribution/licenses/ced/` are staged at
-`share/solstone-journal/licenses/ced-engine/` (POSIX) and `share/licenses/ced/`
-(Windows).
+The journal packages include the ced.cpp sound-tag engine and the ced-tiny
+model it runs. On linux and macos they are at `lib/solstone-ced/`; on windows
+the engine is `bin/ced.dll` and the model is under
+`lib/solstone_journal_models/assets/ced/`. They are not part of solstone and
+are not covered by solstone's AGPL-3.0-only license.
 
 ### ced.cpp v0.1.0 engine
 
-Attribution: ced.cpp project (localai-org).
+Attribution: ced.cpp project (localai-org). It includes ggml.
 
 Source:
 
-- Release binaries: https://github.com/localai-org/ced.cpp/releases/tag/v0.1.0
-- Project: https://github.com/localai-org/ced.cpp
-- Downloaded file: `ced-v0.1.0-lib-linux-cpu-x64.tar.gz`
-- SHA-256: `915e0573bc4e17197a7a893d0eb98e1a851abb64451b2e1a8ad51f5f99040360`
-- Downloaded file: `ced-v0.1.0-lib-linux-cpu-arm64.tar.gz`
-- SHA-256: `a87de0a8b086429aa5d6544a6f881a70e62726d07901734640ac85dbf146181e`
-- Downloaded file: `ced-v0.1.0-lib-macos-metal-arm64.tar.gz`
-- SHA-256: `4c913ba0ece1d06ba2210da9fcaee3d8199ca3c62697c331810f224444e4054b`
+- linux and macos: the release libraries at
+  https://github.com/localai-org/ced.cpp/releases/tag/v0.1.0
+  (`ced-v0.1.0-lib-linux-cpu-x64.tar.gz` SHA-256
+  `915e0573bc4e17197a7a893d0eb98e1a851abb64451b2e1a8ad51f5f99040360`,
+  `ced-v0.1.0-lib-linux-cpu-arm64.tar.gz` SHA-256
+  `a87de0a8b086429aa5d6544a6f881a70e62726d07901734640ac85dbf146181e`,
+  `ced-v0.1.0-lib-macos-metal-arm64.tar.gz` SHA-256
+  `4c913ba0ece1d06ba2210da9fcaee3d8199ca3c62697c331810f224444e4054b`).
+- windows: built from source at ced.cpp commit
+  c04ac14b7992d00584d9e812c9bb6268598a6ce7 with ggml commit
+  e705c5fed490514458bdd2eaddc43bd098fcce9b.
 
-License notice: MIT.
-
-The MIT license permits sol pbc's redistribution of this engine binary.
-
-## bundled provider artifacts (ced-tiny sound-tag model)
-
-sol pbc redistributes this model file inside every package for local ambient
-sound tagging: POSIX `lib/solstone-ced/ced-tiny-q8_0.gguf` and Windows
-`lib/solstone_journal_models/assets/ced/ced-tiny-q8_0.gguf`. Licences from
-`core/distribution/licenses/ced/` are staged at
-`share/solstone-journal/licenses/ced-engine/` (POSIX) and `share/licenses/ced/`
-(Windows).
+License notice: MIT, for ced.cpp and for ggml. The texts are at
+`share/solstone-journal/licenses/ced-engine/` (linux and macos) and
+`share/licenses/ced/` (windows).
 
 ### ced-tiny-q8_0 GGUF model
 
-Attribution: `mudler/ced-gguf`.
+Attribution: `mudler/ced-gguf`, a GGUF quantization of `mispeech/ced-tiny`
+(CED, Xiaomi).
 
 Source:
 
 - Model repository: https://huggingface.co/mudler/ced-gguf
 - Pinned revision: b5e9a4aad6438763c8da16079d77563fbed35c65
-- Downloaded file: `ced-tiny-q8_0.gguf`
+- File: `ced-tiny-q8_0.gguf`
 - SHA-256: `48bee4e2fc3cc85d7806e03471db24e77fda6c2a2e81ffe9ef67caebaf2bd674`
 
-License notice: Apache License 2.0 (Apache-2.0).
-
-Apache-2.0 permits sol pbc's redistribution of this model file with its
-required notice and license terms.
+License notice: Apache License 2.0 (Apache-2.0). The text is
+`ced-tiny-model-LICENSE`, beside the engine licenses.
 
 ## runtime-downloaded provider artifacts (rerank cross-encoder)
 
@@ -707,6 +701,36 @@ The complete llama.cpp MIT license and copyright notice is reproduced in
 The MIT license permits sol pbc's redistribution of these Vulkan/CPU runtime
 files.
 
+## bundled backup tools (restic and rclone)
+
+The journal packages include the unmodified upstream release binaries of
+restic 0.19.0 (https://github.com/restic/restic/releases/tag/v0.19.0) and
+rclone 1.74.4 (https://github.com/rclone/rclone/releases/tag/v1.74.4). On
+linux and macos they are at `lib/solstone-restic/restic` and
+`lib/solstone-rclone/rclone`; on windows at `lib/solstone-restic/restic.exe`
+and `lib/solstone-rclone/rclone.exe`. They are not part of solstone and are
+not covered by solstone's AGPL-3.0-only license.
+
+restic is licensed under the BSD 2-Clause License and rclone under the MIT
+License. Both are Go programs, and Go links every module they use into the
+binary. The complete license texts of
+every Go module linked into each binary, with a machine-readable attribution
+list, are at `share/solstone-journal/licenses/restic/` and
+`share/solstone-journal/licenses/rclone/` (windows: `share/licenses/restic/`
+and `share/licenses/rclone/`). The source of each tool and module is published
+at the versions those lists record.
+
+rclone includes one library under the GNU Lesser General Public License v3
+(LGPL-3.0): `github.com/cloudsoda/sddl`, version
+`v0.0.0-20250224235906-926454e91efc`. Its license text and the GNU GPL v3 text
+it builds on are in the rclone license directory named above. To rebuild rclone
+with a modified copy of that library, use rclone 1.74.4's published source (tag
+`v1.74.4`, commit `5bc93a2a7ab0ebd0a11352bc4968eabeffb18027`, at
+https://github.com/rclone/rclone) and the library's source at that version
+(GitHub commit `926454e` of https://github.com/CloudSoda/sddl, or
+proxy.golang.org). Point rclone's Go module build at your copy, for example
+with a `replace` directive in `go.mod`, and rebuild.
+
 ## Microsoft Visual C++ runtime (windows)
 
 The windows package includes unmodified Microsoft redistributable runtime
@@ -740,7 +764,7 @@ gives no warranty for them. Microsoft does not sponsor or endorse solstone.
 The same restrictions are restated in the installed package at
 share/licenses/msvc/NOTICE.md.
 
-## NVIDIA GPU attestation verifier (windows)
+## NVIDIA GPU attestation verifier
 
 The windows package includes the NVIDIA GPU attestation verifier
 (`bin/nvattest.exe`) and the CA bundle it uses (`share/ca/ca-bundle.pem`).
@@ -762,6 +786,26 @@ share/licenses/nvattest/LICENSE. The CA bundle is derived from Mozilla's root
 certificate store and is licensed under the Mozilla Public License 2.0. The
 notices for the CA bundle and for the libraries built into the verifier are at
 share/licenses/nvattest/NOTICES.md.
+
+The linux and macos packages include the verifier and its library, with the
+same CA bundle, at `lib/solstone-nvattest/`. These components are not part of
+solstone and are not covered by solstone's AGPL-3.0-only license.
+
+Source:
+
+- Verifier and library: version 1.2.2-sol.6, built by sol pbc from
+  https://github.com/solpbc/attestation-sdk revision
+  fdc3c39958f12ba1055ae5beebc182577f7430b3, based on NVIDIA's upstream
+  revision 73efa3ac1bec28ed7d7f0c0811a6c993e722dbd4. The windows revision
+  above is this revision plus its windows build changes.
+- CA bundle: https://curl.se/ca/cacert-2026-07-16.pem, the same file as on
+  windows (SHA-256
+  3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91).
+
+As on windows, the verifier and library are licensed under the Apache License
+2.0 and the CA bundle under the Mozilla Public License 2.0. The license and the
+notices shipped with this build, including the CA bundle's, are at
+share/solstone-journal/licenses/nvattest/.
 
 ## Microsoft Edge WebView2 loader (windows)
 
