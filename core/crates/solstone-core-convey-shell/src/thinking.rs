@@ -1042,7 +1042,7 @@ fn spawn_confidential_handoff(
     poll: Arc<dyn ConfidentialPoll>,
     now: Arc<dyn Fn() -> Instant + Send + Sync>,
     sleep: Option<Arc<dyn Fn(Duration) + Send + Sync>>,
-) {
+) -> tokio::task::JoinHandle<()> {
     let worker_operations = operations.clone();
     let worker = tokio::spawn(async move {
         if !worker_operations.mark_waiting(SERVICE_SPP, handle) {
@@ -1124,6 +1124,7 @@ fn spawn_confidential_handoff(
         };
         worker_operations.finish(SERVICE_SPP, handle, result)
     });
+    // The returned task ends once the turn-on has finished one way or another.
     tokio::spawn(async move {
         if !worker.await.unwrap_or(false) {
             let _ = operations.finish(
@@ -1137,7 +1138,7 @@ fn spawn_confidential_handoff(
                 },
             );
         }
-    });
+    })
 }
 
 fn remap_operation(mut operation: Value) -> Value {
@@ -2790,7 +2791,7 @@ mod tests {
             }
         }));
 
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -2801,14 +2802,12 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
             "operation never ended; phase: {:?}",
@@ -2901,7 +2900,7 @@ mod tests {
             }
         }));
 
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -2912,14 +2911,12 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
             "operation never ended; phase: {:?}",
@@ -2959,7 +2956,7 @@ mod tests {
                 PollOutcome::EarlyAccess
             }
         }));
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -2969,14 +2966,12 @@ mod tests {
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
         );
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
             "operation never ended; phase: {:?}",
@@ -3007,7 +3002,7 @@ mod tests {
                 }
             }
         }));
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -3017,14 +3012,12 @@ mod tests {
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
         );
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
             "operation never ended; phase: {:?}",
@@ -3053,7 +3046,7 @@ mod tests {
             }
         }));
 
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -3064,14 +3057,12 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
             "operation never ended; phase: {:?}",
@@ -3115,7 +3106,7 @@ mod tests {
             }
         }));
 
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -3126,14 +3117,12 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
             "operation never ended; phase: {:?}",
@@ -3245,7 +3234,8 @@ mod tests {
         let mut body: Value = Value::Null;
         let mut ended = false;
         for _ in 0..5000 {
-            tokio::task::yield_now().await;
+            // The refresh runs on a blocking thread; give it real time rather than scheduler turns.
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             let req = Request::builder()
                 .method("GET")
                 .uri("/app/thinking/api/state")
