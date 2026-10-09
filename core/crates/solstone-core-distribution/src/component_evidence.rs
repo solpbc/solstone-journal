@@ -1083,10 +1083,15 @@ pub fn render_runtime_rows(
 }
 
 /// Signing rewrites a Mach-O member and leaves every other file (a model, a CA
-/// bundle) byte-identical, so only a Mach-O member must differ from its
-/// pre-signing digest.
-fn signing_left_member_unchanged(pre_signing: &str, final_sha256: &str, staged: &[u8]) -> bool {
-    pre_signing == final_sha256 && crate::macho::looks_like_macho(staged)
+/// bundle) byte-identical. So a Mach-O member whose digest did not change was
+/// not signed, and any other member whose digest changed was rewritten after
+/// staging. Either one disagrees with its pre-signing digest.
+fn signing_digest_disagrees(pre_signing: &str, final_sha256: &str, staged: &[u8]) -> bool {
+    if crate::macho::looks_like_macho(staged) {
+        pre_signing == final_sha256
+    } else {
+        pre_signing != final_sha256
+    }
 }
 
 pub fn render_posix_evidence(
@@ -1442,7 +1447,7 @@ pub fn render_posix_evidence(
                 if pre != reg_sha {
                     return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
                 }
-                if signing_left_member_unchanged(pre, final_sha256, &actual_bytes) {
+                if signing_digest_disagrees(pre, final_sha256, &actual_bytes) {
                     return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
                 }
             } else {
@@ -1472,7 +1477,7 @@ pub fn render_posix_evidence(
                         return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
                     }
                     if let Some(ref pre) = pre_signing
-                        && signing_left_member_unchanged(pre, final_sha256, &actual_bytes)
+                        && signing_digest_disagrees(pre, final_sha256, &actual_bytes)
                     {
                         return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
                     }
@@ -3222,24 +3227,27 @@ mod tests {
     }
 
     #[test]
-    fn only_a_mach_o_member_must_change_under_signing() {
+    fn signing_must_change_a_mach_o_member_and_no_other() {
         let macho = crate::macho::fixture(&crate::macho::FixtureSpec::default());
         let model = b"GGUF model bytes signing never touches".to_vec();
         let same = "ab".repeat(32);
         let other = "cd".repeat(32);
         // A Mach-O member whose final digest equals its pre-signing digest was
-        // not signed: still refused.
-        assert!(signing_left_member_unchanged(&same, &same, &macho));
-        assert!(!signing_left_member_unchanged(&same, &other, &macho));
-        // Signing leaves a non-Mach-O member byte-identical: accepted.
-        assert!(!signing_left_member_unchanged(&same, &same, &model));
+        // not signed: refused. One that changed was signed: accepted.
+        assert!(signing_digest_disagrees(&same, &same, &macho));
+        assert!(!signing_digest_disagrees(&same, &other, &macho));
+        // Signing leaves any other member byte-identical: accepted. One whose
+        // bytes changed was rewritten after staging: refused.
+        assert!(!signing_digest_disagrees(&same, &same, &model));
+        assert!(signing_digest_disagrees(&same, &other, &model));
     }
 
-    /// The bundled CED model is a component member that signing leaves
-    /// byte-identical. A macOS promote records a pre-signing digest for every
-    /// staged file, and must still accept it.
-    #[test]
-    fn macos_promote_accepts_a_non_mach_o_component_member() {
+    /// A macOS promote of a stage carrying the bundled CED model, a component
+    /// member signing leaves byte-identical. `signer_rewrite`, when set, runs
+    /// inside the fake signer, after the pre-signing digests are taken.
+    fn macos_promote_with_model(
+        signer_rewrite: Option<fn(&Path)>,
+    ) -> (Result<String, String>, String, String) {
         use crate::archive_contract::{DeliveryContract, PrebuildInputIdentity};
         use crate::macho::{FixtureSpec, MH_DYLIB, fixture};
         use crate::promote::{PromoteRequest, promote};
@@ -3322,6 +3330,7 @@ mod tests {
         });
 
         let _signer_guard = crate::promote::install_fake_macos_sign();
+        let _rewrite_guard = signer_rewrite.map(crate::promote::install_fake_sign_rewrite);
 
         let req = PromoteRequest {
             dest: dest.clone(),
@@ -3355,11 +3364,21 @@ mod tests {
             .parent()
             .unwrap()
             .join(evidence_directory_name(&basename));
-        let provenance = res.map(|_| {
-            fs::read_to_string(evidence_dir.join(provenance_file_name(version, target))).unwrap()
-        });
+        let provenance = res
+            .map(|_| {
+                fs::read_to_string(evidence_dir.join(provenance_file_name(version, target)))
+                    .unwrap()
+            })
+            .map_err(|error| error.to_string());
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&evidence_dir);
+        (provenance, member_dest, model_sha)
+    }
+
+    /// Signing leaves the model byte-identical, and the promote accepts it.
+    #[test]
+    fn macos_promote_accepts_a_non_mach_o_component_member() {
+        let (provenance, member_dest, model_sha) = macos_promote_with_model(None);
         let provenance: ProvenanceFile =
             serde_json::from_str(&provenance.expect("macOS promote with a model member")).unwrap();
         let rec = provenance
@@ -3368,6 +3387,25 @@ mod tests {
             .find(|r| r.path == member_dest)
             .expect("record");
         assert_eq!(rec.final_sha256, model_sha);
+    }
+
+    /// A model rewritten during signing, after its pre-signing digest is taken,
+    /// still matches its extracted pin before signing but not after. Signing
+    /// never changes a non-Mach-O member, so the promote refuses.
+    #[test]
+    fn macos_promote_refuses_a_non_mach_o_member_changed_during_signing() {
+        fn rewrite_model(stage: &Path) {
+            let path = stage.join("lib/solstone-ced/ced-tiny-q8_0.gguf");
+            let mut bytes = fs::read(&path).unwrap();
+            bytes.push(0);
+            fs::write(&path, bytes).unwrap();
+        }
+        let (provenance, member_dest, _) = macos_promote_with_model(Some(rewrite_model));
+        let error = provenance.expect_err("a rewritten model must refuse");
+        assert!(
+            error.contains("digest-disagreement") && error.contains(&member_dest),
+            "{error}"
+        );
     }
 
     #[test]

@@ -645,7 +645,34 @@ fn fake_macos_sign_enabled() -> bool {
 }
 
 #[cfg(test)]
+std::thread_local! {
+    static FAKE_SIGN_ALSO_REWRITES: std::cell::Cell<Option<fn(&Path)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Test-only: the fake signer also runs `rewrite` on the staged tree, after the
+/// pre-signing digests are taken, as a signer that touched a data file would.
+#[cfg(test)]
+pub(crate) struct FakeSignRewriteGuard;
+
+#[cfg(test)]
+impl Drop for FakeSignRewriteGuard {
+    fn drop(&mut self) {
+        FAKE_SIGN_ALSO_REWRITES.with(|cell| cell.set(None));
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn install_fake_sign_rewrite(rewrite: fn(&Path)) -> FakeSignRewriteGuard {
+    FAKE_SIGN_ALSO_REWRITES.with(|cell| cell.set(Some(rewrite)));
+    FakeSignRewriteGuard
+}
+
+#[cfg(test)]
 fn fake_sign_macos_tree(stage: &Path) -> Result<MacosSigning, PromoteError> {
+    if let Some(rewrite) = FAKE_SIGN_ALSO_REWRITES.with(std::cell::Cell::get) {
+        rewrite(stage);
+    }
     let signer = apple::FakeArchiveMemberSigner::new("promote");
     let mut members = Vec::new();
     match apple::discover_macho_members(stage) {
