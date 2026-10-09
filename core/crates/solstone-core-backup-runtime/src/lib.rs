@@ -72,7 +72,8 @@ pub use hosted_runtime::{
     hosted_append_only_session, hosted_session, operated_destination, operated_repository,
 };
 pub use repo::{
-    ResticKeyError, add_recovery_key, capture_current_key_id, init_repository, remove_key,
+    KeyLabelOutcome, NEUTRAL_KEY_LABEL, ResticKeyError, add_recovery_key, capture_current_key_id,
+    init_repository, log_key_label_outcome, neutralize_key_labels, remove_key,
 };
 pub use resolve::{ResolvedTools, resolve_operational_tools, resolve_restic_member, resolve_tools};
 pub use restore::{RestoreDraft, RestoreOutcome, publish_restore_outcome, restore_journal};

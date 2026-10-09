@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- if you keep your encrypted backup in storage sol pbc runs for you, it no longer carries your computer's name or your username on it. the small files that unlock your backup used to include both, readable without your key. they now say "solstone" instead. a backup you already have changes over at its next daily backup cleanup, and there's nothing for you to do.
 - agents connected to your journal now get guidance on how to search it: a few keywords rather than a sentence, how to write a date, where the things you committed to are kept, and to say so when nothing matched. this helps agents that don't have the solstone skill, such as ChatGPT.
 - when an agent looks up a person or project, it now gets what your journal has noted about them in the facets it may see, and the last day they came up there, not only the name.
 - when an agent searches for a word that matches nothing on its own, such as "commit", it now also finds longer words that start with it, such as "commitment".
@@ -19,6 +20,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on windows, a journal saved inside the program folder can no longer start. move the whole journal folder outside it, then select the new location in setup.
 - activity settling no longer appears as an extra daily run for yesterday in your journal's health records. its run is recorded separately under today, while each activity keeps its own day.
 - on windows, installing the local model from the thinking page works again. in 2.0.38 it stopped almost as soon as it started and the page said "local setup didn't finish". if that happened to you, choose "try setup again" on the thinking page.
+- on windows, `solstone journal service logs` now shows the journal's recent output, as on mac and linux.
+- on windows, when a local model install ends partway, the thinking page now says "installation stopped" instead of still showing "setting up".
+- on a new journal, `solstone journal setup` no longer warns "the journal response couldn't be read." it now says to choose "install local model" on the thinking page once you've created your journal.
+- `solstone journal setup` now runs its readiness checks against the journal folder you chose, not one you used before or the default one.
+- on linux, the GPU permissions hint in `solstone journal check` told you to run `sol check` again, which no longer exists. it now names `solstone journal check`, and so does the readout's title.
 - when an agent searches your journal by date, a date written as 2026-10-05 now finds the same entries as 20261005. before, it found nothing. a date that isn't a real day is now refused, so the agent can correct it, instead of quietly matching nothing.
 - when an agent searches your journal with a whole sentence and no entry has every word, it now gets entries that match some of the words, and the response says so. before, it got nothing.
 - if you turn on solstone.me before finishing in the services portal, your journal now finishes turning it on by itself once you do. before, you had to come back, turn solstone.me on again and approve it a second time.

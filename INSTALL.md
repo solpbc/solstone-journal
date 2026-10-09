@@ -145,6 +145,19 @@ windows 10 (22H2) or 11 on an Intel or AMD (x64) computer. No administrator acce
 
 The journal starts closed to devices on your network, so windows doesn't ask about the network when the journal first starts. To pair the solstone app on this computer, open the journal's network page, choose "pair a device", then "pair the solstone app on this computer". Your journal stays closed. To pair a phone or another computer over your own network, choose "open to devices on your network" on that page, or run `solstone call link local-network open`. windows may then ask whether **journal**, from sol pbc, can use public and private networks, and on a standard account an administrator has to allow it. If windows didn't ask and a device still can't reach your journal, an earlier choice in windows may be blocking **journal**: an administrator can allow it in Windows Security, under Firewall & network protection › Allow an app through firewall.
 
+### If something doesn't work on windows
+
+These commands show what happened. They only read, so they are safe to run at any time:
+
+```powershell
+solstone journal check
+solstone journal service logs
+solstone call thinking local bootstrap-status
+solstone journal health logs --since 1d --service solstone-core-exe -c 200
+```
+
+`check` says whether this computer can run the bundled local models. `service logs` shows the journal's recent output. `bootstrap-status` shows the last local thinking install and the reason it stopped, if it did, and the last command shows the installer's log from the past day. `service logs` works on windows in journal releases after 2.0.38. If you [contact support](https://support.solstone.app), include what they print.
+
 ### Verify independently on windows
 
 Each release publishes a checksum file beside the installer, at `https://updates.solstone.app/solstone-journal/release/windows/solstone-journal-<version>-windows-x86_64.sha256`. Before you run anything, compare the hash `Get-FileHash` prints with the one in that file:

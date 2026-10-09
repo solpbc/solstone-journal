@@ -23,14 +23,22 @@ const TAIL_CODEPOINT_LIMIT: usize = 10_000;
 enum HostPlatform {
     Linux,
     Darwin,
+    Windows,
     Unsupported(&'static str),
 }
 
 impl HostPlatform {
     fn current() -> Self {
-        match std::env::consts::OS {
+        Self::from_os(std::env::consts::OS)
+    }
+
+    // The supervisor writes its `service` oplog on every journal platform,
+    // Windows included, so the tail reads the same files everywhere.
+    fn from_os(os: &'static str) -> Self {
+        match os {
             "linux" => Self::Linux,
             "macos" => Self::Darwin,
+            "windows" => Self::Windows,
             other => Self::Unsupported(other),
         }
     }
@@ -219,6 +227,21 @@ mod tests {
             rendered,
             "=== service logs ===\nfirst\nsecond\nlast�\n".as_bytes()
         );
+    }
+
+    #[test]
+    fn every_journal_platform_reads_the_service_tail() {
+        for os in ["linux", "macos", "windows"] {
+            let mut stderr = Vec::new();
+            assert!(
+                unsupported_platform(HostPlatform::from_os(os), &mut stderr).is_none(),
+                "{os} must read the service tail"
+            );
+            assert!(stderr.is_empty());
+        }
+        let mut stderr = Vec::new();
+        assert!(unsupported_platform(HostPlatform::from_os("freebsd"), &mut stderr).is_some());
+        assert_eq!(stderr, b"Error: unsupported platform 'freebsd'\n");
     }
 
     #[test]
