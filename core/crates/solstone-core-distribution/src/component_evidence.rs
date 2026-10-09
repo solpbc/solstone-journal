@@ -2737,10 +2737,7 @@ mod tests {
             apple: None,
             inventory: inv,
             archives: vec![
-                (
-                    "decoy-model.gguf".to_string(),
-                    b"not this input".to_vec(),
-                ),
+                ("decoy-model.gguf".to_string(), b"not this input".to_vec()),
                 ("ced-tiny-q8_0.gguf".to_string(), model.clone()),
             ],
             fail_evidence_install: false,
