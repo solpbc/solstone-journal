@@ -32,9 +32,9 @@ pub use edges::{
 #[cfg(any(test, feature = "test-hooks"))]
 pub use execute::QueryCounters;
 pub use execute::{
-    IndexedEntry, OwnerIndex, ResolvedCounts, SearchPlan, agents, coverage, hit_at,
-    indexed_entity_ids, open_owner_index, read_indexed_entry, search, search_connection,
-    search_counts, search_counts_connection,
+    IndexedEntry, IndexedPathEntries, OwnerIndex, ResolvedCounts, SearchPlan, agents, coverage,
+    hit_at, indexed_entity_ids, open_owner_index, read_indexed_entry, read_indexed_path_entries,
+    search, search_connection, search_counts, search_counts_connection,
 };
 pub use own_memory::{
     MemoryOriginalRow, OwnMemoryDateFilters, OwnMemoryOpenError, OwnMemoryQuery,

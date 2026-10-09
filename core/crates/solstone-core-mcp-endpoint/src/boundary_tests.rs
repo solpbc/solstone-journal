@@ -929,7 +929,7 @@ fn ac7_ac21_ac22_entities_are_scoped_stable_and_omit_forbidden_fields() {
     assert_eq!(listed["entities"].as_array().unwrap().len(), 2);
     let reference = listed["entities"][0]["reference"].as_str().unwrap();
     let entity = probe(&journal, "get_entity", json!({"reference": reference})).unwrap();
-    assert_eq!(entity, json!({"name": "Same Name"}));
+    assert_eq!(entity, json!({"name": "Same Name", "notes": []}));
     let serialized = entity.to_string();
     for forbidden in ["aka", "out-of-scope", "detached", "aggregate", "decision"] {
         assert!(!serialized.contains(forbidden));
@@ -1297,4 +1297,75 @@ fn a_sentence_with_no_whole_match_falls_back_to_its_words_and_says_so() {
     )
     .unwrap();
     assert_eq!(result_count(&absent, "results"), 0);
+}
+
+#[test]
+fn get_entity_says_who_someone_is_from_the_granted_facet_only() {
+    // An agent asked "who is X" needs the facet's description and notes, not
+    // just a name. ⛔ The same entity's notes in another facet, and its
+    // journal-level description and aliases, stay out.
+    let journal = fixture();
+    let root = journal.path();
+    for (facet, description, note) in [
+        ("alpha", "Advisor in alpha", "alpha note about coffee"),
+        ("beta", "Something only beta knows", "beta-only secret note"),
+    ] {
+        let link = root.join("facets").join(facet).join("entities/primary");
+        fs::create_dir_all(&link).unwrap();
+        fs::write(
+            link.join("entity.json"),
+            json!({"entity_id": "entity-primary", "description": description, "last_seen": "20260913"})
+                .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            link.join("observations.jsonl"),
+            format!("{{\"content\":\"{note}\"}}\n"),
+        )
+        .unwrap();
+    }
+    fs::write(
+        root.join("entities/primary/entity.json"),
+        json!({"id": "entity-primary", "name": "Same Name", "type": "Person",
+               "aka": ["forbidden aka"], "description": "out-of-scope description"})
+        .to_string(),
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".to_owned()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.to_owned()],
+                },
+            },
+        )
+        .unwrap();
+    let listed = probe(&journal, "list_entities", json!({})).unwrap();
+    let primary = listed["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entity| {
+            probe(
+                &journal,
+                "get_entity",
+                json!({"reference": entity["reference"]}),
+            )
+            .unwrap()
+        })
+        .find(|entity| entity["description"] == "Advisor in alpha")
+        .expect("the alpha relationship is served");
+    assert_eq!(primary["type"], "Person");
+    assert_eq!(primary["last_seen"], "20260913");
+    assert_eq!(primary["notes"], json!(["alpha note about coffee"]));
+    let serialized = primary.to_string();
+    for forbidden in ["beta", "secret", "aka", "out-of-scope"] {
+        assert!(
+            !serialized.contains(forbidden),
+            "{forbidden} leaked: {serialized}"
+        );
+    }
 }

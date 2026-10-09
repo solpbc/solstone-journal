@@ -2731,3 +2731,46 @@ fn activity_saved_details_stay_one_fetchable_entry_per_activity() {
     assert!(rows(&root).is_empty());
     fs::remove_dir_all(root).expect("cleanup activity saved details");
 }
+
+#[test]
+fn the_last_relaxed_rung_lets_a_word_match_as_a_prefix() {
+    // An agent asks for `commit`; the journal says `commitment`.
+    let (root, connection) = seeded_root("prefix-ladder");
+    insert(
+        &connection,
+        "Saved commitment: send the numbers",
+        "notes/promise.md",
+        "20260101",
+        "",
+        "flow",
+        "",
+        0,
+    );
+    insert(
+        &connection,
+        "commuting by train",
+        "notes/train.md",
+        "20260101",
+        "",
+        "flow",
+        "",
+        0,
+    );
+    drop(connection);
+    let mut query = request("commit");
+    let strict = search(&root, &query, reference_date()).expect("strict search");
+    assert!(strict.results.is_empty(), "a whole word stays a whole word");
+    query.relax = true;
+    let relaxed = search(&root, &query, reference_date()).expect("prefix rung");
+    assert!(relaxed.relaxed);
+    assert_eq!(relaxed.results.len(), 1);
+    assert_eq!(relaxed.results[0].metadata.path, "notes/promise.md");
+    let mut short = request("com");
+    short.relax = true;
+    let short = search(&root, &short, reference_date()).expect("short prefix");
+    assert!(
+        short.results.is_empty(),
+        "a three-letter prefix is not tried"
+    );
+    fs::remove_dir_all(root).expect("cleanup prefix ladder index");
+}

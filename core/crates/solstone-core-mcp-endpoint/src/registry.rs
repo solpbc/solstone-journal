@@ -55,7 +55,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::SaveMemory,
         wire_name: "save_memory",
-        description: "save a note as this connection's agent memory. content is exact UTF-8, up to 32,768 bytes. retry with the same operation_id and content if the outcome is uncertain.",
+        description: "save a note as this connection's agent memory, when the owner asks you to remember something. content is exact UTF-8, up to 32,768 bytes. retry with the same operation_id and content if the outcome is uncertain.",
         input_schema: save_memory_input_schema,
         requires: NOTHING,
         audit_name: solstone_core_mcp_audit::ToolName::SaveMemory,
@@ -71,7 +71,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::ListFacets,
         wire_name: "list_facets",
-        description: "List facets available to this connection.",
+        description: "List the facets this connection may see: the areas the owner sorts their journal into, such as work or personal.",
         input_schema: list_facets_input_schema,
         requires: NOTHING,
         audit_name: solstone_core_mcp_audit::ToolName::ListFacets,
@@ -79,7 +79,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::Search,
         wire_name: "search",
-        description: "Search indexed journal content available to this connection.",
+        description: "Search what this connection may see of the owner's journal: summaries of days and conversations, activities with the commitments and decisions saved in them, and notes about people and projects. Use a few keywords such as names or topics, not a sentence. To list what someone promised, search `commitment` with day_from and day_to, then fetch the entries: each promise is a `Saved commitment` line with who made it, the action, and a due date when there is one. Days are YYYYMMDD or YYYY-MM-DD. Raw transcripts are not searched; use list_transcripts. When nothing matches, say so rather than guessing.",
         input_schema: search_input_schema,
         requires: TRANSCRIPTS,
         audit_name: solstone_core_mcp_audit::ToolName::Search,
@@ -87,7 +87,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::Fetch,
         wire_name: "fetch",
-        description: "Fetch an indexed entry returned by search.",
+        description: "Read the full text of an entry returned by search. Pass its reference unchanged.",
         input_schema: fetch_input_schema,
         requires: TRANSCRIPTS,
         audit_name: solstone_core_mcp_audit::ToolName::Fetch,
@@ -95,7 +95,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::ListTranscripts,
         wire_name: "list_transcripts",
-        description: "List transcript segments available to this connection.",
+        description: "List transcript segments this connection may read, optionally for one day (YYYYMMDD or YYYY-MM-DD). Read one with get_transcript.",
         input_schema: list_transcripts_input_schema,
         requires: TRANSCRIPTS,
         audit_name: solstone_core_mcp_audit::ToolName::ListTranscripts,
@@ -103,7 +103,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::GetTranscript,
         wire_name: "get_transcript",
-        description: "Read approved transcript text from one segment.",
+        description: "Read what was said in one transcript segment returned by list_transcripts.",
         input_schema: transcript_input_schema,
         requires: TRANSCRIPTS,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
@@ -111,7 +111,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::ListEntities,
         wire_name: "list_entities",
-        description: "List entities available to this connection.",
+        description: "List the people, projects and other entities this connection may see. To learn who or what one is, call get_entity with its reference.",
         input_schema: list_entities_input_schema,
         requires: ENTITIES,
         audit_name: solstone_core_mcp_audit::ToolName::ListEntities,
@@ -119,7 +119,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::GetEntity,
         wire_name: "get_entity",
-        description: "Read an entity returned by list_entities.",
+        description: "Read what the journal has noted about an entity returned by list_entities: its type and, in that facet, its description, the last day it came up, and notes about it.",
         input_schema: fetch_input_schema,
         requires: ENTITIES,
         audit_name: solstone_core_mcp_audit::ToolName::GetEntity,
