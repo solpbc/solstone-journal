@@ -106,8 +106,8 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
         };
         let mut search_index =
             search_index::evaluate_search_index(&root, &search_index::FsIndexMetadata, now);
-        if search_index.text == search_index::SEARCH_TEXT_UNCLEAR && !search_index.observed_failure
-        {
+        // Before the first night, search makes no claim unless it is failing.
+        if search_index.state != "failing" {
             match not_yet {
                 Some(solstone_core_system_health::NotYet::FirstNight) => {
                     search_index.text = solstone_core_system_health::NOT_YET_SEARCH.to_owned();

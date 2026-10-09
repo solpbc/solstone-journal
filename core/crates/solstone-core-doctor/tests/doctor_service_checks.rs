@@ -358,6 +358,7 @@ fn run_poison_battery_child(root: &Path) {
             ("journal_sync", Status::Ok),
             ("journal_caught_up", Status::Ok),
             ("journal_durability", Status::Ok),
+            ("search_index", Status::Ok),
             ("journal_sources_readable", Status::Skip),
             ("task_pace", Status::Skip),
             ("sense_dispatch", Status::Warn),

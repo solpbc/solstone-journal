@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -44,6 +44,7 @@ use crate::db::{
     read_segment_aggregate_migration, replace_chunk_classification, write_entity_search_watermark,
     write_segment_aggregate_migration,
 };
+use crate::generation::{ScanReceipt, WRITER_VERSION, record_scan};
 use crate::writer_admission::{IndexAdmission, check_test_seam};
 
 const MERGE_STEP: i64 = 32;
@@ -67,6 +68,29 @@ pub struct ScanReport {
     /// does not classify). Never gates `mark_index_build_complete` — unlike
     /// `warnings`, whose presence keeps a full build in `Building`.
     pub benign_skips: Vec<String>,
+    /// Every counted failure: the file and the modification time it failed
+    /// at, or no file for a failure of the pass itself. `failed` always equals
+    /// its length, so the count, the receipt and the exit code agree.
+    pub failures: Vec<ScanFailure>,
+}
+
+/// One failure a scan counted.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ScanFailure {
+    /// Journal-relative path, or `None` for a failure of the pass itself.
+    pub path: Option<String>,
+    /// The file's modification time when it failed, when it could be read.
+    pub mtime: Option<i64>,
+}
+
+impl ScanReport {
+    fn fail(&mut self, path: Option<&str>, mtime: Option<i64>) {
+        self.failed += 1;
+        self.failures.push(ScanFailure {
+            path: path.map(str::to_owned),
+            mtime,
+        });
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -84,7 +108,7 @@ struct EdgeScanReport {
     indexed: usize,
     removed: usize,
     rows_inserted: usize,
-    failed: usize,
+    failures: Vec<ScanFailure>,
     warnings: Vec<String>,
 }
 
@@ -377,6 +401,70 @@ pub(crate) fn scan_journal_admitted(
     full: bool,
     admission: &IndexAdmission,
 ) -> Result<ScanReport, StoreError> {
+    let result = scan_journal_pass(journal, full, admission);
+    if let Err(error) = &result {
+        // A scan that stops leaves an observation too, so a pass that fails
+        // every night is visible rather than an old receipt aging quietly.
+        record_failed_scan(journal, full, error);
+    }
+    result
+}
+
+fn record_failed_scan(journal: &Path, full: bool, error: &StoreError) {
+    let path = crate::db::db_path(journal);
+    if !crate::generation::has_sqlite_header(&path) {
+        return;
+    }
+    // A newer generation is not this binary's to annotate, and a scan stopped
+    // by a lock would only wait on the same lock to say so.
+    let locked = matches!(
+        error,
+        StoreError::Sql(rusqlite::Error::SqliteFailure(failure, _))
+            if matches!(
+                failure.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            )
+    );
+    if locked || matches!(error, StoreError::IndexGenerationNewer { .. }) {
+        return;
+    }
+    let receipt = ScanReceipt {
+        finished_at_ms: now_ms(),
+        full,
+        error: Some(error.to_string()),
+        writer_version: WRITER_VERSION.to_owned(),
+        ..ScanReceipt::default()
+    };
+    let recorded = Connection::open(&path)
+        .map_err(StoreError::from)
+        .and_then(|mut conn| {
+            conn.execute_batch("PRAGMA busy_timeout=5000;")?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            record_scan(&tx, &receipt)?;
+            tx.commit()?;
+            Ok(())
+        });
+    if let Err(record_error) = recorded {
+        log::warn!(target: "solstone::indexer", "failed scan not recorded: {record_error}");
+    }
+}
+
+fn is_not_found(error: &StoreError) -> bool {
+    matches!(error, StoreError::Io(io) if io.kind() == std::io::ErrorKind::NotFound)
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or_default()
+}
+
+fn scan_journal_pass(
+    journal: &Path,
+    full: bool,
+    admission: &IndexAdmission,
+) -> Result<ScanReport, StoreError> {
     prune_authored_chat_paths_admitted(journal, admission)?;
     let mut conn = open_index_admitted(journal, admission)?;
     if !chunk_path_lookup_ready(&conn)? {
@@ -414,6 +502,9 @@ pub(crate) fn scan_journal_admitted(
                     .push(format!("mtime read failed for {rel}: {error}"));
                 if memory_note {
                     to_index.push((rel.clone(), path.clone(), 0));
+                } else if !is_not_found(&error) {
+                    // A file removed since discovery is gone, not failed.
+                    report.fail(Some(rel), None);
                 }
             }
         }
@@ -463,7 +554,7 @@ pub(crate) fn scan_journal_admitted(
                         result,
                         OriginalRead::Corrupt | OriginalRead::Unavailable { .. }
                     ) {
-                        report.failed += 1;
+                        report.fail(Some(rel), Some(*mtime));
                         report.warnings.push(format!(
                             "memory original is incomplete for {rel}: {}",
                             original_read_label(&result)
@@ -506,6 +597,7 @@ pub(crate) fn scan_journal_admitted(
             Ok(warnings) => warnings,
             Err(StoreError::Io(error)) => {
                 report.skipped += 1;
+                report.fail(Some(rel), Some(*mtime));
                 report.warnings.push(error.to_string());
                 continue;
             }
@@ -548,7 +640,8 @@ pub(crate) fn scan_journal_admitted(
     report.edges_indexed = edge_report.indexed;
     report.edges_removed = edge_report.removed;
     report.edge_rows_inserted = edge_report.rows_inserted;
-    report.failed += edge_report.failed;
+    report.failed += edge_report.failures.len();
+    report.failures.extend(edge_report.failures);
     report.warnings.extend(edge_report.warnings);
     if full && report.failed == 0 && report.warnings.is_empty() {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -562,7 +655,37 @@ pub(crate) fn scan_journal_admitted(
     if let Some(warning) = merge_warning {
         report.warnings.push(warning);
     }
+    // The receipt is an observation for status and health; failing to record it
+    // never fails the scan.
+    if let Err(error) = record_scan_receipt(&mut conn, &report, full) {
+        log::warn!(target: "solstone::indexer", "scan receipt not recorded: {error}");
+    }
     Ok(report)
+}
+
+fn record_scan_receipt(
+    conn: &mut Connection,
+    report: &ScanReport,
+    full: bool,
+) -> Result<(), StoreError> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    record_scan(
+        &tx,
+        &ScanReceipt {
+            finished_at_ms: now_ms(),
+            full,
+            indexed: report.indexed,
+            removed: report.removed,
+            skipped: report.skipped,
+            failed: report.failed,
+            warnings: report.warnings.len(),
+            failures: report.failures.clone(),
+            error: None,
+            writer_version: WRITER_VERSION.to_owned(),
+        },
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 /// Incrementally classify legacy paths. State advances only with the durable
@@ -831,9 +954,19 @@ fn reconcile_edges(
 
     let db_mtimes = edge_file_mtimes(conn)?;
     let mut to_index = Vec::new();
+    let mut unreadable = Vec::new();
     for (rel, path) in &files {
-        let Ok(mtime) = file_mtime_secs(path) else {
-            continue;
+        let mtime = match file_mtime_secs(path) {
+            Ok(mtime) => mtime,
+            Err(error) => {
+                if !is_not_found(&error) {
+                    unreadable.push(ScanFailure {
+                        path: Some(rel.clone()),
+                        mtime: None,
+                    });
+                }
+                continue;
+            }
         };
         if db_mtimes.get(rel) != Some(&mtime) {
             to_index.push((rel.clone(), path.clone(), mtime));
@@ -841,9 +974,12 @@ fn reconcile_edges(
     }
 
     let mut resolver = EdgeResolver::new(journal);
-    let mut report = EdgeScanReport::default();
+    let mut report = EdgeScanReport {
+        failures: unreadable,
+        ..EdgeScanReport::default()
+    };
     if let Err(error) = resolver.preflight_owner_timezone() {
-        report.failed = 1;
+        report.failures.push(ScanFailure::default());
         report.warnings.push(error.to_string());
         return Ok(report);
     }
@@ -860,7 +996,10 @@ fn reconcile_edges(
             Err(error) => {
                 tx.rollback()?;
                 report.indexed += 1;
-                report.failed += 1;
+                report.failures.push(ScanFailure {
+                    path: Some(rel.clone()),
+                    mtime: Some(*mtime),
+                });
                 report
                     .warnings
                     .push(format!("Skipping edge extraction for {rel}: {error}"));
@@ -870,7 +1009,10 @@ fn reconcile_edges(
         report.indexed += 1;
         if result.failed {
             tx.rollback()?;
-            report.failed += 1;
+            report.failures.push(ScanFailure {
+                path: Some(rel.clone()),
+                mtime: Some(*mtime),
+            });
             report.warnings.extend(result.warnings);
             continue;
         }
@@ -1031,7 +1173,7 @@ fn edge_value_to_sql(value: &EdgeValue) -> SqlValue {
     }
 }
 
-fn load_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64>, StoreError> {
+pub(crate) fn load_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64>, StoreError> {
     let mut statement =
         conn.prepare("SELECT path, mtime FROM files WHERE path NOT LIKE 'entity_search:%'")?;
     let rows = statement.query_map([], |row| {
@@ -1576,7 +1718,7 @@ fn resolve_rescan_target(journal: &Path, input: &Path) -> Result<(String, PathBu
     }
 }
 
-fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
+pub(crate) fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
     let modified = fs::metadata(path)?.modified()?;
     let duration = modified.duration_since(UNIX_EPOCH).map_err(|error| {
         StoreError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
@@ -1584,12 +1726,12 @@ fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
     Ok(duration.as_secs() as i64)
 }
 
-fn is_memory_note(rel: &str) -> bool {
+pub(crate) fn is_memory_note(rel: &str) -> bool {
     solstone_core_format::content::resolve_spec(rel)
         .is_some_and(|spec| spec.family == Family::AgentMemory)
 }
 
-fn memory_file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
+pub(crate) fn memory_file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
     let segment = path
         .parent()
         .ok_or_else(|| StoreError::MissingFile(path.to_path_buf()))?;
@@ -2330,8 +2472,8 @@ mod tests {
         fs::write(&bad_path, [0xFFu8, 0xFE, 0x00, 0xFF]).expect("write invalid utf8 content");
         let report = scan_journal(&root, true).expect("scan with real failure");
         assert_eq!(
-            report.failed, 0,
-            "a content read failure is a skip+warning, not report.failed"
+            report.failed, 1,
+            "a content read failure is a skip, a warning and a failed file"
         );
         assert_eq!(
             report.benign_skips.len(),

@@ -6,11 +6,17 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `solstone journal indexer status` shows how far search is behind your journal, without changing either.
+
 ### Changed
 
 - on linux, the journal now needs glibc 2.34 or newer with the GCC 11 C++ runtime, such as Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 or newer releases of each. local transcription also needs the GCC 12 C++ runtime, which RHEL 9 doesn't include.
 - on mac and linux, your journal no longer downloads tools the first time you use encrypted backup, confidential processing or sound tagging. those tools now come inside the journal package, as the sound-tagging model now does on windows, and your journal checks each one against the package's own record before using it.
 - segments from your phone that hold only location now show in transcripts, so you can delete them like any other segment. the delete dialog now says when a segment holds location.
+- the health page now checks search against your journal: it says when search is up to date, when it's catching up and by how many changes, and when it has stopped updating. `solstone call health` no longer calls search stale just because it hasn't changed in a week, and `solstone journal doctor` checks search too.
+- `solstone journal indexer --rescan-full` now ends with an error when something couldn't be added to search.
 - the journal's thinking app now says when confidential processing is no longer active for your sign-in, and how to get it back.
 - on windows, the thinking page now offers confidential processing, as on mac and linux. before sending anything, your journal checks the service's hardware, and sends nothing if it can't verify it.
 - your journal now signs requests to turn on a service. older journals can still turn on services during the rollout.

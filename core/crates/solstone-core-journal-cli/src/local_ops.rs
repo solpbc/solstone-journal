@@ -107,7 +107,13 @@ fn indexer(_args: &[OsString]) -> Outcome {
 
 #[cfg(not(target_os = "ios"))]
 fn indexer(args: &[OsString]) -> Outcome {
-    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n       solstone journal indexer path-lookup [--apply] [--json]\n       solstone journal indexer classifications [--json] [--apply] [--drain]\n";
+    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n       solstone journal indexer status [--json]\n       solstone journal indexer path-lookup [--apply] [--json]\n       solstone journal indexer classifications [--json] [--apply] [--drain]\n";
+
+    if let Some((verb, rest)) = args.split_first()
+        && verb == OsStr::new("status")
+    {
+        return indexer_status(rest);
+    }
 
     if let Some((verb, rest)) = args.split_first()
         && verb == OsStr::new("path-lookup")
@@ -308,6 +314,7 @@ fn indexer(args: &[OsString]) -> Outcome {
     };
     let mut stdout = String::new();
     let mut stderr = String::new();
+    let mut full_rescan_failed = 0;
 
     if reset && let Err(error) = reset_index(&journal) {
         return failure("indexer", &format!("reset failed: {error}"), EXIT_IO);
@@ -353,12 +360,23 @@ fn indexer(args: &[OsString]) -> Outcome {
                 for warning in report.warnings {
                     stderr.push_str(&format!("warning: {warning}\n"));
                 }
+                let failed = if report.failed > 0 {
+                    format!(", failed {}", report.failed)
+                } else {
+                    String::new()
+                };
                 stdout.push_str(&format!(
-                    "Indexed {} file(s), removed {}, skipped {}\n",
+                    "Indexed {} file(s), removed {}, skipped {}{failed}\n",
                     report.indexed, report.removed, report.skipped
                 ));
                 if rescan_full && !reset && !rebuild && report.edge_rows_inserted == 0 {
                     stdout.push_str("Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run solstone journal indexer --rebuild-edges to force full edge re-extraction.\n");
+                }
+                // A full rescan is an operator's repair, so it says when files failed.
+                // A light rescan keeps exit 0: the nightly processing runs it, and a
+                // failed file there is retried by the next scan.
+                if rescan_full {
+                    full_rescan_failed = report.failed;
                 }
             }
             Err(error) => {
@@ -395,7 +413,57 @@ fn indexer(args: &[OsString]) -> Outcome {
         }
     }
 
+    if full_rescan_failed > 0 {
+        stderr.push_str(&format!(
+            "solstone journal indexer: {full_rescan_failed} update(s) couldn't be indexed; see the warnings above\n"
+        ));
+        return Outcome::LocalFailure {
+            stdout,
+            stderr,
+            exit: EXIT_FAILED,
+        };
+    }
+
     Outcome::LocalSuccess { stdout, stderr }
+}
+
+/// Read-only: measures the index against the journal and changes neither.
+#[cfg(not(target_os = "ios"))]
+fn indexer_status(args: &[OsString]) -> Outcome {
+    const HELP: &str = "Usage: solstone journal indexer status [--json]\n";
+    if args.len() == 1 && matches!(args[0].to_str(), Some("--help" | "-h")) {
+        return success(HELP.to_owned());
+    }
+    let mut json_output = false;
+    for arg in args {
+        match arg.to_str() {
+            Some("--json") if !json_output => json_output = true,
+            _ => return usage("indexer status", "unexpected or duplicate argument"),
+        }
+    }
+    let journal = match journal_root("indexer status") {
+        Ok(journal) => journal,
+        Err(outcome) => return outcome,
+    };
+    let status = match solstone_core_indexer_store::status::inspect_index(&journal) {
+        Ok(status) => status,
+        Err(error) => return failure("indexer status", &error.to_string(), EXIT_IO),
+    };
+    let observations =
+        solstone_core_system_health::read_indexing_observations(&journal, chrono::Utc::now());
+    let health = solstone_core_system_health::index_health_from(&status, &observations);
+    if json_output {
+        let mut value = status.to_json_value();
+        value["health"] = serde_json::to_value(&health).expect("serialize index health");
+        success(format!("{value}\n"))
+    } else {
+        success(format!(
+            "health: {} ({})\n{}",
+            health.state.as_str(),
+            health.text,
+            status.format_human()
+        ))
+    }
 }
 
 #[cfg(not(target_os = "ios"))]

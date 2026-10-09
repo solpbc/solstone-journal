@@ -209,6 +209,50 @@ fn assert_sentinel_untouched(sentinel: &Path) {
 }
 
 #[test]
+fn journal_indexer_full_rescan_exit_names_failed_files_and_status_writes_nothing() {
+    let temp = TempDir::new("journal-indexer-failed-exit");
+    let journal = temp.path.join("journal");
+    seed_journal(&journal);
+    let note = journal.join("chronicle/20260809/default/120000_1/talents/native.md");
+    fs::create_dir_all(note.parent().expect("note parent")).expect("create note directory");
+    fs::write(&note, "# Native index\n\nneedle\n").expect("write note");
+    // An observation whose relation note is an object fails edge extraction.
+    let observations = journal.join("facets/work/entities/source/observations.jsonl");
+    fs::create_dir_all(observations.parent().expect("parent")).expect("create facet directory");
+    fs::write(
+        &observations,
+        r#"{"observed_at":1777556100000,"source_day":"20260430","relation":{"kind":"works-with","target_entity_id":"other","target_name":"Other","note":{"bad":true}}}
+"#,
+    )
+    .expect("write observations");
+
+    // The light rescan the nightly processing runs keeps exit 0 and says so.
+    let light = run_journal_with_journal(&["indexer", "--rescan"], None, &journal);
+    let light_stdout = String::from_utf8_lossy(&light.stdout);
+    assert!(light.status.success(), "light rescan: {light_stdout}");
+    assert!(light_stdout.contains(", failed 1"), "{light_stdout}");
+
+    // The operator's full rescan exits nonzero when a file failed.
+    let full = run_journal_with_journal(&["indexer", "--rescan-full"], None, &journal);
+    assert_eq!(full.status.code(), Some(1));
+
+    let index = journal.join("indexer/journal.sqlite");
+    let before = fs::read(&index).expect("index bytes");
+    let status = run_journal_with_journal(&["indexer", "status", "--json"], None, &journal);
+    assert!(status.status.success());
+    assert_eq!(fs::read(&index).expect("index bytes"), before);
+    let value: serde_json::Value = serde_json::from_slice(&status.stdout).expect("status is JSON");
+    assert_eq!(value["files"]["missing"], 0);
+    assert_eq!(value["generation"]["generation"], 1);
+    assert!(value["health"]["state"].is_string());
+    assert!(
+        value["last_scan"]["full"]
+            .as_bool()
+            .expect("last scan recorded")
+    );
+}
+
+#[test]
 fn journal_indexer_writes_real_index_with_interpreters_poisoned() {
     let temp = TempDir::new("journal-indexer-native-poison");
     let journal = temp.path.join("journal");

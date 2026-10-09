@@ -13,22 +13,9 @@ use solstone_core_indexer_store::db::{
     read_index_build_state, read_segment_aggregate_migration,
 };
 use solstone_core_system_health::{
-    IndexingAttemptObservation, IndexingDiagnostics, read_indexing_observations,
+    IndexHealth, IndexHealthState, IndexingAttemptObservation, IndexingDiagnostics,
+    evaluate_index_health_recent, read_indexing_observations,
 };
-
-pub const SEARCH_TEXT_BEHIND_ATTEMPT_FAILED: &str =
-    "some journal updates couldn't be added to search.";
-pub const SEARCH_TEXT_UNCLEAR: &str = "it's unclear when search last caught up.";
-pub const SEARCH_NOTE_ATTEMPT_FAILED: &str =
-    "some search updates could not finish; search-backed consumers may be stale.";
-
-/// Fills a search template's `{age}` with the time since the index's last write.
-pub fn render_search_text(template: &str, age: Duration) -> String {
-    template.replace(
-        "{age}",
-        &solstone_core_system_health::format_summary_age(age),
-    )
-}
 
 pub trait IndexMetadata: Send + Sync {
     fn modified(&self, path: &Path) -> std::io::Result<SystemTime>;
@@ -52,11 +39,16 @@ pub struct SearchClassification {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchIndexHealth {
+    /// `complete` when nothing on disk is waiting for the index, `partial` when
+    /// something is, `unknown` when the index could not be measured.
     pub coverage: String,
     pub index_activity_at_ms: Option<i64>,
+    /// The index health value: `ok`, `behind`, `failing` or `building`.
     pub state: String,
+    /// Any failed update recorded in the window, repaired since or not.
     pub observed_failure: bool,
     pub text: String,
+    pub index: IndexHealth,
     pub outcomes: Vec<IndexingAttemptObservation>,
     pub classification: SearchClassification,
     pub diagnostics: IndexingDiagnostics,
@@ -104,6 +96,10 @@ pub fn evaluate_search_index(
     } else {
         None
     };
+
+    // Measured after the activity time is read: opening the index, even
+    // read-only, can create an empty write-ahead file beside it.
+    let index = evaluate_index_health_recent(journal_root, &observations);
 
     let mut backfill = "unknown".to_owned();
     let mut stalled_path = None;
@@ -177,32 +173,25 @@ pub fn evaluate_search_index(
         segment_aggregate,
     };
 
-    let (state, text) = if observed_failure {
-        (
-            "degraded".to_owned(),
-            SEARCH_TEXT_BEHIND_ATTEMPT_FAILED.to_owned(),
-        )
-    } else if classification.backfill == "stalled" || classification.backfill == "incomplete" {
-        (
-            "incomplete".to_owned(),
-            "search classification is still incomplete.".to_owned(),
-        )
-    } else {
-        let text = if let Some(ms) = index_activity_at_ms {
-            let dt = Utc.timestamp_millis_opt(ms).single().unwrap_or(now);
-            render_search_text("search index last changed {age} ago.", now - dt)
-        } else {
-            SEARCH_TEXT_UNCLEAR.to_owned()
-        };
-        ("unknown".to_owned(), text)
+    let coverage = match index.failure {
+        Some(solstone_core_system_health::IndexFailure::Unreadable) => "unknown",
+        _ if index.pending == 0
+            && index.failed == 0
+            && index.retained == 0
+            && index.state != IndexHealthState::Building =>
+        {
+            "complete"
+        }
+        _ => "partial",
     };
 
     SearchIndexHealth {
-        coverage: "unknown".to_owned(),
+        coverage: coverage.to_owned(),
         index_activity_at_ms,
-        state,
+        state: index.state.as_str().to_owned(),
         observed_failure,
-        text,
+        text: index.text.clone(),
+        index,
         outcomes: observations.outcomes,
         classification,
         diagnostics: observations.diagnostics,
@@ -237,8 +226,8 @@ mod full_tests {
 
         // 1. Missing database (no file) stays the first case
         let health_absent = evaluate_search_index(dir.path(), &FsIndexMetadata, now);
-        assert_eq!(health_absent.coverage, "unknown");
-        assert_eq!(health_absent.state, "unknown");
+        assert_eq!(health_absent.coverage, "complete");
+        assert_eq!(health_absent.state, "ok");
         assert_eq!(health_absent.classification.backfill, "unknown");
         assert_eq!(health_absent.index_activity_at_ms, None);
 
@@ -297,7 +286,7 @@ mod full_tests {
             }
         };
 
-        // Stalled (stalled: true, completed: false): state incomplete, coverage unknown,
+        // Stalled (stalled: true, completed: false): state failing, nothing pending on disk,
         // index_activity_at_ms equals that mtime, observed_failure false, stalled_path preserved
         write_chunk_classification_backfill(
             &conn,
@@ -314,8 +303,8 @@ mod full_tests {
         set_mtimes();
 
         let health_stalled = evaluate_search_index(dir.path(), &FsIndexMetadata, now);
-        assert_eq!(health_stalled.coverage, "unknown");
-        assert_eq!(health_stalled.state, "incomplete");
+        assert_eq!(health_stalled.coverage, "complete");
+        assert_eq!(health_stalled.state, "failing");
         assert!(!health_stalled.observed_failure);
         assert_eq!(health_stalled.classification.backfill, "stalled");
         assert_eq!(
@@ -324,7 +313,7 @@ mod full_tests {
         );
         assert_eq!(health_stalled.index_activity_at_ms, Some(mtime_ms));
 
-        // Separately stalled: false, completed: false: backfill incomplete, state incomplete, activity mtime still set
+        // Separately stalled: false, completed: false: backfill incomplete, state behind, activity mtime still set
         let conn = open_index(dir.path()).unwrap();
         write_chunk_classification_backfill(
             &conn,
@@ -341,13 +330,13 @@ mod full_tests {
         set_mtimes();
 
         let health_inprog = evaluate_search_index(dir.path(), &FsIndexMetadata, now);
-        assert_eq!(health_inprog.coverage, "unknown");
-        assert_eq!(health_inprog.state, "incomplete");
+        assert_eq!(health_inprog.coverage, "complete");
+        assert_eq!(health_inprog.state, "behind");
         assert_eq!(health_inprog.classification.backfill, "incomplete");
         assert_eq!(health_inprog.index_activity_at_ms, Some(mtime_ms));
 
         // completed: true, stalled: false, plus index_build complete and segment_aggregate completed:
-        // coverage unknown, state is not incomplete and not degraded, backfill exhausted
+        // nothing pending, state ok, backfill exhausted
         let conn2 = open_index(dir.path()).unwrap();
         write_chunk_classification_backfill(
             &conn2,
@@ -370,16 +359,15 @@ mod full_tests {
         set_mtimes();
 
         let health_complete = evaluate_search_index(dir.path(), &FsIndexMetadata, now);
-        assert_eq!(health_complete.coverage, "unknown");
-        assert_ne!(health_complete.state, "incomplete");
-        assert_ne!(health_complete.state, "degraded");
-        assert_eq!(health_complete.state, "unknown");
+        assert_eq!(health_complete.coverage, "complete");
+        assert_eq!(health_complete.state, "ok");
         assert!(!health_complete.observed_failure);
         assert_eq!(health_complete.classification.backfill, "exhausted");
         assert_eq!(health_complete.classification.index_build, "complete");
         assert_eq!(health_complete.classification.segment_aggregate, "complete");
 
-        // Then a think health index.attempt failure with ts inside the window: state degraded, observed_failure true, activity mtime still set
+        // Then a think health index.attempt failure with ts inside the window, for a
+        // file that is not on disk: observed, but nothing is behind, so still ok.
         let today = now.format("%Y%m%d").to_string();
         let health_dir = dir.path().join("chronicle").join(&today).join("health");
         fs::create_dir_all(&health_dir).unwrap();
@@ -398,9 +386,13 @@ mod full_tests {
         .unwrap();
 
         set_mtimes();
-        let health_degraded = evaluate_search_index(dir.path(), &FsIndexMetadata, now);
-        assert_eq!(health_degraded.state, "degraded");
-        assert!(health_degraded.observed_failure);
-        assert_eq!(health_degraded.index_activity_at_ms, Some(mtime_ms));
+        // Every reader this page uses leaves the index file's bytes unchanged.
+        let before = fs::read(&db_path).unwrap();
+        let health_observed = evaluate_search_index(dir.path(), &FsIndexMetadata, now);
+        assert_eq!(fs::read(&db_path).unwrap(), before);
+        assert!(fs::metadata(&wal_path).map_or(true, |wal| wal.len() == 0));
+        assert_eq!(health_observed.state, "ok");
+        assert!(health_observed.observed_failure);
+        assert_eq!(health_observed.index_activity_at_ms, Some(mtime_ms));
     }
 }

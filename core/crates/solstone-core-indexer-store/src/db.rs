@@ -14,6 +14,7 @@ use crate::chunk_sources::{
     CREATE_CHUNK_SOURCES_PATH_INDEX, chunk_path_lookup_ready, delete_chunk_source_rowids,
     require_chunk_path_lookup, seed_path_lookup,
 };
+use crate::generation::stamp_if_needed;
 use crate::writer_admission::IndexAdmission;
 
 pub const INDEX_DIR: &str = "indexer";
@@ -265,7 +266,11 @@ pub(crate) fn reset_index_admitted(
     tx.execute("DROP TABLE IF EXISTS chunk_classification_facets", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_classification", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_classification_backfill", [])?;
+    // A reset builds a new index: it carries this writer's stamp, not one the
+    // gate let through because it could not be read.
+    tx.execute("DROP TABLE IF EXISTS index_meta", [])?;
     create_schema(&tx)?;
+    stamp_if_needed(&tx)?;
     tx.execute("DELETE FROM entity_search_watermark", [])?;
     tx.execute("DELETE FROM segment_aggregate_migration", [])?;
     tx.execute(
@@ -435,6 +440,7 @@ fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {
     let chunks_existed = sqlite_table_exists(&tx, "chunks")?;
     let rebuilt = migrate_legacy_chunks(&tx)?;
     create_schema(&tx)?;
+    stamp_if_needed(&tx)?;
     if rebuilt {
         tx.execute("DELETE FROM chunk_sources", [])?;
         tx.execute("DELETE FROM chunk_source_readiness", [])?;

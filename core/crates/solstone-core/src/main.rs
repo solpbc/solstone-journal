@@ -6875,6 +6875,16 @@ fn run_indexer_maintenance(options: IndexerOptions) -> ExitCode {
                         "failed": report.failed,
                     }));
                 }
+                // A full rescan is an operator's repair, so it says when files
+                // failed. A light rescan keeps exit 0 for the scheduled callers;
+                // its next run retries the file.
+                if options.rescan_full && report.failed > 0 {
+                    eprintln!(
+                        "indexer: {} update(s) couldn't be indexed; see the warnings above",
+                        report.failed
+                    );
+                    return ExitCode::FAILURE;
+                }
                 return ExitCode::SUCCESS;
             }
             Err(error) => {

@@ -82,6 +82,18 @@ pub(crate) struct SynthesisHealth {
     pub(crate) talent_run_failures_24h: Option<u64>,
     pub(crate) talent_degraded_outputs_24h: Option<u64>,
     pub(crate) index_activity_at: Option<i64>,
+    pub(crate) search_index: SearchIndexSummary,
+}
+
+/// The search index health value, as `solstone call health` reports it.
+#[derive(Debug, Serialize)]
+pub(crate) struct SearchIndexSummary {
+    pub(crate) state: &'static str,
+    pub(crate) text: String,
+    pub(crate) stale: usize,
+    pub(crate) missing: usize,
+    pub(crate) orphaned: usize,
+    pub(crate) failed: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -521,28 +533,10 @@ pub(crate) fn build_synthesis_health(
     );
 
     let index_activity_at = search_eval.index_activity_at_ms;
+    let index = &search_eval.index;
 
-    if search_eval.observed_failure {
-        notes.push(note(
-            "warn",
-            "synthesis",
-            crate::search_index::SEARCH_NOTE_ATTEMPT_FAILED,
-            generated_at,
-            None,
-        ));
-    } else if let Some(mtime_ms) = search_eval.index_activity_at_ms
-        && generated_at - mtime_ms > 7 * DAY_MS
-    {
-        notes.push(note(
-            "warn",
-            "synthesis",
-            &format!(
-                "search index last changed {}d ago; search-backed consumers may be stale.",
-                (generated_at - mtime_ms) / DAY_MS
-            ),
-            generated_at,
-            None,
-        ));
+    if index.state == solstone_core_system_health::IndexHealthState::Failing {
+        notes.push(note("warn", "synthesis", &index.text, generated_at, None));
     }
 
     match fs::metadata(&indexer_sqlite) {
@@ -568,6 +562,14 @@ pub(crate) fn build_synthesis_health(
             talent_run_failures_24h: failures,
             talent_degraded_outputs_24h: degraded,
             index_activity_at,
+            search_index: SearchIndexSummary {
+                state: search_eval.index.state.as_str(),
+                text: search_eval.index.text.clone(),
+                stale: search_eval.index.stale,
+                missing: search_eval.index.missing,
+                orphaned: search_eval.index.orphaned,
+                failed: search_eval.index.failed,
+            },
         },
         notes,
     ))
@@ -1963,33 +1965,23 @@ mod tests {
     }
 
     #[test]
-    fn indexer_at_seven_days_is_not_stale_but_older_is_warned() {
+    fn a_quiet_index_is_never_called_stale_by_its_age() {
+        // Staleness is measured against the disk now; an index nobody needed to
+        // change for a month is up to date, not stale.
         let temporary = temporary();
         healthy_talent_guards(temporary.path(), now());
+        drop(solstone_core_indexer_store::db::open_index(temporary.path()).expect("open index"));
         let index = temporary.path().join("indexer/journal.sqlite");
-        fs::create_dir_all(index.parent().unwrap()).unwrap();
-        fs::write(&index, "sqlite").unwrap();
         set_file_mtime(
             &index,
-            FileTime::from_unix_time((now().timestamp() - 7 * 86_400) as _, 0),
+            FileTime::from_unix_time((now().timestamp() - 30 * 86_400) as _, 0),
         )
         .unwrap();
-        let (_, notes) =
+        let (synthesis, notes) =
             build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+        assert_eq!(synthesis.search_index.state, "ok");
         assert!(
             !notes
-                .iter()
-                .any(|note| note.message.contains("last changed"))
-        );
-        set_file_mtime(
-            &index,
-            FileTime::from_unix_time((now().timestamp() - 7 * 86_400 - 1) as _, 0),
-        )
-        .unwrap();
-        let (_, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
-        assert!(
-            notes
                 .iter()
                 .any(|note| note.message.contains("last changed"))
         );

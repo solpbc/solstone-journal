@@ -834,7 +834,7 @@
       };
     }
 
-    if (state.searchIndex && ['degraded', 'incomplete'].includes(state.searchIndex.state) && state.searchIndex.text) {
+    if (state.searchIndex && state.searchIndex.state === 'failing' && state.searchIndex.text) {
       return {
         key: 'HEALTH_GLANCE_BRAIN_ATTENTION',
         vars: { headline: state.searchIndex.text },

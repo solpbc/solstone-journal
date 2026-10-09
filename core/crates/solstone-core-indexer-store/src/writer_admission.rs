@@ -77,6 +77,9 @@ impl IndexAdmission {
         match hold_lock(&target_path, LockOptions::default()) {
             Ok(lock) => {
                 let wait = started.elapsed();
+                // The lease is held: refuse a newer generation, and record this
+                // writer's version before any write the caller makes.
+                crate::generation::admit_writer(&target_path, operation)?;
                 let admission = Self {
                     _lock: lock,
                     operation,

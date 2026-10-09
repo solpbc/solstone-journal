@@ -262,6 +262,16 @@ fn render_summary(report: &Value) -> Vec<String> {
         "  index_activity_at: {}",
         dash(&synthesis["index_activity_at"])
     ));
+    if let Some(index) = synthesis.get("search_index").and_then(Value::as_object) {
+        lines.push(format!(
+            "  search_index: {} (stale {}, missing {}, orphaned {}, failed {})",
+            display_value(&index["state"]),
+            display_value(&index["stale"]),
+            display_value(&index["missing"]),
+            display_value(&index["orphaned"]),
+            display_value(&index["failed"])
+        ));
+    }
     render_backlog(&mut lines, &report["segment_backlog"]);
     lines.push("Consumer Signals".to_string());
     lines.push(format!(
