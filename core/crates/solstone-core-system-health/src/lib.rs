@@ -75,8 +75,9 @@ pub use safe_text::{
     sanitize_str_for_terminal_bounded, unsafe_ranges,
 };
 pub use scan::{
-    DaySegment, ScanResult, TimeRange, UnclaimedImageState, newest_segment_input_ms, scan_day,
-    unclaimed_image_state,
+    DaySegment, LocationSegmentRow, ScanResult, TimeRange, UnclaimedImageState,
+    holds_location_file, is_location_only, list_location_only_segments, newest_segment_input_ms,
+    scan_day, unclaimed_image_state,
 };
 pub use segment_state::{find_segment_dir, read_segment_data_state};
 pub use source::{

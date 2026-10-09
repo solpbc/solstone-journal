@@ -30,6 +30,14 @@ pub struct UnclaimedImageState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocationSegmentRow {
+    pub key: String,
+    pub stream: String,
+    pub start: String,
+    pub end: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DaySegment {
     pub key: String,
     pub stream: String,
@@ -50,6 +58,106 @@ impl From<DaySegment> for SegmentInput {
             data_state: segment.data_state,
         }
     }
+}
+
+fn segment_start_and_end(
+    times: solstone_core_format::segment::SegmentTimes,
+    end_seconds: u64,
+) -> (u64, String, String) {
+    let start_seconds =
+        u64::from(times.hour) * 3_600 + u64::from(times.minute) * 60 + u64::from(times.second);
+    let start = format_time(start_seconds);
+    // This shares Python's end-of-day clamp with chronological consumers;
+    // rendering remains the same `HH:MM` display format. A positive segment
+    // that collapses into its start minute needs a visible end for range attachment.
+    let natural_end = format_time(end_seconds);
+    let end = if end_seconds > start_seconds && natural_end == start {
+        let next_minute = start_seconds - (start_seconds % 60) + 60;
+        format_time(next_minute.min(86_399))
+    } else {
+        natural_end
+    };
+    (start_seconds, start, end)
+}
+
+fn timeline_types(data_state: &DataStateMap) -> Vec<String> {
+    ["audio", "screen", "image", "markdown", "browser"]
+        .into_iter()
+        .filter(|modality| data_state.0.contains_key(*modality))
+        .map(str::to_owned)
+        .collect()
+}
+
+pub fn holds_location_file(dir: &Path) -> bool {
+    dir.join("location.jsonl").is_file()
+}
+
+pub fn is_location_only(
+    dir: &Path,
+    stream_parent_name: &str,
+    now: DateTime<Utc>,
+) -> Result<bool, HealthError> {
+    if !holds_location_file(dir) {
+        return Ok(false);
+    }
+    let (data_state, _) = detect_data_state(dir, stream_parent_name, now)?;
+    Ok(timeline_types(&data_state).is_empty())
+}
+
+pub fn list_location_only_segments<S: SegmentSource>(
+    source: &S,
+    journal: &Path,
+    day: &str,
+    now: DateTime<Utc>,
+) -> Result<Vec<LocationSegmentRow>, HealthError> {
+    let day_path = solstone_core_journal_io::day_path(journal, day, false)?;
+    if !day_path.is_dir() {
+        return Ok(Vec::new());
+    }
+    let _day_date = NaiveDate::parse_from_str(day, "%Y%m%d")
+        .map_err(|_| HealthError::InvalidDay(day.to_owned()))?;
+    let mut rows = Vec::new();
+
+    for segment in source.segments(journal, day)? {
+        let Some(raw_name) = segment.name().to_str() else {
+            return Err(HealthError::UnrepresentableSegment {
+                path: segment.path().to_path_buf(),
+            });
+        };
+        let Some((times, end_seconds)) = segment_start_and_end_seconds(raw_name) else {
+            continue;
+        };
+        let (_start_seconds, start, end) = segment_start_and_end(times, end_seconds);
+        let parent_name = segment
+            .path()
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+
+        if !is_location_only(segment.path(), parent_name, now)? {
+            continue;
+        }
+
+        let Ok(identity) = segment.record_identity() else {
+            continue;
+        };
+
+        rows.push(LocationSegmentRow {
+            key: raw_name.to_owned(),
+            stream: identity.stream.to_owned(),
+            start,
+            end,
+        });
+    }
+
+    rows.sort_by(|left, right| {
+        left.start
+            .cmp(&right.start)
+            .then(left.stream.cmp(&right.stream))
+            .then(left.key.cmp(&right.key))
+    });
+    Ok(rows)
 }
 
 pub fn scan_day<S: SegmentSource>(
@@ -77,19 +185,7 @@ pub fn scan_day<S: SegmentSource>(
         let Some((times, end_seconds)) = segment_start_and_end_seconds(raw_name) else {
             continue;
         };
-        let start_seconds =
-            u64::from(times.hour) * 3_600 + u64::from(times.minute) * 60 + u64::from(times.second);
-        let start = format_time(start_seconds);
-        // This shares Python's end-of-day clamp with chronological consumers;
-        // rendering remains the same `HH:MM` display format. A positive segment
-        // that collapses into its start minute needs a visible end for range attachment.
-        let natural_end = format_time(end_seconds);
-        let end = if end_seconds > start_seconds && natural_end == start {
-            let next_minute = start_seconds - (start_seconds % 60) + 60;
-            format_time(next_minute.min(86_399))
-        } else {
-            natural_end
-        };
+        let (start_seconds, start, end) = segment_start_and_end(times, end_seconds);
         // The card check uses the path parent, which differs from Direct layout
         // (`_default` has no directory). Do not substitute a stream spelling here.
         let parent_name = segment
@@ -100,11 +196,7 @@ pub fn scan_day<S: SegmentSource>(
             .unwrap_or_default();
         let (data_state, modality_input_mtime_ms) =
             detect_data_state(segment.path(), parent_name, now)?;
-        let types = ["audio", "screen", "image", "markdown", "browser"]
-            .into_iter()
-            .filter(|modality| data_state.0.contains_key(*modality))
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
+        let types = timeline_types(&data_state);
         if types.is_empty() {
             continue;
         }
@@ -522,6 +614,7 @@ fn format_time(seconds: u64) -> String {
 mod tests {
     use std::fs;
     use std::path::Path;
+    use std::time::SystemTime;
 
     use chrono::{DateTime, Utc};
     use tempfile::TempDir;
@@ -712,5 +805,260 @@ mod tests {
         let now = DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH);
         let (states, _) = detect_data_state(&segment_dir, "field", now).unwrap();
         assert_eq!(states.0.get("image").map(String::as_str), Some("failed"));
+    }
+
+    fn device_ingest_event_line(stream: &str, day: &str, segment: &str) -> String {
+        serde_json::json!({
+            "record_type": "device_ingest",
+            "record_version": 1,
+            "outcome": "accepted",
+            "protocol_version": 3,
+            "cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source": "",
+            "stream": stream,
+            "day": day,
+            "segment": segment,
+            "files": [],
+            "meta": {},
+        })
+        .to_string()
+            + "\n"
+    }
+
+    #[test]
+    fn producer_shaped_day_scan_day_equality_with_and_without_location() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let day = "20260101";
+        let now = Utc::now();
+
+        let loc_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("field")
+            .join("120000_60");
+        fs::create_dir_all(&loc_dir).unwrap();
+        write_file(&loc_dir, "location.jsonl", "{\"lat\":0.0}\n");
+        write_file(&loc_dir, "stream.json", "{\"stream\":\"field\"}\n");
+        write_file(
+            &loc_dir,
+            "events.jsonl",
+            &device_ingest_event_line("field", day, "120000_60"),
+        );
+
+        let mix_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("field")
+            .join("120500_60");
+        fs::create_dir_all(&mix_dir).unwrap();
+        write_file(
+            &mix_dir,
+            "audio.jsonl",
+            "{\"_solstone_processing\":{\"handler\":\"transcribe\"}}\n{\"row_type\":\"audio_transcript\"}\n",
+        );
+        write_file(&mix_dir, "location.jsonl", "{\"lat\":0.0}\n");
+        write_file(&mix_dir, "stream.json", "{\"stream\":\"field\"}\n");
+        write_file(
+            &mix_dir,
+            "events.jsonl",
+            &device_ingest_event_line("field", day, "120500_60"),
+        );
+
+        let with_location = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+
+        fs::remove_file(loc_dir.join("location.jsonl")).unwrap();
+        fs::remove_file(mix_dir.join("location.jsonl")).unwrap();
+
+        let without_location = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert_eq!(with_location, without_location);
+    }
+
+    #[test]
+    fn location_only_partition_against_scan_day() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let day = "20260101";
+        let now = Utc::now();
+        let stream = "phone";
+
+        // 1. location.jsonl alone -> location-only
+        let d1 = root
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join("090000_60");
+        fs::create_dir_all(&d1).unwrap();
+        write_file(&d1, "location.jsonl", "{\"lat\":0.0}\n");
+
+        // 2. beside audio.jsonl -> scan_day
+        let d2 = root
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join("090100_60");
+        fs::create_dir_all(&d2).unwrap();
+        write_file(&d2, "location.jsonl", "{\"lat\":0.0}\n");
+        write_file(&d2, "audio.jsonl", "{\"row_type\":\"audio_transcript\"}\n");
+
+        // 3. beside fresh .analyzing_audio -> scan_day
+        let d3 = root
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join("090200_60");
+        fs::create_dir_all(&d3).unwrap();
+        write_file(&d3, "location.jsonl", "{\"lat\":0.0}\n");
+        let marker = d3.join(".analyzing_audio");
+        write_file(&d3, ".analyzing_audio", "{}\n");
+        fs::File::open(&marker)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(SystemTime::from(now)))
+            .unwrap();
+
+        // 4. beside .analyze_failed_audio -> scan_day
+        let d4 = root
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join("090300_60");
+        fs::create_dir_all(&d4).unwrap();
+        write_file(&d4, "location.jsonl", "{\"lat\":0.0}\n");
+        write_file(&d4, ".analyze_failed_audio", "{}\n");
+
+        // 5. beside raw audio.m4a -> scan_day
+        let d5 = root
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join("090400_60");
+        fs::create_dir_all(&d5).unwrap();
+        write_file(&d5, "location.jsonl", "{\"lat\":0.0}\n");
+        write_file(&d5, "audio.m4a", "fake-audio");
+
+        // 6. beside nonempty *_transcript.md on a normal stream -> scan_day
+        let d6 = root
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join("090500_60");
+        fs::create_dir_all(&d6).unwrap();
+        write_file(&d6, "location.jsonl", "{\"lat\":0.0}\n");
+        write_file(&d6, "mic_transcript.md", "transcript contents");
+
+        // 7. beside *_transcript.jsonl on a normal stream -> scan_day
+        let d7 = root
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join("090600_60");
+        fs::create_dir_all(&d7).unwrap();
+        write_file(&d7, "location.jsonl", "{\"lat\":0.0}\n");
+        write_file(&d7, "mic_transcript.jsonl", "{}\n");
+
+        let (_, _, timeline) = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+        let location_only =
+            list_location_only_segments(&FilesystemSegmentSource, root, day, now).unwrap();
+
+        let timeline_keys: BTreeSet<String> = timeline.into_iter().map(|seg| seg.key).collect();
+        let location_keys: BTreeSet<String> =
+            location_only.into_iter().map(|row| row.key).collect();
+
+        let all_keys = [
+            "090000_60",
+            "090100_60",
+            "090200_60",
+            "090300_60",
+            "090400_60",
+            "090500_60",
+            "090600_60",
+        ];
+
+        for key in all_keys {
+            let in_timeline = timeline_keys.contains(key);
+            let in_location = location_keys.contains(key);
+            assert!(
+                in_timeline ^ in_location,
+                "key {key} must be in exactly one set: timeline={in_timeline}, location={in_location}"
+            );
+        }
+        assert!(location_keys.contains("090000_60"));
+    }
+
+    #[test]
+    fn ambiguous_named_default_dropped_from_location_list_and_sibling_returns() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let day = "20260101";
+        let now = Utc::now();
+
+        let default_named = root
+            .join("chronicle")
+            .join(day)
+            .join("_default")
+            .join("120000_60");
+        fs::create_dir_all(&default_named).unwrap();
+        write_file(&default_named, "location.jsonl", "{\"lat\":0.0}\n");
+
+        let phone_named = root
+            .join("chronicle")
+            .join(day)
+            .join("phone")
+            .join("120000_60");
+        fs::create_dir_all(&phone_named).unwrap();
+        write_file(&phone_named, "location.jsonl", "{\"lat\":0.0}\n");
+
+        let location_only =
+            list_location_only_segments(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert_eq!(location_only.len(), 1);
+        assert_eq!(location_only[0].stream, "phone");
+        assert_eq!(location_only[0].key, "120000_60");
+
+        // scan_day skips both because neither has timeline modality, returning Ok(empty)
+        assert!(scan_day(&FilesystemSegmentSource, root, day, now).is_ok());
+    }
+
+    #[test]
+    fn direct_layout_location_only_listed_with_default_stream() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let day = "20260101";
+        let now = Utc::now();
+
+        let direct = root.join("chronicle").join(day).join("120000_60");
+        fs::create_dir_all(&direct).unwrap();
+        write_file(&direct, "location.jsonl", "{\"lat\":0.0}\n");
+
+        let location_only =
+            list_location_only_segments(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert_eq!(location_only.len(), 1);
+        assert_eq!(
+            location_only[0].stream,
+            solstone_core_journal_io::DEFAULT_STREAM
+        );
+        assert_eq!(location_only[0].key, "120000_60");
+    }
+
+    #[test]
+    fn unparseable_directory_skipped_and_missing_day_is_empty() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let day = "20260101";
+        let now = Utc::now();
+
+        let invalid = root
+            .join("chronicle")
+            .join(day)
+            .join("phone")
+            .join("invalid_segment_name");
+        fs::create_dir_all(&invalid).unwrap();
+        write_file(&invalid, "location.jsonl", "{\"lat\":0.0}\n");
+
+        let rows = list_location_only_segments(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert!(rows.is_empty());
+
+        let missing =
+            list_location_only_segments(&FilesystemSegmentSource, root, "20260102", now).unwrap();
+        assert!(missing.is_empty());
     }
 }
