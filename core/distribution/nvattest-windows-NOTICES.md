@@ -269,8 +269,8 @@ THE SOFTWARE.
 
 ## openssl_external
 
-Source: https://github.com/openssl/openssl/releases/download/openssl-3.6.4/openssl-3.6.4.tar.gz
-Pin: 9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef
+Source: https://github.com/openssl/openssl/releases/download/openssl-3.6.5/openssl-3.6.5.tar.gz
+Pin: a2157c2830efdec3788939b00c9b0638306d3f0bbb76dc4832ee503bb397df98
 
 ### openssl_external.txt
 
@@ -523,8 +523,8 @@ and users must comply to its license: https://raw.githubusercontent.com/fmtlib/f
 
 ## xmlsec_external
 
-Source: https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_39/xmlsec1-1.2.39.tar.gz
-Pin: 15f2f55ea5968e578fcd24b3b427e553876c86c147dc7f03923e98fc2768a1fa
+Source: https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_42/xmlsec1-1.2.42.tar.gz
+Pin: 5359e3c19016ab164b505c1222ef5a2d87b34f50f85ff91d765f4aaa0df42db2
 
 ### xmlsec_external.txt
 
@@ -532,7 +532,7 @@ Pin: 15f2f55ea5968e578fcd24b3b427e553876c86c147dc7f03923e98fc2768a1fa
 xmlsec, xmlsec-openssl, xmlsec-gnutls, xmlsec-gcrypt libraries
 ------------------------------------------------------------------------------
 
-Copyright (C) 2002-2016 Aleksey Sanin <aleksey@aleksey.com>. All Rights Reserved.
+Copyright (C) 2002-2024 Aleksey Sanin <aleksey@aleksey.com>. All Rights Reserved.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -558,7 +558,7 @@ ings in this Software without prior written authorization from him.
 
 xmlsec-nss library
 ------------------------------------------------------------------------------
-Copyright (C) 2002-2016 Aleksey Sanin <aleksey@aleksey.com>. All Rights Reserved.
+Copyright (C) 2002-2024 Aleksey Sanin <aleksey@aleksey.com>. All Rights Reserved.
 Copyright (c) 2003 America Online, Inc.  All rights reserved.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -571,7 +571,7 @@ nished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.
 
-Portions of the Software were created using source code and/or APIs 
+Portions of the Software were created using source code and/or APIs
 governed by the Mozilla Public License (MPL). The MPL is available
 at http://www.mozilla.org/MPL/MPL-1.1.html. The MPL permits such
 portions to be distributed with code not governed by MPL, as long
@@ -592,7 +592,7 @@ ings in this Software without prior written authorization from him.
 xmlsec-mscrypto library
 ------------------------------------------------------------------------------
 
-Copyright (C) 2002-2016 Aleksey Sanin <aleksey@aleksey.com>. All Rights Reserved.
+Copyright (C) 2002-2024 Aleksey Sanin <aleksey@aleksey.com>. All Rights Reserved.
 Copyright (C) 2003 Cordys R&D BV, All rights reserved.
 Copyright (C) 2007 Roumen Petrov.
 Copyright (c) 2005-2006 Cryptocom LTD (http://www.cryptocom.ru).
@@ -623,7 +623,7 @@ ings in this Software without prior written authorization from him.
 xmlsec-mscng library
 ------------------------------------------------------------------------------
 
-Copyright (C) 2018 Aleksey Sanin. All Rights Reserved.
+Copyright (C) 2018-2024 Aleksey Sanin. All Rights Reserved.
 Copyright (C) 2018 Miklos Vajna. All Rights Reserved.
 
 

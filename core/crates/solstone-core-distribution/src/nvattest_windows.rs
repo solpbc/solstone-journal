@@ -54,9 +54,9 @@ pub const NVATTEST_REFUSAL_MANIFEST_BOUNDARY: &str =
     "offline manifest does not match the caller-bound digest";
 pub const NVATTEST_REFUSAL_REUSE_BOUNDARY: &str = "offline builds cannot reuse dependencies";
 /// The driver flips one byte of this bundle member for the changed-input control.
-pub const NVATTEST_REFUSAL_CORRUPT_MEMBER: &str = "openssl-3.6.4.tar.gz";
+pub const NVATTEST_REFUSAL_CORRUPT_MEMBER: &str = "openssl-3.6.5.tar.gz";
 pub const NVATTEST_REFUSAL_CORRUPT_BOUNDARY: &str =
-    "missing or changed offline input: openssl-3.6.4.tar.gz";
+    "missing or changed offline input: openssl-3.6.5.tar.gz";
 
 pub const NVATTEST_NETWORK_CONNECTED: &str = "connected";
 pub const NVATTEST_NETWORK_REFUSED: &str = "refused";
@@ -199,9 +199,9 @@ const fn download(name: &'static str, url: &'static str, sha256: &'static str) -
 
 const NATIVE_SOURCES: &[NativeSourcePin] = &[
     download(
-        "openssl-3.6.4.tar.gz",
-        "https://github.com/openssl/openssl/releases/download/openssl-3.6.4/openssl-3.6.4.tar.gz",
-        "9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef",
+        "openssl-3.6.5.tar.gz",
+        "https://github.com/openssl/openssl/releases/download/openssl-3.6.5/openssl-3.6.5.tar.gz",
+        "a2157c2830efdec3788939b00c9b0638306d3f0bbb76dc4832ee503bb397df98",
     ),
     download(
         "libxml2-2.11.9.tar.xz",
@@ -209,9 +209,9 @@ const NATIVE_SOURCES: &[NativeSourcePin] = &[
         "780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f",
     ),
     download(
-        "xmlsec1-1.2.39.tar.gz",
-        "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_39/xmlsec1-1.2.39.tar.gz",
-        "15f2f55ea5968e578fcd24b3b427e553876c86c147dc7f03923e98fc2768a1fa",
+        "xmlsec1-1.2.42.tar.gz",
+        "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_42/xmlsec1-1.2.42.tar.gz",
+        "5359e3c19016ab164b505c1222ef5a2d87b34f50f85ff91d765f4aaa0df42db2",
     ),
     download(
         "curl-8.22.0.tar.gz",
@@ -278,7 +278,7 @@ const BUILD_TOOLS: &[DownloadSourcePin] = &[
     },
 ];
 
-pub const NVATTEST_SDK_REVISION: &str = "ff957aa1012781d18b68973e370a0188b8ef502d";
+pub const NVATTEST_SDK_REVISION: &str = "69a71c859ec02b6e5f10616b8b8a873c230941c9";
 
 pub(crate) const fn production_pins() -> Pins {
     Pins {
@@ -286,13 +286,13 @@ pub(crate) const fn production_pins() -> Pins {
         sdk_revision: NVATTEST_SDK_REVISION,
         source_archive: ArchivePin {
             bytes: 5201920,
-            sha256: "3ddd77f2af4bb2c149a6de9aa24b38c98786b81af0fe5ef874936e34fb6e13f9",
+            sha256: "8a6f05954c8fe490acec8c1032926a72e31fb3f303493a7cb263bd5e63534623",
         },
         bundle_archive: ArchivePin {
-            bytes: 451399680,
-            sha256: "551bf2064bd73aa3c14b80c95d9f21633d709e47b31f110caf00f176d93d860a",
+            bytes: 451512320,
+            sha256: "114e0135cbcec53dd104d330c76ffafd630c372f5c25d0e103d718514f34725d",
         },
-        manifest_sha256: "72e44754363ed30ad30efddfe82d9af4c3ff68ca88dedb832d9a6f753828cd84",
+        manifest_sha256: "bca2a8fa20094517599953f38a3708e79ab93106228c594df3c9a4e19836932d",
         ca_bundle: FilePin {
             member: "ca-bundle.pem",
             bytes: 186446,
@@ -308,8 +308,8 @@ pub(crate) const fn production_pins() -> Pins {
             bytes: 45645,
             sha256: "b8352c80ef609b602bfd25e393ad774f74894bab1ab60a9afbeb61d6aae3c910",
         },
-        notices_body_sha256: "51f2ae4af1af443f8a753d47157006459dcfafd9a1652919b32ac0d25eb53946",
-        body_assembly_revision: "ff957aa1012781d18b68973e370a0188b8ef502d",
+        notices_body_sha256: "b12f2cb77c1578524f1d2f05c6cc35fdac3f499bb280bce66959590efd909579",
+        body_assembly_revision: "69a71c859ec02b6e5f10616b8b8a873c230941c9",
         native_sources: NATIVE_SOURCES,
         build_tools: BUILD_TOOLS,
         msvc_runtime: MsvcRuntimePins {

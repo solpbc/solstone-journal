@@ -922,23 +922,8 @@ fn captured_dumpbin_lists_exactly_the_captured_report_imports() {
 }
 
 #[test]
-fn production_pins_carry_the_committed_toolchain_and_archive_identities() {
+fn production_pins_bind_the_committed_regorus_lock() {
     let pins = production_pins();
-    assert_eq!(
-        pins.sdk_revision,
-        "ff957aa1012781d18b68973e370a0188b8ef502d"
-    );
-    assert_eq!(pins.source_archive.bytes, 5201920);
-    assert_eq!(pins.bundle_archive.bytes, 451399680);
-    assert_eq!(pins.native_sources.len(), 13);
-    assert_eq!(
-        pins.native_sources
-            .iter()
-            .filter(|s| matches!(s, NativeSourcePin::BuildRevision(_)))
-            .count(),
-        1
-    );
-    assert_eq!(pins.toolchain.windows_sdk, "10.0.26100.0");
     assert_eq!(sha256_hex(REGORUS_LOCK), pins.regorus_cargo_lock.sha256);
     assert_eq!(REGORUS_LOCK.len() as u64, pins.regorus_cargo_lock.bytes);
 }

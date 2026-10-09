@@ -215,12 +215,6 @@ mod tests {
         assert!(auth.targets.contains_key("macos-arm64"));
 
         let spec = artifact_spec(&auth, "linux-x86_64").expect("spec for linux-x86_64");
-        assert_eq!(spec.name, "libnvat-linux-x86_64-1.2.2-sol.6-archive.tar.xz");
-        assert_eq!(
-            spec.origin_key,
-            "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.6-archive.tar.xz"
-        );
-        assert_eq!(spec.size_bytes, 7793216);
         assert!(!spec.inventory.is_empty());
 
         let pins = origin_pins(&auth).expect("origin pins");

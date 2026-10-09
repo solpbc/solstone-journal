@@ -158,6 +158,8 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-con
 echo === cargo test --locked --no-run (solstone-core Windows library harness) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --lib --features test-hooks,journal-mcp-endpoint --no-run || exit /b 1
 
+call :run_exact_library "solstone-core" "supervisor::host::tests::program_folder_adopted_journal_refuses_boot_and_preserves_cleanup" "full-tests,test-hooks,journal-mcp-endpoint" || exit /b 1
+
 echo === owner evidence exporter controls ===
 powershell -NoProfile -File scripts\win-owner-evidence-tests.ps1 || exit /b 1
 
