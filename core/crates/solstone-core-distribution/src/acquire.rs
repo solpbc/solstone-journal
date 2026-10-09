@@ -538,8 +538,7 @@ pub(crate) fn acquire_catalog_inputs(
             )));
         }
         check_cache_path_components(unit, row.version, filename)?;
-        let cache_dir = repo
-            .join("target/catalog-input-cache")
+        let cache_dir = crate::pinned_stage::catalog_input_cache_dir(repo)
             .join(unit)
             .join(row.version);
         let cache_file = cache_dir.join(filename);
@@ -1223,6 +1222,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             let err = crate::pinned_stage::resolve_pinned_input(
                 "committed-test",
                 empty_repo.path(),
+                &crate::pinned_stage::catalog_input_cache_dir(empty_repo.path()),
                 "linux-x86_64",
                 &input,
             )

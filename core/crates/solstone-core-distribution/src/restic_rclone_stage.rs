@@ -342,6 +342,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
             crate::produce::stage_layout(
                 &repo,
+                &crate::pinned_stage::catalog_input_cache_dir(&repo),
                 &inventory_path,
                 &inventory,
                 target_id,

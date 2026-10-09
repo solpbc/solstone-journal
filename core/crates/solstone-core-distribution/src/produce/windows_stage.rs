@@ -306,6 +306,7 @@ fn collect_plan<'a>(
                 let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
                     entry_name,
                     checkout,
+                    &crate::pinned_stage::catalog_input_cache_dir(checkout),
                     WINDOWS_PAYLOAD_TARGET,
                     input,
                 )

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::digest::sha256_hex;
 use crate::inventory::StagedMember;
@@ -486,15 +486,28 @@ fn extract_tar_members<R: Read>(
     Ok(())
 }
 
+/// Where `acquire catalog-inputs` keeps catalog-acquired inputs: under the
+/// ignored `target/` of the repository it runs in. Produce stages committed
+/// inputs from its own per-run worktree, which never holds this cache, so it
+/// reads catalog-acquired inputs from the source repository's cache instead.
+pub(crate) fn catalog_input_cache_dir(repo: &Path) -> PathBuf {
+    repo.join("target/catalog-input-cache")
+}
+
+/// `repo` supplies committed inputs; `catalog_cache` supplies catalog-acquired
+/// ones (see [`catalog_input_cache_dir`]). Every input is still checked against
+/// its pin before use.
 pub(crate) fn resolve_pinned_input(
     entry: &str,
     repo: &Path,
+    catalog_cache: &Path,
     target_id: &str,
     input: &crate::inventory::PinnedInput,
 ) -> Result<(Vec<u8>, ResolvedPin, String), ProduceError> {
     resolve_pinned_input_with_catalog(
         entry,
         repo,
+        catalog_cache,
         target_id,
         input,
         solstone_core_assets::catalog(),
@@ -504,6 +517,7 @@ pub(crate) fn resolve_pinned_input(
 pub(crate) fn resolve_pinned_input_with_catalog(
     entry: &str,
     repo: &Path,
+    catalog_cache: &Path,
     target_id: &str,
     input: &crate::inventory::PinnedInput,
     catalog: &[solstone_core_assets::Artifact],
@@ -583,8 +597,7 @@ pub(crate) fn resolve_pinned_input_with_catalog(
             }
             crate::acquire::check_cache_path_components(unit, artifact.version, filename)
                 .map_err(|e| ProduceError::new(format!("{entry}: {e}")))?;
-            let cache_path = repo
-                .join("target/catalog-input-cache")
+            let cache_path = catalog_cache
                 .join(unit)
                 .join(artifact.version)
                 .join(filename);
@@ -1245,8 +1258,14 @@ mod tests {
             filename: "ced-v0.1.0-lib-linux-cpu-x64.tar.gz".into(),
             path: "core/models/assets/ced/ced-v0.1.0-lib-linux-cpu-x64.tar.gz".into(),
         };
-        let (bytes, pin, filename) =
-            resolve_pinned_input("ced-test", repo_root, "linux-x86_64", &input).unwrap();
+        let (bytes, pin, filename) = resolve_pinned_input(
+            "ced-test",
+            repo_root,
+            &catalog_input_cache_dir(repo_root),
+            "linux-x86_64",
+            &input,
+        )
+        .unwrap();
 
         let needed_set = BTreeSet::from(["ced-v0.1.0-lib-linux-cpu-x64/libced.so"]);
         let contents = extract_needed_members("ced-test", &bytes, &filename, &needed_set).unwrap();
@@ -1294,8 +1313,14 @@ mod tests {
             filename: "ced-v0.1.0-lib-linux-cpu-x64.tar.gz".into(),
             path: corrupt_file.to_str().unwrap().into(),
         };
-        let err = resolve_pinned_input("ced-test", repo_root, "linux-x86_64", &corrupt_input)
-            .unwrap_err();
+        let err = resolve_pinned_input(
+            "ced-test",
+            repo_root,
+            &catalog_input_cache_dir(repo_root),
+            "linux-x86_64",
+            &corrupt_input,
+        )
+        .unwrap_err();
         let err_msg = err.to_string();
         assert!(err_msg.contains("ced-test"));
         assert!(err_msg.contains("(ced-engine, ced-v0.1.0-lib-linux-cpu-x64.tar.gz)"));
@@ -1312,8 +1337,14 @@ mod tests {
             path: "core/models/assets/nvattest/libnvat-linux-x86_64-1.2.2-sol.6-archive.tar.xz"
                 .into(),
         };
-        let (bytes, pin, filename) =
-            resolve_pinned_input("nvattest-linux", repo_root, "linux-x86_64", &input).unwrap();
+        let (bytes, pin, filename) = resolve_pinned_input(
+            "nvattest-linux",
+            repo_root,
+            &catalog_input_cache_dir(repo_root),
+            "linux-x86_64",
+            &input,
+        )
+        .unwrap();
 
         let needed_set = BTreeSet::from([
             "bin/nvattest",
@@ -1394,8 +1425,14 @@ mod tests {
             path: "core/models/assets/nvattest/libnvat-macos-arm64-1.2.2-sol.6-archive.tar.xz"
                 .into(),
         };
-        let (bytes, pin, filename) =
-            resolve_pinned_input("nvattest-mac", repo_root, "macos-arm64", &input).unwrap();
+        let (bytes, pin, filename) = resolve_pinned_input(
+            "nvattest-mac",
+            repo_root,
+            &catalog_input_cache_dir(repo_root),
+            "macos-arm64",
+            &input,
+        )
+        .unwrap();
 
         let needed_set = BTreeSet::from([
             "bin/nvattest",
@@ -1516,6 +1553,7 @@ mod tests {
         let err = resolve_pinned_input_with_catalog(
             "my-entry",
             Path::new("."),
+            Path::new("target/catalog-input-cache"),
             "linux-x86_64",
             &input,
             &catalog,
@@ -1560,8 +1598,14 @@ mod tests {
                 crate::inventory::Entry::PinnedMembers { input, .. } => input,
                 _ => unreachable!(),
             };
-            let (bytes, pin, filename) =
-                resolve_pinned_input("nvattest", repo_root, target_id, input).unwrap();
+            let (bytes, pin, filename) = resolve_pinned_input(
+                "nvattest",
+                repo_root,
+                &catalog_input_cache_dir(repo_root),
+                target_id,
+                input,
+            )
+            .unwrap();
             let tmp = tempfile::tempdir().unwrap();
             let mut all_staged = Vec::new();
             for entry in &entries {
@@ -1738,8 +1782,14 @@ mod tests {
                 path: corrupt_archive.to_str().unwrap().into(),
             };
             assert!(
-                resolve_pinned_input("nvattest-corrupt", repo_root, target_id, &corrupt_input)
-                    .is_err()
+                resolve_pinned_input(
+                    "nvattest-corrupt",
+                    repo_root,
+                    &catalog_input_cache_dir(repo_root),
+                    target_id,
+                    &corrupt_input
+                )
+                .is_err()
             );
 
             let bin_bytes =
@@ -1896,8 +1946,14 @@ mod tests {
             _ => unreachable!(),
         };
 
-        let (bytes, pin, filename) =
-            resolve_pinned_input("nvattest", repo_root, "linux-x86_64", input).unwrap();
+        let (bytes, pin, filename) = resolve_pinned_input(
+            "nvattest",
+            repo_root,
+            &catalog_input_cache_dir(repo_root),
+            "linux-x86_64",
+            input,
+        )
+        .unwrap();
         let plans =
             plan_pinned_input("nvattest", &bytes, &pin, &filename, staged, ignored).unwrap();
         let tmp = tempfile::tempdir().unwrap();

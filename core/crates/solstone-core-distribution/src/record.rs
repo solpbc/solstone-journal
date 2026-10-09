@@ -81,6 +81,7 @@ pub fn declared_records(
     inventory: &Inventory,
     target_id: &str,
     repo: &Path,
+    catalog_cache: &Path,
     payload: &[String],
     artifacts: &BTreeMap<ArtifactId, PathBuf>,
     onnx: Option<(&onnx_runtime::TargetSpec, &onnx_runtime::StagedRuntime)>,
@@ -214,9 +215,14 @@ pub fn declared_records(
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
                 }
-                let (bytes, pin, filename) =
-                    crate::pinned_stage::resolve_pinned_input(dest, repo, target_id, input)
-                        .map_err(|e| e.to_string())?;
+                let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
+                    dest,
+                    repo,
+                    catalog_cache,
+                    target_id,
+                    input,
+                )
+                .map_err(|e| e.to_string())?;
                 let staged_member = crate::inventory::StagedMember {
                     relpath: String::new(),
                     dest: dest.clone(),
@@ -260,9 +266,14 @@ pub fn declared_records(
                     .first()
                     .map(|m| m.dest.as_str())
                     .unwrap_or("pinned-members");
-                let (bytes, pin, filename) =
-                    crate::pinned_stage::resolve_pinned_input(entry_name, repo, target_id, input)
-                        .map_err(|e| e.to_string())?;
+                let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
+                    entry_name,
+                    repo,
+                    catalog_cache,
+                    target_id,
+                    input,
+                )
+                .map_err(|e| e.to_string())?;
                 let plans = crate::pinned_stage::plan_pinned_input(
                     entry_name, &bytes, &pin, &filename, staged, ignored,
                 )

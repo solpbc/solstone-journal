@@ -487,6 +487,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         }
     }
     let checkout = work.join("checkout");
+    let catalog_cache = produce_catalog_cache(repo);
     let wrappers = work.join("wrappers");
     let onnx_dir = work.join("onnx");
     let target_dir = isolated_target_dir(&work);
@@ -590,6 +591,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 inventory_path: &inventory_path,
                 target,
                 checkout: &checkout,
+                catalog_cache: &catalog_cache,
                 work: &work,
                 spec,
                 staged_runtime: &staged_runtime,
@@ -729,6 +731,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             inventory_path: &inventory_path,
             target,
             checkout: &checkout,
+            catalog_cache: &catalog_cache,
             work: &work,
             spec,
             staged_runtime: &staged_runtime,
@@ -818,6 +821,9 @@ struct FinishProduce<'a> {
     inventory_path: &'a Path,
     target: &'a Target,
     checkout: &'a Path,
+    /// Catalog-acquired inputs come from the source repository's cache; the
+    /// per-run `checkout` worktree never holds them.
+    catalog_cache: &'a Path,
     work: &'a Path,
     spec: &'a onnx_runtime::TargetSpec,
     staged_runtime: &'a onnx_runtime::StagedRuntime,
@@ -843,6 +849,7 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         inventory_path,
         target,
         checkout,
+        catalog_cache,
         work,
         spec,
         staged_runtime,
@@ -906,6 +913,7 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
     let staged = write_stage(
         &selection,
         checkout,
+        catalog_cache,
         inventory_path,
         inventory,
         &args.target_id,
@@ -1700,6 +1708,7 @@ pub fn stage_inventory_tree(
     let staged = write_stage(
         &selection,
         repo,
+        &crate::pinned_stage::catalog_input_cache_dir(repo),
         inventory_path,
         inventory,
         target_id,
@@ -1730,6 +1739,7 @@ struct StagedWrite {
 fn write_stage(
     selection: &Selection,
     repo: &Path,
+    catalog_cache: &Path,
     inventory_path: &Path,
     inventory: &Inventory,
     target_id: &str,
@@ -1741,6 +1751,7 @@ fn write_stage(
     select::stage_selected(selection, stage)?;
     let archives = stage_layout(
         repo,
+        catalog_cache,
         inventory_path,
         inventory,
         target_id,
@@ -1770,6 +1781,7 @@ fn write_stage(
         inventory,
         target_id,
         repo,
+        catalog_cache,
         &payload,
         &artifacts,
         onnx,
@@ -1844,6 +1856,7 @@ fn check_authority_inventory(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn stage_layout(
     repo: &Path,
+    catalog_cache: &Path,
     inventory_path: &Path,
     inventory: &Inventory,
     target_id: &str,
@@ -1933,8 +1946,13 @@ pub(crate) fn stage_layout(
                     continue;
                 }
                 validate_identity_basename(dest, identity)?;
-                let (bytes, pin, filename) =
-                    crate::pinned_stage::resolve_pinned_input(dest, repo, target_id, input)?;
+                let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
+                    dest,
+                    repo,
+                    catalog_cache,
+                    target_id,
+                    input,
+                )?;
                 archives.push(SourceArchiveBytes {
                     name: filename.clone(),
                     bytes: bytes.clone(),
@@ -1976,8 +1994,13 @@ pub(crate) fn stage_layout(
                     .first()
                     .map(|m| m.dest.as_str())
                     .unwrap_or("pinned-members");
-                let (bytes, pin, filename) =
-                    crate::pinned_stage::resolve_pinned_input(entry_name, repo, target_id, input)?;
+                let (bytes, pin, filename) = crate::pinned_stage::resolve_pinned_input(
+                    entry_name,
+                    repo,
+                    catalog_cache,
+                    target_id,
+                    input,
+                )?;
                 archives.push(SourceArchiveBytes {
                     name: filename.clone(),
                     bytes: bytes.clone(),
@@ -2187,6 +2210,12 @@ fn git_stdout(repo: &Path, args: &[&str]) -> Result<String, ProduceError> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
+/// The catalog cache produce reads: the source repository's, where `acquire
+/// catalog-inputs` wrote it, never the per-run worktree's.
+fn produce_catalog_cache(source_repo: &Path) -> PathBuf {
+    crate::pinned_stage::catalog_input_cache_dir(source_repo)
+}
+
 fn git_run(repo: &Path, args: &[&str]) -> Result<(), ProduceError> {
     git_stdout(repo, args).map(|_| ())
 }
@@ -2253,6 +2282,71 @@ mod tests {
 
     use crate::archive_taxonomy::ContainerKind;
     use crate::inventory::{ArchiveExecutable, ArchiveSlot, PinnedInput};
+
+    /// Produce stages from a fresh per-run worktree, but `acquire catalog-inputs`
+    /// writes restic and rclone under the source repository's ignored
+    /// `target/`. The worktree never holds that cache, so produce must read
+    /// catalog-acquired inputs from the source repository.
+    #[test]
+    fn catalog_acquired_inputs_resolve_from_the_source_repo_not_the_produce_worktree() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let checkout = root.path().join("work/checkout");
+        fs::create_dir_all(&checkout).unwrap();
+        let bytes = b"synthetic acquired input".to_vec();
+        let digest: &'static str = Box::leak(crate::digest::sha256_hex(&bytes).into_boxed_str());
+        let catalog = vec![solstone_core_assets::Artifact {
+            unit: "restic",
+            version: "0.19.0",
+            filename: "restic_0.19.0_linux_amd64.bz2",
+            sha256: digest,
+            size_bytes: bytes.len() as u64,
+            upstream_url: "https://example.com/restic_0.19.0_linux_amd64.bz2",
+            origin_key: "restic-test",
+            artifact_key: None,
+            platform: None,
+            backend: None,
+            extracted_binary_sha256: None,
+        }];
+        let cached = crate::pinned_stage::catalog_input_cache_dir(&source)
+            .join("restic/0.19.0/restic_0.19.0_linux_amd64.bz2");
+        fs::create_dir_all(cached.parent().unwrap()).unwrap();
+        fs::write(&cached, &bytes).unwrap();
+        let input = PinnedInput::CatalogAcquired {
+            unit: "restic".into(),
+            filename: "restic_0.19.0_linux_amd64.bz2".into(),
+        };
+
+        let worktree_cache = crate::pinned_stage::catalog_input_cache_dir(&checkout);
+        let refused = crate::pinned_stage::resolve_pinned_input_with_catalog(
+            "lib/solstone-restic/restic",
+            &checkout,
+            &worktree_cache,
+            "linux-x86_64",
+            &input,
+            &catalog,
+        )
+        .unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("missing catalog input cache file"),
+            "{refused}"
+        );
+
+        let (resolved, pin, filename) = crate::pinned_stage::resolve_pinned_input_with_catalog(
+            "lib/solstone-restic/restic",
+            &checkout,
+            &produce_catalog_cache(&source),
+            "linux-x86_64",
+            &input,
+            &catalog,
+        )
+        .unwrap();
+        assert_eq!(resolved, bytes);
+        assert_eq!(pin.sha256_hex, digest);
+        assert_eq!(filename, "restic_0.19.0_linux_amd64.bz2");
+    }
 
     #[test]
     fn work_lock_refuses_a_second_producer_without_erasing_the_warm_cache() {
@@ -3212,6 +3306,7 @@ class = "notice"
             &inventory,
             "windows-x86_64",
             root.path(),
+            &crate::pinned_stage::catalog_input_cache_dir(root.path()),
             &payload,
             &artifacts,
             None,
@@ -3359,6 +3454,7 @@ class = "notice"
             &inventory,
             "linux-x86_64",
             &repo,
+            &crate::pinned_stage::catalog_input_cache_dir(&repo),
             &payload,
             &artifacts,
             Some((spec, &staged)),
@@ -3565,6 +3661,7 @@ zig_gnu = "x86_64-linux-gnu.2.27"
                 bins: vec![],
             },
             root.path(),
+            &crate::pinned_stage::catalog_input_cache_dir(root.path()),
             &root.path().join("inventory.toml"),
             &inv,
             "linux-x86_64",
@@ -3599,6 +3696,7 @@ zig_gnu = "x86_64-linux-gnu.2.27"
                 bins: vec![],
             },
             root.path(),
+            &crate::pinned_stage::catalog_input_cache_dir(root.path()),
             &root.path().join("inventory.toml"),
             &inv,
             "linux-x86_64",
@@ -3633,6 +3731,7 @@ zig_gnu = "x86_64-linux-gnu.2.27"
                 bins: vec![],
             },
             root.path(),
+            &crate::pinned_stage::catalog_input_cache_dir(root.path()),
             &root.path().join("inventory.toml"),
             &inv,
             "linux-x86_64",
