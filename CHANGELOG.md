@@ -6,12 +6,22 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- agents connected to your journal now get guidance on how to search it: a few keywords rather than a sentence, how to write a date, where the things you committed to are kept, and to say so when nothing matched. this helps agents that don't have the solstone skill, such as ChatGPT.
+- when an agent looks up a person or project, it now gets what your journal has noted about them in the facets it may see, and the last day they came up there, not only the name.
+- when an agent searches for a word that matches nothing on its own, such as "commit", it now also finds longer words that start with it, such as "commitment".
+- the agents app's ChatGPT steps now name the exact place to add your journal on chatgpt.com, and say that your journal added in ChatGPT's desktop app settings works only in Codex.
+
 ### Fixed
 
+- activity settling no longer appears as an extra daily run for yesterday in your journal's health records. its run is recorded separately under today, while each activity keeps its own day.
 - on windows, installing the local model from the thinking page works again. in 2.0.38 it stopped almost as soon as it started and the page said "local setup didn't finish". if that happened to you, choose "try setup again" on the thinking page.
 - when an agent searches your journal by date, a date written as 2026-10-05 now finds the same entries as 20261005. before, it found nothing. a date that isn't a real day is now refused, so the agent can correct it, instead of quietly matching nothing.
 - when an agent searches your journal with a whole sentence and no entry has every word, it now gets entries that match some of the words, and the response says so. before, it got nothing.
 - if you turn on solstone.me before finishing in the services portal, your journal now finishes turning it on by itself once you do. before, you had to come back, turn solstone.me on again and approve it a second time.
+- if your journal restarted while it was downloading the local thinking model or the transcription model, it no longer says the download is still going when nothing is downloading.
+- if your agents couldn't recall the notes they saved in your journal, or entity search wasn't available, both now work once everyday use has brought search up to date with your journal. before, they waited for a full rebuild of search, which everyday use never does.
 
 ## [2.0.38] - 2026-10-09
 

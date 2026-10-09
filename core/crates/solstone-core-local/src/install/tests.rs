@@ -416,8 +416,10 @@ fn metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit() {
         "downloading",
     )
     .unwrap();
+    let installer = lease::acquire(&root, "local").unwrap().unwrap();
     let reports_current_native_status =
         metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin").unwrap();
+    drop(installer);
     assert_eq!(
         reports_current_native_status["install"]["install_state"],
         "downloading"
@@ -1343,6 +1345,35 @@ fn run_parakeet_returns_exit_75_when_the_lease_is_held() {
     let error_body = error.envelope.error.as_ref().unwrap();
     assert_eq!(error_body.kind, "busy");
     assert_eq!(error_body.reason_code, "install_busy");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn an_install_whose_installer_is_gone_reads_interrupted_not_in_progress() {
+    let root = temp("inspect-parakeet-installer-gone");
+    let attempt = status::begin_or_replace(
+        &root,
+        "parakeet",
+        "{}".to_owned(),
+        "target".to_owned(),
+        None,
+        "downloading",
+    )
+    .unwrap();
+
+    let held = lease::acquire(&root, "parakeet").unwrap().unwrap();
+    let running = inspect_parakeet(&root, PARAKEET_TEST_KEY);
+    assert_eq!(running["in_flight"], true);
+    assert_eq!(running["install"]["install_state"], "downloading");
+    drop(held);
+
+    let gone = inspect_parakeet(&root, PARAKEET_TEST_KEY);
+    assert_eq!(gone["in_flight"], false);
+    assert_eq!(gone["install"]["install_state"], "failed");
+    assert_eq!(gone["install"]["error_code"], "install_interrupted");
+    assert_eq!(gone["install"]["attempt_id"], json!(attempt.attempt_id));
+    // Observing writes nothing; the next installer records the interruption.
+    assert_eq!(status::read_status(&root, "parakeet").unwrap(), attempt);
     let _ = fs::remove_dir_all(root);
 }
 

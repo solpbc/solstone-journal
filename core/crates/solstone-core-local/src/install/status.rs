@@ -159,6 +159,34 @@ pub fn read_status(journal: &Path, provider: &str) -> Result<InstallStatus, Stat
     Ok(status)
 }
 
+/// Read a provider's install status as an observer should report it.
+///
+/// The record says what the last installer wrote; only the provider lease says
+/// whether that installer is still running. An in-flight record whose lease is
+/// free was left by an installer that exited without a terminal write (killed,
+/// crashed, or stopped with its journal), so it reads as interrupted instead of
+/// in progress. Nothing is written: the next installer records the
+/// interruption when it begins.
+pub fn read_observed_status(journal: &Path, provider: &str) -> Result<InstallStatus, StatusError> {
+    let first = read_status(journal, provider)?;
+    if !is_in_flight(&first.install_state) || super::lease::is_held(journal, provider)? {
+        return Ok(first);
+    }
+    // An installer that finished or began between the two reads moved the
+    // revision; report what it wrote rather than the record it replaced.
+    let second = read_status(journal, provider)?;
+    if second.revision != first.revision || !is_in_flight(&second.install_state) {
+        return Ok(second);
+    }
+    let mut interrupted = second;
+    interrupted.install_state = "failed".to_owned();
+    interrupted.install_error = Some("install_interrupted".to_owned());
+    interrupted.error_code = Some("install_interrupted".to_owned());
+    interrupted.progress_bytes_received = None;
+    interrupted.progress_bytes_total = None;
+    Ok(interrupted)
+}
+
 pub fn begin(
     journal: &Path,
     fingerprint_json: String,

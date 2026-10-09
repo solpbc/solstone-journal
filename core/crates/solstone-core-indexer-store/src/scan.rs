@@ -38,9 +38,9 @@ use crate::chunk_sources::{
 use crate::classification::{FacetDeclarationSet, classify_source};
 use crate::classification_batch::{Counts, ResumeCount, classify_one_batch};
 use crate::db::{
-    EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, delete_chunk_classification,
+    EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, IndexBuildLifecycle, delete_chunk_classification,
     mark_index_build_complete, open_index_admitted, prune_authored_chat_paths_admitted,
-    read_chunk_classification_backfill, read_entity_search_watermark,
+    read_chunk_classification_backfill, read_entity_search_watermark, read_index_build_state,
     read_segment_aggregate_migration, replace_chunk_classification, write_entity_search_watermark,
     write_segment_aggregate_migration,
 };
@@ -65,8 +65,8 @@ pub struct ScanReport {
     pub failed: usize,
     pub warnings: Vec<String>,
     /// Expected, non-blocking skips (e.g. a discovered file type this index
-    /// does not classify). Never gates `mark_index_build_complete` — unlike
-    /// `warnings`, whose presence keeps a full build in `Building`.
+    /// does not classify). Never gates `mark_index_build_complete`; neither
+    /// do `warnings`. A failed file or a retained row does.
     pub benign_skips: Vec<String>,
     /// Every counted failure: the file and the modification time it failed
     /// at, or no file for a failure of the pass itself. `failed` always equals
@@ -108,6 +108,8 @@ struct EdgeScanReport {
     indexed: usize,
     removed: usize,
     rows_inserted: usize,
+    /// Edge rows kept for a day where discovery found no edge source.
+    retained: usize,
     failures: Vec<ScanFailure>,
     warnings: Vec<String>,
 }
@@ -608,6 +610,10 @@ fn scan_journal_pass(
         report.indexed += 1;
     }
 
+    // Rows this pass knows it could not reconcile: a light scan keeps them for
+    // a day where discovery found nothing. They keep the build out of Complete,
+    // and so do the edge rows reconcile_edges keeps the same way.
+    let retained_rows = retained_days.values().sum::<usize>();
     report.warnings.extend(
         retained_days
             .into_iter()
@@ -640,14 +646,23 @@ fn scan_journal_pass(
     report.edges_indexed = edge_report.indexed;
     report.edges_removed = edge_report.removed;
     report.edge_rows_inserted = edge_report.rows_inserted;
+    let retained_rows = retained_rows + edge_report.retained;
     report.failed += edge_report.failures.len();
     report.failures.extend(edge_report.failures);
     report.warnings.extend(edge_report.warnings);
-    if full && report.failed == 0 && report.warnings.is_empty() {
+    // A pass that walked every discovered path, light or full, with no failed
+    // file and no row left unreconciled leaves an index that matches the
+    // journal. Other warnings are reported, not gating. Only a transition
+    // writes, so an index that is already Complete pays no counts here.
+    if report.failed == 0 && retained_rows == 0 {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let files_count = tx.query_row("SELECT count(*) FROM files", [], |row| row.get(0))?;
-        let chunks_count = tx.query_row("SELECT count(*) FROM chunks", [], |row| row.get(0))?;
-        mark_index_build_complete(&tx, files_count, chunks_count)?;
+        let already_complete = read_index_build_state(&tx)?
+            .is_some_and(|state| state.state == IndexBuildLifecycle::Complete);
+        if !already_complete {
+            let files_count = tx.query_row("SELECT count(*) FROM files", [], |row| row.get(0))?;
+            let chunks_count = tx.query_row("SELECT count(*) FROM chunks", [], |row| row.get(0))?;
+            mark_index_build_complete(&tx, files_count, chunks_count)?;
+        }
         tx.commit()?;
     }
     let (merge_steps_spent, merge_warning) = run_bounded_merge(&mut conn);
@@ -984,6 +999,7 @@ fn reconcile_edges(
         return Ok(report);
     }
     let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
+    report.retained = retained_days.values().sum::<usize>();
     report.warnings.extend(
         retained_days
             .into_iter()
@@ -2512,7 +2528,15 @@ mod tests {
             .expect("completed state row");
         drop(conn);
 
-        scan_journal(&root, false).expect("light scan");
+        // A new file arrives; the light scan indexes it but does not rewrite an
+        // index that is already Complete, so the recorded counts stay put.
+        write(
+            &root,
+            "chronicle/20260718/talents/flow.md",
+            "# Flow\n\nlater",
+        );
+        let report = scan_journal(&root, false).expect("light scan");
+        assert_eq!(report.indexed, 1);
         let conn = open_index(&root).expect("open light-scanned index");
         assert_eq!(
             read_index_build_state(&conn).expect("read state after light scan"),
@@ -2523,16 +2547,184 @@ mod tests {
     }
 
     #[test]
-    fn light_scan_does_not_create_a_build_state_row() {
-        let root = temp_root("light-no-build-state");
-        scan_journal(&root, false).expect("light scan");
+    fn clean_light_scan_marks_a_fresh_index_complete() {
+        // Ordinary operation only ever light-scans, so this is how a fresh
+        // journal's index becomes usable for recall and entity search.
+        let root = temp_root("light-completes-fresh");
+        write(
+            &root,
+            "chronicle/20260717/talents/flow.md",
+            "# Flow\n\nfresh journal",
+        );
+        let report = scan_journal(&root, false).expect("light scan");
+        assert_eq!(report.failed, 0);
         let conn = open_index(&root).expect("open light-scanned index");
         assert_eq!(
             read_index_build_state(&conn).expect("read build state"),
-            None
+            Some(IndexBuildState {
+                schema_version: 1,
+                state: IndexBuildLifecycle::Complete,
+                files_count: count(&conn, "SELECT count(*) FROM files"),
+                chunks_count: count(&conn, "SELECT count(*) FROM chunks"),
+            })
         );
         drop(conn);
-        fs::remove_dir_all(root).expect("cleanup light no-state root");
+        fs::remove_dir_all(root).expect("cleanup light completes root");
+    }
+
+    #[test]
+    fn a_failed_file_keeps_a_light_scan_out_of_complete_until_it_is_repaired() {
+        let root = temp_root("light-failed-file");
+        write(
+            &root,
+            "chronicle/20260716/talents/flow.md",
+            "# Flow\n\nday one",
+        );
+        let bad_path = root.join("chronicle/20260717/talents/flow.md");
+        fs::create_dir_all(bad_path.parent().expect("test path should have parent"))
+            .expect("create parent");
+        fs::write(&bad_path, [0xFFu8, 0xFE, 0x00, 0xFF]).expect("write invalid utf8 content");
+
+        let report = scan_journal(&root, false).expect("light scan with a failure");
+        assert_eq!(report.failed, 1);
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(read_index_build_state(&conn).expect("read state"), None);
+        drop(conn);
+
+        fs::write(&bad_path, "# Flow\n\nday two").expect("repair content");
+        let report = scan_journal(&root, false).expect("light scan after repair");
+        assert_eq!(report.failed, 0);
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(
+            read_index_build_state(&conn)
+                .expect("read state")
+                .map(|state| state.state),
+            Some(IndexBuildLifecycle::Complete)
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup light failed file root");
+    }
+
+    #[test]
+    fn a_retained_day_keeps_a_light_scan_out_of_complete_and_a_full_scan_clears_it() {
+        // Built the way most indexes are: by single-file updates, never a scan.
+        let root = temp_root("light-retained-day");
+        write(
+            &root,
+            "chronicle/20260716/talents/flow.md",
+            "# Flow\n\nday one",
+        );
+        write(
+            &root,
+            "chronicle/20260717/talents/flow.md",
+            "# Flow\n\nday two",
+        );
+        rescan_file(&root, Path::new("20260716/talents/flow.md")).expect("index day one");
+        fs::remove_dir_all(root.join("chronicle/20260716")).expect("remove day one");
+
+        let report = scan_journal(&root, false).expect("light scan with a retained day");
+        assert_eq!(report.failed, 0);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.starts_with("light scan retained")),
+            "expected a retained-day warning: {:?}",
+            report.warnings
+        );
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(read_index_build_state(&conn).expect("read state"), None);
+        drop(conn);
+
+        scan_journal(&root, true).expect("full scan");
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(
+            read_index_build_state(&conn)
+                .expect("read state")
+                .map(|state| state.state),
+            Some(IndexBuildLifecycle::Complete)
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup light retained root");
+    }
+
+    #[test]
+    fn a_warning_without_a_failure_does_not_keep_a_light_scan_out_of_complete() {
+        let root = temp_root("light-warning-completes");
+        write(
+            &root,
+            "chronicle/20260717/default/090000_300/talents/flow.md",
+            "# Flow\n\nwarned",
+        );
+        write(
+            &root,
+            "chronicle/20260717/default/090000_300/stream.json",
+            "not json",
+        );
+        let report = scan_journal(&root, false).expect("light scan with a warning");
+        assert_eq!(report.failed, 0);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.starts_with("stream marker JSON failed")),
+            "expected a stream marker warning: {:?}",
+            report.warnings
+        );
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(
+            read_index_build_state(&conn)
+                .expect("read state")
+                .map(|state| state.state),
+            Some(IndexBuildLifecycle::Complete)
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup light warning root");
+    }
+
+    #[test]
+    fn a_light_scan_finishes_an_interrupted_reset_and_an_aborted_one_changes_nothing() {
+        let root = temp_root("light-after-reset");
+        write(
+            &root,
+            "chronicle/20260717/talents/flow.md",
+            "# Flow\n\nreset",
+        );
+        reset_index(&root).expect("reset index");
+        let conn = open_index(&root).expect("open reset index");
+        create_abort_trigger(
+            &conn,
+            "abort_light_after_reset",
+            "BEFORE",
+            "INSERT",
+            "files",
+            Some("NEW.path='20260717/talents/flow.md'"),
+        );
+        drop(conn);
+        scan_journal(&root, false).expect_err("trigger aborts light scan");
+        let conn = open_index(&root).expect("open aborted index");
+        assert_eq!(
+            read_index_build_state(&conn)
+                .expect("read state")
+                .map(|state| state.state),
+            Some(IndexBuildLifecycle::Building)
+        );
+        drop_trigger(&conn, "abort_light_after_reset");
+        drop(conn);
+
+        scan_journal(&root, false).expect("light scan after reset");
+        let conn = open_index(&root).expect("open rebuilt index");
+        assert_eq!(
+            read_index_build_state(&conn).expect("read state"),
+            Some(IndexBuildState {
+                schema_version: 1,
+                state: IndexBuildLifecycle::Complete,
+                files_count: count(&conn, "SELECT count(*) FROM files"),
+                chunks_count: count(&conn, "SELECT count(*) FROM chunks"),
+            })
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup light after reset root");
     }
 
     #[test]
@@ -4107,6 +4299,8 @@ mod tests {
             ]
         );
         let conn = Connection::open(db_path(&root)).expect("open db after light scan");
+        // Retained edge rows keep the build out of Complete, as chunk rows do.
+        assert_eq!(read_index_build_state(&conn).expect("read state"), None);
         assert_eq!(count(&conn, "SELECT count(*) FROM edges"), 1);
         assert_eq!(
             count(

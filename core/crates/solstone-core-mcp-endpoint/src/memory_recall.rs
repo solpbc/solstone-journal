@@ -1377,6 +1377,46 @@ mod tests {
 
     #[cfg(feature = "full-tests")]
     #[test]
+    fn a_journal_that_only_ever_light_scans_can_recall() {
+        // Ordinary operation never runs a full scan, so recall must not need one.
+        use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
+        use solstone_core_indexer_store::scan::scan_journal;
+        let outer = tempfile::Builder::new()
+            .prefix("memory-light-only-")
+            .tempdir_in(test_scratch_root())
+            .unwrap();
+        let journal = outer.path().join("journal");
+        fs::create_dir(&journal).unwrap();
+        let AppendResult::Stored(_) = append_connection_memory(
+            &journal,
+            AuthenticatedMemorySource {
+                verified_id: "light-source",
+                creation_label: "light fixture",
+            },
+            "needle light original",
+            "light-operation",
+            Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap(),
+        )
+        .unwrap() else {
+            panic!("writer fixture must store");
+        };
+        scan_journal(&journal, false).unwrap();
+        let codec = ReferenceCodec::new().unwrap();
+        let recalled = recall(
+            &journal,
+            &codec,
+            "light-connection",
+            "light-source",
+            "light-credential",
+            RecallArgs::default(),
+            NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+        );
+        assert!(recalled.complete, "{:?}", recalled.reason);
+        assert_eq!(recalled.notes.len(), 1);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
     fn writer_original_scan_rescan_and_unused_recall_use_actual_paths() {
         use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
         use solstone_core_indexer_store::scan::{rescan_file, scan_journal};

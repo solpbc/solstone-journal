@@ -8,6 +8,8 @@ use crate::compile::compile_query;
 use crate::execute::{QueryConnection, SqlPlan, plan_from_outcome_with_boundary};
 use crate::{ConnectionBoundary, IndexAccessError, QueryCompilation, SearchRequest};
 
+const MIN_PREFIX_CHARS: usize = 4;
+
 const RELAX_STOPWORDS: &[&str] = &[
     "what", "who", "whom", "whose", "when", "where", "why", "how", "which", "did", "do", "does",
     "doing", "done", "is", "are", "was", "were", "am", "be", "been", "being", "the", "a", "an",
@@ -51,6 +53,27 @@ pub(super) fn relaxed_plan(
     if content.len() > 1 {
         let plan = candidate_plan(
             &content.join(" OR "),
+            compilation,
+            request,
+            reference_date,
+            boundary,
+        );
+        if connection.has_rows(&plan)? {
+            return Ok(Some(plan));
+        }
+    }
+
+    // Last word-level rung: let each content word match as a prefix, so
+    // `commit` finds `commitment`. Short words are left out because a two- or
+    // three-letter prefix matches too much of the index to mean anything.
+    let prefixes: Vec<String> = content
+        .iter()
+        .filter(|word| word.chars().count() >= MIN_PREFIX_CHARS && !word.ends_with('*'))
+        .map(|word| format!("{word}*"))
+        .collect();
+    if !prefixes.is_empty() {
+        let plan = candidate_plan(
+            &prefixes.join(" OR "),
             compilation,
             request,
             reference_date,
