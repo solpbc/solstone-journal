@@ -24,6 +24,7 @@ test-support = []
 chrono.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
+log.workspace = true
 md5.workspace = true
 serde.workspace = true
 serde_json.workspace = true

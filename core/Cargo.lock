@@ -3645,6 +3645,7 @@ dependencies = [
  "chrono",
  "getrandom 0.3.4",
  "hmac",
+ "log",
  "md5",
  "nix",
  "rustix",
