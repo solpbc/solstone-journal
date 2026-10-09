@@ -1042,7 +1042,7 @@ fn spawn_confidential_handoff(
     poll: Arc<dyn ConfidentialPoll>,
     now: Arc<dyn Fn() -> Instant + Send + Sync>,
     sleep: Option<Arc<dyn Fn(Duration) + Send + Sync>>,
-) {
+) -> tokio::task::JoinHandle<()> {
     let worker_operations = operations.clone();
     let worker = tokio::spawn(async move {
         if !worker_operations.mark_waiting(SERVICE_SPP, handle) {
@@ -1124,6 +1124,7 @@ fn spawn_confidential_handoff(
         };
         worker_operations.finish(SERVICE_SPP, handle, result)
     });
+    // The returned task ends once the turn-on has finished one way or another.
     tokio::spawn(async move {
         if !worker.await.unwrap_or(false) {
             let _ = operations.finish(
@@ -1137,7 +1138,7 @@ fn spawn_confidential_handoff(
                 },
             );
         }
-    });
+    })
 }
 
 fn remap_operation(mut operation: Value) -> Value {
@@ -2672,38 +2673,6 @@ mod tests {
         }
     }
 
-    struct CompletionPoll {
-        poll: Arc<dyn super::ConfidentialPoll>,
-        finished: Option<tokio::sync::oneshot::Sender<()>>,
-    }
-    impl super::ConfidentialPoll for CompletionPoll {
-        fn poll(&self, base_url: &str, nonce: &str) -> PollOutcome {
-            self.poll.poll(base_url, nonce)
-        }
-    }
-    impl Drop for CompletionPoll {
-        fn drop(&mut self) {
-            if let Some(finished) = self.finished.take() {
-                let _ = finished.send(());
-            }
-        }
-    }
-    fn completion_poll(
-        poll: Arc<dyn super::ConfidentialPoll>,
-    ) -> (
-        Arc<dyn super::ConfidentialPoll>,
-        tokio::sync::oneshot::Receiver<()>,
-    ) {
-        let (finished, completion) = tokio::sync::oneshot::channel();
-        (
-            Arc::new(CompletionPoll {
-                poll,
-                finished: Some(finished),
-            }),
-            completion,
-        )
-    }
-
     fn sample_handoff_payload() -> serde_json::Map<String, Value> {
         json!({
             "endpoint_url": "https://handoff.example/v1",
@@ -2822,8 +2791,7 @@ mod tests {
             }
         }));
 
-        let (poll, completion) = completion_poll(poll);
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -2834,10 +2802,14 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        // The worker drops its final poll reference after publishing its result.
-        completion.await.expect("handoff worker completed");
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
-            !operations.is_open(super::SERVICE_SPP, handle),
+            ended,
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -2928,8 +2900,7 @@ mod tests {
             }
         }));
 
-        let (poll, completion) = completion_poll(poll);
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -2940,10 +2911,14 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        // The worker drops its final poll reference after publishing its result.
-        completion.await.expect("handoff worker completed");
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
-            !operations.is_open(super::SERVICE_SPP, handle),
+            ended,
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -2981,8 +2956,7 @@ mod tests {
                 PollOutcome::EarlyAccess
             }
         }));
-        let (poll, completion) = completion_poll(poll);
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -2992,10 +2966,14 @@ mod tests {
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
         );
-        // The worker drops its final poll reference after publishing its result.
-        completion.await.expect("handoff worker completed");
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
-            !operations.is_open(super::SERVICE_SPP, handle),
+            ended,
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -3024,8 +3002,7 @@ mod tests {
                 }
             }
         }));
-        let (poll, completion) = completion_poll(poll);
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -3035,10 +3012,14 @@ mod tests {
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
         );
-        // The worker drops its final poll reference after publishing its result.
-        completion.await.expect("handoff worker completed");
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
-            !operations.is_open(super::SERVICE_SPP, handle),
+            ended,
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -3065,8 +3046,7 @@ mod tests {
             }
         }));
 
-        let (poll, completion) = completion_poll(poll);
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -3077,11 +3057,14 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        // The worker owns the final poll reference until it publishes its result.
-        // Await that completion instead of racing the blocking-pool scheduler.
-        completion.await.expect("handoff worker completed");
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
-            !operations.is_open(super::SERVICE_SPP, handle),
+            ended,
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -3123,8 +3106,7 @@ mod tests {
             }
         }));
 
-        let (poll, completion) = completion_poll(poll);
-        super::spawn_confidential_handoff(
+        let turn_on = super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
             handle,
@@ -3135,10 +3117,14 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        // The worker drops its final poll reference after publishing its result.
-        completion.await.expect("handoff worker completed");
+        // Wait for the turn-on itself, never for a number of scheduler turns.
+        tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
+            .await
+            .expect("turn-on ends")
+            .expect("turn-on task completes");
+        let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
-            !operations.is_open(super::SERVICE_SPP, handle),
+            ended,
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -3248,7 +3234,8 @@ mod tests {
         let mut body: Value = Value::Null;
         let mut ended = false;
         for _ in 0..5000 {
-            tokio::task::yield_now().await;
+            // The refresh runs on a blocking thread; give it real time rather than scheduler turns.
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             let req = Request::builder()
                 .method("GET")
                 .uri("/app/thinking/api/state")
