@@ -36,15 +36,15 @@ $ProgressPreference = 'SilentlyContinue'
 
 # Committed pins. The recorder holds the same values in Rust and refuses any
 # difference; these only let the driver refuse early and name its inputs.
-$PinnedSdkRevision = 'ff957aa1012781d18b68973e370a0188b8ef502d'
-$PinnedSourceSha256 = '3ddd77f2af4bb2c149a6de9aa24b38c98786b81af0fe5ef874936e34fb6e13f9'
+$PinnedSdkRevision = '69a71c859ec02b6e5f10616b8b8a873c230941c9'
+$PinnedSourceSha256 = '8a6f05954c8fe490acec8c1032926a72e31fb3f303493a7cb263bd5e63534623'
 $PinnedSourceSize = 5201920
-$PinnedBundleSha256 = '551bf2064bd73aa3c14b80c95d9f21633d709e47b31f110caf00f176d93d860a'
-$PinnedBundleSize = 451399680
-$PinnedManifestSha256 = '72e44754363ed30ad30efddfe82d9af4c3ff68ca88dedb832d9a6f753828cd84'
+$PinnedBundleSha256 = '9cc47abc0be80b7b4ae77875842bc9f8e224df7a818019f5edd9349407bc1f1b'
+$PinnedBundleSize = 433367040
+$PinnedManifestSha256 = 'bca2a8fa20094517599953f38a3708e79ab93106228c594df3c9a4e19836932d'
 $CmakeArchiveName = 'cmake-3.31.12-windows-x86_64.zip'
 $CmakeExeRelative = 'cmake-3.31.12-windows-x86_64\bin\cmake.exe'
-$CorruptMember = 'openssl-3.6.4.tar.gz'
+$CorruptMember = 'openssl-3.6.5.tar.gz'
 $RefusalManifestBoundary = 'offline manifest does not match the caller-bound digest'
 $RefusalReuseBoundary = 'offline builds cannot reuse dependencies'
 $RefusalCorruptBoundary = "missing or changed offline input: $CorruptMember"
