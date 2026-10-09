@@ -8,7 +8,7 @@ use solstone_core_indexer_query::AdmittedCategory;
 
 use crate::permissions::{ConnectionReadSnapshot, PermissionDecision};
 use crate::tools::search::MAX_QUERY_BYTES;
-use crate::tools::{MAX_DAY_BYTES, MAX_OPAQUE_REFERENCE_BYTES};
+use crate::tools::{DAY_DESCRIPTION, DAY_PATTERN, MAX_DAY_BYTES, MAX_OPAQUE_REFERENCE_BYTES};
 
 /// What one tool needs before a connection may see or call it.
 ///
@@ -210,9 +210,9 @@ fn recall_memory_input_schema(_context: &SchemaContext<'_>) -> Value {
         "properties": {
             "query": {"type": "string", "maxLength": MAX_QUERY_BYTES},
             "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
-            "day": {"type": "string", "maxLength": MAX_DAY_BYTES},
-            "day_from": {"type": "string", "maxLength": MAX_DAY_BYTES},
-            "day_to": {"type": "string", "maxLength": MAX_DAY_BYTES},
+            "day": {"type": "string", "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION},
+            "day_from": {"type": "string", "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION},
+            "day_to": {"type": "string", "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION},
             "continuation": {"type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES}
         }
     })
@@ -267,18 +267,20 @@ fn list_facets_input_schema(_context: &SchemaContext<'_>) -> Value {
     })
 }
 
+const SEARCH_QUERY_DESCRIPTION: &str = "a few plain keywords such as names or topics. when no entry matches every word, results match some of them and `relaxed` is true.";
+
 fn search_input_schema(context: &SchemaContext<'_>) -> Value {
     let mut schema = json!({
         "type": "object",
         "additionalProperties": false,
         "required": ["query"],
         "properties": {
-            "query": { "type": "string", "minLength": 1, "maxLength": MAX_QUERY_BYTES },
+            "query": { "type": "string", "minLength": 1, "maxLength": MAX_QUERY_BYTES, "description": SEARCH_QUERY_DESCRIPTION },
             "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
             "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
-            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES },
-            "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES },
-            "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES },
+            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
+            "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
+            "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
         }
     });
     if let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut)
@@ -306,7 +308,7 @@ fn list_transcripts_input_schema(context: &SchemaContext<'_>) -> Value {
         "additionalProperties": false,
         "properties": {
             "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
-            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES },
+            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
         }
     });
     with_scoped_facet(schema, context)

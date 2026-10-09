@@ -54,7 +54,7 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
         return Err(ToolError::InvalidInput);
     }
     Ok(ValidatedListTranscripts {
-        day: params.day,
+        day: super::normalize_day(params.day)?,
         facet_id: params.facet,
         limit: params.limit,
     })

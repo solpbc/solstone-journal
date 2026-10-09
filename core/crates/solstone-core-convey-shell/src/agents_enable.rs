@@ -316,8 +316,17 @@ fn spawn_handoff(
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                     Ok(("revoked", _)) => break outcome(Phase::Revoked, "revoked", None),
+                    // The portal has saved the owner's consent and is waiting on a
+                    // subscription. Turning on now lets the service hold on the
+                    // portal's no-write 402 and retry, so a purchase is picked up
+                    // by itself. Ending here instead made the owner turn solstone.me
+                    // on and approve it again after paying.
                     Ok(("needs_subscription", url)) => {
-                        break outcome(Phase::NeedsSubscription, "needs_subscription", url);
+                        let result = enable_sme(&journal);
+                        break match result {
+                            Ok(()) => outcome(Phase::Enabled, "approved", url),
+                            Err(_) => outcome(Phase::Error, "local_error", None),
+                        };
                     }
                     Ok(("approved", _)) => {
                         let result = enable_sme(&journal);

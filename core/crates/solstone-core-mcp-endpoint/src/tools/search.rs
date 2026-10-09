@@ -6,7 +6,7 @@ use serde_json::Value;
 use solstone_core_indexer_query::AdmittedCategory;
 
 use super::{
-    MAX_DAY_BYTES, MAX_FACET_BYTES, MAX_OPAQUE_REFERENCE_BYTES, ToolError,
+    MAX_DAY_BYTES, MAX_FACET_BYTES, MAX_OPAQUE_REFERENCE_BYTES, ToolError, normalize_day,
     optional_string_within_limit,
 };
 
@@ -78,9 +78,9 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolEr
         query: params.query,
         limit: params.limit,
         cursor: params.cursor,
-        day: params.day,
-        day_from: params.day_from,
-        day_to: params.day_to,
+        day: normalize_day(params.day)?,
+        day_from: normalize_day(params.day_from)?,
+        day_to: normalize_day(params.day_to)?,
         category,
         facet_id: params.facet,
     })

@@ -153,9 +153,10 @@ fn recall_args(arguments: Option<&Value>) -> Option<RecallArgs> {
     Some(RecallArgs {
         query: string("query", crate::tools::search::MAX_QUERY_BYTES)?,
         limit,
-        day: string("day", crate::tools::MAX_DAY_BYTES)?,
-        day_from: string("day_from", crate::tools::MAX_DAY_BYTES)?,
-        day_to: string("day_to", crate::tools::MAX_DAY_BYTES)?,
+        day: crate::tools::normalize_day(string("day", crate::tools::MAX_DAY_BYTES)?).ok()?,
+        day_from: crate::tools::normalize_day(string("day_from", crate::tools::MAX_DAY_BYTES)?)
+            .ok()?,
+        day_to: crate::tools::normalize_day(string("day_to", crate::tools::MAX_DAY_BYTES)?).ok()?,
         continuation,
     })
 }

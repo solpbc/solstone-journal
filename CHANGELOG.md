@@ -9,6 +9,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - on windows, installing the local model from the thinking page works again. in 2.0.38 it stopped almost as soon as it started and the page said "local setup didn't finish". if that happened to you, choose "try setup again" on the thinking page.
+- when an agent searches your journal by date, a date written as 2026-10-05 now finds the same entries as 20261005. before, it found nothing. a date that isn't a real day is now refused, so the agent can correct it, instead of quietly matching nothing.
+- when an agent searches your journal with a whole sentence and no entry has every word, it now gets entries that match some of the words, and the response says so. before, it got nothing.
+- if you turn on solstone.me before finishing in the services portal, your journal now finishes turning it on by itself once you do. before, you had to come back, turn solstone.me on again and approve it a second time.
 
 ## [2.0.38] - 2026-10-09
 
