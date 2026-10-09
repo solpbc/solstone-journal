@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when an agent searches your journal with a whole sentence and no entry has every word, it now gets entries that match some of the words, and the response says so. before, it got nothing.
 - if you turn on solstone.me before finishing in the services portal, your journal now finishes turning it on by itself once you do. before, you had to come back, turn solstone.me on again and approve it a second time.
 - if your journal restarted while it was downloading the local thinking model or the transcription model, it no longer says the download is still going when nothing is downloading.
+- if your agents couldn't recall the notes they saved in your journal, or entity search wasn't available, both now work once everyday use has brought search up to date with your journal. before, they waited for a full rebuild of search, which everyday use never does.
 
 ## [2.0.38] - 2026-10-09
 
