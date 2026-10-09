@@ -99,7 +99,6 @@ pub fn linux_produce_dir(root: &Path, version: &str) -> (PathBuf, String) {
         inventory: test_inventory(),
         fail_evidence_install: false,
         archives: Vec::new(),
-        stage_mutator: None,
     })
     .expect("promote linux fixture");
     for name in inventory::artifact_set(&basename) {

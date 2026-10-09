@@ -697,6 +697,10 @@ pub fn entry_component_id(entry: &Entry) -> Option<&'static str> {
             WindowsNativeMapping::Component(id) => Some(id),
             _ => None,
         },
+        Entry::PinnedMembers {
+            component: Some(component),
+            ..
+        } => solstone_core_assets::unit_id(component),
         _ => None,
     }
 }
@@ -2870,18 +2874,18 @@ zig_gnu = "x86_64-linux-gnu.2.28"
         // Copy of share/LICENSE with class = notice
         let mut inv_copy = original.clone();
         for entry in &mut inv_copy.entry {
-            if let Entry::Copy { class, dest, .. } = entry {
-                if dest == "share/LICENSE" {
-                    *class = Some(DeliveryClass::Notice);
-                    let err = super::validate_inventory(&path, &inv_copy)
-                        .unwrap_err()
-                        .to_string();
-                    assert!(
-                        err.contains("illegal-class: copy share/LICENSE notice"),
-                        "{err}"
-                    );
-                    break;
-                }
+            if let Entry::Copy { class, dest, .. } = entry
+                && dest == "share/LICENSE"
+            {
+                *class = Some(DeliveryClass::Notice);
+                let err = super::validate_inventory(&path, &inv_copy)
+                    .unwrap_err()
+                    .to_string();
+                assert!(
+                    err.contains("illegal-class: copy share/LICENSE notice"),
+                    "{err}"
+                );
+                break;
             }
         }
 
@@ -2954,6 +2958,27 @@ zig_gnu = "x86_64-linux-gnu.2.28"
     }
 
     #[test]
+    fn every_component_entry_names_its_component() {
+        // A component entry that resolves to no id is silently left out of the
+        // components file, the bundled-id check and the provenance receipts.
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let inventory =
+            super::load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
+        for entry in &inventory.entry {
+            if entry.class() == Some(DeliveryClass::Component) {
+                assert!(
+                    entry_component_id(entry).is_some(),
+                    "component entry names no component: {:?}",
+                    entry_fields(entry).0
+                );
+            }
+        }
+    }
+
+    #[test]
     fn producer_bundled_ids_and_non_catalog_component_ids() {
         let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
@@ -2974,12 +2999,10 @@ zig_gnu = "x86_64-linux-gnu.2.28"
                 let targets = entry_fields(entry).1;
                 if entry.class() == Some(DeliveryClass::Component)
                     && targets.iter().any(|t| t == target)
+                    && let Some(id) = entry_component_id(entry)
+                    && solstone_core_assets::unit_id(id).is_some()
                 {
-                    if let Some(id) = entry_component_id(entry) {
-                        if solstone_core_assets::unit_id(id).is_some() {
-                            component_ids.insert(id);
-                        }
-                    }
+                    component_ids.insert(id);
                 }
             }
             let compiled_bundled = solstone_core_assets::bundled_ids(target);
@@ -2992,12 +3015,11 @@ zig_gnu = "x86_64-linux-gnu.2.28"
 
         let mut non_catalog_ids = BTreeSet::new();
         for entry in &inventory.entry {
-            if entry.class() == Some(DeliveryClass::Component) {
-                if let Some(id) = entry_component_id(entry) {
-                    if solstone_core_assets::unit_id(id).is_none() {
-                        non_catalog_ids.insert(id);
-                    }
-                }
+            if entry.class() == Some(DeliveryClass::Component)
+                && let Some(id) = entry_component_id(entry)
+                && solstone_core_assets::unit_id(id).is_none()
+            {
+                non_catalog_ids.insert(id);
             }
         }
         let expected_non_catalog: BTreeSet<&str> = [

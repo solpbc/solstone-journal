@@ -82,12 +82,13 @@ pub fn unit_id(unit: &str) -> Option<&'static str> {
 
 /// Compiled bundled catalog-unit IDs per target.
 ///
-/// POSIX targets bundle no catalog units.
-/// Windows bundles: llama-server, parakeet-server, parakeet-model, ced-engine, restic, rclone, nvattest.
+/// POSIX targets bundle: ced-engine, ced-model, nvattest.
+/// Windows bundles: llama-server, parakeet-server, parakeet-model, ced-engine, ced-model,
+/// restic, rclone, nvattest.
 static COMPILED_BUNDLED_IDS: &[(&str, &[&str])] = &[
-    ("linux-x86_64", &[]),
-    ("linux-aarch64", &[]),
-    ("macos-arm64", &[]),
+    ("linux-x86_64", &["ced-engine", "ced-model", "nvattest"]),
+    ("linux-aarch64", &["ced-engine", "ced-model", "nvattest"]),
+    ("macos-arm64", &["ced-engine", "ced-model", "nvattest"]),
     (
         "windows-x86_64",
         &[
@@ -95,6 +96,7 @@ static COMPILED_BUNDLED_IDS: &[(&str, &[&str])] = &[
             "parakeet-server",
             "parakeet-model",
             "ced-engine",
+            "ced-model",
             "restic",
             "rclone",
             "nvattest",
@@ -592,8 +594,6 @@ mod tests {
     use super::*;
 
     const ORACLE_LINUX_X86_64: &[&str] = &[
-        "assets/ced-engine/v0.1.0/ced-v0.1.0-lib-linux-cpu-x64.tar.gz",
-        "assets/ced-model/b5e9a4aad6438763c8da16079d77563fbed35c65/ced-tiny-q8_0.gguf",
         "assets/llama-server-vulkan/b11429/llama-b11429-bin-ubuntu-vulkan-x64.tar.gz",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
@@ -602,13 +602,10 @@ mod tests {
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-x64.tar.gz",
         "assets/rclone/1.74.4/rclone-v1.74.4-linux-amd64.zip",
         "assets/restic/0.19.0/restic_0.19.0_linux_amd64.bz2",
-        "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.6-archive.tar.xz",
         "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz",
     ];
 
     const ORACLE_LINUX_AARCH64: &[&str] = &[
-        "assets/ced-engine/v0.1.0/ced-v0.1.0-lib-linux-cpu-arm64.tar.gz",
-        "assets/ced-model/b5e9a4aad6438763c8da16079d77563fbed35c65/ced-tiny-q8_0.gguf",
         "assets/llama-server-vulkan/b11429/llama-b11429-bin-ubuntu-vulkan-arm64.tar.gz",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
@@ -617,13 +614,10 @@ mod tests {
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-arm64.tar.gz",
         "assets/rclone/1.74.4/rclone-v1.74.4-linux-arm64.zip",
         "assets/restic/0.19.0/restic_0.19.0_linux_arm64.bz2",
-        "providers/nvattest/libnvat-linux-aarch64-1.2.2-sol.6-archive.tar.xz",
         "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-arm64-sol1.tar.gz",
     ];
 
     const ORACLE_MACOS_ARM64: &[&str] = &[
-        "assets/ced-engine/v0.1.0/ced-v0.1.0-lib-macos-metal-arm64.tar.gz",
-        "assets/ced-model/b5e9a4aad6438763c8da16079d77563fbed35c65/ced-tiny-q8_0.gguf",
         "assets/llama-server-vulkan/b11429/llama-b11429-bin-macos-arm64.tar.gz",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
@@ -652,11 +646,9 @@ mod tests {
         "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/parakeet_vocab.json",
         "assets/rclone/1.74.4/rclone-v1.74.4-osx-arm64.zip",
         "assets/restic/0.19.0/restic_0.19.0_darwin_arm64.bz2",
-        "providers/nvattest/libnvat-macos-arm64-1.2.2-sol.6-archive.tar.xz",
     ];
 
-    const ORACLE_WINDOWS_X86_64: &[&str] =
-        &["assets/ced-model/b5e9a4aad6438763c8da16079d77563fbed35c65/ced-tiny-q8_0.gguf"];
+    const ORACLE_WINDOWS_X86_64: &[&str] = &[];
 
     #[test]
     fn oracle_equality_for_all_four_targets() {
@@ -767,15 +759,21 @@ mod tests {
         for target in ["linux-x86_64", "linux-aarch64", "macos-arm64"] {
             let spec = solstone_core_nvattest_authority::artifact_spec(&authority, target)
                 .expect("nvattest spec");
+            // The verifier ships in the package, so it is never in the real set; with
+            // nothing bundled, its candidate key still composes from the authority.
             let set = runtime_fetch_set(target).expect("fetch set");
-            let nvat_entries: Vec<_> = set.iter().filter(|f| f.unit() == "nvattest").collect();
-            assert_eq!(
-                nvat_entries.len(),
-                1,
-                "expected exactly 1 nvattest entry for {target}"
-            );
+            assert!(!set.iter().any(|f| f.unit() == "nvattest"), "{target}");
             let expected_key = format!("providers/nvattest/{}", spec.name);
-            assert_eq!(nvat_entries[0].origin_key(), expected_key);
+            with_bundled_ids_override(target, &[], || {
+                let set = runtime_fetch_set(target).expect("fetch set");
+                let nvat_entries: Vec<_> = set.iter().filter(|f| f.unit() == "nvattest").collect();
+                assert_eq!(
+                    nvat_entries.len(),
+                    1,
+                    "expected exactly 1 nvattest candidate for {target}"
+                );
+                assert_eq!(nvat_entries[0].origin_key(), expected_key);
+            });
         }
 
         let win_set = runtime_fetch_set("windows-x86_64").expect("windows fetch set");

@@ -364,7 +364,7 @@ fn windows_component_evidence_happy_path() {
 
     let prov_path = out_dir.path().join(
         solstone_core_distribution::component_evidence::provenance_file_name(
-            &workspace_ver,
+            workspace_ver,
             "windows-x86_64",
         ),
     );
@@ -389,7 +389,7 @@ fn windows_component_evidence_happy_path() {
 
     let comp_path = out_dir.path().join(
         solstone_core_distribution::component_evidence::components_file_name(
-            &workspace_ver,
+            workspace_ver,
             "windows-x86_64",
         ),
     );

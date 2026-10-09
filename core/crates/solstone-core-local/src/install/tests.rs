@@ -3915,30 +3915,11 @@ fn cuda_b11429_covered_probe_integrity_is_blocked() {
     }
 }
 
-/// Engine key the runtime fetch set still selects. The installer no longer
-/// downloads CED; this match is the selector the committed fetch-set oracles
-/// were written against.
-fn ced_artifact_key(os_name: &str, arch: &str) -> Option<&'static str> {
-    match (os_name, arch.to_ascii_lowercase().as_str()) {
-        ("linux", "amd64" | "x64" | "x86_64") => Some("linux-cpu-x64"),
-        ("linux", "arm64" | "aarch64") => Some("linux-cpu-arm64"),
-        ("darwin", "arm64") => Some("macos-metal-arm64"),
-        _ => None,
-    }
-}
-
-fn ced_uses_package_engine(os_name: &str, arch: &str) -> bool {
-    matches!(
-        (os_name, arch.to_ascii_lowercase().as_str()),
-        ("windows", "amd64" | "x64" | "x86_64")
-    )
-}
-
 #[test]
 pub fn fetch_set_selectors_request_only_that_targets_local_units() {
+    // CED ships inside every package, so the installer selects no CED unit and the
+    // fetch set carries none (asserted below).
     let local_units = [
-        "ced-engine",
-        "ced-model",
         "llama-server-vulkan",
         "llama-server-cuda",
         "local-model",
@@ -3948,40 +3929,14 @@ pub fn fetch_set_selectors_request_only_that_targets_local_units() {
     ];
 
     let targets = [
-        ("linux-x86_64", "linux", "x86_64"),
-        ("linux-aarch64", "linux", "aarch64"),
-        ("macos-arm64", "darwin", "arm64"),
-        ("windows-x86_64", "windows", "x86_64"),
+        "linux-x86_64",
+        "linux-aarch64",
+        "macos-arm64",
+        "windows-x86_64",
     ];
 
-    for (target, os, arch) in targets {
+    for target in targets {
         let mut collected = BTreeSet::new();
-
-        // ced-model on all four targets
-        let art = super::select_artifact("ced-model", None, None, None, Some("ced-tiny-q8_0.gguf"))
-            .expect("ced-model");
-        collected.insert(art.origin_key);
-
-        // ced-engine only when ced_artifact_key(os, arch) is Some
-        if ced_artifact_key(os, arch).is_some() {
-            let (key, platform, backend) = match (os, arch) {
-                ("linux", "x86_64") => ("linux-cpu-x64", Platform::LinuxX64, Backend::Cpu),
-                ("linux", "aarch64") => ("linux-cpu-arm64", Platform::LinuxArm64, Backend::Cpu),
-                ("darwin", "arm64") => ("macos-metal-arm64", Platform::MacosArm64, Backend::Metal),
-                _ => unreachable!(),
-            };
-            let art = super::select_artifact(
-                "ced-engine",
-                Some(platform),
-                Some(backend),
-                Some(key),
-                None,
-            )
-            .expect("ced-engine");
-            collected.insert(art.origin_key);
-        } else {
-            assert!(ced_uses_package_engine(os, arch));
-        }
 
         // llama-server-vulkan: platform + artifact key, backend None. Not windows.
         if target != "windows-x86_64" {
@@ -4085,5 +4040,11 @@ pub fn fetch_set_selectors_request_only_that_targets_local_units() {
             .collect();
 
         assert_eq!(collected, expected, "target {target} origin keys mismatch");
+        assert!(
+            !fetch_set
+                .iter()
+                .any(|f| matches!(f.unit(), "ced-engine" | "ced-model")),
+            "target {target} fetch set carries a CED unit"
+        );
     }
 }

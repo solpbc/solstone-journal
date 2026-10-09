@@ -201,12 +201,16 @@ fn read_llama_cpp_revision(checkout: &Path) -> Result<String, EvidenceError> {
     )))
 }
 
+/// Test-only replacement identity for a bundled component, keyed by (target, id).
+#[cfg(test)]
+type BundledIdentityOverride = BTreeMap<(String, String), (String, String, Vec<InputRef>)>;
+
 #[cfg(test)]
 thread_local! {
     static RESIDUAL_OVERRIDES: std::cell::RefCell<BTreeMap<(String, String, String), String>> =
-        std::cell::RefCell::new(BTreeMap::new());
-    static BUNDLED_IDENTITY_OVERRIDE: std::cell::RefCell<Option<BTreeMap<(String, String), (String, String, Vec<InputRef>)>>> =
-        std::cell::RefCell::new(None);
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+    static BUNDLED_IDENTITY_OVERRIDE: std::cell::RefCell<Option<BundledIdentityOverride>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -687,6 +691,42 @@ fn entry_targets(entry: &crate::inventory::Entry) -> &[String] {
     }
 }
 
+/// Names a pinned-members entry's input by its pin alone: the catalog row, the
+/// nvattest authority, or the inline digest. It never reads the input bytes.
+fn pinned_input_ref(input: &crate::inventory::PinnedInput) -> Option<InputRef> {
+    match input {
+        crate::inventory::PinnedInput::Inline { source, digest } => Some(InputRef {
+            name: Path::new(source)
+                .file_name()?
+                .to_string_lossy()
+                .into_owned(),
+            sha256: digest.clone(),
+        }),
+        crate::inventory::PinnedInput::CatalogCommitted { unit, filename, .. }
+        | crate::inventory::PinnedInput::CatalogAcquired { unit, filename } => {
+            let artifact = solstone_core_assets::catalog()
+                .iter()
+                .find(|a| a.unit == unit && a.filename == filename)?;
+            Some(InputRef {
+                name: filename.clone(),
+                sha256: artifact.sha256.to_string(),
+            })
+        }
+        crate::inventory::PinnedInput::AuthorityCommitted { platform, .. } => {
+            let authority = solstone_core_nvattest_authority::parse(
+                solstone_core_nvattest_authority::AUTHORITY_JSON,
+            )
+            .ok()?;
+            let spec =
+                solstone_core_nvattest_authority::artifact_spec(&authority, platform).ok()?;
+            Some(InputRef {
+                name: spec.name,
+                sha256: spec.sha256,
+            })
+        }
+    }
+}
+
 pub fn name_receipt_inputs(
     inventory: &Inventory,
     target: &str,
@@ -748,6 +788,11 @@ pub fn name_receipt_inputs(
                     name: spec.archive_name.to_string(),
                     sha256: spec.archive_sha256.to_string(),
                 }]
+            }
+            crate::inventory::Entry::PinnedMembers { input, .. } => {
+                vec![pinned_input_ref(input).ok_or_else(|| {
+                    EvidenceError::new(format!("unnamed-input: {target} {id} {dest}"))
+                })?]
             }
             crate::inventory::Entry::WindowsNative { component, .. } => match *component {
                 crate::inventory::WindowsNativeComponent::Ced
@@ -1936,13 +1981,12 @@ mod tests {
             for entry in &inv.entry {
                 if entry_targets(entry).iter().any(|t| t == target)
                     && entry.class() == Some(crate::inventory::DeliveryClass::Component)
+                    && let Some(id) = crate::inventory::entry_component_id(entry)
                 {
-                    if let Some(id) = crate::inventory::entry_component_id(entry) {
-                        assert!(
-                            inputs.iter().any(|i| i.id == id),
-                            "missing component {id} for target {target}"
-                        );
-                    }
+                    assert!(
+                        inputs.iter().any(|i| i.id == id),
+                        "missing component {id} for target {target}"
+                    );
                 }
             }
         }
@@ -2492,7 +2536,7 @@ mod tests {
             work: work.clone(),
             tree: vec![
                 ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
-                (member_dest.clone().into(), vad_bytes.to_vec(), 0o644),
+                (member_dest.clone(), vad_bytes.to_vec(), 0o644),
             ],
             version: version.to_owned(),
             basename: basename.clone(),
