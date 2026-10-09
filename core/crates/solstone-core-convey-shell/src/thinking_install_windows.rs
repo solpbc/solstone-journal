@@ -184,7 +184,14 @@ pub(super) fn admit(
             loop {
                 match poll(&owner) {
                     Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                    Ok(Some(_)) | Err(_) => {
+                    Ok(Some(code)) => {
+                        record_unfinished_exit(&owner, code);
+                        if let Err(error) = retire(&owner) {
+                            log::error!("{error}");
+                        }
+                        return;
+                    }
+                    Err(_) => {
                         if let Err(error) = retire(&owner) {
                             log::error!("{error}");
                         }
@@ -200,6 +207,49 @@ pub(super) fn admit(
             };
             let _ = admitted.send(result);
         }
+    }
+}
+
+/// The installer writes its own terminal status. When it exits without one
+/// (killed, crashed), its attempt would read in-flight with nothing running,
+/// so that attempt, and only that attempt, is recorded as interrupted. A
+/// status another attempt owns, or one already terminal, is left alone.
+fn record_unfinished_exit(owner: &Owner, code: i32) {
+    let current = match status::read_status(&owner.journal, "local") {
+        Ok(current) => current,
+        Err(error) => {
+            log::warn!("local model installer exited ({code}); its status is unreadable: {error}");
+            return;
+        }
+    };
+    let owned = current
+        .owner
+        .clone()
+        .and_then(|value| serde_json::from_value::<ProcessInstance>(value).ok())
+        == Some(owner.instance);
+    let attempt = current.attempt_id.as_deref().filter(|_| owned);
+    let Some(attempt) = attempt.filter(|_| status::is_in_flight(&current.install_state)) else {
+        if code != 0 {
+            log::warn!(
+                "local model installer exited ({code}); install state {}",
+                current.install_state
+            );
+        }
+        return;
+    };
+    match status::record_interrupted(
+        &owner.journal,
+        attempt,
+        current.target_fingerprint_sha256.as_deref(),
+    ) {
+        Ok(_) => log::warn!(
+            "local model installer exited ({code}) while {}; recorded as interrupted",
+            current.install_state
+        ),
+        Err(error) => log::warn!(
+            "local model installer exited ({code}) while {}; not recorded: {error}",
+            current.install_state
+        ),
     }
 }
 

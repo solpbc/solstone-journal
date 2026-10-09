@@ -267,6 +267,11 @@ mod native {
         .unwrap();
         wait_retired(next_owner);
         gone(descendant_identity);
+        // The root left its attempt in flight; the monitor records it as
+        // interrupted instead of leaving `downloading` with nothing running.
+        let ended = status::read_status(root.path(), "local").unwrap();
+        assert_eq!(ended.install_state, "failed");
+        assert_eq!(ended.error_code.as_deref(), Some("install_interrupted"));
         reconcile(root.path()).unwrap();
 
         let timeout_root = tempfile::tempdir().unwrap();

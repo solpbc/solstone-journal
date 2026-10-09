@@ -664,7 +664,7 @@ fn available_memory_bytes() -> Option<u64> {
 
 fn parakeet_target_sha(journal: &Path, os_name: &str, arch: &str) -> Result<String, String> {
     let target = solstone_core_local::install::parakeet_target_for_platform(journal, os_name, arch)
-        .map_err(dispatch_message)?;
+        .map_err(|error| dispatch_message("parakeet", error))?;
     let text = fingerprint::canonical(target).map_err(|error| error.to_string())?;
     Ok(fingerprint::sha256(&text))
 }
@@ -677,7 +677,8 @@ fn local_target_sha(journal: &Path) -> Result<String, String> {
     if canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).0 == "darwin" {
         payload["backend"] = Value::String("metal".to_owned());
     }
-    let envelope = dispatch(InstallVerb::FingerprintLocal, payload).map_err(dispatch_message)?;
+    let envelope = dispatch(InstallVerb::FingerprintLocal, payload)
+        .map_err(|error| dispatch_message("local", error))?;
     envelope
         .result
         .and_then(|result| {
@@ -791,7 +792,7 @@ fn install_failure(
     error: DispatchError,
     mut stderr: Vec<String>,
 ) -> InstallProviderOutcome {
-    stderr.push(dispatch_message(error));
+    stderr.push(dispatch_message(provider, error));
     match status::read_status(journal, provider) {
         Ok(status) => InstallProviderOutcome {
             exit_code: 1,
@@ -827,13 +828,13 @@ fn is_install_busy(error: &DispatchError) -> bool {
         .is_some_and(|error| error.reason_code == "install_busy")
 }
 
-fn dispatch_message(error: DispatchError) -> String {
+fn dispatch_message(provider: &str, error: DispatchError) -> String {
     error
         .envelope
         .error
         .as_ref()
         .map(|error| error.message.clone())
-        .unwrap_or_else(|| "parakeet install failed".to_owned())
+        .unwrap_or_else(|| format!("{provider} install failed"))
 }
 
 fn render_status(status: &status::InstallStatus) -> String {
