@@ -3954,15 +3954,14 @@ pub fn fetch_set_selectors_request_only_that_targets_local_units() {
             collected.insert(art.origin_key);
         }
 
-        // local-model: every catalog() row with unit == "local-model", POSIX targets only.
-        if target != "windows-x86_64" {
-            for row in catalog() {
-                if row.unit == "local-model" {
-                    let art =
-                        super::select_artifact("local-model", None, None, None, Some(row.filename))
-                            .expect("local-model");
-                    collected.insert(art.origin_key);
-                }
+        // local-model: every catalog() row with unit == "local-model", on every
+        // target. Windows packages the runtime but downloads the model.
+        for row in catalog() {
+            if row.unit == "local-model" {
+                let art =
+                    super::select_artifact("local-model", None, None, None, Some(row.filename))
+                        .expect("local-model");
+                collected.insert(art.origin_key);
             }
         }
 
@@ -4243,7 +4242,12 @@ mod runtime_fetch_seam_tests {
 
     #[test]
     fn positive_twins_verify_recorded_urls_digests_and_sizes() {
-        let targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"];
+        let targets = [
+            "linux-x86_64",
+            "linux-aarch64",
+            "macos-arm64",
+            "windows-x86_64",
+        ];
 
         for target in targets {
             let set = runtime_fetch_set(target).expect("fetch set for target");
@@ -4454,19 +4458,34 @@ mod runtime_fetch_seam_tests {
             assert_eq!(fake.calls.lock().unwrap().len(), 0);
         });
 
+        // Windows packages the llama runtime but not the model: the model install
+        // must reach the origin for both files. Journal 2.0.38 refused this.
         with_runtime_fetch_target("windows-x86_64", || {
             let fake = Rc::new(MockFake::default());
             with_fake_runtime_fetch(&fake, || {
                 let root = temp("pos-twin-windows");
                 let mut status_val = test_status(&root);
-                let err = install_model(&root, "local/qwen3.5-4b", &mut status_val).unwrap_err();
-                assert_eq!(err.exit_code, 65);
-                assert_eq!(
-                    err.envelope.error.as_ref().unwrap().reason_code,
-                    "component_packaged"
-                );
+                if let Err(err) = install_model(&root, "local/qwen3.5-4b", &mut status_val) {
+                    assert_ne!(
+                        err.envelope.error.as_ref().unwrap().reason_code,
+                        "component_packaged"
+                    );
+                }
             });
-            assert_eq!(fake.calls.lock().unwrap().len(), 0);
+            // The fake fails the first fetch, so install_model stops there; the
+            // point is that it reached the origin instead of refusing. The
+            // positive twins above cover both files' URLs, digests and sizes.
+            let calls = fake.calls.lock().unwrap();
+            assert_eq!(calls.len(), 1);
+            let first = runtime_fetch_set("windows-x86_64")
+                .expect("windows fetch set")
+                .into_iter()
+                .find(|f| f.origin_key().ends_with("/Qwen3.5-4B-Q4_K_M.gguf"))
+                .expect("windows fetch set carries the model");
+            assert_eq!(
+                calls[0].0,
+                format!("https://updates.solstone.app/{}", first.origin_key())
+            );
         });
     }
 
