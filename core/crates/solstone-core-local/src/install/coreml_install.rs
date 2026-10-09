@@ -134,7 +134,7 @@ fn fetch_runtime_member(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CoremlAdmission {
     Mint,
-    #[cfg(feature = "runtime-fetch-test")]
+    #[cfg(feature = "test-hooks")]
     Fixture,
 }
 
@@ -199,7 +199,7 @@ pub(crate) fn install_with_rows_and_seams(
                     };
                     fetch_runtime_member(&query, &staging.join(row.filename))?;
                 }
-                #[cfg(feature = "runtime-fetch-test")]
+                #[cfg(feature = "test-hooks")]
                 CoremlAdmission::Fixture => {
                     let handle = solstone_core_assets::runtime_fetch_handle_fixture(
                         row.unit,
@@ -300,7 +300,7 @@ pub(crate) fn install_with_rows_for_test(
     )
 }
 
-#[cfg(feature = "test-hooks")]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn install_minted_rows_for_test(
     home_dir: &Path,
     config: &JournalConfigRead,

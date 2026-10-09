@@ -47,18 +47,19 @@ pub mod test_hooks {
     use std::path::{Path, PathBuf};
 
     use serde_json::{Value, json};
-    #[cfg(feature = "test-hooks")]
+    #[cfg(any(test, feature = "test-hooks"))]
     use solstone_core_assets::Artifact;
+    #[cfg(any(test, feature = "test-hooks"))]
+    use solstone_core_journal_config::JournalConfigRead;
     #[cfg(feature = "test-hooks")]
-    use solstone_core_journal_config::{
-        JournalConfigRead, parakeet_coreml::ParakeetCoremlSentinel,
-    };
+    use solstone_core_journal_config::parakeet_coreml::ParakeetCoremlSentinel;
 
     #[cfg(feature = "test-hooks")]
     use super::coreml_install::{
-        CoremlAdmission, CoremlInstallError, install_minted_rows_for_test,
-        install_with_rows_and_seams, install_with_rows_for_test,
+        CoremlAdmission, install_with_rows_and_seams, install_with_rows_for_test,
     };
+    #[cfg(any(test, feature = "test-hooks"))]
+    use super::coreml_install::{CoremlInstallError, install_minted_rows_for_test};
     #[cfg(feature = "test-hooks")]
     use super::rfdetr_install::{
         EngineSpec, ModelSpec, RfdetrInstallError, RfdetrInstallRecord,
@@ -185,7 +186,7 @@ pub mod test_hooks {
         install_with_rows_for_test(home_dir, config, force, rows)
     }
 
-    #[cfg(feature = "test-hooks")]
+    #[cfg(any(test, feature = "test-hooks"))]
     pub fn install_coreml_minted_rows(
         home_dir: &Path,
         config: &JournalConfigRead,
