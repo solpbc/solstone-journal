@@ -350,6 +350,10 @@ fn windows_component_evidence_happy_path() {
         ced_model_dir.join("ced-tiny-q8_0.gguf"),
     )
     .unwrap();
+    // The verifier ships its CA bundle beside it; the bundle has no receipt.
+    fs::write(root.path().join("bin/nvattest.exe"), b"nvattest verifier").unwrap();
+    fs::create_dir_all(root.path().join("share/ca")).unwrap();
+    fs::write(root.path().join("share/ca/ca-bundle.pem"), b"ca bundle").unwrap();
 
     sign_payload_manifest(root.path());
 
@@ -424,6 +428,28 @@ fn windows_component_evidence_happy_path() {
             .records
             .iter()
             .any(|r| r.id == "ced-model" && r.input.sha256 == ced_row.sha256)
+    );
+
+    // The CA bundle has no receipt; it is named from the verifier's
+    // production pin (`nvattest_windows::production_pins().ca_bundle`).
+    const CA_BUNDLE_PIN: &str = "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91";
+    let ca_record = prov_file
+        .records
+        .iter()
+        .find(|r| r.id == "nvattest" && r.path == "share/ca/ca-bundle.pem")
+        .expect("CA bundle provenance record");
+    assert_eq!(ca_record.input.name, "ca-bundle.pem");
+    assert_eq!(ca_record.input.sha256, CA_BUNDLE_PIN);
+    let nvattest = comp_file
+        .components
+        .iter()
+        .find(|c| c.id == "nvattest")
+        .expect("nvattest present");
+    assert!(
+        nvattest
+            .members
+            .iter()
+            .any(|m| m.path == "share/ca/ca-bundle.pem")
     );
 
     let llama = comp_file

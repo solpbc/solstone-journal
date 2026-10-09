@@ -1681,6 +1681,15 @@ pub fn render_windows_component_evidence(
             }
             _ => bundled_identity(&repo_root, target, id)?,
         };
+        // The verifier's CA bundle carries no receipt of its own; it is named
+        // from its production pin, as `name_receipt_inputs` names it.
+        if id == "nvattest" && dest.ends_with(".pem") {
+            let pins = crate::nvattest_windows::production_pins();
+            row_inputs = vec![InputRef {
+                name: "ca-bundle.pem".to_string(),
+                sha256: pins.ca_bundle.sha256.to_string(),
+            }];
+        }
 
         let mut pre_signing_sha256 = None;
         let receipt_rel = match id {
