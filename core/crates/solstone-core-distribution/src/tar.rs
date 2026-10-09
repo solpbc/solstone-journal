@@ -52,7 +52,6 @@ fn append_file<W: io::Write>(
 ) -> io::Result<()> {
     let mut header = Header::new_gnu();
     header.set_entry_type(EntryType::Regular);
-    header.set_path(dest)?;
     header.set_size(bytes.len() as u64);
     header.set_mode(mode);
     header.set_uid(0);
@@ -60,8 +59,9 @@ fn append_file<W: io::Write>(
     header.set_username("")?;
     header.set_groupname("")?;
     header.set_mtime(0);
-    header.set_cksum();
-    builder.append(&header, bytes)?;
+    // `append_data` writes a GNU long-name entry for a path the 100-byte
+    // header field cannot hold, such as a deep licence-tree path.
+    builder.append_data(&mut header, dest, bytes)?;
     Ok(())
 }
 
@@ -72,7 +72,6 @@ pub(crate) fn append_directory<W: io::Write>(
 ) -> io::Result<()> {
     let mut header = Header::new_gnu();
     header.set_entry_type(EntryType::Directory);
-    header.set_path(dest)?;
     header.set_size(0);
     header.set_mode(mode);
     header.set_uid(0);
@@ -80,8 +79,7 @@ pub(crate) fn append_directory<W: io::Write>(
     header.set_username("")?;
     header.set_groupname("")?;
     header.set_mtime(0);
-    header.set_cksum();
-    builder.append(&header, io::empty())
+    builder.append_data(&mut header, dest, io::empty())
 }
 
 #[derive(Debug)]
@@ -169,4 +167,50 @@ pub(crate) fn append_regular<W: io::Write>(
     mode: u32,
 ) -> io::Result<()> {
     append_file(builder, dest, bytes, mode)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Licence trees nest Go module paths well past the 100-byte name field of
+    /// a tar header. The archive must still carry each one whole.
+    #[test]
+    fn tar_gz_and_directory_entries_keep_paths_longer_than_a_header_name() {
+        let long_dir = "share/solstone-journal/licenses/restic/deps/github.com__GoogleCloudPlatform__opentelemetry-operations-go__internal__resourcemapping@v0.55.0";
+        let long_file = format!("{long_dir}/LICENSE");
+        assert!(long_file.len() > 100);
+        let root = tempfile::tempdir().unwrap();
+        let stage = root.path().join("stage");
+        fs::create_dir_all(stage.join(long_dir)).unwrap();
+        fs::write(stage.join(&long_file), b"licence text").unwrap();
+        let out = root.path().join("out.tar.gz");
+        write_tar_gz(&stage, &out).unwrap();
+        let members = tar_members(&fs::read(&out).unwrap()).unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].path, long_file);
+        assert_eq!(members[0].bytes, b"licence text");
+
+        let mut builder = Builder::new(Vec::new());
+        append_directory(&mut builder, &format!("./usr/{long_dir}/"), 0o755).unwrap();
+        append_regular(&mut builder, &format!("./usr/{long_file}"), b"x", 0o644).unwrap();
+        let bytes = builder.into_inner().unwrap();
+        let mut archive = tar::Archive::new(bytes.as_slice());
+        let paths: Vec<String> = archive
+            .entries()
+            .unwrap()
+            .map(|entry| {
+                entry
+                    .unwrap()
+                    .path()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            vec![format!("./usr/{long_dir}/"), format!("./usr/{long_file}")]
+        );
+    }
 }
