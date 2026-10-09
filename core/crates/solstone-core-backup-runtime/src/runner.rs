@@ -108,9 +108,23 @@ pub struct SystemToolRunner;
 
 // restic's -o flag parses CSV before rclone splits the program shell string.
 // Encode only after program admission, preserving that exact logical value.
-#[cfg(any(windows, test))]
 fn encode_restic_csv_option(option: &str) -> String {
     format!("\"{}\"", option.replace('"', "\"\""))
+}
+
+/// The argv a process receives. The quoted `rclone.program` option must reach
+/// restic as one CSV field: a bare `"` in it is a parse error and the backup
+/// never starts.
+#[cfg(unix)]
+fn spawn_argv(argv: &[OsString]) -> Vec<OsString> {
+    argv.iter()
+        .map(|arg| match arg.to_str() {
+            Some(text) if text.starts_with("rclone.program=") => {
+                OsString::from(encode_restic_csv_option(text))
+            }
+            _ => arg.clone(),
+        })
+        .collect()
 }
 
 #[cfg(unix)]
@@ -489,7 +503,10 @@ impl SystemToolRunner {
         let (stdout_r, stdout_w) = pipe_cloexec()?;
         let (stderr_r, stderr_w) = pipe_cloexec()?;
         let mut command = Command::new(&request.program);
-        command.args(&request.argv).env_clear().envs(&request.env);
+        command
+            .args(spawn_argv(&request.argv))
+            .env_clear()
+            .envs(&request.env);
         command
             .stdin(Stdio::null())
             .stdout(Stdio::from(stdout_w.try_clone()?))
@@ -847,6 +864,28 @@ mod tests {
                 stderr: vec![],
             })
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_spawn_passes_the_rclone_program_option_as_one_csv_field() {
+        let argv: Vec<OsString> = [
+            "-o",
+            r#"rclone.program="/opt/solstone app/lib/solstone-rclone/rclone""#,
+            "-o",
+            "rclone.args=serve restic --stdio --append-only --config /dev/null",
+            "backup",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let spawned = spawn_argv(&argv);
+        assert_eq!(
+            spawned[1],
+            OsString::from(r#""rclone.program=""/opt/solstone app/lib/solstone-rclone/rclone""""#)
+        );
+        assert_eq!(spawned[0], argv[0]);
+        assert_eq!(spawned[2..], argv[2..]);
     }
 
     #[test]
