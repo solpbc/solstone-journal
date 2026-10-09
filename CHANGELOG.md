@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- on windows, installing the local model from the thinking page works again. in 2.0.38 it stopped almost as soon as it started and the page said "local setup didn't finish". if that happened to you, choose "try setup again" on the thinking page.
+
 ## [2.0.38] - 2026-10-09
 
 ### Added

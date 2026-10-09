@@ -129,7 +129,7 @@ impl Admission {
     }
     pub fn floor_bytes(&self, config: &Map<String, Value>) -> u64 {
         // Auto free-RAM wait is retired. Apple Silicon uses swap and the
-        // compressor; the large thinking model is gated by `sol check`
+        // compressor; the large thinking model is gated by `solstone journal check`
         // (16 GiB total / 13 GiB available), not this Sense floor.
         // An explicit `memory.floor_mib` remains an operator override.
         config

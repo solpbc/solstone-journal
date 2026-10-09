@@ -31,7 +31,7 @@ const MAC_MEMORY_MIN: u64 = 16 * GIB;
 const MAC_AVAILABLE_MIN: u64 = 13 * GIB;
 const LINUX_RAM_WARN: u64 = 8 * GIB;
 const FEEDBACK_URL: &str = "https://github.com/solpbc/solstone-journal";
-const RENDER_HINT: &str = "a GPU render node exists under /dev/dri but this user cannot open it — add yourself to the render group with `sudo usermod -aG render $USER`, then log out and back in and run `sol check` again";
+const RENDER_HINT: &str = "a GPU render node exists under /dev/dri but this user cannot open it — add yourself to the render group with `sudo usermod -aG render $USER`, then log out and back in and run `solstone journal check` again";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CheckInputs {
@@ -488,7 +488,7 @@ fn placement_suffix(
         selected.is_some_and(is_discrete),
         discrete_hardware_gpu_count(devices),
         unified_memory,
-        // `sol check` runs before install and cannot rely on journal config.
+        // `solstone journal check` runs before install and cannot rely on journal config.
         true,
     );
     cpu_placement_suffix(selected, decision.force_cpu)
@@ -912,7 +912,8 @@ pub fn json_output(report: &CheckReport) -> String {
 }
 pub fn human_output(report: &CheckReport) -> String {
     let mut lines = vec![
-        "sol check — can this computer run the journal with the bundled local models?".to_owned(),
+        "solstone journal check — can this computer run the journal with the bundled local models?"
+            .to_owned(),
     ];
     for item in &report.checks {
         let marker = match item.severity {

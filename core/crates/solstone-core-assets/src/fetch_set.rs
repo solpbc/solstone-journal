@@ -563,13 +563,30 @@ fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetError> {
             rows.push(nvattest_row("macos-arm64"));
         }
         "windows-x86_64" => {
-            // ced-model only
+            // ced-model
             let a = find_catalog_row("ced-model", "ced-tiny-q8_0.gguf", None);
             rows.push(RuntimeFetch {
                 unit: a.unit,
                 origin_key: a.origin_key,
                 sha256: a.sha256,
                 size_bytes: a.size_bytes,
+            });
+
+            // local-model both files: the package carries the runtime, not the
+            // model, so the Windows installer downloads both (install.rs).
+            let a1 = find_catalog_row("local-model", "Qwen3.5-4B-Q4_K_M.gguf", None);
+            rows.push(RuntimeFetch {
+                unit: a1.unit,
+                origin_key: a1.origin_key,
+                sha256: a1.sha256,
+                size_bytes: a1.size_bytes,
+            });
+            let a2 = find_catalog_row("local-model", "mmproj-F16.gguf", None);
+            rows.push(RuntimeFetch {
+                unit: a2.unit,
+                origin_key: a2.origin_key,
+                sha256: a2.sha256,
+                size_bytes: a2.size_bytes,
             });
         }
         _ => return Err(FetchSetError::UnknownTarget(target.to_owned())),
@@ -651,7 +668,10 @@ mod tests {
         "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/parakeet_vocab.json",
     ];
 
-    const ORACLE_WINDOWS_X86_64: &[&str] = &[];
+    const ORACLE_WINDOWS_X86_64: &[&str] = &[
+        "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
+        "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
+    ];
 
     #[test]
     fn oracle_equality_for_all_four_targets() {
