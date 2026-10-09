@@ -671,7 +671,9 @@ check-rust-doc:
 	# feature closure. Run that crate alone so workspace feature unification via
 	# backup-cli/maintenance cannot make the compile-fail examples false-red.
 	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-backup-runtime --doc --locked -- --test-threads=1
-	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --exclude solstone-core-backup-runtime --doc --locked -- --test-threads=1
+	# Feature unification false-reds the assets compile_fail examples.
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-assets --doc --locked -- --test-threads=1
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --exclude solstone-core-backup-runtime --exclude solstone-core-assets --doc --locked -- --test-threads=1
 
 SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-ci --locked --offline --
 SOLSTONE_DISTRIBUTION := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-distribution --bin solstone-distribution --locked --offline --

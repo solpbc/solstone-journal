@@ -18,7 +18,11 @@ unsafe_code = "deny"
 full-tests = []
 # Narrow test driver for the loopback installer transport target.  Production
 # builds deliberately do not expose fixture-row or injected-write seams.
-test-hooks = []
+runtime-fetch-test = [
+    "solstone-core-artifact-download/runtime-fetch-test",
+    "solstone-core-assets/runtime-fetch-test",
+]
+test-hooks = ["runtime-fetch-test"]
 test-fixture-pin = ["solstone-core-distribution/test-fixture-pin"]
 
 [dependencies]

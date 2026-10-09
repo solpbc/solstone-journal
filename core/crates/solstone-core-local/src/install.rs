@@ -55,10 +55,9 @@ pub mod test_hooks {
     };
 
     #[cfg(feature = "test-hooks")]
-    use super::archive::DownloadHostPolicy;
-    #[cfg(feature = "test-hooks")]
     use super::coreml_install::{
-        CoremlInstallError, install_with_rows_and_seams, install_with_rows_for_test,
+        CoremlAdmission, CoremlInstallError, install_minted_rows_for_test,
+        install_with_rows_and_seams, install_with_rows_for_test,
     };
     #[cfg(feature = "test-hooks")]
     use super::rfdetr_install::{
@@ -66,6 +65,11 @@ pub mod test_hooks {
         check_rfdetr_model_with_artifacts,
     };
     use super::{InstallVerb, dispatch, manifest, pins};
+    #[cfg(feature = "runtime-fetch-test")]
+    pub use solstone_core_artifact_download::{
+        FakeRuntimeFetch, RuntimeFetchLoopback, with_builder_fetch_loopback,
+        with_fake_runtime_fetch, with_runtime_fetch_loopback,
+    };
 
     pub struct ParakeetFixture {
         pub cpu_path: PathBuf,
@@ -176,10 +180,19 @@ pub mod test_hooks {
         home_dir: &Path,
         config: &JournalConfigRead,
         force: bool,
-        policy: &DownloadHostPolicy<'_>,
         rows: &[&Artifact],
     ) -> Result<PathBuf, CoremlInstallError> {
-        install_with_rows_for_test(home_dir, config, force, policy, rows)
+        install_with_rows_for_test(home_dir, config, force, rows)
+    }
+
+    #[cfg(feature = "test-hooks")]
+    pub fn install_coreml_minted_rows(
+        home_dir: &Path,
+        config: &JournalConfigRead,
+        force: bool,
+        rows: &[&Artifact],
+    ) -> Result<PathBuf, CoremlInstallError> {
+        install_minted_rows_for_test(home_dir, config, force, rows)
     }
 
     #[allow(clippy::too_many_arguments)] // Fixture-only write seams prove atomic ordering.
@@ -188,14 +201,20 @@ pub mod test_hooks {
         home_dir: &Path,
         config: &JournalConfigRead,
         force: bool,
-        policy: &DownloadHostPolicy<'_>,
         platform: (&str, &str),
         rows: &[&Artifact],
         publish: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
         write: &mut impl FnMut(&Path, &ParakeetCoremlSentinel) -> std::io::Result<()>,
     ) -> Result<PathBuf, CoremlInstallError> {
         install_with_rows_and_seams(
-            home_dir, config, force, policy, platform, rows, publish, write,
+            home_dir,
+            config,
+            force,
+            platform,
+            rows,
+            CoremlAdmission::Fixture,
+            publish,
+            write,
         )
     }
 
@@ -288,14 +307,6 @@ impl InstallEnvelope {
 }
 
 pub fn dispatch(verb: InstallVerb, request: Value) -> Result<InstallEnvelope, DispatchError> {
-    dispatch_with_download_policy(verb, request, &archive::PRODUCTION_DOWNLOAD_POLICY)
-}
-
-fn dispatch_with_download_policy(
-    verb: InstallVerb,
-    request: Value,
-    policy: &archive::DownloadHostPolicy<'_>,
-) -> Result<InstallEnvelope, DispatchError> {
     let object = request.as_object().cloned().ok_or_else(|| {
         failure(
             "input",
@@ -348,7 +359,7 @@ fn dispatch_with_download_policy(
         InstallVerb::ProbeBinary => readiness::probe_binary(&object),
         InstallVerb::RunLocal => {
             local_backend(&object)?;
-            run_local(&object, policy)?
+            run_local(&object)?
         }
         InstallVerb::PinsParakeet => pins::parakeet_pins_json(),
         InstallVerb::PathsParakeet => {
@@ -360,7 +371,7 @@ fn dispatch_with_download_policy(
             let target = parakeet_target(&journal)?;
             resolved_fingerprint(target)?
         }
-        InstallVerb::RunParakeet => run_parakeet(&object, policy)?,
+        InstallVerb::RunParakeet => run_parakeet(&object)?,
     };
     Ok(InstallEnvelope::ok(result))
 }
@@ -463,21 +474,30 @@ fn download_artifact_reason_code<'a>(
     }
 }
 
-pub(crate) fn download_artifact(
-    artifact: &Artifact,
+fn fetch_runtime_member(
+    query: &solstone_core_assets::RuntimeFetchQuery<'_>,
     destination: &Path,
-    policy: &archive::DownloadHostPolicy<'_>,
     progress: impl FnMut(u64, Option<u64>),
     fallback_reason_code: &str,
-) -> Result<(), DispatchError> {
-    archive::download_verified(artifact, destination, policy, progress).map_err(|error| {
+) -> Result<bool, DispatchError> {
+    let handle = solstone_core_assets::mint_runtime_fetch(query).map_err(|err| {
         failure(
-            "download",
-            download_artifact_reason_code(&error, fallback_reason_code),
-            error,
-            74,
+            "package",
+            solstone_core_assets::FetchMintError::REASON_CODE,
+            err,
+            65,
         )
-    })
+    })?;
+    solstone_core_artifact_download::download_runtime_fetch(&handle, destination, progress).map_err(
+        |error| {
+            failure(
+                "download",
+                download_artifact_reason_code(&error, fallback_reason_code),
+                error,
+                74,
+            )
+        },
+    )
 }
 
 fn write_manifest(kind: &str, object: &Map<String, Value>) -> Result<Value, DispatchError> {
@@ -536,17 +556,11 @@ impl RunKind {
     }
 }
 
-fn run_local(
-    object: &Map<String, Value>,
-    policy: &archive::DownloadHostPolicy<'_>,
-) -> Result<Value, DispatchError> {
-    run(object, RunKind::Local, policy)
+fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
+    run(object, RunKind::Local)
 }
-fn run_parakeet(
-    object: &Map<String, Value>,
-    policy: &archive::DownloadHostPolicy<'_>,
-) -> Result<Value, DispatchError> {
-    run(object, RunKind::Parakeet, policy)
+fn run_parakeet(object: &Map<String, Value>) -> Result<Value, DispatchError> {
+    run(object, RunKind::Parakeet)
 }
 
 pub fn install_parakeet_with_lease(
@@ -566,15 +580,10 @@ pub fn install_parakeet_with_lease(
         journal.to_path_buf(),
         lease,
         Some((os_name, arch)),
-        &archive::PRODUCTION_DOWNLOAD_POLICY,
     )
 }
 
-fn run(
-    object: &Map<String, Value>,
-    kind: RunKind,
-    policy: &archive::DownloadHostPolicy<'_>,
-) -> Result<Value, DispatchError> {
+fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
     let provider = kind.status_provider();
     let Some(lease) = lease::acquire(&journal, provider)
@@ -587,7 +596,7 @@ fn run(
             lease::BUSY_EXIT_CODE,
         ));
     };
-    run_with_lease(object, kind, journal, lease, None, policy)
+    run_with_lease(object, kind, journal, lease, None)
 }
 
 fn run_with_lease(
@@ -596,7 +605,6 @@ fn run_with_lease(
     journal: PathBuf,
     _lease: lease::InstallLease,
     parakeet_platform: Option<(&str, &str)>,
-    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<Value, DispatchError> {
     let provider = kind.status_provider();
     let fingerprint = match kind {
@@ -628,8 +636,8 @@ fn run_with_lease(
     .map_err(|error| failure("state", "begin_failed", error, 74))?;
     let start = Instant::now();
     let result = match kind {
-        RunKind::Local => run_local_install(object, &mut state, start, policy),
-        RunKind::Parakeet => run_parakeet_install(&journal, &mut state, policy),
+        RunKind::Local => run_local_install(object, &mut state, start),
+        RunKind::Parakeet => run_parakeet_install(&journal, &mut state),
     };
     match result {
         Ok(result) => {
@@ -1167,7 +1175,6 @@ fn run_local_install(
     object: &Map<String, Value>,
     status_value: &mut status::InstallStatus,
     _start: Instant,
-    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
     let model_id = string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned());
@@ -1226,7 +1233,7 @@ fn run_local_install(
             &[model_file, projector_file],
         );
         if model_proof["status"] != "ready" {
-            install_model(&journal, &model_id, status_value, policy)?;
+            install_model(&journal, &model_id, status_value)?;
         }
         return Ok(json!({
             "backend": "vulkan",
@@ -1299,10 +1306,14 @@ fn run_local_install(
             .map_err(|error| failure("state", "transition_failed", error, 74))?,
     )
     .map_err(|error| failure("state", "status_write_failed", error, 74))?;
-    download_artifact(
-        artifact,
+    let query = solstone_core_assets::RuntimeFetchQuery {
+        unit: Some(artifact.unit),
+        origin_key: Some(artifact.origin_key),
+        ..Default::default()
+    };
+    fetch_runtime_member(
+        &query,
         &archive_path,
-        policy,
         |received, total| {
             if let Ok(Some(next)) = status::bump_progress(
                 status_value.clone(),
@@ -1356,7 +1367,7 @@ fn run_local_install(
         status_value.attempt_id.as_deref(),
         &exclude_names,
     )?;
-    install_model(&journal, &model_id, status_value, policy)?;
+    install_model(&journal, &model_id, status_value)?;
     Ok(
         json!({"backend":backend,"binary_path":install_dir.join("llama-server"),"model_id":model_id}),
     )
@@ -1448,7 +1459,6 @@ pub fn commit_staged_local_runtime(
 fn run_parakeet_install(
     journal: &Path,
     status_value: &mut status::InstallStatus,
-    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<Value, DispatchError> {
     let target: Value = serde_json::from_str(
         status_value
@@ -1504,10 +1514,14 @@ fn run_parakeet_install(
                 .map_err(|error| failure("state", "transition_failed", error, 74))?,
         )
         .map_err(|error| failure("state", "status_write_failed", error, 74))?;
-        download_artifact(
-            artifact,
+        let query = solstone_core_assets::RuntimeFetchQuery {
+            unit: Some(artifact.unit),
+            origin_key: Some(artifact.origin_key),
+            ..Default::default()
+        };
+        fetch_runtime_member(
+            &query,
             &archive_path,
-            policy,
             |received, total| {
                 if let Ok(Some(next)) = status::bump_progress(
                     status_value.clone(),
@@ -1558,14 +1572,13 @@ fn run_parakeet_install(
             .map_err(|error| failure("io", "publish_failed", error, 74))?;
         binaries.push(json!({"backend": backend, "binary_path": install_dir.join(binary_name)}));
     }
-    let model_path = install_parakeet_model(journal, status_value, policy)?;
+    let model_path = install_parakeet_model(journal, status_value)?;
     Ok(json!({"artifact_key": key, "binaries": binaries, "model_path": model_path}))
 }
 
 fn install_parakeet_model(
     journal: &Path,
     status_value: &mut status::InstallStatus,
-    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<PathBuf, DispatchError> {
     let (repo, filename, revision, ..) = pins::PARAKEET_MODEL;
     let artifact = select_artifact("parakeet-model", None, None, None, Some(filename))?;
@@ -1586,10 +1599,14 @@ fn install_parakeet_model(
         .map_err(|error| failure("state", "status_write_failed", error, 74))?;
     let mut progress_at = Instant::now();
     let mut progress_error = None;
-    download_artifact(
-        artifact,
+    let query = solstone_core_assets::RuntimeFetchQuery {
+        unit: Some(artifact.unit),
+        origin_key: Some(artifact.origin_key),
+        ..Default::default()
+    };
+    fetch_runtime_member(
+        &query,
         &dest,
-        policy,
         |received, total| {
             if progress_error.is_some() {
                 return;
@@ -1653,7 +1670,6 @@ fn install_model(
     journal: &Path,
     model_id: &str,
     status_value: &mut status::InstallStatus,
-    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<(), DispatchError> {
     let identity = pins::model_identity(model_id)
         .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
@@ -1679,14 +1695,15 @@ fn install_model(
         let artifact = select_artifact("local-model", None, None, None, Some(name))?;
         let dest = root.join(name);
         let base_bytes = cumulative_bytes;
-        let url = archive::origin_url(policy.origin_base_url, artifact.origin_key);
         let mut progress_error = None;
-        let fetched = archive::ensure_verified_url(
-            &url,
-            artifact.sha256,
-            Some(artifact.size_bytes),
+        let query = solstone_core_assets::RuntimeFetchQuery {
+            unit: Some("local-model"),
+            origin_key: Some(artifact.origin_key),
+            ..Default::default()
+        };
+        let fetched = fetch_runtime_member(
+            &query,
             &dest,
-            policy,
             |received, _file_total| {
                 let current_received = base_bytes.saturating_add(received);
                 if progress_error.is_none() {
@@ -1706,15 +1723,8 @@ fn install_model(
                     }
                 }
             },
-        )
-        .map_err(|error| {
-            failure(
-                "download",
-                download_artifact_reason_code(&error, "model_download_failed"),
-                error,
-                74,
-            )
-        })?;
+            "model_download_failed",
+        )?;
 
         if let Some(error) = progress_error {
             return Err(failure("state", "status_write_failed", error, 74));

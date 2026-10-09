@@ -12,6 +12,9 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+runtime-fetch-test = []
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true

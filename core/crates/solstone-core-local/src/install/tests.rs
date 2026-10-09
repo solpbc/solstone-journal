@@ -13,15 +13,14 @@ use std::time::{Duration, Instant};
 use super::metal_candidate;
 use super::test_hooks::{inspect_parakeet, stage_ready_parakeet};
 use super::{
-    InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, download_artifact, fingerprint,
-    flatten_binary_bundle, hoist_binary, lease, local_backend_choice, manifest,
+    InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, fetch_runtime_member,
+    fingerprint, flatten_binary_bundle, hoist_binary, lease, local_backend_choice, manifest,
     parakeet_target_for_install, pins, publish_staged_tree_with, readiness, status,
     write_parakeet_model_manifest,
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use solstone_core_assets::{Artifact, Backend, Platform, catalog, resolve};
 
 use crate::nvidia::NVIDIA_PROBE_SCHEMA;
@@ -193,26 +192,6 @@ fn injected_dns_failure_maps_to_origin_unreachable_without_a_lookup() {
         super::download_artifact_reason_code(&error, "download_failed"),
         "download_origin_unreachable"
     );
-}
-
-fn fixture_artifact(url: String, filename: &'static str, body: &[u8]) -> Artifact {
-    let sha256: String = Sha256::digest(body)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    Artifact {
-        unit: "test-artifact",
-        version: "test",
-        filename,
-        sha256: Box::leak(sha256.into_boxed_str()),
-        size_bytes: body.len() as u64,
-        upstream_url: Box::leak(url.into_boxed_str()),
-        origin_key: "test-origin",
-        artifact_key: None,
-        platform: None,
-        backend: None,
-        extracted_binary_sha256: None,
-    }
 }
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -693,7 +672,7 @@ fn origin_urls_follow_the_catalog_for_every_rust_download_unit() {
     for (unit, platform, backend, expected) in cases {
         let artifact = resolve(unit, platform, backend).into_iter().next().unwrap();
         assert_eq!(
-            archive::origin_url("https://updates.solstone.app", artifact.origin_key),
+            format!("https://updates.solstone.app/{}", artifact.origin_key),
             expected
         );
     }
@@ -2256,7 +2235,7 @@ fn every_flipped_catalog_unit_contacts_only_its_origin_for_each_failure_class() 
     let artifacts = flipped_origin_artifacts();
     assert!(!artifacts.is_empty());
     for artifact in &artifacts {
-        let origin = archive::origin_url(ORIGIN_BASE, artifact.origin_key);
+        let origin = format!("{ORIGIN_BASE}/{}", artifact.origin_key);
         assert_eq!(origin, format!("{ORIGIN_BASE}/{}", artifact.origin_key));
         assert!(
             origin.contains(ORIGIN_HOST),
@@ -2272,28 +2251,36 @@ fn every_flipped_catalog_unit_contacts_only_its_origin_for_each_failure_class() 
 }
 
 #[test]
+#[cfg(feature = "runtime-fetch-test")]
 fn download_artifact_refuses_userinfo_url_with_distinct_envelope_reason() {
-    let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
-    let policy = archive::DownloadHostPolicy {
-        allowed_hosts: &["blocked.test"],
+    let loopback = solstone_core_artifact_download::RuntimeFetchLoopback {
+        base_url: "http://127.0.0.1:1@blocked.test".to_owned(),
+        allowed_hosts: vec!["blocked.test".to_owned()],
         allow_http: true,
-        origin_base_url: "http://127.0.0.1:1@blocked.test",
     };
-    let root = temp("download-userinfo");
-    let destination = root.join("artifact");
-    let error = download_artifact(
-        &artifact,
-        &destination,
-        &policy,
-        |_received, _total| {},
-        "download_failed",
-    )
-    .unwrap_err();
-    let error = error.envelope.error.unwrap();
-    assert_eq!(error.reason_code, "download_url_userinfo_refused");
-    assert!(error.message.contains("userinfo"));
-    assert!(!destination.exists());
-    let _ = fs::remove_dir_all(root);
+    solstone_core_artifact_download::with_runtime_fetch_loopback(loopback, || {
+        let root = temp("download-userinfo");
+        let destination = root.join("artifact");
+        let query = solstone_core_assets::RuntimeFetchQuery {
+            unit: Some("local-model"),
+            origin_key: Some(
+                "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
+            ),
+            ..Default::default()
+        };
+        let error = fetch_runtime_member(
+            &query,
+            &destination,
+            |_received, _total| {},
+            "download_failed",
+        )
+        .unwrap_err();
+        let error = error.envelope.error.unwrap();
+        assert_eq!(error.reason_code, "download_url_userinfo_refused");
+        assert!(error.message.contains("userinfo"));
+        assert!(!destination.exists());
+        let _ = fs::remove_dir_all(root);
+    });
 }
 
 #[test]
@@ -3092,19 +3079,16 @@ fn upgrade_prepublish_failures_keep_an_admitted_incumbent() {
     let snapshot_bin = fs::read(&incumbent_bin).unwrap();
     let snapshot_manifest = fs::read(&manifest_path).unwrap();
 
-    // Failure 1: download_artifact into staging with a refused-host policy
+    // Failure 1: fetch_runtime_member into staging with an unminted query
     let staging1 = root.join("staging1");
     fs::create_dir_all(&staging1).unwrap();
-    let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
-    let disallowed_policy = archive::DownloadHostPolicy {
-        allowed_hosts: &["allowed.example.com"],
-        allow_http: true,
-        origin_base_url: "http://127.0.0.1:1@allowed.example.com",
+    let unminted_query = solstone_core_assets::RuntimeFetchQuery {
+        unit: Some("nonexistent-unit"),
+        ..Default::default()
     };
-    let dl_err = download_artifact(
-        &artifact,
+    let dl_err = fetch_runtime_member(
+        &unminted_query,
         &staging1.join("artifact"),
-        &disallowed_policy,
         |_received, _total| {},
         "download_failed",
     );
@@ -4046,5 +4030,482 @@ pub fn fetch_set_selectors_request_only_that_targets_local_units() {
                 .any(|f| matches!(f.unit(), "ced-engine" | "ced-model")),
             "target {target} fetch set carries a CED unit"
         );
+    }
+}
+
+#[cfg(feature = "runtime-fetch-test")]
+mod runtime_fetch_seam_tests {
+    use std::path::Path;
+    use std::rc::Rc;
+    use std::sync::Mutex;
+
+    use serde_json::json;
+    use solstone_core_artifact_download::{
+        ArchiveError, FakeRuntimeFetch, with_fake_runtime_fetch,
+    };
+    use solstone_core_assets::{
+        Artifact, Backend, Platform, RuntimeFetchQuery, catalog, resolve, runtime_fetch_set,
+        with_runtime_fetch_target, without_runtime_fetch_unit,
+    };
+    use solstone_core_journal_config::JournalConfigRead;
+
+    use super::*;
+    use crate::install::{install_model, select_artifact, test_hooks};
+
+    fn coreml_config(root: &Path) -> JournalConfigRead {
+        JournalConfigRead {
+            present: true,
+            sha256: None,
+            config: Some(
+                json!({"transcribe": {"parakeet": {"cache_dir": root.display().to_string()}}})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        }
+    }
+
+    fn test_status(journal: &Path) -> status::InstallStatus {
+        status::begin(
+            journal,
+            "{}".to_owned(),
+            "target_fp".to_owned(),
+            None,
+            "downloading",
+        )
+        .unwrap()
+    }
+
+    #[derive(Default)]
+    struct MockFake {
+        calls: Mutex<Vec<(String, String, u64)>>,
+        behavior: Mutex<MockBehavior>,
+    }
+
+    #[derive(Default, Clone, Copy)]
+    enum MockBehavior {
+        #[default]
+        StopAtFetch,
+        WrongBytes,
+        ShortBody,
+    }
+
+    impl FakeRuntimeFetch for MockFake {
+        fn fetch(&self, url: &str, sha256: &str, size_bytes: u64) -> Result<Vec<u8>, ArchiveError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((url.to_string(), sha256.to_string(), size_bytes));
+            match *self.behavior.lock().unwrap() {
+                MockBehavior::StopAtFetch => Err(ArchiveError::Download("stop".to_string())),
+                MockBehavior::WrongBytes => Ok(vec![0u8; size_bytes as usize]),
+                MockBehavior::ShortBody => {
+                    let len = if size_bytes > 0 { size_bytes - 1 } else { 0 };
+                    Ok(vec![0u8; len as usize])
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn five_production_runtime_fetch_callers_are_accounted() {
+        let callers = [
+            "run_local_install engine (install.rs ~1299, llama-server-cuda or llama-server-vulkan)",
+            "install_model (~1689)",
+            "run_parakeet_install server loop (~1507, CPU and Vulkan)",
+            "install_parakeet_model (~1592)",
+            "Core ML row loop (coreml_install.rs ~189)",
+        ];
+        assert_eq!(callers.len(), 5);
+    }
+
+    #[test]
+    fn bundled_refusal_returns_component_packaged_with_zero_calls() {
+        let fake = Rc::new(MockFake::default());
+        let root = temp("bundled-refusal");
+        let dest = root.join("dest");
+
+        let ced_queries = [
+            RuntimeFetchQuery {
+                unit: Some("ced-model"),
+                ..Default::default()
+            },
+            RuntimeFetchQuery {
+                filename: Some("ced-tiny-q8_0.gguf"),
+                ..Default::default()
+            },
+            RuntimeFetchQuery {
+                origin_key: Some("assets/ced/tiny/ced-tiny-q8_0.gguf"),
+                ..Default::default()
+            },
+        ];
+
+        let backup_queries = [
+            RuntimeFetchQuery {
+                unit: Some("restic"),
+                ..Default::default()
+            },
+            RuntimeFetchQuery {
+                filename: Some("restic_0.19.0_linux_amd64.bz2"),
+                ..Default::default()
+            },
+            RuntimeFetchQuery {
+                origin_key: Some("assets/restic/0.19.0/restic_0.19.0_linux_amd64.bz2"),
+                ..Default::default()
+            },
+            RuntimeFetchQuery {
+                unit: Some("rclone"),
+                ..Default::default()
+            },
+            RuntimeFetchQuery {
+                filename: Some("rclone-v1.74.4-linux-amd64.zip"),
+                ..Default::default()
+            },
+            RuntimeFetchQuery {
+                origin_key: Some("assets/rclone/1.74.4/rclone-v1.74.4-linux-amd64.zip"),
+                ..Default::default()
+            },
+        ];
+
+        with_fake_runtime_fetch(&fake, || {
+            for q in ced_queries.iter().chain(backup_queries.iter()) {
+                let err =
+                    fetch_runtime_member(q, &dest, |_, _| {}, "model_download_failed").unwrap_err();
+                assert_eq!(err.exit_code, 65);
+                assert_eq!(
+                    err.envelope.error.as_ref().unwrap().reason_code,
+                    "component_packaged"
+                );
+            }
+        });
+        assert_eq!(fake.calls.lock().unwrap().len(), 0);
+
+        with_fake_runtime_fetch(&fake, || {
+            without_runtime_fetch_unit("llama-server", || {
+                let query = RuntimeFetchQuery {
+                    unit: Some("llama-server-vulkan"),
+                    ..Default::default()
+                };
+                let err =
+                    fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed").unwrap_err();
+                assert_eq!(err.exit_code, 65);
+                assert_eq!(
+                    err.envelope.error.as_ref().unwrap().reason_code,
+                    "component_packaged"
+                );
+            });
+
+            without_runtime_fetch_unit("local-model", || {
+                let model_root = temp("bundled-refusal-model");
+                let mut status_val = test_status(&model_root);
+                let err =
+                    install_model(&model_root, "local/qwen3.5-4b", &mut status_val).unwrap_err();
+                assert_eq!(err.exit_code, 65);
+                assert_eq!(
+                    err.envelope.error.as_ref().unwrap().reason_code,
+                    "component_packaged"
+                );
+            });
+
+            without_runtime_fetch_unit("parakeet-server", || {
+                let query = RuntimeFetchQuery {
+                    unit: Some("parakeet-server"),
+                    ..Default::default()
+                };
+                let err =
+                    fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed").unwrap_err();
+                assert_eq!(err.exit_code, 65);
+                assert_eq!(
+                    err.envelope.error.as_ref().unwrap().reason_code,
+                    "component_packaged"
+                );
+            });
+
+            without_runtime_fetch_unit("parakeet-coreml", || {
+                let coreml_root = temp("bundled-refusal-coreml");
+                let config = coreml_config(&coreml_root);
+                let coreml_row = catalog()
+                    .iter()
+                    .find(|row| row.unit == "parakeet-coreml")
+                    .expect("parakeet-coreml catalog row");
+                let err = test_hooks::install_coreml_minted_rows(
+                    &coreml_root,
+                    &config,
+                    false,
+                    &[coreml_row],
+                )
+                .unwrap_err();
+                assert_eq!(err.reason_code, "component_packaged");
+            });
+        });
+        assert_eq!(fake.calls.lock().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn positive_twins_verify_recorded_urls_digests_and_sizes() {
+        let targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"];
+
+        for target in targets {
+            let set = runtime_fetch_set(target).expect("fetch set for target");
+            with_runtime_fetch_target(target, || {
+                let fake = Rc::new(MockFake::default());
+                with_fake_runtime_fetch(&fake, || {
+                    let root = temp(&format!("pos-twin-{target}"));
+                    let dest = root.join("artifact.bin");
+
+                    for item in &set {
+                        if item.unit() == "parakeet-coreml" {
+                            continue;
+                        }
+                        let query = RuntimeFetchQuery {
+                            unit: Some(item.unit()),
+                            origin_key: Some(item.origin_key()),
+                            ..Default::default()
+                        };
+                        let _ = fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed");
+                    }
+                });
+
+                let calls = fake.calls.lock().unwrap();
+                let non_coreml_items: Vec<_> = set
+                    .iter()
+                    .filter(|f| f.unit() != "parakeet-coreml")
+                    .collect();
+                assert_eq!(
+                    calls.len(),
+                    non_coreml_items.len(),
+                    "calls mismatch for target {target}"
+                );
+                for (i, item) in non_coreml_items.iter().enumerate() {
+                    let (url, sha, size) = &calls[i];
+                    assert_eq!(
+                        *url,
+                        format!("https://updates.solstone.app/{}", item.origin_key())
+                    );
+                    assert_eq!(*sha, item.sha256());
+                    assert_eq!(*size, item.size_bytes());
+                }
+            });
+        }
+
+        with_runtime_fetch_target("macos-arm64", || {
+            let fake = Rc::new(MockFake::default());
+            with_fake_runtime_fetch(&fake, || {
+                let root = temp("pos-twin-metal");
+                let dest = root.join("metal.bin");
+                let vulkan_art = resolve("llama-server-vulkan", Some(Platform::MacosArm64), None)
+                    .into_iter()
+                    .next()
+                    .unwrap();
+                let query = RuntimeFetchQuery {
+                    unit: Some("llama-server-vulkan"),
+                    origin_key: Some(vulkan_art.origin_key),
+                    ..Default::default()
+                };
+                let _ = fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed");
+            });
+            let calls = fake.calls.lock().unwrap();
+            assert_eq!(calls.len(), 1);
+            let (url, sha, size) = &calls[0];
+            let vulkan_art = resolve("llama-server-vulkan", Some(Platform::MacosArm64), None)
+                .into_iter()
+                .next()
+                .unwrap();
+            assert_eq!(
+                *url,
+                format!("https://updates.solstone.app/{}", vulkan_art.origin_key)
+            );
+            assert_eq!(*sha, vulkan_art.sha256);
+            assert_eq!(*size, vulkan_art.size_bytes);
+        });
+
+        with_runtime_fetch_target("linux-x86_64", || {
+            let fake = Rc::new(MockFake::default());
+            with_fake_runtime_fetch(&fake, || {
+                let root = temp("pos-twin-parakeet-linux");
+                let cpu_art = resolve(
+                    "parakeet-server",
+                    Some(Platform::LinuxX64),
+                    Some(Backend::Cpu),
+                )
+                .into_iter()
+                .next()
+                .unwrap();
+                let vulkan_art = resolve(
+                    "parakeet-server",
+                    Some(Platform::LinuxX64),
+                    Some(Backend::Vulkan),
+                )
+                .into_iter()
+                .next()
+                .unwrap();
+                let model_art = resolve("parakeet-model", None, None)
+                    .into_iter()
+                    .next()
+                    .unwrap();
+
+                for art in [cpu_art, vulkan_art, model_art] {
+                    let dest = root.join(art.filename);
+                    let query = RuntimeFetchQuery {
+                        unit: Some(art.unit),
+                        origin_key: Some(art.origin_key),
+                        ..Default::default()
+                    };
+                    let _ = fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed");
+                }
+            });
+            let calls = fake.calls.lock().unwrap();
+            assert_eq!(calls.len(), 3);
+        });
+
+        with_runtime_fetch_target("macos-arm64", || {
+            let fake = Rc::new(MockFake::default());
+            let root = temp("pos-twin-coreml");
+            let config = coreml_config(&root);
+            let coreml_rows: Vec<&Artifact> = catalog()
+                .iter()
+                .filter(|row| row.unit == "parakeet-coreml")
+                .collect();
+            assert_eq!(coreml_rows.len(), 23);
+
+            with_fake_runtime_fetch(&fake, || {
+                for row in &coreml_rows {
+                    let _ = test_hooks::install_coreml_minted_rows(&root, &config, false, &[*row]);
+                }
+            });
+
+            let calls = fake.calls.lock().unwrap();
+            assert_eq!(calls.len(), 23);
+            for (i, row) in coreml_rows.iter().enumerate() {
+                let (url, sha, size) = &calls[i];
+                assert_eq!(
+                    *url,
+                    format!("https://updates.solstone.app/{}", row.origin_key)
+                );
+                assert_eq!(*sha, row.sha256);
+                assert_eq!(*size, row.size_bytes);
+            }
+        });
+
+        {
+            let fake = Rc::new(MockFake::default());
+            *fake.behavior.lock().unwrap() = MockBehavior::WrongBytes;
+            let root = temp("pos-twin-wrong-bytes");
+            let config = coreml_config(&root);
+            let coreml_row = catalog()
+                .iter()
+                .find(|row| row.unit == "parakeet-coreml")
+                .unwrap();
+            with_runtime_fetch_target("macos-arm64", || {
+                with_fake_runtime_fetch(&fake, || {
+                    let err = test_hooks::install_coreml_minted_rows(
+                        &root,
+                        &config,
+                        false,
+                        &[coreml_row],
+                    )
+                    .unwrap_err();
+                    assert_eq!(err.reason_code, "download_digest_mismatch");
+                });
+            });
+        }
+
+        {
+            let fake = Rc::new(MockFake::default());
+            *fake.behavior.lock().unwrap() = MockBehavior::ShortBody;
+            let root = temp("pos-twin-short-body");
+            let config = coreml_config(&root);
+            let coreml_row = catalog()
+                .iter()
+                .find(|row| row.unit == "parakeet-coreml")
+                .unwrap();
+            with_runtime_fetch_target("macos-arm64", || {
+                with_fake_runtime_fetch(&fake, || {
+                    let err = test_hooks::install_coreml_minted_rows(
+                        &root,
+                        &config,
+                        false,
+                        &[coreml_row],
+                    )
+                    .unwrap_err();
+                    assert_eq!(err.reason_code, "download_size_mismatch");
+                });
+            });
+        }
+
+        with_runtime_fetch_target("linux-x86_64", || {
+            let fake = Rc::new(MockFake::default());
+            with_fake_runtime_fetch(&fake, || {
+                let root = temp("override-foreign-target");
+                let dest = root.join("artifact.bin");
+                let query = RuntimeFetchQuery {
+                    unit: Some("llama-server-vulkan"),
+                    artifact_key: Some("x86_64-apple-darwin"),
+                    ..Default::default()
+                };
+                let err =
+                    fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed").unwrap_err();
+                assert_eq!(err.exit_code, 65);
+                assert_eq!(
+                    err.envelope.error.as_ref().unwrap().reason_code,
+                    "component_packaged"
+                );
+            });
+            assert_eq!(fake.calls.lock().unwrap().len(), 0);
+        });
+
+        with_runtime_fetch_target("windows-x86_64", || {
+            let fake = Rc::new(MockFake::default());
+            with_fake_runtime_fetch(&fake, || {
+                let root = temp("pos-twin-windows");
+                let mut status_val = test_status(&root);
+                let err = install_model(&root, "local/qwen3.5-4b", &mut status_val).unwrap_err();
+                assert_eq!(err.exit_code, 65);
+                assert_eq!(
+                    err.envelope.error.as_ref().unwrap().reason_code,
+                    "component_packaged"
+                );
+            });
+            assert_eq!(fake.calls.lock().unwrap().len(), 0);
+        });
+    }
+
+    #[test]
+    fn local_model_removal_and_positive_twin_accounting() {
+        let fake = Rc::new(MockFake::default());
+        let root = temp("model-removal");
+
+        without_runtime_fetch_unit("local-model", || {
+            with_fake_runtime_fetch(&fake, || {
+                let mut status_val = test_status(&root);
+                let err = install_model(&root, "local/qwen3.5-4b", &mut status_val).unwrap_err();
+                assert_eq!(err.exit_code, 65);
+                assert_eq!(
+                    err.envelope.error.as_ref().unwrap().reason_code,
+                    "component_packaged"
+                );
+            });
+        });
+        assert_eq!(fake.calls.lock().unwrap().len(), 0);
+
+        let twin_root = temp("model-twin");
+        with_fake_runtime_fetch(&fake, || {
+            let mut status_val = test_status(&twin_root);
+            let _ = install_model(&twin_root, "local/qwen3.5-4b", &mut status_val);
+
+            let mmproj_art =
+                select_artifact("local-model", None, None, None, Some("mmproj-F16.gguf")).unwrap();
+            let dest_mmproj = twin_root.join("mmproj-F16.gguf");
+            let query = RuntimeFetchQuery {
+                unit: Some("local-model"),
+                origin_key: Some(mmproj_art.origin_key),
+                ..Default::default()
+            };
+            let _ = fetch_runtime_member(&query, &dest_mmproj, |_, _| {}, "model_download_failed");
+        });
+        let calls = fake.calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert!(calls[0].0.contains("Qwen3.5-4B-Q4_K_M.gguf"));
+        assert!(calls[1].0.contains("mmproj-F16.gguf"));
     }
 }

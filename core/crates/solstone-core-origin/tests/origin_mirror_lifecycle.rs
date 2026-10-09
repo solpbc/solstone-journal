@@ -11,7 +11,6 @@ use std::thread::{self, JoinHandle};
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use solstone_core_local::install::archive::DownloadHostPolicy;
 use solstone_core_origin::gate::{GateTarget, head_gate_targets, verify_targets};
 use solstone_core_origin::mirror::{
     MULTIPART_THRESHOLD_BYTES, MirrorError, MirrorOutcome, MirrorTarget, PublishBackend,
@@ -70,11 +69,10 @@ fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn policy(base: &str) -> DownloadHostPolicy<'_> {
-    DownloadHostPolicy {
+fn origin_policy() -> UpstreamHostPolicy<'static> {
+    UpstreamHostPolicy {
         allowed_hosts: &["127.0.0.1"],
         allow_http: true,
-        origin_base_url: base,
     }
 }
 
@@ -221,7 +219,13 @@ fn gate_loopback_verifies_bytes_and_inner_slash_origin_key() {
         "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Decoder.mlmodelc/analytics/coremldata.bin",
         b"fixture-origin",
     );
-    verify_targets(&[target], &temp("gate-inner-slash"), &policy(&origin.base)).unwrap();
+    verify_targets(
+        &[target],
+        &temp("gate-inner-slash"),
+        &origin.base,
+        &origin_policy(),
+    )
+    .unwrap();
     origin.shutdown();
     assert_eq!(
         origin.request_lines(),
@@ -236,7 +240,13 @@ fn gate_loopback_verifies_bytes_and_inner_slash_origin_key() {
 fn gate_rejects_wrong_bytes_even_with_matching_content_length() {
     let origin = server(|_| (String::new(), b"wrong".to_vec()));
     let target = target("assets/fixture", b"right");
-    let error = verify_targets(&[target], &temp("gate-wrong"), &policy(&origin.base)).unwrap_err();
+    let error = verify_targets(
+        &[target],
+        &temp("gate-wrong"),
+        &origin.base,
+        &origin_policy(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("origin verification failed"));
 }
 
@@ -245,7 +255,13 @@ fn gate_rejects_short_body_even_when_digest_would_be_checked_later() {
     let origin = server(|_| (String::new(), b"short".to_vec()));
     let mut target = target("assets/fixture", b"shorter");
     target.sha256 = sha256(b"short");
-    let error = verify_targets(&[target], &temp("gate-short"), &policy(&origin.base)).unwrap_err();
+    let error = verify_targets(
+        &[target],
+        &temp("gate-short"),
+        &origin.base,
+        &origin_policy(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("origin verification failed"));
 }
 
@@ -263,7 +279,8 @@ fn full_head_target_set_can_be_verified_when_authority_sizes_are_absent() {
     verify_targets(
         &targets,
         &temp("full-head-target-set"),
-        &policy(&origin.base),
+        &origin.base,
+        &origin_policy(),
     )
     .unwrap();
 }
@@ -297,7 +314,8 @@ fn mirror_uses_loopback_github_digest_metadata_then_reads_back() {
         &backend,
         &root,
         &root.join("log.jsonl"),
-        &policy(&origin.base),
+        &origin.base,
+        &origin_policy(),
         &upstream_policy(),
     )
     .unwrap();
@@ -343,7 +361,8 @@ fn mirror_follows_validated_loopback_redirects() {
             &backend,
             &root,
             &root.join("log.jsonl"),
-            &policy(&origin.base),
+            &origin.base,
+            &origin_policy(),
             &upstream_policy(),
         ),
         Ok(MirrorOutcome::Mirrored { .. })
@@ -396,7 +415,8 @@ fn mirror_refuses_redirect_to_a_disallowed_host() {
             &backend,
             &root,
             &root.join("log.jsonl"),
-            &policy(&origin.base),
+            &origin.base,
+            &origin_policy(),
             &upstream_policy(),
         ),
         Err(MirrorError::UpstreamHostRefused { .. })
@@ -444,7 +464,8 @@ fn mirror_uses_loopback_huggingface_git_blob_metadata() {
         &backend,
         &root,
         &log,
-        &policy(&origin.base),
+        &origin.base,
+        &origin_policy(),
         &upstream_policy(),
     )
     .unwrap();
@@ -489,7 +510,8 @@ fn mirror_refuses_huggingface_git_blob_etag_that_does_not_match_the_body() {
             &backend,
             &root,
             &root.join("log.jsonl"),
-            &policy(&origin.base),
+            &origin.base,
+            &origin_policy(),
             &upstream_policy(),
         ),
         Err(MirrorError::UpstreamGitBlobDigestMismatch { .. })
@@ -518,7 +540,8 @@ fn mirror_uses_loopback_huggingface_sha256_metadata() {
         &backend,
         &root,
         &root.join("log.jsonl"),
-        &policy(&origin.base),
+        &origin.base,
+        &origin_policy(),
         &upstream_policy(),
     )
     .unwrap();
@@ -564,7 +587,8 @@ fn mirror_read_back_failure_leaves_no_provenance_row() {
             &backend,
             &root,
             &log,
-            &policy(&origin.base),
+            &origin.base,
+            &origin_policy(),
             &upstream_policy()
         )
         .is_err()
@@ -605,7 +629,8 @@ fn mirror_read_back_is_shared_after_single_shot_publish() {
         &backend,
         &root.join("single"),
         &first_log,
-        &policy(&origin.base),
+        &origin.base,
+        &origin_policy(),
         &upstream_policy(),
     )
     .unwrap();
@@ -614,7 +639,8 @@ fn mirror_read_back_is_shared_after_single_shot_publish() {
         &backend,
         &root.join("multipart"),
         &second_log,
-        &policy(&origin.base),
+        &origin.base,
+        &origin_policy(),
         &upstream_policy(),
     )
     .unwrap();
@@ -662,7 +688,8 @@ fn gate_never_falls_back_to_the_upstream_listener() {
     verify_targets(
         &[target],
         &temp("origin-no-fallback"),
-        &policy(&origin.base),
+        &origin.base,
+        &origin_policy(),
     )
     .unwrap();
     match witness.accept() {

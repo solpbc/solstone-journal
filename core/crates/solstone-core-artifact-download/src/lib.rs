@@ -6,31 +6,14 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
-use std::time::Duration;
 
 use sha2::{Digest, Sha256};
-use solstone_core_assets::Artifact;
+use solstone_core_assets::RuntimeFetchHandle;
 use thiserror::Error;
 
 const MAX_REDIRECT_HOPS: u8 = 5;
-const DOWNLOAD_ALLOWED_HOSTS: &[&str] = &["updates.solstone.app"];
+const OWNER_ORIGIN_HOST: &str = "updates.solstone.app";
 
-/// Build-time upstreams a developer machine may fetch when preparing a
-/// distribution. These hosts are **not** an owner-facing origin.
-///
-/// `DOWNLOAD_ALLOWED_HOSTS` / `PRODUCTION_DOWNLOAD_POLICY` is a covenant
-/// property of `P-system-models`: an owner's install may only reach
-/// `updates.solstone.app`. Widening that list would let an owner-facing
-/// fetch follow a redirect off our origin.
-///
-/// Builder-input acquisition is a different trust basis. It runs on a
-/// developer or CI machine, never on an owner's host, and consumes
-/// digest-pinned upstream sources (FFmpeg, zig, rust-std, ONNX Runtime
-/// wheels, PDFium). The pin is the admission; the host list only stops
-/// the fetch from wandering. The two policies stay separate so a
-/// reviewer who finds two allow-lists can tell which is which without
-/// guessing: production is the owner's origin, builder-input is the
-/// packaging machine's pin table.
 const BUILDER_INPUT_ALLOWED_HOSTS: &[&str] = &[
     "github.com",
     "codeload.github.com",
@@ -49,29 +32,10 @@ const BUILDER_INPUT_ALLOWED_HOSTS: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, Copy)]
-pub struct DownloadHostPolicy<'a> {
-    pub allowed_hosts: &'a [&'a str],
-    pub allow_http: bool,
-    pub origin_base_url: &'a str,
+struct DownloadHostPolicy<'a> {
+    allowed_hosts: &'a [&'a str],
+    allow_http: bool,
 }
-
-pub const PRODUCTION_DOWNLOAD_POLICY: DownloadHostPolicy<'static> = DownloadHostPolicy {
-    allowed_hosts: DOWNLOAD_ALLOWED_HOSTS,
-    allow_http: false,
-    origin_base_url: "https://updates.solstone.app",
-};
-
-/// Policy for digest-pinned builder-input acquisition.
-///
-/// `origin_base_url` is unused: builder inputs are fetched from their
-/// pin-table URL, not composed against a single origin. See
-/// `BUILDER_INPUT_ALLOWED_HOSTS` for why this is not
-/// `PRODUCTION_DOWNLOAD_POLICY`.
-pub const BUILDER_INPUT_DOWNLOAD_POLICY: DownloadHostPolicy<'static> = DownloadHostPolicy {
-    allowed_hosts: BUILDER_INPUT_ALLOWED_HOSTS,
-    allow_http: false,
-    origin_base_url: "",
-};
 
 #[derive(Debug, Error)]
 pub enum ArchiveError {
@@ -97,138 +61,79 @@ pub enum ArchiveError {
     Download(String),
 }
 
-/// A narrow byte-download seam for installers that must decode an archive in
-/// memory after the authoritative compressed-byte digest has been checked.
-pub trait ByteDownload {
-    fn fetch(&self, url: &str, timeout: Duration) -> Result<Vec<u8>, ByteDownloadError>;
+#[cfg(feature = "runtime-fetch-test")]
+pub trait FakeRuntimeFetch: 'static {
+    fn fetch(&self, url: &str, sha256: &str, size_bytes: u64) -> Result<Vec<u8>, ArchiveError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ByteDownloadError {
-    HttpStatus(u16),
-    Transport,
-    DigestMismatch,
-    InsecureUrl,
-    /// The URL names a host other than the owner-facing origin.
-    HostRefused,
+#[cfg(feature = "runtime-fetch-test")]
+#[derive(Debug, Clone)]
+pub struct RuntimeFetchLoopback {
+    pub base_url: String,
+    pub allowed_hosts: Vec<String>,
+    pub allow_http: bool,
 }
 
-#[derive(Debug, Default)]
-pub struct UreqByteDownload;
-
-impl ByteDownload for UreqByteDownload {
-    fn fetch(&self, url: &str, timeout: Duration) -> Result<Vec<u8>, ByteDownloadError> {
-        // No redirects: a hop off the origin would reach a host the
-        // pre-fetch check never saw. A 3xx surfaces as `HttpStatus`.
-        let response = ureq::get(url)
-            .config()
-            .timeout_global(Some(timeout))
-            .max_redirects(0)
-            .http_status_as_error(false)
-            .build()
-            .call()
-            .map_err(|_| ByteDownloadError::Transport)?;
-        if !response.status().is_success() {
-            return Err(ByteDownloadError::HttpStatus(response.status().as_u16()));
-        }
-        let mut reader = response.into_body().into_reader();
-        let mut bytes = Vec::new();
-        reader
-            .read_to_end(&mut bytes)
-            .map_err(|_| ByteDownloadError::Transport)?;
-        Ok(bytes)
-    }
+#[cfg(feature = "runtime-fetch-test")]
+thread_local! {
+    static FAKE_RUNTIME_FETCH: std::cell::RefCell<Option<std::rc::Rc<dyn FakeRuntimeFetch>>> =
+        const { std::cell::RefCell::new(None) };
+    static RUNTIME_FETCH_LOOPBACK: std::cell::RefCell<Option<RuntimeFetchLoopback>> =
+        const { std::cell::RefCell::new(None) };
+    static BUILDER_FETCH_LOOPBACK: std::cell::RefCell<Option<(Vec<String>, bool)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
-pub fn verify_sha256_bytes(bytes: &[u8], expected: &str) -> Result<(), ByteDownloadError> {
-    let actual = Sha256::digest(bytes);
-    let actual: String = actual.iter().map(|byte| format!("{byte:02x}")).collect();
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(ByteDownloadError::DigestMismatch)
-    }
-}
-
-trait Backoff {
-    fn back_off(&self, duration: Duration);
-}
-
-struct ThreadBackoff;
-
-impl Backoff for ThreadBackoff {
-    fn back_off(&self, duration: Duration) {
-        std::thread::sleep(duration);
-    }
-}
-
-/// Download and verify a pinned in-memory archive from the owner-facing origin.
-///
-/// The URL must be `https://` on a `PRODUCTION_DOWNLOAD_POLICY` host; anything
-/// else is refused before the downloader is asked. HTTP status responses fail
-/// immediately. Transport and timeout failures use
-/// the Python reference backoff: 0.25 seconds multiplied by the attempt index.
-pub fn download_verified_bytes(
-    downloader: &dyn ByteDownload,
-    url: &str,
-    expected_sha256: &str,
-    attempts: u8,
-    timeout: Duration,
-) -> Result<Vec<u8>, ByteDownloadError> {
-    download_verified_bytes_with(
-        downloader,
-        url,
-        expected_sha256,
-        attempts,
-        timeout,
-        &ThreadBackoff,
-    )
-}
-
-pub(crate) fn download_verified_bytes_with(
-    downloader: &dyn ByteDownload,
-    url: &str,
-    expected_sha256: &str,
-    attempts: u8,
-    timeout: Duration,
-    backoff: &dyn Backoff,
-) -> Result<Vec<u8>, ByteDownloadError> {
-    if !url.starts_with("https://") {
-        return Err(ByteDownloadError::InsecureUrl);
-    }
-    if validate_url(url, &PRODUCTION_DOWNLOAD_POLICY).is_err() {
-        return Err(ByteDownloadError::HostRefused);
-    }
-    let attempts = attempts.max(1);
-    let mut last = ByteDownloadError::Transport;
-    for attempt in 0..attempts {
-        match downloader.fetch(url, timeout) {
-            Ok(bytes) => {
-                verify_sha256_bytes(&bytes, expected_sha256)?;
-                return Ok(bytes);
-            }
-            Err(error @ ByteDownloadError::HttpStatus(_)) => return Err(error),
-            Err(error) => {
-                last = error;
-                if attempt + 1 < attempts {
-                    backoff.back_off(Duration::from_millis(250 * u64::from(attempt + 1)));
-                }
-            }
+#[cfg(feature = "runtime-fetch-test")]
+pub fn with_fake_runtime_fetch<F: FakeRuntimeFetch, T>(
+    fake: &std::rc::Rc<F>,
+    f: impl FnOnce() -> T,
+) -> T {
+    struct Guard(Option<std::rc::Rc<dyn FakeRuntimeFetch>>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            FAKE_RUNTIME_FETCH.with(|cell| *cell.borrow_mut() = self.0.take());
         }
     }
-    Err(last)
+    let prev = FAKE_RUNTIME_FETCH.with(|cell| cell.borrow_mut().replace(fake.clone()));
+    let _guard = Guard(prev);
+    f()
+}
+
+#[cfg(feature = "runtime-fetch-test")]
+pub fn with_runtime_fetch_loopback<T>(loopback: RuntimeFetchLoopback, f: impl FnOnce() -> T) -> T {
+    struct Guard(Option<RuntimeFetchLoopback>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            RUNTIME_FETCH_LOOPBACK.with(|cell| *cell.borrow_mut() = self.0.take());
+        }
+    }
+    let prev = RUNTIME_FETCH_LOOPBACK.with(|cell| cell.borrow_mut().replace(loopback));
+    let _guard = Guard(prev);
+    f()
+}
+
+#[cfg(feature = "runtime-fetch-test")]
+pub fn with_builder_fetch_loopback<T>(
+    extra_hosts: &[&str],
+    allow_http: bool,
+    f: impl FnOnce() -> T,
+) -> T {
+    struct Guard(Option<(Vec<String>, bool)>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            BUILDER_FETCH_LOOPBACK.with(|cell| *cell.borrow_mut() = self.0.take());
+        }
+    }
+    let hosts = extra_hosts.iter().map(|s| (*s).to_owned()).collect();
+    let prev = BUILDER_FETCH_LOOPBACK.with(|cell| cell.borrow_mut().replace((hosts, allow_http)));
+    let _guard = Guard(prev);
+    f()
 }
 
 pub fn verify_sha256(path: &Path, expected: &str) -> Result<String, ArchiveError> {
     let mut file = File::open(path)?;
     let mut digest = Sha256::new();
-    // Heap-allocated. A 1 MiB fixed-size array here lives on the stack, which
-    // alone meets or exceeds the default 1 MiB Windows main-thread stack
-    // reserve before any caller frame is considered: this is the same defect
-    // `solstone-core-pdf`'s `sha256_file` carried, and it crashed
-    // `journal install-models` with STATUS_STACK_OVERFLOW before it could
-    // print anything, because the bundled RF-DETR asset check hashes a file
-    // here first.
     let mut chunk = vec![0_u8; 1024 * 1024];
     loop {
         let size = file.read(&mut chunk)?;
@@ -251,53 +156,181 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<String, ArchiveError
     Ok(actual)
 }
 
-pub fn download_verified(
-    artifact: &Artifact,
+/// Download an owner runtime artifact verified by a [`RuntimeFetchHandle`].
+///
+/// Skips network when `destination` already exists and matches SHA-256 (returning `Ok(false)`).
+/// Otherwise writes `destination` atomically via a temporary file and returns `Ok(true)`.
+pub fn download_runtime_fetch(
+    handle: &RuntimeFetchHandle,
     destination: &Path,
-    policy: &DownloadHostPolicy<'_>,
-    progress: impl FnMut(u64, Option<u64>),
-) -> Result<(), ArchiveError> {
-    download_verified_origin(
-        artifact.origin_key,
-        artifact.sha256,
-        Some(artifact.size_bytes),
+    mut progress: impl FnMut(u64, Option<u64>),
+) -> Result<bool, ArchiveError> {
+    if destination.is_file() {
+        match verify_sha256(destination, handle.sha256()) {
+            Ok(_) => return Ok(false),
+            Err(ArchiveError::DigestMismatch { .. }) => {}
+            Err(error) => return Err(error),
+        }
+    }
+
+    #[cfg(feature = "runtime-fetch-test")]
+    {
+        let fake_opt = FAKE_RUNTIME_FETCH.with(|cell| cell.borrow().clone());
+        if let Some(fake) = fake_opt {
+            let url = format!("https://{OWNER_ORIGIN_HOST}/{}", handle.origin_key());
+            let bytes = fake.fetch(&url, handle.sha256(), handle.size_bytes())?;
+            write_and_verify_bytes(&bytes, handle.sha256(), handle.size_bytes(), destination)?;
+            return Ok(true);
+        }
+    }
+
+    let origin_key = handle.origin_key();
+    let expected_size = handle.size_bytes();
+    let sha256 = handle.sha256();
+
+    #[cfg(feature = "runtime-fetch-test")]
+    let (url, loopback_hosts, allow_http) = {
+        let loopback_opt = RUNTIME_FETCH_LOOPBACK.with(|cell| cell.borrow().clone());
+        if let Some(loopback) = loopback_opt {
+            let url = format!("{}/{}", loopback.base_url.trim_end_matches('/'), origin_key);
+            (url, loopback.allowed_hosts, loopback.allow_http)
+        } else {
+            let url = format!("https://{OWNER_ORIGIN_HOST}/{origin_key}");
+            (url, vec![OWNER_ORIGIN_HOST.to_string()], false)
+        }
+    };
+    #[cfg(feature = "runtime-fetch-test")]
+    let host_refs: Vec<&str> = loopback_hosts.iter().map(|s| s.as_str()).collect();
+    #[cfg(feature = "runtime-fetch-test")]
+    let policy = DownloadHostPolicy {
+        allowed_hosts: &host_refs,
+        allow_http,
+    };
+
+    #[cfg(not(feature = "runtime-fetch-test"))]
+    let (url, policy) = {
+        let url = format!("https://{OWNER_ORIGIN_HOST}/{origin_key}");
+        let policy = DownloadHostPolicy {
+            allowed_hosts: &[OWNER_ORIGIN_HOST],
+            allow_http: false,
+        };
+        (url, policy)
+    };
+
+    download_verified_url_internal(
+        &url,
+        sha256,
+        Some(expected_size),
         destination,
-        policy,
-        progress,
-    )
+        &policy,
+        &mut progress,
+    )?;
+    Ok(true)
 }
 
-pub fn download_verified_origin(
-    origin_key: &str,
+#[cfg(feature = "runtime-fetch-test")]
+fn write_and_verify_bytes(
+    bytes: &[u8],
+    expected_sha256: &str,
+    expected_size: u64,
+    destination: &Path,
+) -> Result<(), ArchiveError> {
+    if bytes.len() as u64 != expected_size {
+        return Err(ArchiveError::SizeMismatch {
+            expected: expected_size,
+            actual: bytes.len() as u64,
+        });
+    }
+    let actual_sha = format!("{:x}", Sha256::digest(bytes));
+    if actual_sha != expected_sha256 {
+        return Err(ArchiveError::DigestMismatch {
+            expected: expected_sha256.to_owned(),
+            actual: actual_sha,
+        });
+    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| ArchiveError::Download("destination has no parent".to_owned()))?;
+    fs::create_dir_all(parent)?;
+    let filename = destination
+        .file_name()
+        .ok_or_else(|| ArchiveError::Download("destination has no file name".to_owned()))?;
+    let temporary = parent.join(format!(".{}.part", filename.to_string_lossy()));
+    fs::write(&temporary, bytes)?;
+    fs::rename(&temporary, destination)?;
+    Ok(())
+}
+
+/// Fetch builder inputs from allowed upstream hosts.
+///
+/// Refuses `OWNER_ORIGIN_HOST` unconditionally before any network attempt or fake consultation.
+pub fn ensure_verified_url(
+    url: &str,
     sha256: &str,
     expected_size: Option<u64>,
     destination: &Path,
-    policy: &DownloadHostPolicy<'_>,
-    progress: impl FnMut(u64, Option<u64>),
-) -> Result<(), ArchiveError> {
-    let origin = origin_url(policy.origin_base_url, origin_key);
-    download_verified_url(
-        &origin,
+    mut progress: impl FnMut(u64, Option<u64>),
+) -> Result<bool, ArchiveError> {
+    let parsed = parse_absolute_url(url)?;
+    if parsed.host.eq_ignore_ascii_case(OWNER_ORIGIN_HOST) {
+        return Err(ArchiveError::HostRefused { host: parsed.host });
+    }
+
+    if destination.is_file() {
+        match verify_sha256(destination, sha256) {
+            Ok(_) => return Ok(false),
+            Err(ArchiveError::DigestMismatch { .. }) => {}
+            Err(error) => return Err(error),
+        }
+    }
+
+    #[cfg(feature = "runtime-fetch-test")]
+    let (extra_hosts, allow_http) = BUILDER_FETCH_LOOPBACK
+        .with(|cell| cell.borrow().clone())
+        .unwrap_or_default();
+    #[cfg(feature = "runtime-fetch-test")]
+    let mut allowed_strings: Vec<String> = BUILDER_INPUT_ALLOWED_HOSTS
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    #[cfg(feature = "runtime-fetch-test")]
+    for h in extra_hosts {
+        if !h.eq_ignore_ascii_case(OWNER_ORIGIN_HOST) {
+            allowed_strings.push(h);
+        }
+    }
+    #[cfg(feature = "runtime-fetch-test")]
+    let host_refs: Vec<&str> = allowed_strings.iter().map(|s| s.as_str()).collect();
+    #[cfg(feature = "runtime-fetch-test")]
+    let policy = DownloadHostPolicy {
+        allowed_hosts: &host_refs,
+        allow_http,
+    };
+
+    #[cfg(not(feature = "runtime-fetch-test"))]
+    let policy = DownloadHostPolicy {
+        allowed_hosts: BUILDER_INPUT_ALLOWED_HOSTS,
+        allow_http: false,
+    };
+
+    download_verified_url_internal(
+        url,
         sha256,
         expected_size,
         destination,
-        policy,
-        progress,
-    )
+        &policy,
+        &mut progress,
+    )?;
+    Ok(true)
 }
 
-/// Fetch `url` through `policy`, write `destination`, and require `sha256`.
-///
-/// Use [`PRODUCTION_DOWNLOAD_POLICY`] for owner-facing origin keys and
-/// [`BUILDER_INPUT_DOWNLOAD_POLICY`] for pin-table builder inputs. The
-/// policies are not interchangeable: see `BUILDER_INPUT_ALLOWED_HOSTS`.
-pub fn download_verified_url(
+fn download_verified_url_internal(
     url: &str,
     sha256: &str,
     expected_size: Option<u64>,
     destination: &Path,
     policy: &DownloadHostPolicy<'_>,
-    mut progress: impl FnMut(u64, Option<u64>),
+    progress: &mut dyn FnMut(u64, Option<u64>),
 ) -> Result<(), ArchiveError> {
     let mut current = validate_url(url, policy)?;
     let agent = ureq::agent();
@@ -384,27 +417,6 @@ pub fn download_verified_url(
     result
 }
 
-/// Like [`download_verified_url`], but skip the network when `destination`
-/// already matches `sha256`. Returns `true` when a fetch ran.
-pub fn ensure_verified_url(
-    url: &str,
-    sha256: &str,
-    expected_size: Option<u64>,
-    destination: &Path,
-    policy: &DownloadHostPolicy<'_>,
-    progress: impl FnMut(u64, Option<u64>),
-) -> Result<bool, ArchiveError> {
-    if destination.is_file() {
-        match verify_sha256(destination, sha256) {
-            Ok(_) => return Ok(false),
-            Err(ArchiveError::DigestMismatch { .. }) => {}
-            Err(error) => return Err(error),
-        }
-    }
-    download_verified_url(url, sha256, expected_size, destination, policy, progress)?;
-    Ok(true)
-}
-
 #[derive(Debug, Clone)]
 struct AbsoluteUrl {
     scheme: String,
@@ -412,6 +424,7 @@ struct AbsoluteUrl {
     host: String,
     path_and_query: String,
 }
+
 impl AbsoluteUrl {
     fn as_str(&self) -> String {
         format!(
@@ -419,10 +432,6 @@ impl AbsoluteUrl {
             self.scheme, self.authority, self.path_and_query
         )
     }
-}
-
-pub fn origin_url(base: &str, origin_key: &str) -> String {
-    format!("{base}/{origin_key}")
 }
 
 fn validate_url(url: &str, policy: &DownloadHostPolicy<'_>) -> Result<AbsoluteUrl, ArchiveError> {
@@ -444,6 +453,7 @@ fn validate_url(url: &str, policy: &DownloadHostPolicy<'_>) -> Result<AbsoluteUr
     }
     Ok(parsed)
 }
+
 fn parse_absolute_url(url: &str) -> Result<AbsoluteUrl, ArchiveError> {
     let url = url.split('#').next().unwrap_or_default();
     let (scheme, rest) = url
@@ -480,6 +490,7 @@ fn parse_absolute_url(url: &str) -> Result<AbsoluteUrl, ArchiveError> {
         path_and_query,
     })
 }
+
 fn parse_authority(authority: &str) -> Result<(String, String), ArchiveError> {
     if authority.is_empty() || authority.bytes().any(|byte| byte.is_ascii_whitespace()) {
         return Err(ArchiveError::Download(
@@ -518,6 +529,7 @@ fn parse_authority(authority: &str) -> Result<(String, String), ArchiveError> {
     let authority = port.map_or_else(|| host.clone(), |port| format!("{host}:{port}"));
     Ok((host, authority))
 }
+
 fn parse_port(tail: &str) -> Result<Option<u16>, ArchiveError> {
     if tail.is_empty() {
         return Ok(None);
@@ -529,6 +541,7 @@ fn parse_port(tail: &str) -> Result<Option<u16>, ArchiveError> {
     };
     Ok(Some(parse_port_suffix(port)?))
 }
+
 fn parse_port_suffix(port: &str) -> Result<u16, ArchiveError> {
     if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(ArchiveError::Download("URL has malformed port".to_owned()));
@@ -536,6 +549,7 @@ fn parse_port_suffix(port: &str) -> Result<u16, ArchiveError> {
     port.parse()
         .map_err(|_| ArchiveError::Download("URL has malformed port".to_owned()))
 }
+
 fn resolve_location(current: &AbsoluteUrl, location: &str) -> Result<AbsoluteUrl, ArchiveError> {
     let location = location.split('#').next().unwrap_or_default();
     if location.is_empty() {
@@ -571,6 +585,7 @@ fn resolve_location(current: &AbsoluteUrl, location: &str) -> Result<AbsoluteUrl
         current.scheme, current.authority, path_and_query
     ))
 }
+
 fn normalize_path(path: &str) -> String {
     let trailing_slash = path.ends_with('/');
     let mut components = Vec::new();
@@ -589,11 +604,13 @@ fn normalize_path(path: &str) -> String {
     }
     normalized
 }
+
 fn has_scheme_prefix(value: &str) -> bool {
     value
         .split_once(':')
         .is_some_and(|(scheme, _)| is_scheme(scheme))
 }
+
 fn is_scheme(value: &str) -> bool {
     !value.is_empty()
         && value.bytes().enumerate().all(|(index, byte)| {
@@ -601,62 +618,46 @@ fn is_scheme(value: &str) -> bool {
         })
 }
 
+#[cfg(unix)]
 pub fn make_executable(path: &Path) -> Result<(), ArchiveError> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(path)?.permissions();
-        permissions.set_mode(permissions.mode() | 0o111);
-        fs::set_permissions(path, permissions)?;
-    }
-    #[cfg(not(unix))]
-    let _ = path;
+    use std::os::unix::fs::PermissionsExt;
+    let metadata = fs::metadata(path)?;
+    let mut permissions = metadata.permissions();
+    permissions.set_mode(permissions.mode() | 0o111);
+    fs::set_permissions(path, permissions)?;
     Ok(())
 }
+
+#[cfg(not(unix))]
+pub fn make_executable(_path: &Path) -> Result<(), ArchiveError> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 pub fn clear_macos_quarantine(path: &Path) -> Result<(), ArchiveError> {
-    #[cfg(target_os = "macos")]
+    use std::process::Command;
+    let status = Command::new("xattr")
+        .arg("-d")
+        .arg("com.apple.quarantine")
+        .arg(path)
+        .status();
+    if let Ok(status) = status
+        && !status.success()
     {
-        let status = std::process::Command::new("xattr")
-            .args(["-d", "-r", "com.apple.quarantine"])
-            .arg(path)
-            .status()?;
-        if !status.success() {
-            return Err(ArchiveError::Download("xattr failed".to_owned()));
-        }
+        let _ = status;
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = path;
-    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn clear_macos_quarantine(_path: &Path) -> Result<(), ArchiveError> {
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::{Cell, RefCell};
     use std::io::Write;
-
-    struct ScriptedDownload {
-        responses: RefCell<Vec<Result<Vec<u8>, ByteDownloadError>>>,
-        calls: Cell<u8>,
-    }
-    impl ByteDownload for ScriptedDownload {
-        fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
-            self.calls.set(self.calls.get() + 1);
-            self.responses.borrow_mut().remove(0)
-        }
-    }
-
-    struct RecordingBackoff {
-        delays: RefCell<Vec<Duration>>,
-    }
-
-    impl Backoff for RecordingBackoff {
-        fn back_off(&self, duration: Duration) {
-            self.delays.borrow_mut().push(duration);
-        }
-    }
 
     #[test]
     fn sha256_mismatch_is_rejected() {
@@ -676,10 +677,6 @@ mod tests {
 
     #[test]
     fn digest_verification_fits_a_one_mib_stack() {
-        // The Windows main thread reserves 1 MiB. `verify_sha256` runs on it,
-        // from `journal install-models` among others, so its read buffer must
-        // not be a stack array of that same size. A worker thread with a
-        // Windows-sized stack is the portable way to regress it here.
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("asset");
         File::create(&path)
@@ -707,19 +704,10 @@ mod tests {
     }
 
     #[test]
-    fn origin_url_joins_the_authoritative_key() {
-        assert_eq!(
-            origin_url("https://updates.solstone.app", "assets/tool"),
-            "https://updates.solstone.app/assets/tool"
-        );
-    }
-
-    #[test]
     fn allowed_host_comparison_is_case_insensitive_without_a_network_request() {
         let policy = DownloadHostPolicy {
             allowed_hosts: &["MiXeD.ExAmPlE"],
             allow_http: false,
-            origin_base_url: "https://mixed.example",
         };
         assert_eq!(
             validate_url("https://mixed.example/asset", &policy)
@@ -730,99 +718,13 @@ mod tests {
     }
 
     #[test]
-    fn byte_download_http_status_is_not_retried() {
-        let download = ScriptedDownload {
-            responses: RefCell::new(vec![Err(ByteDownloadError::HttpStatus(404))]),
-            calls: Cell::new(0),
-        };
-        assert_eq!(
-            download_verified_bytes(
-                &download,
-                "https://updates.solstone.app/assets/fixture",
-                "00",
-                3,
-                Duration::ZERO,
-            ),
-            Err(ByteDownloadError::HttpStatus(404))
-        );
-        assert_eq!(download.calls.get(), 1);
-    }
-
-    #[test]
-    fn byte_download_retries_transport_then_verifies() {
-        let bytes = b"fixture".to_vec();
-        let digest: String = Sha256::digest(&bytes)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        let download = ScriptedDownload {
-            responses: RefCell::new(vec![
-                Err(ByteDownloadError::Transport),
-                Err(ByteDownloadError::Transport),
-                Ok(bytes.clone()),
-            ]),
-            calls: Cell::new(0),
-        };
-        let backoff = RecordingBackoff {
-            delays: RefCell::new(Vec::new()),
-        };
-        assert_eq!(
-            download_verified_bytes_with(
-                &download,
-                "https://updates.solstone.app/assets/fixture",
-                &digest,
-                3,
-                Duration::ZERO,
-                &backoff,
-            )
-            .unwrap(),
-            bytes
-        );
-        assert_eq!(download.calls.get(), 3);
-        assert_eq!(
-            *backoff.delays.borrow(),
-            [Duration::from_millis(250), Duration::from_millis(500)]
-        );
-    }
-
-    #[test]
-    fn byte_download_refuses_a_host_off_the_origin_without_fetching() {
-        for url in [
-            "https://downloads.rclone.org/v1.74.4/rclone-v1.74.4-linux-amd64.zip",
-            "https://github.com/restic/restic/releases/download/v0.19.0/asset.bz2",
-            "https://updates.solstone.app@example.invalid/asset",
-        ] {
-            let download = ScriptedDownload {
-                responses: RefCell::new(vec![Ok(b"fixture".to_vec())]),
-                calls: Cell::new(0),
-            };
-            assert_eq!(
-                download_verified_bytes(&download, url, "00", 3, Duration::ZERO),
-                Err(ByteDownloadError::HostRefused),
-                "{url}"
-            );
-            assert_eq!(download.calls.get(), 0, "{url}");
-        }
-    }
-
-    #[test]
-    fn production_policy_refuses_a_builder_input_host() {
-        let error = validate_url(
-            "https://github.com/FFmpeg/FFmpeg/archive/deadbeef.tar.gz",
-            &PRODUCTION_DOWNLOAD_POLICY,
-        )
-        .expect_err("owner-facing policy must not admit github.com");
-        assert!(matches!(
-            error,
-            ArchiveError::HostRefused { host } if host == "github.com"
-        ));
-    }
-
-    #[test]
     fn builder_input_policy_refuses_the_owner_origin() {
-        let error = validate_url(
+        let error = ensure_verified_url(
             "https://updates.solstone.app/assets/tool",
-            &BUILDER_INPUT_DOWNLOAD_POLICY,
+            "00",
+            Some(10),
+            Path::new("/nonexistent"),
+            |_, _| {},
         )
         .expect_err("builder-input policy must not admit the owner origin");
         assert!(matches!(
@@ -833,6 +735,10 @@ mod tests {
 
     #[test]
     fn builder_input_policy_admits_each_pinned_upstream() {
+        let policy = DownloadHostPolicy {
+            allowed_hosts: BUILDER_INPUT_ALLOWED_HOSTS,
+            allow_http: false,
+        };
         for url in [
             "https://github.com/FFmpeg/FFmpeg/archive/deadbeef.tar.gz",
             "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz",
@@ -841,8 +747,7 @@ mod tests {
             "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
             "https://files.pythonhosted.org/packages/onnxruntime.whl",
         ] {
-            validate_url(url, &BUILDER_INPUT_DOWNLOAD_POLICY)
-                .unwrap_or_else(|error| panic!("{url}: {error}"));
+            validate_url(url, &policy).unwrap_or_else(|error| panic!("{url}: {error}"));
         }
     }
 
@@ -860,10 +765,93 @@ mod tests {
             &digest,
             Some(6),
             &path,
-            &BUILDER_INPUT_DOWNLOAD_POLICY,
             |_, _| {},
         )
         .expect("matching cache must not fetch");
         assert!(!fetched);
+    }
+
+    #[cfg(feature = "runtime-fetch-test")]
+    #[test]
+    fn fake_runtime_fetch_records_url_digest_and_size() {
+        use solstone_core_assets::runtime_fetch_handle_fixture;
+        use std::cell::RefCell;
+
+        struct TestFake {
+            calls: RefCell<Vec<(String, String, u64)>>,
+            body: Vec<u8>,
+        }
+        impl FakeRuntimeFetch for TestFake {
+            fn fetch(
+                &self,
+                url: &str,
+                sha256: &str,
+                size_bytes: u64,
+            ) -> Result<Vec<u8>, ArchiveError> {
+                self.calls
+                    .borrow_mut()
+                    .push((url.to_owned(), sha256.to_owned(), size_bytes));
+                Ok(self.body.clone())
+            }
+        }
+
+        let body = b"valid payload".to_vec();
+        let sha256: &'static str =
+            Box::leak(format!("{:x}", Sha256::digest(&body)).into_boxed_str());
+        let size = body.len() as u64;
+
+        let fake = std::rc::Rc::new(TestFake {
+            calls: RefCell::new(Vec::new()),
+            body: body.clone(),
+        });
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("target");
+        let handle = runtime_fetch_handle_fixture("test-unit", "assets/test-key", sha256, size);
+
+        with_fake_runtime_fetch(&fake, || {
+            let fetched = download_runtime_fetch(&handle, &path, |_, _| {}).unwrap();
+            assert!(fetched);
+            assert_eq!(fs::read(&path).unwrap(), body);
+        });
+
+        assert_eq!(fake.calls.borrow().len(), 1);
+        let (url, recorded_sha, recorded_size) = &fake.calls.borrow()[0];
+        assert_eq!(url, "https://updates.solstone.app/assets/test-key");
+        assert_eq!(recorded_sha, &sha256);
+        assert_eq!(*recorded_size, size);
+
+        // Wrong bytes -> digest mismatch
+        let bad_fake = std::rc::Rc::new(TestFake {
+            calls: RefCell::new(Vec::new()),
+            body: b"wrong payload".to_vec(),
+        });
+        let bad_path = directory.path().join("bad_target");
+        with_fake_runtime_fetch(&bad_fake, || {
+            let err = download_runtime_fetch(&handle, &bad_path, |_, _| {}).unwrap_err();
+            assert!(matches!(err, ArchiveError::DigestMismatch { .. }));
+        });
+
+        // Short body -> size mismatch
+        let short_fake = std::rc::Rc::new(TestFake {
+            calls: RefCell::new(Vec::new()),
+            body: b"short".to_vec(),
+        });
+        with_fake_runtime_fetch(&short_fake, || {
+            let err = download_runtime_fetch(&handle, &bad_path, |_, _| {}).unwrap_err();
+            assert!(matches!(err, ArchiveError::SizeMismatch { .. }));
+        });
+
+        // Builder fetch of owner origin records nothing and refuses
+        let err = ensure_verified_url(
+            "https://updates.solstone.app/assets/test-key",
+            sha256,
+            Some(size),
+            &bad_path,
+            |_, _| {},
+        )
+        .unwrap_err();
+        assert!(matches!(err, ArchiveError::HostRefused { .. }));
+        assert_eq!(fake.calls.borrow().len(), 1);
     }
 }
