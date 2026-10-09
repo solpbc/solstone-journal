@@ -1935,7 +1935,6 @@ mod tests {
             "gateway_unreachable",
         );
 
-        let now_check = now + chrono::Duration::seconds(1);
         let fingerprint1 = solstone_core_brain::build_active_brain_fingerprint(
             &config_map,
             &ready_key,
@@ -1945,6 +1944,9 @@ mod tests {
         .unwrap();
         assert!(fingerprint1.is_some());
 
+        // The refusal writer timestamps with the real clock. Inspect after its
+        // write rather than assuming both fixture setups finish within a second.
+        let now_check = chrono::Utc::now();
         let inspection1 =
             solstone_core_brain::inspect_brain_state(ready_path, &config_map, now_check);
         let outcome1 = RenewalMachine::default().plan(now_check, &inspection1, fingerprint1);
@@ -1993,6 +1995,7 @@ mod tests {
         .unwrap();
         assert!(fingerprint2.is_some());
 
+        let now_check = chrono::Utc::now();
         let inspection2 =
             solstone_core_brain::inspect_brain_state(mid_check_path, &config_map, now_check);
         assert_eq!(inspection2.projection.aggregate_state, "unhealthy");
