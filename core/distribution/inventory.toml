@@ -1666,7 +1666,7 @@ ignored = [
 [entry.input]
 kind = "authority-committed"
 platform = "linux-x86_64"
-path = "core/models/assets/nvattest/libnvat-linux-x86_64-1.2.2-sol.6-archive.tar.xz"
+path = "core/models/assets/nvattest/libnvat-linux-x86_64-1.2.2-sol.7-archive.tar.xz"
 
 [[entry.staged]]
 relpath = "bin/nvattest"
@@ -1678,7 +1678,7 @@ extracted_sha256 = "41d65c4ae56aab9e17802cdc376017c64cd1e10a3b273a212c096307e513
 relpath = "lib/libnvat.so.1"
 dest = "lib/solstone-nvattest/lib/libnvat.so.1"
 mode = 0o755
-extracted_sha256 = "b0c5d7031700845f49fa6dae1ab33dcc427965df691354466aaf67c868ec0c29"
+extracted_sha256 = "30a6c13dab1016d5287d4a43fa6c60cc042c847dae9776a16275108ff15f26f3"
 
 [[entry.staged]]
 relpath = "share/ca/ca-bundle.pem"
@@ -1702,7 +1702,7 @@ ignored = [
 [entry.input]
 kind = "authority-committed"
 platform = "linux-x86_64"
-path = "core/models/assets/nvattest/libnvat-linux-x86_64-1.2.2-sol.6-archive.tar.xz"
+path = "core/models/assets/nvattest/libnvat-linux-x86_64-1.2.2-sol.7-archive.tar.xz"
 
 [[entry.staged]]
 relpath = "LICENSE"
@@ -1714,7 +1714,7 @@ extracted_sha256 = "82d36972a71088e8d4a4793313e64e18340c60de08e3175a58360a277c96
 relpath = "share/THIRD_PARTY_NOTICES.md"
 dest = "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md"
 mode = 0o644
-extracted_sha256 = "b6f7785f37de5e10aeda2f86435f3e6b7fdabda603b3d04200d91ed00ef7312a"
+extracted_sha256 = "6c8e4c75f729ca19e059dcc4aaa94b907c307f6172c8426de07ee56ba56b4ddc"
 
 [[entry]]
 kind = "pinned-members"
@@ -1731,7 +1731,7 @@ ignored = [
 [entry.input]
 kind = "authority-committed"
 platform = "linux-aarch64"
-path = "core/models/assets/nvattest/libnvat-linux-aarch64-1.2.2-sol.6-archive.tar.xz"
+path = "core/models/assets/nvattest/libnvat-linux-aarch64-1.2.2-sol.7-archive.tar.xz"
 
 [[entry.staged]]
 relpath = "bin/nvattest"
@@ -1743,7 +1743,7 @@ extracted_sha256 = "02032d5bc77c2ff8b76e0a7e735c268253b37251a09eb4ddc13085a74b7a
 relpath = "lib/libnvat.so.1"
 dest = "lib/solstone-nvattest/lib/libnvat.so.1"
 mode = 0o755
-extracted_sha256 = "ee0d57e5b6e79beb5e43ec86c4b0e7512705e7c0edf7db8b8b3652ce2a745a86"
+extracted_sha256 = "caabbbbd33640c83c939dd9353fbb8e4a371fc7bc80d0c4b1650f5fc99be2ded"
 
 [[entry.staged]]
 relpath = "share/ca/ca-bundle.pem"
@@ -1767,7 +1767,7 @@ ignored = [
 [entry.input]
 kind = "authority-committed"
 platform = "linux-aarch64"
-path = "core/models/assets/nvattest/libnvat-linux-aarch64-1.2.2-sol.6-archive.tar.xz"
+path = "core/models/assets/nvattest/libnvat-linux-aarch64-1.2.2-sol.7-archive.tar.xz"
 
 [[entry.staged]]
 relpath = "LICENSE"
@@ -1779,7 +1779,7 @@ extracted_sha256 = "82d36972a71088e8d4a4793313e64e18340c60de08e3175a58360a277c96
 relpath = "share/THIRD_PARTY_NOTICES.md"
 dest = "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md"
 mode = 0o644
-extracted_sha256 = "b6f7785f37de5e10aeda2f86435f3e6b7fdabda603b3d04200d91ed00ef7312a"
+extracted_sha256 = "6c8e4c75f729ca19e059dcc4aaa94b907c307f6172c8426de07ee56ba56b4ddc"
 
 [[entry]]
 kind = "pinned-members"
@@ -1796,7 +1796,7 @@ ignored = [
 [entry.input]
 kind = "authority-committed"
 platform = "macos-arm64"
-path = "core/models/assets/nvattest/libnvat-macos-arm64-1.2.2-sol.6-archive.tar.xz"
+path = "core/models/assets/nvattest/libnvat-macos-arm64-1.2.2-sol.7-archive.tar.xz"
 
 [[entry.staged]]
 relpath = "bin/nvattest"
@@ -1808,7 +1808,7 @@ extracted_sha256 = "f9b22f299477545df5537a53b3b26bfaf9738759a49c1def4ca1d0842207
 relpath = "lib/libnvat.1.dylib"
 dest = "lib/solstone-nvattest/lib/libnvat.1.dylib"
 mode = 0o755
-extracted_sha256 = "f2519b32b31b36ca62538611910f2142bf9fcf654ed386785429d8ed5de414e8"
+extracted_sha256 = "8206324644a77603c0d0f9a7fa5f2c6cc37480aedf0fae1648baa2b858c270a8"
 
 [[entry.staged]]
 relpath = "share/ca/ca-bundle.pem"
@@ -1832,7 +1832,7 @@ ignored = [
 [entry.input]
 kind = "authority-committed"
 platform = "macos-arm64"
-path = "core/models/assets/nvattest/libnvat-macos-arm64-1.2.2-sol.6-archive.tar.xz"
+path = "core/models/assets/nvattest/libnvat-macos-arm64-1.2.2-sol.7-archive.tar.xz"
 
 [[entry.staged]]
 relpath = "LICENSE"
@@ -1844,7 +1844,7 @@ extracted_sha256 = "82d36972a71088e8d4a4793313e64e18340c60de08e3175a58360a277c96
 relpath = "share/THIRD_PARTY_NOTICES.md"
 dest = "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md"
 mode = 0o644
-extracted_sha256 = "199a52ad0726e35c4ae82ed6b8fb80b75ac89aa0d2303e38755a67136a15db56"
+extracted_sha256 = "bbbcc2c091464c0969ce89619358e92d621e9c20246de3acdfe5a77a8007eab7"
 
 [[entry]]
 kind = "pinned-members"
