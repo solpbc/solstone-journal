@@ -79,6 +79,12 @@ cargo metadata --manifest-path core\Cargo.toml --locked --offline --all-features
 call :phase distribution
 echo === cargo build --locked (distribution recorder for the FFmpeg toolchain bootstrap) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-distribution --bin solstone-distribution || exit /b 1
+call :phase payload-early
+echo === cargo test --locked (early Windows payload sanity) ===
+call :run_exact_integration "solstone-core-distribution" "windows_payload" "signed_windows_payload_is_complete_and_refuses_mutation" "test-fixture-pin" || exit /b 1
+call :run_exact_integration "solstone-core-distribution" "windows_payload" "windows_component_evidence_error_conditions" "test-fixture-pin" || exit /b 1
+call :run_exact_integration "solstone-core-distribution" "windows_payload" "windows_component_evidence_happy_path" "test-fixture-pin" || exit /b 1
+
 if not defined JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT set "JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT=%USERPROFILE%\sj-ffmpeg-tools"
 if not defined JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT set "JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT=%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%\inputs"
 set "JOURNAL_WIN_CI_FFMPEG_ENV=core\target\journal-win-ci-ffmpeg-environment-%RANDOM%%RANDOM%.cmd"
