@@ -346,6 +346,17 @@ fn prepare_segment(
     {
         obj.insert("reason_code".to_owned(), Value::Object(reason_code));
     }
+    if solstone_core_system_health::holds_location_file(&dir)
+        && let Some(obj) = payload.as_object_mut()
+    {
+        obj.insert("holds_location".to_owned(), Value::Bool(true));
+        if let Some(readings) = crate::location::location_reading_count(&dir) {
+            obj.insert(
+                "location_readings".to_owned(),
+                Value::Number(readings.into()),
+            );
+        }
+    }
     Ok(payload)
 }
 
@@ -1831,5 +1842,78 @@ mod tests {
         assert_eq!(record["reason_code"], vocab::REASON_ANALYSIS_FAILED);
         assert_eq!(record["handler"], vocab::HANDLER_DEPICT);
         assert!(header.get("text").is_none());
+    }
+
+    #[test]
+    fn prepare_segment_location_keys() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path();
+        let now = chrono::Utc::now();
+        let day = "20260101";
+
+        // Segment 1: base (no location.jsonl)
+        let base_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("phone")
+            .join("120000_60");
+        std::fs::create_dir_all(&base_dir).unwrap();
+        std::fs::write(base_dir.join("stream.json"), "{}\n").unwrap();
+
+        let base_val = super::prepare_segment(root, day, "phone", "120000_60", now).unwrap();
+        assert!(base_val.get("holds_location").is_none());
+        assert!(base_val.get("location_readings").is_none());
+        let base_keys: Vec<String> = base_val.as_object().unwrap().keys().cloned().collect();
+
+        // Segment 2: with readable location.jsonl (twin directory)
+        let loc_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("watch")
+            .join("120000_60");
+        std::fs::create_dir_all(&loc_dir).unwrap();
+        std::fs::write(loc_dir.join("stream.json"), "{}\n").unwrap();
+        std::fs::write(
+            loc_dir.join("location.jsonl"),
+            "{\"record_type\":\"solstone.location.segment/1\"}\n{\"record_type\":\"solstone.location.fix/1\"}\n{\"record_type\":\"solstone.location.fix/1\"}\n",
+        )
+        .unwrap();
+
+        let loc_val = super::prepare_segment(root, day, "watch", "120000_60", now).unwrap();
+        assert_eq!(
+            loc_val.get("holds_location"),
+            Some(&serde_json::Value::Bool(true))
+        );
+        assert_eq!(
+            loc_val.get("location_readings"),
+            Some(&serde_json::json!(2))
+        );
+
+        let loc_keys: Vec<String> = loc_val.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(&loc_keys[..base_keys.len()], &base_keys[..]);
+        assert_eq!(
+            &loc_keys[base_keys.len()..],
+            &["holds_location", "location_readings"]
+        );
+
+        // Segment 3: invalid UTF-8 location.jsonl
+        let inv_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("car")
+            .join("120000_60");
+        std::fs::create_dir_all(&inv_dir).unwrap();
+        std::fs::write(inv_dir.join("stream.json"), "{}\n").unwrap();
+        std::fs::write(inv_dir.join("location.jsonl"), [0xff, 0xfe]).unwrap();
+
+        let inv_val = super::prepare_segment(root, day, "car", "120000_60", now).unwrap();
+        assert_eq!(
+            inv_val.get("holds_location"),
+            Some(&serde_json::Value::Bool(true))
+        );
+        assert!(inv_val.get("location_readings").is_none());
+        let inv_keys: Vec<String> = inv_val.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(&inv_keys[..base_keys.len()], &base_keys[..]);
+        assert_eq!(&inv_keys[base_keys.len()..], &["holds_location"]);
     }
 }

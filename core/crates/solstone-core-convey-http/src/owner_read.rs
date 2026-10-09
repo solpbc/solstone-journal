@@ -46,6 +46,7 @@ pub enum OwnerReadRole {
     TranscriptsRead,
     TranscriptsSegment,
     TranscriptsServeFile,
+    TranscriptsLocation,
     StatsData,
     StatsUsage,
     StatsIndex,
@@ -101,6 +102,7 @@ impl OwnerReadRole {
         Self::TranscriptsRead,
         Self::TranscriptsSegment,
         Self::TranscriptsServeFile,
+        Self::TranscriptsLocation,
         Self::StatsData,
         Self::StatsUsage,
         Self::StatsIndex,
@@ -170,6 +172,7 @@ impl OwnerReadRole {
                 "/app/transcripts/api/segment/20260901/default/000000_000100"
             }
             Self::TranscriptsServeFile => "/app/transcripts/api/serve_file/20260901/mic.jsonl",
+            Self::TranscriptsLocation => "/app/transcripts/api/location/20260901",
             Self::StatsData => "/app/stats/api/stats",
             Self::StatsUsage => "/app/stats/api/usage",
             Self::StatsIndex => "/app/stats/api/index",

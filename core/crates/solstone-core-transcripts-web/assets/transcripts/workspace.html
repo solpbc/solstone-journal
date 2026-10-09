@@ -1613,6 +1613,45 @@
   outline-offset: 2px;
 }
 
+.tr-location-toggle,
+.tr-location-row {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 8px 0 0;
+  padding: 12px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--orange-text-aa);
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tr-location-toggle:hover,
+.tr-location-row:hover {
+  background: var(--orange-wash);
+}
+
+.tr-location-toggle:focus-visible,
+.tr-location-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.tr-location-rows {
+  margin-top: 4px;
+}
+
+[data-location-notice] {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 .tr-audio-players {
   display: flex;
   flex-wrap: wrap;
@@ -2659,6 +2698,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   let range = { start: 9 * 60, end: 10 * 60 };
   let drag = null;
   let allSegments = [];
+  let locationSegments = [];
+  let locationSectionExpanded = false;
+  let locationLoad = 'pending';
+  let dayLoad = 'pending';
   let dayBodyWindow = null;
   let selectedSegment = null;
   let selectedSegmentZone = null;
@@ -3086,6 +3129,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const zoomY = (m) => (m - range.start) * zoomPpm;
 
   function parseTime(timeStr) {
+    if (!timeStr) return 0;
     const [hh, mm] = timeStr.split(':').map(Number);
     return hh * 60 + mm;
   }
@@ -3147,6 +3191,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   // `captureZone` is the segment's own, from its response: the segment's
   // times are that device's clock, so its body readings are fetched there.
   function fetchSegmentBodyWindow(seg, signal = null, captureZone = null) {
+    if (!seg || !seg.start || !seg.end) {
+      return Promise.resolve({ has_data: false });
+    }
     const startMin = parseTime(seg.start);
     const endMin = parseTime(seg.end);
     const offset = typeof captureZone?.utc_offset_seconds === 'number'
@@ -3499,6 +3546,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   // device reported a zone other than the one this journal shows times in,
   // name it beside the range so the times read as what they are.
   function segmentRangeLabel(seg) {
+    if (seg.locationRow) return seg.start;
     const range = `${seg.start} - ${seg.end}`;
     if (!selectedSegmentZone?.differs || !selectedSegmentZone.label) return range;
     const note = window.JournalClock
@@ -3634,11 +3682,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       // does not itself select a block — acknowledge step one is done so
       // the instructions don't read as if the click had no effect.
       if (!selectedSegment) {
-        panel.innerHTML = window.SurfaceState.empty({
+        refreshUnselectedLocation(window.SurfaceState.empty({
           icon: window.ConveyIcons.svg('clock'),
           heading: 'your day at a glance',
           desc: 'now pick a block in the detail column to read it'
-        });
+        }));
       }
     };
     el.addEventListener('click', e => {
@@ -3832,7 +3880,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       }
       const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : 'screen';
 
-      if (selectedSegment && selectedSegment.key === seg.key) {
+      if (selectedSegment && selectedSegment.key === seg.key && selectedSegment.stream === seg.stream) {
         pill.classList.add('tr-active');
       }
 
@@ -3846,6 +3894,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       pill.title = seg.start + ' – ' + seg.end + ' · ' + duration + ' min · ' + typeDesc + ' · ' + humanizeStreamName(seg.stream) + statusSuffix;
       pill.setAttribute('aria-label', 'segment ' + seg.start + ' \u2013 ' + seg.end + ', ' + typeLabel + ', ' + humanizeStreamName(seg.stream) + ariaStatusSuffix);
       pill.dataset.key = seg.key;
+      pill.dataset.stream = seg.stream;
 
       pill.addEventListener('click', () => selectSegment(seg));
       pill.addEventListener('keydown', e => {
@@ -3902,7 +3951,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     // Update active state in zoom view
     zoomSegments.querySelectorAll('.tr-zoom-pill').forEach(pill => {
-      pill.classList.toggle('tr-active', pill.dataset.key === seg.key);
+      pill.classList.toggle('tr-active', pill.dataset.key === seg.key && pill.dataset.stream === seg.stream);
     });
 
     titleEl.textContent = humanizeStreamName(seg.stream);
@@ -3935,9 +3984,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
   // Step through segments with [ ] keys
   function navigateSegment(delta) {
+    if (selectedSegment && selectedSegment.locationRow) return;
     if (allSegments.length === 0) return;
     let currentIdx = selectedSegment
-      ? allSegments.findIndex(s => s.key === selectedSegment.key)
+      ? allSegments.findIndex(s => s.key === selectedSegment.key && s.stream === selectedSegment.stream)
       : -1;
     let nextIdx = currentIdx === -1
       ? (delta > 0 ? 0 : allSegments.length - 1)
@@ -3964,6 +4014,32 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   let knownSpeakersPromise = null;
   let knownSpeakers = [];
   let activeSpeakerPicker = null;
+
+  function selectLocationSegment(seg, updateHash = true) {
+    const previous = selectedSegment;
+    selectedSegment = { ...seg, locationRow: true };
+
+    if (updateHash) {
+      const tab = activeTab || 'transcript';
+      const url = segmentLocation(seg, tab);
+      const samePair = previous
+        && previous.key === seg.key
+        && previous.stream === seg.stream;
+      if (samePair) history.replaceState(null, '', url);
+      else history.pushState(null, '', url);
+    }
+
+    zoomSegments.querySelectorAll('.tr-zoom-pill').forEach(pill => {
+      pill.classList.remove('tr-active');
+    });
+
+    titleEl.textContent = humanizeStreamName(seg.stream);
+    selectedSegmentZone = null;
+    rangeText.textContent = seg.start;
+    deleteBtn.classList.add('visible');
+
+    loadSegmentContent(selectedSegment);
+  }
 
   function loadSegmentContent(seg, requestedTabId = null) {
     currentSegmentAbort?.abort();
@@ -4007,9 +4083,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         }
         panel.classList.remove('loading');
         renderLoadedSegmentData(data, requestedTabId);
-        const analyzing = currentAnalyzingModalities(data.data_state || {});
-        if (analyzing.length > 0) {
-          startAnalyzePoller(analyzing);
+        if (!isLocationOnlySegment(data)) {
+          const analyzing = currentAnalyzingModalities(data.data_state || {});
+          if (analyzing.length > 0) {
+            startAnalyzePoller(analyzing);
+          }
         }
       })
       .catch(err => {
@@ -4322,11 +4400,48 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return [...tabsContainer.querySelectorAll('.tr-tab')].some(tab => tab.dataset.tab === tabId);
   }
 
+  function isLocationOnlySegment(data) {
+    if (selectedSegment && selectedSegment.locationRow) return true;
+    if (!data || data.holds_location !== true) return false;
+    const ds = data.data_state || {};
+    return !ds.audio && !ds.screen && !ds.image && !ds.markdown && !ds.browser;
+  }
+
+  function renderLocationOnlyDetail(data) {
+    const hasReadings = typeof data?.location_readings === 'number';
+    const readings = hasReadings ? data.location_readings : null;
+    let desc = 'this segment holds location only.';
+    if (readings === 1) {
+      desc = 'this segment holds location only: 1 reading.';
+    } else if (readings !== null && readings > 1) {
+      desc = `this segment holds location only: ${readings} readings.`;
+    }
+    const countAttr = (hasReadings && readings > 0) ? ` data-location-count="${readings}"` : '';
+    panel.innerHTML = `
+      <div class="tr-location-only-detail" data-location-only="true">
+        <div class="surface-state surface-state--empty">
+          <div class="surface-state-icon" aria-hidden="true">${window.ConveyIcons.svg('map-pin')}</div>
+          <p class="surface-state-desc"${countAttr}>${escapeHtml(desc)}</p>
+        </div>
+      </div>
+    `;
+  }
+
   function renderLoadedSegmentData(data, requestedTabId = null) {
     segmentData = data;
     selectedSegmentZone = data.capture_zone || null;
     TR_COPY = data.transcripts_copy || {};
     updateRangeText();
+
+    if (isLocationOnlySegment(data)) {
+      tabsContainer.innerHTML = '';
+      tabsContainer.classList.remove('visible');
+      stopAnalyzePoller();
+      renderLocationOnlyDetail(data);
+      renderWarningNotice(data);
+      return;
+    }
+
     buildTabBar(data);
     const nextTab = requestedTabId && tabExists(requestedTabId) ? requestedTabId : 'transcript';
     activateTab(nextTab);
@@ -6279,14 +6394,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
       // Store segments and update zoom
       allSegments = data.segments || [];
+      dayLoad = 'ready';
       updateZoom();
-      if (allSegments.length === 0) {
-        panel.innerHTML = window.SurfaceState.empty({
-          icon: window.ConveyIcons.svg('calendar-days'),
-          heading: 'nothing here',
-          desc: 'no observations were found for this day'
-        });
-      }
+      refreshUnselectedLocation(null);
 
       // Check for hash fragment to auto-select segment
       const rawHash = window.location.hash.slice(1);
@@ -6301,6 +6411,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     })
 	    .catch(err => {
 	      console.error('transcripts: day data load did not complete:', err);
+	      dayLoad = 'error';
 	      zoomSegments.innerHTML = '';
 	      panel.innerHTML = window.SurfaceState.error({
 	        heading: "transcripts couldn't be loaded.",
@@ -6312,8 +6423,159 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 	      });
 	      const retry = panel.querySelector('.surface-state-retry');
 	      if (retry) retry.addEventListener('click', loadDayData);
+	      refreshUnselectedLocation(null);
 	    });
 	  }
+
+  function locationAddonHtml() {
+    if (locationLoad === 'error') {
+      return '<p data-location-notice="true">location for this day couldn\'t be loaded.</p>';
+    }
+    if (locationLoad === 'ready' && locationSegments.length > 0) {
+      const count = locationSegments.length;
+      const collapsedText = count === 1 ? 'show 1 location segment' : `show ${count} location segments`;
+      const toggleText = locationSectionExpanded ? 'location' : collapsedText;
+      const rowsHtml = locationSectionExpanded ? `
+        <div class="tr-location-rows">
+          ${locationSegments.map(s => {
+            const hasReadings = typeof s.location_readings === 'number';
+            const readings = hasReadings ? s.location_readings : null;
+            let text = s.start;
+            if (readings === 1) {
+              text = `${s.start} · 1 reading`;
+            } else if (readings !== null && readings > 1) {
+              text = `${s.start} · ${readings} readings`;
+            }
+            const dataReadingsAttr = hasReadings ? ` data-readings="${readings}"` : '';
+            return `<button type="button" class="tr-location-row" data-key="${escapeHtml(s.key)}" data-stream="${escapeHtml(s.stream)}"${dataReadingsAttr}>${escapeHtml(text)}</button>`;
+          }).join('')}
+        </div>
+      ` : '';
+      return `
+        <div class="tr-location-section" data-location-section="true">
+          <button type="button" class="tr-location-toggle" aria-expanded="${locationSectionExpanded}">
+            ${escapeHtml(toggleText)}
+          </button>
+          ${rowsHtml}
+        </div>
+      `;
+    }
+    return '';
+  }
+
+  function wireLocationAddonListeners() {
+    const toggle = panel.querySelector('.tr-location-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        locationSectionExpanded = !locationSectionExpanded;
+        refreshUnselectedLocation(null);
+      });
+    }
+    panel.querySelectorAll('.tr-location-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const seg = locationSegments.find(s => s.key === row.dataset.key && s.stream === row.dataset.stream);
+        if (seg) selectLocationSegment(seg);
+      });
+    });
+  }
+
+  function refreshUnselectedLocation(glanceHtml = null) {
+    if (selectedSegment) return;
+
+    // Remove existing [data-location-section] and [data-location-notice] before painting a new one
+    panel.querySelectorAll('[data-location-section]').forEach(el => el.remove());
+    panel.querySelectorAll('[data-location-notice]').forEach(el => el.remove());
+
+    if (dayLoad === 'error') {
+      const addon = locationAddonHtml();
+      if (addon) {
+        panel.insertAdjacentHTML('beforeend', addon);
+        wireLocationAddonListeners();
+      }
+      return;
+    }
+
+    if (allSegments.length === 0) {
+      if (dayLoad === 'pending') {
+        const addon = locationAddonHtml();
+        if (addon) {
+          panel.insertAdjacentHTML('beforeend', addon);
+          wireLocationAddonListeners();
+        }
+        return;
+      }
+      if (dayLoad === 'ready') {
+        if (locationLoad === 'pending') {
+          return;
+        }
+        if (locationLoad === 'error') {
+          panel.innerHTML = '<p data-location-notice="true">location for this day couldn\'t be loaded.</p>';
+          return;
+        }
+        if (locationLoad === 'ready') {
+          if (locationSegments.length === 0) {
+            panel.innerHTML = window.SurfaceState.empty({
+              icon: window.ConveyIcons.svg('calendar-days'),
+              heading: 'nothing here',
+              desc: 'no observations were found for this day'
+            });
+          } else {
+            panel.innerHTML = locationAddonHtml();
+            wireLocationAddonListeners();
+          }
+          return;
+        }
+      }
+    }
+
+    if (glanceHtml) {
+      panel.innerHTML = glanceHtml;
+    }
+    const addon = locationAddonHtml();
+    if (addon) {
+      panel.insertAdjacentHTML('beforeend', addon);
+      wireLocationAddonListeners();
+    }
+  }
+
+  function loadLocationData() {
+    locationLoad = 'pending';
+    return window.apiJson(`/app/transcripts/api/location/${day}`)
+      .then(data => {
+        if (!data || !Array.isArray(data.segments)) {
+          locationSegments = [];
+          locationLoad = 'error';
+          refreshUnselectedLocation(null);
+          return;
+        }
+        locationSegments = data.segments;
+        locationLoad = 'ready';
+        if (selectedSegment) {
+          return;
+        }
+        refreshUnselectedLocation(null);
+        const rawHash = window.location.hash.slice(1);
+        const [segKey] = rawHash.split('/', 2);
+        if (segKey) {
+          if (linkedSegment(segKey)) {
+            return;
+          }
+          const stream = new URLSearchParams(window.location.search).get('stream');
+          const matching = locationSegments.filter(s => s.key === segKey && (!stream || s.stream === stream));
+          if (matching.length === 1) {
+            selectLocationSegment(matching[0], false);
+          }
+        }
+      })
+      .catch(err => {
+        console.error('transcripts: location data load failed:', err);
+        locationSegments = [];
+        locationLoad = 'error';
+        if (!selectedSegment) {
+          refreshUnselectedLocation(null);
+        }
+      });
+  }
 
   function resizeOverviewIndicators() {
     document.querySelectorAll('.tr-seg, .tr-body-event').forEach(el => {
@@ -6340,6 +6602,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     }).observe(zoom);
 
     loadDayData();
+    loadLocationData();
     reportUnfinishedDeletes();
 
     // Popstate and a later hashchange share this restore, and an in-flight load
@@ -6354,6 +6617,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       }
       const seg = linkedSegment(segKey);
       if (!seg) {
+        const stream = new URLSearchParams(window.location.search).get('stream');
+        const locSeg = locationSegments.find(s => s.key === segKey && (!stream || s.stream === stream));
+        if (locSeg) {
+          selectLocationSegment(locSeg, false);
+          return;
+        }
         resetSegmentSelection();
         return;
       }
@@ -6502,20 +6771,33 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     if (!selectedSegment) return;
 
     const seg = selectedSegment;
+    const isLocRow = Boolean(seg.locationRow);
+    const holdsLoc = Boolean(segmentData?.holds_location);
     const totalBytes = (segmentData?.media_sizes?.audio || 0) + (segmentData?.media_sizes?.screen || 0);
-    const sizeLine = totalBytes > 0
+    const sizeLine = (!isLocRow && totalBytes > 0)
       ? `<p class="tr-delete-segment-size">current raw media size: ${formatSize(totalBytes)}</p>`
       : '';
 
-    deleteSegmentModalBody.innerHTML = `
-      <p class="tr-delete-segment-meta"><strong>${escapeHtml(humanizeStreamName(seg.stream))}</strong> · <strong>${escapeHtml(day)}</strong> · <strong>${escapeHtml(seg.start)} - ${escapeHtml(seg.end)}</strong></p>
-      <p>You'll have about 10 seconds to cancel after confirming.</p>
-      <p>This deletes the segment's own:</p>
-      <ul class="tr-delete-segment-list">
-        <li>audio</li>
+    const metaTime = isLocRow ? escapeHtml(seg.start) : `${escapeHtml(seg.start)} - ${escapeHtml(seg.end)}`;
+    const itemsHtml = isLocRow
+      ? `<li>location</li>`
+      : holdsLoc
+        ? `<li>audio</li>
         <li>screen frames</li>
         <li>transcript</li>
         <li>analysis stored with it</li>
+        <li>location</li>`
+        : `<li>audio</li>
+        <li>screen frames</li>
+        <li>transcript</li>
+        <li>analysis stored with it</li>`;
+
+    deleteSegmentModalBody.innerHTML = `
+      <p class="tr-delete-segment-meta"><strong>${escapeHtml(humanizeStreamName(seg.stream))}</strong> · <strong>${escapeHtml(day)}</strong> · <strong>${metaTime}</strong></p>
+      <p>You'll have about 10 seconds to cancel after confirming.</p>
+      <p>This deletes the segment's own:</p>
+      <ul class="tr-delete-segment-list">
+        ${itemsHtml}
       </ul>
       <p>Summaries made from it elsewhere in your journal aren't deleted and may still mention it.</p>
       ${sizeLine}
@@ -6594,16 +6876,21 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
       const data = await response.json();
 
-      // Remove segment from local state
-      allSegments = allSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
+      if (seg.locationRow) {
+        locationSegments = locationSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
+        clearSegmentSelection();
+      } else {
+        // Remove segment from local state
+        allSegments = allSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
 
-      // Clear selection and UI
-      clearSegmentSelection();
+        // Clear selection and UI
+        clearSegmentSelection();
 
-      // Re-render zoom timeline
-      buildZoomSegments();
+        // Re-render zoom timeline
+        buildZoomSegments();
 
-      refreshSegmentIndicators();
+        refreshSegmentIndicators();
+      }
 
       let pendingNotificationId = null;
       pendingNotificationId = window.AppServices.notifications.show({
@@ -6622,7 +6909,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       // Time the wait from this answer, not the journal's clock: a paired
       // device's clock can be minutes off.
       const deleteDay = day;
-      watchDeleteOutcome(data.pending, seg, deleteDay, Date.now() + (data.ttl_seconds || 10) * 1000);
+      const ttlSec = typeof data.ttl_seconds === 'number' ? data.ttl_seconds : 10;
+      watchDeleteOutcome(data.pending, seg, deleteDay, Date.now() + ttlSec * 1000);
 
     } catch (err) {
       if (err instanceof TypeError) {
@@ -6653,6 +6941,16 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   // moved on to another day, where the same key names a different segment.
   function restoreDeletedSegment(seg, segDay) {
     if (!seg || segDay !== day) return;
+    if (seg.locationRow) {
+      if (!locationSegments.some(existing => existing.key === seg.key && existing.stream === seg.stream)) {
+        locationSegments.push(seg);
+        locationSegments.sort((a, b) => a.start.localeCompare(b.start) || a.stream.localeCompare(b.stream) || a.key.localeCompare(b.key));
+      }
+      if (!selectedSegment) {
+        refreshUnselectedLocation(null);
+      }
+      return;
+    }
     if (!allSegments.some(existing => existing.key === seg.key && existing.stream === seg.stream)) {
       allSegments.push(seg);
       sortSegmentsByKey();
@@ -6873,6 +7171,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
   window.closeDeleteSegmentModal = closeDeleteSegmentModal;
   window.confirmDeleteSegment = confirmDeleteSegment;
+  window.selectLocationSegment = selectLocationSegment;
 
   // Clear selection and reset UI state without modifying browser history
   function resetSegmentSelection() {
@@ -6903,11 +7202,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     tabsContainer.innerHTML = '';
     tabsContainer.classList.remove('visible');
     warningNotice.classList.remove('visible');
-    panel.innerHTML = window.SurfaceState.empty({
+    refreshUnselectedLocation(window.SurfaceState.empty({
       icon: window.ConveyIcons.svg('clock'),
       heading: 'your day at a glance',
       desc: 'pick a stretch of the day on the left, then a block in detail to read it'
-    });
+    }));
 
     // Clear active state in zoom view
     zoomSegments.querySelectorAll('.tr-zoom-pill').forEach(pill => {

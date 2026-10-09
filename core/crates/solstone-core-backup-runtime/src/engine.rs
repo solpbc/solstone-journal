@@ -1029,6 +1029,12 @@ fn record_backup(journal: &Path, clock: &dyn Clock, result: &BackupResult) {
     );
 }
 
+/// Whether this journal has backup turned on. A journal without it needs no
+/// backup tool: its maintenance and prune commands skip before running one.
+pub fn backup_enabled(journal: &Path) -> bool {
+    get_backup_config(journal).is_ok_and(|config| config.get("enabled") == Some(&Value::Bool(true)))
+}
+
 /// Persist a backup-run failure that happened before `run_backup` was invoked.
 pub fn record_backup_error(journal: &Path, clock: &dyn Clock, reason: &str) -> BackupResult {
     let result = BackupResult {

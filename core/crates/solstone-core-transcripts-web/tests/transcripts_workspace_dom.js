@@ -71,6 +71,20 @@ function matchesSelector(element, selector) {
 }
 
 function queryAll(root, selector) {
+  if (selector.includes(',')) {
+    const parts = selector.split(',').map((s) => s.trim()).filter(Boolean);
+    const results = [];
+    const seen = new Set();
+    for (const part of parts) {
+      for (const el of queryAll(root, part)) {
+        if (!seen.has(el)) {
+          seen.add(el);
+          results.push(el);
+        }
+      }
+    }
+    return results;
+  }
   const pieces = selector.trim().split(/\s+/);
   let candidates = [root];
   for (const piece of pieces) {
@@ -243,6 +257,27 @@ class Element {
 
   append(...children) { children.forEach((child) => this.appendChild(child)); }
 
+  insertAdjacentHTML(position, html) {
+    if (!html || !this.ownerDocument) return;
+    const parsed = parseMockHtmlForWorkspace(html, this.ownerDocument);
+    if (position === 'beforeend') {
+      parsed.forEach((child) => this.appendChild(child));
+    } else if (position === 'afterbegin') {
+      for (let i = parsed.length - 1; i >= 0; i--) {
+        this.insertBefore(parsed[i], this.children[0]);
+      }
+    } else if (position === 'afterend') {
+      if (this.parentElement) {
+        const next = this.parentElement.children[this.parentElement.children.indexOf(this) + 1];
+        parsed.forEach((child) => this.parentElement.insertBefore(child, next));
+      }
+    } else if (position === 'beforebegin') {
+      if (this.parentElement) {
+        parsed.forEach((child) => this.parentElement.insertBefore(child, this));
+      }
+    }
+  }
+
   remove() {
     if (this.parentElement) {
       const idx = this.parentElement.children.indexOf(this);
@@ -283,6 +318,8 @@ class Element {
   dispatchEvent(event) {
     event.target ||= this;
     event.currentTarget = this;
+    event.stopPropagation ||= () => { event.cancelBubble = true; };
+    event.preventDefault ||= () => { event.defaultPrevented = true; };
     for (const listener of [...(this.listeners[event.type] || [])]) listener.call(this, event);
     if (event.bubbles && !event.cancelBubble && this.parentElement) this.parentElement.dispatchEvent(event);
     return !event.defaultPrevented;
@@ -541,8 +578,11 @@ function createTranscriptsDOM() {
   deleteSegmentModalBody.id = 'trDeleteSegmentModalBody';
   const deleteSegmentModalConfirm = doc.createElement('button');
   deleteSegmentModalConfirm.id = 'trDeleteSegmentModalConfirm';
+  const deleteSegmentModalClose = doc.createElement('button');
+  deleteSegmentModalClose.id = 'trDeleteSegmentModalClose';
   deleteSegmentModal.appendChild(deleteSegmentModalBody);
   deleteSegmentModal.appendChild(deleteSegmentModalConfirm);
+  deleteSegmentModal.appendChild(deleteSegmentModalClose);
   doc.body.appendChild(deleteSegmentModal);
 
   const initialEmptyIcon = doc.createElement('div');
@@ -563,7 +603,8 @@ async function createEnvironment(
   initialUrl = 'https://journal.example/app/transcripts/20200115?ref=keep',
   initialAudioState = 'analyzed',
   ignoreSegmentAbort = false,
-  segments = null
+  segments = null,
+  options = {}
 ) {
   const doc = createTranscriptsDOM();
   const storage = new MockStorage();
@@ -596,7 +637,7 @@ async function createEnvironment(
     },
     SurfaceState: {
       loading: () => '<div class="surface-state surface-state--loading"></div>',
-      empty: () => '<div class="surface-state surface-state--empty"></div>',
+      empty: (opts = {}) => `<div class="surface-state surface-state--empty"><h2 class="surface-state-heading">${opts.heading || ''}</h2><p class="surface-state-desc">${opts.desc || ''}</p></div>`,
       error: () => '<div class="surface-state surface-state--error"></div>',
     },
     JournalFormat: {
@@ -621,26 +662,34 @@ async function createEnvironment(
   windowObj.history = history;
 
   const segmentGetRequests = [];
+  let deleteStatusState = options.deleteStatusState || 'deleted';
+  let deleteIdCounter = 0;
+
+  const defaultSegments = [
+    { key: '114500_300', stream: 'room', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
+    { key: '115500_300', stream: 'room', start: '11:55', end: '12:00', types: ['audio'], data_state: { audio: 'analyzed' } },
+    { key: '114500_300', stream: 'desk', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
+  ];
+  const daySegments = segments !== null && segments !== undefined ? segments : defaultSegments;
 
   const dayPayload = {
     audio: [{ start: '00:30', end: '23:30', streams: ['room', 'desk'], state: 'analyzed' }],
     screen: [],
-    segments: segments || [
-      { key: '114500_300', stream: 'room', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
-      { key: '115500_300', stream: 'room', start: '11:55', end: '12:00', types: ['audio'], data_state: { audio: 'analyzed' } },
-      { key: '114500_300', stream: 'desk', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
-    ],
+    segments: daySegments,
   };
 
-  const mockFetch = (url, options = {}) => {
-    const urlStr = String(url);
-    const signal = options.signal;
+  const pendingLocationGets = [];
 
-    if (options.method === 'DELETE') {
+  const mockFetch = (url, fetchOpts = {}) => {
+    const urlStr = String(url);
+    const signal = fetchOpts.signal;
+
+    if (fetchOpts.method === 'DELETE') {
+      deleteIdCounter++;
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => ({ pending: 'ok', ttl_seconds: 0 }),
+        json: async () => ({ pending: 'del_' + deleteIdCounter, ttl_seconds: 0 }),
       });
     }
 
@@ -648,7 +697,7 @@ async function createEnvironment(
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => ({ state: 'deleted' }),
+        json: async () => ({ state: deleteStatusState }),
       });
     }
 
@@ -660,7 +709,57 @@ async function createEnvironment(
       });
     }
 
+    if (urlStr.startsWith('/app/transcripts/api/location/')) {
+      const mode = options.locationMode ?? 'ok';
+      if (mode === 'reject') {
+        return Promise.reject(new Error('Location fetch rejected'));
+      }
+      if (mode === 'non_ok') {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: async () => ({ error: 'internal error' }),
+        });
+      }
+      if (mode === 'empty_object') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+        });
+      }
+      if (mode === 'deferred') {
+        let resolveDeferred;
+        let rejectDeferred;
+        const promise = new Promise((resolve, reject) => {
+          resolveDeferred = resolve;
+          rejectDeferred = reject;
+        });
+        pendingLocationGets.push({
+          resolve: (segs = (options.locationSegments || [])) => {
+            resolveDeferred({
+              ok: true,
+              status: 200,
+              json: async () => ({ segments: segs }),
+            });
+          },
+          reject: (err = new Error('Deferred location rejected')) => {
+            rejectDeferred(err);
+          },
+        });
+        return promise;
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ segments: options.locationSegments || [] }),
+      });
+    }
+
     if (urlStr.includes('/app/transcripts/api/day/')) {
+      if (options.dayReject) {
+        return Promise.reject(new Error('Day fetch rejected'));
+      }
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -707,12 +806,17 @@ async function createEnvironment(
         resolve: (audioState = initialAudioState, payloadOverride) => {
           if (!reqRecord.fulfilled && !reqRecord.aborted) {
             reqRecord.fulfilled = true;
+            const dataState = payloadOverride && payloadOverride.data_state !== undefined
+              ? payloadOverride.data_state
+              : { audio: audioState };
             resolveDeferred({
               ok: true,
               status: 200,
               json: async () => ({
                 chunks: payloadOverride?.chunks ?? [],
-                data_state: { audio: audioState },
+                data_state: dataState,
+                holds_location: payloadOverride?.holds_location,
+                location_readings: payloadOverride?.location_readings,
                 signals: { events: [] },
                 speaker_labels: payloadOverride?.speaker_labels,
                 transcripts_copy: {},
@@ -720,6 +824,12 @@ async function createEnvironment(
                 warning_details: payloadOverride?.warning_details,
               }),
             });
+          }
+        },
+        reject: (err = new Error('Segment fetch rejected')) => {
+          if (!reqRecord.fulfilled && !reqRecord.aborted) {
+            reqRecord.fulfilled = true;
+            rejectDeferred(err);
           }
         },
       };
@@ -754,8 +864,12 @@ async function createEnvironment(
     });
   };
 
+  const resizeObserverCallbacks = [];
   class MockResizeObserver {
-    constructor(cb) { this.cb = cb; }
+    constructor(cb) {
+      this.cb = cb;
+      resizeObserverCallbacks.push(cb);
+    }
     observe() {}
     unobserve() {}
     disconnect() {}
@@ -820,6 +934,13 @@ async function createEnvironment(
   // Flush microtasks for day load
   await new Promise((r) => setTimeout(r, 10));
 
+  const closeBtn = doc.querySelector('#trDeleteSegmentModalClose');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      windowObj.closeDeleteSegmentModal?.();
+    });
+  }
+
   return {
     doc,
     window: windowObj,
@@ -827,8 +948,16 @@ async function createEnvironment(
     notifications,
     intervals,
     segmentGetRequests,
+    pendingLocationGets,
+    setDeleteStatusState: (st) => { deleteStatusState = st; },
+    timelineResizeObserver: resizeObserverCallbacks[0],
+    zoomResizeObserver: resizeObserverCallbacks[1],
     flushHashchanges: async () => {
       await new Promise((r) => setTimeout(r, 0));
+    },
+    releasePendingLocationGets: async (segs) => {
+      pendingLocationGets.forEach((req) => req.resolve(segs));
+      await new Promise((r) => setTimeout(r, 10));
     },
     releasePendingSegmentGets: async (audioState, payloadOverride) => {
       segmentGetRequests.forEach((req) => req.resolve(audioState, payloadOverride));
@@ -1270,6 +1399,526 @@ test('completed audio copy shows history without claiming current loss', async (
   });
   assert.strictEqual(h.doc.querySelector('#trWarningText').textContent, 'an earlier audio copy attempt had a problem.');
   assert.ok(h.doc.querySelector('#trWarningDetails').children[0].textContent.includes('latest copy completed'));
+});
+
+test('location section absent when empty, collapsed by default, expanding shows rows, survives events', async () => {
+  const locSegments = [
+    { key: '100000_60', stream: 'phone', start: '10:00', location_readings: 2 },
+    { key: '101500_60', stream: 'phone', start: '10:15', location_readings: 1 },
+    { key: '103000_60', stream: 'phone', start: '10:30' },
+  ];
+  // 1. Section absent when list empty
+  const hEmpty = await createEnvironment('https://journal.example/app/transcripts/20200115?ref=keep');
+  assert.strictEqual(hEmpty.doc.querySelector('[data-location-section="true"]'), null);
+
+  // 2. Collapsed by default
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    null,
+    { locationSegments: locSegments }
+  );
+  const section = h.doc.querySelector('[data-location-section="true"]');
+  assert.ok(section, 'location section present');
+  const toggle = section.querySelector('.tr-location-toggle');
+  assert.ok(toggle);
+  assert.strictEqual(toggle.getAttribute('aria-expanded'), 'false');
+  assert.strictEqual(section.querySelector('.tr-location-rows'), null);
+
+  // 3. Expanding shows rows
+  toggle.dispatchEvent({ type: 'click' });
+  const expandedToggle = h.doc.querySelector('.tr-location-toggle');
+  assert.strictEqual(expandedToggle.getAttribute('aria-expanded'), 'true');
+  const rows = h.doc.querySelectorAll('.tr-location-row');
+  assert.strictEqual(rows.length, 3);
+  assert.strictEqual(rows[0].getAttribute('data-key'), '100000_60');
+  assert.strictEqual(rows[0].getAttribute('data-stream'), 'phone');
+  assert.strictEqual(rows[0].getAttribute('data-readings'), '2');
+  assert.strictEqual(rows[1].getAttribute('data-key'), '101500_60');
+  assert.strictEqual(rows[1].getAttribute('data-stream'), 'phone');
+  assert.strictEqual(rows[1].getAttribute('data-readings'), '1');
+  assert.strictEqual(rows[2].getAttribute('data-key'), '103000_60');
+  assert.strictEqual(rows[2].getAttribute('data-stream'), 'phone');
+  assert.strictEqual(rows[2].hasAttribute('data-readings'), false);
+
+  // 4. Expansion survives overview indicator click
+  const segIndicator = h.doc.querySelector('.tr-seg');
+  assert.ok(segIndicator);
+  segIndicator.dispatchEvent({ type: 'click' });
+  const toggleAfterInd = h.doc.querySelector('.tr-location-toggle');
+  assert.ok(toggleAfterInd);
+  assert.strictEqual(toggleAfterInd.getAttribute('aria-expanded'), 'true');
+
+  // 5. Expansion survives back to no selection
+  h.window.history.pushState(null, '', 'https://journal.example/app/transcripts/20200115');
+  h.window.dispatchEvent({ type: 'popstate' });
+  await h.flushHashchanges();
+  const toggleAfterReset = h.doc.querySelector('.tr-location-toggle');
+  assert.ok(toggleAfterReset);
+  assert.strictEqual(toggleAfterReset.getAttribute('aria-expanded'), 'true');
+});
+
+test('empty timeline plus rows: section present, nothing-found absent, rows are buttons in time order', async () => {
+  const locSegments = [
+    { key: '090000_60', stream: 'phone', start: '09:00', location_readings: 5 },
+    { key: '100000_60', stream: 'phone', start: '10:00', location_readings: 10 },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    [],
+    { locationSegments: locSegments }
+  );
+  const panel = h.doc.querySelector('#trPanel');
+  assert.ok(panel.querySelector('[data-location-section="true"]'));
+  assert.strictEqual(panel.querySelector('.surface-state--empty'), null);
+
+  const toggle = panel.querySelector('.tr-location-toggle');
+  toggle.dispatchEvent({ type: 'click' });
+  const rows = panel.querySelectorAll('.tr-location-row');
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].tagName, 'BUTTON');
+  assert.strictEqual(rows[0].dataset.key, '090000_60');
+  assert.strictEqual(rows[0].dataset.stream, 'phone');
+  assert.strictEqual(rows[1].dataset.key, '100000_60');
+
+  rows[0].dispatchEvent({ type: 'click' });
+  assert.ok(h.window.location.hash.startsWith('#090000_60'));
+  assert.ok(h.window.location.search.includes('stream=phone'));
+});
+
+test('endpoint failure non-OK: day timeline renders, notice present, section absent', async () => {
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    null,
+    { locationMode: 'non_ok' }
+  );
+  assert.strictEqual(getZoomPills(h.doc).length, 3);
+  assert.ok(h.doc.querySelector('[data-location-notice="true"]'));
+  assert.strictEqual(h.doc.querySelector('[data-location-section="true"]'), null);
+});
+
+test('last location row deleted on empty timeline: section gone, nothing-found present', async () => {
+  const locSegments = [
+    { key: '100000_60', stream: 'phone', start: '10:00' },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    [],
+    { locationSegments: locSegments }
+  );
+  const toggle = h.doc.querySelector('.tr-location-toggle');
+  toggle.dispatchEvent({ type: 'click' });
+  h.doc.querySelector('.tr-location-row').dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets('absent', {
+    chunks: [],
+    holds_location: true,
+    location_readings: 1,
+  });
+
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await h.window.confirmDeleteSegment();
+
+  assert.strictEqual(h.doc.querySelector('[data-location-section="true"]'), null);
+  const emptyState = h.doc.querySelector('#trPanel .surface-state--empty');
+  assert.ok(emptyState, 'nothing-found present');
+});
+
+test('location-only payload: no tabs, data-location-only, data-location-count for positive, absent for 0 and missing', async () => {
+  const locSegments = [
+    { key: '100000_60', stream: 'phone', start: '10:00' },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    [],
+    { locationSegments: locSegments }
+  );
+  const toggle = h.doc.querySelector('.tr-location-toggle');
+  toggle.dispatchEvent({ type: 'click' });
+  h.doc.querySelector('.tr-location-row').dispatchEvent({ type: 'click' });
+
+  // 1. Positive count
+  await h.releasePendingSegmentGets('absent', {
+    chunks: [],
+    holds_location: true,
+    location_readings: 4,
+    data_state: {},
+  });
+  assert.strictEqual(h.doc.querySelectorAll('#trTabs .tr-tab').length, 0);
+  assert.ok(h.doc.querySelector('[data-location-only="true"]'));
+  const descEl = h.doc.querySelector('[data-location-only="true"] .surface-state-desc');
+  assert.strictEqual(descEl.getAttribute('data-location-count'), '4');
+  assert.strictEqual(h.doc.querySelector('.tr-analyzing-state'), null);
+
+  // 2. Count 0
+  h.window.selectLocationSegment({ key: '100000_60', stream: 'phone', start: '10:00' });
+  await h.releasePendingSegmentGets('absent', {
+    chunks: [],
+    holds_location: true,
+    location_readings: 0,
+    data_state: {},
+  });
+  const descZero = h.doc.querySelector('[data-location-only="true"] .surface-state-desc');
+  assert.strictEqual(descZero.hasAttribute('data-location-count'), false);
+
+  // 3. Missing count
+  h.window.selectLocationSegment({ key: '100000_60', stream: 'phone', start: '10:00' });
+  await h.releasePendingSegmentGets('absent', {
+    chunks: [],
+    holds_location: true,
+    data_state: {},
+  });
+  const descMissing = h.doc.querySelector('[data-location-only="true"] .surface-state-desc');
+  assert.strictEqual(descMissing.hasAttribute('data-location-count'), false);
+});
+
+test('deep link with deferred location list opens row on release, history transitions, no active zoom pill', async () => {
+  const locSegments = [
+    { key: '090000_60', stream: 'phone', start: '09:00' },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep&stream=phone#090000_60/transcript',
+    'analyzed',
+    false,
+    null,
+    { locationMode: 'deferred', locationSegments: locSegments }
+  );
+
+  // Nothing selected yet
+  assert.strictEqual(isDeleteBtnVisible(h.doc), false);
+
+  // Release location list
+  await h.releasePendingLocationGets(locSegments);
+  await h.releasePendingSegmentGets('absent', {
+    chunks: [],
+    holds_location: true,
+    location_readings: 1,
+    data_state: {},
+  });
+  assert.strictEqual(isDeleteBtnVisible(h.doc), true);
+  assert.strictEqual(h.doc.querySelectorAll('.tr-zoom-pill.tr-active').length, 0);
+
+  // Select timeline pill
+  getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets();
+  assert.strictEqual(h.doc.querySelectorAll('.tr-zoom-pill.tr-active').length, 1);
+
+  // Back to location segment
+  h.history.back();
+  await h.flushHashchanges();
+  await h.releasePendingSegmentGets('absent', {
+    chunks: [],
+    holds_location: true,
+    location_readings: 1,
+    data_state: {},
+  });
+  assert.strictEqual(h.doc.querySelectorAll('.tr-zoom-pill.tr-active').length, 0);
+
+  // Forward to timeline pill
+  h.history.forward();
+  await h.flushHashchanges();
+  await h.releasePendingSegmentGets();
+  assert.strictEqual(h.doc.querySelectorAll('.tr-zoom-pill.tr-active').length, 1);
+
+  // Back again
+  h.history.back();
+  await h.flushHashchanges();
+  await h.releasePendingSegmentGets('absent', {
+    chunks: [],
+    holds_location: true,
+    location_readings: 1,
+    data_state: {},
+  });
+  assert.strictEqual(h.doc.querySelectorAll('.tr-zoom-pill.tr-active').length, 0);
+});
+
+test('delete dialog li counts: audio 4, screen-only 4, holds_location 5, location row 1, survives reject', async () => {
+  const locSegments = [
+    { key: '090000_60', stream: 'phone', start: '09:00' },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    [
+      { key: '114500_300', stream: 'room', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
+      { key: '120000_300', stream: 'room', start: '12:00', end: '12:05', types: ['screen'], data_state: { screen: 'analyzed' } },
+    ],
+    { locationSegments: locSegments }
+  );
+
+  // 1. Audio timeline row: 4
+  getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets('analyzed', { data_state: { audio: 'analyzed' } });
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
+
+  // 2. Screen-only timeline row: 4
+  getZoomPills(h.doc)[1].dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets('absent', { data_state: { screen: 'analyzed' } });
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
+
+  // 3. Timeline row with holds_location: 5
+  getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets('analyzed', { holds_location: true, data_state: { audio: 'analyzed' } });
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 5);
+  h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
+
+  // 4. Location row: 1 li before resolve and after reject
+  h.window.selectLocationSegment(locSegments[0]);
+  // Dialog before segment response resolves:
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 1);
+  h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
+
+  // Reject segment fetch:
+  h.segmentGetRequests.at(-1).reject(new Error('Segment failed'));
+  await new Promise((r) => setTimeout(r, 10));
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 1);
+  h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
+});
+
+test('location row duration clamp: does not change zoom aria-label, seg positions, rangeText/meta omit end', async () => {
+  const locSegments = [
+    { key: '090000_14400', stream: 'phone', start: '09:00', end: '13:00' },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    null,
+    { locationSegments: locSegments }
+  );
+
+  const zoomAriaBefore = h.doc.querySelector('#trZoom').getAttribute('aria-label');
+  const segTopsBefore = [...h.doc.querySelectorAll('.tr-seg')].map((el) => el.style.top);
+
+  const toggle = h.doc.querySelector('.tr-location-toggle');
+  toggle.dispatchEvent({ type: 'click' });
+  h.doc.querySelector('.tr-location-row').dispatchEvent({ type: 'click' });
+
+  assert.strictEqual(h.doc.querySelector('#trZoom').getAttribute('aria-label'), zoomAriaBefore);
+  const segTopsAfter = [...h.doc.querySelectorAll('.tr-seg')].map((el) => el.style.top);
+  assert.deepStrictEqual(segTopsAfter, segTopsBefore);
+
+  assert.strictEqual(h.doc.querySelector('#trRangeText').textContent, '09:00');
+  assert.ok(!h.doc.querySelector('#trRangeText').textContent.includes('13:00'));
+
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  const metaText = h.doc.querySelector('.tr-delete-segment-meta').textContent;
+  assert.ok(metaText.includes('09:00'));
+  assert.ok(!metaText.includes('13:00'));
+  h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
+});
+
+test('location row same-key different stream: rebuild zoom leaves active pill count 0, select room makes 1', async () => {
+  const locSegments = [
+    { key: '114500_300', stream: 'phone', start: '11:45' },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    null,
+    { locationSegments: locSegments }
+  );
+
+  const toggle = h.doc.querySelector('.tr-location-toggle');
+  toggle.dispatchEvent({ type: 'click' });
+  h.doc.querySelector('.tr-location-row').dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets('absent', { holds_location: true, data_state: {} });
+
+  // Rebuild zoom via observer callback
+  assert.ok(h.zoomResizeObserver);
+  h.zoomResizeObserver();
+  assert.strictEqual(h.doc.querySelectorAll('.tr-zoom-pill.tr-active').length, 0);
+
+  // Select room pill
+  const roomPill = [...getZoomPills(h.doc)].find((p) => p.dataset.stream === 'room');
+  assert.ok(roomPill);
+  roomPill.dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets();
+  const activePills = h.doc.querySelectorAll('.tr-zoom-pill.tr-active');
+  assert.strictEqual(activePills.length, 1);
+  assert.strictEqual(activePills[0].dataset.stream, 'room');
+});
+
+test('deferred location list arriving after timeline segment selected does not displace selection', async () => {
+  const locSegments = [
+    { key: '090000_60', stream: 'phone', start: '09:00' },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    null,
+    { locationMode: 'deferred', locationSegments: locSegments }
+  );
+
+  getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets();
+  assert.ok(h.window.location.hash.startsWith('#114500_300'));
+
+  await h.releasePendingLocationGets(locSegments);
+  assert.ok(h.window.location.hash.startsWith('#114500_300'));
+  assert.strictEqual(isDeleteBtnVisible(h.doc), true);
+  assert.strictEqual(h.doc.querySelector('[data-location-section="true"]'), null);
+});
+
+test('2xx empty object and rejected location fetch show notice on timeline day', async () => {
+  const hEmpty = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    null,
+    { locationMode: 'empty_object' }
+  );
+  assert.ok(hEmpty.doc.querySelector('[data-location-notice="true"]'));
+
+  const hRej = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    null,
+    { locationMode: 'reject' }
+  );
+  assert.ok(hRej.doc.querySelector('[data-location-notice="true"]'));
+});
+
+test('empty timeline plus failed location fetch: notice present, nothing-found absent', async () => {
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    [],
+    { locationMode: 'reject' }
+  );
+  assert.ok(h.doc.querySelector('[data-location-notice="true"]'));
+  assert.strictEqual(h.doc.querySelector('.surface-state--empty'), null);
+});
+
+test('failed day fetch plus successful location list: error stays and section present', async () => {
+  const locSegments = [
+    { key: '090000_60', stream: 'phone', start: '09:00' },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    [],
+    { dayReject: true, locationSegments: locSegments }
+  );
+  assert.ok(h.doc.querySelector('.surface-state--error'));
+  assert.ok(h.doc.querySelector('[data-location-section="true"]'));
+});
+
+test('delete one location row from 3 rows: cancel, cancelled, not_deleted restore order; incomplete leaves off', async () => {
+  const locSegments = [
+    { key: '090000_60', stream: 'phone', start: '09:00' },
+    { key: '090000_60', stream: 'watch', start: '09:00' },
+    { key: '100000_60', stream: 'phone', start: '10:00' },
+  ];
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    null,
+    { locationSegments: locSegments }
+  );
+
+  const initialAllSegsCount = 3;
+  const snapshotZoomPills = () =>
+    [...h.doc.querySelectorAll('#trZoomSegments .tr-zoom-pill')].map((p) => ({
+      key: p.getAttribute('data-key'),
+      stream: p.getAttribute('data-stream'),
+    }));
+  const initialZoomPills = snapshotZoomPills();
+
+  // Expand and select middle row (watch)
+  const toggle = h.doc.querySelector('.tr-location-toggle');
+  toggle.dispatchEvent({ type: 'click' });
+  const rows = h.doc.querySelectorAll('.tr-location-row');
+  assert.strictEqual(rows.length, 3);
+  rows[1].dispatchEvent({ type: 'click' });
+
+  // Delete watch row
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await h.window.confirmDeleteSegment();
+
+  // Watch row is gone: two rows remain, section present, aria-expanded still true, pills unchanged
+  assert.ok(h.doc.querySelector('[data-location-section="true"]'));
+  const toggleAfterDel = h.doc.querySelector('.tr-location-toggle');
+  assert.ok(toggleAfterDel);
+  assert.strictEqual(toggleAfterDel.getAttribute('aria-expanded'), 'true');
+  const remainingRows = h.doc.querySelectorAll('.tr-location-row');
+  assert.strictEqual(remainingRows.length, 2);
+  assert.ok([...remainingRows].every((r) => r.dataset.stream !== 'watch'));
+  assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
+
+  // 1. Cancel via notification button
+  const notifCancelBtn = h.notifications.at(-1)?.buttons?.[0];
+  assert.ok(notifCancelBtn);
+  notifCancelBtn.onClick();
+  await new Promise((r) => setTimeout(r, 10));
+
+  const restoredRows = h.doc.querySelectorAll('.tr-location-row');
+  assert.strictEqual(restoredRows.length, 3);
+  assert.strictEqual(restoredRows[0].dataset.stream, 'phone');
+  assert.strictEqual(restoredRows[1].dataset.stream, 'watch');
+  assert.strictEqual(restoredRows[2].dataset.stream, 'phone');
+  assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
+
+  // 2. Delete watch again, test watcher state cancelled
+  restoredRows[1].dispatchEvent({ type: 'click' });
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await h.window.confirmDeleteSegment();
+
+  h.setDeleteStatusState('cancelled');
+  await new Promise((r) => setTimeout(r, 600));
+
+  const restoredRows2 = h.doc.querySelectorAll('.tr-location-row');
+  assert.strictEqual(restoredRows2.length, 3);
+  assert.strictEqual(restoredRows2[1].dataset.stream, 'watch');
+  assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
+
+  // 3. Delete watch again, test watcher state not_deleted
+  restoredRows2[1].dispatchEvent({ type: 'click' });
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await h.window.confirmDeleteSegment();
+
+  h.setDeleteStatusState('not_deleted');
+  await new Promise((r) => setTimeout(r, 600));
+
+  const restoredRows3 = h.doc.querySelectorAll('.tr-location-row');
+  assert.strictEqual(restoredRows3.length, 3);
+  assert.strictEqual(restoredRows3[1].dataset.stream, 'watch');
+  assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
+
+  // 4. Delete watch again, test watcher state incomplete (leaves it off)
+  restoredRows3[1].dispatchEvent({ type: 'click' });
+  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await h.window.confirmDeleteSegment();
+
+  h.setDeleteStatusState('incomplete');
+  await new Promise((r) => setTimeout(r, 600));
+
+  const rowsAfterIncomplete = h.doc.querySelectorAll('.tr-location-row');
+  assert.strictEqual(rowsAfterIncomplete.length, 2);
+  assert.ok([...rowsAfterIncomplete].every((r) => r.dataset.stream !== 'watch'));
+  assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
 });
 
 async function run() {
