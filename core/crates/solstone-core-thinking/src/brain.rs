@@ -268,9 +268,7 @@ fn attestation_state_for_reason(status_ok: bool, reason: Option<&str>) -> Option
         Some("attestation_rejected")
         | Some("nvattest_platform_unsupported")
         | Some("nvattest_unavailable")
-        | Some("nvattest_install_failed")
         | Some("nvattest_integrity_failed") => Some("failed"),
-        Some("nvattest_install_in_progress") => Some("verifying"),
         Some("attestation_not_verified") => Some("unreachable"),
         Some("attestation_expired") => Some("stale"),
         _ => None,
@@ -536,25 +534,27 @@ mod tests {
         );
     }
     #[test]
-    fn attestation_installing_branch() {
-        assert_branch(
-            confidential_attestation(
-                &inspection(
-                    "spp",
-                    "unhealthy",
-                    None,
-                    Some(
-                        json!({"status":"failed","reason_code":"nvattest_install_in_progress","observed_at":"o","expires_at":"e"}),
+    fn attestation_retired_codes_render_stale() {
+        for retired in ["nvattest_install_in_progress", "nvattest_install_failed"] {
+            assert_branch(
+                confidential_attestation(
+                    &inspection(
+                        "spp",
+                        "unhealthy",
+                        None,
+                        Some(
+                            json!({"status":"failed","reason_code":retired,"observed_at":"o","expires_at":"e"}),
+                        ),
                     ),
+                    true,
+                    None,
                 ),
-                true,
-                None,
-            ),
-            "verifying",
-            Some("nvattest_install_in_progress"),
-            true,
-            true,
-        );
+                "stale",
+                Some(retired),
+                false,
+                false,
+            );
+        }
     }
     #[test]
     fn attestation_install_failure_branch() {

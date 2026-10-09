@@ -2411,42 +2411,65 @@ mod tests {
             .config
             .unwrap();
 
-        // nvattest_install_failed
-        record_confidential_attestation_refusal(journal.path(), &config, "nvattest_install_failed");
+        // nvattest_unavailable
+        record_confidential_attestation_refusal(journal.path(), &config, "nvattest_unavailable");
         let now1 = Utc::now() + chrono::Duration::seconds(1);
         let insp1 = inspect_brain_state(journal.path(), &config, now1);
         let expected_agg = local_contract()
             .brain_state
             .reason_to_aggregate
-            .get("nvattest_install_failed")
-            .expect("aggregate mapping for nvattest_install_failed");
+            .get("nvattest_unavailable")
+            .expect("aggregate mapping for nvattest_unavailable");
         assert_eq!(insp1.projection.aggregate_state, *expected_agg);
         assert_eq!(
             insp1.projection.reason_code.as_deref(),
-            Some("nvattest_install_failed")
+            Some("nvattest_unavailable")
         );
         assert_eq!(
             insp1.record.as_ref().unwrap()["evidence"]["lane_prerequisites"]["reason_code"],
-            "nvattest_install_failed"
+            "nvattest_unavailable"
         );
 
-        // nvattest_install_in_progress
+        // nvattest_integrity_failed
         record_confidential_attestation_refusal(
             journal.path(),
             &config,
-            "nvattest_install_in_progress",
+            "nvattest_integrity_failed",
         );
         let now2 = Utc::now() + chrono::Duration::seconds(1);
         let insp2 = inspect_brain_state(journal.path(), &config, now2);
-        assert_eq!(insp2.projection.aggregate_state, "blocked");
+        assert_eq!(insp2.projection.aggregate_state, "unhealthy");
         assert_eq!(
             insp2.projection.reason_code.as_deref(),
-            Some("nvattest_install_in_progress")
+            Some("nvattest_integrity_failed")
         );
         assert_eq!(
             insp2.record.as_ref().unwrap()["evidence"]["lane_prerequisites"]["reason_code"],
-            "nvattest_install_in_progress"
+            "nvattest_integrity_failed"
         );
+
+        // A persisted record with a retired code fails validation, becomes brain_record_invalid,
+        // renders stale, and the owner text has no "nvattest".
+        for retired in ["nvattest_install_failed", "nvattest_install_in_progress"] {
+            let mut corrupt_record = insp2.record.clone().unwrap();
+            corrupt_record["reason_code"] = serde_json::Value::String(retired.to_owned());
+            corrupt_record["evidence"]["lane_prerequisites"]["reason_code"] =
+                serde_json::Value::String(retired.to_owned());
+            let state_path = brain_state_path(journal.path());
+            std::fs::write(&state_path, serde_json::to_vec(&corrupt_record).unwrap()).unwrap();
+
+            let inspected = inspect_brain_state(journal.path(), &config, Utc::now());
+            assert_eq!(inspected.status, crate::inspect::InspectionStatus::Corrupt);
+            assert_eq!(
+                inspected.projection.reason_code.as_deref(),
+                Some("brain_record_invalid")
+            );
+            assert!(inspected.record.is_none());
+            let presentation =
+                crate::presentation::present_brain_inspection(&inspected, Utc::now());
+            assert!(!presentation.reason_text.contains("nvattest"));
+            assert!(!presentation.headline.contains("nvattest"));
+        }
     }
 
     #[test]

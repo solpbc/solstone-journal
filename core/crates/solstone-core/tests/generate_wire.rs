@@ -269,12 +269,6 @@ fn write_config(root: &Path, config: Value) {
     std::fs::write(root.join("config/journal.json"), config.to_string()).expect("write config");
 }
 
-fn configure_uninstallable_nvattest(root: &Path, config: &mut Value) {
-    let blocked_parent = root.join("blocked-nvattest-parent");
-    std::fs::write(&blocked_parent, "not a directory").expect("write nvattest install blocker");
-    config["services"]["confidential"]["nvattest_dir"] = json!(blocked_parent.join("nvattest"));
-}
-
 fn bundled_config(confidential: bool) -> Value {
     if confidential {
         json!({"providers": {"active": {"provider": "local"}}, "services": {"confidential": {}}})
@@ -716,9 +710,8 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
 
 #[test]
 fn confidential_lane_refusal_matches_not_verified_fixture_without_network() {
-    let mut config = json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}, "services": {"confidential": {}}});
+    let config = json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}, "services": {"confidential": {}}});
     let journal = root("attestation");
-    configure_uninstallable_nvattest(&journal, &mut config);
     write_config(&journal, config);
     let output = one_shot(&journal, &fixture_vector("generated")["request"]);
     assert_eq!(output.status.code(), Some(0));
@@ -727,7 +720,7 @@ fn confidential_lane_refusal_matches_not_verified_fixture_without_network() {
     let vector_id = "refused-attestation-not-verified";
     let expected = &fixture_vector(vector_id)["response"];
     assert_eq!(response["reason"], expected["reason"], "{vector_id} reason");
-    assert_eq!(response["detail"], expected["detail"], "{vector_id} detail");
+    assert_eq!(response["detail"], "nvattest_unavailable");
     assert_eq!(
         response["provider"], expected["provider"],
         "{vector_id} provider"
@@ -1103,6 +1096,71 @@ fn attestation_stale_refusal_matches_fixture_vector_fields() {
     assert_eq!(refusal.provider.as_deref(), expected["provider"].as_str());
 }
 
+fn create_test_package(root: &Path) -> solstone_core_installed_payload::InstalledPackage {
+    use solstone_core_installed_payload::{
+        COMPILED_VERSION, INSTALLED_PAYLOAD_MANIFEST, InstalledPackage, PRODUCT, compiled_target,
+        render_installed_payload,
+    };
+    let bin = root.join("lib/solstone-nvattest/bin/nvattest");
+    let lib = root.join("lib/solstone-nvattest/lib/libnvat.so.1");
+    let ca = root.join("lib/solstone-nvattest/share/ca/ca-bundle.pem");
+    std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(lib.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(ca.parent().unwrap()).unwrap();
+    std::fs::write(&bin, b"binary placeholder").unwrap();
+    std::fs::write(&lib, b"library placeholder").unwrap();
+    std::fs::write(&ca, b"ca placeholder").unwrap();
+    let manifest =
+        render_installed_payload(root, PRODUCT, COMPILED_VERSION, compiled_target(), "commit")
+            .unwrap();
+    let manifest_path = root.join(INSTALLED_PAYLOAD_MANIFEST);
+    std::fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
+    std::fs::write(manifest_path, manifest).unwrap();
+    InstalledPackage::admit(root, COMPILED_VERSION, compiled_target()).unwrap()
+}
+
+fn plant_marker_dir(dir: &Path) {
+    let bin = dir.join("bin/nvattest");
+    let lib = dir.join("lib");
+    let ca = dir.join("share/ca/ca-bundle.pem");
+    std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(&lib).unwrap();
+    std::fs::create_dir_all(ca.parent().unwrap()).unwrap();
+    let marker_file = dir.join("bin/marker.txt");
+    let script = format!("#!/bin/sh\ntouch \"{}\"\n", marker_file.display());
+    std::fs::write(&bin, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    std::fs::write(lib.join("placeholder.txt"), b"lib placeholder").unwrap();
+    std::fs::write(&ca, b"ca placeholder").unwrap();
+}
+
+fn dir_snapshot(path: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut files = Vec::new();
+    fn walk(base: &Path, dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+            entries.sort_by_key(|e| e.path());
+            for entry in entries {
+                let p = entry.path();
+                if p.is_dir() {
+                    walk(base, &p, out);
+                } else if p.is_file() {
+                    let rel = p.strip_prefix(base).unwrap().to_path_buf();
+                    let bytes = std::fs::read(&p).unwrap();
+                    out.push((rel, bytes));
+                }
+            }
+        }
+    }
+    walk(path, path, &mut files);
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
 #[test]
 fn confidential_channel_failure_uses_attestation_failed_vector() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind attestation stub");
@@ -1111,29 +1169,214 @@ fn confidential_channel_failure_uses_attestation_failed_vector() {
         let (_stream, _) = listener.accept().expect("accept attestation connection");
     });
     let journal = root("confidential-attestation-failed");
-    let nvattest = journal.join("cache/providers/nvattest");
-    std::fs::create_dir_all(nvattest.join("bin")).expect("create nvattest bin");
-    std::fs::create_dir_all(nvattest.join("lib")).expect("create nvattest lib");
-    std::fs::create_dir_all(nvattest.join("share/ca")).expect("create nvattest CA");
-    std::fs::write(nvattest.join("bin/nvattest"), "stub").expect("write nvattest stub");
-    std::fs::write(nvattest.join("share/ca/ca-bundle.pem"), "stub").expect("write CA bundle");
-    write_config(
-        &journal,
-        json!({"providers": {"active": {"provider": "local"}, "local": {
-            "endpoint_url": format!("http://127.0.0.1:{port}"),
-            "served_model_id": "served",
-        }}, "services": {"confidential": {}}}),
+    let pkg_root = journal.join("pkg");
+    let package = create_test_package(&pkg_root);
+
+    let request_str = fixture_vector("generated")["request"].to_string();
+    let request =
+        solstone_core_generate_wire::parse_one_shot_request(&request_str).expect("parse request");
+    let endpoint = solstone_core_local::ByoEndpoint {
+        base_url: format!("http://127.0.0.1:{port}"),
+        served_model_id: "served".into(),
+        credential: Some("token".into()),
+        parallel_slots: None,
+        is_bundled: false,
+        is_confidential: true,
+    };
+    let config = serde_json::Map::new();
+    let runtime = solstone_core_generate_wire::EndpointRuntime::default();
+
+    let result = solstone_core_generate_wire::confidential_generate_in_package(
+        &request, &journal, &endpoint, &config, &runtime, &package,
     );
-    let output = one_shot(&journal, &fixture_vector("generated")["request"]);
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stderr, b"");
-    let response = stdout_json(&output);
+
+    let solstone_core_generate_wire::ConfidentialResult::AttestationFailed(detail) = result else {
+        panic!("expected AttestationFailed");
+    };
+
+    let refusal = refusal_for(
+        &LaneOutcome::AttestationFailed(detail),
+        "local",
+        request.id.clone(),
+    );
     let expected = &fixture_vector("refused-attestation-failed")["response"];
-    for name in ["reason", "reason_code", "retryable", "blocking", "provider"] {
-        assert_eq!(response[name], expected[name], "{name}");
-    }
-    assert_eq!(response["detail"], "gateway_unreachable");
+    assert_eq!(
+        refusal.reason.as_str(),
+        expected["reason"].as_str().unwrap()
+    );
+    assert_eq!(
+        refusal.reason_code.as_ref().map(|code| code.as_wire()),
+        expected["reason_code"].as_str()
+    );
+    assert_eq!(refusal.retryable, expected["retryable"].as_bool().unwrap());
+    assert_eq!(refusal.blocking, expected["blocking"].as_bool().unwrap());
+    assert_eq!(refusal.provider.as_deref(), expected["provider"].as_str());
+    assert_eq!(detail, "gateway_unreachable");
+
     dropped.join().expect("join attestation stub");
+    let _ = std::fs::remove_dir_all(journal);
+}
+
+#[allow(unsafe_code)]
+#[test]
+fn planted_nvattest_locations_are_never_executed_or_mutated() {
+    let journal = root("planted-locations");
+    let dir1 = journal.join("cache/providers/nvattest");
+    let dir2 = journal.join("config_nvattest");
+    let dir3 = journal.join("env_nvattest");
+
+    plant_marker_dir(&dir1);
+    plant_marker_dir(&dir2);
+    plant_marker_dir(&dir3);
+
+    let snap1 = dir_snapshot(&dir1);
+    let snap2 = dir_snapshot(&dir2);
+    let snap3 = dir_snapshot(&dir3);
+
+    let mut config_map = serde_json::Map::new();
+    let mut services = serde_json::Map::new();
+    let mut confidential = serde_json::Map::new();
+    confidential.insert(
+        "nvattest_dir".to_string(),
+        json!(dir2.to_string_lossy().to_string()),
+    );
+    services.insert("confidential".to_string(), Value::Object(confidential));
+    config_map.insert("services".to_string(), Value::Object(services));
+
+    unsafe {
+        std::env::set_var("SPP_NVATTEST_DIR", &dir3);
+    }
+
+    struct EnvGuard;
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                std::env::remove_var("SPP_NVATTEST_DIR");
+            }
+        }
+    }
+    let _guard = EnvGuard;
+
+    // Part A: Valid package
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let port = listener.local_addr().expect("port").port();
+        let dropped = thread::spawn(move || {
+            let (_stream, _) = listener.accept().expect("accept connection");
+        });
+        let pkg_root = journal.join("valid_pkg");
+        let package = create_test_package(&pkg_root);
+
+        let request_str = fixture_vector("generated")["request"].to_string();
+        let request = solstone_core_generate_wire::parse_one_shot_request(&request_str)
+            .expect("parse request");
+        let endpoint = solstone_core_local::ByoEndpoint {
+            base_url: format!("http://127.0.0.1:{port}"),
+            served_model_id: "served".into(),
+            credential: Some("token".into()),
+            parallel_slots: None,
+            is_bundled: false,
+            is_confidential: true,
+        };
+        let runtime = solstone_core_generate_wire::EndpointRuntime::default();
+
+        let result = solstone_core_generate_wire::confidential_generate_in_package(
+            &request,
+            &journal,
+            &endpoint,
+            &config_map,
+            &runtime,
+            &package,
+        );
+        assert!(matches!(
+            result,
+            solstone_core_generate_wire::ConfidentialResult::AttestationFailed(_)
+        ));
+
+        assert!(!dir1.join("bin/marker.txt").exists());
+        assert!(!dir2.join("bin/marker.txt").exists());
+        assert!(!dir3.join("bin/marker.txt").exists());
+        assert_eq!(dir_snapshot(&dir1), snap1);
+        assert_eq!(dir_snapshot(&dir2), snap2);
+        assert_eq!(dir_snapshot(&dir3), snap3);
+
+        dropped.join().expect("join stub");
+    }
+
+    // Part B: Missing member (without lib/solstone-nvattest/bin/nvattest)
+    {
+        use solstone_core_installed_payload::{
+            COMPILED_VERSION, INSTALLED_PAYLOAD_MANIFEST, InstalledPackage, PRODUCT,
+            compiled_target, render_installed_payload,
+        };
+        let counting_listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        counting_listener.set_nonblocking(true).unwrap();
+        let port = counting_listener.local_addr().expect("port").port();
+
+        let pkg_root = journal.join("missing_bin_pkg");
+        let lib = pkg_root.join("lib/solstone-nvattest/lib/libnvat.so.1");
+        let ca = pkg_root.join("lib/solstone-nvattest/share/ca/ca-bundle.pem");
+        std::fs::create_dir_all(lib.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(ca.parent().unwrap()).unwrap();
+        std::fs::write(&lib, b"library placeholder").unwrap();
+        std::fs::write(&ca, b"ca placeholder").unwrap();
+        let manifest = render_installed_payload(
+            &pkg_root,
+            PRODUCT,
+            COMPILED_VERSION,
+            compiled_target(),
+            "commit",
+        )
+        .unwrap();
+        let manifest_path = pkg_root.join(INSTALLED_PAYLOAD_MANIFEST);
+        std::fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
+        std::fs::write(manifest_path, manifest).unwrap();
+        let package =
+            InstalledPackage::admit(&pkg_root, COMPILED_VERSION, compiled_target()).unwrap();
+
+        let request_str = fixture_vector("generated")["request"].to_string();
+        let request = solstone_core_generate_wire::parse_one_shot_request(&request_str)
+            .expect("parse request");
+        let endpoint = solstone_core_local::ByoEndpoint {
+            base_url: format!("http://127.0.0.1:{port}"),
+            served_model_id: "served".into(),
+            credential: Some("token".into()),
+            parallel_slots: None,
+            is_bundled: false,
+            is_confidential: true,
+        };
+        let runtime = solstone_core_generate_wire::EndpointRuntime::default();
+
+        let result = solstone_core_generate_wire::confidential_generate_in_package(
+            &request,
+            &journal,
+            &endpoint,
+            &config_map,
+            &runtime,
+            &package,
+        );
+
+        let solstone_core_generate_wire::ConfidentialResult::AttestationNotVerified(detail) =
+            result
+        else {
+            panic!("expected AttestationNotVerified");
+        };
+        assert_eq!(detail, "nvattest_unavailable");
+
+        assert!(!dir1.join("bin/marker.txt").exists());
+        assert!(!dir2.join("bin/marker.txt").exists());
+        assert!(!dir3.join("bin/marker.txt").exists());
+        assert_eq!(dir_snapshot(&dir1), snap1);
+        assert_eq!(dir_snapshot(&dir2), snap2);
+        assert_eq!(dir_snapshot(&dir3), snap3);
+
+        assert!(
+            counting_listener.accept().is_err(),
+            "stub accept count must stay 0"
+        );
+    }
+
+    drop(_guard);
     let _ = std::fs::remove_dir_all(journal);
 }
 
@@ -1157,7 +1400,6 @@ fn byo_endpoint_generates_without_confidential_downgrade() {
     let confidential_journal = root("byo-confidential");
     let mut confidential = config;
     confidential["services"] = json!({"confidential": {}});
-    configure_uninstallable_nvattest(&confidential_journal, &mut confidential);
     write_config(&confidential_journal, confidential);
     let output = one_shot(
         &confidential_journal,
@@ -1169,6 +1411,11 @@ fn byo_endpoint_generates_without_confidential_downgrade() {
     assert_eq!(
         response["reason"],
         fixture_vector("refused-attestation-not-verified")["response"]["reason"]
+    );
+    let detail_or_reason = format!("{:?} {:?}", response.get("detail"), response.get("reason"));
+    assert!(
+        detail_or_reason.contains("nvattest_unavailable"),
+        "expected nvattest_unavailable in {detail_or_reason}"
     );
     let _ = std::fs::remove_dir_all(journal);
     let _ = std::fs::remove_dir_all(confidential_journal);

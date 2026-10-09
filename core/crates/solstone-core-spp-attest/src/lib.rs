@@ -18,7 +18,9 @@ pub use error::{
 };
 pub use nvgpu::{
     GpuAppraiser, NVATTEST_TIMEOUT, NvattestCommand, NvattestGpuAppraiser, NvattestInstallation,
-    appraise_gpu_leg, build_nvattest_attest_command, locate_nvattest,
+    appraise_gpu_leg, build_nvattest_attest_command,
+    build_nvattest_attest_command_with_installation, build_nvattest_offline_attest_command,
+    build_nvattest_offline_attest_command_with_installation, locate_nvattest,
 };
 pub use pcr_appraisal::{
     ApplicationExpectations, ApplicationPcrPolicy, PcrAppraisalFailure, PcrAppraisalReason,

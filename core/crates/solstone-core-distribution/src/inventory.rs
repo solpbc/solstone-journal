@@ -1670,16 +1670,22 @@ mod tests {
         // library filename, same reason as the RF-DETR archives.
         // `linux-aarch64` shares `lib/solstone-ced/libced.so` with
         // `linux-x86_64`. The shared GGUF dest stays in the compared set.
+        // `libnvat.so.1` / `libnvat.1.dylib` are the same shipped verifier
+        // library with a platform filename. `linux-aarch64` shares
+        // `lib/solstone-nvattest/lib/libnvat.so.1` with `linux-x86_64`.
+        // The executable and CA bundle stay in the compared set.
         // share/README.md is a Linux-only exception too: it is the
         // agent-facing install/crossover README for the Linux v1-to-v2
         // crossover arc, and macOS distribution is out of scope for that arc.
         const MACOS_ONLY: &[&str] = &[
             "bin/parakeet-helper",
             "lib/solstone-ced/libced.dylib",
+            "lib/solstone-nvattest/lib/libnvat.1.dylib",
             "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
         ];
         const LINUX_ONLY: &[&str] = &[
             "lib/solstone-ced/libced.so",
+            "lib/solstone-nvattest/lib/libnvat.so.1",
             "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
             "share/README.md",
         ];

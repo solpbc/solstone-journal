@@ -624,6 +624,13 @@ pub(crate) fn resolve_pinned_input_with_catalog(
                     file_path.display()
                 ))
             })?;
+            if bytes.len() as u64 != spec.size_bytes
+                || !sha256_hex(&bytes).eq_ignore_ascii_case(&spec.sha256)
+            {
+                return Err(ProduceError::new(format!(
+                    "{entry}: authority committed file verification failed for {platform}"
+                )));
+            }
             let pin = ResolvedPin {
                 sha256_hex: spec.sha256.clone(),
                 size: spec.size_bytes,
@@ -1516,5 +1523,381 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("bad-unit"));
         assert!(err.to_string().contains("bad.tar.gz"));
+    }
+
+    #[test]
+    fn nvattest_inventory_targets_staged_and_admitted() {
+        const EM_AARCH64: u16 = 183;
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let inventory =
+            crate::inventory::load_inventory(&repo_root.join("core/distribution/inventory.toml"))
+                .unwrap();
+
+        for target_id in ["linux-x86_64", "linux-aarch64", "macos-arm64"] {
+            let entry = inventory
+                .entry
+                .iter()
+                .find(|e| match e {
+                    crate::inventory::Entry::PinnedMembers {
+                        component, targets, ..
+                    } => {
+                        component.as_deref() == Some("nvattest")
+                            && targets.iter().any(|t| t == target_id)
+                    }
+                    _ => false,
+                })
+                .unwrap_or_else(|| panic!("find nvattest entry for {target_id}"));
+
+            let (input, staged, ignored) = match entry {
+                crate::inventory::Entry::PinnedMembers {
+                    component,
+                    input,
+                    staged,
+                    ignored,
+                    ..
+                } => {
+                    assert_eq!(component.as_deref(), Some("nvattest"));
+                    (input, staged.as_slice(), ignored.as_slice())
+                }
+                _ => unreachable!(),
+            };
+
+            for m in staged {
+                assert!(
+                    !m.dest.starts_with("bin/"),
+                    "dest {} must not be under package-root bin/",
+                    m.dest
+                );
+                assert!(
+                    !m.dest.starts_with("share/licenses/"),
+                    "dest {} must not be under share/licenses/",
+                    m.dest
+                );
+                assert!(
+                    !m.dest.starts_with("share/provenance/"),
+                    "dest {} must not be under share/provenance/",
+                    m.dest
+                );
+            }
+
+            if target_id.starts_with("linux") {
+                assert!(ignored.contains(&"lib/libnvat.so".to_string()));
+                assert!(ignored.contains(&"lib/libnvat.so.1.2.2".to_string()));
+            } else {
+                assert!(ignored.contains(&"lib/libnvat.dylib".to_string()));
+                assert!(ignored.contains(&"lib/libnvat.1.2.2.dylib".to_string()));
+            }
+            assert_eq!(ignored.len(), 2);
+            for ign in ignored {
+                assert!(
+                    !staged.iter().any(|m| m.dest == *ign || m.relpath == *ign),
+                    "ignored name {ign} must not be a dest or relpath in staged"
+                );
+            }
+
+            let (bytes, pin, filename) =
+                resolve_pinned_input("nvattest", repo_root, target_id, input).unwrap();
+            let plans =
+                plan_pinned_input("nvattest", &bytes, &pin, &filename, staged, ignored).unwrap();
+            let tmp = tempfile::tempdir().unwrap();
+            stage_pinned_plans("nvattest", tmp.path(), &bytes, &filename, &plans).unwrap();
+
+            let expected_files = if target_id.starts_with("linux") {
+                vec![
+                    "lib/solstone-nvattest/bin/nvattest",
+                    "lib/solstone-nvattest/lib/libnvat.so.1",
+                    "lib/solstone-nvattest/share/ca/ca-bundle.pem",
+                    "share/solstone-journal/licenses/nvattest/LICENSE",
+                    "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md",
+                ]
+            } else {
+                vec![
+                    "lib/solstone-nvattest/bin/nvattest",
+                    "lib/solstone-nvattest/lib/libnvat.1.dylib",
+                    "lib/solstone-nvattest/share/ca/ca-bundle.pem",
+                    "share/solstone-journal/licenses/nvattest/LICENSE",
+                    "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md",
+                ]
+            };
+
+            for rel in &expected_files {
+                let p = tmp.path().join(rel);
+                assert!(p.is_file(), "expected file {} does not exist", p.display());
+                let meta = std::fs::symlink_metadata(&p).unwrap();
+                assert!(
+                    !meta.file_type().is_symlink(),
+                    "{} must not be a symlink",
+                    p.display()
+                );
+            }
+
+            let bin_meta =
+                std::fs::metadata(tmp.path().join("lib/solstone-nvattest/bin/nvattest")).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(bin_meta.permissions().mode() & 0o777, 0o755);
+            }
+
+            assert_no_symlinks_recursive(tmp.path());
+            assert!(!tmp.path().join("bin/nvattest").exists());
+
+            fn count_files(p: &Path) -> usize {
+                let mut c = 0;
+                for entry in std::fs::read_dir(p).unwrap() {
+                    let entry = entry.unwrap();
+                    let ft = entry.file_type().unwrap();
+                    if ft.is_file() {
+                        c += 1;
+                    } else if ft.is_dir() {
+                        c += count_files(&entry.path());
+                    }
+                }
+                c
+            }
+            assert_eq!(count_files(tmp.path()), 5);
+
+            for m in staged {
+                let staged_bytes = std::fs::read(tmp.path().join(&m.dest)).unwrap();
+                let actual_hash = sha256_hex(&staged_bytes);
+                assert_eq!(
+                    actual_hash, m.extracted_sha256,
+                    "staged file hash mismatch for {}",
+                    m.dest
+                );
+
+                let expected_oracle = match (target_id, m.dest.as_str()) {
+                    ("linux-x86_64", "lib/solstone-nvattest/bin/nvattest") => {
+                        "41d65c4ae56aab9e17802cdc376017c64cd1e10a3b273a212c096307e513ce28"
+                    }
+                    ("linux-x86_64", "lib/solstone-nvattest/lib/libnvat.so.1") => {
+                        "b0c5d7031700845f49fa6dae1ab33dcc427965df691354466aaf67c868ec0c29"
+                    }
+                    ("linux-aarch64", "lib/solstone-nvattest/bin/nvattest") => {
+                        "02032d5bc77c2ff8b76e0a7e735c268253b37251a09eb4ddc13085a74b7a89c7"
+                    }
+                    ("linux-aarch64", "lib/solstone-nvattest/lib/libnvat.so.1") => {
+                        "ee0d57e5b6e79beb5e43ec86c4b0e7512705e7c0edf7db8b8b3652ce2a745a86"
+                    }
+                    ("macos-arm64", "lib/solstone-nvattest/bin/nvattest") => {
+                        "f9b22f299477545df5537a53b3b26bfaf9738759a49c1def4ca1d08422071497"
+                    }
+                    ("macos-arm64", "lib/solstone-nvattest/lib/libnvat.1.dylib") => {
+                        "f2519b32b31b36ca62538611910f2142bf9fcf654ed386785429d8ed5de414e8"
+                    }
+                    (_, "lib/solstone-nvattest/share/ca/ca-bundle.pem") => {
+                        "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91"
+                    }
+                    (_, "share/solstone-journal/licenses/nvattest/LICENSE") => {
+                        "82d36972a71088e8d4a4793313e64e18340c60de08e3175a58360a277c962a33"
+                    }
+                    (
+                        "linux-x86_64" | "linux-aarch64",
+                        "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md",
+                    ) => "b6f7785f37de5e10aeda2f86435f3e6b7fdabda603b3d04200d91ed00ef7312a",
+                    (
+                        "macos-arm64",
+                        "share/solstone-journal/licenses/nvattest/THIRD_PARTY_NOTICES.md",
+                    ) => "199a52ad0726e35c4ae82ed6b8fb80b75ac89aa0d2303e38755a67136a15db56",
+                    other => panic!("unexpected (target, dest): {other:?}"),
+                };
+                assert_eq!(
+                    m.extracted_sha256, expected_oracle,
+                    "inventory extracted_sha256 oracle mismatch for {}",
+                    m.dest
+                );
+            }
+
+            let mut flipped_bytes = bytes.clone();
+            flipped_bytes[64] ^= 0xaa;
+            let corrupt_dir = tempfile::tempdir().unwrap();
+            let corrupt_archive = corrupt_dir.path().join("flipped.tar.xz");
+            std::fs::write(&corrupt_archive, &flipped_bytes).unwrap();
+            let corrupt_input = crate::inventory::PinnedInput::AuthorityCommitted {
+                platform: target_id.into(),
+                path: corrupt_archive.to_str().unwrap().into(),
+            };
+            assert!(
+                resolve_pinned_input("nvattest-corrupt", repo_root, target_id, &corrupt_input)
+                    .is_err()
+            );
+
+            let bin_bytes =
+                std::fs::read(tmp.path().join("lib/solstone-nvattest/bin/nvattest")).unwrap();
+            if target_id == "linux-x86_64" || target_id == "linux-aarch64" {
+                let machine = if target_id == "linux-x86_64" {
+                    EM_X86_64
+                } else {
+                    EM_AARCH64
+                };
+                let so_bytes =
+                    std::fs::read(tmp.path().join("lib/solstone-nvattest/lib/libnvat.so.1"))
+                        .unwrap();
+                crate::elf::admit_elf(
+                    "lib/solstone-nvattest/bin/nvattest",
+                    &bin_bytes,
+                    machine,
+                    "lib/solstone-nvattest/bin",
+                    None,
+                    &[("lib/solstone-nvattest/lib/libnvat.so.1", &so_bytes)],
+                )
+                .unwrap();
+
+                let bin_info = crate::elf::parse_elf(&bin_bytes).unwrap();
+                let so_info = crate::elf::parse_elf(&so_bytes).unwrap();
+
+                for need in &bin_info.verneed {
+                    for name in &need.names {
+                        if let Some(rest) = name.strip_prefix("GLIBC_") {
+                            if !name.starts_with("GLIBC_PRIVATE") && !name.starts_with("GLIBC_ABI_")
+                            {
+                                let parts: Vec<u32> =
+                                    rest.split('.').filter_map(|s| s.parse().ok()).collect();
+                                if parts.len() >= 2 {
+                                    assert!(
+                                        parts[0] < 2 || (parts[0] == 2 && parts[1] <= 28),
+                                        "glibc version {name} exceeds 2.28 in {target_id}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                assert!(
+                    so_info.needed.iter().any(|n| n == "libutil.so.1"),
+                    "libnvat in {target_id} must need libutil.so.1"
+                );
+                assert!(
+                    so_info
+                        .verneed
+                        .iter()
+                        .any(|v| v.file == "libz.so.1"
+                            && v.names.iter().any(|n| n == "ZLIB_1.2.3.4")),
+                    "libnvat in {target_id} must need ZLIB_1.2.3.4"
+                );
+                assert!(
+                    so_info
+                        .verneed
+                        .iter()
+                        .any(|v| v.names.iter().any(|n| n == "GLIBCXX_3.4.21"))
+                        || bin_info
+                            .verneed
+                            .iter()
+                            .any(|v| v.names.iter().any(|n| n == "GLIBCXX_3.4.21")),
+                    "GLIBCXX_3.4.21 must be present in {target_id}"
+                );
+            } else if target_id == "macos-arm64" {
+                crate::macho::admit_macho(
+                    "lib/solstone-nvattest/bin/nvattest",
+                    &bin_bytes,
+                    crate::macho::cputype_arm64(),
+                    (15, 0),
+                    "lib/solstone-nvattest/bin",
+                    None,
+                    &["lib/solstone-nvattest/lib/libnvat.1.dylib"],
+                )
+                .unwrap();
+            }
+
+            if target_id == "linux-x86_64" {
+                let out_dir = tempfile::tempdir().unwrap();
+                let basename = "solstone-journal-2.0.0-linux-x86_64";
+                crate::write_containers(
+                    tmp.path(),
+                    out_dir.path(),
+                    crate::ContainerMeta {
+                        version: "2.0.0",
+                        basename,
+                        deb_arch: "amd64",
+                        rpm_arch: "x86_64",
+                    },
+                )
+                .unwrap();
+                let [tar_name, deb_name, rpm_name] = crate::inventory::artifact_archives(basename);
+                let tar_records =
+                    crate::tar::tar_records(&std::fs::read(out_dir.path().join(tar_name)).unwrap())
+                        .unwrap();
+                let deb_records = crate::deb::deb_records(&out_dir.path().join(deb_name)).unwrap();
+                let rpm_records = crate::rpm::rpm_records(&out_dir.path().join(rpm_name)).unwrap();
+
+                let tar_bin = tar_records
+                    .iter()
+                    .find(|r| r.dest == "lib/solstone-nvattest/bin/nvattest")
+                    .expect("tar bin");
+                let deb_bin = deb_records
+                    .iter()
+                    .find(|r| r.dest == "lib/solstone-nvattest/bin/nvattest")
+                    .expect("deb bin");
+                let rpm_bin = rpm_records
+                    .iter()
+                    .find(|r| r.dest == "lib/solstone-nvattest/bin/nvattest")
+                    .expect("rpm bin");
+
+                assert_eq!(tar_bin.mode, 0o755);
+                assert_eq!(deb_bin.mode, 0o755);
+                assert_eq!(rpm_bin.mode, 0o755);
+            }
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn nvattest_version_staged_runs_exit_0() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let inventory =
+            crate::inventory::load_inventory(&repo_root.join("core/distribution/inventory.toml"))
+                .unwrap();
+        let entry = inventory
+            .entry
+            .iter()
+            .find(|e| match e {
+                crate::inventory::Entry::PinnedMembers {
+                    component, targets, ..
+                } => {
+                    component.as_deref() == Some("nvattest")
+                        && targets.iter().any(|t| t == "linux-x86_64")
+                }
+                _ => false,
+            })
+            .expect("find nvattest entry for linux-x86_64");
+
+        let (input, staged, ignored) = match entry {
+            crate::inventory::Entry::PinnedMembers {
+                input,
+                staged,
+                ignored,
+                ..
+            } => (input, staged.as_slice(), ignored.as_slice()),
+            _ => unreachable!(),
+        };
+
+        let (bytes, pin, filename) =
+            resolve_pinned_input("nvattest", repo_root, "linux-x86_64", input).unwrap();
+        let plans =
+            plan_pinned_input("nvattest", &bytes, &pin, &filename, staged, ignored).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        stage_pinned_plans("nvattest", tmp.path(), &bytes, &filename, &plans).unwrap();
+
+        let exe = tmp.path().join("lib/solstone-nvattest/bin/nvattest");
+        let output = std::process::Command::new(&exe)
+            .arg("version")
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .expect("execute staged nvattest version");
+        assert!(
+            output.status.success(),
+            "status: {:?}, stderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

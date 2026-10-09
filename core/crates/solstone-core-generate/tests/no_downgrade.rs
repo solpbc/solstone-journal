@@ -488,9 +488,6 @@ fn destination_and_refusal_three_journals() {
 
     // Confidential refusal cell verifies unverified attestation blocks egress to both stubs.
     let journal_refusal = JournalDir::new("confidential-refusal");
-    let blocker_file = journal_refusal.path.join("blocker");
-    fs::write(&blocker_file, "not a directory").unwrap();
-    let blocked_nvattest = blocker_file.join("nvattest");
 
     journal_refusal.write_config(serde_json::json!({
         "env": {"OPENAI_API_KEY": "sk-test"},
@@ -509,8 +506,7 @@ fn destination_and_refusal_three_journals() {
                 "prior_local_endpoint": {
                     "endpoint_url": format!("http://127.0.0.1:{port_b}"),
                     "served_model_id": "stub"
-                },
-                "nvattest_dir": blocked_nvattest.to_string_lossy()
+                }
             }
         }
     }));
@@ -528,6 +524,11 @@ fn destination_and_refusal_three_journals() {
         panic!("expected refused response, got {resp_refusal:?}");
     };
     assert_eq!(refusal.reason, RefusalReason::AttestationNotVerified);
+    let detail_or_reason = format!("{:?} {:?}", refusal.detail, refusal.reason);
+    assert!(
+        detail_or_reason.contains("nvattest_unavailable"),
+        "expected nvattest_unavailable in {detail_or_reason}"
+    );
 
     assert_eq!(
         stub_a.count(),

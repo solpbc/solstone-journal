@@ -30,10 +30,16 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone)]
+pub enum PayloadSource {
+    Directory(PathBuf),
+    #[cfg(not(windows))]
+    Package(solstone_core_installed_payload::InstalledPackage),
+}
+
 /// Production verifier backed by the locally provisioned nvattest payload.
 pub struct ProductionCompositeVerifier {
-    nvattest_dir: PathBuf,
-    gpu_appraiser: Box<dyn GpuAppraiser + Send + Sync>,
+    source: PayloadSource,
     profiles: GpuProfiles,
 }
 
@@ -46,8 +52,23 @@ impl ProductionCompositeVerifier {
     /// instruments that also inject their own CPU policy.
     pub fn with_profiles(nvattest_dir: PathBuf, profiles: GpuProfiles) -> Self {
         Self {
-            nvattest_dir,
-            gpu_appraiser: Box::new(NvattestGpuAppraiser),
+            source: PayloadSource::Directory(nvattest_dir),
+            profiles,
+        }
+    }
+
+    #[cfg(not(windows))]
+    pub fn in_package(package: solstone_core_installed_payload::InstalledPackage) -> Self {
+        Self::in_package_with_profiles(package, GpuProfiles::production())
+    }
+
+    #[cfg(not(windows))]
+    pub fn in_package_with_profiles(
+        package: solstone_core_installed_payload::InstalledPackage,
+        profiles: GpuProfiles,
+    ) -> Self {
+        Self {
+            source: PayloadSource::Package(package),
             profiles,
         }
     }
@@ -59,14 +80,66 @@ impl CompositeVerifier for ProductionCompositeVerifier {
         bundle: CpuBundle<'_>,
         input: CompositeVerificationInput<'_>,
     ) -> Result<CompositeVerdict, CompositeVerificationError> {
-        verify_composite_with_gpu_appraiser(
-            bundle,
-            input,
-            self.gpu_appraiser.as_ref(),
-            &self.profiles,
-            &self.nvattest_dir,
-            SystemTime::now(),
-        )
+        match &self.source {
+            PayloadSource::Directory(nvattest_dir) => verify_composite_with_gpu_appraiser(
+                bundle,
+                input,
+                &NvattestGpuAppraiser,
+                &self.profiles,
+                nvattest_dir,
+                SystemTime::now(),
+            ),
+            #[cfg(not(windows))]
+            PayloadSource::Package(package) => {
+                let cpu = appraise_cpu_leg(
+                    bundle,
+                    input.envelope_tlv,
+                    input.channel_binding,
+                    input.binding_domain,
+                    input.policy,
+                    input.quote_verifier,
+                )
+                .map_err(cpu_error)?;
+
+                let profile = self.profiles.select(&cpu.pcr_sha256).map_err(gpu_error)?;
+                let envelope = decode_gpu_envelope(input.envelope_tlv)
+                    .map_err(|_| composite_error("cpu_verification_failed"))?;
+                let owner_nonce: &[u8; 32] = input
+                    .owner_nonce
+                    .try_into()
+                    .map_err(|_| composite_error("gpu_appraisal_failed"))?;
+
+                let paths = crate::installed::resolve_installed_nvattest(package)
+                    .map_err(|refusal| composite_error(refusal.failure.reason_code))?;
+                let lib_dir = paths
+                    .library
+                    .parent()
+                    .ok_or_else(|| composite_error("nvattest_unavailable"))?;
+                let installation = solstone_core_spp_attest::NvattestInstallation {
+                    binary: paths.binary,
+                    lib_dir: lib_dir.to_path_buf(),
+                    ca_bundle: paths.ca_bundle,
+                };
+                let now = SystemTime::now();
+                let status = GpuStatusInput {
+                    profile,
+                    proofs: input.status_proofs,
+                    verification_time: now,
+                };
+                let gpu = NvattestGpuAppraiser
+                    .appraise_installation(&envelope, owner_nonce, &installation, &status)
+                    .map_err(gpu_error)?;
+
+                Ok(CompositeVerdict {
+                    verified: true,
+                    legs: ["cpu", "gpu"],
+                    substrate: format!("AMD SEV-SNP + NVIDIA {}", gpu.hwmodel),
+                    checked_at: now,
+                    cpu,
+                    gpu,
+                })
+            }
+        }
     }
 }
 
@@ -147,8 +220,9 @@ pub fn check_nvattest_readiness(nvattest_dir: &Path) -> NvattestEnsureStatus {
             GpuAppraisalReason::GpuNonceMismatch
             | GpuAppraisalReason::GpuAppraisalFailed
             | GpuAppraisalReason::StatusProfileMissing
-            | GpuAppraisalReason::StatusProofsMissing,
-        ) => NvattestEnsureStatus::InstallFailed,
+            | GpuAppraisalReason::StatusProofsMissing
+            | GpuAppraisalReason::OnlineCheckUnreachable,
+        ) => NvattestEnsureStatus::Unavailable,
     }
 }
 
@@ -168,6 +242,7 @@ pub fn establish_production_attested_channel(
     )
 }
 
+#[cfg(windows)]
 /// [`establish_production_attested_channel`], admitted on the caller's clock,
 /// so a pool measures channel age on the same clock it admitted with.
 pub fn establish_production_attested_channel_with_clock(
@@ -189,6 +264,100 @@ pub fn establish_production_attested_channel_with_clock(
         endpoint,
         &owner_nonce,
         nvattest_dir,
+        SystemTime::now(),
+        None,
+        Some(&policy),
+        None,
+        &verifier,
+        socket_timeout,
+        epoch,
+        clock,
+    )
+}
+
+#[cfg(not(windows))]
+/// [`establish_production_attested_channel`], admitted on the caller's clock,
+/// so a pool measures channel age on the same clock it admitted with.
+pub fn establish_production_attested_channel_with_clock(
+    endpoint: &RatlsEndpoint,
+    _nvattest_dir: &Path,
+    socket_timeout: Duration,
+    epoch: u64,
+    clock: &dyn AdmissionClock,
+) -> Result<AttestedChannel, RatlsChannelError> {
+    let current_exe = std::env::current_exe().map_err(|_| RatlsChannelError {
+        reason_code: "nvattest_unavailable",
+    })?;
+    let root = solstone_core_installed_payload::locate_installed_package(
+        &current_exe,
+        solstone_core_installed_payload::host_executable_platform(),
+    )
+    .map_err(|refusal| {
+        let mapped = crate::installed::refusal_for_installed_payload(&refusal);
+        RatlsChannelError {
+            reason_code: mapped.failure.reason_code,
+        }
+    })?;
+    let package = solstone_core_installed_payload::InstalledPackage::admit(
+        &root,
+        solstone_core_installed_payload::COMPILED_VERSION,
+        solstone_core_installed_payload::compiled_target(),
+    )
+    .map_err(|refusal| {
+        let mapped = crate::installed::refusal_for_installed_payload(&refusal);
+        RatlsChannelError {
+            reason_code: mapped.failure.reason_code,
+        }
+    })?;
+
+    establish_production_attested_channel_in_package_with_clock(
+        endpoint,
+        &package,
+        socket_timeout,
+        epoch,
+        clock,
+    )
+}
+
+#[cfg(not(windows))]
+/// Establishes one production-policy RA-TLS channel using an explicit installed package.
+pub fn establish_production_attested_channel_in_package(
+    endpoint: &RatlsEndpoint,
+    package: &solstone_core_installed_payload::InstalledPackage,
+    socket_timeout: Duration,
+    epoch: u64,
+) -> Result<AttestedChannel, RatlsChannelError> {
+    establish_production_attested_channel_in_package_with_clock(
+        endpoint,
+        package,
+        socket_timeout,
+        epoch,
+        &SystemAdmissionClock,
+    )
+}
+
+#[cfg(not(windows))]
+/// [`establish_production_attested_channel_in_package`], admitted on the caller's clock.
+pub fn establish_production_attested_channel_in_package_with_clock(
+    endpoint: &RatlsEndpoint,
+    package: &solstone_core_installed_payload::InstalledPackage,
+    socket_timeout: Duration,
+    epoch: u64,
+    clock: &dyn AdmissionClock,
+) -> Result<AttestedChannel, RatlsChannelError> {
+    let mut owner_nonce = [0u8; 32];
+    SystemRandom::new()
+        .fill(&mut owner_nonce)
+        .map_err(|_| RatlsChannelError {
+            reason_code: "nonce_generation_failed",
+        })?;
+    let policy = production_policy();
+    let verifier = ProductionCompositeVerifier::in_package(package.clone());
+    let dummy_dir = Path::new("");
+    establish_attested_channel_with_clock(
+        endpoint,
+        &owner_nonce,
+        dummy_dir,
         SystemTime::now(),
         None,
         Some(&policy),
@@ -223,6 +392,7 @@ fn gpu_error(error: GpuAppraisalReason) -> CompositeVerificationError {
         GpuAppraisalReason::GpuAppraisalFailed => "gpu_appraisal_failed",
         GpuAppraisalReason::StatusProfileMissing => "gpu_status_profile_missing",
         GpuAppraisalReason::StatusProofsMissing => "gpu_status_proofs_missing",
+        GpuAppraisalReason::OnlineCheckUnreachable => "online_check_unreachable",
     })
 }
 

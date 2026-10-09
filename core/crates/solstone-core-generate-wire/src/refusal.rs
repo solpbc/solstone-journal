@@ -28,11 +28,11 @@ pub fn refusal_for(
             Some("thinking_engine_not_chosen".to_owned()),
             None,
         ),
-        LaneOutcome::AttestationNotVerified => (
+        LaneOutcome::AttestationNotVerified(detail) => (
             "refused-attestation-not-verified",
             RefusalReason::AttestationNotVerified,
             Some("attestation_not_yet_verified".to_owned()),
-            None,
+            Some(*detail),
         ),
         LaneOutcome::AttestationFailed(detail) => (
             "refused-attestation-failed",
@@ -291,7 +291,7 @@ mod tests {
                 true,
             ),
             (
-                LaneOutcome::AttestationNotVerified,
+                LaneOutcome::AttestationNotVerified("nvattest_unavailable"),
                 "local",
                 RefusalReason::AttestationNotVerified,
                 Some("attestation_not_yet_verified"),

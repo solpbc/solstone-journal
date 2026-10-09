@@ -15,8 +15,8 @@ solstone-core-distribution.workspace = true
 thiserror = { workspace = true }
 x509-parser = "=0.16.0"
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "deny"
 
 [features]
 full-tests = []

@@ -291,11 +291,11 @@ pub fn spp_reason_diagnostic(raw: &str) -> Map<String, Value> {
 
 fn spp_reason(raw: &str) -> &'static str {
     match raw {
-        "gateway_unreachable" => "attestation_not_verified",
-        "nvattest_install_in_progress" => "nvattest_install_in_progress",
+        "gateway_unreachable" | "online_check_unreachable" | "attestation_not_verified" => {
+            "attestation_not_verified"
+        }
         "nvattest_platform_unsupported" => "nvattest_platform_unsupported",
         "nvattest_unavailable" => "nvattest_unavailable",
-        "nvattest_install_failed" => "nvattest_install_failed",
         "nvattest_integrity_failed" => "nvattest_integrity_failed",
         "tls_handshake_failed"
         | "proof_http_failed"
@@ -893,12 +893,8 @@ mod tests {
             "nvattest_integrity_failed"
         );
         assert_eq!(
-            spp_reason("nvattest_install_failed"),
-            "nvattest_install_failed"
-        );
-        assert_eq!(
-            spp_reason("nvattest_install_in_progress"),
-            "nvattest_install_in_progress"
+            spp_reason("online_check_unreachable"),
+            "attestation_not_verified"
         );
         assert_eq!(spp_reason("certificate_invalid"), "attestation_rejected");
         assert_eq!(

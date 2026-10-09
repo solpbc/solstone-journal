@@ -19,9 +19,10 @@ use serde_json::json;
 use crate::{
     error::GpuAppraisalReason,
     nvgpu::{
-        GpuProfile, NvattestVerdict, StatusExpectation, StatusMode, build_gpu_appraisal,
-        build_nvattest_attest_command, build_nvattest_offline_attest_command,
-        classify_nvattest_result, parse_nvattest_stdout,
+        GpuProfile, NvattestInstallation, NvattestVerdict, StatusExpectation, StatusMode,
+        build_gpu_appraisal, build_nvattest_attest_command_with_installation,
+        build_nvattest_offline_attest_command_with_installation, classify_nvattest_result,
+        parse_nvattest_stdout,
     },
     snp::AppraisalStep,
     tlv::GpuEnvelope,
@@ -92,11 +93,27 @@ pub fn appraise_gpu_leg(
 }
 
 impl NvattestGpuAppraiser {
-    fn appraise_with_timeout(
+    pub fn appraise_installation(
         &self,
         envelope: &GpuEnvelope,
         owner_nonce: &[u8; 32],
-        nvattest_dir: &Path,
+        installation: &NvattestInstallation,
+        status: &GpuStatusInput<'_>,
+    ) -> Result<crate::nvgpu::GpuAppraisal, GpuAppraisalReason> {
+        self.appraise_installation_with_timeout(
+            envelope,
+            owner_nonce,
+            installation,
+            status,
+            NVATTEST_TIMEOUT,
+        )
+    }
+
+    pub fn appraise_installation_with_timeout(
+        &self,
+        envelope: &GpuEnvelope,
+        owner_nonce: &[u8; 32],
+        installation: &NvattestInstallation,
         status: &GpuStatusInput<'_>,
         timeout: Duration,
     ) -> Result<crate::nvgpu::GpuAppraisal, GpuAppraisalReason> {
@@ -110,13 +127,12 @@ impl NvattestGpuAppraiser {
                     .ok_or(GpuAppraisalReason::StatusProofsMissing)?,
             ),
         };
-        crate::nvgpu::locate_nvattest(nvattest_dir)?;
         let rims = super::rims::TempRimDir::write(status.profile)?;
         let evidence_file = TempEvidenceFile::write(envelope, owner_nonce)?;
         let (command, expectation, _proof_file) = match offline_proofs {
             None => (
-                build_nvattest_attest_command(
-                    nvattest_dir,
+                build_nvattest_attest_command_with_installation(
+                    installation,
                     evidence_file.path(),
                     owner_nonce,
                     "dir",
@@ -135,8 +151,8 @@ impl NvattestGpuAppraiser {
                     .ok_or(GpuAppraisalReason::GpuAppraisalFailed)?;
                 let proof_file = TempFile::write("proofs", "der", proofs)?;
                 (
-                    build_nvattest_offline_attest_command(
-                        nvattest_dir,
+                    build_nvattest_offline_attest_command_with_installation(
+                        installation,
                         evidence_file.path(),
                         owner_nonce,
                         rims.path(),
@@ -151,10 +167,20 @@ impl NvattestGpuAppraiser {
             }
         };
         let output = run_nvattest(command, timeout)?;
-        let stdout =
-            String::from_utf8(output.stdout).map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?;
-        let stdout =
-            parse_nvattest_stdout(&stdout).map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?;
+
+        let is_online = matches!(expectation, StatusExpectation::OnlineNonce);
+        let parsed_stdout = String::from_utf8(output.stdout)
+            .ok()
+            .and_then(|text| parse_nvattest_stdout(&text).ok());
+        let has_result_code = parsed_stdout
+            .as_ref()
+            .is_some_and(|obj| obj.get("result_code").is_some());
+
+        if is_online && !output.status.success() && !has_result_code {
+            return Err(GpuAppraisalReason::OnlineCheckUnreachable);
+        }
+
+        let stdout = parsed_stdout.ok_or(GpuAppraisalReason::GpuAppraisalFailed)?;
 
         let verdict = classify_nvattest_result(
             output.status.code().unwrap_or(-1),
@@ -174,6 +200,24 @@ impl NvattestGpuAppraiser {
             acceptance.status,
         )
         .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)
+    }
+
+    fn appraise_with_timeout(
+        &self,
+        envelope: &GpuEnvelope,
+        owner_nonce: &[u8; 32],
+        nvattest_dir: &Path,
+        status: &GpuStatusInput<'_>,
+        timeout: Duration,
+    ) -> Result<crate::nvgpu::GpuAppraisal, GpuAppraisalReason> {
+        let installation = crate::nvgpu::locate_nvattest(nvattest_dir)?;
+        self.appraise_installation_with_timeout(
+            envelope,
+            owner_nonce,
+            &installation,
+            status,
+            timeout,
+        )
     }
 }
 
@@ -216,8 +260,6 @@ fn run_nvattest(
     invocation: crate::nvgpu::NvattestCommand,
     timeout: Duration,
 ) -> Result<Output, GpuAppraisalReason> {
-    // The released Linux binary's RUNPATH ends in an empty entry, which the
-    // loader reads as the working directory: never inherit the caller's.
     let mut command = Command::new(&invocation.executable);
     command.args(invocation.argv.iter().skip(1));
     #[cfg(windows)]
@@ -241,7 +283,12 @@ fn run_nvattest(
             .creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
     #[cfg(not(windows))]
-    command.current_dir("/").envs(invocation.env);
+    {
+        // libnvat statically links OpenSSL with compiled-in config directory /nvat-openssl;
+        // clearing the environment does not affect that; planting files there takes root,
+        // or is impossible on the macOS sealed system volume.
+        command.env_clear().envs(invocation.env);
+    }
     let mut process = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -839,20 +886,120 @@ exec cat "$base/result.stdout"
 
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
-    fn appraiser_runs_nvattest_from_the_filesystem_root() {
+    fn online_command_maps_nonzero_exit_without_result_code_to_unreachable() {
         let root = TempDir::new();
-        fs::write(
-            root.path().join("positive.stdout"),
-            fixture_bytes("nvattest/positive.stdout"),
-        )
-        .expect("write stdout");
-        install_script(
-            root.path(),
-            "#!/bin/sh\n[ \"$(pwd -P)\" = / ] || exit 7\nexec cat \"$(dirname \"$0\")/../positive.stdout\"\n",
+        install_script(root.path(), "#!/bin/sh\nexit 1\n");
+        assert_eq!(
+            appraise(root.path(), HELPER_DEADLINE),
+            Err(GpuAppraisalReason::OnlineCheckUnreachable)
         );
+    }
 
-        let appraisal = appraise(root.path(), HELPER_DEADLINE).expect("green appraisal");
-        assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    #[allow(unsafe_code)]
+    fn child_environment_equals_path_and_preserves_argv_nonce() {
+        let root = TempDir::new();
+        fs::create_dir_all(root.path().join("bin")).expect("create bin");
+        fs::create_dir_all(root.path().join("lib")).expect("create lib");
+        fs::create_dir_all(root.path().join("share/ca")).expect("create CA directory");
+        fs::write(root.path().join("share/ca/ca-bundle.pem"), "CA").expect("write CA bundle");
+
+        let c_src = root.path().join("helper.c");
+        let binary = root.path().join("bin/nvattest");
+        let base_dir = root.path().display().to_string();
+        fs::write(
+            &c_src,
+            format!(
+                r#"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+extern char **environ;
+
+int main(int argc, char **argv) {{
+    FILE *f = fopen("{base_dir}/seen_env.txt", "w");
+    if (f) {{
+        for (char **ep = environ; *ep; ep++) {{
+            fprintf(f, "%s\n", *ep);
+        }}
+        fclose(f);
+    }}
+    FILE *a = fopen("{base_dir}/seen_argv.txt", "w");
+    if (a) {{
+        for (int i = 0; i < argc; i++) {{
+            fprintf(a, "%s\n", argv[i]);
+        }}
+        fclose(a);
+    }}
+    exit(1);
+}}
+"#
+            ),
+        )
+        .expect("write c source");
+
+        let status = std::process::Command::new("/usr/bin/cc")
+            .arg(&c_src)
+            .arg("-o")
+            .arg(&binary)
+            .status()
+            .expect("compile helper");
+        assert!(status.success(), "compile helper binary");
+
+        let pollution = [
+            ("OPENSSL_CONF", "/etc/ssl/openssl.cnf"),
+            ("OPENSSL_MODULES", "/usr/lib/ossl-modules"),
+            ("OPENSSL_CONF_INCLUDE", "/etc/ssl/sentinel-include"),
+            ("NVAT_OCSP_BASE_URL", "https://ocsp.sentinel.example.com"),
+            (
+                "NVAT_RIM_SERVICE_BASE_URL",
+                "https://rim.sentinel.example.com",
+            ),
+            ("NVAT_NRAS_BASE_URL", "https://nras.sentinel.example.com"),
+            ("NV_ATTESTATION_SERVICE_KEY", "sentinel-service-key"),
+            ("NVAT_CA_BUNDLE", "/etc/ssl/sentinel-nvat-ca.pem"),
+            ("NVAT_LOG_LEVEL", "sentinel-debug"),
+            ("NVAT_FORMAT", "sentinel-json"),
+            ("SSL_CERT_DIR", "/etc/ssl/certs"),
+            ("SSL_CERT_FILE", "/etc/ssl/cert.pem"),
+            ("CURL_CA_BUNDLE", "/etc/ssl/ca-bundle.pem"),
+            ("HTTPS_PROXY", "http://127.0.0.1:8081"),
+            ("https_proxy", "http://127.0.0.1:8082"),
+            ("HTTP_PROXY", "http://127.0.0.1:8083"),
+            ("http_proxy", "http://127.0.0.1:8084"),
+            ("ALL_PROXY", "socks5://127.0.0.1:1085"),
+            ("NO_PROXY", "sentinel.local,127.0.0.1"),
+            ("LD_LIBRARY_PATH", "/usr/local/lib"),
+            ("LD_PRELOAD", "/usr/lib/libfake.so"),
+            ("LD_AUDIT", "/usr/lib/libsentinel-audit.so"),
+            ("GLIBC_TUNABLES", "glibc.malloc.check=sentinel"),
+            (
+                "DYLD_INSERT_LIBRARIES",
+                "/usr/local/lib/sentinel-fake.dylib",
+            ),
+            ("DYLD_LIBRARY_PATH", "/usr/local/dyld-lib"),
+            ("DYLD_FALLBACK_LIBRARY_PATH", "/usr/local/dyld-fallback-lib"),
+        ];
+        for (k, v) in pollution {
+            unsafe { std::env::set_var(k, v) };
+        }
+
+        let _ = appraise(root.path(), HELPER_DEADLINE);
+
+        for (k, _) in pollution {
+            unsafe { std::env::remove_var(k) };
+        }
+
+        let seen_env = fs::read_to_string(root.path().join("seen_env.txt")).expect("read seen_env");
+        let env_lines = seen_env.lines().collect::<Vec<_>>();
+        assert_eq!(env_lines, vec!["PATH=/usr/bin:/bin"]);
+
+        let seen_argv =
+            fs::read_to_string(root.path().join("seen_argv.txt")).expect("read seen_argv");
+        let nonce_hex = crate::snp::hex_lower(&owner_nonce());
+        assert!(seen_argv.contains(&nonce_hex), "argv nonce must appear");
     }
 
     #[cfg(all(test, feature = "full-tests"))]

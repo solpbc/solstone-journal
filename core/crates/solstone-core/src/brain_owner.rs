@@ -504,14 +504,49 @@ fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: DateTime<U
             );
         }
     };
-    let nvattest_dir = solstone_core_spp_ratls::resolve_nvattest_dir(Some(config), journal);
+    #[cfg(not(windows))]
+    let (prerequisite_err, nvattest_dir) = {
+        let _ = journal;
+        match solstone_core_spp_ratls::resolve_nvattest_from_current_exe() {
+            Ok(_) => (None, std::path::PathBuf::new()),
+            Err(refusal) => (Some(refusal.failure), std::path::PathBuf::new()),
+        }
+    };
+    #[cfg(windows)]
+    let (prerequisite_err, nvattest_dir) = {
+        let dir = solstone_core_spp_ratls::resolve_nvattest_dir(Some(config), journal);
+        let status = solstone_core_spp_ratls::check_nvattest_readiness(&dir);
+        (
+            solstone_core_spp_ratls::classify_nvattest_prerequisite(status),
+            dir,
+        )
+    };
+    if let Some(failure) = prerequisite_err {
+        let reason = solstone_core_brain::valid_spp_reason(failure.reason_code);
+        let diagnostic = solstone_core_brain::spp_reason_diagnostic(failure.reason_code);
+        return component_for_reason("lane_prerequisites", reason, diagnostic, now);
+    }
+
+    #[cfg(not(windows))]
+    let readiness = |_: &Path| match solstone_core_spp_ratls::resolve_nvattest_from_current_exe() {
+        Ok(_) => solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled,
+        Err(refusal) => match refusal.failure.reason_code {
+            "nvattest_integrity_failed" => {
+                solstone_core_spp_ratls::NvattestEnsureStatus::IntegrityFailed
+            }
+            _ => solstone_core_spp_ratls::NvattestEnsureStatus::Unavailable,
+        },
+    };
+    #[cfg(windows)]
+    let readiness = |dir: &Path| solstone_core_spp_ratls::check_nvattest_readiness(dir);
+
     let state = solstone_core_spp_ratls::AttestationStateStore::new();
     match solstone_core_spp_ratls::perform_fresh_reattest(
         &state,
         &endpoint.base_url,
         &nvattest_dir,
         StdDuration::from_secs(120),
-        solstone_core_spp_ratls::ensure_nvattest_installed,
+        readiness,
     ) {
         Ok(channel) if channel.session.status(SystemTime::now()) == "verified" => {
             spp_component_ok(now, &channel.session)

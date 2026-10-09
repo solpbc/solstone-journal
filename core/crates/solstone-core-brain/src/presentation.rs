@@ -32,11 +32,8 @@ pub fn present_brain_inspection(
 ) -> BrainPresentation {
     let projection = &inspection.projection;
     let reason = projection.reason_code.as_deref();
-    let progressing = matches!(
-        reason,
-        Some("brain_check_in_progress" | "nvattest_install_in_progress")
-    ) || (reason == Some("local_runtime_not_ready")
-        && projection.runtime_transition_in_progress);
+    let progressing = reason == Some("brain_check_in_progress")
+        || (reason == Some("local_runtime_not_ready") && projection.runtime_transition_in_progress);
     let (mut failing_component, observed_at) = evidence_view(inspection.record.as_ref());
     if failing_component.is_none() {
         failing_component = component_for_reason(reason);
@@ -72,7 +69,6 @@ fn headline(state: &str, reason: Option<&str>, progressing: bool) -> &'static st
         ("blocked", Some("attestation_not_verified")) => {
             "can't reach confidential processing right now"
         }
-        ("blocked", Some("nvattest_install_in_progress")) => "checking confidential processing",
         ("blocked", Some("local_runtime_not_ready")) if progressing => {
             "setting up local processing"
         }
@@ -106,23 +102,22 @@ pub fn brain_reason_text(reason: Option<&str>) -> String {
         Some("stale_expected_fingerprint") => "stale expected fingerprint".to_owned(),
         Some("lost_fence") => "refresh fence lost".to_owned(),
         Some("busy") => "check already running".to_owned(),
-        Some("attestation_not_verified") => "couldn't reach the service to verify it".to_owned(),
-        Some("nvattest_install_in_progress") => "getting the hardware check ready".to_owned(),
+        Some("attestation_not_verified" | "online_check_unreachable") => {
+            "couldn't reach the service to verify it".to_owned()
+        }
         Some("nvattest_platform_unsupported") => NOT_ON_PLATFORM.to_owned(),
-        Some("nvattest_unavailable") => {
-            "something the hardware check needs isn't installed".to_owned()
-        }
-        Some("nvattest_install_failed") => {
-            "couldn't install what the hardware check needs".to_owned()
-        }
+        Some("nvattest_unavailable") => "hardware verification is unavailable".to_owned(),
         Some("nvattest_integrity_failed") => {
-            "the hardware check's files failed an integrity check".to_owned()
+            solstone_core_installed_payload::guidance::PACKAGE_MISMATCH.to_owned()
         }
         Some("chatgpt_not_eligible") => "this ChatGPT account isn't eligible".to_owned(),
         Some("chatgpt_sign_in_required") => "signed out of ChatGPT".to_owned(),
         Some("chatgpt_usage_limit") => "ChatGPT usage limit reached".to_owned(),
         Some("confidential_access_ended") => {
             "confidential processing isn't active for this sign-in".to_owned()
+        }
+        Some("nvattest_install_failed" | "nvattest_install_in_progress") => {
+            "hardware verification is unavailable".to_owned()
         }
         Some(reason) => reason.replace('_', " "),
     }
@@ -279,22 +274,18 @@ mod tests {
         );
 
         let unreachable = view_of("blocked", "attestation_not_verified", false);
-        let installing = view_of("blocked", "nvattest_install_in_progress", false);
         let local = view_of("blocked", "local_runtime_not_ready", true);
         assert!(!unreachable.progressing);
-        assert!(installing.progressing);
         assert!(local.progressing);
-        let headlines = [&unreachable.headline, &installing.headline, &local.headline];
+        let headlines = [&unreachable.headline, &local.headline];
         for (index, headline) in headlines.iter().enumerate() {
             assert_ne!(**headline, setup.headline);
             assert!(headlines[index + 1..].iter().all(|other| other != headline));
         }
-        for (reason, waiting) in [
-            ("attestation_not_verified", &unreachable),
-            ("nvattest_install_in_progress", &installing),
-        ] {
-            assert_ne!(waiting.reason_text, reason.replace('_', " "), "{reason}");
-        }
+        assert_ne!(
+            unreachable.reason_text,
+            "attestation_not_verified".replace('_', " ")
+        );
     }
 
     #[test]
@@ -306,11 +297,21 @@ mod tests {
         for reason in [
             "nvattest_platform_unsupported",
             "nvattest_unavailable",
-            "nvattest_install_failed",
             "nvattest_integrity_failed",
         ] {
             let text = view_of("blocked", reason, false).reason_text;
             assert!(!text.contains("nvattest"), "{reason}: {text}");
+        }
+    }
+
+    #[test]
+    fn brain_reason_retired_install_codes_render_as_hardware_verification_unavailable() {
+        for code in ["nvattest_install_failed", "nvattest_install_in_progress"] {
+            let text = super::brain_reason_text(Some(code));
+            assert_eq!(text, "hardware verification is unavailable");
+            assert!(!text.contains("nvattest"));
+            assert!(!text.contains("install"));
+            assert!(!text.contains("download"));
         }
     }
 

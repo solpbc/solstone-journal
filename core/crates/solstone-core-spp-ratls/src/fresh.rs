@@ -128,35 +128,21 @@ pub fn resolve_ratls_target(base_url: &str) -> Option<(RatlsEndpoint, String)> {
     (!host.is_empty()).then(|| (RatlsEndpoint::new(host, port), authority.to_owned()))
 }
 
+#[cfg(windows)]
 pub fn resolve_nvattest_dir(
     config: Option<&serde_json::Map<String, serde_json::Value>>,
     journal_path: &Path,
 ) -> std::path::PathBuf {
-    #[cfg(windows)]
-    {
-        let _ = (config, journal_path);
-        // The Windows verifier belongs to the installed signed program.
-        // Neither journal state nor environment can select an executable.
-        return std::env::current_exe()
-            .ok()
-            .and_then(|exe| {
-                let bin = exe.parent()?;
-                (bin.file_name()? == "bin").then(|| bin.parent().map(Path::to_path_buf))?
-            })
-            .unwrap_or_default();
-    }
-    #[cfg(not(windows))]
-    config
-        .and_then(|root| root.get("services"))
-        .and_then(serde_json::Value::as_object)
-        .and_then(|services| services.get("confidential"))
-        .and_then(serde_json::Value::as_object)
-        .and_then(|confidential| confidential.get("nvattest_dir"))
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("SPP_NVATTEST_DIR").map(std::path::PathBuf::from))
-        .unwrap_or_else(|| journal_path.join("cache/providers/nvattest"))
+    let _ = (config, journal_path);
+    // The verifier belongs to the installed signed program.
+    // Neither journal state nor environment can select an executable.
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            let bin = exe.parent()?;
+            (bin.file_name()? == "bin").then(|| bin.parent().map(Path::to_path_buf))?
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -190,7 +176,11 @@ mod tests {
         assert_eq!(host, "confidential.example:8443");
     }
 
-    fn assert_prerequisite_failure(nvattest_dir: &Path, reason_code: &'static str) {
+    fn assert_prerequisite_failure(
+        nvattest_dir: &Path,
+        reason_code: &'static str,
+        expected_kind: AttestationFailureKind,
+    ) {
         let state = AttestationStateStore::new();
         let failure = match perform_fresh_reattest(
             &state,
@@ -202,7 +192,7 @@ mod tests {
             Err(failure) => failure,
             Ok(_) => panic!("readiness refusal must not establish a channel"),
         };
-        assert_eq!(failure.kind, AttestationFailureKind::Failed);
+        assert_eq!(failure.kind, expected_kind);
         assert_eq!(failure.reason_code, reason_code);
         assert_eq!(state.get_attestation_state().failure, Some(failure));
     }
@@ -210,17 +200,29 @@ mod tests {
     #[test]
     fn fresh_reattest_records_the_locator_cause_before_channel_establishment() {
         let root = TempDir::new("fresh");
-        assert_prerequisite_failure(&root.path().join("missing"), "nvattest_unavailable");
-        assert_prerequisite_failure(root.path(), "nvattest_unavailable");
+        assert_prerequisite_failure(
+            &root.path().join("missing"),
+            "nvattest_unavailable",
+            AttestationFailureKind::Unreachable,
+        );
+        assert_prerequisite_failure(
+            root.path(),
+            "nvattest_unavailable",
+            AttestationFailureKind::Unreachable,
+        );
 
         fs::create_dir_all(root.path().join("bin")).expect("create binary directory");
         fs::create_dir_all(root.path().join("lib")).expect("create library directory");
         fs::write(root.path().join("bin/nvattest"), "placeholder").expect("write binary");
-        assert_prerequisite_failure(root.path(), "nvattest_integrity_failed");
+        assert_prerequisite_failure(
+            root.path(),
+            "nvattest_integrity_failed",
+            AttestationFailureKind::Failed,
+        );
     }
 
     #[test]
-    fn fresh_reattest_honors_an_injected_install_status() {
+    fn fresh_reattest_honors_an_injected_readiness_status() {
         let root = TempDir::new("fresh-inject");
         let state = AttestationStateStore::new();
         let failure = match perform_fresh_reattest(
@@ -228,13 +230,13 @@ mod tests {
             "not-a-channel-target",
             root.path(),
             Duration::from_millis(1),
-            |_| NvattestEnsureStatus::InstallInFlight,
+            |_| NvattestEnsureStatus::PlatformUnsupported,
         ) {
             Err(failure) => failure,
-            Ok(_) => panic!("injected in-flight status must not establish a channel"),
+            Ok(_) => panic!("injected status must not establish a channel"),
         };
-        assert_eq!(failure.kind, AttestationFailureKind::Unreachable);
-        assert_eq!(failure.reason_code, "nvattest_install_in_progress");
+        assert_eq!(failure.kind, AttestationFailureKind::Failed);
+        assert_eq!(failure.reason_code, "nvattest_platform_unsupported");
         assert_eq!(state.get_attestation_state().failure, Some(failure));
     }
 }
