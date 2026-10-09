@@ -132,7 +132,9 @@ fn measure(journal: &Path) -> Result<Arc<IndexStatus>, String> {
     let mut cache = measurements()
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    if started.elapsed() >= EXPENSIVE_MEASUREMENT {
+    if started.elapsed() >= EXPENSIVE_MEASUREMENT
+        && !matches!(status.database, IndexDatabase::Unreadable(_))
+    {
         cache.insert(
             journal.to_path_buf(),
             Measured {
@@ -168,13 +170,13 @@ pub fn evaluate_index_health_recent(
                     let journal = journal.to_path_buf();
                     std::thread::spawn(move || {
                         if let Err(error) = measure(&journal) {
+                            // Never keep serving a measurement that could not be
+                            // renewed: the next read measures for itself.
                             log::warn!("search index status refresh failed: {error}");
-                            let mut cache = measurements()
+                            measurements()
                                 .lock()
-                                .unwrap_or_else(PoisonError::into_inner);
-                            if let Some(entry) = cache.get_mut(&journal) {
-                                entry.refreshing = false;
-                            }
+                                .unwrap_or_else(PoisonError::into_inner)
+                                .remove(&journal);
                         }
                     });
                 }
@@ -224,6 +226,9 @@ pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservatio
         .map(|o| &o.identity)
         .filter(|identity| behind(identity))
         .chain(status.failed.iter())
+        // A file whose modification time cannot be read is one the scan skips
+        // and warns about every time.
+        .chain(status.unreadable.iter())
         .collect::<std::collections::BTreeSet<_>>()
         .len();
     let pending = status.pending();

@@ -266,6 +266,9 @@ pub(crate) fn reset_index_admitted(
     tx.execute("DROP TABLE IF EXISTS chunk_classification_facets", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_classification", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_classification_backfill", [])?;
+    // A reset builds a new index: it carries this writer's stamp, not one the
+    // gate let through because it could not be read.
+    tx.execute("DROP TABLE IF EXISTS index_meta", [])?;
     create_schema(&tx)?;
     stamp_if_needed(&tx)?;
     tx.execute("DELETE FROM entity_search_watermark", [])?;

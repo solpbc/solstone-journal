@@ -135,6 +135,7 @@ impl IndexStatus {
                 "skipped": scan.skipped,
                 "failed": scan.failed,
                 "warnings": scan.warnings,
+                "error": scan.error,
                 "writer_version": scan.writer_version,
             })
         });
@@ -192,7 +193,7 @@ impl IndexStatus {
             ));
         }
         out.push_str(&format!(
-            "files: {} on disk, {} indexed, {} current, {} stale, {} missing, {} failed, {} orphaned, {} kept until a full rescan, {} unreadable, {} not indexable\n",
+            "files: {} on disk, {} indexed, {} current, {} stale, {} missing, {} failed, {} orphaned, {} kept until a full rescan, {} no longer indexable but still in search, {} unreadable, {} not indexable\n",
             self.discovered,
             self.indexed,
             self.current,
@@ -201,6 +202,7 @@ impl IndexStatus {
             self.failed.len(),
             self.orphaned.len(),
             self.retained.len(),
+            self.ineligible_rows,
             self.unreadable.len(),
             self.ineligible
         ));
@@ -220,14 +222,21 @@ impl IndexStatus {
         };
         out.push_str(&format!("classification: {classification}\n"));
         match &self.last_scan {
-            Some(scan) => out.push_str(&format!(
-                "last scan: {} at {} ms, indexed {}, removed {}, failed {}\n",
-                if scan.full { "full" } else { "light" },
-                scan.finished_at_ms,
-                scan.indexed,
-                scan.removed,
-                scan.failed
-            )),
+            Some(scan) => match &scan.error {
+                Some(error) => out.push_str(&format!(
+                    "last scan: {} at {} ms stopped: {error}\n",
+                    if scan.full { "full" } else { "light" },
+                    scan.finished_at_ms,
+                )),
+                None => out.push_str(&format!(
+                    "last scan: {} at {} ms, indexed {}, removed {}, failed {}\n",
+                    if scan.full { "full" } else { "light" },
+                    scan.finished_at_ms,
+                    scan.indexed,
+                    scan.removed,
+                    scan.failed
+                )),
+            },
             None => out.push_str("last scan: not recorded\n"),
         }
         out
@@ -331,7 +340,7 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
     }
     if let Some(scan) = &status.last_scan {
         for rel in &scan.failed_paths {
-            if status.missing.remove(rel) {
+            if status.missing.remove(rel) | status.stale.remove(rel) {
                 status.failed.insert(rel.clone());
             }
         }
@@ -487,7 +496,22 @@ mod tests {
         );
         let bad = journal.0.join("chronicle/20260717/talents/bad.md");
         fs::write(&bad, [0xff]).expect("write invalid utf8");
+        journal.write("chronicle/20260717/talents/later.md", "# Later\n\none");
         scan_journal(&journal.0, false).expect("scan");
+        // An indexed file rewritten into something the scan cannot read keeps
+        // its old row and old mtime: named failed, not stale.
+        fs::write(
+            journal.0.join("chronicle/20260717/talents/later.md"),
+            [0xff],
+        )
+        .expect("rewrite as invalid utf8");
+        let row = Connection::open(db_path(&journal.0)).expect("open");
+        row.execute(
+            "UPDATE files SET mtime=0 WHERE path='20260717/talents/later.md'",
+            [],
+        )
+        .expect("make the row older than the file");
+        drop(row);
 
         // A removed day: a light scan keeps its rows. A file the scan could not
         // index: named by the receipt. A row whose file is no longer indexable.
@@ -513,7 +537,7 @@ mod tests {
         assert!(status.orphaned.is_empty());
         assert_eq!(
             status.failed.iter().collect::<Vec<_>>(),
-            ["20260717/talents/bad.md"]
+            ["20260717/talents/bad.md", "20260717/talents/later.md"]
         );
         assert!(status.missing.is_empty());
         assert_eq!(status.ineligible_rows, 1);

@@ -163,10 +163,12 @@ pub(crate) fn stamp_if_needed(conn: &Connection) -> Result<(), StoreError> {
 
 /// The writer-lease gate for an index file that already exists.
 ///
-/// A newer generation refuses the write. Any other failure to read or update
-/// the stamp (a damaged or busy file) is logged and the operation proceeds as
-/// it would have without a stamp, so repair paths such as reset keep working.
-pub(crate) fn admit_writer(db_path: &Path) -> Result<(), StoreError> {
+/// A newer generation refuses the write, and so does a stamp that cannot be
+/// read or brought current: a writer that cannot tell the generation does not
+/// write. The two repairs that replace the file outright (reset, legacy
+/// removal) proceed past a damaged stamp, so a broken index can still be
+/// rebuilt; reset then writes a fresh stamp.
+pub(crate) fn admit_writer(db_path: &Path, operation: &str) -> Result<(), StoreError> {
     // A file that is not a SQLite database has nothing to stamp, and opening
     // one, even read-only, can create sidecars beside it.
     if !has_sqlite_header(db_path) {
@@ -175,14 +177,15 @@ pub(crate) fn admit_writer(db_path: &Path) -> Result<(), StoreError> {
     match stamp_existing(db_path) {
         Ok(()) => Ok(()),
         Err(error @ StoreError::IndexGenerationNewer { .. }) => Err(error),
-        Err(error) => {
+        Err(error) if matches!(operation, "reset" | "remove-legacy-index") => {
             log::warn!(
                 target: "solstone::indexer",
-                "index generation stamp skipped path={} cause={error}",
+                "index generation stamp unreadable, proceeding with {operation} path={} cause={error}",
                 db_path.display()
             );
             Ok(())
         }
+        Err(error) => Err(error),
     }
 }
 
@@ -364,6 +367,30 @@ mod tests {
         assert_eq!(stamp.last_compatible_generation, Some(1));
         assert_eq!(stamp.writer_version.as_deref(), Some(WRITER_VERSION));
         assert_eq!(chunks(&journal.0), before);
+    }
+
+    #[test]
+    fn a_stamp_that_cannot_be_read_refuses_writes_except_the_rebuilding_reset() {
+        let journal = Journal::with_one_note("unreadable-stamp");
+        scan_journal(&journal.0, true).expect("scan");
+        // A metadata table this binary cannot read the stamp from.
+        Connection::open(db_path(&journal.0))
+            .expect("open")
+            .execute_batch("DROP TABLE index_meta; CREATE TABLE index_meta(key TEXT PRIMARY KEY);")
+            .expect("damage the stamp table");
+        let before = fs::read(db_path(&journal.0)).expect("bytes");
+
+        assert!(matches!(
+            scan_journal(&journal.0, false),
+            Err(StoreError::Sql(_))
+        ));
+        assert_eq!(fs::read(db_path(&journal.0)).expect("bytes"), before);
+
+        reset_index(&journal.0).expect("a reset rebuilds past a damaged stamp");
+        let stamp = read_stamp(&Connection::open(db_path(&journal.0)).expect("open"))
+            .expect("read the fresh stamp");
+        assert_eq!(stamp.generation, Some(1));
+        assert_eq!(stamp.writer_version.as_deref(), Some(WRITER_VERSION));
     }
 
     #[test]
