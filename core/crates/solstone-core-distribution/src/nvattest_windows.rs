@@ -289,8 +289,8 @@ pub(crate) const fn production_pins() -> Pins {
             sha256: "8a6f05954c8fe490acec8c1032926a72e31fb3f303493a7cb263bd5e63534623",
         },
         bundle_archive: ArchivePin {
-            bytes: 433367040,
-            sha256: "9cc47abc0be80b7b4ae77875842bc9f8e224df7a818019f5edd9349407bc1f1b",
+            bytes: 451512320,
+            sha256: "114e0135cbcec53dd104d330c76ffafd630c372f5c25d0e103d718514f34725d",
         },
         manifest_sha256: "bca2a8fa20094517599953f38a3708e79ab93106228c594df3c9a4e19836932d",
         ca_bundle: FilePin {
