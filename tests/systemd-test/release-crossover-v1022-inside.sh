@@ -102,7 +102,11 @@ inspect_and_install_candidate() {
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$package"
             ;;
         rpm)
-            rpm -qpl "$package" | grep -Fxq '/usr/bin/journal'
+            # Read the whole listing first: grep -q exits at its first match,
+            # and the bundled licence trees make the listing longer than a pipe
+            # buffer, so rpm would die of SIGPIPE under pipefail.
+            rpm -qpl "$package" > /tmp/rpm-members
+            grep -Fxq '/usr/bin/journal' /tmp/rpm-members
             [ -z "$(rpm -qp --scripts "$package")" ] || fail "rpm contains prohibited scriptlets"
             if rpm -qp --qf '%{SIGPGP:pgpsig}\n%{SIGGPG:pgpsig}\n%{RSAHEADER:pgpsig}\n%{DSAHEADER:pgpsig}\n' "$package" \
                 | grep -Fv '(none)' | grep -q .; then
