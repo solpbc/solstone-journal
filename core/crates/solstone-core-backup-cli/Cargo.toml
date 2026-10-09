@@ -9,15 +9,17 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[lints]
-workspace = true
+# std::env::set_var is unsafe. The fallback-plant tests are the only callers,
+# and each one carries its own allow.
+[lints.rust]
+unsafe_code = "deny"
 
 [dependencies]
 chrono.workspace = true
 serde_json.workspace = true
-solstone-core-artifact-download.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-runtime.workspace = true
+solstone-core-installed-payload.workspace = true
 solstone-core-offload.workspace = true
 # Restic's own reason reaches the owner, so it is sanitized before it is printed.
 solstone-core-system-health.workspace = true

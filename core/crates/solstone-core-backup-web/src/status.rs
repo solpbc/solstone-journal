@@ -150,6 +150,8 @@ mod tests {
             kind: kind.to_owned(),
             phase: phase.to_owned(),
             reason_code: None,
+            detail: None,
+            guidance: None,
             recording_failure: None,
             portal_url: None,
         }

@@ -226,8 +226,6 @@
         "missing_file_after_restore": "media restore finished, but a file was still missing.",
         "nothing_to_restore": "nothing to restore for that day.",
         "repo_missing": "encrypted backup could not find the repository.",
-        "restic_unavailable": "the backup tool is not available yet.",
-        "rclone_unavailable": "the storage access tool is not available yet.",
         "segment_missing": "that day is no longer available locally.",
         "timeout": "media restore took too long. try again later.",
         "verification_failed": "restored media did not match the backup checksum."
@@ -256,7 +254,6 @@
       "invalid_config_value": "use non-negative whole numbers, then save again.",
       "invalid_operation_for_state": "finish the current backup setup step, then try again.",
       "invalid_request_value": "check the destination details and try again.",
-      "restic_unavailable": "the backup tool couldn't be prepared. try again after setup finishes.",
       "repo_missing": "no backup repository was found at that destination.",
       "auth_failed": "that recovery key didn't unlock the backup. check the key first, then the destination details.",
       "locked": "the destination is busy. try again shortly.",
@@ -1591,11 +1588,13 @@
     setText('[data-operation-phase]', labelForPhase(operation.phase));
     const spinner = banner.querySelector('.backup-spinner');
     if (spinner) spinner.hidden = !operationActive(operation);
-    const errorLabel =
+    const defaultErrorLabel =
       operation.kind === 'offload_restore'
         ? offloadRestoreReasonLabel(operation.reason_code)
         : reasonLabel(operation.reason_code);
-    setText('[data-operation-error]', operation.reason_code ? errorLabel : '');
+    const hasGuidance = typeof operation.guidance === 'string' && operation.guidance.length > 0;
+    const errorLabel = hasGuidance ? operation.guidance : defaultErrorLabel;
+    setText('[data-operation-error]', hasGuidance || operation.reason_code ? errorLabel : '');
   }
 
   function renderCleanup() {

@@ -10,11 +10,28 @@ pub fn success(value: Value) -> Response {
 }
 
 pub fn error(status: StatusCode, message: &str, reason_code: &str, detail: &str) -> Response {
-    (
-        status,
-        Json(json!({"error": message, "reason_code": reason_code, "detail": detail})),
-    )
-        .into_response()
+    error_with_guidance(status, message, reason_code, detail, None)
+}
+
+pub fn error_with_guidance(
+    status: StatusCode,
+    message: &str,
+    reason_code: &str,
+    detail: &str,
+    guidance: Option<&str>,
+) -> Response {
+    let mut payload = json!({
+        "error": message,
+        "reason_code": reason_code,
+        "detail": detail,
+    });
+    if let Some(guidance) = guidance {
+        payload
+            .as_object_mut()
+            .unwrap()
+            .insert("guidance".into(), json!(guidance));
+    }
+    (status, Json(payload)).into_response()
 }
 
 pub fn invalid_config(detail: &str) -> Response {

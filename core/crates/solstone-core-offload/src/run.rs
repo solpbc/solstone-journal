@@ -912,7 +912,7 @@ mod tests {
         .unwrap();
         generate_and_store_keys(journal).unwrap();
         set_enabled(journal, true).unwrap();
-        record_backup_result(journal, "ok", json!(now), json!("ready"), Value::Null).unwrap();
+        record_backup_result(journal, "ok", json!(now), json!("ready"), Value::Null, None).unwrap();
         record_verification_result(journal, "ok", json!(now), Value::Null, json!("1/52")).unwrap();
         set_offload(
             journal,

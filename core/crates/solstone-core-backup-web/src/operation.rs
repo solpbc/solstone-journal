@@ -26,6 +26,10 @@ pub struct Operation {
     pub kind: String,
     pub phase: String,
     pub reason_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guidance: Option<String>,
     pub recording_failure: Option<String>,
     pub portal_url: Option<String>,
 }
@@ -67,6 +71,8 @@ fn observe_cleanup(current: &mut Slot) {
 fn apply_terminal(current: &mut Slot, terminal: Terminal) {
     current.view.phase = terminal.phase;
     current.view.reason_code = terminal.reason_code;
+    current.view.detail = terminal.detail;
+    current.view.guidance = terminal.guidance;
     current.view.recording_failure = terminal.recording_failure;
     current.view.portal_url = None;
     current.nonce = None;
@@ -115,6 +121,8 @@ fn expire_hosted_wait_in_place(slot: &mut Slot) {
     }
     slot.view.phase = "error".into();
     slot.view.reason_code = Some("expired".into());
+    slot.view.detail = None;
+    slot.view.guidance = None;
     slot.view.recording_failure = None;
     slot.view.portal_url = None;
     slot.nonce = None;
@@ -284,6 +292,8 @@ pub fn begin(
         kind: kind.to_owned(),
         phase: running_phase(kind).to_owned(),
         reason_code: None,
+        detail: None,
+        guidance: None,
         recording_failure: None,
         portal_url,
     };
@@ -324,14 +334,19 @@ pub fn finish(
         Terminal {
             phase: phase.into(),
             reason_code,
+            detail: None,
+            guidance: None,
             recording_failure,
         },
     );
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Terminal {
     pub phase: String,
     pub reason_code: Option<String>,
+    pub detail: Option<String>,
+    pub guidance: Option<String>,
     pub recording_failure: Option<String>,
 }
 
@@ -341,13 +356,31 @@ impl Terminal {
     }
 
     pub fn error(reason_code: impl Into<String>) -> Self {
-        Self::phase("error", Some(reason_code.into()))
+        Self {
+            phase: "error".into(),
+            reason_code: Some(reason_code.into()),
+            detail: None,
+            guidance: None,
+            recording_failure: None,
+        }
+    }
+
+    pub fn tool_error(error: solstone_core_backup_runtime::ClosedToolError) -> Self {
+        Self {
+            phase: "error".into(),
+            reason_code: Some(error.to_string()),
+            detail: Some(error.detail().to_owned()),
+            guidance: Some(error.guidance().to_owned()),
+            recording_failure: None,
+        }
     }
 
     pub fn phase(phase: impl Into<String>, reason_code: Option<String>) -> Self {
         Self {
             phase: phase.into(),
             reason_code,
+            detail: None,
+            guidance: None,
             recording_failure: None,
         }
     }
@@ -360,6 +393,8 @@ impl Terminal {
         Self {
             phase: phase.into(),
             reason_code,
+            detail: None,
+            guidance: None,
             recording_failure,
         }
     }

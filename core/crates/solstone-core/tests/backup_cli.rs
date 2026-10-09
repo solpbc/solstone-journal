@@ -49,12 +49,10 @@ fn write_config(journal: &tempfile::TempDir, bytes: &[u8]) -> std::path::PathBuf
 fn restore_process_reports_tool_resolution_failure_without_pinning_restic_version() {
     let journal = tempfile::tempdir().expect("journal");
     let home = tempfile::tempdir().expect("home");
-    let missing_bundle = home.path().join("missing-restic.bz2");
     let input = r#"{"recovery_key":"0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ","repository":"s3:unreachable.example.invalid/journal","backend":"s3","credentials":{"access_key_id":"access","secret_access_key":"secret"}}"#;
     let restore = |args: &[&str]| {
         let mut child = command(&journal, args)
             .env("HOME", home.path())
-            .env("SOLSTONE_RESTIC_BUNDLE", &missing_bundle)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

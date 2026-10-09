@@ -2271,24 +2271,26 @@ mod tests {
         let work = root.join("work");
         let _ = fs::remove_dir_all(&root);
 
+        // restic and rclone ship in the package, so they are not in the runtime
+        // fetch set. parakeet-server still is, and a bundled copy of it collides.
         let mut inv = test_inventory();
         inv.entry.push(crate::inventory::Entry::WindowsNative {
             class: Some(crate::inventory::DeliveryClass::Component),
-            component: crate::inventory::WindowsNativeComponent::Restic,
-            member: "restic.exe".to_string(),
-            dest: "bin/restic.exe".to_string(),
+            component: crate::inventory::WindowsNativeComponent::Parakeet,
+            member: "parakeet-server.exe".to_string(),
+            dest: "bin/parakeet-server.exe".to_string(),
             mode: 0o755,
             targets: vec!["linux-x86_64".to_string()],
         });
 
         set_bundled_identity_override(
             "linux-x86_64",
-            "restic",
-            "0.19.0",
-            "https://github.com/restic/restic",
+            "parakeet-server",
+            "0.6.1",
+            "https://github.com/mudler/parakeet.cpp",
             vec![InputRef {
-                name: "restic.exe".to_string(),
-                sha256: crate::digest::sha256_hex(b"restic"),
+                name: "parakeet-server.exe".to_string(),
+                sha256: crate::digest::sha256_hex(b"parakeet"),
             }],
         );
 
@@ -2297,7 +2299,11 @@ mod tests {
             work: work.clone(),
             tree: vec![
                 ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
-                ("bin/restic.exe".into(), b"restic".to_vec(), 0o755),
+                (
+                    "bin/parakeet-server.exe".into(),
+                    b"parakeet".to_vec(),
+                    0o755,
+                ),
             ],
             version: version.to_owned(),
             basename: basename.clone(),
@@ -2326,8 +2332,8 @@ mod tests {
         clear_bundled_identity_override();
         let err = res.unwrap_err();
         assert!(
-            err.message.contains("mixed-delivery: restic"),
-            "expected mixed-delivery: restic, got {}",
+            err.message.contains("mixed-delivery: parakeet-server"),
+            "expected mixed-delivery: parakeet-server, got {}",
             err.message
         );
 

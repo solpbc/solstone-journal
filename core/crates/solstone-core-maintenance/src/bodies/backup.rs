@@ -47,10 +47,14 @@ pub(crate) fn backup_run_result(result: BackupResult) -> CliRun {
         "cleared_superseded" => "backup: claimed by another device; local settings were \
              cleared. run `solstone journal backup enable` to set up a new backup here."
             .to_owned(),
-        _ => format!(
-            "backup: error reason={}",
-            result.error_reason.as_deref().unwrap_or("None")
-        ),
+        _ => {
+            let reason = result.error_reason.as_deref().unwrap_or("None");
+            if let Some(detail) = result.detail.as_deref() {
+                format!("backup: error reason={reason} detail={detail}")
+            } else {
+                format!("backup: error reason={reason}")
+            }
+        }
     };
     routine_result(line, &result.status)
 }
@@ -379,6 +383,7 @@ mod tests {
             snapshot_id: None,
             error_reason: Some("binding_superseded".into()),
             unreadable: None,
+            detail: None,
         });
         assert_eq!(
             result.stdout,

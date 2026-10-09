@@ -7,12 +7,13 @@ use axum::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use solstone_core_artifact_download::{ByteDownload, ByteDownloadError};
 use solstone_core_backup_runtime::hosted_runtime::HttpError;
 use solstone_core_backup_runtime::{
     Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance, JournalMaintenanceError,
-    NativeRestoreRecorder, RESTIC_VERSION, ToolOutput, ToolRequest, ToolRunner,
+    NativeRestoreRecorder, ToolOutput, ToolRequest, ToolRunner,
 };
+
+const RESTIC_VERSION: &str = "0.19.0";
 use std::collections::VecDeque;
 use std::fs;
 use std::io;
@@ -440,7 +441,6 @@ async fn engine_routes_are_no_longer_native_refusals() {
         let restic = tempfile::tempdir().unwrap();
         crate::test_support::write_ready_restic(restic.path());
         let runner = ScriptRunner::with_outputs(vec![
-            version_output(),
             output(10, ""),
             output(0, ""),
             output(0, ""),
@@ -758,8 +758,8 @@ impl ToolRunner for ScriptRunner {
 struct PanicAfterVersionRunner(AtomicUsize);
 
 impl ToolRunner for PanicAfterVersionRunner {
-    fn run(&self, _: &ToolRequest<'_>) -> io::Result<ToolOutput> {
-        if self.0.fetch_add(1, Ordering::AcqRel) == 0 {
+    fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        if request.argv.first().and_then(|a| a.to_str()) == Some("version") {
             return Ok(version_output());
         }
         panic!("restore fixture panic")
@@ -867,14 +867,6 @@ impl HttpTransport for HttpScript {
     }
 }
 
-struct PanicDownload;
-
-impl ByteDownload for PanicDownload {
-    fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
-        panic!("must not download")
-    }
-}
-
 struct TestClock;
 
 impl Clock for TestClock {
@@ -936,21 +928,38 @@ fn engine_deps(
     journal_root: PathBuf,
     runner: Arc<dyn ToolRunner + Send + Sync>,
     http: Arc<dyn HttpTransport + Send + Sync>,
-    restic_install_dir: Option<PathBuf>,
+    executable: Option<PathBuf>,
 ) -> crate::BackupWebDeps {
     write_test_committed_identity(&journal_root);
+    let executable = match executable {
+        Some(path) => {
+            if path.is_file()
+                && path
+                    .file_name()
+                    .map_or(false, |name| name == "restic" || name == "restic.exe")
+            {
+                path.parent()
+                    .and_then(|p| p.parent())
+                    .map(|p| p.join("bin/solstone"))
+                    .unwrap_or(path)
+            } else if path.is_dir() {
+                path.join("bin/solstone")
+            } else {
+                path
+            }
+        }
+        None => PathBuf::from(""),
+    };
     crate::BackupWebDeps {
         journal_root,
         cache: corpus_cache(),
         operations: crate::operation::new_slot(),
         runner,
         http,
-        downloader: Arc::new(PanicDownload),
         clock: Arc::new(TestClock),
         journal_maintenance: Arc::new(OkMaintenance),
         restore_recorder: Arc::new(NativeRestoreRecorder),
-        restic_install_dir,
-        rclone_install_dir: None,
+        executable,
         portal_base: crate::test_support::PORTAL_BASE.into(),
         version: "test",
         handoff_poll_lease: Arc::new(AtomicBool::new(false)),
@@ -1068,18 +1077,11 @@ fn restore_summary() -> &'static str {
 }
 
 fn init_outputs() -> Vec<ToolOutput> {
-    vec![
-        version_output(),
-        output(10, ""),
-        output(0, ""),
-        output(0, ""),
-        output(0, ""),
-    ]
+    vec![output(10, ""), output(0, ""), output(0, ""), output(0, "")]
 }
 
 fn restore_outputs() -> Vec<ToolOutput> {
     vec![
-        version_output(),
         output(0, journal_catalog()),
         output(0, restore_summary()),
         output(0, ""),
@@ -1087,16 +1089,11 @@ fn restore_outputs() -> Vec<ToolOutput> {
 }
 
 fn teardown_outputs() -> Vec<ToolOutput> {
-    vec![
-        version_output(),
-        output(0, "[{\"id\":\"snap\"}]"),
-        output(0, ""),
-    ]
+    vec![output(0, "[{\"id\":\"snap\"}]"), output(0, "")]
 }
 
 fn rotate_outputs() -> Vec<ToolOutput> {
     vec![
-        version_output(),
         output(0, "[{\"id\":\"old\",\"current\":true}]"),
         output(0, ""),
         output(0, ""),
@@ -1153,13 +1150,31 @@ async fn engine_routes_return_running_while_restic_is_held() {
             kind: "offload_restore",
             phase: "restoring",
             disable: false,
-            outputs: vec![version_output()],
+            outputs: vec![output(0, "")],
         },
     ];
     for case in cases {
         let root = crate::test_support::root("healthy");
         if case.disable {
             disable_backup(root.path());
+        }
+        if case.kind == "offload_restore" {
+            let segment = root.path().join("chronicle/20260101/010000_001");
+            fs::create_dir_all(&segment).unwrap();
+            solstone_core_offload::append_offload_event(
+                root.path(),
+                "20260101",
+                "_default",
+                "010000_001",
+                "snapshot",
+                &[solstone_core_offload::OffloadFile {
+                    name: "new.webm".into(),
+                    bytes: 8,
+                    sha256: "d".repeat(64),
+                }],
+                1,
+            )
+            .unwrap();
         }
         let hold = Hold::new();
         let runner = ScriptRunner::with_hold(case.outputs, hold.clone());
@@ -1192,7 +1207,7 @@ async fn engine_routes_return_running_while_restic_is_held() {
 async fn enable_init_failure_leaves_disabled_and_errors() {
     let root = crate::test_support::root("healthy");
     disable_backup(root.path());
-    let runner = ScriptRunner::with_outputs(vec![version_output(), output(10, ""), output(12, "")]);
+    let runner = ScriptRunner::with_outputs(vec![output(10, ""), output(12, "")]);
     let (deps, _restic) = prepared(root.path().to_path_buf(), Arc::new(runner));
     let (status, _) = post_json(&deps, "/app/backup/enable", None).await;
     assert_eq!(status, 200);
@@ -1222,7 +1237,6 @@ async fn restore_success_records_snapshots_then_restore() {
     assert_eq!(
         runner.calls(),
         vec![
-            vec!["version".into()],
             vec!["snapshots".into(), "--json".into()],
             vec![
                 "restore".into(),
@@ -1243,7 +1257,7 @@ async fn restore_success_records_snapshots_then_restore() {
 #[tokio::test]
 async fn restore_empty_snapshots_records_journal_snapshot_not_found() {
     let root = crate::test_support::root("healthy");
-    let runner = ScriptRunner::with_outputs(vec![version_output(), output(0, "[]")]);
+    let runner = ScriptRunner::with_outputs(vec![output(0, "[]")]);
     let (deps, _restic) = prepared(root.path().to_path_buf(), Arc::new(runner));
     let _ = post_json(&deps, "/app/backup/restore", Some(restore_body())).await;
     let done = wait_terminal(&deps).await;
@@ -1260,7 +1274,7 @@ async fn restore_empty_snapshots_records_journal_snapshot_not_found() {
 #[tokio::test]
 async fn restore_adapter_records_invalid_key_once_after_tool_resolution() {
     let root = crate::test_support::root("healthy");
-    let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
     let (mut deps, _restic) = prepared(root.path().to_path_buf(), runner);
     let recorder = Arc::new(solstone_core_backup_runtime::test_support::RestoreRecorderSpy::new());
     deps.restore_recorder = recorder.clone();
@@ -1301,7 +1315,6 @@ async fn restore_worker_panic_is_restore_failed_and_records_once() {
 async fn restore_check_failure_is_degraded() {
     let root = crate::test_support::root("healthy");
     let runner = ScriptRunner::with_outputs(vec![
-        version_output(),
         output(0, journal_catalog()),
         output(0, restore_summary()),
         output(11, ""),
@@ -1316,11 +1329,7 @@ async fn restore_check_failure_is_degraded() {
 #[tokio::test]
 async fn teardown_byo_forgets_then_clears() {
     let root = crate::test_support::root("healthy");
-    let runner = ScriptRunner::with_outputs(vec![
-        version_output(),
-        output(0, "[{\"id\":\"snap\"}]"),
-        output(0, ""),
-    ]);
+    let runner = ScriptRunner::with_outputs(vec![output(0, "[{\"id\":\"snap\"}]"), output(0, "")]);
     let runner = Arc::new(runner);
     let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
     let (status, body) = post_json(&deps, "/app/backup/teardown", None).await;
@@ -1341,7 +1350,7 @@ async fn teardown_byo_forgets_then_clears() {
 #[tokio::test]
 async fn teardown_operated_wipes_via_http() {
     let root = crate::test_support::hosted_bound_root();
-    let runner = ScriptRunner::with_outputs(vec![version_output()]);
+    let runner = ScriptRunner::with_outputs(vec![]);
     let restic = tempfile::tempdir().unwrap();
     crate::test_support::write_ready_restic(restic.path());
     let http = HttpScript::with_responses(vec![
@@ -1371,7 +1380,7 @@ async fn teardown_operated_wipes_via_http() {
 async fn teardown_operated_keeps_binding_visible_while_held() {
     let root = crate::test_support::hosted_bound_root();
     let hold = Hold::new();
-    let runner = ScriptRunner::with_outputs(vec![version_output()]);
+    let runner = ScriptRunner::with_outputs(vec![]);
     let restic = tempfile::tempdir().unwrap();
     crate::test_support::write_ready_restic(restic.path());
     let http = Arc::new(
@@ -1417,7 +1426,7 @@ async fn teardown_operated_keeps_binding_visible_while_held() {
 #[tokio::test]
 async fn teardown_operated_superseded_binding_clears_local_state_without_wiping() {
     let root = crate::test_support::hosted_bound_root();
-    let runner = ScriptRunner::with_outputs(vec![version_output()]);
+    let runner = ScriptRunner::with_outputs(vec![]);
     let restic = tempfile::tempdir().unwrap();
     crate::test_support::write_ready_restic(restic.path());
     let http = Arc::new(HttpScript::with_responses(vec![Ok(HttpResponse {
@@ -1446,7 +1455,7 @@ async fn teardown_operated_superseded_binding_clears_local_state_without_wiping(
 #[tokio::test]
 async fn teardown_operated_invalid_binding_keeps_local_state() {
     let root = crate::test_support::hosted_bound_root();
-    let runner = ScriptRunner::with_outputs(vec![version_output()]);
+    let runner = ScriptRunner::with_outputs(vec![]);
     let restic = tempfile::tempdir().unwrap();
     crate::test_support::write_ready_restic(restic.path());
     let http = Arc::new(HttpScript::with_responses(vec![Ok(HttpResponse {
@@ -1476,7 +1485,6 @@ async fn teardown_operated_invalid_binding_keeps_local_state() {
 async fn rotate_does_not_echo_recovery_key() {
     let root = crate::test_support::root("healthy");
     let runner = ScriptRunner::with_outputs(vec![
-        version_output(),
         output(0, "[{\"id\":\"old\",\"current\":true}]"),
         output(0, ""),
         output(0, ""),
@@ -1524,7 +1532,7 @@ async fn destination_returns_distinct_reason_codes_from_cat_config() {
     let destination = json!({"repository":"s3:bucket","backend":"s3","credentials":{"access_key_id":"key","secret_access_key":"secret"}});
     for (code, reason) in [(0, "repo_exists"), (12, "auth_failed"), (99, "unreachable")] {
         let root = crate::test_support::root("fresh");
-        let runner = ScriptRunner::with_outputs(vec![version_output(), output(code, "")]);
+        let runner = ScriptRunner::with_outputs(vec![output(code, "")]);
         let runner = Arc::new(runner);
         let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
         let (status, body) =
@@ -1626,7 +1634,7 @@ async fn enable_hosted_returns_portal_url() {
     let root = crate::test_support::root("healthy");
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     let (status, body) = post_json(&deps, "/app/backup/enable-hosted", None).await;
     assert_eq!(status, 200);
@@ -1648,7 +1656,7 @@ async fn enable_hosted_verifies_refusals_and_busy_behavior() {
     let root = crate::test_support::root("healthy");
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     let (status, body) = post_json(&deps, "/app/backup/enable-hosted", None).await;
     assert_eq!(status, 200);
@@ -1693,7 +1701,7 @@ async fn enable_hosted_verifies_refusals_and_busy_behavior() {
     let missing_ca_root = crate::test_support::root("healthy");
     let (missing_deps, _restic) = prepared(
         missing_ca_root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     fs::remove_file(missing_ca_root.path().join("link/ca/cert.pem")).unwrap();
     let (status, body) = post_json(&missing_deps, "/app/backup/enable-hosted", None).await;
@@ -1705,7 +1713,7 @@ async fn enable_hosted_verifies_refusals_and_busy_behavior() {
     let corrupt_ca_root = crate::test_support::root("healthy");
     let (corrupt_deps, _restic) = prepared(
         corrupt_ca_root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     fs::write(
         corrupt_ca_root.path().join("link/ca/cert.pem"),
@@ -1721,7 +1729,7 @@ async fn enable_hosted_verifies_refusals_and_busy_behavior() {
     let missing_state_root = crate::test_support::root("healthy");
     let (missing_state_deps, _restic) = prepared(
         missing_state_root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     fs::remove_file(missing_state_root.path().join("link/state.json")).unwrap();
     let (status, body) = post_json(&missing_state_deps, "/app/backup/enable-hosted", None).await;
@@ -1733,7 +1741,7 @@ async fn enable_hosted_verifies_refusals_and_busy_behavior() {
     let mismatched_state_root = crate::test_support::root("healthy");
     let (mismatched_state_deps, _restic) = prepared(
         mismatched_state_root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     fs::write(
         mismatched_state_root.path().join("link/state.json"),
@@ -1755,7 +1763,7 @@ async fn enable_hosted_verifies_refusals_and_busy_behavior() {
         let fault_root = crate::test_support::root("healthy");
         let (fault_deps, _restic) = prepared(
             fault_root.path().to_path_buf(),
-            Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+            Arc::new(ScriptRunner::with_outputs(vec![])),
         );
         let guard = HomeReachFaultGuard::install(primitive);
         let (status, body) = post_json(&fault_deps, "/app/backup/enable-hosted", None).await;
@@ -1823,9 +1831,7 @@ async fn hosted_enable_hides_persisted_binding_until_done_while_credentials_are_
     let root = crate::test_support::root("healthy");
     disable_backup(root.path());
     let hold = Hold::new();
-    let mut outputs = init_outputs();
-    outputs.push(version_output());
-    let runner = ScriptRunner::with_outputs(outputs);
+    let runner = ScriptRunner::with_outputs(init_outputs());
     let restic = tempfile::tempdir().unwrap();
     crate::test_support::write_ready_restic(restic.path());
     let http = Arc::new(
@@ -1899,7 +1905,7 @@ async fn handoff_needs_subscription_is_terminal_without_binding() {
     let root = crate::test_support::root("healthy");
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     let (_, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
     let url = started["operation"]["portal_url"].as_str().unwrap();
@@ -1933,7 +1939,7 @@ async fn bound_restore_hosted_maps_broker_402_to_entitlement_error() {
     })]);
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         Arc::new(http),
         Some(restic.path().to_path_buf()),
     );
@@ -1956,7 +1962,7 @@ async fn unbound_restore_hosted_returns_portal_and_restoring_phase() {
     let root = crate::test_support::root("fresh");
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     let capability = prepare_unbound_restore(&deps).await;
     let keyed = key_unbound_restore(&deps, &capability).await;
@@ -1976,7 +1982,7 @@ async fn unbound_restore_hosted_requires_prepare_flow() {
     let root = crate::test_support::root("healthy");
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     let (status, body) = post_json(&deps, "/app/backup/restore-hosted", Some(json!({}))).await;
     assert_eq!(status, 409);
@@ -1988,7 +1994,7 @@ async fn status_reports_hosted_binding_without_token() {
     let root = crate::test_support::hosted_bound_root();
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     let (status, body) = get_status_json(&deps).await;
     assert_eq!(status, 200);
@@ -2029,7 +2035,7 @@ async fn offload_status_matches_builder_across_distinct_ledgers() {
     ] {
         let (deps, _restic) = prepared(
             journal.to_path_buf(),
-            Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+            Arc::new(ScriptRunner::with_outputs(vec![])),
         );
         let (status, body) = response_json(
             crate::routes_with_deps(deps.clone()),
@@ -2272,7 +2278,7 @@ async fn expired_hosted_wait_clears_busy_on_status_and_begin() {
     let root = crate::test_support::root("healthy");
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     let (status, body) = post_json(&deps, "/app/backup/enable-hosted", None).await;
     assert_eq!(status, 200);
@@ -2463,7 +2469,7 @@ async fn restore_prepare_does_not_allocate_an_enable_instance_id() {
     let enabled_root = crate::test_support::root("healthy");
     let (enabled_deps, _restic) = prepared(
         enabled_root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     crate::operation::reset_instance_allocations();
     let (status, _) = post_json(&enabled_deps, "/app/backup/enable-hosted", None).await;
@@ -3428,7 +3434,7 @@ async fn hosted_poll_gets_handoff_backup_nonce_without_instance() {
     let http = Arc::new(HttpScript::default());
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
@@ -3567,7 +3573,7 @@ async fn hosted_poll_configured_portal_base_preflight_blocks_or_allows_transport
         let restic = tempfile::tempdir().unwrap();
         crate::test_support::write_ready_restic(restic.path());
         let runner = Arc::new(ScriptRunner::with_outputs(if case.blocked {
-            vec![version_output()]
+            vec![]
         } else {
             init_outputs()
         }));
@@ -3667,7 +3673,7 @@ async fn hosted_poll_configured_portal_base_preflight_blocks_or_allows_transport
             case.name
         );
         assert_eq!(credentials_posts(&http), 1, "{}", case.name);
-        argv_in_order(&runner.argv_heads(), &["version", "cat", "init", "key"]);
+        argv_in_order(&runner.argv_heads(), &["cat", "init", "key"]);
         assert_no_sentinels(&done);
     }
 
@@ -3678,7 +3684,7 @@ async fn hosted_poll_configured_portal_base_preflight_blocks_or_allows_transport
         let root = crate::test_support::root("healthy");
         let restic = tempfile::tempdir().unwrap();
         crate::test_support::write_ready_restic(restic.path());
-        let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+        let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
         let http = Arc::new(
             HttpScript::with_responses(vec![Ok(credentials_response())]).with_poll_responses(vec![
                 Ok(needs_subscription_poll_body(&format!(
@@ -3776,7 +3782,7 @@ async fn hosted_poll_approved_enables_operated_mode() {
             .all(|request| request.method == "GET" && request.url == expected_poll)
     );
     assert_eq!(credentials_posts(&http), 1);
-    argv_in_order(&runner.argv_heads(), &["version", "cat", "init", "key"]);
+    argv_in_order(&runner.argv_heads(), &["cat", "init", "key"]);
 }
 
 #[tokio::test]
@@ -3784,7 +3790,7 @@ async fn hosted_poll_needs_subscription_is_terminal_without_binding() {
     let root = crate::test_support::root("healthy");
     let restic = tempfile::tempdir().unwrap();
     crate::test_support::write_ready_restic(restic.path());
-    let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
     let http = Arc::new(HttpScript::default().with_poll_responses(vec![Ok(
         needs_subscription_poll_body("https://services.solstone.app/services/backup"),
     )]));
@@ -3836,7 +3842,7 @@ async fn hosted_poll_subscribe_url_and_secrets_stay_off_status() {
     );
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
@@ -4013,7 +4019,7 @@ async fn hosted_poll_response_classes_retry_or_fail() {
         let runner = Arc::new(if case.init {
             ScriptRunner::with_outputs(init_outputs())
         } else {
-            ScriptRunner::with_outputs(vec![version_output()])
+            ScriptRunner::with_outputs(vec![])
         });
         let deps = engine_deps(
             root.path().to_path_buf(),
@@ -4054,7 +4060,7 @@ async fn hosted_poll_watchdog_expires_while_get_is_held() {
     let http = Arc::new(HttpScript::default().with_hold(hold.clone()));
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
@@ -4088,7 +4094,7 @@ async fn hosted_poll_needs_subscription_rejects_non_https_subscribe_url() {
     )]));
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http,
         Some(restic.path().to_path_buf()),
     );
@@ -4185,7 +4191,6 @@ async fn hosted_poll_restore_failure_records_without_publishing_destination_or_r
     let deps = engine_deps(
         root.path().to_path_buf(),
         Arc::new(ScriptRunner::with_outputs(vec![
-            version_output(),
             output(0, journal_catalog()),
             output(1, ""),
         ])),
@@ -4218,7 +4223,7 @@ async fn hosted_poll_stale_generation_cannot_persist_binding() {
     );
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
@@ -4332,7 +4337,7 @@ async fn hosted_poll_get_timeout_is_bounded_by_remaining_ttl() {
     let http = Arc::new(HttpScript::default());
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
@@ -4371,7 +4376,7 @@ async fn hosted_poll_broker_unreachable_matches_local_handoff_broker_unreachable
         if poll_approved {
             script = script.with_poll_responses(vec![Ok(approved_poll_response())]);
         }
-        let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+        let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
         let http = Arc::new(script);
         let deps = engine_deps(
             root.path().to_path_buf(),
@@ -4402,7 +4407,7 @@ async fn hosted_poll_broker_unreachable_matches_local_handoff_broker_unreachable
         }
         let done = wait_terminal(&deps).await;
         assert!(!crate::operation::is_busy(&deps.operations));
-        assert_runner_argv(&runner, &[vec!["version".into()]]);
+        assert_runner_argv(&runner, &[]);
         assert_credentials_requests(&http, Some("operated"));
         assert_no_temporary_credentials_in_journal(root.path());
         let binding = solstone_core_backup::load_hosted_binding(root.path());
@@ -4452,7 +4457,7 @@ async fn hosted_poll_broker_error_matches_local_handoff_broker_error_contract() 
         disable_backup(root.path());
         let restic = tempfile::tempdir().unwrap();
         crate::test_support::write_ready_restic(restic.path());
-        let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+        let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
         let mut script = HttpScript::with_responses(vec![Ok(HttpResponse {
             status: 500,
             headers: vec![],
@@ -4482,7 +4487,7 @@ async fn hosted_poll_broker_error_matches_local_handoff_broker_error_contract() 
         }
         let done = wait_terminal(&deps).await;
         assert!(!crate::operation::is_busy(&deps.operations));
-        assert_runner_argv(&runner, &[vec!["version".into()]]);
+        assert_runner_argv(&runner, &[]);
         assert_credentials_requests(&http, Some("operated"));
         assert_no_temporary_credentials_in_journal(root.path());
         let restic_calls = runner.calls.lock().unwrap().len();
@@ -4512,7 +4517,7 @@ async fn hosted_poll_broker_error_matches_local_handoff_broker_error_contract() 
         assert_eq!(body["hosted"]["bound"], false, "{label}");
         assert!(!body.to_string().contains("broker-token-secret"), "{label}");
         assert_eq!(creds, 1, "{label}");
-        assert_eq!(restic, 1, "{label}");
+        assert_eq!(restic, 0, "{label}");
     }
     assert_eq!(poll["operation"]["phase"], local["operation"]["phase"]);
     assert_eq!(
@@ -4561,7 +4566,7 @@ async fn hosted_poll_watchdog_expiry_is_proven_by_direct_slot_lock_not_observati
     );
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
@@ -4630,7 +4635,7 @@ async fn handoff_needs_subscription_missing_field_is_failed() {
     let root = crate::test_support::root("healthy");
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     let (_, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
     let nonce = portal_nonce(&started);
@@ -4654,7 +4659,7 @@ async fn hosted_poll_approved_wrong_origin_is_failed() {
         Arc::new(HttpScript::default().with_poll_responses(vec![Ok(wrong_origin_poll_response())]));
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
@@ -4671,7 +4676,7 @@ async fn handoff_approved_wrong_origin_is_rejected() {
     let root = crate::test_support::root("healthy");
     let restic = tempfile::tempdir().unwrap();
     crate::test_support::write_ready_restic(restic.path());
-    let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
     let http = Arc::new(HttpScript::default());
     let deps = engine_deps(
         root.path().to_path_buf(),
@@ -4717,7 +4722,7 @@ async fn hosted_poll_wrong_origin_matches_local_wrong_origin_contract() {
         let http = Arc::new(script);
         let deps = engine_deps(
             root.path().to_path_buf(),
-            Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+            Arc::new(ScriptRunner::with_outputs(vec![])),
             http.clone(),
             Some(restic.path().to_path_buf()),
         );
@@ -4765,7 +4770,7 @@ async fn hosted_poll_needs_subscription_rejects_wrong_origin_subscribe_url() {
     )]));
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http,
         Some(restic.path().to_path_buf()),
     );
@@ -4786,7 +4791,7 @@ async fn hosted_poll_needs_subscription_rejects_userinfo_subscribe_url() {
     )]));
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http,
         Some(restic.path().to_path_buf()),
     );
@@ -4801,7 +4806,7 @@ async fn handoff_needs_subscription_rejects_non_https_subscribe_url() {
     let root = crate::test_support::root("healthy");
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
     );
     let (_, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
     let nonce = portal_nonce(&started);
@@ -4830,7 +4835,7 @@ async fn hosted_poll_needs_subscription_matches_local_needs_subscription_contrac
         }
         let deps = engine_deps(
             root.path().to_path_buf(),
-            Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+            Arc::new(ScriptRunner::with_outputs(vec![])),
             Arc::new(script),
             Some(restic.path().to_path_buf()),
         );
@@ -4883,7 +4888,7 @@ async fn hosted_poll_second_get_is_resource_bounded_and_lease_releases_on_comple
     );
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
@@ -4956,7 +4961,7 @@ async fn hosted_poll_binding_write_failure_matches_local_handoff_contract() {
         fs::create_dir_all(root.path().join("backup/hosted/binding.json")).unwrap();
         let restic = tempfile::tempdir().unwrap();
         crate::test_support::write_ready_restic(restic.path());
-        let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+        let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
         let mut script = HttpScript::with_responses(vec![]);
         if poll_approved {
             script = script.with_poll_responses(vec![Ok(approved_poll_response())]);
@@ -5028,7 +5033,6 @@ async fn hosted_poll_repository_init_failure_matches_local_handoff_contract() {
         let restic = tempfile::tempdir().unwrap();
         crate::test_support::write_ready_restic(restic.path());
         let runner = Arc::new(ScriptRunner::with_outputs(vec![
-            version_output(),
             output(10, ""),
             output(12, ""),
         ]));
@@ -5059,11 +5063,7 @@ async fn hosted_poll_repository_init_failure_matches_local_handoff_contract() {
         assert!(!crate::operation::is_busy(&deps.operations));
         assert_runner_argv(
             &runner,
-            &[
-                vec!["version".into()],
-                vec!["cat".into(), "config".into()],
-                vec!["init".into()],
-            ],
+            &[vec!["cat".into(), "config".into()], vec!["init".into()]],
         );
         assert_credentials_requests(&http, Some("operated"));
         assert_no_temporary_credentials_in_journal(root.path());
@@ -5090,7 +5090,7 @@ async fn hosted_poll_repository_init_failure_matches_local_handoff_contract() {
         );
         assert_eq!(body["hosted"]["bound"], false, "{label}");
         assert_eq!(creds, 1, "{label}");
-        assert_eq!(restic, 3, "{label}");
+        assert_eq!(restic, 2, "{label}");
         assert_ne!(body["mode"], "operated", "{label}");
         assert_eq!(body["enabled"], false, "{label}");
         let rendered = body.to_string();
@@ -5116,7 +5116,6 @@ async fn hosted_poll_restore_failure_matches_local_handoff_contract() {
         let restic = tempfile::tempdir().unwrap();
         crate::test_support::write_ready_restic(restic.path());
         let runner = Arc::new(ScriptRunner::with_outputs(vec![
-            version_output(),
             output(0, journal_catalog()),
             output(1, ""),
         ]));
@@ -5161,7 +5160,6 @@ async fn hosted_poll_restore_failure_matches_local_handoff_contract() {
         assert_runner_argv(
             &runner,
             &[
-                vec!["version".into()],
                 vec!["snapshots".into(), "--json".into()],
                 vec![
                     "restore".into(),
@@ -5200,7 +5198,7 @@ async fn hosted_poll_restore_failure_matches_local_handoff_contract() {
             "{label}"
         );
         assert_eq!(creds, 1, "{label}");
-        assert_eq!(restic, 3, "{label}");
+        assert_eq!(restic, 2, "{label}");
         assert_ne!(body["mode"], "operated", "{label}");
         assert!(!body.to_string().contains("broker-token-secret"), "{label}");
         assert!(
@@ -5354,7 +5352,7 @@ async fn hosted_secrets_and_binding_mode_are_never_exposed() {
         let runner = if scenario.init {
             ScriptRunner::with_outputs(init_outputs())
         } else {
-            ScriptRunner::with_outputs(vec![version_output()])
+            ScriptRunner::with_outputs(vec![])
         };
         let deps = engine_deps(
             root.path().to_path_buf(),

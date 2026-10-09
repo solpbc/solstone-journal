@@ -502,19 +502,17 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Notice)
         }
 
-        (WindowsNativeComponent::Restic, "bin/restic.exe") => {
+        (WindowsNativeComponent::Restic, "lib/solstone-restic/restic.exe") => {
             Ok(WindowsNativeMapping::Component("restic"))
         }
-        (WindowsNativeComponent::Restic, "share/licenses/restic/LICENSE")
-        | (WindowsNativeComponent::Restic, "share/provenance/restic/archive.json") => {
+        (WindowsNativeComponent::Restic, "share/provenance/restic/archive.json") => {
             Ok(WindowsNativeMapping::Notice)
         }
 
-        (WindowsNativeComponent::Rclone, "bin/rclone.exe") => {
+        (WindowsNativeComponent::Rclone, "lib/solstone-rclone/rclone.exe") => {
             Ok(WindowsNativeMapping::Component("rclone"))
         }
-        (WindowsNativeComponent::Rclone, "share/licenses/rclone/COPYING")
-        | (WindowsNativeComponent::Rclone, "share/provenance/rclone/archive.json") => {
+        (WindowsNativeComponent::Rclone, "share/provenance/rclone/archive.json") => {
             Ok(WindowsNativeMapping::Notice)
         }
 
@@ -2782,7 +2780,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
-        assert_eq!(inv.entry.len(), 160);
+        assert_eq!(inv.entry.len(), 166);
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }

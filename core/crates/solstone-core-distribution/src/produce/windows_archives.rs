@@ -42,15 +42,13 @@ pub(crate) struct MemberPin {
 }
 
 pub fn admit_restic(archive: &Path, license: &Path) -> Result<AdmittedArchiveInput, String> {
-    let mut members = admit_zip(archive, &RESTIC)?;
-    members.insert(
-        "LICENSE".into(),
-        pinned_file(
-            license,
-            1345,
-            "6f08a01a9fab5b24e139a09f15cc24a73087c7bc09e3bacf099fdf2d767bf897",
-        )?,
-    );
+    let members = admit_zip(archive, &RESTIC)?;
+    // licence-tree publishes this text; the pin still rejects a different file.
+    let _ = pinned_file(
+        license,
+        1345,
+        "6f08a01a9fab5b24e139a09f15cc24a73087c7bc09e3bacf099fdf2d767bf897",
+    )?;
     Ok(AdmittedArchiveInput {
         component: WindowsNativeComponent::Restic,
         members,
@@ -58,15 +56,13 @@ pub fn admit_restic(archive: &Path, license: &Path) -> Result<AdmittedArchiveInp
 }
 
 pub fn admit_rclone(archive: &Path, license: &Path) -> Result<AdmittedArchiveInput, String> {
-    let mut members = admit_zip(archive, &RCLONE)?;
-    members.insert(
-        "COPYING".into(),
-        pinned_file(
-            license,
-            1095,
-            "8cd2e9e750b90a04b7d82dbbca3930c696ae0309d7c10464f90a44f45754cd04",
-        )?,
-    );
+    let members = admit_zip(archive, &RCLONE)?;
+    // licence-tree publishes this text; the pin still rejects a different file.
+    let _ = pinned_file(
+        license,
+        1095,
+        "8cd2e9e750b90a04b7d82dbbca3930c696ae0309d7c10464f90a44f45754cd04",
+    )?;
     Ok(AdmittedArchiveInput {
         component: WindowsNativeComponent::Rclone,
         members,

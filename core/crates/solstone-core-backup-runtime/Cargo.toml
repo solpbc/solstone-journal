@@ -9,8 +9,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[lints]
-workspace = true
+# std::env::set_var is unsafe. The fallback-plant tests are the only callers,
+# and each one carries its own allow.
+[lints.rust]
+unsafe_code = "deny"
 
 [features]
 full-tests = []
@@ -19,7 +21,6 @@ test-hooks = []
 test-support = []
 
 [dependencies]
-bzip2-rs.workspace = true
 chrono.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
@@ -29,9 +30,7 @@ serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 ureq.workspace = true
-zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
-solstone-core-artifact-download.workspace = true
-solstone-core-assets.workspace = true
+solstone-core-installed-payload.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-body-rebuild.workspace = true
 solstone-core-indexer-store.workspace = true

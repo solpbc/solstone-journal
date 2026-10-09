@@ -82,13 +82,22 @@ pub fn unit_id(unit: &str) -> Option<&'static str> {
 
 /// Compiled bundled catalog-unit IDs per target.
 ///
-/// POSIX targets bundle: ced-engine, ced-model, nvattest.
+/// POSIX targets bundle: ced-engine, ced-model, restic, rclone, nvattest.
 /// Windows bundles: llama-server, parakeet-server, parakeet-model, ced-engine, ced-model,
 /// restic, rclone, nvattest.
 static COMPILED_BUNDLED_IDS: &[(&str, &[&str])] = &[
-    ("linux-x86_64", &["ced-engine", "ced-model", "nvattest"]),
-    ("linux-aarch64", &["ced-engine", "ced-model", "nvattest"]),
-    ("macos-arm64", &["ced-engine", "ced-model", "nvattest"]),
+    (
+        "linux-x86_64",
+        &["ced-engine", "ced-model", "restic", "rclone", "nvattest"],
+    ),
+    (
+        "linux-aarch64",
+        &["ced-engine", "ced-model", "restic", "rclone", "nvattest"],
+    ),
+    (
+        "macos-arm64",
+        &["ced-engine", "ced-model", "restic", "rclone", "nvattest"],
+    ),
     (
         "windows-x86_64",
         &[
@@ -600,8 +609,6 @@ mod tests {
         "assets/parakeet-model/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf",
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-cpu-x64.tar.gz",
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-x64.tar.gz",
-        "assets/rclone/1.74.4/rclone-v1.74.4-linux-amd64.zip",
-        "assets/restic/0.19.0/restic_0.19.0_linux_amd64.bz2",
         "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-amd64-sol1.tar.gz",
     ];
 
@@ -612,8 +619,6 @@ mod tests {
         "assets/parakeet-model/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf",
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-cpu-arm64.tar.gz",
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-arm64.tar.gz",
-        "assets/rclone/1.74.4/rclone-v1.74.4-linux-arm64.zip",
-        "assets/restic/0.19.0/restic_0.19.0_linux_arm64.bz2",
         "runtimes/llama-cuda13/b11429/llama-b11429-bin-linux-cuda13-arm64-sol1.tar.gz",
     ];
 
@@ -644,8 +649,6 @@ mod tests {
         "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/config.json",
         "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/parakeet_v3_vocab.json",
         "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/parakeet_vocab.json",
-        "assets/rclone/1.74.4/rclone-v1.74.4-osx-arm64.zip",
-        "assets/restic/0.19.0/restic_0.19.0_darwin_arm64.bz2",
     ];
 
     const ORACLE_WINDOWS_X86_64: &[&str] = &[];
@@ -673,12 +676,40 @@ mod tests {
     }
 
     #[test]
-    fn restic_override_removes_restic_keys_from_set_while_oracle_preserves_them() {
-        with_bundled_ids_override("linux-x86_64", &["restic"], || {
-            let set = runtime_fetch_set("linux-x86_64").expect("set");
-            assert!(!set.iter().any(|f| f.unit() == "restic"));
-            assert!(ORACLE_LINUX_X86_64.iter().any(|k| k.contains("restic")));
-        });
+    fn packaged_restic_and_rclone_leave_the_fetch_set() {
+        // The package ships these members, so the real set omits them. With nothing
+        // bundled, each target still composes exactly one catalog candidate.
+        let expected = [
+            (
+                "linux-x86_64",
+                "assets/restic/0.19.0/restic_0.19.0_linux_amd64.bz2",
+                "assets/rclone/1.74.4/rclone-v1.74.4-linux-amd64.zip",
+            ),
+            (
+                "linux-aarch64",
+                "assets/restic/0.19.0/restic_0.19.0_linux_arm64.bz2",
+                "assets/rclone/1.74.4/rclone-v1.74.4-linux-arm64.zip",
+            ),
+            (
+                "macos-arm64",
+                "assets/restic/0.19.0/restic_0.19.0_darwin_arm64.bz2",
+                "assets/rclone/1.74.4/rclone-v1.74.4-osx-arm64.zip",
+            ),
+        ];
+        for (target, restic_key, rclone_key) in expected {
+            let set = runtime_fetch_set(target).expect("fetch set");
+            assert!(!set.iter().any(|f| f.unit() == "restic"), "{target}");
+            assert!(!set.iter().any(|f| f.unit() == "rclone"), "{target}");
+            with_bundled_ids_override(target, &[], || {
+                let set = runtime_fetch_set(target).expect("fetch set");
+                let restic: Vec<_> = set.iter().filter(|f| f.unit() == "restic").collect();
+                let rclone: Vec<_> = set.iter().filter(|f| f.unit() == "rclone").collect();
+                assert_eq!(restic.len(), 1, "{target}");
+                assert_eq!(rclone.len(), 1, "{target}");
+                assert_eq!(restic[0].origin_key(), restic_key);
+                assert_eq!(rclone[0].origin_key(), rclone_key);
+            });
+        }
     }
 
     #[test]

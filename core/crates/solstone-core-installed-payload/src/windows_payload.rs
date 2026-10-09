@@ -62,8 +62,8 @@ pub const WINDOWS_PARAKEET_SERVER: &str = "bin/parakeet-server.exe";
 pub const WINDOWS_PARAKEET_MODEL: &str =
     "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf";
 /// The backup tools are verified package executables, never runtime downloads.
-pub const WINDOWS_RESTIC_WORKER: &str = "bin/restic.exe";
-pub const WINDOWS_RCLONE_WORKER: &str = "bin/rclone.exe";
+pub const WINDOWS_RESTIC_WORKER: &str = "lib/solstone-restic/restic.exe";
+pub const WINDOWS_RCLONE_WORKER: &str = "lib/solstone-rclone/rclone.exe";
 /// Required object detection uses the package engine and the bundled model.
 pub const WINDOWS_RFDETR_WORKER: &str = "bin/rfdetr-cli.exe";
 pub const WINDOWS_RFDETR_MODEL: &str =

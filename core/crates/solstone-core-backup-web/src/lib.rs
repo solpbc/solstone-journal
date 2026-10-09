@@ -20,7 +20,6 @@ use axum::{
 };
 use chrono::{Datelike, Utc};
 use serde_json::{Map, Value, json};
-use solstone_core_artifact_download::{ByteDownload, UreqByteDownload};
 use solstone_core_backup::{
     Destination, HostedBinding, generate_daily_key, get_destination, get_keys, load_hosted_binding,
     save_hosted_binding, set_destination, set_enabled, set_mode,
@@ -28,11 +27,12 @@ use solstone_core_backup::{
 use solstone_core_backup_runtime::hosted_runtime::fetch_hosted_credentials;
 use solstone_core_backup_runtime::repo::RepoError;
 use solstone_core_backup_runtime::{
-    BackupServices, Clock, HttpTransport, JournalMaintenance, NativeJournalMaintenance,
-    NativeRestoreRecorder, RestoreDraft, RestoreOutcome, RestoreRecorder, SystemToolRunner,
-    ToolInstallDirs, ToolRunner, UreqHttpTransport, init_repository, operated_destination,
-    publish_restore_outcome, reason_for_returncode, resolve_operational_tools, restore_journal,
-    rotate_recovery_key, teardown_backup, validate_destination,
+    BackupServices, Clock, ClosedToolError, HttpTransport, JournalMaintenance,
+    NativeJournalMaintenance, NativeRestoreRecorder, ResolvedTools, RestoreDraft, RestoreOutcome,
+    RestoreRecorder, SystemToolRunner, ToolRunner, UreqHttpTransport, init_repository,
+    operated_destination, publish_restore_outcome, reason_for_returncode,
+    resolve_operational_tools, restore_journal, rotate_recovery_key, teardown_backup,
+    validate_destination,
 };
 use solstone_core_offload::{restore_all_offload, restore_offload_day};
 
@@ -63,12 +63,10 @@ pub struct BackupWebDeps {
     pub operations: SharedOperationSlot,
     pub runner: Arc<dyn ToolRunner + Send + Sync>,
     pub http: Arc<dyn HttpTransport + Send + Sync>,
-    pub downloader: Arc<dyn ByteDownload + Send + Sync>,
     pub clock: Arc<dyn Clock + Send + Sync>,
     pub journal_maintenance: Arc<dyn JournalMaintenance + Send + Sync>,
     pub restore_recorder: Arc<dyn RestoreRecorder + Send + Sync>,
-    pub restic_install_dir: Option<PathBuf>,
-    pub rclone_install_dir: Option<PathBuf>,
+    pub executable: PathBuf,
     pub portal_base: String,
     pub version: &'static str,
     pub handoff_poll_lease: Arc<AtomicBool>,
@@ -98,23 +96,14 @@ impl BackupWebDeps {
             operations: operation::new_slot(),
             runner: Arc::new(SystemToolRunner),
             http: Arc::new(UreqHttpTransport),
-            downloader: Arc::new(UreqByteDownload),
             clock: Arc::new(ProductionClock),
             journal_maintenance: Arc::new(NativeJournalMaintenance),
             restore_recorder: Arc::new(NativeRestoreRecorder),
-            restic_install_dir: None,
-            rclone_install_dir: None,
+            executable: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("")),
             portal_base: "https://services.solstone.app".into(),
             version: env!("CARGO_PKG_VERSION"),
             handoff_poll_lease: Arc::new(AtomicBool::new(false)),
             restore_prepare: restore_prepare::new_shared(),
-        }
-    }
-
-    fn install_dirs(&self) -> ToolInstallDirs<'_> {
-        ToolInstallDirs {
-            restic: self.restic_install_dir.as_deref(),
-            rclone: self.rclone_install_dir.as_deref(),
         }
     }
 }
@@ -585,15 +574,12 @@ fn init_and_enable(
     })
 }
 
-fn resolve_tools(
-    deps: &BackupWebDeps,
-) -> Result<solstone_core_backup_runtime::ResolvedTools, String> {
+fn resolve_tools(deps: &BackupWebDeps) -> Result<ResolvedTools, ClosedToolError> {
     resolve_operational_tools(
         deps.runner.as_ref(),
-        deps.downloader.as_ref(),
         &deps.journal_root,
         false,
-        deps.install_dirs(),
+        &deps.executable,
     )
 }
 
@@ -669,7 +655,7 @@ async fn enable_backup(deps: BackupWebDeps) -> axum::response::Response {
     spawn_backup_worker(deps.clone(), generation, move |worker| {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
-            Err(reason) => return Terminal::error(reason),
+            Err(error) => return Terminal::tool_error(error),
         };
         let destination = match get_destination(&worker.journal_root) {
             Ok(Some(destination)) => destination,
@@ -819,13 +805,15 @@ async fn set_backup_destination(deps: BackupWebDeps, body: Bytes) -> axum::respo
     };
     let tools = match resolve_tools(&deps) {
         Ok(tools) => tools,
-        Err(reason) => {
+        Err(error) => {
             return destination_status_response(
                 &deps,
                 false,
                 false,
-                &reason,
-                "could not prepare the backup tool",
+                &error.to_string(),
+                error.guidance(),
+                Some(error.detail()),
+                Some(error.guidance()),
             );
         }
     };
@@ -842,6 +830,8 @@ async fn set_backup_destination(deps: BackupWebDeps, body: Bytes) -> axum::respo
             status.repo_exists,
             status.reason_code,
             status.message,
+            None,
+            None,
         ),
         Err(_) => internal_error(),
     }
@@ -853,15 +843,24 @@ fn destination_status_response(
     repo_exists: bool,
     reason_code: &str,
     message: &str,
+    detail: Option<&str>,
+    guidance: Option<&str>,
 ) -> axum::response::Response {
     match status::status(&deps.journal_root, &deps.operations) {
         Ok(mut value) => {
-            value["destination_status"] = json!({
+            let mut status_obj = json!({
                 "reachable": reachable,
                 "repo_exists": repo_exists,
                 "reason_code": reason_code,
                 "message": message,
             });
+            if let Some(detail) = detail {
+                status_obj["detail"] = json!(detail);
+            }
+            if let Some(guidance) = guidance {
+                status_obj["guidance"] = json!(guidance);
+            }
+            value["destination_status"] = status_obj;
             response::success(value)
         }
         Err(_) => internal_error(),
@@ -876,7 +875,7 @@ async fn rotate_key(deps: BackupWebDeps) -> axum::response::Response {
     spawn_backup_worker(deps.clone(), started.generation, move |worker| {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
-            Err(reason) => return Terminal::error(reason),
+            Err(error) => return Terminal::tool_error(error),
         };
         let result = rotate_recovery_key(&worker.journal_root, &services(&worker, &tools));
         match result.status.as_str() {
@@ -899,7 +898,7 @@ async fn teardown_route(deps: BackupWebDeps) -> axum::response::Response {
     spawn_backup_worker(deps.clone(), started.generation, move |worker| {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
-            Err(reason) => return Terminal::error(reason),
+            Err(error) => return Terminal::tool_error(error),
         };
         let result = teardown_backup(&worker.journal_root, &services(&worker, &tools));
         match result.status.as_str() {
@@ -935,7 +934,12 @@ async fn restore_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
         panic::catch_unwind(AssertUnwindSafe(|| {
             let tools = match resolve_tools(&worker) {
                 Ok(tools) => tools,
-                Err(reason) => return publish_restore_error(&worker, &reason),
+                Err(error) => {
+                    let mut terminal = publish_restore_error(&worker, &error.to_string());
+                    terminal.detail = Some(error.detail().to_owned());
+                    terminal.guidance = Some(error.guidance().to_owned());
+                    return terminal;
+                }
             };
             map_restore(restore_journal(
                 &worker.journal_root,
@@ -1101,7 +1105,12 @@ fn bound_restore_hosted_inner(
 ) -> Terminal {
     let tools = match resolve_tools(deps) {
         Ok(tools) => tools,
-        Err(reason) => return publish_restore_error(deps, &reason),
+        Err(error) => {
+            let mut terminal = publish_restore_error(deps, &error.to_string());
+            terminal.detail = Some(error.detail().to_owned());
+            terminal.guidance = Some(error.guidance().to_owned());
+            return terminal;
+        }
     };
     let credentials =
         match fetch_hosted_credentials(deps.http.as_ref(), &binding, "maintenance", deps.version) {
@@ -1138,7 +1147,7 @@ async fn offload_restore_route(deps: BackupWebDeps, body: Bytes) -> axum::respon
     spawn_backup_worker(deps.clone(), started.generation, move |worker| {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
-            Err(reason) => return Terminal::error(reason),
+            Err(error) => return Terminal::tool_error(error),
         };
         let result = if all {
             restore_all_offload(&worker.journal_root, &services(&worker, &tools))
@@ -1337,7 +1346,7 @@ pub(crate) fn consume_hosted(
 ) -> Terminal {
     let tools = match resolve_tools(deps) {
         Ok(tools) => tools,
-        Err(reason) => return Terminal::error(reason),
+        Err(error) => return Terminal::tool_error(error),
     };
     let credentials = match fetch_hosted_credentials(
         deps.http.as_ref(),
@@ -1392,5 +1401,7 @@ pub(crate) fn consume_hosted(
 
 #[cfg(test)]
 mod corpus;
+#[cfg(test)]
+mod resolution_tests;
 #[cfg(test)]
 mod test_support;

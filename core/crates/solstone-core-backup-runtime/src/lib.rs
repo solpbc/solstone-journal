@@ -21,9 +21,6 @@ pub mod destination;
 pub mod destination_admission;
 pub mod engine;
 pub mod hosted_runtime;
-pub mod install;
-pub mod rclone_install;
-pub mod readiness;
 pub mod repo;
 pub mod resolve;
 pub mod restore;
@@ -36,7 +33,10 @@ pub mod teardown;
 pub use schedule::effective_backup_schedule;
 #[cfg(windows)]
 pub mod windows_cleanup;
-mod windows_tool;
+#[cfg(windows)]
+pub mod windows_tool;
+#[cfg(windows)]
+pub use windows_tool::verify_package_and_get_tool;
 
 pub use destination::{DestinationStatus, validate_destination};
 #[cfg(any(test, feature = "test-hooks", feature = "test-support"))]
@@ -70,16 +70,10 @@ pub use hosted_runtime::{
     HttpRequest, HttpResponse, HttpTransport, UreqHttpTransport, fetch_hosted_credentials,
     hosted_append_only_session, hosted_session, operated_destination, operated_repository,
 };
-pub use install::{RESTIC_LICENSE_TEXT, ensure_restic};
-pub use rclone_install::ensure_rclone;
-pub use readiness::{
-    ARCH_ALIASES, LINUX_TOOL_DIR, MAC_TOOL_DIR, RESTIC_BUNDLE_ENV, RESTIC_BZ2_SHA256,
-    RESTIC_SCHEMA_VERSION, RESTIC_VERSION, select_restic_asset,
-};
 pub use repo::{
     ResticKeyError, add_recovery_key, capture_current_key_id, init_repository, remove_key,
 };
-pub use resolve::{ResolvedTools, ToolInstallDirs, resolve_operational_tools, resolve_tools};
+pub use resolve::{ResolvedTools, resolve_operational_tools, resolve_restic_member, resolve_tools};
 pub use restore::{RestoreDraft, RestoreOutcome, publish_restore_outcome, restore_journal};
 pub use rotation::{RotationResult, rotate_recovery_key};
 pub use runner::{

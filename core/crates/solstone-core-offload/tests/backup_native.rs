@@ -101,7 +101,9 @@ fn stage_payload(test_name: &str, fake_tools: bool) {
                 digest
             );
         }
-        fs::copy(source, root.join(format!("bin/{tool}{}", suffix()))).unwrap();
+        let dest = root.join(format!("lib/solstone-{tool}/{tool}{}", suffix()));
+        fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        fs::copy(source, &dest).unwrap();
     }
     let commit = std::env::var("SOLSTONE_NATIVE_SOURCE_COMMIT").expect("source commit");
     let lock = std::env::var("SOLSTONE_NATIVE_LOCK_SHA256").expect("Cargo.lock digest");
@@ -248,8 +250,8 @@ fn backup_native_round_trip() {
     let exe = std::env::current_exe().unwrap();
     let package = exe.parent().unwrap().parent().unwrap();
     verify_windows_payload(package).expect("signed fixture admission");
-    let restic = package.join(format!("bin/restic{}", suffix()));
-    let rclone = package.join(format!("bin/rclone{}", suffix()));
+    let restic = package.join(format!("lib/solstone-restic/restic{}", suffix()));
+    let rclone = package.join(format!("lib/solstone-rclone/rclone{}", suffix()));
     // Restic's existing .tmp* exclusion also matches ancestor directories.
     let tmp = tempfile::Builder::new()
         .prefix("native-backup-data-")

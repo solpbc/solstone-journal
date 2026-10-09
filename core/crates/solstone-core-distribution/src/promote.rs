@@ -537,7 +537,10 @@ fn notarize_macos_tree(
     checkpoint(request, PromoteStep::Notarize)
 }
 
-fn render_installed_manifest(request: &PromoteRequest, stage: &Path) -> Result<(), PromoteError> {
+pub(crate) fn render_installed_manifest(
+    request: &PromoteRequest,
+    stage: &Path,
+) -> Result<(), PromoteError> {
     let target = installed_target(request)?;
     let bytes = solstone_core_installed_payload::render_installed_payload(
         stage,
