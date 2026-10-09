@@ -30,9 +30,9 @@ use solstone_core_backup_runtime::{
     BackupServices, Clock, ClosedToolError, HttpTransport, JournalMaintenance,
     NativeJournalMaintenance, NativeRestoreRecorder, ResolvedTools, RestoreDraft, RestoreOutcome,
     RestoreRecorder, SystemToolRunner, ToolRunner, UreqHttpTransport, init_repository,
-    operated_destination, publish_restore_outcome, reason_for_returncode,
-    resolve_operational_tools, restore_journal, rotate_recovery_key, teardown_backup,
-    validate_destination,
+    log_key_label_outcome, neutralize_key_labels, operated_destination, publish_restore_outcome,
+    reason_for_returncode, resolve_operational_tools, restore_journal, rotate_recovery_key,
+    teardown_backup, validate_destination,
 };
 use solstone_core_offload::{restore_all_offload, restore_offload_day};
 
@@ -1376,6 +1376,16 @@ pub(crate) fn consume_hosted(
         ) {
             return Terminal::error(reason);
         }
+        // `restic init` labels its key file with this machine's names. The repository
+        // already opens with both secrets, so a miss here waits for the daily prune.
+        log_key_label_outcome(neutralize_key_labels(
+            deps.runner.as_ref(),
+            &destination,
+            &keys.daily_key,
+            &keys.recovery_key,
+            &tools.restic_path,
+            None,
+        ));
         if set_mode(&deps.journal_root, "operated").is_err()
             || set_enabled(&deps.journal_root, true).is_err()
         {

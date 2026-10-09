@@ -767,6 +767,7 @@ pub fn child_env(
                         | ("RCLONE_CONFIG_SPB_ENV_AUTH", "false")
                         | ("RCLONE_CONFIG_SPB_REGION", "auto")
                         | ("RCLONE_CONFIG_SPB_NO_CHECK_BUCKET", "true")
+                        | ("TZ", "UTC")
                 );
                 if !value.is_empty() && !public_setting {
                     secrets.push(value.clone());

@@ -31,6 +31,7 @@ pub const BACKUP_TIMEOUT_SECONDS: u64 = 6 * 60 * 60;
 pub const INITIAL_BACKUP_TIMEOUT_SECONDS: u64 = 48 * 60 * 60;
 pub const PRUNE_TIMEOUT_SECONDS: u64 = 2 * 60 * 60;
 pub const PRUNE_MAX_REPACK_SIZE: &str = "1G";
+pub const KEY_LABEL_TIMEOUT_SECONDS: u64 = 5 * 60;
 pub const UNLOCK_TIMEOUT_SECONDS: u64 = 5 * 60;
 pub const VERIFY_TIMEOUT_SECONDS: u64 = 60 * 60;
 
@@ -1319,9 +1320,14 @@ pub fn run_prune(journal: &Path, services: &BackupServices<'_>) -> PruneResult {
         }
     };
     unlock(services, &runtime);
-    let retention = get_backup_config(journal)
-        .ok()
-        .and_then(|config| config.get("retention").and_then(Value::as_object).cloned())
+    let config = get_backup_config(journal).unwrap_or_default();
+    if config.get("mode") == Some(&Value::String("operated".into())) {
+        neutralize_operated_key_labels(services, &runtime, &config);
+    }
+    let retention = config
+        .get("retention")
+        .and_then(Value::as_object)
+        .cloned()
         .unwrap_or_default();
     let args = vec![
         "forget".into(),
@@ -1376,6 +1382,29 @@ pub fn run_prune(journal: &Path, services: &BackupServices<'_>) -> PruneResult {
     };
     record_prune(journal, services.clock, &result);
     result
+}
+
+/// Prune holds the one credential that can delete, so it carries every operated
+/// repository's key files to the neutral label. A failure leaves the repository
+/// as it was and the next daily prune tries again; it never fails the prune.
+fn neutralize_operated_key_labels(
+    services: &BackupServices<'_>,
+    runtime: &Runtime,
+    config: &Map<String, Value>,
+) {
+    let (Ok(Some(keys)), Ok(restic_path)) =
+        (keys_from_backup_config(config), services.restic_path())
+    else {
+        return;
+    };
+    crate::repo::log_key_label_outcome(crate::repo::neutralize_key_labels(
+        services.runner,
+        &runtime.destination,
+        &keys.daily_key,
+        &keys.recovery_key,
+        restic_path,
+        Some(Duration::from_secs(KEY_LABEL_TIMEOUT_SECONDS)),
+    ));
 }
 
 pub fn verification_subset_for_week(week: u8) -> String {

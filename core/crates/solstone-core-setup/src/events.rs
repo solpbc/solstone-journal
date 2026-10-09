@@ -133,6 +133,9 @@ pub enum SkipReason {
     LocalProviderUnavailable,
     /// This reason accompanies a brain `warning`, not a skipped result.
     LocalBootstrapDidNotStart,
+    /// The journal exists on disk but the owner has not created it yet, so
+    /// local thinking is installed from the Thinking page afterwards.
+    JournalNotCreatedYet,
     SolAlreadyKeepsJournal,
     PriorRunOk,
     /// This reason accompanies a service `ok` result, not a skipped result.
@@ -160,6 +163,9 @@ impl SkipReason {
             Self::ProviderConfigUnexpectedShape => "provider config is not in the expected shape",
             Self::LocalProviderUnavailable => "local provider unavailable on this host",
             Self::LocalBootstrapDidNotStart => "local bootstrap did not start",
+            Self::JournalNotCreatedYet => {
+                "choose \"install local model\" on the thinking page once you've created your journal"
+            }
             Self::SolAlreadyKeepsJournal => "the journal already lives on this mac",
             Self::PriorRunOk => "prior_run_ok",
             Self::ResumedAfterRestart => "resumed_after_restart",
@@ -304,6 +310,7 @@ mod tests {
             SkipReason::ProviderConfigUnexpectedShape,
             SkipReason::LocalProviderUnavailable,
             SkipReason::LocalBootstrapDidNotStart,
+            SkipReason::JournalNotCreatedYet,
             SkipReason::SolAlreadyKeepsJournal,
             SkipReason::PriorRunOk,
             SkipReason::ResumedAfterRestart,
@@ -311,7 +318,7 @@ mod tests {
         assert_eq!(events.len(), 9);
         assert_eq!(steps.len(), 8);
         assert_eq!(errors.len(), 9);
-        assert_eq!(reasons.len(), 13);
+        assert_eq!(reasons.len(), 14);
         assert_eq!(
             SkipReason::LocalBootstrapDidNotStart.as_str(),
             "local bootstrap did not start"

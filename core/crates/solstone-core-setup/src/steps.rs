@@ -79,6 +79,8 @@ pub struct CommandRequest {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub timeout_seconds: Option<u64>,
+    /// Added to the child's inherited environment.
+    pub env: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,6 +141,7 @@ impl NativeServiceOps {
                 .chain(args.iter().map(|value| (*value).to_owned()))
                 .collect(),
             timeout_seconds: None,
+            env: Vec::new(),
         })
     }
 }
@@ -244,6 +247,7 @@ impl ProcessCommandRunner {
         // does) whenever the caller holds a non-TTY stdin open.
         let mut child = Command::new(&request.program)
             .args(&request.args)
+            .envs(request.env.iter().map(|(key, value)| (key, value)))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1345,6 +1349,13 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
             context.args.port.to_string(),
         ],
         timeout_seconds: Some(DOCTOR_TIMEOUT_SECONDS),
+        // Doctor runs before the journal step records where the journal lives,
+        // so it is told which journal this setup is for rather than reading
+        // the old pointer or the default folder.
+        env: vec![(
+            "SOLSTONE_JOURNAL".into(),
+            context.journal_path.to_string_lossy().into_owned(),
+        )],
     };
     let output = context
         .runner
@@ -1627,6 +1638,7 @@ fn step_install_models(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
                 .args
                 .step_timeout_seconds_supplied()
                 .then_some(context.args.step_timeout_seconds.max(0) as u64),
+            env: Vec::new(),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
     let now = (context.now)();
@@ -1962,6 +1974,7 @@ fn step_service_with_guard(
                 service_guard["SOLSTONE_INSTALLATION_JOURNAL_TOKEN"].clone(),
             ],
             timeout_seconds: None,
+            env: Vec::new(),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
     if output.exit_code != 0 {
@@ -2081,13 +2094,25 @@ fn brain_skip_reason(context: &SetupContext<'_>) -> SkipReason {
     }
 }
 
+/// The journal's own record that the owner finished creating it, the same
+/// field the create-your-journal page reads.
+fn journal_is_created(config: &Map<String, Value>) -> bool {
+    config
+        .get("setup")
+        .and_then(|setup| setup.get("completed_at"))
+        .and_then(Value::as_f64)
+        .is_some_and(|completed_at| completed_at > 0.0)
+}
+
 fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
     // Probe before taking the config lock: the host gate decides whether local
     // may become the default, and the probe can take seconds.
     let readiness = context
         .check_report_builder
         .local_provider_readiness(&context.journal_path);
+    let mut journal_created = false;
     let mutation = mutate_journal_config(&context.journal_path, LockOptions::default(), |config| {
+        journal_created = journal_is_created(config);
         let malformed = || JournalConfigMutation {
             changed: false,
             value: Some(SkipReason::ProviderConfigUnexpectedShape),
@@ -2174,6 +2199,18 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
             SkipReason::LocalProviderUnavailable,
         ));
     }
+    // Until the owner creates the journal, every Thinking route answers with
+    // the create-your-journal page, so a bootstrap now cannot start. Local is
+    // already chosen above; the owner installs it from the Thinking page,
+    // where creating the journal lands them.
+    if !journal_created {
+        return Ok(skipped_result(
+            StepName::Brain,
+            Vec::new(),
+            (context.now)(),
+            SkipReason::JournalNotCreatedYet,
+        ));
+    }
     let output = context
         .runner
         .run(&CommandRequest {
@@ -2185,6 +2222,7 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
                 "bootstrap".into(),
             ],
             timeout_seconds: Some(context.args.step_timeout_seconds.max(0) as u64),
+            env: Vec::new(),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
     if output.exit_code == 0 && !output.timed_out {
@@ -2237,6 +2275,7 @@ fn run_skill_step(
             program: context.install_bin_dir.join("solstone"),
             args,
             timeout_seconds: Some(context.args.step_timeout_seconds.max(0) as u64),
+            env: Vec::new(),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
     let now = (context.now)();
@@ -3272,6 +3311,7 @@ mod tests {
             json!({"provider":"local","model":LOCAL_MODEL})
         );
         let (args, resolved, root, home) = fixture("brain-warning", &[]);
+        mark_journal_created(&resolved.journal_path);
         let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
             exit_code: 7,
             stdout: String::new(),
@@ -3299,6 +3339,48 @@ mod tests {
             json!({"code":"step_subprocess_failed","message":"bootstrap failed","details":"bootstrap failed\n","exit_code":7,"fix_hint":LOCAL_INSTALL_HINT})
         );
     }
+    fn mark_journal_created(journal: &Path) {
+        mutate_journal_config(journal, LockOptions::default(), |config| {
+            config.insert("setup".into(), json!({"completed_at": 1_791_570_000.0}));
+            JournalConfigMutation {
+                changed: true,
+                value: (),
+            }
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn brain_waits_for_the_owner_to_create_the_journal() {
+        let (args, resolved, root, home) = fixture("brain-uncreated", &[]);
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let result = step_brain(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(result.status, StepStatus::Skipped);
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(SkipReason::JournalNotCreatedYet.as_str())
+        );
+        assert!(runner.requests.is_empty(), "no bootstrap before creation");
+        let config: Value = serde_json::from_slice(
+            &fs::read(get_journal_config_path(&resolved.journal_path)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            config["providers"]["active"],
+            json!({"provider":"local","model":LOCAL_MODEL})
+        );
+    }
+
     fn check_report(os: &str, vulkan_probe_ok: bool, devices: Value, free_gib: u64) -> CheckReport {
         let gib = 1024 * 1024 * 1024_u64;
         let inputs = serde_json::from_value(json!({
@@ -4122,6 +4204,35 @@ mod tests {
         assert_eq!(recorder.0.borrow().len(), 5);
     }
     #[test]
+    fn doctor_checks_the_journal_this_setup_is_for() {
+        let (args, resolved, root, home) = fixture("doctor-journal", &["--jsonl"]);
+        let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
+            exit_code: 0,
+            stdout: "{\"event\":\"doctor.completed\",\"status\":\"ok\"}\n".into(),
+            stderr: String::new(),
+            timed_out: false,
+        })]);
+        let mut prompt = Prompt(false);
+        step_doctor(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(
+            runner.requests[0].env,
+            vec![(
+                "SOLSTONE_JOURNAL".to_owned(),
+                resolved.journal_path.to_string_lossy().into_owned()
+            )]
+        );
+    }
+
+    #[test]
     fn doctor_jsonl_emits_advisory_warning_fields() {
         let (args, resolved, root, home) = fixture("doctor-advisory", &["--jsonl"]);
         let stdout = concat!(
@@ -4605,6 +4716,7 @@ mod held_stdin {
                         READER_ARG.into(),
                     ],
                     timeout_seconds: Some(15),
+                    env: Vec::new(),
                 })
                 .expect("spawn reader");
             if output.timed_out || output.exit_code != 42 {
@@ -4664,6 +4776,7 @@ mod held_stdin {
                     WRITER_ARG.into(),
                 ],
                 timeout_seconds: Some(15),
+                env: Vec::new(),
             })
             .expect("run writer");
         assert!(!output.timed_out);
