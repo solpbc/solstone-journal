@@ -86,12 +86,10 @@ pub(crate) async fn list_location_segments(
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::sync::Arc;
-    use std::time::Duration;
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Method, Request, StatusCode};
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
     use serde_json::Value;
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -220,7 +218,7 @@ mod tests {
         write_file(
             &s3,
             "events.jsonl",
-            &device_ingest_event_line("phone", day, "100000_60"),
+            device_ingest_event_line("phone", day, "100000_60"),
         );
 
         // Seg 4: mixed (has audio.jsonl) -> excluded
@@ -242,7 +240,7 @@ mod tests {
         write_file(
             &s5,
             "events.jsonl",
-            &device_ingest_event_line("phone", day, "120000_60"),
+            device_ingest_event_line("phone", day, "120000_60"),
         );
 
         // Seg 6: _default named directory -> dropped
