@@ -3030,6 +3030,11 @@ async fn restore_handoff_needs_subscription_can_retry_with_a_new_generation() {
     assert!(solstone_core_backup::load_hosted_binding(root.path()).is_none());
     assert_eq!(credentials_posts(&http), 0);
     assert_eq!(runner.calls.lock().unwrap().len(), 0);
+    // The first poll thread publishes `needs_subscription` before it drops the
+    // poll lease. A retry that activates inside that window is refused as
+    // `error`/`failed`, so wait for the lease before starting the second
+    // generation.
+    wait_lease_released(&deps, &http);
 
     let second_capability = prepare_unbound_restore(&deps).await;
     let second_keyed = key_unbound_restore(&deps, &second_capability).await;
@@ -3037,7 +3042,7 @@ async fn restore_handoff_needs_subscription_can_retry_with_a_new_generation() {
     let _ = arm_unbound_restore(&deps, &second_capability).await;
     let _ = activate_unbound_restore(&deps, &second_capability).await;
     let second = wait_terminal(&deps).await;
-    assert_eq!(second["operation"]["phase"], "done");
+    assert_eq!(second["operation"]["phase"], "done", "{second}");
     assert_eq!(
         solstone_core_backup::load_hosted_binding(root.path()),
         Some(crate::test_support::hosted_binding())
