@@ -71,23 +71,34 @@ call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul || ( echo ERROR: vc
 :: session are not picked up by a later SSH session here.
 :: Acquire the complete lockfile before compilation, rather than discovering
 :: a missing dependency late in a native suite on a fresh build host.
+call :phase fetch
 echo === cargo fetch --locked (complete dependency graph) ===
 cargo fetch --manifest-path core\Cargo.toml --locked || exit /b 1
 cargo metadata --manifest-path core\Cargo.toml --locked --offline --all-features --filter-platform x86_64-pc-windows-msvc --format-version 1 >nul || exit /b 1
 
+call :phase distribution
 echo === cargo build --locked (distribution recorder for the FFmpeg toolchain bootstrap) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-distribution --bin solstone-distribution || exit /b 1
+call :phase payload-early
+echo === cargo test --locked (early Windows payload sanity) ===
+call :run_exact_integration "solstone-core-distribution" "windows_payload" "signed_windows_payload_is_complete_and_refuses_mutation" "test-fixture-pin" || exit /b 1
+call :run_exact_integration "solstone-core-distribution" "windows_payload" "windows_component_evidence_error_conditions" "test-fixture-pin" || exit /b 1
+call :run_exact_integration "solstone-core-distribution" "windows_payload" "windows_component_evidence_happy_path" "test-fixture-pin" || exit /b 1
+
 if not defined JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT set "JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT=%USERPROFILE%\sj-ffmpeg-tools"
 if not defined JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT set "JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT=%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%\inputs"
 set "JOURNAL_WIN_CI_FFMPEG_ENV=core\target\journal-win-ci-ffmpeg-environment-%RANDOM%%RANDOM%.cmd"
+call :phase tools-acquire
 echo === acquiring the pinned FFmpeg build toolchain ===
 core\target\debug\solstone-distribution.exe acquire ffmpeg-windows-tools --dest "%JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT%" || ( echo ERROR: pinned FFmpeg build toolchain acquisition failed & exit /b 1 )
+call :phase tools-stage
 echo === staging the pinned FFmpeg build toolchain ===
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.ps1 -Mode stage -RepositoryRoot "%CD%" -ToolsRoot "%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%" -InputRoot "%JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT%" -Recorder "%CD%\core\target\debug\solstone-distribution.exe" -EnvironmentScript "%CD%\%JOURNAL_WIN_CI_FFMPEG_ENV%" || ( echo ERROR: pinned FFmpeg build toolchain staging failed & exit /b 1 )
 call "%JOURNAL_WIN_CI_FFMPEG_ENV%" || ( echo ERROR: staged FFmpeg build toolchain environment could not be applied & exit /b 1 )
 del /q "%JOURNAL_WIN_CI_FFMPEG_ENV%" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.ps1 -Mode assert -RepositoryRoot "%CD%" -ToolsRoot "%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%" || ( echo ERROR: staged FFmpeg build toolchain did not verify in this run's environment & exit /b 1 )
 
+call :phase portable
 echo === cargo build --locked (portable journal substrate and CI runner) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-system -p solstone-core-win-owner-rail || exit /b 1
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-repository-contracts --bin solstone-ci || exit /b 1
@@ -131,6 +142,7 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shel
 :: solstone-core legs build with the features every shipped journal carries
 :: (core\distribution\shipped-core-features.txt), so they test what owners run
 :: and share one dependency build with the agent-connector build below.
+call :phase native-dispatch
 echo === cargo test --locked (Windows brain owner dispatcher) ===
 call :run_exact_integration "solstone-core-journal-bin" "windows_hosted_native_exit" "unhosted_journal_brain_owner_dispatches_to_native_binary" || exit /b 1
 call :run_exact_binary "solstone-core" "solstone-core" "brain_owner::tests::owner_refresh_bundled_success_converges_to_ready" "full-tests,journal-mcp-endpoint" || exit /b 1
@@ -207,6 +219,7 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-import-sour
 :: The agent connector: the journal binary with it compiled in, its audit
 :: record, and both its routine and boundary suites. The boundary suite is
 :: what proves no tool call is served before its admission record exists.
+call :phase shipped-core
 echo === cargo build --locked (journal with the agent connector) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core --bin solstone-core --features journal-mcp-endpoint || exit /b 1
 echo === cargo test --locked (agent connector audit record) ===
@@ -236,8 +249,8 @@ call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::
 call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::completed_prune_rejects_a_later_rescan_of_the_removed_original" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::all_mutators_wait_for_admission_while_readers_remain_available" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::classification_drain_stops_on_a_busy_next_batch" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_classifications" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_path_lookup" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_classifications" "full-tests,journal-mcp-endpoint" || exit /b 1
+call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_path_lookup" "full-tests,journal-mcp-endpoint" || exit /b 1
 call :run_exact_library "solstone-core-journal-cli" "local_ops::tests::facet_doctor_adopt_merge_indexes_only_after_trust_release" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::guarded_action_round_trips_nondefault_port_and_unicode_path" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::rejects_missing_partial_duplicate_malformed_and_extra_guard_fields" || exit /b 1
@@ -247,6 +260,7 @@ call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tes
 call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tests::requires_unified_engine_and_exact_exec_identity" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tests::refuses_duplicate_actions_triggers_wrong_namespace_and_privilege" || exit /b 1
 
+call :phase registry
 echo === running native Windows suite gate from registry ===
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-registry-tests.ps1 || exit /b 1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-registry.ps1 || exit /b 1
@@ -265,6 +279,7 @@ echo JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%
 echo JOURNAL_WIN_CI_BACKUP_EVIDENCE=%JOURNAL_WIN_CI_BACKUP_EVIDENCE%
 echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%
 echo JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=%JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%
+call :phase gate-end
 echo === JOURNAL_WIN_CI_OK: source-bound native Windows MSVC journal gate passed; launch preparation, Job ownership, and mandatory NTFS and ReFS receipt markers were emitted and validated from their child logs ===
 exit /b 0
 
@@ -283,6 +298,10 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --l
 set "JOURNAL_WIN_CI_TEST_EXIT=%ERRORLEVEL%"
 type "%JOURNAL_WIN_CI_TEST_LOG%"
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_TEST_LOG%" -TestName "%JOURNAL_WIN_CI_TEST%" -TestExitCode %JOURNAL_WIN_CI_TEST_EXIT% || exit /b 1
+exit /b 0
+
+:phase
+echo JOURNAL_WIN_CI_PHASE name=%~1 clock=%TIME%
 exit /b 0
 
 :run_exact_library

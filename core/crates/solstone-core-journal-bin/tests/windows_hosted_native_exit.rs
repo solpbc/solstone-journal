@@ -26,7 +26,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use solstone_core_system::process::{
     CommandLaunchRequest, Disposition, HostedLaunchProvenance, LaunchError, launch_command,
@@ -76,12 +76,26 @@ fn build_binary(package: &str, binary: &str) -> PathBuf {
         .and_then(Path::parent)
         .expect("core directory")
         .join("Cargo.toml");
-    let output = cargo_environment::cargo_command(env!("CARGO"))
+    let mut command = cargo_environment::cargo_command(env!("CARGO"));
+    command
         .args(["build", "--locked", "--manifest-path"])
         .arg(&workspace_manifest)
-        .args(["-p", package, "--bin", binary, "--message-format=json"])
-        .output()
-        .expect("cargo build runs");
+        .args(["-p", package, "--bin", binary, "--message-format=json"]);
+    if package == "solstone-core" {
+        let features = include_str!("../../../distribution/shipped-core-features.txt")
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .collect::<Vec<_>>()
+            .join(",");
+        command.args(["--features", &features]);
+    }
+    let started = Instant::now();
+    let output = command.output().expect("cargo build runs");
+    eprintln!(
+        "JOURNAL_WIN_CI_FIXTURE_BUILD package={package} binary={binary} elapsed_ms={}",
+        started.elapsed().as_millis()
+    );
     assert!(
         output.status.success(),
         "cargo build -p {package} --bin {binary} failed:\n{}\n{}",
@@ -105,7 +119,7 @@ fn build_binary(package: &str, binary: &str) -> PathBuf {
 
 /// The dispatcher and its native siblings, copied into one private directory
 /// so `journal` resolves exactly these binaries beside itself.
-fn install() -> Install {
+fn install(binaries: &[&str]) -> Install {
     let directory = tempfile::Builder::new()
         .prefix("solstone-hosted-native-exit-")
         .tempdir()
@@ -124,7 +138,7 @@ fn install() -> Install {
         &install.journal,
     )
     .expect("copy journal dispatcher");
-    for binary in ["solstone-core-describe", "solstone-core-depict"] {
+    for binary in binaries {
         fs::copy(
             build_binary(binary, binary),
             bin.join(format!("{binary}.exe")),
@@ -198,7 +212,7 @@ fn hosted_journal_returns_the_native_exit_code() {
     let _fixture = FIXTURE_LIFETIME
         .lock()
         .expect("exclusive native-exit fixture");
-    let install = install();
+    let install = install(&["solstone-core-describe", "solstone-core-depict"]);
     for case in CASES {
         let control = unhosted(&install, case);
         assert_eq!(
@@ -236,10 +250,7 @@ fn unhosted_journal_brain_owner_dispatches_to_native_binary() {
     let _fixture = FIXTURE_LIFETIME
         .lock()
         .expect("exclusive native-exit fixture");
-    let install = install();
-    let core_binary = build_binary("solstone-core", "solstone-core");
-    let core_dest = install.root.join("bin/solstone-core.exe");
-    fs::copy(&core_binary, &core_dest).expect("copy solstone-core native sibling");
+    let install = install(&["solstone-core"]);
 
     let journal_dir = install.root.join("journal");
     fs::create_dir_all(journal_dir.join("config")).expect("create config dir");
