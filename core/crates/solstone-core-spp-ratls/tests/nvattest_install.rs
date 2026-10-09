@@ -105,7 +105,7 @@ fn valid_archive() -> Vec<u8> {
 
 fn authority(sha256: &str, size: u64) -> String {
     format!(
-        r#"{{"targets":{{"{PLATFORM}":{{"artifact":{{"name":"{ARTIFACT}","sha256":"{sha256}","size_bytes":{size},"url":"https://updates.solstone.app/providers/nvattest/{ARTIFACT}"}},"inventory":[{{"executable":true,"kind":"regular","relpath":"bin/nvattest","symlink_target":null}},{{"executable":false,"kind":"regular","relpath":"share/ca/ca-bundle.pem","symlink_target":null}}],"source":{{"version":"test"}}}}}}}}"#
+        r#"{{"schema_version":1,"targets":{{"{PLATFORM}":{{"artifact":{{"name":"{ARTIFACT}","sha256":"{sha256}","size_bytes":{size},"url":"https://updates.solstone.app/providers/nvattest/{ARTIFACT}"}},"companion_manifest":{{"name":"manifest.json","sha256":"00","url":"https://updates.solstone.app/providers/nvattest/manifest.json"}},"inventory":[{{"executable":true,"kind":"regular","relpath":"bin/nvattest","symlink_target":null}},{{"executable":false,"kind":"regular","relpath":"share/ca/ca-bundle.pem","symlink_target":null}}],"source":{{"fork_commit":"test","upstream_base":"test","url_prefix":"https://updates.solstone.app/providers/nvattest/","version":"test"}}}}}}}}"#
     )
 }
 

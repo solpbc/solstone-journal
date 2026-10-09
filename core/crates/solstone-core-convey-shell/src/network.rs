@@ -674,7 +674,11 @@ pub(crate) async fn pair(
                                 request: &request,
                                 nonce,
                                 relay_access: Some(relay_entry.snapshot.clone()),
-                                local_endpoints: response_local_endpoints(&snapshot, direct_port),
+                                local_endpoints: response_local_endpoints(
+                                    &root.0,
+                                    &snapshot,
+                                    direct_port,
+                                ),
                             },
                             ceremony_now,
                         )
@@ -707,7 +711,7 @@ pub(crate) async fn pair(
                 request: &request,
                 nonce,
                 relay_access: None,
-                local_endpoints: response_local_endpoints(&snapshot, direct_port),
+                local_endpoints: response_local_endpoints(&root.0, &snapshot, direct_port),
             },
             ceremony_now,
         ) {
@@ -735,19 +739,22 @@ pub(crate) fn uses_relay_pairing(journal_root: &std::path::Path, request: &MintR
     read_posture(journal_root) == "spl" && request.same_machine == Some(false)
 }
 
-pub(crate) fn response_local_endpoints(snapshot: &PairingSnapshot, port: u16) -> Option<Value> {
-    let endpoints: Vec<_> = snapshot
-        .endpoints
-        .iter()
-        .filter(|endpoint| endpoint.ip.is_ipv4())
-        .map(|endpoint| {
-            json!({
-                "ip": endpoint.ip.to_string(),
-                "port": port,
-                "scope": endpoint.scope,
+pub(crate) fn response_local_endpoints(
+    journal_root: &std::path::Path,
+    snapshot: &PairingSnapshot,
+    port: u16,
+) -> Option<Value> {
+    let endpoints: Vec<_> =
+        crate::network_status::device_direct_endpoints(journal_root, snapshot, port)
+            .into_iter()
+            .map(|(ip, scope)| {
+                json!({
+                    "ip": ip.to_string(),
+                    "port": port,
+                    "scope": scope,
+                })
             })
-        })
-        .collect();
+            .collect();
     (!endpoints.is_empty()).then(|| Value::Array(endpoints))
 }
 
@@ -858,6 +865,14 @@ mod tests {
     #[test]
     fn pairing_endpoints_match_the_ipv4_door() {
         use solstone_core_sol_link::pairing::addresses::{EndpointScope, LocalEndpoint};
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        fs::create_dir_all(root.join("config")).expect("config directory");
+        fs::write(
+            root.join("config/journal.json"),
+            br#"{"pairing":{"local_network":true}}"#,
+        )
+        .expect("config");
         let mut snapshot = PairingSnapshot {
             endpoints: vec![LocalEndpoint {
                 ip: "fd00::1".parse().expect("ULA"),
@@ -865,13 +880,13 @@ mod tests {
             }],
             route_ipv4: None,
         };
-        assert_eq!(response_local_endpoints(&snapshot, 7657), None);
+        assert_eq!(response_local_endpoints(root, &snapshot, 7657), None);
         snapshot.endpoints.push(LocalEndpoint {
             ip: "10.8.0.2".parse().expect("IPv4"),
             scope: EndpointScope::Vpn,
         });
         assert_eq!(
-            response_local_endpoints(&snapshot, 7657),
+            response_local_endpoints(root, &snapshot, 7657),
             Some(json!([{"ip":"10.8.0.2","port":7657,"scope":"vpn"}]))
         );
     }

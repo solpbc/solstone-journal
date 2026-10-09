@@ -2095,6 +2095,9 @@ fn oracle_8_framing_does_not_reuse() {
                 code1 == Some("local_capacity_exhausted")
                     || code1 == Some("provider_response_invalid")
             );
+        } else if matches!(script, AppScript::Status(401)) {
+            // The engine refusing the credential is access ended, not a malformed reply.
+            assert_eq!(code1, Some("confidential_access_ended"));
         } else {
             assert_eq!(code1, Some("provider_response_invalid"));
         }

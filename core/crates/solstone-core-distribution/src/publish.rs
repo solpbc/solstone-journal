@@ -593,6 +593,7 @@ fi
                 ),
                 ("SOLSTONE_LIBGOMP", OsString::from("present")),
                 ("SOLSTONE_LIBGCC_S", OsString::from("present")),
+                ("SOLSTONE_LIBZ", OsString::from("present")),
             ],
         )
     }
@@ -843,6 +844,7 @@ fi
                         ),
                         ("SOLSTONE_LIBGOMP", OsString::from("present")),
                         ("SOLSTONE_LIBGCC_S", OsString::from("present")),
+                        ("SOLSTONE_LIBZ", OsString::from("present")),
                     ],
                 );
                 assert!(!output.status.success(), "{origin} {extra:?}");

@@ -444,6 +444,8 @@ fn link_snapshot(journal: &Path) -> Vec<(PathBuf, Vec<u8>)> {
             let path = child.path();
             if path.is_dir() {
                 collect(root, &path, entries);
+            } else if path.file_name().is_some_and(|name| name == "identity.lock") {
+                // The identity lock is coordination, not identity: taking it leaves an empty file.
             } else {
                 entries.push((
                     path.strip_prefix(root)
@@ -1748,7 +1750,18 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
 }
 
 #[tokio::test]
-async fn confidential_enable_requires_committed_identity_and_preserves_link_state() {
+async fn confidential_enable_bootstraps_or_repairs_identity_like_the_other_services() {
+    // 0. A journal with no identity yet gets one, as the other services' turn-ons do
+    let fresh = journal_for_phase("none");
+    let fresh_app = router_with_runtime(
+        fresh.0.clone(),
+        "https://portal.example",
+        Arc::new(EarlyAccessPoll),
+    );
+    let fresh_response = request(fresh_app, "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(fresh_response.0, StatusCode::ACCEPTED);
+    assert!(solstone_core_sol_link::committed::load_committed_identity(&fresh.0).is_ok());
+
     let journal = journal_for_phase("none");
     write_link_ca(&journal.0);
     let app = router_with_runtime(
@@ -1757,19 +1770,21 @@ async fn confidential_enable_requires_committed_identity_and_preserves_link_stat
         Arc::new(EarlyAccessPoll),
     );
 
-    // 1. CA without state refuses with existing confidential_enable_failed body and starts no operation
-    let before = link_snapshot(&journal.0);
+    // 1. CA without state is repaired from the existing CA, which is kept as it was
+    let ca_before = fs::read(journal.0.join("link/ca/cert.pem")).unwrap();
     let ca_only = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
-    assert_eq!(ca_only.0, StatusCode::INTERNAL_SERVER_ERROR);
-    let body: Value = serde_json::from_slice(&ca_only.3).expect("refusal JSON");
-    assert_eq!(body["reason_code"], "settings_operation_failed");
-    assert_eq!(link_snapshot(&journal.0), before);
-    let providers = request(app.clone(), "GET", "/app/thinking/api/providers").await;
-    let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+    assert_eq!(ca_only.0, StatusCode::ACCEPTED);
     assert_eq!(
-        providers_body["active_lane"]["confidential_operation"],
-        Value::Null
+        fs::read(journal.0.join("link/ca/cert.pem")).unwrap(),
+        ca_before
     );
+    assert!(solstone_core_sol_link::committed::load_committed_identity(&journal.0).is_ok());
+    let _ = request(
+        app.clone(),
+        "POST",
+        "/app/thinking/api/confidential/disable",
+    )
+    .await;
 
     // 2. CA plus matching state succeeds, link files are unchanged, and the URL verifies as service spp with exp - iat = 1800
     let instance_id = write_committed_link(&journal.0);
@@ -1814,12 +1829,12 @@ async fn confidential_enable_requires_committed_identity_and_preserves_link_stat
     let exp = claims["exp"].as_i64().expect("exp integer");
     assert_eq!(exp - iat, 1800);
 
-    // 3. Drifted state.json refuses, starts no operation, and does not rewrite link files
+    // 3. Drifted state.json is repaired from the existing CA, which is kept as it was
     let drifted_journal = journal_for_phase("none");
     write_link_ca(&drifted_journal.0);
     let drifted = "11111111-1111-8111-8111-111111111111";
     write_link_state(&drifted_journal.0, drifted);
-    let before = link_snapshot(&drifted_journal.0);
+    let ca_before = fs::read(drifted_journal.0.join("link/ca/cert.pem")).unwrap();
     let drifted_app = router_with_runtime(
         drifted_journal.0.clone(),
         "https://portal.example",
@@ -1831,18 +1846,16 @@ async fn confidential_enable_requires_committed_identity_and_preserves_link_stat
         "/app/thinking/api/confidential/enable",
     )
     .await;
-    assert_eq!(drifted_response.0, StatusCode::INTERNAL_SERVER_ERROR);
-    let body: Value = serde_json::from_slice(&drifted_response.3).expect("refusal JSON");
-    assert_eq!(body["reason_code"], "settings_operation_failed");
-    assert_eq!(link_snapshot(&drifted_journal.0), before);
-    let providers = request(drifted_app, "GET", "/app/thinking/api/providers").await;
-    let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+    assert_eq!(drifted_response.0, StatusCode::ACCEPTED);
     assert_eq!(
-        providers_body["active_lane"]["confidential_operation"],
-        Value::Null
+        fs::read(drifted_journal.0.join("link/ca/cert.pem")).unwrap(),
+        ca_before
     );
+    let repaired = solstone_core_sol_link::committed::load_committed_identity(&drifted_journal.0)
+        .expect("state repaired from the existing CA");
+    assert_ne!(repaired.instance_id(), drifted);
 
-    // 4. State without a CA refuses the same way
+    // 4. An established identity whose CA is missing is never silently replaced: it refuses
     let fallback_journal = journal_for_phase("none");
     let stored = "22222222-2222-8222-8222-222222222222";
     write_link_state(&fallback_journal.0, stored);
@@ -1871,7 +1884,7 @@ async fn confidential_enable_requires_committed_identity_and_preserves_link_stat
 }
 
 #[tokio::test]
-async fn confidential_enable_refuses_missing_identity_without_starting_an_operation() {
+async fn confidential_enable_refuses_a_corrupt_identity_without_starting_an_operation() {
     async fn assert_refusal(journal: &Path) {
         let (started_tx, started_rx) = channel();
         let (_release_tx, release_rx) = channel();
@@ -1909,27 +1922,11 @@ async fn confidential_enable_refuses_missing_identity_without_starting_an_operat
         assert!(started_rx.try_recv().is_err(), "poll must not be called");
     }
 
-    // 1. Missing identity (neither CA nor state)
-    let missing = journal_for_phase("none");
-    assert_refusal(&missing.0).await;
-
-    // 2. Corrupt CA
+    // Corrupt CA
     let corrupt = journal_for_phase("none");
     write_committed_link(&corrupt.0);
     fs::write(corrupt.0.join("link/ca/cert.pem"), b"not a cert").unwrap();
     assert_refusal(&corrupt.0).await;
-
-    // 3. Missing state (CA present, state deleted)
-    let missing_state = journal_for_phase("none");
-    write_committed_link(&missing_state.0);
-    fs::remove_file(missing_state.0.join("link/state.json")).unwrap();
-    assert_refusal(&missing_state.0).await;
-
-    // 4. Mismatched state
-    let mismatched = journal_for_phase("none");
-    write_committed_link(&mismatched.0);
-    write_link_state(&mismatched.0, "wrong-instance-id");
-    assert_refusal(&mismatched.0).await;
 
     #[cfg(feature = "full-tests")]
     {

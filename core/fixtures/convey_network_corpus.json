@@ -401,7 +401,7 @@
           "endpoints": [],
           "generated_at": "<CAPTURE_CLOCK>",
           "ttl_s": 3600,
-          "v": 1
+          "v": 2
         },
         "content_type": "application/json",
         "method": "GET",

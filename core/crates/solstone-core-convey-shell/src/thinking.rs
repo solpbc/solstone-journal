@@ -2672,6 +2672,38 @@ mod tests {
         }
     }
 
+    struct CompletionPoll {
+        poll: Arc<dyn super::ConfidentialPoll>,
+        finished: Option<tokio::sync::oneshot::Sender<()>>,
+    }
+    impl super::ConfidentialPoll for CompletionPoll {
+        fn poll(&self, base_url: &str, nonce: &str) -> PollOutcome {
+            self.poll.poll(base_url, nonce)
+        }
+    }
+    impl Drop for CompletionPoll {
+        fn drop(&mut self) {
+            if let Some(finished) = self.finished.take() {
+                let _ = finished.send(());
+            }
+        }
+    }
+    fn completion_poll(
+        poll: Arc<dyn super::ConfidentialPoll>,
+    ) -> (
+        Arc<dyn super::ConfidentialPoll>,
+        tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let (finished, completion) = tokio::sync::oneshot::channel();
+        (
+            Arc::new(CompletionPoll {
+                poll,
+                finished: Some(finished),
+            }),
+            completion,
+        )
+    }
+
     fn sample_handoff_payload() -> serde_json::Map<String, Value> {
         json!({
             "endpoint_url": "https://handoff.example/v1",
@@ -2790,6 +2822,7 @@ mod tests {
             }
         }));
 
+        let (poll, completion) = completion_poll(poll);
         super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
@@ -2801,16 +2834,10 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // The worker drops its final poll reference after publishing its result.
+        completion.await.expect("handoff worker completed");
         assert!(
-            ended,
+            !operations.is_open(super::SERVICE_SPP, handle),
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -2901,6 +2928,7 @@ mod tests {
             }
         }));
 
+        let (poll, completion) = completion_poll(poll);
         super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
@@ -2912,16 +2940,10 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // The worker drops its final poll reference after publishing its result.
+        completion.await.expect("handoff worker completed");
         assert!(
-            ended,
+            !operations.is_open(super::SERVICE_SPP, handle),
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -2959,6 +2981,7 @@ mod tests {
                 PollOutcome::EarlyAccess
             }
         }));
+        let (poll, completion) = completion_poll(poll);
         super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
@@ -2969,16 +2992,10 @@ mod tests {
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
         );
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // The worker drops its final poll reference after publishing its result.
+        completion.await.expect("handoff worker completed");
         assert!(
-            ended,
+            !operations.is_open(super::SERVICE_SPP, handle),
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -3007,6 +3024,7 @@ mod tests {
                 }
             }
         }));
+        let (poll, completion) = completion_poll(poll);
         super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
@@ -3017,16 +3035,10 @@ mod tests {
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
         );
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // The worker drops its final poll reference after publishing its result.
+        completion.await.expect("handoff worker completed");
         assert!(
-            ended,
+            !operations.is_open(super::SERVICE_SPP, handle),
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -3053,6 +3065,7 @@ mod tests {
             }
         }));
 
+        let (poll, completion) = completion_poll(poll);
         super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
@@ -3064,16 +3077,11 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // The worker owns the final poll reference until it publishes its result.
+        // Await that completion instead of racing the blocking-pool scheduler.
+        completion.await.expect("handoff worker completed");
         assert!(
-            ended,
+            !operations.is_open(super::SERVICE_SPP, handle),
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );
@@ -3115,6 +3123,7 @@ mod tests {
             }
         }));
 
+        let (poll, completion) = completion_poll(poll);
         super::spawn_confidential_handoff(
             root.clone(),
             operations.clone(),
@@ -3126,16 +3135,10 @@ mod tests {
             Some(Arc::new(|_| ())),
         );
 
-        let mut ended = false;
-        for _ in 0..5000 {
-            if !operations.is_open(super::SERVICE_SPP, handle) {
-                ended = true;
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // The worker drops its final poll reference after publishing its result.
+        completion.await.expect("handoff worker completed");
         assert!(
-            ended,
+            !operations.is_open(super::SERVICE_SPP, handle),
             "operation never ended; phase: {:?}",
             operations.operation(super::SERVICE_SPP).get("phase")
         );

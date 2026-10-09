@@ -132,7 +132,7 @@ async fn rekey_device(
         Ok(port) => port,
         Err(_) => return migration_state_unavailable(),
     };
-    let local_endpoints = crate::network::response_local_endpoints(&snapshot, port);
+    let local_endpoints = crate::network::response_local_endpoints(&root.0, &snapshot, port);
     let relay_access = relay_access
         .map(|Extension(snapshot)| snapshot)
         .or_else(|| {

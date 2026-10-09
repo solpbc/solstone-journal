@@ -447,6 +447,7 @@ fi
         )
         .env("SOLSTONE_LIBGOMP", "present")
         .env("SOLSTONE_LIBGCC_S", "present")
+        .env("SOLSTONE_LIBZ", "present")
         .env("TMPDIR", &fixture.root)
         .env(
             "PATH",
