@@ -575,6 +575,8 @@ fn retain_task_run(
 }
 
 fn start_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
+    solstone_core_setup::refuse_journal_in_program_folder(&ctx.journal, &ctx.public_solstone_exe)
+        .map_err(task_error)?;
     let deadline = Instant::now() + READY_TIMEOUT;
     let mut before = inspect_task(ctx, deadline)?;
     if !validate_task(ctx, &before)?.enabled {

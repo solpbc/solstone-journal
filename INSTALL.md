@@ -317,3 +317,5 @@ company: https://solpbc.org
 Questions, feedback, or a bug? **Follow and tag [@solstone.app](https://bsky.app/profile/solstone.app) on Bluesky** for discussion and updates, open an issue at https://github.com/solpbc/solstone-journal/issues for bugs, or reach support at https://support.solstone.app. You do not need to know anyone. Those are the front doors.
 
 (running into trouble or want to develop on solstone yourself? See [CONTRIBUTING.md](CONTRIBUTING.md).)
+
+Maintaining the windows package: [winget manifests and channel check](packaging/winget/README.md).

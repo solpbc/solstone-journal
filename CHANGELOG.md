@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, a journal saved inside the program folder can no longer start. move the whole journal folder outside it, then select the new location in setup.
 - activity settling no longer appears as an extra daily run for yesterday in your journal's health records. its run is recorded separately under today, while each activity keeps its own day.
 - on windows, installing the local model from the thinking page works again. in 2.0.38 it stopped almost as soon as it started and the page said "local setup didn't finish". if that happened to you, choose "try setup again" on the thinking page.
 - when an agent searches your journal by date, a date written as 2026-10-05 now finds the same entries as 20261005. before, it found nothing. a date that isn't a real day is now refused, so the agent can correct it, instead of quietly matching nothing.
