@@ -22,7 +22,7 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|llama-windows|nvattest-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
+    "usage: solstone-distribution <validate|produce|dev-package|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|llama-windows|nvattest-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
 }
 
 fn main() -> ExitCode {
@@ -305,6 +305,25 @@ fn main() -> ExitCode {
                 }
                 _ => {
                     eprintln!("{}", usage());
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("dev-package") => {
+            let rest = args.collect::<Vec<_>>();
+            let repo = match env::current_dir() {
+                Ok(repo) => repo,
+                Err(error) => {
+                    eprintln!("{error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match solstone_core_distribution::dev_package::parse(&rest)
+                .and_then(|parsed| solstone_core_distribution::dev_package::run(&repo, &parsed))
+            {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("{error}");
                     ExitCode::from(2)
                 }
             }

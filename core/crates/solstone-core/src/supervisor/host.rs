@@ -87,11 +87,17 @@ pub enum SiblingBinaryResolutionError {
 pub enum InstallationBindingRefusal {
     LoadFailed(String),
     JournalTokenMismatch,
+    ProgramFolderJournal,
 }
 
 impl fmt::Display for InstallationBindingRefusal {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let detail = match self {
+            Self::ProgramFolderJournal => {
+                return formatter.write_str(
+                    solstone_core_installation_identity::PROGRAM_FOLDER_JOURNAL_REFUSAL,
+                );
+            }
             Self::LoadFailed(detail) => detail.as_str(),
             Self::JournalTokenMismatch => {
                 "the saved installation binding is for a different journal"
@@ -570,12 +576,23 @@ fn load_generation(journal: &Path) -> Result<HostedInstallationBinding, Supervis
                 format!("installation root: {error}"),
             ))
         })?;
-    let root_token = root_token_from_path(&root).map_err(|error| {
+    load_generation_at(journal, &root, &owner)
+}
+
+fn load_generation_at(
+    journal: &Path,
+    root: &Path,
+    owner: &solstone_core_installation_identity::OwnerBase,
+) -> Result<HostedInstallationBinding, SupervisorBootRefusal> {
+    solstone_core_setup::refuse_journal_in_program_folder(journal, root).map_err(|_| {
+        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::ProgramFolderJournal)
+    })?;
+    let root_token = root_token_from_path(root).map_err(|error| {
         SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
             "root token: {error}"
         )))
     })?;
-    let binding = load_installation_binding(&owner, &root_token).map_err(|error| {
+    let binding = load_installation_binding(owner, &root_token).map_err(|error| {
         SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
             "saved binding: {error}"
         )))
@@ -641,6 +658,60 @@ mod tests {
         ExecutionState, InspectResult, InstanceCensus, ProcessBirth, ProcessInstance,
         ProcessInstanceSource,
     };
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn program_folder_adopted_journal_refuses_boot_and_preserves_cleanup() {
+        use solstone_core_installation_identity::{
+            ArtifactBindingEvidence, CleanUninstallRequest, LegacyManifestEvidence, OwnerBase,
+            PlatformTag, SetupAdmissionRequest, admit_clean_uninstall, admit_setup,
+            journal_token_from_path, load_installation_binding, root_token_from_path,
+        };
+        let directory = tempdir().unwrap();
+        let root = directory.path().join("program");
+        let journal = root.join("journal");
+        std::fs::create_dir_all(&journal).unwrap();
+        let sentinel = journal.join("owner-history");
+        std::fs::write(&sentinel, b"keep this history").unwrap();
+        let owner =
+            OwnerBase::at_home(directory.path().to_path_buf(), PlatformTag::current()).unwrap();
+        let root_token = root_token_from_path(&root).unwrap();
+        let journal_token = journal_token_from_path(&journal).unwrap();
+        // Reproduce an older adopted binding, before setup enforced this location policy.
+        let admission = admit_setup(SetupAdmissionRequest {
+            owner: owner.clone(),
+            root_token: root_token.clone(),
+            journal_token: journal_token.clone(),
+            journal_is_explicit: true,
+            accept_prepared_retarget: false,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .unwrap();
+        let original = admission.binding().clone();
+        drop(admission);
+        // The same adopted binding starts in a non-Velopack layout.
+        assert!(super::load_generation_at(&journal, &root, &owner).is_ok());
+        std::fs::write(root.join("Update.exe"), b"velopack marker").unwrap();
+        assert!(matches!(
+            super::load_generation_at(&journal, &root, &owner),
+            Err(SupervisorBootRefusal::InstallationBinding(
+                InstallationBindingRefusal::ProgramFolderJournal
+            ))
+        ));
+        assert_eq!(
+            load_installation_binding(&owner, &root_token).unwrap(),
+            original
+        );
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep this history");
+        let cleanup = admit_clean_uninstall(CleanUninstallRequest {
+            owner,
+            root_token,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .unwrap();
+        assert!(cleanup.plan().protected_journals.contains(&journal_token));
+    }
 
     struct Source {
         self_result: InspectResult,
