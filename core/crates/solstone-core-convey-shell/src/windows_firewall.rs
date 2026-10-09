@@ -52,7 +52,7 @@ impl Policy {
 pub(crate) async fn app_blocked() -> Option<bool> {
     #[cfg(windows)]
     {
-        tokio::task::spawn_blocking(read_policy)
+        tokio::task::spawn_blocking(|| read_policy(std::time::Duration::from_secs(5)).ok())
             .await
             .ok()
             .flatten()
@@ -64,23 +64,22 @@ pub(crate) async fn app_blocked() -> Option<bool> {
 }
 
 #[cfg(windows)]
-fn read_policy() -> Option<bool> {
+fn read_policy(timeout: std::time::Duration) -> Result<bool, String> {
     use std::collections::BTreeMap;
     use std::ffi::OsString;
     use std::path::PathBuf;
-    use std::time::Duration;
 
     use solstone_core_system::process::{
         BoundedHelperBudget, BoundedHelperRequest, BoundedHelperResources, run_bounded_helper,
     };
 
-    let system_root = std::env::var_os("SystemRoot")?;
+    let system_root = std::env::var_os("SystemRoot").ok_or("SystemRoot is unavailable")?;
     let root = PathBuf::from(&system_root).join("System32");
-    let executable = std::env::current_exe().ok()?;
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let executable = executable
-        .to_str()?
-        .strip_prefix(r"\\?\")
-        .unwrap_or(executable.to_str()?);
+        .to_str()
+        .ok_or("executable path is not Unicode")?;
+    let executable = executable.strip_prefix(r"\\?\").unwrap_or(executable);
     let output = run_bounded_helper(BoundedHelperRequest {
         executable: root.join(r"WindowsPowerShell\v1.0\powershell.exe"),
         current_directory: root.clone(),
@@ -96,9 +95,10 @@ fn read_policy() -> Option<bool> {
         .map(str::to_owned)
         .collect(),
         environment: BTreeMap::from([(OsString::from("SystemRoot"), system_root)]),
-        stdin: serde_json::to_vec(&serde_json::json!({"executable": executable})).ok()?,
+        stdin: serde_json::to_vec(&serde_json::json!({"executable": executable}))
+            .map_err(|error| error.to_string())?,
         budget: BoundedHelperBudget {
-            timeout: Duration::from_secs(5),
+            timeout,
             stdin_limit_bytes: 64 * 1024,
             stdout_limit_bytes: 128 * 1024,
             stderr_limit_bytes: 4 * 1024,
@@ -106,12 +106,17 @@ fn read_policy() -> Option<bool> {
         resource_limits: None,
         resources: BoundedHelperResources::new(),
     })
-    .ok()?;
+    .map_err(|error| format!("Windows policy helper: {error:?}"))?;
     if output.exit_code != 0 || !output.quiescent {
-        return None;
+        return Err(format!(
+            "Windows policy helper exit={}, quiescent={}, stderr={}",
+            output.exit_code,
+            output.quiescent,
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
     serde_json::from_slice::<Policy>(&output.stdout)
-        .ok()
+        .map_err(|error| format!("Windows policy response: {error}"))
         .map(|policy| policy.has_app_block())
 }
 
@@ -122,10 +127,10 @@ mod tests {
     #[cfg(all(windows, feature = "full-tests"))]
     #[test]
     fn native_policy_read_completes_through_the_bounded_helper() {
-        assert!(
-            read_policy().is_some(),
-            "Windows policy read must return a checked result"
-        );
+        // This checks native interoperability, not the product's five-second
+        // responsiveness budget, which legitimately returns not-checked on timeout.
+        read_policy(std::time::Duration::from_secs(30))
+            .expect("Windows policy read must return a checked result");
     }
 
     fn cancel_rule() -> Rule {
