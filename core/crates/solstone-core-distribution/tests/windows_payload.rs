@@ -341,6 +341,15 @@ fn windows_component_evidence_happy_path() {
     }
     fs::write(root.path().join("bin/llama-server.exe"), b"llama server").unwrap();
     fs::write(root.path().join("bin/vulkan-1.dll"), b"vulkan loader").unwrap();
+    // The CED model ships in the Windows payload as a pinned catalog member.
+    let ced_model_dir = root.path().join("lib/solstone_journal_models/assets/ced");
+    fs::create_dir_all(&ced_model_dir).unwrap();
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    fs::copy(
+        repo.join("core/models/assets/ced/ced-tiny-q8_0.gguf"),
+        ced_model_dir.join("ced-tiny-q8_0.gguf"),
+    )
+    .unwrap();
 
     sign_payload_manifest(root.path());
 
@@ -398,6 +407,24 @@ fn windows_component_evidence_happy_path() {
         serde_json::from_str(&comp_text).unwrap();
 
     assert!(!comp_file.components.iter().any(|c| c.id == "ffmpeg"));
+
+    // The pinned CED model is named from its catalog row, not a Windows table.
+    let ced_row = solstone_core_assets::catalog()
+        .iter()
+        .find(|a| a.unit == "ced-model" && a.filename == "ced-tiny-q8_0.gguf")
+        .expect("ced-model catalog row");
+    let ced_model = comp_file
+        .components
+        .iter()
+        .find(|c| c.id == "ced-model")
+        .expect("ced-model present");
+    assert_eq!(ced_model.version, ced_row.version);
+    assert!(
+        prov_file
+            .records
+            .iter()
+            .any(|r| r.id == "ced-model" && r.input.sha256 == ced_row.sha256)
+    );
 
     let llama = comp_file
         .components

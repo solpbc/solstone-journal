@@ -1636,24 +1636,32 @@ pub fn render_windows_component_evidence(
     for file in &verified.manifest().files {
         let dest = &file.path;
 
-        let id_opt = inventory.entry.iter().find_map(|e| {
+        let matched = inventory.entry.iter().find_map(|e| {
             if entry_targets(e).iter().any(|t| t == "windows-x86_64")
                 && entry_dest_matches(e, dest)
                 && e.class() == Some(crate::inventory::DeliveryClass::Component)
             {
-                crate::inventory::entry_component_id(e)
+                crate::inventory::entry_component_id(e).map(|id| (id, e))
             } else {
                 None
             }
         });
 
-        let Some(id) = id_opt else {
+        let Some((id, entry)) = matched else {
             continue;
         };
 
         check_member_path(dest)?;
 
-        let (row_version, row_source, mut row_inputs) = bundled_identity(&repo_root, target, id)?;
+        // A pinned entry (the CED model) names its identity from its own pin,
+        // as on POSIX; the Windows-built components keep their source tables.
+        let (row_version, row_source, mut row_inputs) = match entry {
+            crate::inventory::Entry::PinnedMembers { input, .. }
+            | crate::inventory::Entry::PinnedNative { input, .. } => {
+                pinned_identity(input, id, &repo_root)?
+            }
+            _ => bundled_identity(&repo_root, target, id)?,
+        };
 
         let mut pre_signing_sha256 = None;
         let receipt_rel = match id {
