@@ -755,7 +755,7 @@ impl ToolRunner for ScriptRunner {
     }
 }
 
-struct PanicAfterVersionRunner(AtomicUsize);
+struct PanicAfterVersionRunner;
 
 impl ToolRunner for PanicAfterVersionRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
@@ -936,7 +936,7 @@ fn engine_deps(
             if path.is_file()
                 && path
                     .file_name()
-                    .map_or(false, |name| name == "restic" || name == "restic.exe")
+                    .is_some_and(|name| name == "restic" || name == "restic.exe")
             {
                 path.parent()
                     .and_then(|p| p.parent())
@@ -1293,7 +1293,7 @@ async fn restore_worker_panic_is_restore_failed_and_records_once() {
     let root = crate::test_support::root("healthy");
     let restic = tempfile::tempdir().expect("restic");
     crate::test_support::write_ready_restic(restic.path());
-    let runner = Arc::new(PanicAfterVersionRunner(AtomicUsize::new(0)));
+    let runner = Arc::new(PanicAfterVersionRunner);
     let mut deps = engine_deps(
         root.path().to_path_buf(),
         runner,
