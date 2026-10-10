@@ -162,7 +162,7 @@ pub const fn unclassified_phase_reason(phase: RuntimePhase) -> Option<&'static s
 /// Local-provider process-health codes (kebab). Matches
 /// `local_contract.json` `brain_state.runtime_reason_codes`.
 /// Not the generate-path `reason_code` list in `generate_contract.json`.
-pub const KNOWN_REASON_CODES: [&str; 45] = [
+pub const KNOWN_REASON_CODES: [&str; 46] = [
     "intent-disabled",
     "intent-enabled",
     "provider-not-needed",
@@ -178,6 +178,7 @@ pub const KNOWN_REASON_CODES: [&str; 45] = [
     "host-admission-blocked",
     "platform-unsupported",
     "package-unavailable",
+    "package-invalid",
     "openmp-runtime-unavailable",
     "ram-insufficient",
     "gpu-probe-failed",

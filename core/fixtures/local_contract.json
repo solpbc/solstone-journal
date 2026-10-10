@@ -912,6 +912,7 @@
       "observation-raced",
       "openmp-runtime-unavailable",
       "package-unavailable",
+      "package-invalid",
       "platform-unsupported",
       "probe-not-ready",
       "probe-ready",

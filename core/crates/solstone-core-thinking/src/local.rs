@@ -185,7 +185,7 @@ fn unavailable_bootstrap_status(reason: &str) -> Value {
 }
 
 fn idle_bootstrap_status() -> Value {
-    json!({"name":"local","install_state":"idle","attempt_id":null,"last_transition_at":null,"last_progress_at":null,"progress_bytes_received":null,"progress_bytes_total":null,"install_error":null})
+    json!({"name":"local","revision":0,"install_state":"idle","attempt_id":null,"last_transition_at":null,"last_progress_at":null,"progress_bytes_received":null,"progress_bytes_total":null,"install_error":null,"error_code":null})
 }
 
 pub fn runtime(journal: &Path) -> Value {

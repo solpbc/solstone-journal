@@ -2096,7 +2096,7 @@ mod tests {
                     devices: Vec::new(),
                     succeeded: true,
                 },
-                solstone_core_local::install::fit_report::FitSeverity::Warning,
+                solstone_core_local::install::fit_report::FitSeverity::Blocked,
             ),
             (
                 solstone_core_system::vulkan_observe::VulkanObservation {
@@ -2163,7 +2163,7 @@ mod tests {
                     devices: Vec::new(),
                     succeeded: true,
                 },
-                solstone_core_local::install::fit_report::FitSeverity::Warning,
+                solstone_core_local::install::fit_report::FitSeverity::Blocked,
             ),
             (
                 solstone_core_system::vulkan_observe::VulkanObservation {

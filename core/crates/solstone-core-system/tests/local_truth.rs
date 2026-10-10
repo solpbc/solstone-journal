@@ -407,23 +407,29 @@ fn windows_host_reports_gpu_or_package_status() {
             .is_none()
     );
 
-    // Empty or failed vulkan -> gpu-unavailable
-    for obs in [
-        VulkanObservation {
-            devices: Vec::new(),
-            succeeded: true,
-        },
-        VulkanObservation {
-            devices: Vec::new(),
-            succeeded: false,
-        },
+    // No hardware and failed probes have distinct refusal reasons.
+    for (obs, reason) in [
+        (
+            VulkanObservation {
+                devices: Vec::new(),
+                succeeded: true,
+            },
+            "gpu-unavailable",
+        ),
+        (
+            VulkanObservation {
+                devices: Vec::new(),
+                succeeded: false,
+            },
+            "gpu-probe-failed",
+        ),
     ] {
         let (observation, shared, _) =
             observe_with(&root, LocalHost::Windows, Some(undetected_probe()), obs, 1);
         assert_eq!(observation.phase, RuntimePhase::HostBlocked);
         assert_eq!(
             observation.reason_code.as_ref().map(ReasonCode::as_str),
-            Some("gpu-unavailable")
+            Some(reason)
         );
         assert!(
             shared
@@ -694,7 +700,7 @@ fn windows_follow_launches_once_when_the_model_pin_moves() {
                     index: 0,
                     name: "Integrated GPU".into(),
                     device_type: Some(1),
-                    vram_mib: 4096,
+                    vram_mib: 8192,
                 }],
                 succeeded: true,
             },
@@ -749,7 +755,7 @@ fn windows_follow_launches_once_for_an_abandoned_install() {
                     index: 0,
                     name: "Integrated GPU".into(),
                     device_type: Some(1),
-                    vram_mib: 4096,
+                    vram_mib: 8192,
                 }],
                 succeeded: true,
             },

@@ -118,6 +118,14 @@ fn corpus() -> Value {
     {
         for case in cases.as_array_mut().expect("phase cases") {
             let mut projected = false;
+            if case["path"] == "/app/thinking/api/local/bootstrap/status"
+                && case["json"]["install_state"] == "idle"
+            {
+                case["json"]["revision"] = json!(0);
+                case["json"]["error_code"] = Value::Null;
+                case["body_sha256_basis"] = json!("normalized-json");
+                projected = true;
+            }
             if case["path"] == "/app/thinking/api/providers/local/status"
                 && case["json"].get("generate_ready").is_some()
             {
@@ -143,6 +151,14 @@ fn corpus() -> Value {
             for pointer in ["/json", "/json/providers"] {
                 if let Some(object) = case.pointer_mut(pointer).and_then(Value::as_object_mut) {
                     projected |= object.remove("model_tiers").is_some();
+                    // Captured journals had no local install status. The live
+                    // payload now carries its observed revision and cause.
+                    if let Some(local) = object.get_mut("local").and_then(Value::as_object_mut) {
+                        assert_eq!(local["install_state"], "idle");
+                        local.insert("revision".into(), json!(0));
+                        local.insert("error_code".into(), Value::Null);
+                        projected = true;
+                    }
                     // The owner's thinking choice joined the providers payload beside
                     // `byo_models`; every captured journal had none, so it reads off.
                     if object.contains_key("byo_models") {
