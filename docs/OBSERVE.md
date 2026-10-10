@@ -76,20 +76,24 @@ in the per-platform repositories (`solstone-linux`, `solstone-macos`,
 
 ### Vision input sizing
 
-Image sizing is phase- and runtime-specific. The application never enlarges an
+Image sizing depends on the processing phase. The application never enlarges an
 input image.
 
-| Path | Bundled Qwen sizing | Other providers/platforms |
-|---|---|---|
-| Frame categorization (`observe.describe.frame`) | 1024 image-token area ceiling, with the standing 1920px longest-side ceiling | standing 1920px ceiling |
-| Category extraction (`observe.describe.<category>`) | standing 1920px ceiling | standing 1920px ceiling |
-| Still depiction (`observe.depict`) | standing 1920px ceiling | standing 1920px ceiling |
-| Image/document import vision | model preprocessor defaults | model preprocessor defaults |
+| Path | Application sizing |
+|---|---|
+| Frame categorization (`observe.describe.frame`) | 1024 image-token area budget, with a 1920px longest-side ceiling, for all providers |
+| Category extraction (`observe.describe.<category>`) | 1920px longest-side ceiling |
+| Still depiction (`observe.depict`) | 1920px longest-side ceiling |
+| Image/document import vision | 1920px longest-side ceiling |
 
 The [native describe pipeline](../core/crates/solstone-core-describe/src/pipeline.rs)
-applies the 1024 categorization ceiling only to the bundled Qwen/llama.cpp
-path. Configured BYO OpenAI-compatible endpoints retain their existing
-preprocessing. Detailed extraction retains the 1920px longest-side ceiling.
+applies the same categorization resize before dispatch to bundled runtimes,
+configured BYO OpenAI-compatible endpoints, and cloud providers. The
+[resize helper](../core/crates/solstone-core-describe/src/decode.rs) implements
+the 1024 budget as an image-area ceiling of `1024 × 32 × 32 = 1,048,576` pixels.
+This is an application sizing budget; actual image-token counts depend on the
+model's preprocessor. Detailed extraction uses the original decoded frame with
+only the 1920px longest-side ceiling, preserving more detail than categorization.
 
 ## Standalone clients
 
