@@ -46,7 +46,6 @@ pub mod target_cache;
 pub mod windows_archives;
 pub mod windows_build;
 pub mod windows_cli;
-mod windows_crt;
 pub mod windows_inputs;
 pub mod windows_stage;
 

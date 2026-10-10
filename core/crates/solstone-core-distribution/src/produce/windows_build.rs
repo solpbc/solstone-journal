@@ -64,10 +64,6 @@ impl BuiltWindowsProduct {
     }
 }
 
-pub(crate) fn windows_product_rustflags() -> &'static str {
-    "-Ctarget-feature=+crt-static"
-}
-
 /// Build in a clean checkout whose core/target does not yet exist. The operator
 /// supplies its existing fenced, network-denied native build environment.
 /// Build tools stay Unowned; this code creates no Job or replacement manager.
@@ -108,7 +104,7 @@ pub fn build_windows_product(
         .env("SOURCE_DATE_EPOCH", &epoch)
         .env("ZERO_AR_DATE", "1")
         .env("CARGO_BUILD_JOBS", "2")
-        .env("CARGO_ENCODED_RUSTFLAGS", windows_product_rustflags())
+        .env("CARGO_ENCODED_RUSTFLAGS", "-Ctarget-feature=+crt-static")
         .env_remove("RUSTFLAGS")
         .env_remove("RUSTC_WRAPPER")
         .env_remove("RUSTC_WORKSPACE_WRAPPER")
@@ -641,10 +637,5 @@ mod tests {
             1,
             "the agent connector is compiled into the Windows journal exactly once"
         );
-    }
-
-    #[test]
-    fn windows_product_rustflags_selects_static_crt() {
-        assert_eq!(windows_product_rustflags(), "-Ctarget-feature=+crt-static");
     }
 }
