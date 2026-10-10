@@ -3,9 +3,10 @@
 
 //! Windows-only DLL search-path restriction and LoadLibraryEx loader.
 
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::Path;
 
-use crate::{LoadPolicy, PathError, flags_for, resolve_load};
+use crate::{LoadPolicy, PathError, backslash_separators, flags_for, resolve_load};
 
 #[derive(Debug)]
 pub enum DllLoadError {
@@ -61,12 +62,13 @@ pub fn restrict_default_dll_directories() -> Result<(), DllLoadError> {
 
 pub fn load_dll(policy: LoadPolicy, path: &Path) -> Result<libloading::Library, DllLoadError> {
     let resolved = resolve_load(policy, path)?;
+    let native = std::ffi::OsString::from_wide(&backslash_separators(
+        &resolved.path.as_os_str().encode_wide().collect::<Vec<_>>(),
+    ));
     // SAFETY: DLL initialization code (DllMain, TLS callbacks) runs as part of this call;
     // caller is trusted to load only vetted product DLLs from validated paths.
-    let os = unsafe {
-        libloading::os::windows::Library::load_with_flags(&resolved.path, resolved.flags)
-    }
-    .map_err(DllLoadError::LoadFailed)?;
+    let os = unsafe { libloading::os::windows::Library::load_with_flags(&native, resolved.flags) }
+        .map_err(DllLoadError::LoadFailed)?;
     Ok(libloading::Library::from(os))
 }
 

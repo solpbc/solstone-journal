@@ -35,6 +35,24 @@ pub const fn flags_for(policy: LoadPolicy) -> u32 {
     }
 }
 
+/// `LoadLibraryExW` takes the directory it searches for `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR`
+/// dependencies from backslash separators. An inventory path joined onto the install root
+/// keeps its forward slashes, and the loader then misses the DLL's sibling dependencies
+/// (error 126 on a machine without a system-wide VC runtime). Load with backslashes only.
+#[must_use]
+pub fn backslash_separators(units: &[u16]) -> Vec<u16> {
+    units
+        .iter()
+        .map(|&unit| {
+            if unit == u16::from(b'/') {
+                u16::from(b'\\')
+            } else {
+                unit
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedLoad {
     pub path: PathBuf,
@@ -101,6 +119,21 @@ fn has_current_dir_component(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forward_slashes_become_backslashes_for_loadlibraryex() {
+        // An inventory path joined onto the install root, as shipped in 2.0.39's
+        // first cut: LoadLibraryExW with DLL_LOAD_DIR then missed its sibling
+        // VC runtime on a clean machine (error 126).
+        let mixed: Vec<u16> = r"C:\Users\o\current\lib/solstone-native/onnxruntime.dll"
+            .encode_utf16()
+            .collect();
+        let expected: Vec<u16> = r"C:\Users\o\current\lib\solstone-native\onnxruntime.dll"
+            .encode_utf16()
+            .collect();
+        assert_eq!(backslash_separators(&mixed), expected);
+        assert_eq!(backslash_separators(&expected), expected);
+    }
 
     #[test]
     fn application_dir_flags_are_application_dir_and_system32() {
