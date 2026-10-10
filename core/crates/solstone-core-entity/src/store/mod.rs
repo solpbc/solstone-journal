@@ -58,8 +58,8 @@ pub use journal_entities::{
 };
 pub use lifecycle::{
     EntityLifecycleError, adopt_configured_principal, delete_entity_directory,
-    has_journal_principal, read_journal_principal, restore_journal_entity_version,
-    unblock_journal_entity,
+    has_journal_principal, identity_is_principal, journal_principal_entry, read_journal_principal,
+    restore_journal_entity_version, unblock_journal_entity,
 };
 pub use map::{
     EntityIdentityGroupMap, EntityIdentityMap, IdentityMapLoser, IdentityMapLoserReason,

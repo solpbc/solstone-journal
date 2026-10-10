@@ -5,7 +5,7 @@
 
 use std::fs;
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::store_tests::{
     TempDir, create_test_facet, relationship_value, write_facet_relationship, write_journal_entity,
@@ -1068,6 +1068,56 @@ fn attaching_a_non_person_with_an_owner_name_does_not_take_the_principal() {
         .unwrap();
         assert_eq!(identity.value().get("is_principal"), Some(&json!(true)));
     }
+}
+
+#[test]
+fn reactivating_the_principal_as_a_non_person_hands_the_principal_to_the_next_matching_person() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    fs::create_dir_all(temporary.path().join("config")).unwrap();
+    fs::write(
+        temporary.path().join("config/journal.json"),
+        serde_json::to_vec(&json!({"identity":{"name":"Jordan Rivera","preferred":"Jo"}})).unwrap(),
+    )
+    .unwrap();
+    let owner =
+        attach_or_reactivate_entity(temporary.path(), "scope", "Person", "Jordan Rivera", "")
+            .unwrap();
+    let owner_id = owner.relationship["entity_id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        solstone_core_entity::read_journal_principal(temporary.path())
+            .unwrap()
+            .unwrap()["id"],
+        owner_id.as_str()
+    );
+
+    detach_facet_entity(temporary.path(), "scope", &owner_id).unwrap();
+    let reactivated =
+        attach_or_reactivate_entity(temporary.path(), "scope", "Project", "Jordan Rivera", "")
+            .unwrap();
+    assert!(reactivated.reactivated);
+    let at_rest: Value = serde_json::from_slice(
+        &fs::read(
+            temporary
+                .path()
+                .join("entities")
+                .join(&owner_id)
+                .join("entity.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(at_rest["type"], "Project");
+    assert!(at_rest.get("is_principal").is_none(), "{at_rest}");
+    assert!(!solstone_core_entity::has_journal_principal(temporary.path()).unwrap());
+
+    let person =
+        attach_or_reactivate_entity(temporary.path(), "scope", "Person", "Jo", "").unwrap();
+    let principal = solstone_core_entity::read_journal_principal(temporary.path())
+        .unwrap()
+        .unwrap();
+    assert_eq!(principal["id"], person.relationship["entity_id"]);
+    assert_eq!(principal["type"], "Person");
 }
 
 #[test]

@@ -199,6 +199,8 @@ fn screen_request(root: &std::path::Path, sentence_id: i64, encoder: Value) -> V
 #[test]
 fn speaker_label_and_correction_write_verbs_reach_their_native_owners() {
     let journal = root("label-writes");
+    create_entity(&journal, "person");
+    create_entity(&journal, "other");
     let first_segment = segment_request(&journal);
     let base = json!({
         "schema":"solstone-speaker-resolve-write-stub-labels-request-v1",
@@ -264,6 +266,77 @@ fn speaker_label_and_correction_write_verbs_reach_their_native_owners() {
         .1["status"],
         "appended"
     );
+}
+
+/// Runs a verb that is expected to refuse, returning its stderr.
+fn run_refused(verb: &str, request: Value) -> String {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .args(["speaker-resolve", verb])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start speaker-resolve command");
+    serde_json::to_writer(child.stdin.as_mut().expect("stdin"), &request).expect("write request");
+    child.stdin.take();
+    let output = child.wait_with_output().expect("wait for speaker-resolve");
+    assert_ne!(output.status.code(), Some(0), "{verb} was not refused");
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn speaker_write_verbs_refuse_an_entity_that_is_not_a_person() {
+    let journal = root("non-person-writes");
+    std::fs::create_dir_all(journal.join("entities")).expect("create entities directory");
+    solstone_core_entity::create_journal_entity(
+        &journal,
+        "terminal",
+        "Terminal",
+        "Tool",
+        None,
+        None,
+        &[],
+        true,
+        None,
+    )
+    .expect("create tool entity");
+    let segment = segment_request(&journal);
+    let before = content_snapshot(&journal);
+    run_refused(
+        "write-voiceprint",
+        json!({
+            "schema":"solstone-speaker-resolve-write-voiceprint-request-v1",
+            "journal_root":journal, "entity_id":"terminal", "embedding":vec![1.0; 256],
+            "metadata":{"day":"20260809","segment_key":"120000_1","source":"audio","sentence_id":1},
+            "encoder":encoder(),
+        }),
+    );
+    run_refused(
+        "write-full-labels",
+        json!({
+            "schema":"solstone-speaker-resolve-write-full-labels-request-v1",
+            "journal_root":journal, "segment":segment,
+            "labels":[{"sentence_id":1,"speaker":"terminal","confidence":"high","method":"acoustic"}],
+            "metadata":{},
+        }),
+    );
+    run_refused(
+        "patch-labels",
+        json!({
+            "schema":"solstone-speaker-resolve-patch-labels-request-v1",
+            "journal_root":journal, "segment":segment,
+            "patches":{"1":{"speaker":"terminal"}}, "allow_insert":true,
+        }),
+    );
+    run_refused(
+        "append-correction",
+        json!({
+            "schema":"solstone-speaker-resolve-append-correction-request-v1",
+            "journal_root":journal, "segment":segment,
+            "correction":{"sentence_id":1,"corrected_speaker":"terminal"},
+        }),
+    );
+    assert_eq!(content_snapshot(&journal), before);
 }
 
 #[test]

@@ -466,6 +466,69 @@ fn bootstrap_saved_choice_naming_a_blocked_entity_is_unmatched_without_a_new_row
     );
 }
 
+/// Marks a recording's speech as more than any voiceprint writer allows to
+/// overlap, keeping whatever else its header holds.
+fn overlapping(root: &Path, stream: &str, key: &str) {
+    let path = root
+        .join("chronicle/20260808")
+        .join(stream)
+        .join(key)
+        .join("audio.jsonl");
+    let body = fs::read_to_string(&path).unwrap_or_default();
+    let rest = body.split_once('\n').map(|(_, rest)| rest).unwrap_or("");
+    fs::write(
+        &path,
+        format!("{}\n{rest}", json!({"overlap_fraction": 0.4})),
+    )
+    .unwrap();
+}
+
+#[test]
+fn bootstrap_takes_no_voiceprint_from_an_overlapping_recording() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(temporary.path(), "alex", "Alex", "Person", false);
+    write_owner(temporary.path());
+    segment(temporary.path(), "120000_300", "Alex");
+    overlapping(temporary.path(), "mic", "120000_300");
+
+    let BootstrapOutcome::Completed(stats) =
+        bootstrap_voiceprints(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert_eq!(stats.embeddings_saved, 0);
+    assert!(
+        !temporary
+            .path()
+            .join("entities/alex/voiceprints.npz")
+            .exists()
+    );
+}
+
+#[test]
+fn seed_from_imports_takes_no_voiceprint_from_an_overlapping_recording() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(temporary.path(), "alex", "Alex", "Person", false);
+    write_owner(temporary.path());
+    import_segment(temporary.path(), "import.granola", "120000_300", "Alex");
+    overlapping(temporary.path(), "import.granola", "120000_300");
+
+    let SeedFromImportsOutcome::Completed(stats) =
+        seed_from_imports(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert_eq!(stats.embeddings_saved, 0);
+    assert!(
+        !temporary
+            .path()
+            .join("entities/alex/voiceprints.npz")
+            .exists()
+    );
+}
+
 #[test]
 fn seed_from_imports_same_name_person_and_tool_saves_the_person() {
     let temporary = Temp::new();

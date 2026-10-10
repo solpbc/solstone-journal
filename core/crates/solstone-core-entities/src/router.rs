@@ -589,17 +589,6 @@ fn identity_string_list(identity: &Value, key: &str) -> Vec<String> {
         .collect()
 }
 
-fn identity_is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(value) => !value.is_empty(),
-        Value::Object(value) => !value.is_empty(),
-    }
-}
-
 fn load_journal_resolution_entities(
     journal_root: &Path,
 ) -> Result<Vec<IndexPlateEntity>, solstone_core_entity::EntityStoreError> {
@@ -648,26 +637,7 @@ fn exact_journal_entity_dir(entities: &[IndexPlateEntity], query: &str) -> Optio
 fn find_journal_principal_dir(
     journal_root: &Path,
 ) -> Result<Option<(String, Value)>, solstone_core_entity::EntityStoreError> {
-    let mut entity_dirs = solstone_core_entity::read_identity_group_map(journal_root)?
-        .groups
-        .into_values()
-        .flatten()
-        .collect::<Vec<_>>();
-    entity_dirs.sort();
-    for entity_dir in entity_dirs {
-        let Some(identity) = solstone_core_entity::read_entity_identity(journal_root, &entity_dir)?
-        else {
-            continue;
-        };
-        if identity
-            .value()
-            .get("is_principal")
-            .is_some_and(identity_is_truthy)
-        {
-            return Ok(Some((entity_dir, identity.value().clone())));
-        }
-    }
-    Ok(None)
+    solstone_core_entity::journal_principal_entry(journal_root)
 }
 
 fn journal_resolution_slice(
@@ -1413,7 +1383,10 @@ fn classified_operation_error(detail: String) -> Response {
         refusal(ReasonCode::EntityNotFound, detail)
     } else if lowered.contains("blocked") {
         refusal(ReasonCode::EntityBlocked, detail)
-    } else if lowered.contains("must be different") || lowered.contains("two principal") {
+    } else if lowered.contains("must be different")
+        || lowered.contains("two principal")
+        || lowered.contains("isn't a person")
+    {
         refusal(ReasonCode::InvalidRequestValue, detail)
     } else if lowered.contains("lock") || lowered.contains("timed out") || lowered.contains("busy")
     {

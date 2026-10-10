@@ -478,11 +478,18 @@ pub(crate) fn label_has_admitted_speaker(
         .is_some_and(|entity_id| !entity_id.is_empty() && admitted_speaker_ids.contains(entity_id))
 }
 
+/// The journal principal's id, as the entity store resolves it: the one
+/// unblocked `Person` marked as the principal. Unreadable reads as none.
 pub(crate) fn journal_principal_id(root: &Path) -> Option<String> {
-    load_all_journal_entities(root)
-        .into_iter()
-        .find(|(_, entity)| entity.get("is_principal") == Some(&Value::Bool(true)))
-        .map(|(entity_id, _)| entity_id)
+    solstone_core_entity::read_journal_principal(root)
+        .ok()
+        .flatten()
+        .and_then(|principal| {
+            principal
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
 }
 
 /// The journal's entities as the entity store has them: one per effective id,

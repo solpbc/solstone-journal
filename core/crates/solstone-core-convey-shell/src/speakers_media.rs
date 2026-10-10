@@ -178,7 +178,7 @@ fn is_speaker_attach_candidate(
             .is_some_and(|name| !name.is_empty())
         && entity.get("type").and_then(Value::as_str) == Some("Person")
         && !entity.get("blocked").is_some_and(value_truthy)
-        && !entity.get("is_principal").is_some_and(value_truthy)
+        && !solstone_core_entity::identity_is_principal(entity)
         && principal_id != Some(entity_id)
 }
 

@@ -1777,7 +1777,7 @@ fn merge_refuses_two_principal_entities() {
         save_entity_identity(
             &journal,
             id,
-            &json!({"id":id,"name":id,"aka":[],"emails":[],"is_principal":true}),
+            &json!({"id":id,"name":id,"type":"Person","aka":[],"emails":[],"is_principal":true}),
             None,
         )
         .unwrap();
@@ -1834,20 +1834,88 @@ fn merge_transfers_principal_from_source_to_target() {
     save_entity_identity(
         &journal,
         "source",
-        &json!({"id":"source","name":"source","aka":[],"emails":[],"is_principal":true}),
+        &json!({"id":"source","name":"source","type":"Person","aka":[],"emails":[],"is_principal":true}),
         None,
     )
     .unwrap();
     save_entity_identity(
         &journal,
         "target",
-        &json!({"id":"target","name":"target","aka":[],"emails":[]}),
+        &json!({"id":"target","name":"target","type":"Person","aka":[],"emails":[]}),
         None,
     )
     .unwrap();
     commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
     assert_eq!(
         read_entity_identity(&journal, "target")
+            .unwrap()
+            .unwrap()
+            .value()["is_principal"],
+        true
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merge_refuses_to_move_a_persons_speaker_evidence_onto_a_non_person() {
+    let journal = voiceprint_journal();
+    save_entity_identity(
+        &journal,
+        "source",
+        &json!({"id":"source","name":"Alex","type":"Person","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &journal,
+        "target",
+        &json!({"id":"target","name":"Terminal","type":"Tool","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    let labels = journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json");
+    fs::create_dir_all(labels.parent().unwrap()).unwrap();
+    let label_bytes =
+        json!({"labels":[{"sentence_id":1,"speaker":"source","confidence":"high"}]}).to_string();
+    fs::write(&labels, &label_bytes).unwrap();
+
+    assert_eq!(
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+            .unwrap_err()
+            .to_string(),
+        "can't merge a person into something that isn't a person."
+    );
+    assert_eq!(fs::read_to_string(&labels).unwrap(), label_bytes);
+    assert!(read_entity_identity(&journal, "source").unwrap().is_some());
+    assert!(!journal.join("entities/target/voiceprints.npz").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merge_refuses_to_move_the_principal_onto_a_non_person() {
+    let journal = voiceprint_journal();
+    save_entity_identity(
+        &journal,
+        "source",
+        &json!({"id":"source","name":"source","type":"Person","aka":[],"emails":[],"is_principal":true}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &journal,
+        "target",
+        &json!({"id":"target","name":"target","type":"Project","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+            .unwrap_err()
+            .to_string(),
+        "can't merge you into something that isn't a person."
+    );
+    assert_eq!(
+        read_entity_identity(&journal, "source")
             .unwrap()
             .unwrap()
             .value()["is_principal"],

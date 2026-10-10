@@ -182,10 +182,13 @@ fn block_journal_entity_inner(
     let identity = read_entity_identity(journal_root, &entity_dir)
         .map_err(entity_store_error)?
         .expect("resolved identity-map directory contains an identity");
+    // A flag at rest that names no one still protects the entity from being
+    // blocked or deleted.
     if identity
         .value()
         .get("is_principal")
         .is_some_and(value_is_truthy)
+        || identity.had_stray_principal_flag()
     {
         return Err(FacetEntityLifecycleError::PrincipalEntityProtected {
             entity_id: entity_id.to_owned(),
@@ -292,10 +295,13 @@ fn delete_journal_entity_inner(
     let identity = read_entity_identity(journal_root, &entity_dir)
         .map_err(entity_store_error)?
         .expect("resolved identity-map directory contains an identity");
+    // A flag at rest that names no one still protects the entity from being
+    // blocked or deleted.
     if identity
         .value()
         .get("is_principal")
         .is_some_and(value_is_truthy)
+        || identity.had_stray_principal_flag()
     {
         return Err(FacetEntityLifecycleError::PrincipalEntityProtected {
             entity_id: entity_id.to_owned(),

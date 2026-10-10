@@ -417,7 +417,10 @@ fn save_entity_identity_with_lock_options(
 
     reconcile_prepared_history(journal_root, &entity_dir)?;
     let before = read_entity_identity(journal_root, &entity_dir)?;
-    let after = normalized_identity(identity_id, identity)?;
+    let after = without_stray_principal_flag(
+        before.as_ref().map(IdentitySnapshot::value),
+        normalized_identity(identity_id, identity)?,
+    );
     if before
         .as_ref()
         .is_some_and(|snapshot| python_json_equal(snapshot.value(), &after))
@@ -478,7 +481,10 @@ pub fn prepare_identity_changes(
         .map(|s| s.value().clone());
     let mut changes = Vec::new();
     for state in states {
-        let after = normalized_identity(entity_id, state).map_err(|e| e.to_string())?;
+        let after = without_stray_principal_flag(
+            before.as_ref(),
+            normalized_identity(entity_id, state).map_err(|e| e.to_string())?,
+        );
         if before.as_ref() != Some(&after) {
             changes.push(PreparedIdentityChange {
                 entity_id: entity_id.into(),
@@ -539,7 +545,10 @@ pub fn publish_identity_change(
     let current = read_entity_identity(root, &change.entity_dir)
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?
         .map(|s| s.value().clone());
-    let needs_identity_write = current.as_ref() != Some(&change.after);
+    // A plan prepared before the flag rule may still carry a flag the writer
+    // drops; compare against what the writer will actually leave.
+    let after = without_stray_principal_flag(change.before.as_ref(), change.after.clone());
+    let needs_identity_write = current.as_ref() != Some(&after);
     if needs_identity_write && (!allow_before || current != change.before) {
         return Err(ReviewOwnerError::conflict(
             ReviewOwnerConflictKind::IdentityChanged,
@@ -555,11 +564,7 @@ pub fn publish_identity_change(
     if needs_identity_write || needs_history_apply {
         let is_new_principal_grant = needs_identity_write
             && change.before.is_none()
-            && change
-                .after
-                .get("is_principal")
-                .is_some_and(super::lifecycle::value_is_truthy)
-            && change.after.get("type").and_then(Value::as_str) == Some("Person");
+            && super::lifecycle::identity_is_principal(&after);
         if is_new_principal_grant {
             let names = super::create::read_owner_names_for_principal_grant(root).map_err(
                 |_err| {
@@ -568,8 +573,7 @@ pub fn publish_identity_change(
                     )
                 },
             )?;
-            let name = change
-                .after
+            let name = after
                 .get("name")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
@@ -602,7 +606,7 @@ pub fn publish_identity_change(
                 actor: serde_json::json!({"kind":"system"}),
                 metadata: serde_json::json!({}),
             };
-            save_entity_identity(root, &change.entity_id, &change.after, Some(&operation))
+            save_entity_identity(root, &change.entity_id, &after, Some(&operation))
                 .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
         }
     }
@@ -975,6 +979,15 @@ fn reconcile_prepared_history(
         }
     }
     Ok(())
+}
+
+/// `identity` as a write leaves it, with a stray principal flag dropped
+/// (`drop_stray_principal_flag`). `prepare_identity_changes` and
+/// `publish_identity_change` apply the same rule, so a prepared state and the
+/// written one stay equal.
+fn without_stray_principal_flag(before: Option<&Value>, mut identity: Value) -> Value {
+    super::lifecycle::drop_stray_principal_flag(before, &mut identity);
+    identity
 }
 
 fn normalized_identity(identity_id: &str, identity: &Value) -> Result<Value, EntityWriteError> {

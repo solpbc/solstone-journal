@@ -1155,12 +1155,24 @@ fn plan_merge(
             "Cannot merge blocked entity: {target_id}"
         )));
     }
-    if source.get("is_principal").and_then(Value::as_bool) == Some(true)
-        && target.get("is_principal").and_then(Value::as_bool) == Some(true)
+    if super::lifecycle::identity_is_principal(&source)
+        && super::lifecycle::identity_is_principal(&target)
     {
         return Err(EntityMergeError::Refused(
             "Cannot merge two principal entities.".to_owned(),
         ));
+    }
+    // A person's voice evidence and speaker names, and the principal flag,
+    // only ever sit on a person, so a person never merges into anything else.
+    let principal_transferred = super::lifecycle::identity_is_principal(&source);
+    let is_person =
+        |identity: &Value| identity.get("type").and_then(Value::as_str) == Some("Person");
+    if is_person(&source) && !is_person(&target) {
+        return Err(EntityMergeError::Refused(if principal_transferred {
+            "can't merge you into something that isn't a person.".to_owned()
+        } else {
+            "can't merge a person into something that isn't a person.".to_owned()
+        }));
     }
     check_aka_cross_references(
         journal,
@@ -1217,7 +1229,7 @@ fn plan_merge(
             object.insert(field.clone(), value.clone());
         }
     }
-    if source.get("is_principal").and_then(Value::as_bool) == Some(true) {
+    if principal_transferred {
         object.insert("is_principal".to_owned(), Value::Bool(true));
     }
     let source_display_name = source
@@ -1230,7 +1242,6 @@ fn plan_merge(
         .and_then(Value::as_str)
         .unwrap_or(target_id)
         .to_owned();
-    let principal_transferred = source.get("is_principal").and_then(Value::as_bool) == Some(true);
     Ok(MergePlan {
         target_after: after,
         aliases_added: aliases.len().saturating_sub(aliases_before.len()),

@@ -2496,6 +2496,7 @@ fn write_full_labels_request(value: Value) -> Result<Value, String> {
         .and_then(Value::as_array)
         .cloned()
         .ok_or_else(|| "labels is required".to_owned())?;
+    require_person_speakers(&object, labels.iter().map(|label| label.get("speaker")))?;
     solstone_core_speaker_id::labels::write_full_labels(
         &segment_dir(&object)?,
         labels,
@@ -2534,6 +2535,10 @@ fn patch_labels_request(value: Value) -> Result<Value, String> {
             ))
         })
         .collect::<Result<Vec<_>, String>>()?;
+    require_person_speakers(
+        &object,
+        patches.iter().map(|(_, fields)| fields.get("speaker")),
+    )?;
     solstone_core_speaker_id::labels::patch_labels(
         &segment_dir(&object)?,
         &patches,
@@ -2574,11 +2579,10 @@ fn append_correction_request(value: Value) -> Result<Value, String> {
         "solstone-speaker-resolve-append-correction-request-v1",
         &["schema", "journal_root", "segment", "correction"],
     )?;
-    solstone_core_speaker_id::corrections::append_correction(
-        &segment_dir(&object)?,
-        required_object_value(&object, "correction")?,
-    )
-    .map_err(|error| error.to_string())?;
+    let correction = required_object_value(&object, "correction")?;
+    require_person_speakers(&object, [correction.get("corrected_speaker")])?;
+    solstone_core_speaker_id::corrections::append_correction(&segment_dir(&object)?, correction)
+        .map_err(|error| error.to_string())?;
     Ok(json!({"status":"appended"}))
 }
 
@@ -2594,6 +2598,36 @@ fn wipe_speaker_artifacts_request(value: Value) -> Result<Value, String> {
     )
     .map_err(|error| error.to_string())?;
     serde_json::to_value(report).map_err(|error| error.to_string())
+}
+
+/// Refuse a label or correction that names a speaker who is not an admissible
+/// person. An absent or null speaker names no one and passes.
+fn require_person_speakers<'a>(
+    object: &Map<String, Value>,
+    speakers: impl IntoIterator<Item = Option<&'a Value>>,
+) -> Result<(), String> {
+    let named = speakers
+        .into_iter()
+        .flatten()
+        .filter(|speaker| !speaker.is_null())
+        .collect::<Vec<_>>();
+    if named.is_empty() {
+        return Ok(());
+    }
+    let journal_root = PathBuf::from(required_string(object, "journal_root")?);
+    let people = solstone_core_entity::load_all_journal_entities(&journal_root)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(solstone_core_entity::is_admissible_person)
+        .map(|entity| entity.id)
+        .collect::<std::collections::HashSet<_>>();
+    for speaker in named {
+        match speaker.as_str() {
+            Some(id) if people.contains(id) => {}
+            _ => return Err(format!("speaker {speaker} is not a person in this journal")),
+        }
+    }
+    Ok(())
 }
 
 fn segment_dir(object: &Map<String, Value>) -> Result<PathBuf, String> {

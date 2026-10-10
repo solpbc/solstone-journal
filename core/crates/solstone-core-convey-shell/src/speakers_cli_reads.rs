@@ -691,7 +691,7 @@ fn import_linkable(root: &Path, segments: &[CatalogedSegment]) -> Vec<Value> {
     let mut values = Vec::new();
     for (directory, entity) in live_entities(root) {
         let (id, entity) = (entity.id, entity.value);
-        if entity.get("is_principal").and_then(Value::as_bool) == Some(true)
+        if solstone_core_entity::identity_is_principal(&entity)
             || entity.get("blocked").and_then(Value::as_bool) == Some(true)
             || solstone_core_entity::entity_voiceprints_path(root, &directory)
                 .is_ok_and(|path| path.exists())
@@ -990,11 +990,13 @@ mod tests {
                 serde_json::to_vec(&entities[entity_id]).expect("entity json"),
             )
             .expect("entity writes");
-            solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+            solstone_core_entity::save_voiceprints_batch(
                 &root,
                 entity_id,
-                vec![1.0; 256],
-                json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+                &[solstone_core_entity::VoiceprintItem {
+                    embedding: vec![1.0; 256],
+                    metadata: json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+                }],
                 &solstone_core_entity::EncoderIdentity {
                     id: "test".to_owned(),
                     sha256: "0".repeat(64),
