@@ -23,33 +23,6 @@ pub(crate) fn extract_activity_edges(
         let ts = edge_int(entry.get("created_at"), "created_at")?;
 
         extract_participation_edges(entry, context, &record_id, &edge_title, ts, &mut rows);
-        extract_story_edge_rows(
-            entry.get("commitments"),
-            context,
-            "committed-to",
-            "commitment",
-            &record_id,
-            ts,
-            &mut rows,
-        )?;
-        extract_story_edge_rows(
-            entry.get("closures"),
-            context,
-            "committed-to",
-            "closure",
-            &record_id,
-            ts,
-            &mut rows,
-        )?;
-        extract_story_edge_rows(
-            entry.get("decisions"),
-            context,
-            "decided-with",
-            "decision",
-            &record_id,
-            ts,
-            &mut rows,
-        )?;
         extract_relation_rows(entry.get("relations"), context, &record_id, ts, &mut rows)?;
     }
 
@@ -127,50 +100,6 @@ fn extract_participation_edges(
             });
         }
     }
-}
-
-fn extract_story_edge_rows(
-    value: Option<&Value>,
-    context: &EdgeContext,
-    kind: &str,
-    source: &str,
-    anchor: &str,
-    ts: i64,
-    rows: &mut Vec<EdgeRow>,
-) -> Result<(), EdgeError> {
-    let Some(Value::Array(entries)) = value else {
-        return Ok(());
-    };
-    for item in entries {
-        let Value::Object(item) = item else {
-            continue;
-        };
-        let Some(Value::String(owner_id)) = item.get("owner_entity_id") else {
-            continue;
-        };
-        let Some(Value::String(counterparty_id)) = item.get("counterparty_entity_id") else {
-            continue;
-        };
-        if owner_id.is_empty() || counterparty_id.is_empty() || owner_id == counterparty_id {
-            continue;
-        }
-        rows.push(EdgeRow {
-            src: owner_id.clone(),
-            dst: counterparty_id.clone(),
-            kind: kind.to_string(),
-            src_name: EdgeValue::Null,
-            dst_name: EdgeValue::Null,
-            day: Some(context.day.clone()),
-            facet: Some(context.facet.clone()),
-            source: source.to_string(),
-            path: context.path.clone(),
-            anchor: Some(anchor.to_string()),
-            label: EdgeValue::Text(edge_str(item.get("action"), "action")?),
-            ts: EdgeValue::Int(ts),
-            weight: 1,
-        });
-    }
-    Ok(())
 }
 
 fn extract_relation_rows(

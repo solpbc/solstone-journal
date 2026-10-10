@@ -887,7 +887,7 @@ fn network_preview_caps_high_degree_and_zero_limit() {
         .iter()
         .map(|id| SeedEdge::new("self", id, "works-with", None, "p"))
         .collect();
-    let mut prin = SeedEdge::new("self", "prin", "committed-to", None, "prin");
+    let mut prin = SeedEdge::new("self", "prin", "works-with", None, "prin");
     prin.weight = 100;
     rows.push(prin);
 
@@ -938,7 +938,7 @@ fn network_preview_rank_filters_and_evidence_follow_the_request() {
             &[
                 SeedEdge::new("self", "summed", "works-with", Some("20260530"), "s1"),
                 SeedEdge::new("self", "summed", "works-with", Some("20260501"), "s2"),
-                SeedEdge::new("self", "heavy", "committed-to", Some("20260530"), "h1"),
+                SeedEdge::new("self", "heavy", "works-with", Some("20260530"), "h1"),
             ],
         );
         let req = NetworkRequest {
@@ -960,7 +960,7 @@ fn network_preview_rank_filters_and_evidence_follow_the_request() {
 
     // 2. Principal toggle.
     {
-        let mut prin_edge = SeedEdge::new("self", "prin", "committed-to", Some("20260530"), "p");
+        let mut prin_edge = SeedEdge::new("self", "prin", "works-with", Some("20260530"), "p");
         prin_edge.weight = 10;
         let root = seed(
             "principal-toggle",
@@ -1063,13 +1063,8 @@ fn network_preview_rank_filters_and_evidence_follow_the_request() {
             "hi-future",
         );
         hi_future.weight = 100;
-        let mut hi_kind = SeedEdge::new(
-            "self",
-            "hi-kind",
-            "committed-to",
-            Some("20260510"),
-            "hi-kind",
-        );
+        let mut hi_kind =
+            SeedEdge::new("self", "hi-kind", "spoke-with", Some("20260510"), "hi-kind");
         hi_kind.weight = 100;
         let mut hi_facet = SeedEdge::new(
             "self",
@@ -1574,5 +1569,40 @@ fn several_merged_ids_on_both_sides_of_a_pair_combine() {
     )
     .unwrap();
     assert_eq!(overview.totals.edges, 3);
+    cleanup(root);
+}
+
+#[test]
+fn retired_edge_kinds_survive_in_store_and_complete_reads() {
+    let root = seed(
+        "retired-kinds",
+        &[
+            SeedEdge::new("self", "other", "committed-to", Some("20260530"), "p1"),
+            SeedEdge::new("self", "other", "decided-with", Some("20260530"), "p2"),
+            SeedEdge::new("self", "other", "works-with", Some("20260530"), "p3"),
+        ],
+    );
+
+    let evidence =
+        load_edge_evidence(&root, "self", "other", &EdgeEvidenceRequest::default()).unwrap();
+    assert_eq!(evidence.evidence.len(), 3);
+
+    let network = load_entity_network(
+        &root,
+        "self",
+        &default_network("20260530"),
+        None,
+        ATTENDANCE,
+    )
+    .unwrap();
+    assert_eq!(network.neighbors.len(), 1);
+    assert_eq!(network.neighbors[0].entity_id, "other");
+    assert_eq!(network.neighbors[0].kinds.len(), 1);
+    assert!(network.neighbors[0].kinds.contains_key("works-with"));
+
+    let overview =
+        load_network_overview(&root, &default_overview("20260530"), ATTENDANCE, &|_| None).unwrap();
+    assert_eq!(overview.entities.len(), 2);
+
     cleanup(root);
 }

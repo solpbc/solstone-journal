@@ -1100,15 +1100,20 @@ fn commit_rewrites_activity_entity_references() {
     let journal = voiceprint_journal();
     let path = journal.join("facets/work/activities/20260102.jsonl");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, b"{\"id\":\"activity\",\"active_entities\":[\"source\"],\"commitments\":[{\"owner_entity_id\":\"source\",\"counterparty_entity_id\":\"someone-else\"}]}\n").unwrap();
+    fs::write(
+        &path,
+        b"{\"id\":\"activity\",\"active_entities\":[\"source\"],\"relations\":[{\"from_entity_id\":\"source\",\"to_entity_id\":\"someone-else\"}],\"commitments\":[{\"owner_entity_id\":\"source\"}],\"closures\":[{\"owner_entity_id\":\"source\"}],\"decisions\":[{\"owner_entity_id\":\"source\"}],\"edits\":[{\"actor\":\"owner:ledger_close\",\"at\":\"2026-01-01T00:00:00Z\"}]}\n",
+    )
+    .unwrap();
     commit_segment_merge(&journal);
     let row: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(row["active_entities"][0], "target");
-    assert_eq!(row["commitments"][0]["owner_entity_id"], "target");
-    assert_eq!(
-        row["commitments"][0]["counterparty_entity_id"],
-        "someone-else"
-    );
+    assert_eq!(row["relations"][0]["from_entity_id"], "target");
+    assert_eq!(row["relations"][0]["to_entity_id"], "someone-else");
+    assert_eq!(row["commitments"][0]["owner_entity_id"], "source");
+    assert_eq!(row["closures"][0]["owner_entity_id"], "source");
+    assert_eq!(row["decisions"][0]["owner_entity_id"], "source");
+    assert_eq!(row["edits"][0]["actor"], "owner:ledger_close");
     fs::remove_dir_all(journal).unwrap();
 }
 

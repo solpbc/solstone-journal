@@ -2635,9 +2635,9 @@ fn activity_saved_details_stay_one_fetchable_entry_per_activity() {
         .map(|hit| (hit.metadata.path, hit.metadata.idx))
         .collect::<Vec<_>>()
     };
-    let journal = |decisions: Vec<serde_json::Value>| {
+    let journal = |relations: Vec<serde_json::Value>| {
         [
-            serde_json::json!({"id": "a", "title": "Planning", "story": {"body": "Planned the week."}, "decisions": decisions}),
+            serde_json::json!({"id": "a", "title": "Planning", "story": {"body": "Planned the week."}, "relations": relations}),
             serde_json::json!({"id": "b", "title": "Review", "story": {"body": "Reviewed the draft."}}),
         ]
         .map(|record| record.to_string())
@@ -2649,7 +2649,7 @@ fn activity_saved_details_stay_one_fetchable_entry_per_activity() {
         &root,
         rel,
         &journal(vec![
-            serde_json::json!({"action": "ship", "context": "quarterlysentinel"}),
+            serde_json::json!({"note": "ship", "quote": "quarterlysentinel"}),
         ]),
     );
     scan_journal(&root, true).expect("scan activities");
@@ -2670,7 +2670,7 @@ fn activity_saved_details_stay_one_fetchable_entry_per_activity() {
     // without its source being touched.
     let old_text = before[0]
         .2
-        .split("\n\nSaved decision")
+        .split("\n\nSaved relation")
         .next()
         .unwrap()
         .to_string();
@@ -2700,11 +2700,11 @@ fn activity_saved_details_stay_one_fetchable_entry_per_activity() {
     // own activity or nothing.
     let before = rows(&root);
     let mut grown: Vec<_> = (0..40)
-        .map(|index| serde_json::json!({"action": format!("{index} {}", "g".repeat(1_000))}))
+        .map(|index| serde_json::json!({"note": format!("{index} {}", "g".repeat(1_000))}))
         .collect();
-    grown.push(serde_json::json!({"action": "ship", "context": "quarterlysentinel"}));
-    for decisions in [grown, Vec::new()] {
-        write_rel(&root, rel, &journal(decisions));
+    grown.push(serde_json::json!({"note": "ship", "quote": "quarterlysentinel"}));
+    for relations in [grown, Vec::new()] {
+        write_rel(&root, rel, &journal(relations));
         rescan_file(&root, Path::new(rel)).expect("rescan activity file");
         let after = rows(&root);
         assert_eq!(after.len(), 2);

@@ -72,16 +72,12 @@ fn producer_week_opens_in_the_reader() {
                 day: reports[0].day.clone(),
                 facet: "work".to_owned(),
                 record_id: "meeting_1".to_owned(),
-                group: "commitments",
-                index: 0,
                 quote: "I'll get you the deck by friday".to_owned(),
             },
             Said {
                 day: reports[1].day.clone(),
                 facet: "work".to_owned(),
                 record_id: "meeting_1".to_owned(),
-                group: "decisions",
-                index: 1,
                 quote: "let's go with blue then".to_owned(),
             },
         ];

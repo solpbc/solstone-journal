@@ -11,21 +11,21 @@ Canonical implementation: `core/payload/solstone/talent/morning_briefing.md` emi
 A structured preamble summarizing what data sources were consulted and what gaps exist. Appears at the top of the output so the reader knows the briefing's evidence base before reading any claims.
 
 **What it includes:**
-- Source counts (segments, calendar events, entities consulted, newsletters, followups)
+- Source counts (segments, calendar events, entities consulted, newsletters)
 - Gaps — sources that returned zero results or errored
 - Structured metadata with machine-readable source counts
 
 **Example:**
-> Built from 12 transcript segments, 4 calendar events, 3 entity profiles, 2 facet newsletters, and 5 follow-ups. Gaps: entity intelligence unavailable for Sarah Chen; no facet newsletters today.
+> Built from 12 transcript segments, 4 calendar events, 3 entity profiles, and 2 facet newsletters. Gaps: entity intelligence unavailable for Sarah Chen; no facet newsletters today.
 
 ### 2. Source Attribution
 
 Inline parenthetical links connecting claims to their originating data using `sol://` URIs. Allows readers to trace any claim back to the source.
 
 **When to attribute:**
-- High-consequence factual claims (commitments, decisions, deadlines)
+- High-consequence factual claims (deadlines)
 - Entity context drawn from specific interactions
-- Follow-up items and action items
+- Action items
 
 **When attribution is unnecessary:**
 - Calendar events (self-evident from the calendar source)
@@ -82,4 +82,4 @@ To add provenance to a Generate talent:
 - **Visual differentiation** — UI-level styling (bold, color, icons) to distinguish confidence levels. That belongs in the convey layer.
 - **Automated confidence scoring** — Computing numeric confidence as metadata fields. Confidence is expressed through language only.
 - **Retroactive provenance** — Applying provenance to historical briefings already generated. The pattern applies going forward.
-- **Cross-agent provenance chains** — Tracing a claim through multiple agent hops (e.g., transcript → followups → briefing). Each agent applies provenance to its own output independently.
+- **Cross-agent provenance chains** — Tracing a claim through multiple agent hops (e.g., transcript → briefing). Each agent applies provenance to its own output independently.

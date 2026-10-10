@@ -347,7 +347,7 @@
                     "email"
                   ],
                   "color": "#00796b",
-                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
+                  "description": "Generates a conversation story, topics, confidence, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
@@ -737,7 +737,7 @@
                     "productivity"
                   ],
                   "color": "#6d4c41",
-                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
+                  "description": "Generates a work story, topics, confidence, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
@@ -1076,7 +1076,7 @@
                     "email"
                   ],
                   "color": "#00796b",
-                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
+                  "description": "Generates a conversation story, topics, confidence, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
@@ -1466,7 +1466,7 @@
                     "productivity"
                   ],
                   "color": "#6d4c41",
-                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
+                  "description": "Generates a work story, topics, confidence, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
@@ -1906,7 +1906,7 @@
                     "email"
                   ],
                   "color": "#00796b",
-                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
+                  "description": "Generates a conversation story, topics, confidence, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
@@ -2296,7 +2296,7 @@
                     "productivity"
                   ],
                   "color": "#6d4c41",
-                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
+                  "description": "Generates a work story, topics, confidence, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
@@ -2736,7 +2736,7 @@
                     "email"
                   ],
                   "color": "#00796b",
-                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
+                  "description": "Generates a conversation story, topics, confidence, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
@@ -3126,7 +3126,7 @@
                     "productivity"
                   ],
                   "color": "#6d4c41",
-                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
+                  "description": "Generates a work story, topics, confidence, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },

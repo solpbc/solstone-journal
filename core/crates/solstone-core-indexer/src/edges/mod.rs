@@ -41,7 +41,6 @@ pub const KINDS: &[&str] = &[
     "co-present",
     "spoke-with",
     "mentioned",
-    "committed-to",
     "works-with",
     "works-at",
     "reports-to",
@@ -50,21 +49,13 @@ pub const KINDS: &[&str] = &[
     "uses",
     "created",
     "other",
-    "decided-with",
     "messaged-with",
     "scheduled-with",
     "party-of",
 ];
 
 // Rust-owned directed-kind subset retained from the retired Python implementation.
-pub const DIRECTED_KINDS: &[&str] = &[
-    "committed-to",
-    "mentioned",
-    "works-at",
-    "reports-to",
-    "uses",
-    "created",
-];
+pub const DIRECTED_KINDS: &[&str] = &["mentioned", "works-at", "reports-to", "uses", "created"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EdgeContext {
@@ -1092,12 +1083,6 @@ mod tests {
                     {"role":"attendee","entity_id":"edge_ada"},
                     {"role":"mentioned","entity_id":"edge_tessa"}
                 ],
-                "commitments":[{"action":"Send the proposal","owner_entity_id":"edge_zoe","counterparty_entity_id":"edge_ada"}],
-                "closures":[{"action":"Confirm the handoff","owner_entity_id":"edge_tessa","counterparty_entity_id":"edge_zoe"}],
-                "decisions":[
-                    {"action":"Skip self","owner_entity_id":"edge_mike","counterparty_entity_id":"edge_mike"},
-                    {"action":"Use the stable plan together","owner_entity_id":"edge_zoe","counterparty_entity_id":"edge_mike"}
-                ],
                 "relations":[{"from":"Zoe Edge","to":"Ada Edge","from_entity_id":"edge_zoe","to_entity_id":"edge_ada","kind":"works-with","note":"Runs planning together","quote":"Let's pair on this"}]
             })
             .as_object()
@@ -1156,39 +1141,6 @@ mod tests {
                     EdgeValue::Null,
                     Some("story-commitments-1"),
                     EdgeValue::Text("Don'T Ship".to_string()),
-                    EdgeValue::Int(1777554000000),
-                ),
-                (
-                    "commitment",
-                    "edge_zoe",
-                    "edge_ada",
-                    "committed-to",
-                    EdgeValue::Null,
-                    EdgeValue::Null,
-                    Some("story-commitments-1"),
-                    EdgeValue::Text("Send the proposal".to_string()),
-                    EdgeValue::Int(1777554000000),
-                ),
-                (
-                    "closure",
-                    "edge_tessa",
-                    "edge_zoe",
-                    "committed-to",
-                    EdgeValue::Null,
-                    EdgeValue::Null,
-                    Some("story-commitments-1"),
-                    EdgeValue::Text("Confirm the handoff".to_string()),
-                    EdgeValue::Int(1777554000000),
-                ),
-                (
-                    "decision",
-                    "edge_zoe",
-                    "edge_mike",
-                    "decided-with",
-                    EdgeValue::Null,
-                    EdgeValue::Null,
-                    Some("story-commitments-1"),
-                    EdgeValue::Text("Use the stable plan together".to_string()),
                     EdgeValue::Int(1777554000000),
                 ),
                 (

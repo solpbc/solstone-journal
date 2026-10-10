@@ -709,7 +709,7 @@ fn generate_response(
     context: &ExecutionContext,
     generate: &OneShotClient,
     writer: &mut impl Write,
-    state: Option<&PrePostState>,
+    _state: Option<&PrePostState>,
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
     let _ = prepared.config.remove(INPUT_BUDGET_KEY);
     match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
@@ -726,15 +726,9 @@ fn generate_response(
                 prepared.config.contains_key("json_schema"),
                 None,
                 |_attempt| {
-                    let mut response = generate.execute(&request).map_err(|error| {
+                    let response = generate.execute(&request).map_err(|error| {
                         stage_error("generate", "runtime", prepared, format!("{error}"))
                     })?;
-                    if let (GenerateResponse::Generated(generated), Some(state)) =
-                        (&mut response, state)
-                        && matches!(state, PrePostState::MorningBriefing(_))
-                    {
-                        morning_briefing::repair_attention_overflow(generated, prepared, state)?;
-                    }
                     Ok(response)
                 },
                 |event| emit(writer, event),
@@ -837,21 +831,6 @@ pub(crate) fn generate_and_write(
         }
     };
     if let Some((stage, state)) = stage {
-        // The briefing's checked output and saved output must be the same bytes.
-        // This uses its existing stage before ordinary publication; a scheduled
-        // (frozen) daily briefing renders in `daily_execution::execute`.
-        let response = if stage.stage == contract::StageId::MorningBriefing {
-            match morning_briefing::preserve_open_loops(&response, prepared, &state) {
-                Ok(output) => output,
-                Err(mut error) => {
-                    error.usage = usage;
-                    error.degraded = degraded;
-                    return RuntimeOutcome::StageFailed(error);
-                }
-            }
-        } else {
-            response
-        };
         if stage.unavailable_commit.is_some()
             && prepared
                 .config
@@ -1738,7 +1717,7 @@ mod tests {
         let before = fs::read(&activity_path).unwrap();
         let client = OneShotClient::at_path(test_support::one_shot_stub_with_schema_validation(
             root.path(),
-            r#"{"body":"valid enough for the hook","topics":["work"],"confidence":1,"commitments":[],"closures":[],"decisions":[],"relations":[]}"#,
+            r#"{"body":"valid enough for the hook","topics":["work"],"confidence":1,"relations":[]}"#,
             json!({"valid":false,"errors":[{"path":"/body","constraint":"minLength"}]}),
         ));
         let mut output = Vec::new();
@@ -1999,7 +1978,7 @@ mod tests {
         fs::write(work.join("activities"), b"not a directory").unwrap();
         let client = OneShotClient::at_path(test_support::one_shot_stub(
             root.path(),
-            r#"{"body":"body","topics":["work"],"confidence":1,"commitments":[],"closures":[],"decisions":[],"relations":[]}"#,
+            r#"{"body":"body","topics":["work"],"confidence":1,"relations":[]}"#,
         ));
         let mut output = Vec::new();
         let outcome = execute_request(

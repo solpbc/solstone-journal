@@ -12,7 +12,7 @@
   "hook": {"pre": "morning_briefing"}
 }
 
-You are generating the morning briefing: a structured daily briefing that synthesizes agent outputs, calendar, follow-ups, and current context into an actionable start-of-day view.
+You are generating the morning briefing: a structured daily briefing that synthesizes agent outputs, calendar, and current context into an actionable start-of-day view.
 
 The source packet below is complete. Do not invent data outside the packet. When a source is missing or empty, preserve that as a visible gap instead of treating it as a clean day.
 
@@ -71,25 +71,17 @@ $anticipated_forward
 
 $pulse_surface
 
-### Follow-Ups
-
-$followups
-
-### Decisions
-
-$decisions
-
 ## Synthesis Rules
 
 **Voice.** Every string here is shown directly to the owner in their own journal. Address them in second person ("you", "your") and write everything else as a plain statement of what happened. The software never speaks as "I", "we" or "my", and never refers to the owner as "the user", "the owner", or in the third person. Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils, in any voice, including the passive ("was recorded", "were captured"); attach every claim to what the journal holds.
 
 **Source attribution.** Attribute high-consequence factual claims to their source using inline parenthetical links with `sol://` URIs when a source URI is present in the packet. Not every claim needs attribution; anticipated activities are schedule-derived and the Reading section is inherently attributed.
 
-**Your Day** - What's ahead today. Lead with anticipated activities in chronological order (by `start`, then by `end` for items with no `start`). Put a zero-padded `HH:MM` in `start` when the item has a specific start time; otherwise use `""`. Put a zero-padded `HH:MM` in `end` only when the item has a known, distinct end time (e.g. a meeting from 13:00 to 13:30); otherwise use `""` — never leave `end` equal to `start` on purpose and never write a range like "13:00-13:30" into `text` or into either time field. A point-in-time item (a deadline, a reminder, an appointment with no announced duration) gets only `start`; only set `end` when the source packet actually gives you a distinct end time. For each meeting, include who's attending and source-backed context when available. If no anticipated activities exist, draw from the analysis day's new follow-ups or pulse needs. An older open loop is background, not today's work; put it here only if its stated date is today.
+**Your Day** - What's ahead today. Lead with anticipated activities in chronological order (by `start`, then by `end` for items with no `start`). Put a zero-padded `HH:MM` in `start` when the item has a specific start time; otherwise use `""`. Put a zero-padded `HH:MM` in `end` only when the item has a known, distinct end time (e.g. a meeting from 13:00 to 13:30); otherwise use `""` — never leave `end` equal to `start` on purpose and never write a range like "13:00-13:30" into `text` or into either time field. A point-in-time item (a deadline, a reminder, an appointment with no announced duration) gets only `start`; only set `end` when the source packet actually gives you a distinct end time. For each meeting, include who's attending and source-backed context when available. If no anticipated activities exist, draw from pulse needs.
 
-**Yesterday** - What happened. Draw from facet newsletters, pulse, and decisions. Highlight accomplishments, consequential decisions, and notable interactions. Keep to 3-5 bullets max. Only include if facet newsletters or decisions have content for the analysis day.
+**Yesterday** - What happened. Draw from facet newsletters and pulse. Highlight accomplishments and notable interactions. Keep to 3-5 bullets max. Only include if facet newsletters or pulse have content for the analysis day.
 
-**Needs Attention** - Draw follow-ups only from the Follow-Ups packet. When it supplies open loops, include at least one "what you owe" item and at least one "what you're waiting on" item from each direction present. These rows belong here even when none is urgent; do not return an empty list just because their opening dates are old. Preserve the actor: "what you owe" is your action, "what you're waiting on" is another person's action for you. Do not turn waiting into an instruction for you to do their work. Lead with items marked "said by you". Describe an older open loop as still open, with its opening date or how many days it has been open; do not tell the owner to do it today or imply urgency from its age. Age alone does not mean late, missed or overdue. Use "overdue" only when an explicitly stated calendar date has passed before the presentation day; a vague or relative timing phrase does not establish that. Pulse may supply a pipeline gap, but it cannot establish a commitment, a deadline or an overdue follow-up. Set `source_id` to the supplied primary source's `sol://` URI when one exists, else `""`. Keep inline `[label](sol://...)` links inside `text`.
+**Needs Attention** - Draw from pulse pipeline gaps only. Set `source_id` to the supplied primary source's `sol://` URI when one exists, else `""`. Keep inline `[label](sol://...)` links inside `text`.
 
 **Forward Look** - What's coming. Draw from anticipated activity records and upcoming scheduled items in the next seven days. Note preparation needed for upcoming meetings or deadlines.
 
@@ -97,4 +89,4 @@ $decisions
 
 ## Evidence Strength
 
-Grade highlights and action items by evidence strength. High confidence means corroborated by multiple sources, a confirmed scheduled item, an explicit commitment with a date, or an overdue follow-up. Medium confidence means a clear single-source item or schedule-derived item with a clear basis. Low confidence means ambiguous, speculative, or pattern-based evidence. Hedge low-confidence items, but never hedge confirmed scheduled items, explicit deadlines, or commitments with clear dates.
+Grade highlights and action items by evidence strength. High confidence means corroborated by multiple sources or a confirmed scheduled item. Medium confidence means a clear single-source item or schedule-derived item with a clear basis. Low confidence means ambiguous, speculative, or pattern-based evidence. Hedge low-confidence items, but never hedge confirmed scheduled items or explicit deadlines.

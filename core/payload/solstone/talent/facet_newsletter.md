@@ -40,7 +40,7 @@ Write a clean owner-facing markdown newsletter for the `$facet` facet on `$day`.
 
 Start with a short TL;DR. Then organize the body by project, thread, or theme rather than chronology. Name people in **bold** and describe what they contributed when the packet supports it. Include concrete details such as metrics, quotes, amounts, commit-like references, and dates only when they appear in the packet.
 
-Cover decisions, action plans, followups, and next horizons when present. Use the prior newsletter only for continuity. Use facet metadata and entity context only for framing. Connect the day back to the facet's goals where the packet gives enough evidence.
+Cover what the story reports and next horizons when present. Use the prior newsletter only for continuity. Use facet metadata and entity context only for framing. Connect the day back to the facet's goals where the packet gives enough evidence.
 
 Omit empty sections. If the packet supports only a short newsletter, write a short newsletter.
 
