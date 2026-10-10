@@ -1385,6 +1385,7 @@ fn classified_operation_error(detail: String) -> Response {
         refusal(ReasonCode::EntityBlocked, detail)
     } else if lowered.contains("must be different")
         || lowered.contains("two principal")
+        || lowered.contains("both are marked as you")
         || lowered.contains("isn't a person")
     {
         refusal(ReasonCode::InvalidRequestValue, detail)

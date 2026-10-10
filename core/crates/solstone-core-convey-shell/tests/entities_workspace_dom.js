@@ -160,6 +160,34 @@ function main() {
   new vm.Script(workspace.slice(scriptStart, scriptEnd), {filename: 'entities-workspace.js'});
   check(scriptStart >= '<script>'.length && scriptEnd > scriptStart, 'the complete Entities workspace script parses');
 
+  // Every entities refusal answers `error: "Entity request refused"`; the owner's reason is in `detail`.
+  const errorStart = workspace.indexOf('function entityTrustFormat(');
+  const errorEnd = workspace.indexOf('function entityTrustIdentitySummary', errorStart);
+  check(errorStart !== -1 && errorEnd !== -1, 'workspace exposes the entities error-message helper');
+  const errorContext = {
+    window: {SurfaceState: {serverMessageFrom: (err) => err?.serverMessage || ''}},
+    ENT_COPY: {ENT_TRUST_REPAIR_REQUIRED: '{detail} {remediation}'},
+  };
+  vm.runInNewContext(
+    `${workspace.slice(errorStart, errorEnd)}\nwindow.entityErrorMessage = entityErrorMessage;`,
+    errorContext,
+    {filename: 'entities-error-message.js'},
+  );
+  const entityErrorMessage = errorContext.window.entityErrorMessage;
+  const refused = {status: 400, serverMessage: 'Entity request refused', rawDetail: "can't merge a person into something that isn't a person."};
+  check(entityErrorMessage(refused, 'fallback') === refused.rawDetail, 'a refusal shows its detail, not the generic error');
+  check(entityErrorMessage({serverMessage: 'Not Found'}, 'fallback') === 'Not Found', 'an error without detail shows its server message');
+  check(entityErrorMessage(new TypeError('Failed to fetch'), 'fallback') === 'fallback', 'an error with neither shows the fallback');
+  check(
+    entityErrorMessage({status: 500, serverMessage: 'Entity request refused', rawDetail: 'No such file or directory (os error 2)'}, 'fallback') === 'fallback',
+    'a server failure shows the fallback, not its engineering detail',
+  );
+  const helperBody = workspace.slice(errorStart, errorEnd);
+  const outsideHelper = workspace.replace(helperBody, '');
+  check(!outsideHelper.includes('SurfaceState.serverMessageFrom('), 'every entities error surface reads through entityErrorMessage');
+  check(!/err(or)?\?\.serverMessage/.test(outsideHelper), 'no entities error surface reads the generic server message directly');
+  check(!/new Error\((data|body)\.error/.test(workspace), 'raw-fetch failures prefer the refusal detail');
+
   const start = workspace.indexOf('let ENT_COPY = {};');
   const scopeEnd = workspace.indexOf('function showFacetDetailView', start);
   const metadataStart = workspace.indexOf('function adoptJournalSummary', start);

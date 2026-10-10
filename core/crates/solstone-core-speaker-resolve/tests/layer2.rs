@@ -203,6 +203,68 @@ fn screen_and_meeting_names_never_admit_a_non_person() {
 }
 
 #[test]
+fn non_person_and_unresolved_names_produce_no_candidate_evidence() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "tool", "Terminal", Some("Tool"), false);
+    write_entity(temporary.path(), "project", "Atlas", Some("Project"), false);
+    write_entity(temporary.path(), "company", "Acme", Some("Company"), false);
+    write_entity(temporary.path(), "untyped", "Untyped", None, false);
+    write_entity(
+        temporary.path(),
+        "sam-one",
+        "Sam Person",
+        Some("Person"),
+        false,
+    );
+    write_entity(
+        temporary.path(),
+        "sam-two",
+        "Sam Person",
+        Some("Person"),
+        false,
+    );
+    let blocked = temporary.path().join("entities/blocked/entity.json");
+    fs::create_dir_all(blocked.parent().expect("entity parent")).expect("create entity parent");
+    fs::write(
+        blocked,
+        json!({"id": "blocked", "name": "Blocked", "type": "Person", "blocked": true}).to_string(),
+    )
+    .expect("write blocked entity");
+    let entities = journal_entities(temporary.path());
+    let names = [
+        "Terminal",
+        "Atlas",
+        "Acme",
+        "Blocked",
+        "Untyped",
+        "Sam Person",
+        "Nobody",
+    ]
+    .map(str::to_owned);
+    let result = apply_structural_heuristics(
+        labels(&[1]),
+        Layer2Inputs {
+            speakers: &names,
+            setting_names: &names,
+            screen_names: &names,
+            meeting_names: &names,
+            entities: &entities,
+            all_entities: &entities,
+            non_owner_sids: &[1],
+            margin_declined_sids: &HashSet::new(),
+            journal_root: temporary.path(),
+            day: "20260808",
+            segment_key: "120000_300",
+            read_only: true,
+        },
+    )
+    .expect("apply layer 2");
+    assert!(result.candidate_evidence.is_empty());
+    assert!(result.candidate_entity_ids.is_empty());
+    assert_eq!(result.labels[&1].speaker, None);
+}
+
+#[test]
 fn ac5_principal_person_remains_admissible() {
     let temporary = TempDir::new();
     write_entity(temporary.path(), "owner", "Avery", Some("Person"), true);

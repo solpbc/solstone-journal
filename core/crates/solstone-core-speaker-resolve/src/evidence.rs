@@ -11,18 +11,10 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde_json::{Value, json};
-use solstone_core_entity::{
-    EntityResolutionOutcome, EntityStoreError, load_all_journal_entities,
-    record_entity_resolution_from_name_evidence,
-};
+use serde_json::Value;
+use solstone_core_entity::EntityStoreError;
 use solstone_core_journal_config::{ConfigLoadError, materialized_defaults, read_journal_config};
-use solstone_core_journal_io::{PathError, SegmentLayout};
-
-use crate::admission::{
-    admissible_person_pool, admissible_resolution_entities, saved_choice_excluded_by_admission,
-};
-use solstone_core_speaker_id::calibration::RESOLUTION_FUZZY_THRESHOLD;
+use solstone_core_journal_io::PathError;
 
 const CHANNEL_ORDER: [&str; 4] = ["screen", "meeting_day", "setting", "speakers"];
 static LEADING_SETTING_CONTEXT: LazyLock<Regex> = LazyLock::new(|| {
@@ -102,102 +94,6 @@ impl From<crate::segment_catalog::ExactLookupError> for EvidenceError {
     fn from(error: crate::segment_catalog::ExactLookupError) -> Self {
         Self::ExactLookup(error)
     }
-}
-
-/// Recompute per-segment candidate evidence without mutation.
-pub fn compute_segment_candidate_evidence_readonly(
-    journal_root: &Path,
-    day: &str,
-    stream: &str,
-    segment_key: &str,
-    stream_layout: SegmentLayout,
-) -> Result<(Vec<CandidateEvidence>, Vec<EvidenceGap>), EvidenceError> {
-    let Some(segment_dir) = crate::segment_catalog::resolve_exact(
-        journal_root,
-        day,
-        stream,
-        segment_key,
-        stream_layout,
-    )?
-    else {
-        return Ok((Vec::new(), Vec::new()));
-    };
-    if !segment_dir.is_dir() {
-        return Ok((Vec::new(), Vec::new()));
-    }
-
-    let mut gaps = Vec::new();
-    let (speakers, source_gaps) = load_segment_speakers_with_gaps(&segment_dir);
-    gaps.extend(source_gaps);
-    let (setting, source_gaps) = load_setting_field_with_gaps(&segment_dir);
-    gaps.extend(source_gaps);
-    let setting_names = match setting {
-        Some(setting) => parse_setting_names(journal_root, &setting)?,
-        None => Vec::new(),
-    };
-    let (screen_names, source_gaps) = extract_screen_participants_with_gaps(&segment_dir);
-    gaps.extend(source_gaps);
-    let (meeting_names, source_gaps) = extract_meeting_participants_with_gaps(journal_root, day);
-    gaps.extend(source_gaps);
-
-    let name_channels =
-        candidate_name_channels(&speakers, &setting_names, &screen_names, &meeting_names);
-    let candidate_names = ordered_dedup(
-        speakers
-            .iter()
-            .chain(&setting_names)
-            .chain(&screen_names)
-            .chain(&meeting_names),
-    );
-    let entities = load_all_journal_entities(journal_root)?;
-    let all_entities = entities.iter().collect::<Vec<_>>();
-    let unblocked = entities
-        .iter()
-        .filter(|entity| !entity.is_blocked())
-        .collect::<Vec<_>>();
-    let pool = admissible_person_pool(&unblocked);
-    let resolution_entities = admissible_resolution_entities(&pool);
-    let scope = json!({"kind": "journal"});
-    let mut name_entity_ids = HashMap::new();
-    for name in candidate_names {
-        match saved_choice_excluded_by_admission(journal_root, &scope, &name, &all_entities) {
-            Ok(true) => continue,
-            Ok(false) => {}
-            Err(_) => {
-                gaps.push(gap("resolution", "stale_resolution"));
-                continue;
-            }
-        }
-        match record_entity_resolution_from_name_evidence(
-            journal_root,
-            &name,
-            &resolution_entities,
-            scope.clone(),
-            json!({
-                "lane": "apps.speakers.aggregation",
-                "day": day,
-                "segment_id": segment_key,
-                "field": "candidate_name",
-            }),
-            RESOLUTION_FUZZY_THRESHOLD,
-            true,
-        ) {
-            Ok(resolution)
-                if resolution.outcome == EntityResolutionOutcome::Resolved
-                    && let Some(index) = resolution.entity_index =>
-            {
-                if let Some(entity) = pool.get(index) {
-                    name_entity_ids.insert(name, entity.id.clone());
-                }
-            }
-            Ok(_) => {}
-            Err(_) => gaps.push(gap("resolution", "stale_resolution")),
-        }
-    }
-    Ok((
-        assemble_candidate_evidence(&name_channels, &name_entity_ids),
-        gaps,
-    ))
 }
 
 /// Read the imported-audio setting field and its source-health gaps.

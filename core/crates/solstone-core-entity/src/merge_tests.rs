@@ -1720,7 +1720,7 @@ fn merge_refuses_blocked_source() {
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
             .unwrap_err()
             .to_string(),
-        "Cannot merge blocked entity: source"
+        "can't merge something that's blocked. unblock it first."
     );
     fs::remove_dir_all(journal).unwrap();
 }
@@ -1746,7 +1746,7 @@ fn merge_refuses_blocked_target() {
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
             .unwrap_err()
             .to_string(),
-        "Cannot merge blocked entity: target"
+        "can't merge into something that's blocked. unblock it first."
     );
     fs::remove_dir_all(journal).unwrap();
 }
@@ -1786,7 +1786,7 @@ fn merge_refuses_two_principal_entities() {
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
             .unwrap_err()
             .to_string(),
-        "Cannot merge two principal entities."
+        "can't merge these: both are marked as you."
     );
     fs::remove_dir_all(journal).unwrap();
 }

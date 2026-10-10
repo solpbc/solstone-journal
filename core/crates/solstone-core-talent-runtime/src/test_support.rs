@@ -5,7 +5,61 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Set only by the install probe; a stub run with it exits before its body.
+#[cfg(all(test, feature = "full-tests"))]
+const PROBE_ENV: &str = "SOLSTONE_TEST_STUB_PROBE";
+
+/// Write an executable `/bin/sh` stub. Under `full-tests`, where stubs run,
+/// return only once it can be executed.
+pub fn install_stub(path: &Path, script: &str) {
+    let body = script
+        .strip_prefix("#!/bin/sh\n")
+        .expect("stub is a /bin/sh script");
+    fs::write(
+        path,
+        format!("#!/bin/sh\n[ -z \"$SOLSTONE_TEST_STUB_PROBE\" ] || exit 0\n{body}"),
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(path, permissions).unwrap();
+    #[cfg(all(test, feature = "full-tests"))]
+    wait_until_executable(path);
+}
+
+/// A test on another thread that forks while this one holds the file open for
+/// writing keeps that descriptor in its child until the child execs, and an
+/// exec in that window fails with ETXTBSY ("Text file busy"). Probing here,
+/// as `solstone-core-system/tests/fixture_binary.rs` does, keeps the race out
+/// of every test that runs a stub.
+#[cfg(all(test, feature = "full-tests"))]
+fn wait_until_executable(path: &Path) {
+    use std::io::ErrorKind;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match Command::new(path)
+            .env(PROBE_ENV, "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(status) if status.success() => return,
+            Ok(status) => panic!("stub probe exited with {status}"),
+            Err(error)
+                if error.kind() == ErrorKind::ExecutableFileBusy && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("stub probe failed: {error}"),
+        }
+    }
+}
 
 /// Install a one-shot v2 response stub and return its executable path.
 pub fn one_shot_stub(root: &std::path::Path, text: &str) -> PathBuf {
@@ -22,17 +76,13 @@ pub fn generate_one_shot_stub(root: &std::path::Path, text: &str) -> PathBuf {
         "finish_reason":"stop", "thinking":null, "schema_validation":null,
         "input_budget":null, "request_budget":null, "inference":null,
     });
-    fs::write(
+    install_stub(
         &path,
-        format!(
+        &format!(
             "#!/bin/sh\n[ \"$1\" = generate ] && [ \"$2\" = --one-shot ] || exit 92\ncat >/dev/null\nprintf '%s\\n' '{}'\n",
             response
         ),
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o700);
-    fs::set_permissions(&path, permissions).unwrap();
+    );
     path
 }
 
@@ -68,14 +118,10 @@ fn one_shot_stub_with(
         "finish_reason":"stop", "thinking":null, "schema_validation":schema_validation,
         "input_budget":input_budget, "request_budget":null, "inference":null,
     });
-    fs::write(
+    install_stub(
         &path,
-        format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{}'\n", response),
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o700);
-    fs::set_permissions(&path, permissions).unwrap();
+        &format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{}'\n", response),
+    );
     path
 }
 
@@ -91,14 +137,10 @@ pub fn refused_one_shot_stub(
 ) -> PathBuf {
     let path = root.join("refused-one-shot-stub.sh");
     let response = refused_response_value(reason_code, retryable, blocking, provider, detail);
-    fs::write(
+    install_stub(
         &path,
-        format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{}'\n", response),
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o700);
-    fs::set_permissions(&path, permissions).unwrap();
+        &format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{}'\n", response),
+    );
     path
 }
 
@@ -168,9 +210,39 @@ pub fn sequenced_one_shot_stub(root: &std::path::Path, responses: &[serde_json::
             exit 93\n\
         fi\n",
     );
-    fs::write(&script_path, script).unwrap();
-    let mut permissions = fs::metadata(&script_path).unwrap().permissions();
-    permissions.set_mode(0o700);
-    fs::set_permissions(&script_path, permissions).unwrap();
+    install_stub(&script_path, &script);
     script_path
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod tests {
+    use std::io::ErrorKind;
+    use std::process::Command;
+
+    use super::*;
+
+    #[test]
+    fn install_stub_waits_out_a_child_holding_the_file_open_for_writing() {
+        let root = tempfile::Builder::new()
+            .prefix("solstone-talent-stub-busy-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let path = root.path().join("stub.sh");
+        let script = "#!/bin/sh\nprintf ok\n";
+        fs::write(&path, script).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        let writer = fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let mut holder = Command::new("sleep")
+            .arg("0.3")
+            .stdout(writer)
+            .spawn()
+            .unwrap();
+        let busy = Command::new(&path).output().unwrap_err();
+        assert_eq!(busy.kind(), ErrorKind::ExecutableFileBusy);
+
+        install_stub(&path, script);
+        let output = Command::new(&path).output().unwrap();
+        assert_eq!(output.stdout, b"ok");
+        holder.wait().unwrap();
+    }
 }

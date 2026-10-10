@@ -3029,7 +3029,7 @@ async function fetchEntityConnJson(url) {
   const response = await fetch(url);
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(body.error || body.detail || response.statusText);
+    const error = new Error(body.detail || body.error || response.statusText);
     error.status = response.status;
     error.body = body;
     throw error;
@@ -3796,7 +3796,7 @@ function showFacetDetailView(entityId) {
     .then(data => {
       if (!detailObservationTokenCurrent(openToken)) return;
       if (data.error) {
-        throw new Error(data.error);
+        throw new Error(data.detail || data.error);
       }
       currentDetailEntity = data.entity;
       renderDetailView(data.entity, data.observations, data);
@@ -3812,7 +3812,7 @@ function showFacetDetailView(entityId) {
         container.innerHTML = window.SurfaceState.error({
           heading: "this entity couldn't be loaded",
           desc: window.CONVEY_COPY.RELOAD_HINT,
-          serverMessage: window.SurfaceState.serverMessageFrom(error),
+          serverMessage: entityErrorMessage(error),
           detail: error,
         });
       }
@@ -3942,7 +3942,7 @@ function showJournalDetailView(entityId) {
     .then(data => {
       if (!detailObservationTokenCurrent(openToken)) return;
       if (data.error) {
-        throw new Error(data.error);
+        throw new Error(data.detail || data.error);
       }
       currentDetailEntity = data.entity;
       renderJournalDetailView(data.entity);
@@ -3957,7 +3957,7 @@ function showJournalDetailView(entityId) {
         container.innerHTML = window.SurfaceState.error({
           heading: "this entity couldn't be loaded",
           desc: window.CONVEY_COPY.RELOAD_HINT,
-          serverMessage: window.SurfaceState.serverMessageFrom(error),
+          serverMessage: entityErrorMessage(error),
           detail: error,
         });
       }
@@ -4201,13 +4201,16 @@ function entityTrustRepairRequired(err) {
   return err?.payload?.operation_state === 'repair_required';
 }
 
-function entityTrustErrorMessage(err, fallback) {
+// Every entities refusal carries the same generic `error`; the reason is in `detail`.
+function entityErrorMessage(err, fallback = '') {
   if (entityTrustRepairRequired(err)) {
     return entityTrustFormat(ENT_COPY.ENT_TRUST_REPAIR_REQUIRED, {
       detail: err.rawDetail || err.serverMessage || fallback,
       remediation: err.payload.safe_remediation || ''
     }).trim();
   }
+  // A failure's detail is engineering text; it stays under the error's details.
+  if (err?.status >= 500) return fallback;
   return err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || fallback;
 }
 
@@ -4407,7 +4410,7 @@ async function loadJournalTrustDetails(entityId) {
     if (currentDetailEntity?.id !== entityId) return;
     showInlineError(
       'journal-detail-trust-error',
-      window.SurfaceState.serverMessageFrom(err) || ENT_COPY.ENT_TRUST_LOAD_FAILED
+      entityErrorMessage(err, ENT_COPY.ENT_TRUST_LOAD_FAILED)
     );
     document.getElementById('journal-detail-suggestions').textContent = ENT_COPY.ENT_TRUST_LOAD_FAILED || '';
     document.getElementById('journal-detail-history').textContent = ENT_COPY.ENT_TRUST_LOAD_FAILED || '';
@@ -4505,7 +4508,7 @@ async function previewJournalEntityMerge(sourceId, targetId) {
   } catch (err) {
     showInlineError(
       'journal-detail-trust-error',
-      window.SurfaceState.serverMessageFrom(err) || ENT_COPY.ENT_TRUST_ACTION_FAILED
+      entityErrorMessage(err, ENT_COPY.ENT_TRUST_ACTION_FAILED)
     );
   } finally {
     if (currentDetailEntity?.id === sourceId) button.disabled = false;
@@ -4551,7 +4554,7 @@ async function commitJournalEntityMerge(sourceId, targetId, targetName, button) 
     if (!entityTrustRepairRequired(err)) button.disabled = false;
     showInlineError(
       'journal-detail-trust-error',
-      entityTrustErrorMessage(err, ENT_COPY.ENT_TRUST_ACTION_FAILED)
+      entityErrorMessage(err, ENT_COPY.ENT_TRUST_ACTION_FAILED)
     );
   }
 }
@@ -4581,7 +4584,7 @@ async function restoreJournalEntityVersion(entityId, versionId, button) {
     button.disabled = false;
     showInlineError(
       'journal-detail-trust-error',
-      window.SurfaceState.serverMessageFrom(err) || ENT_COPY.ENT_TRUST_ACTION_FAILED
+      entityErrorMessage(err, ENT_COPY.ENT_TRUST_ACTION_FAILED)
     );
   }
 }
@@ -4618,7 +4621,7 @@ document.getElementById('journal-detail-edit-form').addEventListener('submit', f
   .then(response => response.json())
   .then(data => {
     if (data.error) {
-      throw new Error(data.error);
+      throw new Error(data.detail || data.error);
     }
 
     // Update local state
@@ -4671,7 +4674,7 @@ function blockJournalEntity() {
   .then(response => response.json())
   .then(data => {
     if (data.error) {
-      throw new Error(data.error);
+      throw new Error(data.detail || data.error);
     }
     hideInlineError('block-action-error');
     // Navigate back to list and reload
@@ -4700,7 +4703,7 @@ function unblockJournalEntity() {
   .then(response => response.json())
   .then(data => {
     if (data.error) {
-      throw new Error(data.error);
+      throw new Error(data.detail || data.error);
     }
     hideInlineError('block-action-error');
     // Refresh the detail view
@@ -4764,7 +4767,7 @@ function confirmDeleteJournalEntity() {
   })
   .then(data => {
     if (data.error) {
-      throw new Error(data.error);
+      throw new Error(data.detail || data.error);
     }
     accepted = true;
     // Time the wait from this answer, not the journal's clock: a paired
@@ -5268,7 +5271,7 @@ function startDescriptionEdit(entity) {
     .catch(err => {
       textarea.disabled = false;
       generateBtn.classList.remove('generating');
-      showInlineError('description-save-error', err?.serverMessage || "Couldn't start description generation");
+      showInlineError('description-save-error', entityErrorMessage(err, "Couldn't start description generation"));
       window.logError(err, { context: 'entities: generateDescription kickoff failed' });
     });
   };
@@ -5293,7 +5296,7 @@ function saveDescription(entity, newDescription) {
       hideInlineError('description-save-error');
       renderDescriptionSection(entity);
     } else {
-      throw new Error(data.error || 'Failed to save');
+      throw new Error(data.detail || data.error || 'Failed to save');
     }
   })
   .catch(error => {
@@ -5369,7 +5372,7 @@ function detachEntity(entity) {
         ]
       });
     } else {
-      throw new Error(data.error || 'Failed to detach');
+      throw new Error(data.detail || data.error || 'Failed to detach');
     }
   })
   .catch(error => {
@@ -5402,7 +5405,7 @@ function reattachEntity(entity) {
       showDetailView(entity.id);
       refreshEntitiesAfterMutation();  // Refresh list in background
     } else {
-      throw new Error(data.error || 'Failed to re-attach');
+      throw new Error(data.detail || data.error || 'Failed to re-attach');
     }
   })
   .catch(error => {
@@ -5438,7 +5441,7 @@ function attachEntityToFacet(entity, description) {
       showDetailView(entity.id);
       refreshEntitiesAfterMutation();  // Refresh list in background
     } else {
-      throw new Error(data.error || 'failed to attach');
+      throw new Error(data.detail || data.error || 'failed to attach');
     }
   })
   .catch(error => {
@@ -5469,7 +5472,7 @@ async function loadEntitiesState() {
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
       heading: "Couldn't load entities",
       desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage,
+      serverMessage: entityErrorMessage(err),
       detail: err,
       retry: true,
     }));
@@ -5526,7 +5529,7 @@ async function loadEntityScopeMetadata() {
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
       heading: "Couldn't load entities",
       desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage,
+      serverMessage: entityErrorMessage(err),
       detail: err,
       retry: true,
     }));
@@ -5671,7 +5674,7 @@ async function loadEntities() {
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
       heading: "Couldn't load entities",
       desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage,
+      serverMessage: entityErrorMessage(err),
       detail: err,
     }));
   }
@@ -5744,7 +5747,7 @@ async function loadJournalEntities({refresh = false, silent = false, queryChange
         container.innerHTML = window.SurfaceState.error({
           heading: "that search couldn't be run",
           desc: 'try again.',
-          serverMessage: err?.serverMessage,
+          serverMessage: entityErrorMessage(err),
           detail: err,
         });
         if (countEl) { countEl.style.display = 'none'; countEl.textContent = ''; }
@@ -5757,7 +5760,7 @@ async function loadJournalEntities({refresh = false, silent = false, queryChange
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
       heading: "Couldn't load entities",
       desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage,
+      serverMessage: entityErrorMessage(err),
       detail: err,
     }));
   }
@@ -5821,10 +5824,11 @@ function showJournalListError(err) {
   const text = document.createElement('span');
   text.textContent = "couldn't load that page of entities.";
   box.append(text);
-  if (err?.serverMessage) {
+  const message = entityErrorMessage(err);
+  if (message) {
     const detail = document.createElement('span');
     detail.className = 'journal-entity-cards-error-detail';
-    detail.textContent = err.serverMessage;
+    detail.textContent = message;
     box.append(detail);
   }
   const retry = document.createElement('button');
@@ -6335,7 +6339,7 @@ function attachDetectedEntity(entity, button) {
       // Reload to get full entity data
       refreshEntitiesAfterMutation();
     } else {
-      throw new Error(data.error || 'Failed to attach');
+      throw new Error(data.detail || data.error || 'Failed to attach');
     }
   })
   .catch(error => {
@@ -6421,7 +6425,7 @@ function previewEntityDelete(entityName) {
       }
     })
     .catch(err => {
-      showInlineError('detected-action-error', err?.serverMessage || "Couldn't load delete preview");
+      showInlineError('detected-action-error', entityErrorMessage(err, "Couldn't load delete preview"));
       window.logError(err, { context: 'entities: previewEntityDelete failed' });
     });
 }
@@ -6455,7 +6459,7 @@ async function confirmEntityDelete() {
     removeEntityFromUI(entityName);
   } catch (err) {
     closeDeleteModal();
-    showInlineError('detected-action-error', err?.serverMessage || "Couldn't delete entity");
+    showInlineError('detected-action-error', entityErrorMessage(err, "Couldn't delete entity"));
     window.logError(err, { context: 'entities: confirmEntityDelete failed' });
   } finally {
     confirmBtn.disabled = false;
