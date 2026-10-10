@@ -51,6 +51,7 @@ class FakeIngestState:
         self.posture: object = "direct"
         self.status_extra: dict[str, Any] = {}
         self.requests: list[str] = []
+        self.listing_aliases = False
         self.listing_total_delta = 0
         self.hide_listing_reads = 0
         self.listing_http_status = 200
@@ -127,6 +128,16 @@ def handler_for(state: FakeIngestState) -> type[BaseHTTPRequestHandler]:
                             for item in state.items
                             if item["day"] == day and item["source"] == source
                         ]
+                if state.listing_aliases:
+                    items = [
+                        {
+                            **item,
+                            "key": f"{item['key']}~{source or 'device'}",
+                            "segment": item["key"],
+                            "stream": source or "device",
+                        }
+                        for item in items
+                    ]
                 self._json(
                     state.listing_http_status,
                     {
@@ -233,8 +244,6 @@ def handler_for(state: FakeIngestState) -> type[BaseHTTPRequestHandler]:
                     }
                     if same_key:
                         listing["original_key"] = requested
-                        listing["segment"] = landed.rsplit("/", 1)[-1]
-                        listing["stream"] = source if source else "device"
                     state.items.append(
                         {"day": day, "source": source, "listing": listing}
                     )
@@ -949,38 +958,49 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(bridge.stopped)
 
     def test_final_contract_reads_verify_listing_identity_and_files_without_manifests(self) -> None:
-        state = FakeIngestState()
-        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
-            config = self._config(temporary, bridge_url)
-            self.assertEqual(Simulator(config).run(), RunOutcome.PASS)
-            evidence = json.loads(config.evidence_path.read_text(encoding="utf-8"))
-            self.assertEqual(evidence["result"], "PASS")
-            self.assertTrue(evidence["contract_reads"])
-            items = evidence["contract_reads"][0]["segments"]["body"]["items"]
-            self.assertEqual(len(items), 2)
+        for aliases in (False, True):
+            with self.subTest(aliases=aliases), TemporaryDirectory() as temporary:
+                state = FakeIngestState()
+                state.listing_aliases = aliases
+                with FakeServer(state) as bridge_url:
+                    config = self._config(temporary, bridge_url)
+                    self.assertEqual(Simulator(config).run(), RunOutcome.PASS)
+                evidence = json.loads(config.evidence_path.read_text(encoding="utf-8"))
+                self.assertEqual(evidence["result"], "PASS")
+                self.assertTrue(evidence["contract_reads"])
+                items = evidence["contract_reads"][0]["segments"]["body"]["items"]
+                self.assertEqual(len(items), 2)
+                self.assertTrue(all("observed" not in item for item in items))
 
-            alpha_item = next(item for item in items if item["key"] == "080000_30")
-            self.assertNotIn("original_key", alpha_item)
-            self.assertTrue(alpha_item.get("files"))
-            self.assertEqual(alpha_item["files"][0]["name"], "tmux.jsonl")
-            self.assertTrue(all(f.get("status") == "present" for f in alpha_item["files"]))
-
-            collision_item = next(item for item in items if item["key"] == "080000_31")
-            self.assertEqual(collision_item.get("original_key"), "080000_30")
-            self.assertEqual(collision_item.get("segment"), "080000_31")
-            self.assertEqual(collision_item.get("stream"), "tmux")
-            self.assertTrue(collision_item.get("files"))
-            self.assertEqual(collision_item["files"][0]["name"], "tmux.jsonl")
-            self.assertTrue(all(f.get("status") == "present" for f in collision_item["files"]))
-
-            self.assertTrue(state.requests)
-            self.assertNotIn("/app/devices/ingest/manifest", state.requests)
-            self.assertTrue(
-                all(
-                    not path.startswith("/app/devices/ingest/manifest/")
-                    for path in state.requests
+                alpha_item = next(
+                    item for item in items
+                    if item.get("segment", item["key"]) == "080000_30"
                 )
-            )
+                self.assertNotIn("original_key", alpha_item)
+                remapped_item = next(
+                    item for item in items
+                    if item.get("segment", item["key"]) == "080000_31"
+                )
+                self.assertEqual(remapped_item.get("original_key"), "080000_30")
+                for item in (alpha_item, remapped_item):
+                    self.assertTrue(item.get("files"))
+                    self.assertEqual(item["files"][0]["name"], "tmux.jsonl")
+                    self.assertTrue(all(f.get("status") == "present" for f in item["files"]))
+                    if aliases:
+                        self.assertEqual(item.get("stream"), "tmux")
+                        self.assertIn("segment", item)
+                    else:
+                        self.assertNotIn("stream", item)
+                        self.assertNotIn("segment", item)
+
+                self.assertTrue(state.requests)
+                self.assertNotIn("/app/devices/ingest/manifest", state.requests)
+                self.assertTrue(
+                    all(
+                        not path.startswith("/app/devices/ingest/manifest/")
+                        for path in state.requests
+                    )
+                )
 
     def test_resumed_state_is_fully_validated(self) -> None:
         cases: tuple[tuple[str, Callable[[dict[str, Any], str], None], str], ...] = (

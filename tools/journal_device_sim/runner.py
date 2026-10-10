@@ -2438,17 +2438,8 @@ class Simulator:
                     raise SimulationFailure(
                         f"final listing omitted physical identity for {segment.fixture_id}"
                     )
-                if original is not None:
-                    item_segment = item.get("segment")
-                    item_stream = item.get("stream")
-                    if (
-                        not isinstance(item_segment, str)
-                        or not isinstance(item_stream, str)
-                        or physical_segment != item_segment
-                    ):
-                        raise SimulationFailure(
-                            f"final listing collision item omitted required locator metadata for {segment.fixture_id}"
-                        )
+                # A remapped upload can keep a plain listing key. Only listing
+                # aliases need separate segment and stream locator fields.
                 matched = self._matched_files(item, segment)
                 if matched is None or not {
                     entry.get("status") for entry in matched

@@ -104,7 +104,7 @@ outcomes retain them for controlled retry or diagnosis.
 
 Each profile declares one `verification` level:
 
-- `contract` exercises the public v3 POST, listing, day-manifest, root-manifest,
+- `contract` exercises the public v3 POST, listing,
   receiver identity, and carrier-posture contracts. It does not require local
   journal filesystem access. If `--journal-root` is supplied, custody checks run
   too.

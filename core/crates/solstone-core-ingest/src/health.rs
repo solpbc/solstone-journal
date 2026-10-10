@@ -3,10 +3,8 @@
 
 //! Read-only device-day listing health, for `journal doctor`.
 //!
-//! A segment-day read refuses an unreadable day, and the device then reports
-//! itself offline and stops at that day. Nothing on the journal side otherwise
-//! records that a day is being refused. This runs that same per-day listing for
-//! every bound device stream and names each refused day.
+//! A segment-day read refuses an unreadable day. This check runs that same
+//! per-day listing for every bound device stream and names each refused day.
 
 use std::path::Path;
 
