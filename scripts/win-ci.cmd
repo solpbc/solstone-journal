@@ -19,6 +19,9 @@ set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 :: because the invoking Make environment does not cross the SSH boundary.
 set "CARGO_INCREMENTAL=0"
 set "CARGO_PROFILE_DEV_DEBUG=0"
+set "CARGO_BUILD_TARGET=x86_64-pc-windows-msvc"
+set "CARGO_ENCODED_RUSTFLAGS=-Ctarget-feature=+crt-static"
+set "RUSTFLAGS="
 if not defined EXPECTED_JOURNAL_COMMIT ( echo ERROR: EXPECTED_JOURNAL_COMMIT is required; rerun through win-host-ci & exit /b 1 )
 if not defined EXPECTED_JOURNAL_CARGO_LOCK_SHA256 ( echo ERROR: EXPECTED_JOURNAL_CARGO_LOCK_SHA256 is required; rerun through win-host-ci & exit /b 1 )
 if not defined SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT ( echo ERROR: SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT is required; rerun through win-host-ci & exit /b 1 )
@@ -90,10 +93,10 @@ if not defined JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT set "JOURNAL_WIN_CI_FFMPEG_INPUT
 set "JOURNAL_WIN_CI_FFMPEG_ENV=core\target\journal-win-ci-ffmpeg-environment-%RANDOM%%RANDOM%.cmd"
 call :phase tools-acquire
 echo === acquiring the pinned FFmpeg build toolchain ===
-core\target\debug\solstone-distribution.exe acquire ffmpeg-windows-tools --dest "%JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT%" || ( echo ERROR: pinned FFmpeg build toolchain acquisition failed & exit /b 1 )
+core\target\x86_64-pc-windows-msvc\debug\solstone-distribution.exe acquire ffmpeg-windows-tools --dest "%JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT%" || ( echo ERROR: pinned FFmpeg build toolchain acquisition failed & exit /b 1 )
 call :phase tools-stage
 echo === staging the pinned FFmpeg build toolchain ===
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.ps1 -Mode stage -RepositoryRoot "%CD%" -ToolsRoot "%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%" -InputRoot "%JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT%" -Recorder "%CD%\core\target\debug\solstone-distribution.exe" -EnvironmentScript "%CD%\%JOURNAL_WIN_CI_FFMPEG_ENV%" || ( echo ERROR: pinned FFmpeg build toolchain staging failed & exit /b 1 )
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.ps1 -Mode stage -RepositoryRoot "%CD%" -ToolsRoot "%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%" -InputRoot "%JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT%" -Recorder "%CD%\core\target\x86_64-pc-windows-msvc\debug\solstone-distribution.exe" -EnvironmentScript "%CD%\%JOURNAL_WIN_CI_FFMPEG_ENV%" || ( echo ERROR: pinned FFmpeg build toolchain staging failed & exit /b 1 )
 call "%JOURNAL_WIN_CI_FFMPEG_ENV%" || ( echo ERROR: staged FFmpeg build toolchain environment could not be applied & exit /b 1 )
 del /q "%JOURNAL_WIN_CI_FFMPEG_ENV%" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.ps1 -Mode assert -RepositoryRoot "%CD%" -ToolsRoot "%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%" || ( echo ERROR: staged FFmpeg build toolchain did not verify in this run's environment & exit /b 1 )
@@ -164,7 +167,7 @@ echo === owner evidence exporter controls ===
 powershell -NoProfile -File scripts\win-owner-evidence-tests.ps1 || exit /b 1
 
 echo === cargo test --locked journal-io ordinary-owner inventory control ===
-set "JOURNAL_WIN_CI_OWNER_RAIL=core\target\debug\solstone-core-win-owner-rail.exe"
+set "JOURNAL_WIN_CI_OWNER_RAIL=core\target\x86_64-pc-windows-msvc\debug\solstone-core-win-owner-rail.exe"
 set "JOURNAL_WIN_CI_OWNER_LEASE=C:\ProgramData\solstone\journal-win-owner-rail\ordinary-owner.lease.json"
 "%JOURNAL_WIN_CI_OWNER_RAIL%" recover-held --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" || goto :ordinary_owner_failed
 "%JOURNAL_WIN_CI_OWNER_RAIL%" prepare --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" --worktree "%CD%" --worker "%CD%\%JOURNAL_WIN_CI_OWNER_RAIL%" --expected-commit "%EXPECTED_JOURNAL_COMMIT%" --expected-lock "%EXPECTED_JOURNAL_CARGO_LOCK_SHA256%" --owner-account "%SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT%" --refs-root-env SOLSTONE_JOURNAL_WIN_REFS_ROOT || goto :ordinary_owner_failed

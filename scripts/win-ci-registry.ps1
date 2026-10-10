@@ -50,7 +50,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
         Set-Location -LiteralPath $RepositoryRoot
         $script:RegistryNativeExit=$null
-        Invoke-WindowsRegistryCopy -Source (Join-Path $RepositoryRoot 'core\target\debug\solstone-ci.exe') `
+        Invoke-WindowsRegistryCopy -Source (Join-Path $RepositoryRoot 'core\target\x86_64-pc-windows-msvc\debug\solstone-ci.exe') `
             -CopyRoot (Join-Path $RepositoryRoot 'core\target') `
             -Arguments @('windows-run','--coverage','core\target\journal-win-suite-coverage.json',
                 '--owner-evidence','core\target\journal-win-owner-evidence.json',
