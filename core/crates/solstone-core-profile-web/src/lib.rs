@@ -5,17 +5,12 @@
 
 use std::path::PathBuf;
 
-use axum::{
-    Router,
-    routing::{get, post},
-};
+use axum::{Router, routing::get};
 
 pub mod types;
-pub use ledger_fold::read_owner_open_loops;
 
 pub(crate) mod cadence;
 pub(crate) mod error;
-pub(crate) mod ledger_fold;
 pub(crate) mod pagination;
 pub(crate) mod profile;
 pub(crate) mod relationships;
@@ -32,7 +27,5 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/api/profile/{name}/brief", get(routes::brief))
         .route("/api/profile/{name}/cadence", get(routes::cadence))
         .route("/api/profiles/active", get(routes::active))
-        .route("/api/ledger/{item_id}", get(routes::item))
-        .route("/api/ledger/{item_id}/close", post(routes::close))
         .with_state(routes::RouteState { journal_root })
 }

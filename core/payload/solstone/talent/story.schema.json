@@ -5,9 +5,6 @@
     "body",
     "topics",
     "confidence",
-    "commitments",
-    "closures",
-    "decisions",
     "relations"
   ],
   "properties": {
@@ -25,121 +22,6 @@
     },
     "confidence": {
       "type": "number"
-    },
-    "commitments": {
-      "type": "array",
-      "maxItems": 12,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "owner",
-          "action",
-          "counterparty",
-          "when",
-          "context"
-        ],
-        "properties": {
-          "owner": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "action": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "counterparty": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "when": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "context": {
-            "type": "string",
-            "maxLength": 400
-          }
-        }
-      }
-    },
-    "closures": {
-      "type": "array",
-      "maxItems": 12,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "owner",
-          "action",
-          "counterparty",
-          "resolution",
-          "context"
-        ],
-        "properties": {
-          "owner": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "action": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "counterparty": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "resolution": {
-            "type": "string",
-            "enum": [
-              "sent",
-              "done",
-              "signed",
-              "dropped",
-              "deferred"
-            ]
-          },
-          "context": {
-            "type": "string",
-            "maxLength": 400
-          }
-        }
-      }
-    },
-    "decisions": {
-      "type": "array",
-      "maxItems": 12,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "owner",
-          "action",
-          "counterparty",
-          "context"
-        ],
-        "properties": {
-          "owner": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "action": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "counterparty": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 200
-          },
-          "context": {
-            "type": "string",
-            "maxLength": 400
-          }
-        }
-      }
     },
     "relations": {
       "type": "array",

@@ -6,7 +6,6 @@ use serde_json::{Map, Value, json};
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::{AGENT_ACTOR, NamedActor, PreparedTalent, StageError, UNKNOWN_ACTOR, stage_error};
 
-const CLOSURES: &[&str] = &["sent", "done", "signed", "dropped", "deferred"];
 pub(crate) const RELATIONS: &[&str] = &[
     "works-with",
     "works-at",
@@ -32,6 +31,14 @@ pub fn parse(
     let object = value
         .as_object_mut()
         .ok_or_else(|| error(prepared, "story output is not an object"))?;
+    for key in object.keys() {
+        if !matches!(key.as_str(), "body" | "topics" | "confidence" | "relations") {
+            return Err(error(
+                prepared,
+                &format!("story output has unexpected field: {key}"),
+            ));
+        }
+    }
     let body = object
         .get("body")
         .and_then(Value::as_str)
@@ -63,13 +70,8 @@ pub fn parse(
     if clamped != confidence {
         log::warn!("story hook: clamped confidence {confidence} to {clamped}");
     }
-    for field in ["commitments", "closures", "decisions", "relations"] {
-        if !object.get(field).is_some_and(Value::is_array) {
-            return Err(error(
-                prepared,
-                &format!("story output has invalid {field}"),
-            ));
-        }
+    if !object.get("relations").is_some_and(Value::is_array) {
+        return Err(error(prepared, "story output has invalid relations"));
     }
     object.insert("body".into(), Value::String(body));
     object.insert("topics".into(), json!(clean_topics));
@@ -151,7 +153,16 @@ pub fn apply_story(
             NamedActor::Agent | NamedActor::Unknown => return Ok(Value::Null),
             NamedActor::Other => {}
         }
-        let result = solstone_core_entity::record_entity_resolution(root, name, &entities, json!({"kind":"facet","facet":facet}), json!({"lane":"talent.story","facet":facet,"day":day,"record_id":record_id,"field":field}), 90.0, false).map_err(|error| error.to_string())?;
+        let result = solstone_core_entity::record_entity_resolution(
+            root,
+            name,
+            &entities,
+            json!({"kind":"facet","facet":facet}),
+            json!({"lane":"talent.story","facet":facet,"day":day,"record_id":record_id,"field":field}),
+            90.0,
+            false,
+        )
+        .map_err(|error| error.to_string())?;
         Ok(
             if matches!(
                 result.outcome,
@@ -166,103 +177,59 @@ pub fn apply_story(
             },
         )
     };
-    let rows = |group: &str, required: &[&str]| -> Result<Vec<Value>, String> {
-        let mut output = Vec::new();
-        for item in value[group].as_array().unwrap() {
-            let Some(source) = item.as_object() else {
-                log::warn!("story hook: skipping {group}: expected object");
-                continue;
-            };
-            if required
-                .iter()
-                .any(|field| !source.get(*field).is_some_and(Value::is_string))
-            {
-                log::warn!("story hook: skipping {group}: missing required string field");
-                continue;
-            }
-            let mut row = source.clone();
-            if group == "closures" && !CLOSURES.contains(&row["resolution"].as_str().unwrap()) {
-                log::warn!("story hook: skipping closure: invalid resolution");
-                continue;
-            }
-            if group == "relations"
-                && (!RELATIONS.contains(&row["kind"].as_str().unwrap())
-                    || row["kind"] == "other" && row["note"].as_str().is_none_or(str::is_empty))
-            {
-                log::warn!("story hook: skipping relation: invalid kind");
-                continue;
-            }
-            if group == "decisions"
-                && row
-                    .get("counterparty")
-                    .is_some_and(|item| !item.is_string() && !item.is_null())
-            {
-                log::warn!("story hook: skipping decision: invalid counterparty");
-                continue;
-            }
-            if group == "relations" && row.get("quote").is_some_and(|item| !item.is_string()) {
-                log::warn!("story hook: skipping relation: invalid quote");
-                continue;
-            }
-            for (from, to) in [
-                ("owner", "owner_entity_id"),
-                ("counterparty", "counterparty_entity_id"),
-                ("from", "from_entity_id"),
-                ("to", "to_entity_id"),
-            ] {
-                if let Some(name) = row.get(from).and_then(Value::as_str).map(str::to_owned) {
-                    let mut name = name.as_str();
-                    if owner.actor(name) == NamedActor::Agent {
-                        row.insert(from.into(), Value::String(AGENT_ACTOR.to_owned()));
-                    }
-                    if owner.actor(name) == NamedActor::Owner {
-                        match heard.as_deref() {
-                            // Audio where the owner's voice is never recognized
-                            // cannot show the owner saying anything.
-                            Some([]) => {
-                                row.insert(from.into(), Value::String(UNKNOWN_ACTOR.to_owned()));
-                                name = UNKNOWN_ACTOR;
-                            }
-                            // In a meeting the owner did, owes or decided something only
-                            // when the item quotes their own recognized words.
-                            Some(_) if from == "owner" => {
-                                if row
-                                    .get("quote")
-                                    .and_then(Value::as_str)
-                                    .is_some_and(|quote| quoted_from(quote, &said))
-                                {
-                                    row.insert(
-                                        "owner_evidence".into(),
-                                        Value::String("voice".to_owned()),
-                                    );
-                                } else {
-                                    row.insert(
-                                        from.into(),
-                                        Value::String(UNKNOWN_ACTOR.to_owned()),
-                                    );
-                                    name = UNKNOWN_ACTOR;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    row.insert(
-                        to.into(),
-                        if group == "decisions" && from == "counterparty" && name.trim().is_empty()
-                        {
-                            Value::Null
-                        } else {
-                            resolve(name, &format!("{group}.{from}"))?
-                        },
-                    );
-                } else if group == "decisions" && from == "counterparty" {
-                    row.insert(to.into(), Value::Null);
-                }
-            }
-            output.push(Value::Object(row));
+    let mut relations = Vec::new();
+    for item in value["relations"].as_array().unwrap() {
+        let Some(source) = item.as_object() else {
+            log::warn!("story hook: skipping relation: expected object");
+            continue;
+        };
+        if ["from", "to", "kind", "note"]
+            .iter()
+            .any(|field| !source.get(*field).is_some_and(Value::is_string))
+        {
+            log::warn!("story hook: skipping relation: missing required string field");
+            continue;
         }
-        Ok(output)
-    };
+        let kind = source["kind"].as_str().unwrap();
+        if !RELATIONS.contains(&kind)
+            || (kind == "other" && source["note"].as_str().is_none_or(str::is_empty))
+        {
+            log::warn!("story hook: skipping relation: invalid kind");
+            continue;
+        }
+        if source.get("quote").is_some_and(|item| !item.is_string()) {
+            log::warn!("story hook: skipping relation: invalid quote");
+            continue;
+        }
+        let mut row = source.clone();
+        for (actor_field, id_field) in [("from", "from_entity_id"), ("to", "to_entity_id")] {
+            if let Some(name) = row
+                .get(actor_field)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+            {
+                let mut name = name.as_str();
+                if owner.actor(name) == NamedActor::Agent {
+                    row.insert(actor_field.into(), Value::String(AGENT_ACTOR.to_owned()));
+                }
+                if owner.actor(name) == NamedActor::Owner && heard.is_some() {
+                    if row
+                        .get("quote")
+                        .and_then(Value::as_str)
+                        .is_some_and(|quote| quoted_from(quote, &said))
+                    {
+                        row.insert("owner_evidence".into(), Value::String("voice".to_owned()));
+                    } else {
+                        row.insert(actor_field.into(), Value::String(UNKNOWN_ACTOR.to_owned()));
+                        name = UNKNOWN_ACTOR;
+                    }
+                }
+                let resolved = resolve(name, &format!("relations.{actor_field}"))?;
+                row.insert(id_field.into(), resolved);
+            }
+        }
+        relations.push(Value::Object(row));
+    }
     let mut patch = Map::new();
     let mut story = json!({"talent":talent,"body":value["body"],"topics":value["topics"],"confidence":value["confidence"]});
     // A story written from a fitted, clipped request says so on the record.
@@ -270,29 +237,7 @@ pub fn apply_story(
         story["partial_input"] = partial.clone();
     }
     patch.insert("story".into(), story);
-    patch.insert(
-        "commitments".into(),
-        Value::Array(rows(
-            "commitments",
-            &["owner", "action", "counterparty", "when", "context"],
-        )?),
-    );
-    patch.insert(
-        "closures".into(),
-        Value::Array(rows(
-            "closures",
-            &["owner", "action", "counterparty", "resolution", "context"],
-        )?),
-    );
-    patch.insert(
-        "decisions".into(),
-        Value::Array(rows("decisions", &["owner", "action", "context"])?),
-    );
-    patch.insert(
-        "relations".into(),
-        Value::Array(rows("relations", &["from", "to", "kind", "note"])?),
-    );
-    // Existing native writer encodes Python's null note as an empty string.
+    patch.insert("relations".into(), Value::Array(relations));
     solstone_core_facets::update_activity_record(
         root,
         facet,
@@ -310,7 +255,7 @@ pub fn apply_story(
 
 /// What the owner said in the activity's audio, by recognized voice: `None`
 /// when it has no audio transcript, empty when no line is the owner's.
-fn owner_heard(
+pub(crate) fn owner_heard(
     root: &std::path::Path,
     day: &str,
     record: &Map<String, Value>,
@@ -399,77 +344,6 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     use crate::generate_and_write;
     use std::fs;
-    #[test]
-    fn decision_counterparty_contract_survives_the_story_writer() {
-        let root = tempfile::tempdir().unwrap();
-        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
-        let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
-        fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
-        fs::write(&activity_path, "{\"id\":\"activity-1\"}\n").unwrap();
-        let prepared = PreparedTalent {
-            name: "conversation".into(),
-            config: Map::from_iter([
-                ("max_output_tokens".to_owned(), json!(1024)),
-                ("facet".into(), json!("work")),
-                (
-                    "destination_id".into(),
-                    json!(
-                        solstone_core_facets::observe_facet_write_identity(root.path(), "work")
-                            .unwrap()
-                    ),
-                ),
-                ("day".into(), json!("20260101")),
-                ("activity".into(), json!({"id":"activity-1"})),
-            ]),
-        };
-        let mut decisions = vec![json!({"owner":"Owner","action":"absent","context":"meeting"})];
-        for (action, counterparty) in [
-            ("null", Value::Null),
-            ("empty", json!("")),
-            ("named", json!("Someone")),
-            ("number", json!(42)),
-            ("object", json!({})),
-            ("array", json!([])),
-        ] {
-            decisions.push(json!({"owner":"Owner", "action":action, "context":"meeting", "counterparty":counterparty}));
-        }
-        let output = json!({"body":"A completed conversation.","topics":["work"],"confidence":0.9,
-            "commitments":[],"closures":[],"relations":[],"decisions":decisions})
-        .to_string();
-        let plan = commit(
-            parse(&output, &prepared, &PrePostState::None).unwrap(),
-            &prepared,
-            &PrePostState::None,
-        )
-        .unwrap();
-        crate::writers::apply(
-            plan,
-            &ExecutionContext {
-                journal: root.path().into(),
-            },
-        )
-        .unwrap();
-        let record = solstone_core_facets::get_activity_record(
-            root.path(),
-            "work",
-            "20260101",
-            "activity-1",
-        )
-        .unwrap()
-        .unwrap();
-        let decisions = record["decisions"].as_array().unwrap();
-        assert_eq!(
-            decisions
-                .iter()
-                .map(|row| row["action"].as_str().unwrap())
-                .collect::<Vec<_>>(),
-            ["absent", "null", "empty", "named"]
-        );
-        assert!(decisions[1]["counterparty"].is_null());
-        for row in &decisions[..3] {
-            assert!(row["counterparty_entity_id"].is_null());
-        }
-    }
 
     #[test]
     fn spoken_you_rests_on_the_owners_recognized_voice() {
@@ -522,9 +396,15 @@ mod tests {
                     ("activity".into(), json!({"id":"meeting-1"})),
                 ]),
             };
-            let output = json!({"body":"You agreed to send the deck.","topics":[],"confidence":0.9,
-                "commitments":[{"owner":"you","action":"send the deck","counterparty":"Priya","when":"","context":"","quote":"I will send it"},{"owner":"you","action":"book the venue","counterparty":"","when":"","context":"","quote":""}],
-                "closures":[],"decisions":[],"relations":[]})
+            let output = json!({
+                "body":"You agreed to send the deck.",
+                "topics":[],
+                "confidence":0.9,
+                "relations":[
+                    {"from":"you","to":"Priya","kind":"works-with","note":"","quote":"I will send it"},
+                    {"from":"you","to":"Priya","kind":"works-with","note":"","quote":""}
+                ]
+            })
             .to_string();
             let plan = commit(
                 parse(&output, &prepared, &PrePostState::None).unwrap(),
@@ -541,29 +421,29 @@ mod tests {
             .unwrap();
             solstone_core_facets::get_activity_record(root.path(), "work", "20260101", "meeting-1")
                 .unwrap()
-                .unwrap()["commitments"]
+                .unwrap()["relations"]
                 .clone()
         };
         // The owner's own assignment of the line is their voice, and an item
         // quoting those words is what the owner said.
         let heard = story_for("user_confirmed", "conversation");
-        assert_eq!(heard[0]["owner"], "you");
-        assert_eq!(heard[0]["owner_entity_id"], "jordan");
+        assert_eq!(heard[0]["from"], "you");
+        assert_eq!(heard[0]["from_entity_id"], "jordan");
         assert_eq!(heard[0]["owner_evidence"], "voice");
         // An item that quotes nothing the owner said is not shown to be theirs.
-        assert_eq!(heard[1]["owner"], "unknown");
-        assert!(heard[1]["owner_entity_id"].is_null());
+        assert_eq!(heard[1]["from"], "unknown");
+        assert!(heard[1]["from_entity_id"].is_null());
         assert!(heard[1].get("owner_evidence").is_none());
         // A centroid match without a confirmed voiceprint is not their voice.
         let unheard = story_for("owner_centroid", "conversation");
         for item in unheard.as_array().unwrap() {
-            assert_eq!(item["owner"], "unknown");
-            assert!(item["owner_entity_id"].is_null());
+            assert_eq!(item["from"], "unknown");
+            assert!(item["from_entity_id"].is_null());
             assert!(item.get("owner_evidence").is_none());
         }
         // Work Stories are judged by what was typed and sent, not by voice.
         let work = story_for("owner_centroid", "work");
-        assert_eq!(work[0]["owner_entity_id"], "jordan");
+        assert_eq!(work[0]["from_entity_id"], "jordan");
         assert!(work[0].get("owner_evidence").is_none());
     }
 
@@ -616,14 +496,17 @@ mod tests {
                 ("activity".into(), json!({"id":"activity-1"})),
             ]),
         };
-        let output = json!({"body":"You and your agent fixed the retry path.","topics":[],"confidence":0.9,
-            "commitments":[{"owner":"You","action":"review","counterparty":"Priya","when":"","context":""}],
-            "closures":[{"owner":"Your  Agent","action":"fix the test","counterparty":"you","resolution":"done","context":""}],
-            "decisions":[
-                {"owner":"JR","action":"use the queue","counterparty":"your agent","context":""},
-                {"owner":"unknown","action":"ship friday","counterparty":null,"context":""}
-            ],
-            "relations":[{"from":"jordan","to":"Priya","kind":"works-with","note":""}]})
+        let output = json!({
+            "body":"You and your agent fixed the retry path.",
+            "topics":[],
+            "confidence":0.9,
+            "relations":[
+                {"from":"You","to":"Priya","kind":"works-with","note":""},
+                {"from":"Your  Agent","to":"you","kind":"works-with","note":""},
+                {"from":"JR","to":"your agent","kind":"works-with","note":""},
+                {"from":"unknown","to":"Priya","kind":"works-with","note":""}
+            ]
+        })
         .to_string();
         let plan = commit(
             parse(&output, &prepared, &PrePostState::None).unwrap(),
@@ -646,18 +529,17 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        let commitment = &record["commitments"][0];
-        assert_eq!(commitment["owner_entity_id"], "jordan");
-        assert_eq!(commitment["counterparty_entity_id"], "priya");
-        let closure = &record["closures"][0];
-        assert_eq!(closure["owner"], "your agent");
-        assert!(closure["owner_entity_id"].is_null());
-        assert_eq!(closure["counterparty_entity_id"], "jordan");
-        assert_eq!(record["decisions"][0]["owner_entity_id"], "jordan");
-        assert!(record["decisions"][0]["counterparty_entity_id"].is_null());
-        assert_eq!(record["decisions"][1]["owner"], "unknown");
-        assert!(record["decisions"][1]["owner_entity_id"].is_null());
-        assert_eq!(record["relations"][0]["from_entity_id"], "jordan");
+        let relations = record["relations"].as_array().unwrap();
+        assert_eq!(relations[0]["from_entity_id"], "jordan");
+        assert_eq!(relations[0]["to_entity_id"], "priya");
+        assert_eq!(relations[1]["from"], "your agent");
+        assert!(relations[1]["from_entity_id"].is_null());
+        assert_eq!(relations[1]["to_entity_id"], "jordan");
+        assert_eq!(relations[2]["from_entity_id"], "jordan");
+        assert_eq!(relations[2]["to"], "your agent");
+        assert!(relations[2]["to_entity_id"].is_null());
+        assert_eq!(relations[3]["from"], "unknown");
+        assert!(relations[3]["from_entity_id"].is_null());
     }
 
     #[test]
@@ -667,9 +549,7 @@ mod tests {
             config: Map::new(),
         };
         let story = |body: &str| {
-            json!({"body":body,"topics":[],"confidence":0.9,
-                "commitments":[],"closures":[],"decisions":[],"relations":[]})
-            .to_string()
+            json!({"body":body,"topics":[],"confidence":0.9,"relations":[]}).to_string()
         };
         let ParsedOutput::Json(kept) = parse(
             &story("You read your inbox."),
@@ -681,6 +561,45 @@ mod tests {
         };
         assert_eq!(kept["topics"], json!([]));
         assert!(parse(&story("  "), &prepared, &PrePostState::None).is_err());
+    }
+
+    #[test]
+    fn story_parse_accepts_exactly_four_fields_and_rejects_extra_keys() {
+        let prepared = PreparedTalent {
+            name: "work".into(),
+            config: Map::new(),
+        };
+        let valid = json!({
+            "body": "Valid work narrative.",
+            "topics": ["code"],
+            "confidence": 0.8,
+            "relations": []
+        })
+        .to_string();
+        assert!(parse(&valid, &prepared, &PrePostState::None).is_ok());
+
+        for extra_key in [
+            "commitments",
+            "closures",
+            "decisions",
+            "partial_input",
+            "unknown",
+        ] {
+            let mut val = json!({
+                "body": "Valid narrative.",
+                "topics": [],
+                "confidence": 0.8,
+                "relations": []
+            });
+            val.as_object_mut()
+                .unwrap()
+                .insert(extra_key.into(), json!([]));
+            let err = parse(&val.to_string(), &prepared, &PrePostState::None);
+            assert!(
+                err.is_err(),
+                "expected rejection for extra key: {extra_key}"
+            );
+        }
     }
 
     #[test]
@@ -717,8 +636,7 @@ mod tests {
         };
         let value = r#"{
           "body":"A completed conversation.", "topics":["work"], "confidence":0.9,
-          "commitments":[{"owner":"owner-id","action":"follow up","counterparty":"nobody","when":"tomorrow","context":"meeting"}],
-          "closures":[], "decisions":[], "relations":[]
+          "relations":[{"from":"owner-id","to":"Different","kind":"works-with","note":""}]
         }"#;
         let plan = commit(
             parse(value, &prepared, &PrePostState::None).unwrap(),
@@ -741,7 +659,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(record["commitments"][0]["owner_entity_id"], "owner-id");
+        assert_eq!(record["relations"][0]["from_entity_id"], "owner-id");
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -755,7 +673,7 @@ mod tests {
         fs::create_dir_all(entity_path.parent().unwrap()).unwrap();
         fs::write(
             &activity_path,
-            "{\"id\":\"activity-1\",\"story\":{\"old\":true},\"commitments\":[\"old\"]}\n",
+            "{\"id\":\"activity-1\",\"story\":{\"old\":true},\"relations\":[\"old\"]}\n",
         )
         .unwrap();
         fs::write(
@@ -781,9 +699,6 @@ mod tests {
         };
         let valid = r#"{
           "body":"A completed conversation.", "topics":["Work"], "confidence":0.9,
-          "commitments":[{"owner":"Owner","action":"follow up","counterparty":"counterparty@example.com","when":"tomorrow","context":"meeting"}],
-          "closures":[{"owner":"Owner","action":"close","counterparty":"counterparty@example.com","resolution":"done","context":"meeting"}],
-          "decisions":[{"owner":"Owner","action":"decide","context":"meeting","counterparty":"counterparty@example.com"}],
           "relations":[{"from":"Owner","to":"counterparty@example.com","kind":"works-with","note":"colleagues"}]
         }"#;
         let plan = commit(
@@ -810,11 +725,13 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        for field in ["story", "commitments", "closures", "decisions", "relations"] {
-            assert!(written.contains_key(field));
-        }
+        assert!(written.contains_key("story"));
+        assert!(written.contains_key("relations"));
+        assert!(!written.contains_key("commitments"));
+        assert!(!written.contains_key("closures"));
+        assert!(!written.contains_key("decisions"));
         assert_eq!(written["story"]["talent"], "conversation");
-        assert_eq!(written["commitments"][0]["owner_entity_id"], "owner-id");
+        assert_eq!(written["relations"][0]["from_entity_id"], "owner-id");
         assert_eq!(written["relations"][0]["to_entity_id"], "counterparty-id");
         assert_eq!(written["edits"].as_array().unwrap().len(), 1);
         assert_eq!(written["edits"][0]["actor"], "story");
@@ -874,9 +791,12 @@ mod tests {
         };
         // Partial input comes from the response input_budget when clipped is true,
         // not from a request field and not from a partial_input field in the model body.
-        let output = json!({"body":"You worked through a long terminal session.","topics":["work"],
-            "confidence":0.7,"commitments":[],"closures":[],"decisions":[],"relations":[],
-            "partial_input":{"dropped_entries":0}})
+        let output = json!({
+            "body":"You worked through a long terminal session.",
+            "topics":["work"],
+            "confidence":0.7,
+            "relations":[]
+        })
         .to_string();
         let context = ExecutionContext {
             journal: root.path().into(),
@@ -953,9 +873,6 @@ mod tests {
             "body": "You worked through a long terminal session.",
             "topics": ["work"],
             "confidence": 0.7,
-            "commitments": [],
-            "closures": [],
-            "decisions": [],
             "relations": []
         })
         .to_string();

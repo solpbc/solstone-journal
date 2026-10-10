@@ -36,8 +36,7 @@
           "required": [
             "segments",
             "anticipated_activities",
-            "facet_newsletters",
-            "followups"
+            "facet_newsletters"
           ],
           "properties": {
             "segments": {
@@ -49,10 +48,6 @@
               "minimum": 0
             },
             "facet_newsletters": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "followups": {
               "type": "integer",
               "minimum": 0
             }

@@ -71,8 +71,6 @@
     "knows": "knows",
     "uses": "uses",
     "created": "created",
-    "decided-with": "decided together",
-    "committed-to": "committed",
     "spoke-with": "spoke",
     "mentioned": "mentioned",
     "messaged-with": "messaged",
@@ -83,16 +81,12 @@
     "co-present": "around together"
   },
   "ENT_CONN_KIND_CHIP_WORDS": {
-    "committed-to": "commitments",
     "mentioned": "mentions"
   },
   "ENT_CONN_SOURCE_WORDS": {
     "event-legacy": "older calendar events",
     "co-presence": "shared moments",
     "participation": "activity records",
-    "commitment": "commitments",
-    "closure": "commitments",
-    "decision": "decisions",
     "relation": "what your journal holds",
     "observation": "what your journal holds",
     "speaker": "conversation",

@@ -120,8 +120,8 @@ fn owner_patch(
         .filter(|id| !id.is_empty())?;
     let mut patch = Map::new();
     let mut count = 0;
-    for (key, value) in record {
-        let Value::Array(items) = value else {
+    for key in ["participation", "relations"] {
+        let Some(Value::Array(items)) = record.get(key) else {
             continue;
         };
         let mut changed = false;
@@ -148,7 +148,7 @@ fn owner_patch(
             })
             .collect();
         if changed {
-            patch.insert(key.clone(), Value::Array(items));
+            patch.insert(key.to_string(), Value::Array(items));
         }
     }
     (!patch.is_empty()).then(|| (record_id.to_owned(), patch, count))
@@ -205,14 +205,14 @@ mod tests {
                 .to_string(),
         );
         let rows = [
-            json!({"id":"a1","activity":"coding","commitments":[
-                {"owner":"you","owner_entity_id":null,"counterparty":"Priya","counterparty_entity_id":null},
-                {"owner":"Jordan Rivers","owner_entity_id":null},
-                {"owner":"you","owner_entity_id":"someone_else"},
-                {"owner":"your agent","owner_entity_id":null}
+            json!({"id":"a1","activity":"coding","relations":[
+                {"from":"you","from_entity_id":null,"to":"Priya","to_entity_id":null,"kind":"works-with","note":""},
+                {"from":"Jordan Rivers","from_entity_id":null,"to":"Priya","to_entity_id":"priya","kind":"works-with","note":""},
+                {"from":"you","from_entity_id":"someone_else","to":"Priya","to_entity_id":"priya","kind":"works-with","note":""},
+                {"from":"your agent","from_entity_id":null,"to":"Priya","to_entity_id":"priya","kind":"works-with","note":""}
             ]}),
-            json!({"id":"m1","activity":"meeting","commitments":[
-                {"owner":"you","owner_entity_id":null}
+            json!({"id":"m1","activity":"meeting","relations":[
+                {"from":"you","from_entity_id":null,"to":"Priya","to_entity_id":"priya","kind":"works-with","note":""}
             ]}),
         ];
         write(
@@ -222,14 +222,14 @@ mod tests {
         root
     }
 
-    fn commitments(root: &Path, id: &str) -> Vec<Value> {
-        commitments_on(root, "20260101", id)
+    fn relations(root: &Path, id: &str) -> Vec<Value> {
+        relations_on(root, "20260101", id)
     }
 
-    fn commitments_on(root: &Path, day: &str, id: &str) -> Vec<Value> {
+    fn relations_on(root: &Path, day: &str, id: &str) -> Vec<Value> {
         solstone_core_facets::get_activity_record(root, "work", day, id)
             .unwrap()
-            .unwrap()["commitments"]
+            .unwrap()["relations"]
             .as_array()
             .unwrap()
             .clone()
@@ -239,15 +239,15 @@ mod tests {
     fn an_owner_reference_written_without_an_owner_gains_the_owners_id() {
         let root = journal(true);
         assert_eq!(resolve_owner_actors_at(root.path(), now()).unwrap(), 2);
-        let items = commitments(root.path(), "a1");
-        assert_eq!(items[0]["owner_entity_id"], "jordan");
-        assert!(items[0]["counterparty_entity_id"].is_null());
-        assert_eq!(items[1]["owner_entity_id"], "jordan");
-        assert_eq!(items[2]["owner_entity_id"], "someone_else");
-        assert!(items[3]["owner_entity_id"].is_null());
+        let items = relations(root.path(), "a1");
+        assert_eq!(items[0]["from_entity_id"], "jordan");
+        assert!(items[0]["to_entity_id"].is_null());
+        assert_eq!(items[1]["from_entity_id"], "jordan");
+        assert_eq!(items[2]["from_entity_id"], "someone_else");
+        assert!(items[3]["from_entity_id"].is_null());
         // A meeting's "you" also rests on the owner's voice, which this pass
         // does not check, so it is left as it is.
-        assert!(commitments(root.path(), "m1")[0]["owner_entity_id"].is_null());
+        assert!(relations(root.path(), "m1")[0]["from_entity_id"].is_null());
         // A second pass finds nothing left to fill.
         assert_eq!(resolve_owner_actors_at(root.path(), now()).unwrap(), 0);
     }
@@ -283,8 +283,8 @@ mod tests {
         assert_eq!(resolve_owner_actors_at(root.path(), today).unwrap(), 2);
 
         assert_eq!(fs::read(&oldest_kept).unwrap(), rows);
-        let items = commitments_on(root.path(), "20251226", "a1");
-        assert_eq!(items[0]["owner_entity_id"], "jordan");
-        assert_eq!(items[1]["owner_entity_id"], "jordan");
+        let items = relations_on(root.path(), "20251226", "a1");
+        assert_eq!(items[0]["from_entity_id"], "jordan");
+        assert_eq!(items[1]["from_entity_id"], "jordan");
     }
 }

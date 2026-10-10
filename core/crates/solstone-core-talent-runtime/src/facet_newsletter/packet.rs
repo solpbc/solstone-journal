@@ -683,9 +683,6 @@ fn render_activity_record(
         ("active_entities", "Active entities"),
         ("segments", "Segments"),
         ("participation", "Participation"),
-        ("commitments", "Commitments"),
-        ("closures", "Closures"),
-        ("decisions", "Decisions"),
     ] {
         lines.extend(render_list_field(record, name, label));
     }
@@ -925,5 +922,24 @@ mod tests {
             &["failed: facet_metadata failed for work: permission denied".to_owned()],
         );
         assert!(preamble.contains("permission denied"));
+    }
+
+    #[test]
+    fn historical_record_with_retired_arrays_does_not_render_tracking_or_counts() {
+        let mut record = Map::new();
+        record.insert("id".to_string(), json!("act-1"));
+        record.insert(
+            "commitments".to_string(),
+            json!([{"action": "send deck", "owner": "you"}]),
+        );
+        record.insert("closures".to_string(), json!([{"action": "send deck"}]));
+        record.insert("decisions".to_string(), json!([{"action": "ship monday"}]));
+        let mut gaps = Vec::new();
+        let (rendered, _) = render_activity_record(&record, "act-1", &mut gaps);
+        assert!(!rendered.contains("Commitments"));
+        assert!(!rendered.contains("Closures"));
+        assert!(!rendered.contains("Decisions"));
+        assert!(!rendered.contains("send deck"));
+        assert!(!rendered.contains("ship monday"));
     }
 }

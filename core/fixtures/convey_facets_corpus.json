@@ -2237,12 +2237,12 @@
       },
       {
         "body_bytes": 964,
-        "body_sha256": "d49ac9894df24cf585e78d580bd5ce3305cd06459b7ff8c6de2af7b6310bcf97",
+        "body_sha256": "8f4e7cfc9cd7ef9a914eb084f5bfb9a5cc5b49e69fc4696548c0cb9c59bb6741",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "copy": {
-            "empty_body": "every day, one newsletter is written per facet that had activity: your meetings, decisions, follow-ups, and what changed for that part of your life. a short read per facet, in your journal.",
+            "empty_body": "every day, one newsletter is written per facet that had activity: your meetings and what changed for that part of your life. a short read per facet, in your journal.",
             "empty_next": "Newsletters arrive as your journal fills.",
             "empty_until_then": "Until then, this page will be empty. Newsletters appear here every day, newest first, grouped by facet.",
             "grid_lede": null,
@@ -3043,12 +3043,12 @@
       },
       {
         "body_bytes": 1282,
-        "body_sha256": "11175a7c3e51c5c03a10821b2ff9e2a59b0d8b93675968106bc2ed0ef48598e2",
+        "body_sha256": "eefc4141eaf2ea323481d8883fff12293c5f227e35902873c7168dd8a9a9ca35",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "copy": {
-            "empty_body": "every day, one newsletter is written per facet that had activity: your meetings, decisions, follow-ups, and what changed for that part of your life. a short read per facet, in your journal.",
+            "empty_body": "every day, one newsletter is written per facet that had activity: your meetings and what changed for that part of your life. a short read per facet, in your journal.",
             "empty_next": "Your first newsletters arrive tomorrow morning.",
             "empty_until_then": "Until then, this page will be empty. Newsletters appear here every day, newest first, grouped by facet.",
             "grid_lede": "3 newsletters since May 2026.",

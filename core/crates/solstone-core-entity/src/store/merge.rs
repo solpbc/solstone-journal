@@ -588,18 +588,6 @@ pub(crate) fn merge_activities(
                     }
                     for (container, keys) in [
                         ("participation", &["entity_id"][..]),
-                        (
-                            "commitments",
-                            &["owner_entity_id", "counterparty_entity_id"][..],
-                        ),
-                        (
-                            "closures",
-                            &["owner_entity_id", "counterparty_entity_id"][..],
-                        ),
-                        (
-                            "decisions",
-                            &["owner_entity_id", "counterparty_entity_id"][..],
-                        ),
                         ("relations", &["from_entity_id", "to_entity_id"][..]),
                     ] {
                         if let Some(items) = object.get_mut(container).and_then(Value::as_array_mut)

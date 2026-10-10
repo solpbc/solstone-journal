@@ -30,11 +30,8 @@
 //! `apply_prompt_override` inserts the packet JSON as `transcript` and
 //! removes `prompt`. It does not call `apply_template_vars`, so the packet
 //! stays unsubstituted.
-//!
-//! `said` is built by code alone, never by the model: the owner's own words
-//! from Story rows that carry `owner_evidence: "voice"`. The Story writer sets
-//! that mark only when the row's quote is the owner's recognized-voice speech,
-//! so the page shows the quote and never the row's model-written action.
+//! `said` is built by code, never by the model, from naturally quoted passages
+//! in the story body that match the owner's recognized-voice lines.
 
 #[cfg(test)]
 use std::cell::Cell;
@@ -130,8 +127,6 @@ pub struct Said {
     pub day: String,
     pub facet: String,
     pub record_id: String,
-    pub group: &'static str,
-    pub index: usize,
     pub quote: String,
 }
 
@@ -665,16 +660,16 @@ pub fn compute_memory_key(day: &str, position: usize, text: &str) -> String {
 /// unchanged. The `said` prefix keeps it apart from every memory key.
 pub fn compute_said_key(said: &Said) -> String {
     let input = format!(
-        "said\n{}\n{}\n{}\n{}\n{}\n{}",
-        said.day, said.facet, said.record_id, said.group, said.index, said.quote
+        "said\n{}\n{}\n{}\n{}",
+        said.day, said.facet, said.record_id, said.quote
     );
     let digest = Sha256::digest(input.as_bytes());
     let hex = format!("{digest:x}");
     hex[..16].to_owned()
 }
 
-/// The owner's voice-backed Story quotes on one day, in record order, then
-/// group, then position; a repeated quote is kept once and the day is capped.
+/// The owner's voice-backed Story quotes on one day, in record order; a
+/// repeated quote is kept once and the day is capped.
 fn said_on_day(journal: &Path, facets: &[String], day: &str) -> Vec<Said> {
     let mut said = Vec::new();
     let mut seen = BTreeSet::new();
@@ -695,46 +690,73 @@ fn said_on_day(journal: &Path, facets: &[String], day: &str) -> Vec<Said> {
             if !keeps_a_segment(journal, day, &record) {
                 continue;
             }
-            for group in ["commitments", "decisions", "closures"] {
-                let rows = record
-                    .get(group)
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten();
-                for (index, row) in rows.enumerate() {
-                    if row.get("owner_evidence").and_then(Value::as_str) != Some("voice") {
-                        continue;
-                    }
-                    let Some(quote) = row
-                        .get("quote")
-                        .and_then(Value::as_str)
-                        .filter(|quote| !quote.trim().is_empty())
-                    else {
-                        continue;
-                    };
-                    let words = quote
+            let Some(body) = record
+                .get("story")
+                .and_then(Value::as_object)
+                .and_then(|s| s.get("body"))
+                .and_then(Value::as_str)
+            else {
+                continue;
+            };
+            let Some(owner_lines) = crate::story::owner_heard(journal, day, &record) else {
+                continue;
+            };
+
+            for passage in extract_passages(body) {
+                if passage.split_whitespace().count() < 3 {
+                    continue;
+                }
+                if let Some(owner_line) = owner_lines.iter().find(|line| line.contains(passage)) {
+                    let words = owner_line
                         .to_lowercase()
                         .split(|c: char| !c.is_alphanumeric())
-                        .filter(|word| !word.is_empty())
+                        .filter(|w| !w.is_empty())
                         .collect::<Vec<_>>()
                         .join(" ");
-                    if !seen.insert(words) {
-                        continue;
+                    if seen.insert(words) {
+                        said.push(Said {
+                            day: day.to_owned(),
+                            facet: facet.clone(),
+                            record_id: record_id.to_owned(),
+                            quote: owner_line.clone(),
+                        });
                     }
-                    said.push(Said {
-                        day: day.to_owned(),
-                        facet: facet.clone(),
-                        record_id: record_id.to_owned(),
-                        group,
-                        index,
-                        quote: plain_quote(quote),
-                    });
                 }
             }
         }
     }
     said.truncate(SAID_PER_DAY);
     said
+}
+
+fn extract_passages(body: &str) -> Vec<&str> {
+    let mut passages = Vec::new();
+    let mut chars = body.char_indices().peekable();
+    while let Some((start_idx, ch)) = chars.next() {
+        let closing_char = match ch {
+            '"' => Some('"'),
+            '\u{201c}' => Some('\u{201d}'),
+            '\u{2018}' => Some('\u{2019}'),
+            _ => None,
+        };
+        if let Some(target) = closing_char {
+            let inner_start = start_idx + ch.len_utf8();
+            let mut found_close = None;
+            for (idx, close_ch) in chars.by_ref() {
+                if close_ch == target {
+                    found_close = Some(idx);
+                    break;
+                }
+            }
+            if let Some(end_idx) = found_close {
+                let trimmed = body[inner_start..end_idx].trim();
+                if !trimmed.is_empty() {
+                    passages.push(trimmed);
+                }
+            }
+        }
+    }
+    passages
 }
 
 /// Whether any segment the activity names is still in the journal, looked up
@@ -767,27 +789,6 @@ fn keeps_a_segment(journal: &Path, day: &str, record: &Map<String, Value>) -> bo
 
 fn is_live_segment(dir: &Path) -> bool {
     dir.is_dir() && matches!(owner_deleted(dir), Ok(false))
-}
-
-/// One line, with one wrapping pair of quotation marks removed: every surface
-/// adds its own marks. The words are untouched.
-fn plain_quote(quote: &str) -> String {
-    let line = quote.split_whitespace().collect::<Vec<_>>().join(" ");
-    for (open, close) in [
-        ('"', '"'),
-        ('\u{201c}', '\u{201d}'),
-        ('\u{2018}', '\u{2019}'),
-    ] {
-        if let Some(inner) = line
-            .strip_prefix(open)
-            .and_then(|rest| rest.strip_suffix(close))
-            .map(str::trim)
-            .filter(|inner| !inner.is_empty())
-        {
-            return inner.to_owned();
-        }
-    }
-    line
 }
 
 pub fn extract_refs(text: &str) -> Vec<String> {
@@ -1795,23 +1796,49 @@ mod tests {
     fn said_keeps_only_the_owners_voice_backed_quotes() {
         let root = tempfile::tempdir().unwrap();
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let write = |path: &str, text: String| {
+            let p = root.path().join(path);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, text).unwrap();
+        };
+        write(
+            "config/journal.json",
+            json!({"identity":{"name":"Jordan Rivers"}}).to_string(),
+        );
+        write(
+            "entities/jordan/entity.json",
+            json!({"id":"jordan","name":"Jordan Rivers","type":"Person","is_principal":true})
+                .to_string(),
+        );
+
         let path = root.path().join("facets/work/activities/20260309.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let voice = |action: &str, quote: &str| json!({"owner":"you","action":action,"quote":quote,"owner_evidence":"voice"});
         let rows = [
-            json!({"id":"meeting_1","activity":"meeting","stream":"phone","segments":["090000_300"],
-                "commitments":[
-                    voice("send the deck", "I'll get you the deck by friday"),
-                    {"owner":"Pat","action":"book the room","quote":"I can book the room"},
-                    {"owner":"you","action":"call back","owner_evidence":"voice"}
-                ],
-                "decisions":[voice("go with the deck", "I'll get you the deck, by Friday!")]}),
-            json!({"id":"gone","activity":"meeting","segments":["100000_300"],
-                "commitments":[voice("never shown", "words from a deleted conversation")]}),
-            json!({"id":"meeting_2","activity":"meeting","segments":["110000_300"],
-                "closures":[voice("closed it", "\u{201c}that one is\n done now\u{201d}")],
-                "decisions":[voice("pick blue", "let's go with blue then")],
-                "commitments":[voice("write it up", "I will write it up")]}),
+            json!({
+                "id":"meeting_1",
+                "activity":"meeting",
+                "stream":"phone",
+                "segments":["090000_300"],
+                "story":{"body":"You promised \"I will get you the deck by friday\" before leaving."}
+            }),
+            json!({
+                "id":"gone",
+                "activity":"meeting",
+                "segments":["100000_300"],
+                "story":{"body":"You said \"never shown anywhere at all\"."}
+            }),
+            json!({
+                "id":"meeting_pat",
+                "activity":"meeting",
+                "stream":"default",
+                "segments":["110000_300"],
+                "story":{"body":"Pat stated \"we can book the room later\"."}
+            }),
+            json!({
+                "id":"chat_1",
+                "activity":"chat",
+                "story":{"body":"You typed \"we should meet tomorrow morning\"."}
+            }),
         ];
         fs::write(
             &path,
@@ -1820,6 +1847,7 @@ mod tests {
                 .collect::<String>(),
         )
         .unwrap();
+
         let day_dir = root.path().join("chronicle/20260309");
         fs::create_dir_all(day_dir.join("phone/090000_300")).unwrap();
         fs::create_dir_all(day_dir.join("default/110000_300")).unwrap();
@@ -1834,27 +1862,37 @@ mod tests {
         fs::write(day_dir.join("default/100000_300/tombstone.json"), "{}").unwrap();
         assert!(!keeps_a_segment(root.path(), "20260309", &bound));
 
-        let said = said_on_day(root.path(), &["work".to_owned()], "20260309");
-        let quotes = said
-            .iter()
-            .map(|item| item.quote.as_str())
-            .collect::<Vec<_>>();
-        // A quote without the voice mark, a voice mark without a quote, a
-        // conversation whose segments are all deleted and a repeat of the same
-        // words are left out; the day keeps its first three.
-        assert_eq!(
-            quotes,
-            [
-                "I'll get you the deck by friday",
-                "I will write it up",
-                "let's go with blue then"
-            ]
+        write(
+            "chronicle/20260309/phone/090000_300/audio.jsonl",
+            r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"I will get you the deck by friday"}"#
+                .into(),
         );
-        assert_eq!(plain_quote("\"we ship it\nfriday\""), "we ship it friday");
-        assert_eq!(plain_quote("she said \"no\""), "she said \"no\"");
-        assert_eq!(plain_quote("\"\""), "\"\"");
-        assert_eq!(said[1].group, "commitments");
-        assert_eq!(said[2].group, "decisions");
+        write(
+            "chronicle/20260309/phone/090000_300/talents/speaker_labels.json",
+            json!({"labels":[{"sentence_id":1,"speaker":"jordan","method":"user_confirmed"}]})
+                .to_string(),
+        );
+
+        write(
+            "chronicle/20260309/default/110000_300/audio.jsonl",
+            r#"{"start":"00:00:01","speaker":2,"sentence_id":1,"text":"we can book the room later"}"#
+                .into(),
+        );
+        write(
+            "chronicle/20260309/default/110000_300/talents/speaker_labels.json",
+            json!({"labels":[{"sentence_id":1,"speaker":"pat","method":"voice"}]}).to_string(),
+        );
+
+        let said = said_on_day(root.path(), &["work".to_owned()], "20260309");
+        assert_eq!(said.len(), 1);
+        assert_eq!(said[0].quote, "I will get you the deck by friday");
+        assert_eq!(said[0].day, "20260309");
+        assert_eq!(said[0].facet, "work");
+        assert_eq!(said[0].record_id, "meeting_1");
+        assert_eq!(
+            said_uri(&said[0]),
+            "sol://facets/work/activities/20260309#meeting_1"
+        );
         assert!(said_on_day(root.path(), &["work".to_owned()], "20260310").is_empty());
     }
 
@@ -1872,8 +1910,6 @@ mod tests {
                 day: "20260309".to_owned(),
                 facet: "work".to_owned(),
                 record_id: "meeting_1".to_owned(),
-                group: "commitments",
-                index: 0,
                 quote: "I'll get you the deck by friday".to_owned(),
             }],
         };
@@ -1885,7 +1921,6 @@ mod tests {
         );
         let mut two = state.clone();
         two.said.push(Said {
-            index: 1,
             quote: "let's go with blue then".to_owned(),
             ..state.said[0].clone()
         });

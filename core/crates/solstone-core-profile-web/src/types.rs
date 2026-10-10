@@ -15,42 +15,6 @@ pub struct ActivitySourceRef {
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
-pub struct LedgerItem {
-    pub id: String,
-    pub state: String,
-    pub owner: String,
-    pub owner_entity_id: Option<String>,
-    pub counterparty: Option<String>,
-    pub counterparty_entity_id: Option<String>,
-    pub action: String,
-    pub summary: String,
-    pub when: Option<String>,
-    pub context: String,
-    pub opened_at: i64,
-    pub closed_at: Option<i64>,
-    pub age_days: i64,
-    pub sources: Vec<ActivitySourceRef>,
-    /// `"voice"` when the owner said it, by their recognized voice.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub owner_evidence: Option<String>,
-}
-
-#[derive(Serialize, Debug, Clone, PartialEq)]
-pub struct Decision {
-    pub id: String,
-    pub owner: String,
-    pub owner_entity_id: Option<String>,
-    pub action: String,
-    pub context: String,
-    pub day: String,
-    pub created_at: i64,
-    pub source: ActivitySourceRef,
-    /// `"voice"` when the owner said it, by their recognized voice.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub owner_evidence: Option<String>,
-}
-
-#[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct Cadence {
     pub recent_interactions_count_30d: i64,
     pub last_seen: Option<String>,
@@ -68,8 +32,6 @@ pub struct ProfileBrief {
     pub blocked: bool,
     pub description: Option<String>,
     pub last_seen: Option<String>,
-    pub open_loop_count: usize,
-    pub decisions_count_30d: usize,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -92,9 +54,6 @@ pub struct Profile {
     pub detached_facets: Vec<String>,
     pub description: Option<String>,
     pub cadence: Cadence,
-    pub open_with_them: Vec<LedgerItem>,
-    pub closed_with_them_30d: Vec<LedgerItem>,
-    pub decisions_involving_them: Vec<Decision>,
     pub sources: Vec<ActivitySourceRef>,
     pub generated_at: i64,
 }
