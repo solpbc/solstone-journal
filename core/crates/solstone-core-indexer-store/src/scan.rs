@@ -6918,6 +6918,15 @@ not json
         assert_eq!(attempt.outcome, SavedPublicationOutcome::Indexed);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert!(chunk_contents_contain(&conn, "kestrel"));
+        // Searchable by the owner, still not by a connection.
+        let eligible: i64 = conn
+            .query_row(
+                "SELECT eligible FROM chunk_classification WHERE path=?",
+                ["20260717/default/090000_300/talents/sense.json"],
+                |row| row.get(0),
+            )
+            .expect("classification row");
+        assert_eq!(eligible, 0);
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup summary root");
     }
