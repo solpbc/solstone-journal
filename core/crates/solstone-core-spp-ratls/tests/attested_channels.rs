@@ -1766,11 +1766,11 @@ fn real_helper_profiles(
     mode: solstone_core_spp_attest::nvgpu::StatusMode,
 ) -> solstone_core_spp_attest::nvgpu::GpuProfiles {
     use solstone_core_spp_attest::nvgpu::{GpuProfile, GpuProfiles, ManifestSet};
-    // Test-only coexistence: the current production pin keeps its online
-    // profile beside the staged successor pin.
+    // Test-only coexistence: an online fixture profile beside the profile
+    // whose status mode this test selects.
     GpuProfiles::from_profiles(vec![
         GpuProfile::new(
-            solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS[0],
+            "11".repeat(32),
             ManifestSet::QUALIFIED_595_71_05,
             solstone_core_spp_attest::nvgpu::StatusMode::OnlineNonce,
         ),

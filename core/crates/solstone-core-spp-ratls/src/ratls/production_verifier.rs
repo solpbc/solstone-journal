@@ -422,13 +422,14 @@ mod tests {
 
     use super::{check_nvattest_readiness, verify_composite_with_gpu_appraiser};
 
-    const CURRENT_PIN: &str = "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3";
+    const FIXTURE_PIN: &str = "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3";
 
     /// The fixture is the overlap engine's evidence, which predates the
-    /// published per-register record. Tests of what follows a verified CPU leg
-    /// appraise it by its fingerprint alone.
+    /// published per-register record and is no longer admitted in production.
+    /// Tests of what follows a verified CPU leg explicitly admit the fixture.
     fn overlap_engine_policy() -> solstone_core_spp_attest::Policy {
         solstone_core_spp_attest::Policy {
+            pcr_pins: [FIXTURE_PIN.to_owned()].into_iter().collect(),
             application_pcrs: None,
             ..solstone_core_spp_attest::production_policy()
         }
@@ -450,7 +451,7 @@ mod tests {
         let successor = "44".repeat(32);
         // Test-only coexistence: the current pin online, a successor offline.
         let both = profiles(&[
-            (CURRENT_PIN, StatusMode::OnlineNonce),
+            (FIXTURE_PIN, StatusMode::OnlineNonce),
             (&successor, StatusMode::OfflineSignedAge),
         ]);
         for proofs in [None, Some(&b"proofs from the engine"[..])] {
@@ -466,7 +467,7 @@ mod tests {
 
         // The same CPU evidence under a profile set that maps it offline is
         // judged offline, with this device's time and the engine's proofs.
-        let offline = profiles(&[(CURRENT_PIN, StatusMode::OfflineSignedAge)]);
+        let offline = profiles(&[(FIXTURE_PIN, StatusMode::OfflineSignedAge)]);
         let appraiser = FixtureGpuAppraiser::accepted();
         fixture
             .verify_with(Some(&policy), &appraiser, &offline, Some(b"proofs"))
@@ -500,29 +501,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn production_profiles_cover_exactly_the_production_pins() {
-        let profiles = GpuProfiles::production();
-        let expected = [
-            (CURRENT_PIN, StatusMode::OnlineNonce),
-            (
-                "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
-                StatusMode::OfflineSignedAge,
-            ),
-            (
-                "0486d5a350467cfa28dea41076659debee9c2fea8c6423828efb53270cbb4641",
-                StatusMode::OfflineSignedAge,
-            ),
-        ];
-        assert_eq!(
-            solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS.len(),
-            expected.len()
-        );
-        for (pin, status) in expected {
-            assert!(solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS.contains(&pin));
-            assert_eq!(profiles.select(pin).expect("profile").status(), status);
-        }
-    }
     use crate::{
         CompositeVerificationInput, NvattestEnsureStatus, classify_nvattest_prerequisite,
         test_support::TempDir,
@@ -646,7 +624,12 @@ mod tests {
             policy: Option<&solstone_core_spp_attest::Policy>,
             appraiser: &dyn solstone_core_spp_attest::GpuAppraiser,
         ) -> Result<crate::CompositeVerdict, crate::CompositeVerificationError> {
-            self.verify_with(policy, appraiser, &GpuProfiles::production(), None)
+            self.verify_with(
+                policy,
+                appraiser,
+                &profiles(&[(FIXTURE_PIN, StatusMode::OnlineNonce)]),
+                None,
+            )
         }
 
         fn verify_with(
@@ -704,18 +687,14 @@ mod tests {
     }
 
     #[test]
-    fn production_refuses_the_overlap_engine_by_its_registers_before_gpu() {
+    fn production_refuses_the_retired_engine_by_its_fingerprint_before_gpu() {
         let fixture = Fixture::load();
         let appraiser = FixtureGpuAppraiser::accepted();
         let policy = solstone_core_spp_attest::production_policy();
-        // Its fingerprint is still pinned; the register appraisal refuses it.
-        assert!(
-            solstone_core_spp_attest::check_pcr_fingerprint(&fixture.quote_pcrs, &policy).is_ok()
-        );
         let error = fixture
-            .verify(Some(&policy), &appraiser)
-            .expect_err("the overlap engine's registers are not the published build");
-        assert_eq!(error.reason_code, "pcr_selection_mismatch");
+            .verify_with(Some(&policy), &appraiser, &GpuProfiles::production(), None)
+            .expect_err("the retired engine's fingerprint is not admitted");
+        assert_eq!(error.reason_code, "pcr_pin_mismatch");
         assert!(!appraiser.called.load(Ordering::SeqCst));
     }
 
