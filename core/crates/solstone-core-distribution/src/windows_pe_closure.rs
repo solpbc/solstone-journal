@@ -10,7 +10,7 @@
 //! package basename.
 //! https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::inventory::is_allowed_msvc_repetition;
 use crate::pe_dependencies::{PeDependencies, inspect_dependencies};
@@ -171,6 +171,38 @@ fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<Runtim
     if images.is_empty() {
         return Err("Windows payload has no declared PE images".into());
     }
+    // DllLoadDir covers ordinary imports during the initial load only. A DLL
+    // reached that way retains the hosted context for later loads, even when
+    // a private executable also imports it. Merely sharing a directory does
+    // not establish that context or mean a separate root is already loaded.
+    let mut hosted = BTreeSet::new();
+    let mut pending: Vec<String> = [
+        WINDOWS_CED_LIBRARY,
+        WINDOWS_ONNXRUNTIME_LIBRARY,
+        WINDOWS_VULKAN_LOADER,
+        WINDOWS_PDFIUM_LIBRARY,
+    ]
+    .into_iter()
+    .filter(|path| images.get(*path).is_some_and(|image| image.is_dll))
+    .map(str::to_owned)
+    .collect();
+    while let Some(path) = pending.pop() {
+        if !hosted.insert(path.clone()) {
+            continue;
+        }
+        let info = &images[&path];
+        let directory = search_directory(&path, info.is_dll)?;
+        for name in &info.imports {
+            let library = crate::pe_dependencies::dll_name(name)?;
+            if !SYSTEM_DLLS.contains(&library.as_str()) {
+                let member = format!("{directory}/{library}");
+                if images.get(&member).is_some_and(|image| image.is_dll) {
+                    pending.push(member);
+                }
+            }
+        }
+    }
+
     let mut edges = Vec::new();
     for (path, info) in images {
         let directory = search_directory(path, info.is_dll)?;
@@ -181,10 +213,7 @@ fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<Runtim
         ] {
             for name in names {
                 let library = crate::pe_dependencies::dll_name(name)?;
-                if (path == WINDOWS_CED_LIBRARY
-                    || path == WINDOWS_ONNXRUNTIME_LIBRARY
-                    || path == WINDOWS_VULKAN_LOADER
-                    || path == WINDOWS_PDFIUM_LIBRARY)
+                if hosted.contains(path)
                     && (kind == "delay-import" || kind == "forwarder")
                     && !SYSTEM_DLLS.contains(&library.as_str())
                 {
@@ -218,6 +247,172 @@ fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<Runtim
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pe_import(name: &str, delayed: bool) -> Vec<u8> {
+        let mut bytes = crate::pe_dependencies::tests::with_import(delayed);
+        assert!(name.len() < 0x40);
+        bytes[0x280..0x2c0].fill(0);
+        bytes[0x280..0x280 + name.len()].copy_from_slice(name.as_bytes());
+        bytes
+    }
+
+    #[test]
+    fn hosted_dependency_cannot_delay_load_an_independently_declared_root() {
+        let root = pe_import("bridge.dll", false);
+        let bridge = pe_import("onnxruntime.dll", true);
+        let target = crate::pe_dependencies::tests::image();
+        let err = inspect_runtime_closure([
+            (WINDOWS_CED_LIBRARY, root.as_slice()),
+            ("lib/solstone-native/bridge.dll", bridge.as_slice()),
+            (WINDOWS_ONNXRUNTIME_LIBRARY, target.as_slice()),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            err,
+            "lib/solstone-native/bridge.dll: unsupported delay-import onnxruntime.dll under DllLoadDir"
+        );
+    }
+
+    #[test]
+    fn deep_hosted_cycles_refuse_delayed_and_forwarded_private_edges() {
+        for root in [
+            WINDOWS_CED_LIBRARY,
+            WINDOWS_ONNXRUNTIME_LIBRARY,
+            WINDOWS_VULKAN_LOADER,
+            WINDOWS_PDFIUM_LIBRARY,
+        ] {
+            let directory = root.rsplit_once('/').unwrap().0;
+            let leaf = format!("{directory}/aleaf.dll");
+            let bridge = format!("{directory}/zbridge.dll");
+            assert!(leaf.as_str() < root && leaf < bridge);
+            for kind in ["delay-import", "forwarder"] {
+                let entries = [
+                    (root.into(), image(true, &["zbridge.dll"], &[], &[])),
+                    (bridge.clone(), image(true, &["aleaf.dll"], &[], &[])),
+                    (
+                        leaf.clone(),
+                        image(
+                            true,
+                            &["zbridge.dll"],
+                            if kind == "delay-import" {
+                                &["sibling.dll"]
+                            } else {
+                                &[]
+                            },
+                            if kind == "forwarder" {
+                                &["sibling.dll"]
+                            } else {
+                                &[]
+                            },
+                        ),
+                    ),
+                    (
+                        format!("{directory}/sibling.dll"),
+                        image(true, &[], &[], &[]),
+                    ),
+                ];
+                for reverse in [false, true] {
+                    let mut ordered = entries.clone();
+                    if reverse {
+                        ordered.reverse();
+                    }
+                    let err = inspect_edges(&ordered.into_iter().collect()).unwrap_err();
+                    assert_eq!(
+                        err,
+                        format!("{leaf}: unsupported {kind} sibling.dll under DllLoadDir")
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unrelated_hosted_root_does_not_classify_private_executable_dependencies() {
+        let root = crate::pe_dependencies::tests::image();
+        let mut executable = pe_import("bridge.dll", false);
+        executable[0x80 + 22..0x80 + 24].copy_from_slice(&0x0022u16.to_le_bytes());
+        let bridge = pe_import("sibling.dll", true);
+        let sibling = crate::pe_dependencies::tests::image();
+        let members = [
+            (WINDOWS_CED_LIBRARY, root.as_slice()),
+            ("lib/solstone-native/tool.exe", executable.as_slice()),
+            ("lib/solstone-native/bridge.dll", bridge.as_slice()),
+            ("lib/solstone-native/sibling.dll", sibling.as_slice()),
+        ];
+        let edges = inspect_runtime_closure(members).unwrap();
+        assert!(
+            edges
+                .iter()
+                .any(|edge| edge.importer.ends_with("/bridge.dll")
+                    && edge.kind == "delay-import"
+                    && edge.member.as_deref() == Some("lib/solstone-native/sibling.dll"))
+        );
+
+        // Only the hosted root's ordinary edge changes. The executable's
+        // application-directory context cannot erase the shared DLL's host.
+        let root = pe_import("bridge.dll", false);
+        let mut shared = members;
+        shared[0].1 = root.as_slice();
+        assert!(
+            inspect_runtime_closure(shared)
+                .unwrap_err()
+                .contains("unsupported delay-import")
+        );
+    }
+
+    #[test]
+    fn hosted_dependencies_keep_system_late_edges_and_missing_import_refusals() {
+        for kind in ["delay-import", "forwarder"] {
+            let mut images = BTreeMap::from([
+                (
+                    WINDOWS_CED_LIBRARY.into(),
+                    image(true, &["bridge.dll"], &[], &[]),
+                ),
+                (
+                    "lib/solstone-native/bridge.dll".into(),
+                    image(
+                        true,
+                        &[],
+                        if kind == "delay-import" {
+                            &["kernel32.dll"]
+                        } else {
+                            &[]
+                        },
+                        if kind == "forwarder" {
+                            &["kernel32.dll"]
+                        } else {
+                            &[]
+                        },
+                    ),
+                ),
+            ]);
+            let edges = inspect_edges(&images).unwrap();
+            assert!(
+                edges
+                    .iter()
+                    .any(|edge| edge.kind == kind && edge.member.is_none())
+            );
+            images
+                .get_mut("lib/solstone-native/bridge.dll")
+                .unwrap()
+                .imports
+                .push("missing.dll".into());
+            assert!(
+                inspect_edges(&images)
+                    .unwrap_err()
+                    .contains("unresolved import missing.dll")
+            );
+            images.insert(
+                "lib/solstone-other/missing.dll".into(),
+                image(true, &[], &[], &[]),
+            );
+            assert!(
+                inspect_edges(&images)
+                    .unwrap_err()
+                    .contains("unresolved import missing.dll")
+            );
+        }
+    }
 
     fn image(
         is_dll: bool,
