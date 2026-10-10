@@ -862,6 +862,47 @@ pub(crate) fn run_today_sense_repair(
     Some((argv, outcome))
 }
 
+/// How long after a day ends its daily run waits at least: a segment that
+/// began before midnight is sealed and delivered after it.
+const DAY_CLOSE_GRACE: Duration = Duration::from_secs(10 * 60);
+
+/// How long after a day ends its daily run waits at most for that day's last
+/// activities to be written.
+const DAY_CLOSE_LIMIT: Duration = Duration::from_secs(60 * 60);
+
+/// The day that ended within [`DAY_CLOSE_LIMIT`], while its last inputs are
+/// still arriving or being thought: within [`DAY_CLOSE_GRACE`] of its end, or
+/// while a segment, flush or activity task of it, or any settle check, is
+/// queued or running, or an activity of it is waiting to be written or still
+/// having its talents run. Its daily run starts once that stops, so it reads
+/// the day's final inputs once.
+fn day_still_closing(journal: &Path, queue: &TaskQueue, now: SystemTime) -> Option<String> {
+    let local_day = |at: SystemTime| {
+        solstone_core_system::daily_coverage::local_day(journal, chrono::DateTime::from(at))
+    };
+    let day = local_day(now.checked_sub(DAY_CLOSE_LIMIT)?);
+    if day == local_day(now) {
+        return None;
+    }
+    let within_grace = now
+        .checked_sub(DAY_CLOSE_GRACE)
+        .is_some_and(|at| local_day(at) == day);
+    let flush = format!("supervisor-flush-{day}-");
+    let observed = format!("supervisor-observed-{day}-");
+    let activity = format!("\"day\":\"{day}\"");
+    // A settle check reads yesterday as well as today, whatever its stream.
+    let busy = || {
+        queue.any_reference(|reference| {
+            reference.starts_with(&flush)
+                || reference.starts_with(&observed)
+                || reference.starts_with("supervisor-settle-")
+                || (reference.starts_with("supervisor-activity-") && reference.contains(&activity))
+        })
+    };
+    (within_grace || busy() || solstone_core_think_cli::activity_settle_holds_day(journal, &day))
+        .then_some(day)
+}
+
 /// Submit one daily think task for each selected, eligible catchup day.
 pub(crate) fn run_catchup_drain(
     journal: &Path,
@@ -873,7 +914,12 @@ pub(crate) fn run_catchup_drain(
     if no_thinking_engine_chosen(journal) {
         return Ok(());
     }
-    for day in eligible_catchup_days(journal, force_days, exclude, now)? {
+    let mut exclude = exclude.clone();
+    if let Some(day) = day_still_closing(journal, queue, now) {
+        log::debug!("supervisor: {day} is still closing; its daily run waits");
+        exclude.insert(day);
+    }
+    for day in eligible_catchup_days(journal, force_days, &exclude, now)? {
         let reference = format!("supervisor-catchup-{day}");
         let provenance = DailyCatchupProvenance { day: day.clone() };
         let _ = submit_catchup_think(queue, daily_think_argv(&day), &day, reference, provenance);
@@ -3696,7 +3742,8 @@ mod tests {
         .expect("write catchup state");
         let queue = queue(&bed.root);
 
-        initialize_catchup(&bed.root, &queue, false, date(3), wall_time(3, 20))
+        // Past the grace in which the day that just ended still waits.
+        initialize_catchup(&bed.root, &queue, false, date(3), wall_time(3, 11 * 60))
             .expect("startup catchup");
 
         assert_eq!(pending(&queue), 1, "only fresh past-day dirtiness drains");
@@ -3708,7 +3755,7 @@ mod tests {
         assert_eq!(stale["last_outcome"], "interrupted");
         assert_eq!(
             stale["next_retry_at"],
-            wall_time(3, 620)
+            wall_time(3, 11 * 60 + 600)
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs_f64()
@@ -3915,11 +3962,81 @@ mod tests {
 
         assert_eq!(daily.last_day, Some(date(7)));
         assert!(flush.pending.is_empty());
+        // The flush, and four earlier days; the day that just ended waits.
         assert_eq!(pending(&queue), 5);
+        assert!(!queue.contains_reference("supervisor-catchup-20260106"));
         assert_eq!(
             daily_think_argv("20260106"),
             ["solstone", "journal", "think", "-v", "--day", "20260106"].map(str::to_owned)
         );
+    }
+
+    #[test]
+    fn a_day_that_just_ended_runs_once_its_last_inputs_are_in() {
+        let bed = Bed::new("day-still-closing");
+        bed.enable_thinking();
+        bed.updated_day("20260106");
+        let settle = bed.root.join("awareness/activity_settle");
+        let runs = |held: Option<&str>, seconds: u64| {
+            let queue = queue(&bed.root);
+            if let Some(reference) = held {
+                let _ = submit_think(
+                    &queue,
+                    daily_think_argv("20260106"),
+                    "20260106",
+                    reference.to_owned(),
+                );
+            }
+            run_catchup_drain(
+                &bed.root,
+                &queue,
+                &BTreeSet::from(["20260107".to_owned()]),
+                &[],
+                wall_time(7, seconds),
+            )
+            .expect("catchup drain");
+            queue.contains_reference("supervisor-catchup-20260106")
+        };
+        // A segment that began before midnight may still be on its way.
+        assert!(!runs(None, 9 * 60));
+        // Its flush, a segment or activity of it, or a settle check still
+        // running holds it.
+        for reference in [
+            "supervisor-flush-20260106-235500_300",
+            "supervisor-observed-20260106-235800_300",
+            "supervisor-settle-desktop",
+            r#"supervisor-activity-{"day":"20260106","facet":"work","activity":"a"}"#,
+        ] {
+            assert!(!runs(Some(reference), 11 * 60), "{reference}");
+        }
+        // Work for today does not.
+        assert!(runs(
+            Some("supervisor-observed-20260107-000500_300"),
+            11 * 60
+        ));
+        // An activity of it still waiting to be written, or whose talents
+        // are still running, holds it.
+        let publishing = settle.join("publishing");
+        fs::create_dir_all(&publishing).expect("publishing dir");
+        fs::write(
+            publishing.join("desktop-1-1.json"),
+            json!({"days": ["20260106"]}).to_string(),
+        )
+        .expect("publishing");
+        assert!(!runs(None, 11 * 60));
+        fs::remove_dir_all(&publishing).expect("published");
+        fs::create_dir_all(&settle).expect("settle dir");
+        fs::write(
+            settle.join("desktop.json"),
+            json!({"due_ms": 0, "days": {"20260106": {}}}).to_string(),
+        )
+        .expect("settle state");
+        assert!(!runs(None, 11 * 60));
+        // An hour after the day ends it runs whatever is still pending.
+        assert!(runs(None, 60 * 60));
+        // Once nothing of it is left, it runs.
+        fs::remove_file(settle.join("desktop.json")).expect("settled");
+        assert!(runs(Some("supervisor-catchup-20260105"), 11 * 60));
     }
 
     #[test]
@@ -4360,7 +4477,8 @@ mod tests {
         fs::create_dir_all(&health_dir).expect("health dir");
         fs::write(health_dir.join("stream.updated"), b"100.0\n").expect("write stream marker");
 
-        let now = wall_time(3, 10);
+        // Past the grace in which the day that just ended still waits.
+        let now = wall_time(3, 11 * 60);
         for _ in 0..3 {
             let q = queue(&bed.root);
             q.set_ready();
@@ -4394,7 +4512,8 @@ mod tests {
         fs::create_dir_all(&health_dir).expect("health dir");
         fs::write(health_dir.join("stream.updated"), b"100.0\n").expect("write stream marker");
 
-        let now = wall_time(3, 10);
+        // Past the grace in which the day that just ended still waits.
+        let now = wall_time(3, 11 * 60);
         let q = queue(&bed.root);
         let outcome = run_today_sense_repair(&bed.root, &q, false, "20260102", now);
         assert!(outcome.is_some());

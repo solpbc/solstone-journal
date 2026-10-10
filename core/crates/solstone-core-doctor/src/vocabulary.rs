@@ -90,6 +90,15 @@ pub struct CheckResult {
     pub client_delivery: Option<ClientDeliveryFacts>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heals: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backlog_days: Option<BacklogDays>,
+}
+/// The days behind `journal_caught_up`'s counts, oldest first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct BacklogDays {
+    pub pending: Vec<String>,
+    pub stuck: Vec<String>,
+    pub unknown: Vec<String>,
 }
 pub fn make_result(
     check: Check,
@@ -107,6 +116,7 @@ pub fn make_result(
         execution_error: None,
         client_delivery: None,
         heals: None,
+        backlog_days: None,
     }
 }
 pub fn truncate(text: &str, limit: usize) -> String {
@@ -154,6 +164,7 @@ pub fn run_check(
                 }),
                 client_delivery: None,
                 heals: None,
+                backlog_days: None,
             }
         }
     }

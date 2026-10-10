@@ -83,10 +83,17 @@ pub fn package_roots() -> Result<(PathBuf, PathBuf), String> {
 
 /// The owner's day (`YYYYMMDD`) at `now`, in the journal's owner zone.
 pub fn local_day(journal: &Path, now: DateTime<Utc>) -> String {
-    now.with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .format("%Y%m%d")
-        .to_string()
+    local_now(journal, now).format("%Y%m%d").to_string()
 }
+
+/// The owner's wall-clock time at `now`, in the journal's owner zone.
+pub fn local_now(journal: &Path, now: DateTime<Utc>) -> chrono::NaiveDateTime {
+    now.with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .naive_local()
+}
+
+/// The hour of the owner's day at which a morning briefing's morning is over.
+pub const BRIEFING_MORNING_ENDS_HOUR: u32 = 12;
 
 pub fn daily_configs(
     journal: &Path,
@@ -158,7 +165,8 @@ pub enum AcceptedReuse {
     EarlierContract,
 }
 
-/// Whether `record` answers for this unit now.  `None` means it is owed.
+/// Whether `record` answers for this unit at `now`, the owner's wall-clock
+/// time.  `None` means it is owed.
 ///
 /// `Some(None)` is an exact match on evidence and contract; `Some(Some(_))` is
 /// an accepted result kept on purpose.  The caller still checks the accepted
@@ -168,7 +176,7 @@ pub enum AcceptedReuse {
 pub fn accepted_reuse(
     record: &solstone_core_journal_io::DailyUnitRecord,
     evidence: &DailyEvidence,
-    today: &str,
+    now: chrono::NaiveDateTime,
 ) -> Option<Option<AcceptedReuse>> {
     if record.evidence_revision == solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
         && record.contract_digest == solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
@@ -212,9 +220,14 @@ pub fn accepted_reuse(
         return None;
     }
     let day = chrono::NaiveDate::parse_from_str(&record.identity.day, "%Y%m%d").ok()?;
-    let today = chrono::NaiveDate::parse_from_str(today, "%Y%m%d").ok()?;
-    // The briefing for day D is presented on the morning of D+1.
-    if record.identity.name == "morning_briefing" && day + chrono::Duration::days(1) < today {
+    let today = now.date();
+    // The briefing for day D is presented on the morning of D+1, and its
+    // morning is over at noon.
+    if record.identity.name == "morning_briefing"
+        && (day + chrono::Duration::days(1))
+            .and_hms_opt(BRIEFING_MORNING_ENDS_HOUR, 0, 0)
+            .is_some_and(|noon| now >= noon)
+    {
         return Some(Some(AcceptedReuse::FrozenBriefing));
     }
     if day < today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS)
@@ -382,7 +395,7 @@ fn read_unit_coverage_cached(
         Err(error) => return Err(error),
     };
     let (e, contract) = (evidence.revision.clone(), evidence.contract.clone());
-    let today = local_day(journal, Utc::now());
+    let now = local_now(journal, Utc::now());
     let record = observe_daily_unit_record(journal, &identity).map_err(|e| e.to_string())?;
     let mut reason = None;
     let mut earlier_version = None;
@@ -403,7 +416,7 @@ fn read_unit_coverage_cached(
                     && record.has_uncommitted_started_receipt())
             {
                 CoverageState::Outstanding
-            } else if let Some(reuse) = accepted_reuse(record, &evidence, &today)
+            } else if let Some(reuse) = accepted_reuse(record, &evidence, now)
                 // A kept result stands whatever became of its files: a deleted
                 // or edited past output is the owner's, not work to redo.
                 && (reuse.is_some()
@@ -1641,7 +1654,9 @@ mod tests {
         )
         .unwrap();
         utc_journal(root, serde_json::json!({}));
-        let days = closed_days(root, 3); // D-3 and D-2 are past their morning; D-1 is today's.
+        // D-3 and D-2 are past their morning whatever the hour; D-1's freezes
+        // at noon, which the reuse predicate's own test pins.
+        let days = closed_days(root, 3);
         for day in &days {
             source(root, day, "# Flow\nMeeting.");
             accept(root, day, &talent, &apps);
@@ -1659,12 +1674,6 @@ mod tests {
             assert_eq!(unit.state, CoverageState::Current, "{day} is frozen");
             assert_eq!(unit.earlier_version, Some(AcceptedReuse::FrozenBriefing));
         }
-        let live = unit_state(root, &days[2], &talent, &apps);
-        assert_eq!(
-            live.state,
-            CoverageState::Outstanding,
-            "the briefing presented today is live"
-        );
 
         // A later attempt that failed or was cut short keeps the accepted
         // result: a past briefing is not unfrozen by a failed re-run.

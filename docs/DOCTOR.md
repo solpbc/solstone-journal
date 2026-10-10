@@ -266,9 +266,15 @@ Causes: Supervisor not started, socket path permissions.
 ### Processing backlog
 
 ```bash
+# Which days are pending, stuck or unknown (`backlog_days` in the JSON)
+solstone journal doctor --json
+# Each day in a range as states and counts: markers, coverage, units, owed by cause
+solstone journal reprocess FIRST --through LAST --owed --json
 # Check sense log for queue status
 solstone journal health logs --service sense --grep queue -c 10
 ```
+
+After midnight the daily run of the day that just ended waits at least ten minutes, and while a segment, flush or activity task of that day or any activity settle check is still running, or an activity of that day is still being written, so it reads that day's final inputs once. An hour after the day ends it runs whatever is still pending.
 
 Causes: Slow transcription, describe API rate limits.
 

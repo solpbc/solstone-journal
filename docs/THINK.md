@@ -43,8 +43,8 @@ Daily completion records the evidence revision and effective talent contract tha
 each analysis consumed. New source text, derived evidence, or a relevant contract
 change makes earlier results historical. A contract-only change re-owes today
 and the seven preceding closed days; older accepted results stay kept unless
-their evidence changes or the owner requests `--from-scratch`. Past morning
-briefings stay frozen once their presentation day is in the past. Coverage and
+their evidence changes or the owner requests `--from-scratch`. A morning
+briefing stays frozen from noon on the morning it is presented. Coverage and
 execution use the same `accepted_reuse` decision. The raw-input marker still
 guards whole-day publication, but cannot prove that a daily analysis consumed new
 evidence.

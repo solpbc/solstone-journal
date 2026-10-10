@@ -7,7 +7,7 @@ use crate::{
     output,
     registry::{self, Battery},
     run,
-    vocabulary::{CheckResult, ClientRegistryState, Platform, Severity, Status},
+    vocabulary::{BacklogDays, CheckResult, ClientRegistryState, Platform, Severity, Status},
 };
 use chrono::TimeZone;
 use solstone_core_sol_link::client_status::{
@@ -1733,6 +1733,7 @@ fn caught_up_native_backlog_fixture_states() {
     let row = result("journal_caught_up", &clean);
     assert_eq!(row.status, Status::Ok);
     assert_eq!(row.detail, "caught up");
+    assert_eq!(row.backlog_days, Some(BacklogDays::default()));
 
     let capped = fixture();
     health(
@@ -1792,6 +1793,22 @@ fn caught_up_native_backlog_fixture_states() {
     assert_eq!(
         row.detail,
         "1 day(s) pending, 0 day(s) stuck; oldest outstanding 20251231"
+    );
+    // The days behind the count, in JSON and under the check in --verbose.
+    let days = row.backlog_days.clone().expect("backlog days");
+    assert_eq!(days.pending, ["20251231"]);
+    assert!(days.stuck.is_empty() && days.unknown.is_empty());
+    let json = serde_json::to_value(&row).unwrap();
+    assert_eq!(
+        json["backlog_days"]["pending"],
+        serde_json::json!(["20251231"])
+    );
+    let mut text = Vec::new();
+    crate::output::emit_text_to(&mut text, std::slice::from_ref(&row), true).unwrap();
+    assert!(
+        String::from_utf8(text)
+            .unwrap()
+            .contains("\n    pending: 20251231\n")
     );
     assert_eq!(
         row.fix.as_deref(),

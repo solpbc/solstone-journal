@@ -155,6 +155,11 @@ pub fn activity_settle_due(journal: &Path, now_ms: i64) -> Vec<String> {
     settle::due_streams(journal, now_ms)
 }
 
+/// Whether any stream still has activities of `day` waiting to be written.
+pub fn activity_settle_holds_day(journal: &Path, day: &str) -> bool {
+    settle::holds_day(journal, day)
+}
+
 pub fn run_cli(
     args: &[String],
     journal: &Path,
