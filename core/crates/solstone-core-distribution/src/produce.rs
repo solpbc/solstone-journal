@@ -11,8 +11,8 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use solstone_core_ffmpeg_build_support::{
-    BUILD_RUN_ID_ENV, EVIDENCE_DIR, parse_ffmpeg_pin, read_configure_receipt,
-    read_current_run_record, validate_controlled_component_args,
+    BUILD_RUN_ID_ENV, EVIDENCE_DIR, MsvcCrtChoice, msvc_crt_choices, parse_ffmpeg_pin,
+    read_configure_receipt, read_current_run_record, validate_controlled_component_args,
     validate_controlled_component_inventory, verify_sha256,
 };
 
@@ -46,6 +46,7 @@ pub mod target_cache;
 pub mod windows_archives;
 pub mod windows_build;
 pub mod windows_cli;
+mod windows_crt;
 pub mod windows_inputs;
 pub mod windows_stage;
 
@@ -1588,6 +1589,12 @@ fn validate_release_configure_args(
                 "Windows release configure receipt differs from the MSVC release arguments",
             ));
         }
+        if msvc_crt_choices(args) != [MsvcCrtChoice::Static] {
+            return Err(incomplete_ffmpeg_evidence(format!(
+                "Windows release configure receipt requires static CRT (/MT); observed CRT choices: {:?}",
+                msvc_crt_choices(args)
+            )));
+        }
     } else if !args.iter().any(|arg| arg.contains("-O3")) {
         return Err(incomplete_ffmpeg_evidence(
             "release configure receipt does not enable -O3",
@@ -2644,8 +2651,17 @@ mod tests {
     }
 
     fn controlled_release_receipt(windows: bool) -> (Vec<String>, Vec<String>) {
-        use solstone_core_ffmpeg_build_support::{ConfigureMode, configure_mode_args};
+        use solstone_core_ffmpeg_build_support::{
+            ConfigureMode, configure_mode_args, msvc_crt_configure_arg,
+        };
         let mut args = configure_mode_args(ConfigureMode::Release, windows);
+        if windows {
+            args.push(
+                msvc_crt_configure_arg(Some("msvc"), Some("crt-static"))
+                    .expect("static")
+                    .to_owned(),
+            );
+        }
         args.extend(controlled_component_args().iter().map(|s| (*s).to_owned()));
         let components = solstone_core_ffmpeg_build_support::controlled_component_inventory()
             .iter()
@@ -2755,12 +2771,19 @@ mod tests {
 
     #[test]
     fn windows_release_admits_actual_msvc_mode_and_refuses_wrong_optimization() {
-        use solstone_core_ffmpeg_build_support::{ConfigureMode, configure_mode_args};
+        use solstone_core_ffmpeg_build_support::{
+            ConfigureMode, configure_mode_args, msvc_crt_configure_arg,
+        };
         let mut args = controlled_component_args()
             .iter()
             .map(|s| (*s).to_owned())
             .collect::<Vec<_>>();
         args.extend(configure_mode_args(ConfigureMode::Release, true));
+        args.push(
+            msvc_crt_configure_arg(Some("msvc"), Some("crt-static"))
+                .expect("static")
+                .to_owned(),
+        );
         let components = solstone_core_ffmpeg_build_support::controlled_component_inventory()
             .iter()
             .map(|s| (*s).to_owned())
@@ -2786,12 +2809,19 @@ mod tests {
 
     #[test]
     fn windows_release_refuses_appended_or_prepended_mode_overrides_and_duplicates() {
-        use solstone_core_ffmpeg_build_support::{ConfigureMode, configure_mode_args};
+        use solstone_core_ffmpeg_build_support::{
+            ConfigureMode, configure_mode_args, msvc_crt_configure_arg,
+        };
         let mut args = controlled_component_args()
             .iter()
             .map(|s| (*s).to_owned())
             .collect::<Vec<_>>();
         args.extend(configure_mode_args(ConfigureMode::Release, true));
+        args.push(
+            msvc_crt_configure_arg(Some("msvc"), Some("crt-static"))
+                .expect("static")
+                .to_owned(),
+        );
         let components = solstone_core_ffmpeg_build_support::controlled_component_inventory()
             .iter()
             .map(|s| (*s).to_owned())
@@ -2835,6 +2865,26 @@ mod tests {
                     )
                     .is_err(),
                     "accepted {extra}, prepend={prepend}"
+                );
+            }
+        }
+        for crt_extra in ["/MD", "-MD", "/MTd", "-MTd", "/MDd", "-MDd", "/MT"] {
+            for prepend in [false, true] {
+                let mut altered = args.clone();
+                let override_arg = format!("--extra-cflags={crt_extra}");
+                if prepend {
+                    altered.insert(0, override_arg);
+                } else {
+                    altered.push(override_arg);
+                }
+                assert!(
+                    validate_release_configure_args(
+                        &altered,
+                        &components,
+                        "x86_64-pc-windows-msvc"
+                    )
+                    .is_err(),
+                    "accepted crt override {crt_extra}, prepend={prepend}"
                 );
             }
         }
