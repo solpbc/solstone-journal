@@ -42,7 +42,7 @@ public static class RegistryLockControl {
     $repo=Join-Path $root 'repo'
     $scripts=Join-Path $repo 'scripts'
     $target=Join-Path $repo 'core\target'
-    $debug=Join-Path $target 'debug'
+    $debug=Join-Path $target 'x86_64-pc-windows-msvc\debug'
     New-Item -ItemType Directory -Path $scripts,$debug -ErrorAction Stop | Out-Null
     $runner=Join-Path $scripts 'win-ci-registry.ps1'
     [IO.File]::Copy((Join-Path $PSScriptRoot 'win-ci-registry.ps1'),$runner,$false)
