@@ -52,6 +52,7 @@ use solstone_core_facets::load_activity_records;
 use solstone_core_home::{HomeContext, readers::enabled_facet_names};
 use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
 use solstone_core_journal_io::iter_segments;
+use solstone_core_segment::owner_deleted;
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::writers::{WriteIntent, index_warning};
@@ -737,7 +738,9 @@ fn said_on_day(journal: &Path, facets: &[String], day: &str) -> Vec<Said> {
 }
 
 /// Whether any segment the activity names is still in the journal, looked up
-/// the way the Story writer found its audio.
+/// the way the Story writer found its audio. A deleted segment's directory
+/// stays behind as its tombstone, so it counts only while live; one whose
+/// state cannot be read does not keep the words.
 fn keeps_a_segment(journal: &Path, day: &str, record: &Map<String, Value>) -> bool {
     let day_dir = journal.join("chronicle").join(day);
     let stream = record.get("stream").and_then(Value::as_str);
@@ -755,9 +758,15 @@ fn keeps_a_segment(journal: &Path, day: &str, record: &Map<String, Value>) -> bo
         .flatten()
         .filter_map(Value::as_str)
         .any(|segment| {
-            streams.iter().any(|dir| dir.join(segment).is_dir())
-                || (stream.is_none() && day_dir.join(segment).is_dir())
+            streams
+                .iter()
+                .any(|dir| is_live_segment(&dir.join(segment)))
+                || (stream.is_none() && is_live_segment(&day_dir.join(segment)))
         })
+}
+
+fn is_live_segment(dir: &Path) -> bool {
+    dir.is_dir() && matches!(owner_deleted(dir), Ok(false))
 }
 
 /// One line, with one wrapping pair of quotation marks removed: every surface
@@ -1821,7 +1830,9 @@ mod tests {
         assert!(!keeps_a_segment(root.path(), "20260309", &bound));
         bound.remove("stream");
         assert!(keeps_a_segment(root.path(), "20260309", &bound));
-        fs::remove_dir_all(day_dir.join("default/100000_300")).unwrap();
+        // A deleted segment leaves its directory behind as a tombstone.
+        fs::write(day_dir.join("default/100000_300/tombstone.json"), "{}").unwrap();
+        assert!(!keeps_a_segment(root.path(), "20260309", &bound));
 
         let said = said_on_day(root.path(), &["work".to_owned()], "20260309");
         let quotes = said
