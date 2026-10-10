@@ -170,8 +170,19 @@ pub fn timestamp_confirmation(timestamp: &str) -> String {
     format!("detected timestamp {timestamp}; rerun with --timestamp {timestamp} or --auto\n")
 }
 
-pub fn generic_text_complete(segments: usize) -> String {
-    format!("Generic text import complete: segments={segments}\n")
+/// Where an owner asks for a transcript layout the journal does not read yet: the support
+/// form, filled in as a report from the import app. The import page links the same place.
+pub const UNTIMED_TRANSCRIPT_SUPPORT_URL: &str = "https://support.solstone.app/#report=v1&app=import&state=transcript%20times%20not%20recognized";
+
+pub fn generic_text_complete(segments: usize, untimed: bool) -> String {
+    let mut output = format!("Generic text import complete: segments={segments}\n");
+    if untimed {
+        output.push_str(&format!(
+            "no turn times found in this file, so it landed as one segment at the import's start time, each line as written.\n\
+             if your transcripts mark times in a way the journal doesn't read yet, ask us to add it: {UNTIMED_TRANSCRIPT_SUPPORT_URL}\n"
+        ));
+    }
+    output
 }
 
 pub fn audio_sync_preview(source: &Path, files: usize, errors: usize) -> String {

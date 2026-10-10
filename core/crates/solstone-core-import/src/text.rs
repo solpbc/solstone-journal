@@ -67,6 +67,9 @@ impl TextCreated {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TextImportWork {
     pub created: Vec<TextCreated>,
+    /// No turn times were read from the file, so it landed whole at its start. Each such
+    /// segment's header carries `"untimed": true`.
+    pub untimed: bool,
 }
 
 /// Outcome of processing a generic transcript. Always carries identities written to disk.
@@ -268,15 +271,18 @@ pub fn process_transcript_with_wire(
     match import(
         path, day_dir, start_time, import_id, stream, facet, setting, wire,
     ) {
-        Ok(created) => TextImportOutcome::Success(TextImportWork { created }),
+        Ok(work) => TextImportOutcome::Success(work),
         Err((created, error)) => TextImportOutcome::Failed {
-            created: TextImportWork { created },
+            created: TextImportWork {
+                created,
+                untimed: false,
+            },
             error,
         },
     }
 }
 
-type ImportResult = Result<Vec<TextCreated>, (Vec<TextCreated>, TextImportError)>;
+type ImportResult = Result<TextImportWork, (Vec<TextCreated>, TextImportError)>;
 
 #[allow(clippy::too_many_arguments)]
 fn import(
@@ -318,6 +324,7 @@ fn import(
     let mut created = Vec::new();
 
     let reading = read_turns(&text);
+    let untimed = reading.untimed;
     let base = reading.clock_start.unwrap_or(start_seconds);
     for (tile, turns) in tiles(reading.turns) {
         let tile_start = base + tile * TILE_SECONDS;
@@ -371,6 +378,7 @@ fn import(
             facet,
             setting,
             context.as_ref(),
+            untimed,
         );
         if let Err(source) = write_jsonl(
             &output,
@@ -408,7 +416,9 @@ fn import(
         day_occupied.insert(segment_key);
     }
 
-    Ok(created)
+    // An empty file wrote nothing, so there is no untimed segment to speak of.
+    let untimed = untimed && !created.is_empty();
+    Ok(TextImportWork { created, untimed })
 }
 
 fn journal_marker_context(day_dir: &Path) -> Result<(&Path, &str), TextImportError> {
@@ -450,11 +460,13 @@ fn read_turns(text: &str) -> Reading {
         return Reading {
             clock_start: None,
             turns,
+            untimed: false,
         };
     }
     inline_turns(text).unwrap_or_else(|| Reading {
         clock_start: None,
         turns: untimed_turns(text),
+        untimed: true,
     })
 }
 
@@ -464,6 +476,8 @@ struct Reading {
     /// turns are then counted from it. `None` counts them from the import's start.
     clock_start: Option<u64>,
     turns: Vec<Turn>,
+    /// No layout was recognized: every turn sits at the start and none carries a time.
+    untimed: bool,
 }
 
 /// The two single-line turn layouts: `[HH:MM:SS] Name: text` and `Name (HH:MM:SS)`.
@@ -549,6 +563,7 @@ fn inline_turns(text: &str) -> Option<Reading> {
     let base = clock_start.unwrap_or(0);
     Some(Reading {
         clock_start,
+        untimed: false,
         turns: turns
             .into_iter()
             .map(|(time, turn)| Turn {
@@ -904,6 +919,7 @@ fn stage_raw_source(
 
 /// The segment file: a header, then one entry per turn, its `start` counted from the
 /// segment's own start.
+#[allow(clippy::too_many_arguments)]
 fn jsonl_rows(
     turns: &[Turn],
     tile_offset: u64,
@@ -912,6 +928,7 @@ fn jsonl_rows(
     facet: Option<&str>,
     caller_setting: Option<&str>,
     context: Option<&TileContext>,
+    untimed: bool,
 ) -> Vec<Value> {
     let mut imported = Map::new();
     imported.insert("id".to_owned(), Value::String(import_id.to_owned()));
@@ -928,6 +945,11 @@ fn jsonl_rows(
         "raw".to_owned(),
         Value::String(format!("../../../imports/{import_id}/{raw_filename}")),
     );
+    // Every entry still needs a `start` to render and be searched, so an untimed file's
+    // entries sit at `00:00:00`; this tells any reader that none of them is a real time.
+    if untimed {
+        header.insert("untimed".to_owned(), Value::Bool(true));
+    }
     if let Some(context) = context {
         if let Some(topics) = &context.topics {
             header.insert("topics".to_owned(), Value::String(topics.clone()));
@@ -970,6 +992,7 @@ mod tests {
     #[test]
     fn the_v1_layout_reads_times_speakers_and_words_from_the_file() {
         let file = "# 2026-03-11\n# Weekly sync\n\n## 00:00:00\n**Ana Lima:** Hello all.\n**Ben Ode:**   Morning.\nsecond line\n\n## 01:02:03\n**Ana Lima**: Bye.\n\n## Summary\nWe met.\n";
+        assert!(!read_turns(file).untimed);
         assert_eq!(
             read_turns(file).turns,
             vec![
@@ -993,6 +1016,7 @@ mod tests {
         ] {
             let reading = read_turns(file);
             assert_eq!(reading.clock_start, None);
+            assert!(reading.untimed, "{file}");
             let turns = reading.turns;
             assert!(
                 turns
@@ -1012,6 +1036,7 @@ mod tests {
         let file = "Standup\n[00:00:00] Ana Lima: Morning.\n[00:00:04] Ben Okafor:  Hi,\nsecond line\n[01:00:10] Ana Lima: Bye.\n";
         let reading = read_turns(file);
         assert_eq!(reading.clock_start, None);
+        assert!(!reading.untimed);
         assert_eq!(
             reading.turns,
             vec![
@@ -1028,6 +1053,7 @@ mod tests {
         let file = "# Granola notes\nAna Lima (14:30:05)\nWe should start.\nBen Okafor (14:31:00): Agreed.\n\n## Summary\nStarted.\n";
         let reading = read_turns(file);
         assert_eq!(reading.clock_start, Some(14 * 3600 + 30 * 60 + 5));
+        assert!(!reading.untimed);
         assert_eq!(
             reading.turns,
             vec![
@@ -1050,6 +1076,7 @@ mod tests {
         ] {
             let reading = read_turns(file);
             assert_eq!(reading.clock_start, None, "{file}");
+            assert!(reading.untimed, "{file}");
             assert!(
                 reading.turns.iter().all(|turn| turn.speaker.is_none()),
                 "{file}"

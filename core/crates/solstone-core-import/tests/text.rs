@@ -12,7 +12,8 @@ use solstone_core_generate::{
     RefusedResponse,
 };
 use solstone_core_import::{
-    TextCreated, TextImportError, TextImportOutcome, WireClient, process_transcript_with_wire,
+    TextCreated, TextImportError, TextImportOutcome, TextImportWork, WireClient,
+    process_transcript_with_wire,
 };
 use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 use solstone_core_segment::{ImportSource, Kind, StreamHints};
@@ -144,8 +145,12 @@ fn run(path: &Path, day: &Path, start: &str, wire: &dyn WireClient) -> TextImpor
 }
 
 fn run_ok(path: &Path, day: &Path, start: &str, wire: &dyn WireClient) -> Vec<TextCreated> {
+    run_work(path, day, start, wire).created
+}
+
+fn run_work(path: &Path, day: &Path, start: &str, wire: &dyn WireClient) -> TextImportWork {
     match run(path, day, start, wire) {
-        TextImportOutcome::Success(work) => work.created,
+        TextImportOutcome::Success(work) => work,
         TextImportOutcome::Failed { error, .. } => panic!("expected success, got error: {error:?}"),
     }
 }
@@ -253,12 +258,15 @@ fn a_v1_transcript_places_every_turn_from_the_file_with_no_model_at_all() {
         ("wire down", RecordingWire::always(wire_down)),
     ] {
         let (_temporary, source, day) = setup("meeting.md", MEETING);
-        let created = run_ok(&source, &day, "12:00:00", &wire);
+        let work = run_work(&source, &day, "12:00:00", &wire);
+        assert!(!work.untimed, "{name}");
+        let created = work.created;
         assert_meeting_placed_from_the_file(&created);
         for item in &created {
             let header = &rows(&item.path)[0];
             assert!(header.get("topics").is_none(), "{name}");
             assert!(header.get("setting").is_none(), "{name}");
+            assert!(header.get("untimed").is_none(), "{name}");
         }
         assert_eq!(
             wire.requests.borrow().len(),
@@ -430,7 +438,9 @@ fn an_untimed_transcript_is_one_segment_at_its_start_with_no_time_invented() {
     let untimed = "Weekly sync notes\n\nAna: Morning, everyone.\nBen: Morning.\n\n[00:12] a time in a layout this does not read\n## 00:00:05\nnobody speaks under this heading\n";
     let (_temporary, source, day) = setup("notes.txt", untimed);
     let wire = RecordingWire::always(meddling);
-    let created = run_ok(&source, &day, "09:15:30", &wire);
+    let work = run_work(&source, &day, "09:15:30", &wire);
+    assert!(work.untimed);
+    let created = work.created;
     assert_eq!(created.len(), 1);
     assert_eq!(created[0].day, "20260311");
     assert_eq!(created[0].segment, "091530_300", "no duration is estimated");
@@ -445,6 +455,10 @@ fn an_untimed_transcript_is_one_segment_at_its_start_with_no_time_invented() {
         );
     }
     assert_eq!(written[0]["topics"], "roadmap, imports");
+    assert_eq!(
+        written[0]["untimed"], true,
+        "the header says no entry's time was read from the file"
+    );
     assert_eq!(wire.requests.borrow().len(), 1);
 }
 
@@ -454,6 +468,7 @@ fn an_unrecognized_transcript_stays_untimed_with_no_model_at_all() {
     let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(wire_down));
     assert_eq!(created.len(), 1);
     assert_eq!(created[0].segment, "120000_300");
+    assert_eq!(rows(&created[0].path)[0]["untimed"], true);
     let texts: Vec<_> = rows(&created[0].path)[1..]
         .iter()
         .map(|row| (row["start"].clone(), row["text"].clone()))
@@ -472,7 +487,12 @@ fn an_unrecognized_transcript_stays_untimed_with_no_model_at_all() {
 fn an_empty_transcript_writes_nothing() {
     let (_temporary, source, day) = setup("t.txt", "\n  \n");
     let wire = RecordingWire::new(Vec::new());
-    assert!(run_ok(&source, &day, "12:00:00", &wire).is_empty());
+    let work = run_work(&source, &day, "12:00:00", &wire);
+    assert!(work.created.is_empty());
+    assert!(
+        !work.untimed,
+        "nothing landed, so nothing is called untimed"
+    );
 }
 
 #[test]
@@ -496,6 +516,7 @@ fn header_keeps_caller_and_model_setting_slots_distinct() {
         json!({
             "imported": {"id": "id", "facet": "work", "setting": "caller-setting"},
             "raw": "../../../imports/id/t.txt",
+            "untimed": true,
             "topics": "planning",
             "setting": "office"
         })

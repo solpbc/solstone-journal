@@ -89,9 +89,16 @@
     unavailable_description: 'unavailable description',
     unavailable_pages: 'unavailable pages',
     has_gaps: 'contains gaps',
+    untimed_notice: 'no turn times found in this file, so it landed as one segment at the import\'s start time, each line as written. if your transcripts mark times in a way the journal doesn\'t read yet,',
+    untimed_ask: 'ask us to add it',
     file_size_units: Object.freeze(['b', 'kb', 'mb', 'gb'])
   });
   // --- end owner-facing strings ---
+
+  // The support form, filled in as a report from the import app. The command line's
+  // untimed notice links the same place (`cli_render::UNTIMED_TRANSCRIPT_SUPPORT_URL`).
+  const UNTIMED_TRANSCRIPT_SUPPORT_URL =
+    'https://support.solstone.app/#report=v1&app=import&state=transcript%20times%20not%20recognized';
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -375,7 +382,11 @@
       ? `<div class="import-leads-links"><a href="#content">view imported content</a><a href="/app/transcripts/${escapeHtml(encodedDay)}">${escapeHtml(strings.view_day)}</a></div>`
       : '';
 
-    return `<section class="import-leads-card"><h2>${escapeHtml(strings.leads_title)}</h2><div class="import-leads-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${links}</section>`;
+    const untimed = data?.untimed_transcript === true
+      ? `<p class="import-leads-notice">${escapeHtml(strings.untimed_notice)} <a href="${escapeHtml(UNTIMED_TRANSCRIPT_SUPPORT_URL)}" target="_blank" rel="noopener noreferrer">${escapeHtml(strings.untimed_ask)}</a>.</p>`
+      : '';
+
+    return `<section class="import-leads-card"><h2>${escapeHtml(strings.leads_title)}</h2><div class="import-leads-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${untimed}${links}</section>`;
   }
 
   function uploadFacts(importJson) {
