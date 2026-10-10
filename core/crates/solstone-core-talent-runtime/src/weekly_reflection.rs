@@ -2022,7 +2022,7 @@ mod tests {
     fn said_source_spans_preserve_utf8_and_reject_ambiguity_or_cut_words() {
         let line = "Before this, café plans stay open; after that, a different thought.".to_owned();
         assert_eq!(
-            matched_owner_span("café plans stay open", &[line.clone()]),
+            matched_owner_span("café plans stay open", std::slice::from_ref(&line)),
             Some("café plans stay open")
         );
         assert_eq!(
