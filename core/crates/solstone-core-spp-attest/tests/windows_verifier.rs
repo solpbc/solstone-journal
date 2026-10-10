@@ -201,11 +201,11 @@ fn hostile_launch_driver() {
 #[test]
 #[ignore = "child process entry"]
 fn windows_child_launch_report() {
+    // lib/solstone-nvattest/nvattest.exe: three levels below the package root.
     let root = std::env::current_exe()
         .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
+        .ancestors()
+        .nth(3)
         .unwrap()
         .to_path_buf();
     let forbidden: Vec<_> = std::env::vars()

@@ -269,9 +269,7 @@ fn run_nvattest(
             .executable
             .parent()
             .ok_or(GpuAppraisalReason::NvattestUnavailable)?;
-        let root = bin
-            .parent()
-            .ok_or(GpuAppraisalReason::NvattestUnavailable)?;
+        let root = super::windows::package_root(&invocation.executable, super::windows::BINARY)?;
         let installation = super::windows::locate(root)?;
         if installation.binary != invocation.executable {
             return Err(GpuAppraisalReason::NvattestIntegrityFailed);

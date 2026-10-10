@@ -77,6 +77,25 @@ pub(super) fn environment(
     Ok(result)
 }
 
+/// The package root of a verifier executable admitted at `relative`.
+///
+/// The verifier sits in a private folder, so the root is as many levels up
+/// as `relative` has components, not a fixed two. An executable that is not
+/// at `relative` has no package root.
+pub(super) fn package_root<'a>(
+    executable: &'a Path,
+    relative: &str,
+) -> Result<&'a Path, GpuAppraisalReason> {
+    let relative = Path::new(relative);
+    if !executable.ends_with(relative) {
+        return Err(GpuAppraisalReason::NvattestUnavailable);
+    }
+    executable
+        .ancestors()
+        .nth(relative.components().count())
+        .ok_or(GpuAppraisalReason::NvattestUnavailable)
+}
+
 #[cfg(windows)]
 pub(super) fn locate(root: &Path) -> Result<super::NvattestInstallation, GpuAppraisalReason> {
     let root = std::fs::canonicalize(root).map_err(|_| GpuAppraisalReason::NvattestUnavailable)?;
@@ -136,6 +155,19 @@ mod tests {
         );
         assert_eq!(actual[OsStr::new("TEMP")], r"C:\Temp");
         assert!(environment([(OsString::from("Path"), OsString::from("evil"))]).is_err());
+    }
+
+    #[test]
+    fn package_root_climbs_out_of_the_private_verifier_folder() {
+        let relative = "lib/solstone-nvattest/nvattest.exe";
+        let executable = Path::new("/pkg ü/lib/solstone-nvattest/nvattest.exe");
+        assert_eq!(
+            package_root(executable, relative).unwrap(),
+            Path::new("/pkg ü")
+        );
+        // The pre-relocation location is not an admitted verifier path.
+        assert!(package_root(Path::new("/pkg/bin/nvattest.exe"), relative).is_err());
+        assert!(package_root(Path::new("nvattest.exe"), relative).is_err());
     }
 
     #[test]
