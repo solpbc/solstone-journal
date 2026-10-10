@@ -5,6 +5,7 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+pub mod activity_reresolution;
 pub mod admission;
 pub mod artifact_wipe;
 pub mod audio_sample;

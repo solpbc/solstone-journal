@@ -25,6 +25,7 @@ pub mod documents;
 pub mod entities;
 pub mod facet_newsletter;
 pub mod morning_briefing;
+pub mod owner_actors;
 pub mod participation;
 pub mod prepare;
 mod prompt_context;

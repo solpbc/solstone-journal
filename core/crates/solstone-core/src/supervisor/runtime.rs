@@ -1845,6 +1845,16 @@ pub(crate) async fn boot_and_tick(
         Ok(None) => {}
         Err(err) => log::warn!("supervisor: owner adoption skipped: {err}"),
     }
+    // References to "you" written while the journal had no owner gained no id;
+    // with an owner now known, fill them in the background.
+    let owner_journal = journal.clone();
+    std::thread::spawn(move || {
+        match solstone_core_talent_runtime::owner_actors::resolve_owner_actors(&owner_journal) {
+            Ok(0) => {}
+            Ok(filled) => log::info!("supervisor: linked {filled} references to you"),
+            Err(err) => log::warn!("supervisor: references to you not linked: {err}"),
+        }
+    });
     let default_cap = std::env::var("SOLSTONE_SUPERVISOR_TASK_CAP_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
