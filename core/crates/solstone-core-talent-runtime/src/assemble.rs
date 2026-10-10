@@ -365,8 +365,6 @@ fn refusal(
 mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     use std::fs;
-    #[cfg(all(test, feature = "full-tests"))]
-    use std::os::unix::fs::PermissionsExt;
 
     #[cfg(all(test, feature = "full-tests"))]
     use serde_json::json;
@@ -483,18 +481,14 @@ mod tests {
             "request_budget":null,
             "inference":null
         });
-        fs::write(
+        crate::test_support::install_stub(
             &provider,
-            format!(
+            &format!(
                 "#!/bin/sh\ncat > '{}'\nprintf '%s\\n' '{}'\n",
                 capture.display(),
                 response
             ),
-        )
-        .expect("provider spy");
-        let mut permissions = fs::metadata(&provider).unwrap().permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(&provider, permissions).expect("provider executable");
+        );
 
         let output_path = journal.join("facets/work/activities/preview-parity-output.md");
         let request = json!({

@@ -5158,6 +5158,60 @@ async fn merge_refuses_identical_entities_through_classifier() {
     assert_eq!(response["reason_code"], "invalid_request_value");
 }
 
+// The classifier reads refusal text, so each owner refusal from `plan_merge`
+// goes through the real route: a rewording that loses its reason reds here.
+#[tokio::test]
+async fn merge_owner_refusals_keep_their_reason_through_classifier() {
+    let cases = [
+        (
+            json!({"id":"source","name":"Source","type":"Person","blocked":true}),
+            json!({"id":"target","name":"Target","type":"Person"}),
+            "entity_blocked",
+            "can't merge something that's blocked. unblock it first.",
+        ),
+        (
+            json!({"id":"source","name":"Source","type":"Person"}),
+            json!({"id":"target","name":"Target","type":"Person","blocked":true}),
+            "entity_blocked",
+            "can't merge into something that's blocked. unblock it first.",
+        ),
+        (
+            json!({"id":"source","name":"Source","type":"Person","is_principal":true}),
+            json!({"id":"target","name":"Target","type":"Person","is_principal":true}),
+            "invalid_request_value",
+            "can't merge these: both are marked as you.",
+        ),
+        (
+            json!({"id":"source","name":"Source","type":"Person"}),
+            json!({"id":"target","name":"Target","type":"Place"}),
+            "invalid_request_value",
+            "can't merge a person into something that isn't a person.",
+        ),
+        (
+            json!({"id":"source","name":"Source","type":"Person","is_principal":true}),
+            json!({"id":"target","name":"Target","type":"Place"}),
+            "invalid_request_value",
+            "can't merge you into something that isn't a person.",
+        ),
+    ];
+    for (source, target, code, detail) in cases {
+        for commit in [false, true] {
+            let j = Journal::new();
+            write(j.path(), "entities/source/entity.json", source.clone());
+            write(j.path(), "entities/target/entity.json", target.clone());
+            let (status, response) = post(
+                j.path(),
+                "/app/entities/api/merge",
+                json!({"source_slug":"source","target_slug":"target","commit":commit}),
+            )
+            .await;
+            assert_eq!(status, 400, "{detail} (commit {commit}): status");
+            assert_eq!(response["reason_code"], code, "{detail} (commit {commit})");
+            assert_eq!(response["detail"], detail, "commit {commit}");
+        }
+    }
+}
+
 #[tokio::test]
 async fn merge_requires_source_slug() {
     let j = Journal::new();

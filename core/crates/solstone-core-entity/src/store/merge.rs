@@ -1145,21 +1145,23 @@ fn plan_merge(
         .ok_or_else(|| EntityMergeError::Refused(format!("Target entity not found: {target_id}")))?
         .value()
         .clone();
+    // The router classifies refusals by their text ("blocked", "both are
+    // marked as you", "isn't a person"); its route tests pin each one.
     if source.get("blocked").and_then(Value::as_bool) == Some(true) {
-        return Err(EntityMergeError::Refused(format!(
-            "Cannot merge blocked entity: {source_id}"
-        )));
+        return Err(EntityMergeError::Refused(
+            "can't merge something that's blocked. unblock it first.".to_owned(),
+        ));
     }
     if target.get("blocked").and_then(Value::as_bool) == Some(true) {
-        return Err(EntityMergeError::Refused(format!(
-            "Cannot merge blocked entity: {target_id}"
-        )));
+        return Err(EntityMergeError::Refused(
+            "can't merge into something that's blocked. unblock it first.".to_owned(),
+        ));
     }
     if super::lifecycle::identity_is_principal(&source)
         && super::lifecycle::identity_is_principal(&target)
     {
         return Err(EntityMergeError::Refused(
-            "Cannot merge two principal entities.".to_owned(),
+            "can't merge these: both are marked as you.".to_owned(),
         ));
     }
     // A person's voice evidence and speaker names, and the principal flag,
