@@ -19,6 +19,22 @@ import mobile_native_build as mobile
 
 
 class BuildControls(unittest.TestCase):
+    def test_cargo_binary_selection_excludes_host_build_scripts_and_launchers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            log = target / "cargo.log"
+            binary = {"reason": "compiler-artifact", "target": {"kind": ["bin"]},
+                      "executable": str(target / "native")}
+            host = {"reason": "compiler-artifact", "target": {"kind": ["custom-build"]},
+                    "executable": "/host/build-script"}
+            (target / "launcher").write_text("#!/bin/sh\n")
+            log.write_text("human diagnostic\n" + json.dumps(host) + "\n" + json.dumps(binary) + "\n")
+            self.assertEqual(mobile.cargo_binaries([log], target), [target / "native"])
+            binary["executable"] = "/host/native"
+            log.write_text(json.dumps(binary) + "\n")
+            with self.assertRaisesRegex(ValueError, "outside the target directory"):
+                mobile.cargo_binaries([log], target)
+
     def test_running_receipt_cannot_report_success(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -66,9 +66,9 @@ check() {
         "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$root/core/target-ios}"
     )
     env "${build_env[@]}" cargo build --manifest-path core/Cargo.toml --locked \
-        --target "$target" --workspace --lib --bins
+        --target "$target" --workspace --lib --bins --message-format=json-render-diagnostics
     env "${build_env[@]}" cargo build --manifest-path core/Cargo.toml --locked \
-        --target "$target" -p solstone-core --lib --bins --features journal-mcp-endpoint
+        --target "$target" -p solstone-core --lib --bins --features journal-mcp-endpoint --message-format=json-render-diagnostics
     echo "check-rust-ios: workspace and journal-mcp-endpoint built for $target (minimum iOS $deployment_target)"
 }
 

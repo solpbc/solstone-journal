@@ -101,6 +101,28 @@ def require_current_pins(pins):
             raise ValueError(f"mobile {name} source differs from catalog version")
 
 
+def cargo_binaries(logs, target):
+    binaries = set()
+    for log in logs:
+        with log.open() as stream:
+            for line in stream:
+                try:
+                    message = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(message, dict) or message.get("reason") != "compiler-artifact":
+                    continue
+                if "bin" not in message["target"]["kind"] or not message.get("executable"):
+                    continue
+                path = Path(message["executable"]).resolve()
+                if path.parent != target.resolve():
+                    raise ValueError(f"Cargo binary outside the target directory: {path}")
+                binaries.add(path)
+    if not binaries:
+        raise ValueError("Cargo supplied no target binary artifacts")
+    return sorted(binaries)
+
+
 class Build:
     def __init__(self, args):
         self.args = args
@@ -372,6 +394,8 @@ class Build:
         out = self.work / "artifacts" / name
         out.mkdir(parents=True)
         common = [go, "build", "-p", str(self.args.jobs), "-trimpath", "-mod=readonly", "-buildvcs=false"]
+        if name == "restic":
+            common += ["-tags=selfupdate,disable_grpc_modules"]
         command = [*common, "-ldflags=-s -w", "-o", out / name]
         if self.args.platform == "android":
             command += ["-buildmode=pie"]
@@ -381,7 +405,7 @@ class Build:
             archive = out / f"lib{name}.a"
             if name == "rclone":
                 package = "./librclone"
-                code = '#include "librclone.h"\nint main(void){RcloneInitialize(); struct RcloneRPC_return r=RcloneRPC("core/version","{}"); RcloneFreeString(r.r0); RcloneFinalize(); return r.r1;}\n'
+                code = '#include "librclone.h"\nint main(void){RcloneInitialize(); struct RcloneRPCResult r=RcloneRPC("core/version","{}"); RcloneFreeString(r.Output); RcloneFinalize(); return r.Status;}\n'
             else:
                 probe = source / "internal_mobile_link"
                 probe.mkdir()
@@ -484,18 +508,18 @@ class Build:
     def rust(self):
         if self.args.platform == "android":
             self.run("rust-workspace", [sys.executable, ROOT / "scripts/android_cross_build.py", "--work-dir", self.native, "--cache-dir", self.cache, "--jobs", str(self.args.jobs)])
+            binary_logs = [self.native / "receipts/android-workspace.log", self.native / "receipts/android-mcp.log"]
         else:
             env = self.env.copy()
             env["IOS_ONNX_RUNTIME_LIB_DIGEST"] = "4eb86d500c6994fea07f834c1fa632f1953302d30776195dc6b8e5a95800c3e3"
             ffmpeg = tomllib.loads((ROOT / "core/distribution/builder-inputs.toml").read_text())["ffmpeg"]
             env["SOLSTONE_FFMPEG_SOURCE_ARCHIVE"] = str(acquire(ffmpeg, self.cache))
             self.run("ios-onnx-prepare", ["bash", ROOT / "scripts/ios_cross_build.sh", "prepare", self.native], env=env)
-            self.run("rust-workspace", ["bash", ROOT / "scripts/ios_cross_build.sh", "check", self.native], env=env)
+            binary_logs = [self.run("rust-workspace", ["bash", ROOT / "scripts/ios_cross_build.sh", "check", self.native], env=env)]
         self.inspect("onnx-runtime", self.native / "lib" / ("libonnxruntime.a" if self.args.platform == "ios" else "libonnxruntime.so"))
         target = self.work / "rust-target" / self.target / "debug"
-        for executable in sorted(target.glob("*")):
-            if executable.is_file() and executable.stat().st_mode & 0o111:
-                self.inspect(f"rust-{executable.name}", executable)
+        for executable in cargo_binaries(binary_logs, target):
+            self.inspect(f"rust-{executable.name}", executable)
         native_archives = sorted((target / "build").glob("*/out/**/*.a"))
         if not any(path.name == "libavcodec.a" for path in native_archives):
             raise ValueError("workspace did not produce FFmpeg native archives")
