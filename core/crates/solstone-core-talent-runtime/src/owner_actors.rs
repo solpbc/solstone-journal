@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Map, Value};
 use solstone_core_facets::DestinationObservation;
 
@@ -29,12 +29,30 @@ const ACTOR_FIELDS: [(&str, &str); 4] = [
 /// Meeting records are left as they are: there the hook also requires the
 /// owner's recognized voice before "you" stands, which this pass does not
 /// re-check. Muted or unreadable facets are skipped, as the hooks skip them.
+///
+/// Filling an id changes that day's daily evidence, which re-owes the day's
+/// daily outputs. So, as for a contract change (operator approval,
+/// 2026-09-30), only today and the last seven closed days are filled; older
+/// day files are left exactly as written.
 /// Returns how many actors it filled.
 pub fn resolve_owner_actors(journal: &Path) -> Result<usize, String> {
+    resolve_owner_actors_at(journal, Utc::now())
+}
+
+fn resolve_owner_actors_at(journal: &Path, now: DateTime<Utc>) -> Result<usize, String> {
     let owner = JournalOwner::load(journal)?;
     let Some(owner_id) = owner.id.clone() else {
         return Ok(0);
     };
+    let today = chrono::NaiveDate::parse_from_str(
+        &solstone_core_system::daily_coverage::local_day(journal, now),
+        "%Y%m%d",
+    )
+    .map_err(|e| e.to_string())?;
+    let first_day = (today
+        - chrono::Duration::days(solstone_core_system::daily_coverage::CONTRACT_REOWE_CLOSED_DAYS))
+    .format("%Y%m%d")
+    .to_string();
     let mut filled = 0;
     for facet in
         solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?
@@ -44,7 +62,10 @@ pub fn resolve_owner_actors(journal: &Path) -> Result<usize, String> {
         else {
             continue;
         };
-        for day in activity_days(journal, &facet) {
+        for day in activity_days(journal, &facet)
+            .into_iter()
+            .filter(|day| *day >= first_day)
+        {
             let records = solstone_core_facets::load_activity_records(journal, &facet, &day, true)
                 .map_err(|e| e.to_string())?;
             for record in records {
@@ -159,6 +180,13 @@ mod tests {
 
     use super::*;
 
+    /// Noon on 20260101, the day of the journal's records, in its zone.
+    fn now() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2026-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
     fn journal(principal: bool) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
@@ -169,7 +197,7 @@ mod tests {
         };
         write(
             "config/journal.json",
-            json!({"identity":{"name":"Jordan Rivers"}}).to_string(),
+            json!({"identity":{"name":"Jordan Rivers","timezone":"UTC"}}).to_string(),
         );
         write(
             "entities/jordan/entity.json",
@@ -195,7 +223,11 @@ mod tests {
     }
 
     fn commitments(root: &Path, id: &str) -> Vec<Value> {
-        solstone_core_facets::get_activity_record(root, "work", "20260101", id)
+        commitments_on(root, "20260101", id)
+    }
+
+    fn commitments_on(root: &Path, day: &str, id: &str) -> Vec<Value> {
+        solstone_core_facets::get_activity_record(root, "work", day, id)
             .unwrap()
             .unwrap()["commitments"]
             .as_array()
@@ -206,7 +238,7 @@ mod tests {
     #[test]
     fn an_owner_reference_written_without_an_owner_gains_the_owners_id() {
         let root = journal(true);
-        assert_eq!(resolve_owner_actors(root.path()).unwrap(), 2);
+        assert_eq!(resolve_owner_actors_at(root.path(), now()).unwrap(), 2);
         let items = commitments(root.path(), "a1");
         assert_eq!(items[0]["owner_entity_id"], "jordan");
         assert!(items[0]["counterparty_entity_id"].is_null());
@@ -217,17 +249,42 @@ mod tests {
         // does not check, so it is left as it is.
         assert!(commitments(root.path(), "m1")[0]["owner_entity_id"].is_null());
         // A second pass finds nothing left to fill.
-        assert_eq!(resolve_owner_actors(root.path()).unwrap(), 0);
+        assert_eq!(resolve_owner_actors_at(root.path(), now()).unwrap(), 0);
     }
 
     #[test]
     fn without_a_principal_nothing_is_filled() {
         let root = journal(false);
         let before = fs::read(root.path().join("facets/work/activities/20260101.jsonl")).unwrap();
-        assert_eq!(resolve_owner_actors(root.path()).unwrap(), 0);
+        assert_eq!(resolve_owner_actors_at(root.path(), now()).unwrap(), 0);
         assert_eq!(
             fs::read(root.path().join("facets/work/activities/20260101.jsonl")).unwrap(),
             before
         );
+    }
+
+    #[test]
+    fn a_reference_older_than_the_re_derivable_days_is_left_as_written() {
+        // Filling an id changes that day's daily evidence and re-owes its daily
+        // outputs. A release re-derives only the open day and the last seven
+        // closed days (2026-09-30), so the start-up pass reaches no further back.
+        let root = journal(true);
+        let source = root.path().join("facets/work/activities/20260101.jsonl");
+        let rows = fs::read(&source).unwrap();
+        let oldest_kept = root.path().join("facets/work/activities/20251225.jsonl");
+        let oldest_re_derived = root.path().join("facets/work/activities/20251226.jsonl");
+        fs::write(&oldest_kept, &rows).unwrap();
+        fs::rename(&source, &oldest_re_derived).unwrap();
+        // Today is 20260102: the seven closed days before it start at 20251226.
+        let today = DateTime::parse_from_rfc3339("2026-01-02T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert_eq!(resolve_owner_actors_at(root.path(), today).unwrap(), 2);
+
+        assert_eq!(fs::read(&oldest_kept).unwrap(), rows);
+        let items = commitments_on(root.path(), "20251226", "a1");
+        assert_eq!(items[0]["owner_entity_id"], "jordan");
+        assert_eq!(items[1]["owner_entity_id"], "jordan");
     }
 }
