@@ -15,10 +15,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use solstone_core_ffmpeg_build_support::{
-    ConfigureReceipt, EVIDENCE_DIR, controlled_component_args_for_audio_remux,
-    controlled_component_inventory_for_audio_remux, parse_ffmpeg_pin, read_configure_receipt,
-    read_current_run_record, sha256_hex, validate_controlled_component_args,
-    validate_controlled_component_inventory,
+    ConfigureReceipt, EVIDENCE_DIR, MsvcCrtChoice, controlled_component_args_for_audio_remux,
+    controlled_component_inventory_for_audio_remux, msvc_crt_choices, parse_ffmpeg_pin,
+    read_configure_receipt, read_current_run_record, sha256_hex,
+    validate_controlled_component_args, validate_controlled_component_inventory,
 };
 
 use crate::acquire;
@@ -634,6 +634,13 @@ fn validate_configure_receipt(
             "FFmpeg Windows configure receipt has the wrong per-lane component profile",
         ));
     }
+    let crt_choices = msvc_crt_choices(&receipt.args);
+    match crt_choices.as_slice() {
+        [] | [MsvcCrtChoice::Static] | [MsvcCrtChoice::Dynamic] => Ok(()),
+        _ => Err(FfmpegWindowsError::new(format!(
+            "FFmpeg Windows configure receipt has an invalid MSVC CRT configuration: {crt_choices:?}",
+        ))),
+    }?;
     Ok(())
 }
 
@@ -956,5 +963,78 @@ mod tests {
         let mut swapped = evidence;
         swapped.video_decode.components = swapped.audio_remux.components.clone();
         assert!(validate_build_evidence(&swapped).is_err());
+    }
+
+    #[test]
+    fn validate_configure_receipt_admits_empty_static_or_dynamic_crt_only() {
+        use solstone_core_ffmpeg_build_support::{
+            ConfigureMode, configure_mode_args, msvc_crt_configure_arg,
+        };
+        let mut base_args = controlled_component_args_for_audio_remux(true)
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect::<Vec<_>>();
+        base_args.extend(configure_mode_args(ConfigureMode::Release, true));
+        let components = controlled_component_inventory_for_audio_remux(true)
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect::<Vec<_>>();
+
+        // 1. no CRT arg: Ok
+        let receipt_no_crt = ConfigureReceipt::new(
+            FFMPEG_WINDOWS_TARGET_TRIPLE,
+            FFMPEG_WINDOWS_BUILD_PROFILE,
+            &"0".repeat(64),
+            "sh",
+            &base_args,
+            &components,
+        );
+        assert!(validate_configure_receipt(&receipt_no_crt, true).is_ok());
+
+        // 2. appended dynamic selector arg: Ok
+        let dynamic_arg = msvc_crt_configure_arg(Some("msvc"), None)
+            .expect("dynamic")
+            .to_owned();
+        let mut dynamic_args = base_args.clone();
+        dynamic_args.push(dynamic_arg.clone());
+        let receipt_dynamic = ConfigureReceipt::new(
+            FFMPEG_WINDOWS_TARGET_TRIPLE,
+            FFMPEG_WINDOWS_BUILD_PROFILE,
+            &"0".repeat(64),
+            "sh",
+            &dynamic_args,
+            &components,
+        );
+        assert!(validate_configure_receipt(&receipt_dynamic, true).is_ok());
+
+        // 3. appended static selector arg: Ok
+        let static_arg = msvc_crt_configure_arg(Some("msvc"), Some("crt-static"))
+            .expect("static")
+            .to_owned();
+        let mut static_args = base_args.clone();
+        static_args.push(static_arg.clone());
+        let receipt_static = ConfigureReceipt::new(
+            FFMPEG_WINDOWS_TARGET_TRIPLE,
+            FFMPEG_WINDOWS_BUILD_PROFILE,
+            &"0".repeat(64),
+            "sh",
+            &static_args,
+            &components,
+        );
+        assert!(validate_configure_receipt(&receipt_static, true).is_ok());
+
+        // 4. both /MT and /MD extra-cflags: Err
+        let mut mixed_args = base_args;
+        mixed_args.push(dynamic_arg);
+        mixed_args.push(static_arg);
+        let receipt_mixed = ConfigureReceipt::new(
+            FFMPEG_WINDOWS_TARGET_TRIPLE,
+            FFMPEG_WINDOWS_BUILD_PROFILE,
+            &"0".repeat(64),
+            "sh",
+            &mixed_args,
+            &components,
+        );
+        assert!(validate_configure_receipt(&receipt_mixed, true).is_err());
     }
 }
