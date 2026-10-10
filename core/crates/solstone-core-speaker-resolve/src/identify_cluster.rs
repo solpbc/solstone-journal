@@ -219,7 +219,9 @@ pub fn identify_cluster(
     request: &IdentifyClusterRequest,
     encoder: &EncoderIdentity,
 ) -> Result<Value, IdentifyClusterError> {
-    identify_from(request, MemberSource::Discovery, encoder)
+    let result = identify_from(request, MemberSource::Discovery, encoder)?;
+    reresolve_after_identify(request, &result);
+    Ok(result)
 }
 
 /// Name one speaker-pool voice as an existing person, everywhere it is still unnamed.
@@ -233,7 +235,51 @@ pub fn identify_voice(
     anchor: Option<&crate::voice_members::VoiceAnchor>,
     encoder: &EncoderIdentity,
 ) -> Result<Value, IdentifyClusterError> {
-    identify_from(request, MemberSource::Voice(voice_id, anchor), encoder)
+    let result = identify_from(request, MemberSource::Voice(voice_id, anchor), encoder)?;
+    reresolve_after_identify(request, &result);
+    Ok(result)
+}
+
+/// Once a naming has committed, the people already derived from its segments
+/// follow the new labels. This runs after the operation's locks are released,
+/// and a failure here never undoes the naming: it is logged, and the next
+/// naming of those segments tries again.
+fn reresolve_after_identify(request: &IdentifyClusterRequest, result: &Value) {
+    if result["status"] != "identified" {
+        return;
+    }
+    let Some(operation_id) = result["operation_id"].as_str() else {
+        return;
+    };
+    let ledger_path = identify_ledger_path(&request.journal_root);
+    let Ok(Some(state)) =
+        load_operations(&ledger_path).and_then(|rows| fold_operation(&rows, operation_id))
+    else {
+        return;
+    };
+    let plan = &state.prepared_plan;
+    let named = plan["target"]["entity_id"]
+        .as_str()
+        .map(str::to_owned)
+        .into_iter()
+        .collect::<Vec<_>>();
+    let changed = members_from_plan(plan)
+        .into_iter()
+        .map(|member| crate::activity_reresolution::ChangedSegment {
+            day: member.day,
+            stream: member.stream,
+            segment_key: member.segment_key,
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if let Err(error) = crate::activity_reresolution::reresolve_changed_segments(
+        &request.journal_root,
+        &changed,
+        &named,
+    ) {
+        log::warn!("identify: derived people not re-resolved: {error}");
+    }
 }
 
 fn identify_from(
@@ -2014,6 +2060,43 @@ mod tests {
             BTreeSet::from(["100000_300".to_owned(), "100500_300".to_owned()]),
             "the recording the owner picked is still written"
         );
+    }
+
+    #[test]
+    fn naming_a_voice_names_its_speaker_in_the_activities_already_derived() {
+        let (temporary, a, _b) = voice_journal();
+        let root = temporary.path();
+        // Sentences 1 and 3 of segment A are diarization speaker 7, whom the
+        // participation talent saw only as "Speaker 7".
+        let mut transcript = json!({"raw":"fixture"}).to_string() + "\n";
+        for (sentence_id, speaker) in [(1, 7), (2, 8), (3, 7), (4, 9), (5, 9)] {
+            transcript += &(json!({"start":"00:00:01","speaker":speaker,"sentence_id":sentence_id,"text":"words"}).to_string() + "\n");
+        }
+        fs::write(a.join("audio.jsonl"), transcript).unwrap();
+        solstone_core_facets::create_facet(root, "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root.join("facets/work/activities")).unwrap();
+        fs::write(
+            root.join("facets/work/activities/20260808.jsonl"),
+            json!({"id":"a1","activity":"meeting","stream":"mic","segments":["100000_300"],
+                "participation":[{"name":"Speaker 7","role":"attendee","source":"voice","entity_id":null}]})
+            .to_string()
+                + "\n",
+        )
+        .unwrap();
+
+        let result = identify_voice(
+            &request(root, "voice-activity", "ryan"),
+            5,
+            None,
+            &encoder(),
+        )
+        .unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        let record = solstone_core_facets::get_activity_record(root, "work", "20260808", "a1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(record["participation"][0]["name"], "Ryan");
+        assert_eq!(record["participation"][0]["entity_id"], "ryan");
     }
 
     #[test]

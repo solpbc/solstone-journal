@@ -139,6 +139,8 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
     ) {
         return write_error(error, true);
     }
+    drop(_trust);
+    reresolve_segment(&root.0, &fields);
     let principal = admitted_owner(&root.0);
     let mut response = json!({"success":true,"status":"assigned","speaker":fields.speaker,"stream_layout":layout_name(fields.layout)});
     if principal.as_deref() == Some(fields.speaker.as_str()) {
@@ -347,6 +349,8 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     ) {
         return write_error(error, true);
     }
+    drop(_trust);
+    reresolve_segment(&root.0, &fields);
     maybe_bootstrap_owner(&root.0, &fields.speaker);
     let propagation_offer = propagation_offer(&root.0, old_speaker.as_deref(), &fields.speaker);
     Json(json!({"success":true,"status":"corrected","old_speaker":old_speaker,"new_speaker":fields.speaker,"stream_layout":layout_name(fields.layout),"voiceprint_removal":removal,"propagation_offer":propagation_offer})).into_response()
@@ -795,6 +799,28 @@ fn label_fields(label: Option<&Value>) -> (Option<&str>, Option<&str>, Option<&s
             label.get("confidence").and_then(Value::as_str),
         )
     })
+}
+
+/// After the owner changes a speaker, the people already derived from that
+/// segment follow the change. Run with the entity lock released; a failure is
+/// logged and leaves the change itself standing.
+fn reresolve_segment(root: &std::path::Path, fields: &Fields) {
+    let changed = [
+        solstone_core_speaker_resolve::activity_reresolution::ChangedSegment {
+            day: fields.day.clone(),
+            stream: fields.stream.clone(),
+            segment_key: fields.segment_key.clone(),
+        },
+    ];
+    if let Err(error) =
+        solstone_core_speaker_resolve::activity_reresolution::reresolve_changed_segments(
+            root,
+            &changed,
+            std::slice::from_ref(&fields.speaker),
+        )
+    {
+        log::warn!("speaker change: derived people not re-resolved: {error}");
+    }
 }
 
 #[derive(Clone)]

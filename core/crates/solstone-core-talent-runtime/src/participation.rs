@@ -156,6 +156,10 @@ pub fn apply_result(
         .collect::<BTreeSet<_>>();
     let mut attributed = BTreeSet::new();
     let mut named_speakers = Vec::new();
+    let mut sentences = Vec::new();
+    for segment in &segments {
+        sentences.extend(transcript_sentences(journal, day, segment, stream));
+    }
     for segment in segments {
         attributed.extend(attributed_entity_ids(
             journal,
@@ -177,6 +181,11 @@ pub fn apply_result(
         }
         let entity_id = entry.get("entity_id").and_then(Value::as_str);
         let corroborated = entity_id.is_some_and(|id| attributed.contains(id))
+            || (entity_id.is_none_or(|id| admitted_entity_ids.contains(id))
+                && entry
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| introduced(&sentences, name)))
             || name_resolves_to(
                 &SpeakerEvidence {
                     journal,
@@ -311,6 +320,63 @@ fn named_speakers_for_segment(
         .filter_map(Value::as_str)
         .filter(|speaker| !speaker.trim().is_empty())
         .map(str::to_owned)
+        .collect()
+}
+
+/// Whether a sentence introduces `name` explicitly: "I'm Dana", "I am Dana",
+/// "my name is Dana", "this is Dana" or "Dana here", matched on the first name.
+/// Someone who introduces themselves in the activity was there, which is what
+/// a speaker label would otherwise have to show.
+fn introduced(sentences: &[String], name: &str) -> bool {
+    let Some(first) = name
+        .split_whitespace()
+        .next()
+        .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric()))
+        .filter(|word| word.chars().count() >= 2)
+    else {
+        return false;
+    };
+    let Ok(pattern) = regex::Regex::new(&format!(
+        r"(?i)\b(?:i'?m|i am|my name is|my name's|this is)\s+{first}\b|\b{first}\s+here\b",
+        first = regex::escape(first)
+    )) else {
+        return false;
+    };
+    sentences.iter().any(|sentence| pattern.is_match(sentence))
+}
+
+/// The spoken sentences of a segment's audio transcripts.
+fn transcript_sentences(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    stream: Option<&str>,
+) -> Vec<String> {
+    let Some(directory) = find_segment_dir(journal, day, segment, stream) else {
+        return Vec::new();
+    };
+    let Ok(entries) = fs::read_dir(&directory) else {
+        return Vec::new();
+    };
+    let mut names = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| {
+            name.strip_suffix(".jsonl")
+                .is_some_and(|stem| stem == "audio" || stem.ends_with("_audio"))
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    names
+        .iter()
+        .filter_map(|name| fs::read_to_string(directory.join(name)).ok())
+        .flat_map(|text| {
+            text.lines()
+                .skip(1)
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .filter_map(|row| row.get("text").and_then(Value::as_str).map(str::to_owned))
+                .collect::<Vec<_>>()
+        })
         .collect()
 }
 
@@ -472,6 +538,58 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         assert!(find_segment_dir(root.path(), "20260101", "090000_60", None).is_none());
         assert!(!root.path().join("chronicle/20260101").exists());
+    }
+
+    fn write_transcript(root: &Path, sentences: &[&str]) {
+        let mut text = json!({"raw":"fixture"}).to_string() + "\n";
+        for sentence in sentences {
+            text += &(json!({"start":"00:00:01","text":sentence}).to_string() + "\n");
+        }
+        fs::write(
+            root.join(format!("chronicle/{DAY}/{SEGMENT}/audio.jsonl")),
+            text,
+        )
+        .expect("transcript");
+    }
+
+    #[test]
+    fn a_person_who_introduces_themselves_stays_an_attendee_without_a_label() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+        write_transcript(
+            root.path(),
+            &["Hi everyone.", "My name is Ada, I run the lab."],
+        );
+
+        let entry = apply(
+            root.path(),
+            json!({"name":"Ada Lovelace","role":"attendee","source":"voice"}),
+        );
+
+        assert_eq!(entry["entity_id"], "person");
+        assert_eq!(entry["role"], "attendee");
+    }
+
+    #[test]
+    fn without_an_introduction_or_a_label_a_voice_attendee_is_still_demoted() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+        write_transcript(
+            root.path(),
+            &["Ada said she would send it.", "This is Atlas."],
+        );
+
+        let person = apply(
+            root.path(),
+            json!({"name":"Ada Lovelace","role":"attendee","source":"voice"}),
+        );
+        assert_eq!(person["role"], "mentioned");
+        // Only a person is kept by an introduction, never a project.
+        let project = apply(
+            root.path(),
+            json!({"name":"Atlas","role":"attendee","source":"voice"}),
+        );
+        assert_eq!(project["role"], "mentioned");
     }
 
     #[test]
