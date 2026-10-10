@@ -5693,7 +5693,6 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-npy",
- "solstone-core-profile-web",
  "solstone-core-segment",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",

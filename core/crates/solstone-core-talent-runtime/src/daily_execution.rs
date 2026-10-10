@@ -221,13 +221,7 @@ pub(crate) fn execute(
                 format!("unsupported talent type: {talent_type}"),
             ));
         }
-        match crate::generate_response(
-            &mut prepared,
-            context,
-            generate,
-            writer,
-            stage.as_ref().map(|(_, state)| state),
-        ) {
+        match crate::generate_response(&mut prepared, context, generate, writer) {
             Ok((response, usage, degraded)) => (response, usage, degraded),
             Err(outcome) => return outcome,
         }

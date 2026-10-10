@@ -4,7 +4,7 @@
 
 **A memory your agents can work from. On your device, owned by you.**
 
-solstone is a personal memory platform. The solstone app takes in what you share with it, and all of it goes into your journal. This repository is the journal: the part that runs on a computer you own. It holds everything the solstone app takes in, turns audio into speaker-attributed transcripts, turns screen frames into descriptions, surfaces the people, projects, meetings and commitments in your days, indexes all of it, and gives the agents you already use a way to work from it.
+solstone is a personal memory platform. The solstone app takes in what you share with it, and all of it goes into your journal. This repository is the journal: the part that runs on a computer you own. It holds everything the solstone app takes in, turns audio into speaker-attributed transcripts, turns screen frames into descriptions, surfaces the people, projects and meetings in your days, makes journal entries searchable, and gives the agents you already use a way to work from it.
 
 Your journal is a folder of dated directories on a machine you choose. You can read it, back it up, move it, and hand it down. Open source, local-first, AGPL-3.0-only, made by [sol pbc](https://solpbc.org).
 
@@ -17,7 +17,7 @@ Your journal is a folder of dated directories on a machine you choose. You can r
 - **transcription with speaker attribution.** Conversations you share with the solstone app go into your journal, transcribed on your machine by default, with who said what worked out over time.
 - **people, companies, projects and tools.** Surfaced from your days and remembered across them, with the evidence that connects them.
 - **connections.** Who spoke with whom, who was in the room, which projects touch which people. A knowledge graph that builds itself.
-- **meetings and commitments.** Detected from natural conversation and kept with their source context. No manual entry.
+- **meetings.** Detected from natural conversation and kept with their source context. No manual entry.
 - **facets.** Group everything by project or context (work, personal, a client name) and see your journal through that lens in every view.
 - **daily and weekly synthesis.** A morning briefing, an upcoming schedule, a weekly reflection, a newsletter per facet, written from your own material.
 - **imports.** Audio and images, documents, calendar files, Obsidian vaults, conversation exports from ChatGPT, Claude and Gemini, Plaud devices, Apple Health and Oura body data, and archives from another journal.

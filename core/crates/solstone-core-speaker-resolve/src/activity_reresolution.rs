@@ -21,12 +21,7 @@ use solstone_core_facets::DestinationObservation;
 use solstone_core_journal_io::SegmentLayout;
 
 /// The actor fields a Story item names, each with its resolved id field.
-const ACTOR_FIELDS: [(&str, &str); 4] = [
-    ("owner", "owner_entity_id"),
-    ("counterparty", "counterparty_entity_id"),
-    ("from", "from_entity_id"),
-    ("to", "to_entity_id"),
-];
+const ACTOR_FIELDS: [(&str, &str); 2] = [("from", "from_entity_id"), ("to", "to_entity_id")];
 
 /// One segment whose speaker labels a naming or correction changed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

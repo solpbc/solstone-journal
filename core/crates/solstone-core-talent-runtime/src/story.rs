@@ -299,6 +299,9 @@ pub(crate) fn owner_heard(
                 continue;
             }
             audio = true;
+            if !matches!(solstone_core_segment::owner_deleted(&dir), Ok(false)) {
+                continue;
+            }
             if let Some(voices) = voices.as_ref() {
                 said.extend(solstone_core_transcripts::owner_voice_lines(&dir, voices));
             }

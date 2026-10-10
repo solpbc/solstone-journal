@@ -14,12 +14,7 @@ use crate::{JournalOwner, NamedActor};
 
 /// The actor fields a Story item names, each with the id field the Story hook
 /// resolves it into.
-const ACTOR_FIELDS: [(&str, &str); 4] = [
-    ("owner", "owner_entity_id"),
-    ("counterparty", "counterparty_entity_id"),
-    ("from", "from_entity_id"),
-    ("to", "to_entity_id"),
-];
+const ACTOR_FIELDS: [(&str, &str); 2] = [("from", "from_entity_id"), ("to", "to_entity_id")];
 
 /// Give the owner's id to every activity actor written as the owner ("you",
 /// or one of the owner's own names) whose id was left empty because the
@@ -210,7 +205,10 @@ mod tests {
                 {"from":"Jordan Rivers","from_entity_id":null,"to":"Priya","to_entity_id":"priya","kind":"works-with","note":""},
                 {"from":"you","from_entity_id":"someone_else","to":"Priya","to_entity_id":"priya","kind":"works-with","note":""},
                 {"from":"your agent","from_entity_id":null,"to":"Priya","to_entity_id":"priya","kind":"works-with","note":""}
-            ]}),
+            ], "commitments":[{"owner":"you","owner_entity_id":null}],
+               "closures":[{"owner":"you","owner_entity_id":null}],
+               "decisions":[{"owner":"you","owner_entity_id":null}],
+               "edits":[{"actor":"owner:ledger_close","note":"keep this owner choice"}]}),
             json!({"id":"m1","activity":"meeting","relations":[
                 {"from":"you","from_entity_id":null,"to":"Priya","to_entity_id":"priya","kind":"works-with","note":""}
             ]}),
@@ -238,7 +236,23 @@ mod tests {
     #[test]
     fn an_owner_reference_written_without_an_owner_gains_the_owners_id() {
         let root = journal(true);
+        let before =
+            solstone_core_facets::get_activity_record(root.path(), "work", "20260101", "a1")
+                .unwrap()
+                .unwrap();
         assert_eq!(resolve_owner_actors_at(root.path(), now()).unwrap(), 2);
+        let after =
+            solstone_core_facets::get_activity_record(root.path(), "work", "20260101", "a1")
+                .unwrap()
+                .unwrap();
+        for field in ["commitments", "closures", "decisions"] {
+            assert_eq!(after.get(field), before.get(field));
+        }
+        let original_edits = before["edits"].as_array().unwrap();
+        assert_eq!(
+            &after["edits"].as_array().unwrap()[..original_edits.len()],
+            original_edits.as_slice()
+        );
         let items = relations(root.path(), "a1");
         assert_eq!(items[0]["from_entity_id"], "jordan");
         assert!(items[0]["to_entity_id"].is_null());

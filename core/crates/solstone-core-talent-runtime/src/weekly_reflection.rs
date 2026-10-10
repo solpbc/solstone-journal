@@ -706,8 +706,8 @@ fn said_on_day(journal: &Path, facets: &[String], day: &str) -> Vec<Said> {
                 if passage.split_whitespace().count() < 3 {
                     continue;
                 }
-                if let Some(owner_line) = owner_lines.iter().find(|line| line.contains(passage)) {
-                    let words = owner_line
+                if let Some(span) = matched_owner_span(passage, &owner_lines) {
+                    let words = span
                         .to_lowercase()
                         .split(|c: char| !c.is_alphanumeric())
                         .filter(|w| !w.is_empty())
@@ -718,7 +718,7 @@ fn said_on_day(journal: &Path, facets: &[String], day: &str) -> Vec<Said> {
                             day: day.to_owned(),
                             facet: facet.clone(),
                             record_id: record_id.to_owned(),
-                            quote: owner_line.clone(),
+                            quote: span.to_owned(),
                         });
                     }
                 }
@@ -727,6 +727,43 @@ fn said_on_day(journal: &Path, facets: &[String], day: &str) -> Vec<Said> {
     }
     said.truncate(SAID_PER_DAY);
     said
+}
+
+/// Keep a passage only when it identifies one complete-word source span.
+fn matched_owner_span<'a>(passage: &str, owner_lines: &'a [String]) -> Option<&'a str> {
+    if passage.is_empty() {
+        return None;
+    }
+    let mut found = None;
+    for line in owner_lines {
+        for (start, _) in line.char_indices() {
+            if !line[start..].starts_with(passage) {
+                continue;
+            }
+            let end = start + passage.len();
+            let cuts_first_word = passage.chars().next().is_some_and(char::is_alphanumeric)
+                && line[..start]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_alphanumeric);
+            let cuts_last_word = passage
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+                && line[end..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_alphanumeric);
+            if cuts_first_word || cuts_last_word {
+                continue;
+            }
+            if found.is_some() {
+                return None;
+            }
+            found = Some(&line[start..end]);
+        }
+    }
+    found
 }
 
 fn extract_passages(body: &str) -> Vec<&str> {
@@ -1810,6 +1847,10 @@ mod tests {
             json!({"id":"jordan","name":"Jordan Rivers","type":"Person","is_principal":true})
                 .to_string(),
         );
+        write(
+            "entities/pat/entity.json",
+            json!({"id":"pat","name":"Pat","type":"Person"}).to_string(),
+        );
 
         let path = root.path().join("facets/work/activities/20260309.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -1818,8 +1859,8 @@ mod tests {
                 "id":"meeting_1",
                 "activity":"meeting",
                 "stream":"phone",
-                "segments":["090000_300"],
-                "story":{"body":"You promised \"I will get you the deck by friday\" before leaving."}
+                "segments":["090000_300","100000_300"],
+                "story":{"body":"You said \"I will get you the deck by friday\" and \"never quote these deleted words\"."}
             }),
             json!({
                 "id":"gone",
@@ -1837,7 +1878,21 @@ mod tests {
             json!({
                 "id":"chat_1",
                 "activity":"chat",
+                "stream":"default",
+                "segments":["130000_300"],
                 "story":{"body":"You typed \"we should meet tomorrow morning\"."}
+            }),
+            json!({
+                "id":"ambiguous",
+                "stream":"phone",
+                "segments":["120000_300"],
+                "story":{"body":"You said \"we can revisit this next month\"."}
+            }),
+            json!({
+                "id":"uncorrected",
+                "stream":"phone",
+                "segments":["090000_300"],
+                "story":{"body":"You said \"the original words were corrected away\"."}
             }),
         ];
         fs::write(
@@ -1864,7 +1919,7 @@ mod tests {
 
         write(
             "chronicle/20260309/phone/090000_300/audio.jsonl",
-            r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"I will get you the deck by friday"}"#
+            r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"the original words were corrected away","corrected":"Before leaving, I will get you the deck by friday; please check with Pat."}"#
                 .into(),
         );
         write(
@@ -1880,7 +1935,40 @@ mod tests {
         );
         write(
             "chronicle/20260309/default/110000_300/talents/speaker_labels.json",
-            json!({"labels":[{"sentence_id":1,"speaker":"pat","method":"voice"}]}).to_string(),
+            json!({"labels":[{"sentence_id":1,"speaker":"pat","method":"acoustic"}]}).to_string(),
+        );
+        for (segment, text) in [
+            ("phone/100000_300", "never quote these deleted words"),
+            ("phone/120000_300", "we can revisit this next month"),
+        ] {
+            let rows = if segment.ends_with("120000_300") {
+                2
+            } else {
+                1
+            };
+            write(
+                &format!("chronicle/20260309/{segment}/audio.jsonl"),
+                (1..=rows)
+                    .map(|id| json!({"sentence_id":id,"speaker":1,"text":text}).to_string() + "\n")
+                    .collect(),
+            );
+            write(
+                &format!("chronicle/20260309/{segment}/talents/speaker_labels.json"),
+                json!({"labels":(1..=rows).map(|id| json!({"sentence_id":id,"speaker":"jordan","method":"user_confirmed"})).collect::<Vec<_>>()}).to_string(),
+            );
+        }
+        write(
+            "chronicle/20260309/phone/100000_300/tombstone.json",
+            "{}".into(),
+        );
+        write(
+            "chronicle/20260309/default/130000_300/screen.jsonl",
+            json!({"text":"we should meet tomorrow morning"}).to_string(),
+        );
+        write(
+            "chronicle/20260309/default/130000_300/talents/speaker_labels.json",
+            json!({"labels":[{"sentence_id":1,"speaker":"jordan","method":"user_confirmed"}]})
+                .to_string(),
         );
 
         let said = said_on_day(root.path(), &["work".to_owned()], "20260309");
@@ -1894,6 +1982,68 @@ mod tests {
             "sol://facets/work/activities/20260309#meeting_1"
         );
         assert!(said_on_day(root.path(), &["work".to_owned()], "20260310").is_empty());
+
+        let quotes = [
+            "I will get you the deck by friday",
+            "another distinct sentence for the week",
+            "a third sentence about the conversation",
+            "this fourth sentence exceeds the daily cap",
+        ];
+        write(
+            "chronicle/20260309/phone/090000_300/audio.jsonl",
+            quotes
+                .iter()
+                .enumerate()
+                .map(|(i, text)| {
+                    json!({"sentence_id":i+1,"speaker":1,"text":text}).to_string() + "\n"
+                })
+                .collect(),
+        );
+        write(
+            "chronicle/20260309/phone/090000_300/talents/speaker_labels.json",
+            json!({"labels":(1..=4).map(|id| json!({"sentence_id":id,"speaker":"jordan","method":"user_confirmed"})).collect::<Vec<_>>()}).to_string(),
+        );
+        let body = std::iter::once(quotes[0])
+            .chain(quotes)
+            .map(|quote| format!("\"{quote}\""))
+            .collect::<Vec<_>>()
+            .join(" ");
+        fs::write(&path, json!({"id":"meeting_1","stream":"phone","segments":["090000_300"],"story":{"body":body}}).to_string() + "\n").unwrap();
+        let said = said_on_day(root.path(), &["work".to_owned()], "20260309");
+        assert_eq!(
+            said.iter()
+                .map(|row| row.quote.as_str())
+                .collect::<Vec<_>>(),
+            quotes[..3]
+        );
+    }
+
+    #[test]
+    fn said_source_spans_preserve_utf8_and_reject_ambiguity_or_cut_words() {
+        let line = "Before this, café plans stay open; after that, a different thought.".to_owned();
+        assert_eq!(
+            matched_owner_span("café plans stay open", &[line.clone()]),
+            Some("café plans stay open")
+        );
+        assert_eq!(
+            matched_owner_span("café plans stay open", &[line.clone(), line]),
+            None
+        );
+        assert_eq!(
+            matched_owner_span("and then and", &["and then and then and".into()]),
+            None
+        );
+        assert_eq!(
+            matched_owner_span("go with blue", &["logo with blueprint".into()]),
+            None
+        );
+        assert_eq!(
+            matched_owner_span(
+                "a missing exact phrase",
+                &["something else was said".into()]
+            ),
+            None
+        );
     }
 
     #[test]

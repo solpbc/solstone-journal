@@ -709,7 +709,6 @@ fn generate_response(
     context: &ExecutionContext,
     generate: &OneShotClient,
     writer: &mut impl Write,
-    _state: Option<&PrePostState>,
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
     let _ = prepared.config.remove(INPUT_BUDGET_KEY);
     match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
@@ -776,13 +775,7 @@ pub(crate) fn generate_and_write(
     writer: &mut impl Write,
     stage: Option<(&'static contract::StageSpec, PrePostState)>,
 ) -> RuntimeOutcome {
-    let (response, usage, degraded) = match generate_response(
-        prepared,
-        context,
-        generate,
-        writer,
-        stage.as_ref().map(|(_, state)| state),
-    ) {
+    let (response, usage, degraded) = match generate_response(prepared, context, generate, writer) {
         Ok(response) => response,
         Err(outcome) => {
             if let Some((stage, state)) = stage
