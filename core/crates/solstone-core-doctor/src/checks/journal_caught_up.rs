@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 use crate::{
     context::CheckContext,
-    vocabulary::{Check, RunnerResult, Status, make_result},
+    vocabulary::{BacklogDays, Check, RunnerResult, Status, make_result},
 };
 const CANT_TELL: &str = "re-run solstone journal doctor; check the health logs if it persists";
 
@@ -40,7 +40,33 @@ fn unfinished_suffix(days: &[solstone_core_system_health::BacklogDay]) -> String
     }
 }
 
+/// Every result read from the backlog carries the days behind its counts, so
+/// a reader has the set rather than deriving it.
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
+    let mut days = None;
+    let mut result = evaluate(context, check, &mut days)?;
+    result.backlog_days = days;
+    Ok(result)
+}
+
+fn backlog_days(view: &solstone_core_system_health::BacklogView) -> BacklogDays {
+    let mut days = BacklogDays::default();
+    for day in &view.days {
+        let list = match day.state.as_str() {
+            solstone_core_system_health::BACKLOG_STATE_PENDING => &mut days.pending,
+            solstone_core_system_health::BACKLOG_STATE_STUCK => &mut days.stuck,
+            solstone_core_system_health::BACKLOG_STATE_UNKNOWN => &mut days.unknown,
+            _ => continue,
+        };
+        list.push(day.day.clone());
+    }
+    for list in [&mut days.pending, &mut days.stuck, &mut days.unknown] {
+        list.sort();
+    }
+    days
+}
+
+fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>) -> RunnerResult {
     let source = solstone_core_system_health::FilesystemHealthLogSource::new(&context.journal_path);
     let segments = solstone_core_system_health::FilesystemSegmentSource;
     let view = match solstone_core_system_health::read_backlog_view(
@@ -60,6 +86,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         }
         Ok(view) => view,
     };
+    *days = Some(backlog_days(&view));
 
     if !view.errors.is_empty()
         || view

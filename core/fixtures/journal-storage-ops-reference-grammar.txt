@@ -106,7 +106,7 @@ options:
 === reprocess --help
 usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]
                          [--facet FACET] [--from-scratch | --mark-updated |
-                         --owed] [-v] [-d]
+                         --owed] [--json] [-v] [-d]
                          day
 
 Submit a past journal day for reprocessing
@@ -126,13 +126,16 @@ options:
                      re-queues it, then nudge a drain
   --owed             List the daily outputs owed on the day or range and why,
                      without submitting anything
+  --json             With --owed, report each day as states and counts: its
+                     markers, its coverage, how many daily outputs it has and
+                     how many are owed, by cause
   -v, --verbose      Enable verbose output
   -d, --debug        Enable debug logging
 
 === reprocess (missing day)
 usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]
                          [--facet FACET] [--from-scratch | --mark-updated |
-                         --owed] [-v] [-d]
+                         --owed] [--json] [-v] [-d]
                          day
 solstone journal reprocess: error: the following arguments are required: day
 

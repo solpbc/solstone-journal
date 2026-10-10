@@ -284,6 +284,55 @@ fn a_backlog_of_the_previous_day_is_written_once_it_settles() {
 }
 
 #[test]
+fn a_finished_days_last_activity_is_written_once_its_last_segment_settles() {
+    let bed = bed();
+    let yesterday = "20260812";
+    // Thought at 23:59, so its activity is still open at midnight.
+    bed.deliver(yesterday, "235500_300", &work(), at(0, -2));
+    bed.settle(at(0, 0));
+    assert!(bed.records(yesterday).is_empty());
+    assert!(crate::activity_settle_holds_day(&bed.journal, yesterday));
+    // Due five minutes after it was thought, not an hour.
+    assert!(crate::activity_settle_due(&bed.journal, at(0, 3)).is_empty());
+    assert_eq!(crate::activity_settle_due(&bed.journal, at(0, 4)), [STREAM]);
+    // A segment sealed after midnight has arrived and is not yet thought: the
+    // day is not finished until it has been quiet for the window.
+    let straddler = bed.segment(yesterday, "235900_300");
+    fs::create_dir_all(straddler.join("talents")).unwrap();
+    fs::write(straddler.join("audio.flac"), b"audio").unwrap();
+    set_ms(&straddler.join("audio.flac"), at(0, 2));
+    bed.settle(at(0, 4));
+    assert!(bed.records(yesterday).is_empty());
+    assert_eq!(crate::activity_settle_due(&bed.journal, at(0, 7)), [STREAM]);
+    bed.settle(at(0, 7));
+    assert_eq!(
+        bed.records(yesterday),
+        [("work_235500_300".to_owned(), keys(&["235500_300"]))]
+    );
+    assert!(!crate::activity_settle_holds_day(&bed.journal, yesterday));
+}
+
+#[test]
+fn a_day_stays_held_while_the_talents_of_what_was_written_there_run() {
+    let bed = bed();
+    let listed = crate::settle::list_publishing(
+        &bed.journal,
+        STREAM,
+        std::collections::BTreeSet::from(["20260812".to_owned()]),
+    )
+    .unwrap();
+    assert!(crate::activity_settle_holds_day(&bed.journal, "20260812"));
+    assert!(!crate::activity_settle_holds_day(&bed.journal, DAY));
+    fs::remove_file(&listed).unwrap();
+    assert!(!crate::activity_settle_holds_day(&bed.journal, "20260812"));
+    // Nothing written, nothing listed.
+    assert!(
+        crate::settle::list_publishing(&bed.journal, STREAM, std::collections::BTreeSet::new())
+            .is_none()
+    );
+}
+
+#[test]
 fn continuous_capture_does_not_hold_back_an_activity_that_has_settled() {
     let bed = bed();
     let mut minute = 0;

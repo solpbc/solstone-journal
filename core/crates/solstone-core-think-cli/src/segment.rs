@@ -1953,6 +1953,12 @@ pub(crate) struct EndedActivity {
     claim: Option<FileLock>,
 }
 
+impl EndedActivity {
+    pub(crate) fn day(&self) -> &str {
+        &self.day
+    }
+}
+
 /// Append each ended activity's record and record its talent work, without
 /// running any of it. Both writes are idempotent, so publishing an activity
 /// again finds it already there.

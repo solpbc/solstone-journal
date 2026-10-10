@@ -137,7 +137,7 @@ pub(crate) fn summarize_pipeline_day(
                 summary.status = "unknown".to_owned();
                 summary
                     .anomalies
-                    .push(json!({"kind":"segments_not_thought","error":"scan_failed"}));
+                    .push(json!({"kind":"scan_failed","reason":"segments_unreadable"}));
                 return Ok(summary);
             }
         };
@@ -150,12 +150,14 @@ pub(crate) fn summarize_pipeline_day(
         }
         return Ok(summary);
     }
-    if let Err(error) = scan_health_logs(journal_root, date, &day, &mut summary) {
-        log::warn!("native pipeline health scan failed day={day}: {error:?}");
+    // A day this view cannot read says so; it is never reported as a state
+    // of the day itself.
+    if let Err(reason) = scan_health_logs(journal_root, date, &day, &mut summary) {
+        log::warn!("native pipeline health scan failed day={day}: {reason}");
         summary.status = "unknown".to_owned();
         summary
             .anomalies
-            .push(json!({"kind":"segments_not_thought","error":"scan_failed"}));
+            .push(json!({"kind":"scan_failed","reason":reason}));
         return Ok(summary);
     }
     let health_source = FilesystemHealthLogSource::new(journal_root);
@@ -222,7 +224,7 @@ pub(crate) fn summarize_pipeline_day(
             log::warn!("native pipeline completion fold failed day={day}: {error:?}");
             summary
                 .anomalies
-                .push(json!({"kind":"segments_not_thought","error":"fold_failed"}));
+                .push(json!({"kind":"scan_failed","reason":"segments_unreadable"}));
         }
     }
     let stale = summary.anomalies.iter().any(|value| {
@@ -240,7 +242,13 @@ pub(crate) fn summarize_pipeline_day(
         .anomalies
         .iter()
         .any(|value| value.get("kind").and_then(Value::as_str) == Some("talent_failure"));
-    if stale {
+    let unread = summary
+        .anomalies
+        .iter()
+        .any(|value| value.get("kind").and_then(Value::as_str) == Some("scan_failed"));
+    if unread {
+        summary.status = "unknown".to_owned();
+    } else if stale {
         summary.status = "stale".to_owned();
     } else if failure {
         summary.status = "warning".to_owned();
@@ -253,9 +261,8 @@ fn scan_health_logs(
     date: NaiveDate,
     day: &str,
     summary: &mut PipelineReport,
-) -> Result<(), HealthError> {
-    let root = JournalRoot::open(journal_root)
-        .map_err(|error| HealthError::internal(error.to_string()))?;
+) -> Result<(), &'static str> {
+    let root = JournalRoot::open(journal_root).map_err(|_| "journal_unreadable")?;
     let scanned = fold_oplogs(
         root,
         &[date],
@@ -315,7 +322,7 @@ fn scan_health_logs(
             Ok(())
         },
     )
-    .map_err(|error| HealthError::internal(error.to_string()))?;
+    .map_err(|error| error.kind())?;
     summary.runs = scanned.runs;
     summary.talents = scanned.talents;
     summary.activities = scanned.activities;
@@ -382,7 +389,9 @@ mod tests {
     use serde_json::{Value, json};
     use solstone_core_journal_io::{
         JournalRoot,
-        operational_log::{OplogFormat, create_oplog_at},
+        operational_log::{
+            OPLOG_CATALOG_MAX_COUNTABLE_ENTRIES_PER_PASS, OplogFormat, create_oplog_at,
+        },
     };
     use tempfile::TempDir;
 
@@ -630,7 +639,28 @@ mod tests {
         assert_eq!(report["status"], "unknown");
         assert_eq!(
             report["anomalies"],
-            json!([{"kind":"segments_not_thought","error":"scan_failed"}])
+            json!([{"kind":"scan_failed","reason":"segments_unreadable"}])
+        );
+    }
+
+    #[test]
+    fn a_day_too_large_to_scan_says_so_rather_than_reporting_a_day_state() {
+        let temporary = temporary();
+        let date = now().date_naive() - Duration::days(1);
+        let health = temporary
+            .path()
+            .join("chronicle")
+            .join(date.format("%Y%m%d").to_string())
+            .join("health");
+        fs::create_dir_all(&health).unwrap();
+        for index in 0..=OPLOG_CATALOG_MAX_COUNTABLE_ENTRIES_PER_PASS {
+            fs::write(health.join(format!("{index}.marker")), b"").unwrap();
+        }
+        let report = value(&summarize_pipeline_day(temporary.path(), date, now()).unwrap());
+        assert_eq!(report["status"], "unknown");
+        assert_eq!(
+            report["anomalies"],
+            json!([{"kind":"scan_failed","reason":"oplog_catalog_countable_limit"}])
         );
     }
 
@@ -643,7 +673,7 @@ mod tests {
         assert_eq!(report["status"], "unknown");
         assert_eq!(
             report["anomalies"],
-            json!([{"kind":"segments_not_thought","error":"scan_failed"}])
+            json!([{"kind":"scan_failed","reason":"oplog_catalog_read"}])
         );
     }
 

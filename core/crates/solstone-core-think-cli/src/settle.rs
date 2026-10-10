@@ -131,6 +131,61 @@ fn pending_path(journal: &Path, stream: &str) -> PathBuf {
     pending_dir(journal).join(format!("{stream}.json"))
 }
 
+/// While a check runs the talents of what it wrote, the days it wrote are
+/// listed here, one file per check, so a day is never read as settled while
+/// its activities are still being written.
+fn publishing_dir(journal: &Path) -> PathBuf {
+    pending_dir(journal).join("publishing")
+}
+
+/// A listing older than this was left by a check that never finished.
+const PUBLISHING_STALE: Duration = Duration::from_secs(60 * 60);
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Publishing {
+    days: BTreeSet<String>,
+}
+
+/// List `days` as being written by this check, and drop listings this
+/// stream's earlier checks left behind. Returns the listing to remove once
+/// the talents have run.
+pub(crate) fn list_publishing(
+    journal: &Path,
+    stream: &str,
+    days: BTreeSet<String>,
+) -> Option<PathBuf> {
+    let dir = publishing_dir(journal);
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.filter_map(Result::ok) {
+            let stale = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age >= PUBLISHING_STALE);
+            let ours = entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with(&format!("{stream}-")));
+            if stale && ours {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+    if days.is_empty() {
+        return None;
+    }
+    let path = dir.join(format!(
+        "{stream}-{}-{}.json",
+        std::process::id(),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    ));
+    let bytes = serde_json::to_vec(&Publishing { days }).ok()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    atomic_replace(&path, &bytes, AtomicWriteOptions::default()).ok()?;
+    Some(path)
+}
+
 fn read_pending(path: &Path) -> Pending {
     match solstone_core_journal_io::durability::read_json_durable::<Pending>(
         solstone_core_journal_io::durability::ArtifactId::ActivitySettle,
@@ -205,6 +260,41 @@ pub(crate) fn due_streams(journal: &Path, now_ms: i64) -> Vec<String> {
     due
 }
 
+/// Whether any stream's pending checks include `day`, or a check is still
+/// running the talents of activities it wrote there.
+pub(crate) fn holds_day(journal: &Path, day: &str) -> bool {
+    let pending = std::fs::read_dir(pending_dir(journal))
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .any(|entry| {
+            let path = entry.path();
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.strip_suffix(".json"))
+                .is_some_and(safe_stream)
+                && read_pending(&path).days.contains_key(day)
+        });
+    pending
+        || std::fs::read_dir(publishing_dir(journal))
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .any(|entry| {
+                let fresh = entry
+                    .metadata()
+                    .and_then(|metadata| metadata.modified())
+                    .ok()
+                    .and_then(|modified| modified.elapsed().ok())
+                    .is_none_or(|age| age < PUBLISHING_STALE);
+                fresh
+                    && std::fs::read(entry.path())
+                        .ok()
+                        .and_then(|bytes| serde_json::from_slice::<Publishing>(&bytes).ok())
+                        .is_some_and(|publishing| publishing.days.contains(day))
+            })
+}
+
 /// `journal think --settle`: check one stream, or every stream with pending
 /// days.
 pub(crate) fn run(
@@ -273,6 +363,7 @@ pub(crate) fn check(
     let path = pending_path(&context.journal, stream);
     let mut talents = Vec::new();
     let mut errors = Vec::new();
+    let publishing;
     {
         // Another check holding this stream reads the same evidence. A turn
         // that cannot be made at all is not fatal: what has settled is still
@@ -335,10 +426,23 @@ pub(crate) fn check(
         {
             errors.push(error);
         }
+        // Listed before the turn is given up, so the days stay held from
+        // the moment they leave the pending list until their talents finish.
+        publishing = list_publishing(
+            &context.journal,
+            stream,
+            talents
+                .iter()
+                .map(|talent| talent.day().to_owned())
+                .collect(),
+        );
     }
     // Talents can run for minutes; no writer waits on them.
     if let Err(error) = run_activity_talents(context, log, talents, false, max_concurrency) {
         errors.push(error);
+    }
+    if let Some(publishing) = publishing {
+        let _ = std::fs::remove_file(publishing);
     }
     if errors.is_empty() {
         Ok(())
@@ -401,9 +505,9 @@ fn settle_day(
         .filter_map(|segment| segment.arrived.max(segment.sensed))
         .max()
         .unwrap_or(0);
-    let latest_sense = segments.iter().filter_map(|segment| segment.sensed).max();
-    let finished = day < today
-        && (at_once() || latest_sense.is_none_or(|sensed| now - sensed >= SETTLE_WINDOW_MS));
+    // A finished day is over and nothing of it has arrived or been thought
+    // within the window, so a segment still being thought is never left out.
+    let finished = day < today && (at_once() || now - latest >= SETTLE_WINDOW_MS);
     let close_tail = finished
         || now - latest >= QUIET_CLOSE_MS
         || (idle && (at_once() || now - latest >= SETTLE_WINDOW_MS));
@@ -456,6 +560,11 @@ fn settle_day(
     };
 
     let mut due: Option<i64> = open.then_some(latest + QUIET_CLOSE_MS);
+    // A finished day's last activity is written as soon as its last segment
+    // has settled, not an hour after it.
+    if open && day < today {
+        due = due.map(|due| due.min(latest + SETTLE_WINDOW_MS));
+    }
     let mut keep = BTreeSet::new();
     let mut failures = Vec::new();
     let mut held_by_facet: BTreeMap<String, Vec<Map<String, Value>>> = BTreeMap::new();

@@ -1308,28 +1308,25 @@ impl TaskQueue {
     }
 
     pub fn contains_reference(&self, reference: &str) -> bool {
+        self.any_reference(|value| value == reference)
+    }
+
+    /// Whether any pending, queued, running or held task carries a reference
+    /// that `matches`.
+    pub fn any_reference(&self, matches: impl Fn(&str) -> bool) -> bool {
         let state = self.inner.state.lock().expect("queue state lock poisoned");
-        state
-            .pending
-            .iter()
-            .any(|entry| entry.reference == reference)
+        state.pending.iter().any(|entry| matches(&entry.reference))
+            || state.running.values().any(|slot| matches(&slot.reference))
+            || state.active.keys().any(|value| matches(value))
             || state
-                .running
+                .held
                 .values()
-                .any(|slot| slot.reference == reference)
-            || state.active.contains_key(reference)
-            || state.held.values().any(|entry| {
-                entry
-                    .dispatch
-                    .references
-                    .iter()
-                    .any(|value| value == reference)
-            })
+                .any(|entry| entry.dispatch.references.iter().any(|value| matches(value)))
             || state
                 .queues
                 .values()
                 .flatten()
-                .any(|entry| entry.references.iter().any(|value| value == reference))
+                .any(|entry| entry.references.iter().any(|value| matches(value)))
     }
 
     pub fn set_ready(&self) {

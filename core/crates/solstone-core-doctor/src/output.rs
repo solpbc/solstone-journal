@@ -34,6 +34,17 @@ pub fn emit_text_to(
         if let Some(fix) = &result.fix {
             writeln!(writer, "    → {fix}")?;
         }
+        if verbose && let Some(days) = &result.backlog_days {
+            for (label, list) in [
+                ("pending", &days.pending),
+                ("stuck", &days.stuck),
+                ("unknown", &days.unknown),
+            ] {
+                if !list.is_empty() {
+                    writeln!(writer, "    {label}: {}", list.join(", "))?;
+                }
+            }
+        }
     }
     let s = summary_counts(results);
     writeln!(
@@ -84,6 +95,12 @@ pub fn emit_jsonl_to(
             event.as_object_mut().expect("object").insert(
                 "client_delivery".to_owned(),
                 serde_json::to_value(facts).expect("client delivery facts serialize"),
+            );
+        }
+        if let Some(days) = &r.backlog_days {
+            event.as_object_mut().expect("object").insert(
+                "backlog_days".to_owned(),
+                serde_json::to_value(days).expect("backlog days serialize"),
             );
         }
         let _ = writeln!(writer, "{event}");

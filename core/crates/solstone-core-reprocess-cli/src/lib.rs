@@ -49,6 +49,7 @@ struct ParsedArgs {
     flavor: Flavor,
     unit: Option<String>,
     facet: Option<String>,
+    json: bool,
 }
 
 /// Range facts deliberately preserve their distinct sources: iter-segments is
@@ -146,6 +147,7 @@ where
             parsed.through.as_deref(),
             now,
             zone,
+            parsed.json,
         );
     }
     if let Some(through_raw) = parsed.through.as_deref() {
@@ -206,12 +208,14 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
     let mut flavor_flag: Option<&str> = None;
     let mut unit = None;
     let mut facet = None;
+    let mut json = false;
     let mut unknown = Vec::new();
     let mut index = 0;
     while index < args.len() {
         let argument = &args[index];
         match argument.as_str() {
             "-v" | "--verbose" | "-d" | "--debug" => {}
+            "--json" => json = true,
             "--yes" => {
                 if unit.is_some() {
                     return Err(ParseResult::Usage(
@@ -297,6 +301,11 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
             "argument --facet: requires --unit".to_owned(),
         ));
     }
+    if json && flavor != Flavor::Owed {
+        return Err(ParseResult::Usage(
+            "argument --json: requires --owed".to_owned(),
+        ));
+    }
     let Some(day) = day else {
         return Err(ParseResult::Usage(
             "the following arguments are required: day".to_owned(),
@@ -310,6 +319,7 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
             flavor,
             unit,
             facet,
+            json,
         })
     } else {
         Err(ParseResult::Usage(format!(
@@ -556,12 +566,15 @@ fn format_day_set<'a>(days: impl IntoIterator<Item = &'a str>) -> String {
 /// Read-only: nothing is submitted.  A release burn-in runs the candidate's
 /// build of this against the journal before installing it, so the number of
 /// past outputs an upgrade would regenerate is stated rather than discovered.
+/// With `json`, each day is reported as states and counts only: its markers,
+/// its coverage, how many daily units it has and how many are owed, by cause.
 fn owed_report(
     journal: &Path,
     start_raw: &str,
     through_raw: Option<&str>,
     now: DateTime<Utc>,
     zone: Tz,
+    json: bool,
 ) -> CliRun {
     let Some(start) = parse_day(journal, start_raw) else {
         return failure("expected day in YYYYMMDD format");
@@ -579,6 +592,7 @@ fn owed_report(
     let today = now.with_timezone(&zone).date_naive();
     let through = through.min(today - chrono::Duration::days(1));
     let mut lines = Vec::new();
+    let mut json_days = Vec::new();
     let mut causes = std::collections::BTreeMap::<String, usize>::new();
     let (mut owed, mut days, mut unreadable) = (0usize, 0usize, 0usize);
     let mut current = start;
@@ -588,7 +602,34 @@ fn owed_report(
         if !day_path(journal, &day, false).is_ok_and(|path| path.is_dir()) {
             continue;
         }
-        match solstone_core_system::daily_coverage::read_daily_coverage(journal, &day) {
+        let coverage = solstone_core_system::daily_coverage::read_daily_coverage(journal, &day);
+        if json {
+            let markers = match solstone_core_journal_io::day_marker_pair_status(journal, &day) {
+                Ok(status) if status.is_complete() => "complete",
+                Ok(_) => "dirty",
+                Err(_) => "unreadable",
+            };
+            json_days.push(match &coverage {
+                Ok(coverage) => {
+                    let mut owed_by = std::collections::BTreeMap::<String, usize>::new();
+                    for unit in coverage.units.iter().filter(|unit| unit.state.is_owed()) {
+                        *owed_by
+                            .entry(unit.owed_by.clone().unwrap_or_else(|| "unknown".to_owned()))
+                            .or_default() += 1;
+                    }
+                    json!({
+                        "day": day,
+                        "markers": markers,
+                        "coverage": coverage.state,
+                        "units": coverage.units.len(),
+                        "owed": owed_by.values().sum::<usize>(),
+                        "owed_by": owed_by,
+                    })
+                }
+                Err(_) => json!({"day": day, "markers": markers, "coverage": "unreadable"}),
+            });
+        }
+        match coverage {
             Ok(coverage) => {
                 let mut counted = false;
                 for unit in coverage.units.iter().filter(|unit| unit.state.is_owed()) {
@@ -615,6 +656,18 @@ fn owed_report(
         .map(|(cause, count)| format!("{count} {cause}"))
         .collect::<Vec<_>>()
         .join(", ");
+    if json {
+        return success(
+            json!({
+                "days": json_days,
+                "owed": owed,
+                "owed_days": days,
+                "unreadable_days": unreadable,
+            })
+            .to_string()
+                + "\n",
+        );
+    }
     lines.push(format!(
         "{owed} owed output(s) on {days} past day(s){}; {unreadable} unreadable day(s)",
         if summary.is_empty() {
@@ -743,8 +796,8 @@ mod tests {
     use super::*;
 
     const DAY: &str = "20260101";
-    const HELP: &str = "usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [-v] [-d]\n                         day\n\nSubmit a past journal day for reprocessing\n\npositional arguments:\n  day                Past day in YYYYMMDD format\n\noptions:\n  -h, --help         show this help message and exit\n  --through THROUGH  Inclusive range end in YYYYMMDD format\n  --yes\n  --unit UNIT        Reset one failed daily unit for the next eligible run\n  --facet FACET      Facet of that unit; required when the unit has a facet\n  --from-scratch     Force a full daily re-run, preserving markers (does not\n                     flag the day as updated)\n  --mark-updated     Flag the day as having new raw data so daily processing\n                     re-queues it, then nudge a drain\n  --owed             List the daily outputs owed on the day or range and why,\n                     without submitting anything\n  -v, --verbose      Enable verbose output\n  -d, --debug        Enable debug logging\n";
-    const MISSING_DAY_STDERR: &str = "usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [-v] [-d]\n                         day\nsolstone journal reprocess: error: the following arguments are required: day\n";
+    const HELP: &str = "usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [--json] [-v] [-d]\n                         day\n\nSubmit a past journal day for reprocessing\n\npositional arguments:\n  day                Past day in YYYYMMDD format\n\noptions:\n  -h, --help         show this help message and exit\n  --through THROUGH  Inclusive range end in YYYYMMDD format\n  --yes\n  --unit UNIT        Reset one failed daily unit for the next eligible run\n  --facet FACET      Facet of that unit; required when the unit has a facet\n  --from-scratch     Force a full daily re-run, preserving markers (does not\n                     flag the day as updated)\n  --mark-updated     Flag the day as having new raw data so daily processing\n                     re-queues it, then nudge a drain\n  --owed             List the daily outputs owed on the day or range and why,\n                     without submitting anything\n  --json             With --owed, report each day as states and counts: its\n                     markers, its coverage, how many daily outputs it has and\n                     how many are owed, by cause\n  -v, --verbose      Enable verbose output\n  -d, --debug        Enable debug logging\n";
+    const MISSING_DAY_STDERR: &str = "usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [--json] [-v] [-d]\n                         day\nsolstone journal reprocess: error: the following arguments are required: day\n";
 
     fn words(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -1060,6 +1113,58 @@ mod tests {
             )),
             "{summary}"
         );
+    }
+
+    #[test]
+    fn owed_json_reports_each_day_as_states_and_counts() {
+        let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "{}\n",
+        )
+        .unwrap();
+        solstone_core_system::daily_coverage::register_daily_day(root.path(), DAY, now()).unwrap();
+        let result = run_cli_with(
+            &words(&[DAY, "--owed", "--json"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| panic!("--owed submits nothing"),
+        );
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        let report: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
+        let day = &report["days"][0];
+        assert_eq!(day["day"], DAY);
+        assert_eq!(day["coverage"], "outstanding");
+        let owed = day["owed"].as_u64().unwrap();
+        assert!(owed > 0 && owed == day["units"].as_u64().unwrap());
+        assert_eq!(day["owed_by"], json!({"never_made": owed}));
+        assert_eq!(report["owed"], owed);
+        assert_eq!(report["unreadable_days"], 0);
+        // States and counts only: no unit, facet or path reaches the report.
+        let keys = |value: &serde_json::Value| {
+            value
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            keys(day),
+            ["day", "markers", "coverage", "units", "owed", "owed_by"]
+        );
+
+        let refused = run_cli_with(
+            &words(&[DAY, "--json"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| true,
+        );
+        assert_eq!(refused.exit_code, 2);
+        assert!(refused.stderr.contains("argument --json: requires --owed"));
     }
 
     #[test]

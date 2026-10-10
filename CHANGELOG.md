@@ -6,14 +6,23 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `solstone journal reprocess FIRST --through LAST --owed --json` reports, for each day in the range, whether the day is marked finished, the state of its daily results, how many there are, and how many are owed and why.
+
 ### Changed
 
 - older solstone apps must update to keep syncing with your journal. minimum versions: tmux 2.0.6, linux 2.0.7, macos 2.0.15, windows 2.0.10, android 2.1.9, and ios 2.0.5 (build 107).
 - when you import a text or markdown transcript and the journal can't find turn times in it, the import now says so, both in the command's output and on the import's page, with a link to ask us to support how your transcript marks times. the file still lands as one segment at the import's start time, each line as written.
+- after midnight, your journal now waits at least ten minutes, and up to an hour, for what's still coming in from the day that just ended before it makes that day's daily results and your morning briefing. when something was still coming in at midnight, it used to start on the day straight away and make part of it again ten to fifteen minutes later.
+- your morning briefing now stays as it was from noon on the morning it's for. until noon, something that arrives late for the day before, such as audio from your watch, can still change it. before, that could happen until midnight. to have it written again, run `solstone journal reprocess DAY --from-scratch` for the day before that morning. it redoes that whole day.
+- `solstone journal doctor --json` and `solstone journal doctor --verbose` now list which days are still being processed, which are stuck and which it couldn't check, not only how many.
 
 ### Fixed
 
 - the health page now shows which source on a device had uploads turned away, even when another source is still adding material. after a successful check, if device status can't be checked again, it keeps that last result and shows when it was checked.
+- a week your journal makes after you've deleted every segment of a conversation now leaves that conversation's words out of "said by you". before, they could still appear there.
+- `solstone call health pipeline --day DAY` now says when it couldn't read a day's processing record, as `scan_failed` with a reason. before, on a day with a very large record, it said the day's recordings hadn't been processed.
 - on the entities page, when your journal refuses something you asked for, such as a merge or a restore, it now says why, for example that one side of a merge is blocked. before, it often said only "Entity request refused".
 - when your journal can't use what the model wrote for an activity's story, such as a story with nothing in it, the health page now says so. the activity is still left without a story; before, nothing said so.
 

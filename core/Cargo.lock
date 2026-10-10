@@ -5695,6 +5695,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-npy",
  "solstone-core-profile-web",
+ "solstone-core-segment",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
