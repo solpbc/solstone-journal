@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- your journal no longer makes separate lists of decisions or commitments, counts them in profiles, or lets you mark them complete. your morning briefing no longer tells you what you owe or what you're waiting on. activities still describe what happened and who did it, and your weekly page still includes quotations from audio in which your voice is recognized. existing records stay as written.
 - older solstone apps must update to keep syncing with your journal. minimum versions: tmux 2.0.6, linux 2.0.7, macos 2.0.15, windows 2.0.10, android 2.1.9, and ios 2.0.5 (build 107).
 - when you import a text or markdown transcript and the journal can't find turn times in it, the import now says so, both in the command's output and on the import's page, with a link to ask us to support how your transcript marks times. the file still lands as one segment at the import's start time, each line as written.
 - after midnight, your journal now waits at least ten minutes, and up to an hour, for what's still coming in from the day that just ended before it makes that day's daily results and your morning briefing. when something was still coming in at midnight, it used to start on the day straight away and make part of it again ten to fifteen minutes later.
@@ -24,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `solstone call health pipeline --day DAY` now says when it couldn't read a day's processing record, as `scan_failed` with a reason. before, on a day with a very large record, it said the day's recordings hadn't been processed.
 - on the entities page, when your journal refuses something you asked for, such as a merge or a restore, it now says why, for example that one side of a merge is blocked. before, it often said only "Entity request refused".
 - when your journal can't use what the model wrote for an activity's story, such as a story with nothing in it, the health page now says so. the activity is still left without a story; before, nothing said so.
+- the description of what was on your screen during a segment now shows in your search as soon as that segment is processed. before, it waited for the journal's daily search update, so the health page said search was catching up all day.
 
 ## [2.0.40] - 2026-10-10
 

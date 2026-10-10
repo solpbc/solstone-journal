@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use solstone_core_entities::{ATTENDANCE_KINDS, ENTITIES_COPY, compose_connections_horizon_note};
 use solstone_core_facets::ConnectionsHorizon;
 
-const CONNECTION_KIND_KEYS: [&str; 15] = [
+const CONNECTION_KIND_KEYS: [&str; 13] = [
     "works-with",
     "works-at",
     "reports-to",
@@ -15,8 +15,6 @@ const CONNECTION_KIND_KEYS: [&str; 15] = [
     "knows",
     "uses",
     "created",
-    "decided-with",
-    "committed-to",
     "spoke-with",
     "mentioned",
     "messaged-with",
@@ -335,7 +333,7 @@ mod tests {
             json!(["attended-with", "co-present", "scheduled-with"])
         );
         assert!(card["kind_words"].get("attended-with").is_none());
-        assert_eq!(card["kind_words"]["committed-to"], "commitments");
+        assert!(card["kind_words"].get("committed-to").is_none());
         assert_eq!(card["kind_words"]["mentioned"], "mentions");
         assert_eq!(
             card["neighbors"][0]["kinds"],
@@ -374,7 +372,7 @@ mod tests {
         );
         assert_eq!(kinds["neighbors"][0]["kinds"], json!([]));
         assert_eq!(kinds.as_object().unwrap().len(), 5);
-        assert_eq!(kinds["kind_words"].as_object().unwrap().len(), 15);
+        assert_eq!(kinds["kind_words"].as_object().unwrap().len(), 13);
     }
 
     fn ok_network() -> Value {

@@ -79,7 +79,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::Search,
         wire_name: "search",
-        description: "Search what this connection may see of the owner's journal: summaries of days and conversations, activities with the commitments and decisions saved in them, and notes about people and projects. Use a few keywords such as names or topics, not a sentence. To list what someone promised, search `commitment` with day_from and day_to, then fetch the entries: each promise is a `Saved commitment` line with who made it, the action, and a due date when there is one. Days are YYYYMMDD or YYYY-MM-DD. Raw transcripts are not searched; use list_transcripts. When nothing matches, say so rather than guessing.",
+        description: "Search what this connection may see of the owner's journal: summaries of days and conversations, activities, and notes about people and projects. Use a few keywords such as names or topics, not a sentence. Days are YYYYMMDD or YYYY-MM-DD. Raw transcripts are not searched; use list_transcripts and get_transcript for what was said. Read source context to answer questions about promises or decisions; a summary alone does not establish whether something happened. When nothing matches, say so rather than guessing.",
         input_schema: search_input_schema,
         requires: TRANSCRIPTS,
         audit_name: solstone_core_mcp_audit::ToolName::Search,

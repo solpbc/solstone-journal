@@ -18,7 +18,6 @@ use solstone_core_indexer::edges::KINDS;
 
 // Rust-owned weights retained from the retired Python implementation.
 const KIND_WEIGHTS: &[(&str, f64)] = &[
-    ("committed-to", 5.0),
     ("works-with", 4.0),
     ("works-at", 4.0),
     ("reports-to", 4.0),
@@ -27,7 +26,6 @@ const KIND_WEIGHTS: &[(&str, f64)] = &[
     ("uses", 4.0),
     ("created", 4.0),
     ("other", 4.0),
-    ("decided-with", 4.0),
     ("spoke-with", 4.0),
     ("mentioned", 3.0),
     ("attended-with", 3.0),
@@ -518,6 +516,9 @@ pub fn load_entity_network(
         {
             return Ok(());
         }
+        if row.kind == "committed-to" || row.kind == "decided-with" {
+            return Ok(());
+        }
         let weighted = kind_weight(&row.kind, row.weight_sum, row.day.as_deref(), reference)?;
         let neighbor = in_flight.get_or_insert_with(|| NetworkNeighbor {
             entity_id: row.peer.clone(),
@@ -740,6 +741,9 @@ pub fn load_network_overview(
     let rows = subtract_rows(rows, by_endpoint);
     let mut entities = BTreeMap::<String, OverviewEntity>::new();
     for row in fold_overview_rows(aliases, rows) {
+        if row.kind == "committed-to" || row.kind == "decided-with" {
+            continue;
+        }
         let entity = entities
             .entry(row.entity_id.clone())
             .or_insert_with(|| OverviewEntity {
@@ -1371,6 +1375,9 @@ fn accumulate_kind(
     day: Option<&str>,
     reference: NaiveDate,
 ) -> Result<(), EdgeQueryError> {
+    if kind == "committed-to" || kind == "decided-with" {
+        return Ok(());
+    }
     let weighted = kind_weight(kind, weight_sum, day, reference)?;
     let entry = target.entry(kind.to_string()).or_insert(KindSummary {
         count: 0,

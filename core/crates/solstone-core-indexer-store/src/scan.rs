@@ -206,14 +206,12 @@ pub fn attempt_saved_publication(
             };
         }
     };
-    let is_admitted = solstone_core_format::content::resolve_spec(&rel).is_some_and(|spec| {
-        matches!(
-            spec.disposition,
-            solstone_core_format::content::IndexDisposition::Admitted { .. }
-        )
-    });
+    // Any indexed content family counts, whatever its disposition. The
+    // disposition decides what a connection may read, not whether search holds
+    // the file: a per-segment summary is indexed, just not shared with agents.
+    let is_indexed = solstone_core_format::content::resolve_spec(&rel).is_some();
 
-    if edge_source.is_some() || is_admitted {
+    if edge_source.is_some() || is_indexed {
         match rescan(journal, &path) {
             Ok(RescanFileStatus::Indexed { warnings }) => SavedPublicationAttempt {
                 path: rel,
@@ -6860,14 +6858,15 @@ not json
         assert_eq!(attempt.path, "20260101/stream/120000_60/talents/note.md");
         assert!(!attempt.path.starts_with("chronicle/"));
 
-        // 2. sense.json returns Excluded and does not call closure
+        // 2. sense.json is indexed content even though agents never read it,
+        // so a saved summary is indexed at publication
         let mut called = false;
         let attempt = attempt_saved_publication(&root, &sense_path, |_j, _p| {
             called = true;
             Ok(RescanFileStatus::Indexed { warnings: vec![] })
         });
-        assert!(!called);
-        assert_eq!(attempt.outcome, SavedPublicationOutcome::Excluded);
+        assert!(called);
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Indexed);
         assert_eq!(attempt.path, "20260101/stream/120000_60/talents/sense.json");
         assert!(!attempt.path.starts_with("chronicle/"));
 
@@ -6900,6 +6899,36 @@ not json
         assert_eq!(attempt.path, "20260101/stream/120000_60/talents/note.md");
 
         fs::remove_dir_all(root).expect("cleanup test root");
+    }
+
+    #[test]
+    fn a_saved_segment_summary_is_searchable_at_publication() {
+        // Before the nightly scan: a summary saved by segment processing is in
+        // search as soon as it is published.
+        let root = temp_root("summary-at-publication");
+        let rel = "chronicle/20260717/default/090000_300/talents/sense.json";
+        write(
+            &root,
+            rel,
+            r#"{"content_type":"meeting","activity_summary":"Reviewed the quarterly kestrel launch.","entities":[]}"#,
+        );
+        let attempt = attempt_saved_publication(&root, &root.join(rel), |journal, path| {
+            rescan_file(journal, path).map_err(|error| error.to_string())
+        });
+        assert_eq!(attempt.outcome, SavedPublicationOutcome::Indexed);
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        assert!(chunk_contents_contain(&conn, "kestrel"));
+        // Searchable by the owner, still not by a connection.
+        let eligible: i64 = conn
+            .query_row(
+                "SELECT eligible FROM chunk_classification WHERE path=?",
+                ["20260717/default/090000_300/talents/sense.json"],
+                |row| row.get(0),
+            )
+            .expect("classification row");
+        assert_eq!(eligible, 0);
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup summary root");
     }
 
     fn chunk_contents_contain(conn: &Connection, needle: &str) -> bool {

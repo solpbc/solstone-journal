@@ -584,7 +584,7 @@ mod tests {
                 let plan = if hook == "story" {
                     crate::story::commit(
                         ParsedOutput::Json(json!({"body":"updated", "topics":[], "confidence":1,
-                        "commitments":[], "closures":[], "decisions":[], "relations":[]})),
+                        "relations":[]})),
                         &prepared,
                         &state,
                     )
@@ -1027,7 +1027,7 @@ mod tests {
                 record_id: "activity-1".to_owned(),
                 value: json!({
                     "body":"body", "topics":[], "confidence":1,
-                    "commitments":[], "closures":[], "decisions":[], "relations":[]
+                    "relations":[]
                 }),
             }),
             &ExecutionContext {

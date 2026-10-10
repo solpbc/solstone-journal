@@ -1532,16 +1532,15 @@ mod tests {
     }
 
     #[test]
-    fn production_policy_admits_qualified_overlap_quotes_and_rejects_mutations() {
+    fn production_policy_admits_qualified_sealed_quotes_and_rejects_mutations() {
         use crate::nvgpu::{GpuProfiles, StatusMode};
 
         let policy = crate::pins::production_policy();
         assert_eq!(policy.pcr_mode, PcrMode::Pin);
         let profiles = GpuProfiles::production();
-        // Captured quote-PCR bytes, covering the current engine and both
-        // reboot-qualified firmware states of the sealed appliance.
+        // Captured quote-PCR bytes for both reboot-qualified firmware states
+        // of the sealed appliance.
         for (fixture, status) in [
-            ("quote.pcrs", StatusMode::OnlineNonce),
             ("sealed-pre-roll-quote.pcrs", StatusMode::OfflineSignedAge),
             ("sealed-post-roll-quote.pcrs", StatusMode::OfflineSignedAge),
         ] {

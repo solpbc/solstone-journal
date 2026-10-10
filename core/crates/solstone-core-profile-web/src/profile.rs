@@ -5,11 +5,10 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Duration, FixedOffset, Utc};
+use chrono::{DateTime, FixedOffset};
 
 use crate::cadence::{compute_cadence, list_active_entity_ids};
 use crate::error::ProfileResult;
-use crate::ledger_fold::{DecisionQuery, LedgerListQuery, LedgerState, decisions, list};
 use crate::relationships::{
     description_for, detached_facets, load_facet_descriptions, selected_facets,
 };
@@ -29,34 +28,6 @@ pub(crate) fn full(
     let descriptions = load_facet_descriptions(journal_root, &target)?;
     let (cadence, sources) =
         compute_cadence(journal_root, &target.entity_id, include_mentions, now)?;
-    let mut open_with_them = list(
-        journal_root,
-        now.with_timezone(&Utc),
-        ledger_query(LedgerState::Open, &target.entity_id, None),
-    )?;
-    said_by_you_first(&mut open_with_them, |item| item.owner_evidence.as_deref());
-    let closed_with_them_30d = list(
-        journal_root,
-        now.with_timezone(&Utc),
-        ledger_query(
-            LedgerState::Closed,
-            &target.entity_id,
-            Some(day_minus(now, 30)),
-        ),
-    )?;
-    let mut decisions_involving_them = decisions(
-        journal_root,
-        DecisionQuery {
-            owner: None,
-            involving: Some(target.entity_id.clone()),
-            since: None,
-            top: None,
-            facets: None,
-        },
-    )?;
-    said_by_you_first(&mut decisions_involving_them, |decision| {
-        decision.owner_evidence.as_deref()
-    });
 
     Ok(Some(Profile {
         entity_id: target.entity_id,
@@ -69,9 +40,6 @@ pub(crate) fn full(
         detached_facets: detached_facets(&descriptions),
         description: description_for(&descriptions, facets),
         cadence,
-        open_with_them,
-        closed_with_them_30d,
-        decisions_involving_them,
         sources,
         generated_at: now.timestamp_millis(),
     }))
@@ -87,23 +55,6 @@ pub(crate) fn brief(
     };
     let descriptions = load_facet_descriptions(journal_root, &target)?;
     let (cadence, _) = compute_cadence(journal_root, &target.entity_id, false, now)?;
-    let open_loop_count = list(
-        journal_root,
-        now.with_timezone(&Utc),
-        ledger_query(LedgerState::Open, &target.entity_id, None),
-    )?
-    .len();
-    let decisions_count_30d = decisions(
-        journal_root,
-        DecisionQuery {
-            owner: None,
-            involving: Some(target.entity_id.clone()),
-            since: Some(day_minus(now, 30)),
-            top: None,
-            facets: None,
-        },
-    )?
-    .len();
 
     Ok(Some(ProfileBrief {
         entity_id: target.entity_id,
@@ -112,8 +63,6 @@ pub(crate) fn brief(
         blocked: target.blocked,
         description: description_for(&descriptions, None),
         last_seen: cadence.last_seen,
-        open_loop_count,
-        decisions_count_30d,
     }))
 }
 
@@ -136,35 +85,4 @@ pub(crate) fn list_active(
     now: DateTime<FixedOffset>,
 ) -> ProfileResult<Vec<String>> {
     list_active_entity_ids(journal_root, window_days, now)
-}
-
-fn ledger_query(
-    state: LedgerState,
-    counterparty: &str,
-    closed_since: Option<String>,
-) -> LedgerListQuery {
-    LedgerListQuery {
-        state,
-        owner: None,
-        counterparty: Some(counterparty.to_owned()),
-        age_days_gte: None,
-        closed_since,
-        top: None,
-        sort: None,
-        facets: None,
-    }
-}
-
-/// What the owner said, by their recognized voice, comes first; the order is
-/// otherwise kept. A missing mark means no voice evidence, not someone else's,
-/// so nothing is dropped or reordered among the unmarked. Closed items keep
-/// their recency order and are not passed through here.
-fn said_by_you_first<T>(items: &mut [T], evidence: impl Fn(&T) -> Option<&str>) {
-    items.sort_by_key(|item| evidence(item) != Some("voice"));
-}
-
-fn day_minus(now: DateTime<FixedOffset>, days: i64) -> String {
-    (now.date_naive() - Duration::days(days))
-        .format("%Y%m%d")
-        .to_string()
 }

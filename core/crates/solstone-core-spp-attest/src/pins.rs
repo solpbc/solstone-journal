@@ -10,14 +10,11 @@ use crate::{
     snp::{PcrMode, Policy},
 };
 
-// The overlap engine's fingerprint was captured live on 2026-07-24 and matched
-// across two fresh RA-TLS sessions. It stays pinned, but its quote predates the
-// published register record, so production_policy refuses it at the register
-// appraisal. The sealed image's two fingerprints were qualified
-// on 2026-10-06, one per Azure firmware state, with reboot-identical quotes.
+// The sealed image's two fingerprints were qualified on 2026-10-06, one per
+// Azure firmware state, with reboot-identical quotes. The overlap engine was
+// retired on 2026-10-09 and its fingerprint is no longer admitted.
 // Each pin's authenticated manifests and status mode live in nvgpu/rims.rs.
 pub const PRODUCTION_PCR_SHA256_PINS: &[&str] = &[
-    "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3",
     "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
     "0486d5a350467cfa28dea41076659debee9c2fea8c6423828efb53270cbb4641",
 ];
@@ -82,8 +79,7 @@ pub fn published_application_pcr_policy() -> ApplicationPcrPolicy {
 /// Returns the pinned production policy with all other policy defaults intact.
 ///
 /// A quote must match a fingerprint pin and, register by register, the
-/// published build. The overlap engine's quote predates the published record,
-/// so this policy refuses it and the address walk moves to the next engine.
+/// published build.
 pub fn production_policy() -> Policy {
     Policy {
         pcr_mode: PcrMode::Pin,
@@ -195,10 +191,10 @@ mod tests {
             .application_pcrs
             .as_ref()
             .expect("production appraises registers");
-        // The overlap engine's quote is fingerprint-pinned but carries ten
-        // registers, not the published fourteen.
+        // The retired engine's quote carries ten registers, not the published
+        // fourteen. Both admission layers refuse it independently.
         let overlap = fixture_bytes("quote.pcrs");
-        assert!(check_pcr_fingerprint(&overlap, &policy).is_ok());
+        assert!(check_pcr_fingerprint(&overlap, &policy).is_err());
         let error = check_application_pcrs(&overlap, application).expect_err("refused");
         assert_eq!(
             error,

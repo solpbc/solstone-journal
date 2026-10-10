@@ -21,12 +21,7 @@ use solstone_core_facets::DestinationObservation;
 use solstone_core_journal_io::SegmentLayout;
 
 /// The actor fields a Story item names, each with its resolved id field.
-const ACTOR_FIELDS: [(&str, &str); 4] = [
-    ("owner", "owner_entity_id"),
-    ("counterparty", "counterparty_entity_id"),
-    ("from", "from_entity_id"),
-    ("to", "to_entity_id"),
-];
+const ACTOR_FIELDS: [(&str, &str); 2] = [("from", "from_entity_id"), ("to", "to_entity_id")];
 
 /// One segment whose speaker labels a naming or correction changed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -285,8 +280,8 @@ fn record_patch(
     };
     let mut patch = Map::new();
     let mut count = 0;
-    for (key, value) in record {
-        let Value::Array(items) = value else {
+    for key in ["participation", "relations"] {
+        let Some(Value::Array(items)) = record.get(key) else {
             continue;
         };
         let fields: &[(&str, &str)] = if key == "participation" {
@@ -327,7 +322,7 @@ fn record_patch(
             })
             .collect();
         if changed {
-            patch.insert(key.clone(), Value::Array(items));
+            patch.insert(key.to_string(), Value::Array(items));
         }
     }
     (!patch.is_empty()).then(|| (record_id.to_owned(), patch, count))
@@ -396,7 +391,7 @@ mod tests {
                     {"name":"Bob","role":"mentioned","source":"transcript","entity_id":null},
                     {"name":"Cara","role":"mentioned","source":"transcript","entity_id":null}
                 ],
-                "commitments":[{"owner":"Speaker 2","owner_entity_id":null,"counterparty":"you","counterparty_entity_id":"owner"}]
+                "relations":[{"from":"Speaker 2","from_entity_id":null,"to":"you","to_entity_id":"owner","kind":"works-with","note":""}]
             }).to_string() + "\n",
         );
         // Speaker 2 is Bob in both segments. Speaker 1 is Bob in one and Cara
@@ -448,9 +443,13 @@ mod tests {
         assert_eq!(people[3]["entity_id"], "bob");
         // Someone the naming did not name keeps the hook's resolution.
         assert!(people[4]["entity_id"].is_null());
-        assert_eq!(record["commitments"][0]["owner"], "Bob");
-        assert_eq!(record["commitments"][0]["owner_entity_id"], "bob");
-        assert_eq!(record["commitments"][0]["counterparty_entity_id"], "owner");
+        assert_eq!(record["relations"][0]["from"], "Bob");
+        assert_eq!(record["relations"][0]["from_entity_id"], "bob");
+        assert_eq!(record["relations"][0]["to_entity_id"], "owner");
+        assert_eq!(
+            record["edits"].as_array().unwrap().last().unwrap()["actor"],
+            "speaker_identify"
+        );
         assert_eq!(resolved, 3);
         // Nothing is left to resolve a second time.
         assert_eq!(

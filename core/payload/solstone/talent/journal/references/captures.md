@@ -302,6 +302,6 @@ Each template is a `.md` file with JSON frontmatter containing metadata (title, 
 - System outputs: `talents/{agent}.md` or `talents/{agent}.json`, depending on declared `output`
 - App outputs: `talents/_{app}_{agent}.md` or `talents/_{app}_{agent}.json`, depending on declared `output`
 - JSON outputs are rendered to text through the formatter registry
-- Story fields (`story`, `commitments`, `closures`, `decisions`) live on the activity record in `facets/{facet}/activities/{day}.jsonl`
+- Story fields (`story`, `relations`) live on the activity record in `facets/{facet}/activities/{day}.jsonl`
 
 Each generator type has a corresponding template file (`{name}.md`) that defines how the AI synthesizes extracts into narrative form.

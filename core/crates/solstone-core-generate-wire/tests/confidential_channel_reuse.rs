@@ -2726,12 +2726,13 @@ impl CompositeVerifier for InstalledPackageAttestingVerifier {
             .collect::<Vec<_>>();
         let owner_nonce: [u8; 32] = bytes.try_into().expect("32-byte nonce");
 
-        let profiles = solstone_core_spp_attest::nvgpu::GpuProfiles::production();
-        let profile = profiles
-            .select(solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS[0])
-            .expect("production profile");
+        let profile = solstone_core_spp_attest::nvgpu::GpuProfile::new(
+            "11".repeat(32),
+            solstone_core_spp_attest::nvgpu::ManifestSet::QUALIFIED_595_71_05,
+            solstone_core_spp_attest::nvgpu::StatusMode::OnlineNonce,
+        );
         let status = solstone_core_spp_attest::nvgpu::GpuStatusInput {
-            profile,
+            profile: &profile,
             proofs: None,
             verification_time: SystemTime::now(),
         };

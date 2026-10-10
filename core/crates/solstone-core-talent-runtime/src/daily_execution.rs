@@ -221,29 +221,8 @@ pub(crate) fn execute(
                 format!("unsupported talent type: {talent_type}"),
             ));
         }
-        match crate::generate_response(
-            &mut prepared,
-            context,
-            generate,
-            writer,
-            stage.as_ref().map(|(_, state)| state),
-        ) {
-            Ok((response, usage, degraded)) => match stage.as_ref() {
-                // A scheduled briefing renders its open loops before the result is
-                // retained, so the checked, retained and saved bytes are the same.
-                Some((spec, state)) if spec.stage == crate::contract::StageId::MorningBriefing => {
-                    match crate::morning_briefing::preserve_open_loops(&response, &prepared, state)
-                    {
-                        Ok(output) => (output, usage, degraded),
-                        Err(mut error) => {
-                            error.usage = usage;
-                            error.degraded = degraded;
-                            return RuntimeOutcome::StageFailed(error);
-                        }
-                    }
-                }
-                _ => (response, usage, degraded),
-            },
+        match crate::generate_response(&mut prepared, context, generate, writer) {
+            Ok((response, usage, degraded)) => (response, usage, degraded),
             Err(outcome) => return outcome,
         }
     };

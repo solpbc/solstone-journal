@@ -66,7 +66,7 @@ fn chunk_text_contains(journal: &Path, rel_path: &str, substring: &str) -> bool 
 }
 
 #[test]
-fn actual_results_with_entities_indexes_activity_and_sense_md_and_excludes_sense_json() {
+fn actual_results_with_entities_indexes_activity_sense_md_and_sense_json() {
     let (_journal, context) = fixture_journal();
     solstone_core_facets::create_facet(context.journal.as_path(), "work", "Work", "", "", "", None)
         .unwrap();
@@ -121,7 +121,8 @@ fn actual_results_with_entities_indexes_activity_and_sense_md_and_excludes_sense
         "Alice Developer"
     ));
 
-    // 3. sense.json attempt is excluded and not a search hit / chunk
+    // 3. sense.json is indexed content (agents never read it), so its
+    // attempt indexes it at publication rather than waiting for the next scan
     let records = oplog_records(&context.journal, DAY, "segment");
     let sense_json_attempts: Vec<_> = records
         .iter()
@@ -134,10 +135,10 @@ fn actual_results_with_entities_indexes_activity_and_sense_md_and_excludes_sense
         .collect();
     assert!(!sense_json_attempts.is_empty());
     for attempt in sense_json_attempts {
-        assert_eq!(attempt["outcome"], "excluded");
+        assert_eq!(attempt["outcome"], "indexed");
     }
     let rel_sense_json = "20260813/default/120000_60/talents/sense.json";
-    assert!(!chunk_text_contains(
+    assert!(chunk_text_contains(
         &context.journal,
         rel_sense_json,
         "Sprint planning"

@@ -89,15 +89,10 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
 const READ_LIMITS: [usize; 2] = [16 * 1024, 64 * 1024];
 const OMITTED: &str = "\n\nNot everything saved with this activity fit in this entry. The full activity record has all of it.";
 const PARTIAL: &str = "\n\nThis story, and anything saved with it, was written from part of the activity, not all of it.";
-const STORED_ARRAYS: [(&str, &str); 4] = [
-    ("commitments", "Saved commitment"),
-    ("closures", "Saved closure"),
-    ("decisions", "Saved decision"),
-    ("relations", "Saved relation"),
-];
+const STORED_ARRAYS: [(&str, &str); 1] = [("relations", "Saved relation")];
 
-/// Append a record's saved commitments, closures, decisions and relations, and
-/// whether its story saw only part of its input, after the rendered text.
+/// Append a record's saved relations, and whether its story saw only part of
+/// its input, after the rendered text.
 ///
 /// The rendered text is never shortened: search over it must keep matching
 /// what it matched before. Only additions are bounded, by the smallest read
@@ -304,9 +299,7 @@ mod tests {
     /// adds were read, so removing them reproduces it.
     fn legacy(record: &JsonObject) -> String {
         let mut record = record.clone();
-        for key in ["commitments", "closures", "decisions", "relations"] {
-            record.remove(key);
-        }
+        record.remove("relations");
         if let Some(Value::Object(story)) = record.get_mut("story") {
             story.remove("partial_input");
         }
@@ -334,9 +327,6 @@ mod tests {
             "source_refs": [{"path": "20260918/audio.jsonl", "line": 4}],
             "custom": {"kept": true},
             "story": {"body": "  Aligned on the launch.  ", "topics": ["launch"]},
-            "commitments": [{"owner": "Mina", "action": "send the notes", "context": "café  résumé"}],
-            "closures": [{"action": "closed the draft"}],
-            "decisions": ["ship Monday"],
             "relations": [{"from_entity_id": "mina", "to_entity_id": "pat", "role": "peer"}],
         }));
         let produced = render(None, std::slice::from_ref(&record));
@@ -346,10 +336,7 @@ mod tests {
         assert!(chunk.content.starts_with(&old));
         assert_eq!(
             &chunk.content[old.len()..],
-            "\n\nSaved commitment: {\"owner\":\"Mina\",\"action\":\"send the notes\",\"context\":\"café  résumé\"}\
-             \n\nSaved closure: {\"action\":\"closed the draft\"}\
-             \n\nSaved decision: \"ship Monday\"\
-             \n\nSaved relation: {\"from_entity_id\":\"mina\",\"to_entity_id\":\"pat\",\"role\":\"peer\"}"
+            "\n\nSaved relation: {\"from_entity_id\":\"mina\",\"to_entity_id\":\"pat\",\"role\":\"peer\"}"
         );
         assert_eq!(chunk.source.as_ref(), Some(&normalize_record(&record)));
         assert_eq!(
@@ -360,22 +347,22 @@ mod tests {
 
     #[test]
     fn an_entry_too_big_to_add_is_skipped_and_later_ones_still_fit() {
-        let mut decisions = vec![json!({"action": "huge", "context": "y".repeat(20_000)})];
-        decisions.extend((0..24).map(|index| json!({"action": format!("small {index}")})));
-        let record = object(json!({"title": "Review", "decisions": decisions}));
+        let mut relations = vec![json!({"role": "huge", "context": "y".repeat(20_000)})];
+        relations.extend((0..24).map(|index| json!({"role": format!("small {index}")})));
+        let record = object(json!({"title": "Review", "relations": relations}));
         let text = rendered(&record);
         assert!(text.starts_with(&legacy(&record)));
         assert!(text.len() <= 16 * 1024);
         assert!(!text.contains("huge"));
         for index in 0..24 {
-            assert!(text.contains(&format!("{{\"action\":\"small {index}\"}}")));
+            assert!(text.contains(&format!("{{\"role\":\"small {index}\"}}")));
         }
         assert!(text.ends_with(OMITTED));
     }
 
     #[test]
     fn rendering_without_room_for_the_notice_is_returned_exactly() {
-        let record = object(json!({"title": "Review", "decisions": ["a"]}));
+        let record = object(json!({"title": "Review", "relations": ["a"]}));
         for bytes in [
             16 * 1024 - OMITTED.len() + 1,
             16 * 1024,
@@ -391,10 +378,10 @@ mod tests {
 
     #[test]
     fn additions_stay_under_the_smallest_limit_the_rendering_fits() {
-        let decisions: Vec<Value> = (0..40)
-            .map(|index| json!({"action": format!("{index} {}", "z".repeat(2_000))}))
+        let relations: Vec<Value> = (0..40)
+            .map(|index| json!({"role": format!("{index} {}", "z".repeat(2_000))}))
             .collect();
-        let record = object(json!({"title": "Review", "decisions": decisions}));
+        let record = object(json!({"title": "Review", "relations": relations}));
         for (bytes, limit) in [
             (16 * 1024 - OMITTED.len() - 200, 16 * 1024),
             (16 * 1024 + 1, 64 * 1024),
@@ -438,7 +425,7 @@ mod tests {
 
     #[test]
     fn a_partial_story_without_room_for_its_note_keeps_the_exact_rendering() {
-        let record = object(json!({"title": "Chat", "decisions": ["a"]}));
+        let record = object(json!({"title": "Chat", "relations": ["a"]}));
         let record = sized(record, 16 * 1024 - OMITTED.len() - PARTIAL.len() + 1);
         let mut partial = record.clone();
         partial.insert(

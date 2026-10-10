@@ -12,7 +12,6 @@ use axum::{
 };
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use solstone_core_convey_shell::router;
 use tower::ServiceExt;
 
@@ -121,12 +120,6 @@ fn day_ago(days: i64) -> String {
 
 fn timestamp_ago(days: i64) -> i64 {
     (Utc::now() - Duration::days(days)).timestamp_millis()
-}
-
-fn folded_id(parts: &[&str]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(parts.join("|"));
-    format!("{:x}", digest.finalize())[..16].to_owned()
 }
 
 fn attendee(id: &str, created_at: i64, entity_id: &str) -> Value {
@@ -364,7 +357,6 @@ async fn rich_full_brief_cadence_and_active_responses_match_complete_json() {
             "blocked":false,
             "facets":["math","work"],"detached_facets":[],"description":"Mathematician | Engineer",
             "cadence":{"recent_interactions_count_30d":2,"last_seen":today,"avg_interval_days":2.0,"gone_quiet_since":null},
-            "open_with_them":[],"closed_with_them_30d":[],"decisions_involving_them":[],
             "sources":[
                 {"facet":"math","day":prior,"activity_id":"z-math","field":"participation","created_at":20},
                 {"facet":"work","day":today,"activity_id":"a-work","field":"participation","created_at":30}
@@ -375,7 +367,7 @@ async fn rich_full_brief_cadence_and_active_responses_match_complete_json() {
     let (_, _, brief) = get("/api/profile/ada/brief", &fixture).await;
     assert_eq!(
         body_json(&brief),
-        json!({"entity_id":"ada","name":"Ada","type":"person","blocked":false,"description":"Mathematician | Engineer","last_seen":today,"open_loop_count":0,"decisions_count_30d":0})
+        json!({"entity_id":"ada","name":"Ada","type":"person","blocked":false,"description":"Mathematician | Engineer","last_seen":today})
     );
     let (_, _, cadence) = get("/api/profile/ada/cadence", &fixture).await;
     assert_eq!(
@@ -387,7 +379,7 @@ async fn rich_full_brief_cadence_and_active_responses_match_complete_json() {
 }
 
 #[tokio::test]
-async fn full_uses_enabled_ledger_folds_but_all_declared_profile_data() {
+async fn full_uses_all_declared_profile_data() {
     let fixture = Fixture::new();
     fixture.established();
     fixture.entity("pat", "Pat", &[], "person", false);
@@ -458,60 +450,6 @@ async fn full_uses_enabled_ledger_folds_but_all_declared_profile_data() {
         "Muted relationship | Work relationship"
     );
     assert_eq!(full["cadence"]["recent_interactions_count_30d"], 5);
-    let open_id = folded_id(&["owner", "send notes", "pat"]);
-    assert_eq!(
-        full["open_with_them"],
-        json!([{
-            "id":open_id,
-            "state":"open",
-            "owner":"Owner",
-            "owner_entity_id":"owner",
-            "counterparty":"Pat",
-            "counterparty_entity_id":"pat",
-            "action":"send notes",
-            "summary":"send notes",
-            "when":"tomorrow",
-            "context":"Send meeting notes",
-            "opened_at":open_created_at,
-            "closed_at":null,
-            "age_days":5,
-            "sources":[{
-                "facet":"work",
-                "day":open_day,
-                "activity_id":"open",
-                "field":"commitments",
-                "created_at":open_created_at
-            }]
-        }])
-    );
-    assert_eq!(
-        full["closed_with_them_30d"]
-            .as_array()
-            .expect("closed")
-            .len(),
-        1
-    );
-    assert_eq!(full["closed_with_them_30d"][0]["action"], "ship report");
-    let decision_id = folded_id(&["pat", "old decision", &stale_commit_day]);
-    assert_eq!(
-        full["decisions_involving_them"],
-        json!([{
-            "id":decision_id,
-            "owner":"Pat",
-            "owner_entity_id":"pat",
-            "action":"old decision",
-            "context":"still relevant",
-            "day":stale_commit_day,
-            "created_at":stale_created_at,
-            "source":{
-                "facet":"work",
-                "day":stale_commit_day,
-                "activity_id":"old-decision",
-                "field":"decisions",
-                "created_at":stale_created_at
-            }
-        }])
-    );
     let sources = full["sources"].as_array().expect("sources");
     let keys = sources
         .iter()
@@ -537,91 +475,14 @@ async fn full_uses_enabled_ledger_folds_but_all_declared_profile_data() {
     let (_, _, brief) = get("/api/profile/pat/brief", &fixture).await;
     let brief = body_json(&brief);
     let fields = brief.as_object().expect("brief object");
-    // 8, not 7: `blocked` joined the brief when the profile crate started
-    // reporting entity status instead of filtering on it.
-    assert_eq!(fields.len(), 8);
+    assert_eq!(fields.len(), 6);
     assert_eq!(brief["blocked"], false);
-    assert_eq!(brief["open_loop_count"], 1);
-    assert_eq!(brief["decisions_count_30d"], 0);
     assert!(brief.get("is_self").is_none());
     assert!(brief.get("generated_at").is_none());
 }
 
 #[tokio::test]
-async fn what_the_owner_said_by_voice_leads_open_loops_and_decisions_and_nothing_else_moves() {
-    let fixture = Fixture::new();
-    fixture.established();
-    fixture.entity("pat", "Pat", &[], "person", false);
-    fixture.entity("owner", "Owner", &[], "Person", true);
-    fixture.facet("work", false);
-    let oldest = day_ago(12);
-    let older = day_ago(9);
-    let newer = day_ago(2);
-    fixture.activities(
-        "work",
-        &oldest,
-        &[json!({"id":"oldest","created_at":timestamp_ago(12),
-            "commitments":[{"owner":"you","owner_entity_id":"owner","counterparty":"Pat","counterparty_entity_id":"pat","action":"oldest unmarked"}]})],
-    );
-    fixture.activities(
-        "work",
-        &older,
-        &[json!({"id":"older","created_at":timestamp_ago(9),
-            "commitments":[{"owner":"you","owner_entity_id":"owner","counterparty":"Pat","counterparty_entity_id":"pat","action":"older unmarked"}],
-            "decisions":[{"owner":"you","owner_entity_id":"owner","action":"older said","context":"with Pat","owner_evidence":"voice"}],
-            "participation":[{"entity_id":"pat","role":"attendee"}]})],
-    );
-    fixture.activities(
-        "work",
-        &newer,
-        &[json!({"id":"newer","created_at":timestamp_ago(2),
-            "commitments":[{"owner":"you","owner_entity_id":"owner","counterparty":"Pat","counterparty_entity_id":"pat","action":"newer said","owner_evidence":"voice"}],
-            "decisions":[{"owner":"you","owner_entity_id":"owner","action":"newer unmarked"}]})],
-    );
-
-    let (_, _, full) = get("/api/profile/pat", &fixture).await;
-    let full = body_json(&full);
-    let actions = |key: &str| {
-        full[key]
-            .as_array()
-            .expect(key)
-            .iter()
-            .map(|item| item["action"].as_str().unwrap().to_owned())
-            .collect::<Vec<_>>()
-    };
-    // Oldest first is the open ledger's order; the voice-backed item leads it
-    // and the two unmarked items keep that order between them.
-    assert_eq!(
-        actions("open_with_them"),
-        ["newer said", "oldest unmarked", "older unmarked"]
-    );
-    assert_eq!(full["open_with_them"][0]["owner_evidence"], "voice");
-    assert!(full["open_with_them"][1].get("owner_evidence").is_none());
-
-    // A decision is on its owner's profile. Newest first is the decisions'
-    // order; the voice-backed one leads it.
-    let (_, _, own) = get("/api/profile/owner", &fixture).await;
-    let own = body_json(&own);
-    let decisions = own["decisions_involving_them"]
-        .as_array()
-        .expect("decisions")
-        .iter()
-        .map(|item| item["action"].as_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
-    assert_eq!(decisions, ["older said", "newer unmarked"]);
-    assert_eq!(
-        own["decisions_involving_them"][0]["owner_evidence"],
-        "voice"
-    );
-    assert!(
-        own["decisions_involving_them"][1]
-            .get("owner_evidence")
-            .is_none()
-    );
-}
-
-#[tokio::test]
-async fn muted_only_profile_data_stays_visible_while_muted_ledger_data_is_excluded() {
+async fn muted_only_profile_data_stays_visible() {
     let fixture = Fixture::new();
     fixture.established();
     fixture.entity("muted_only", "Muted Only", &[], "person", false);
@@ -642,9 +503,6 @@ async fn muted_only_profile_data_stays_visible_while_muted_ledger_data_is_exclud
     let full = body_json(&full);
     assert_eq!(full["description"], "Muted relationship");
     assert_eq!(full["cadence"]["recent_interactions_count_30d"], 1);
-    assert_eq!(full["open_with_them"], json!([]));
-    assert_eq!(full["closed_with_them_30d"], json!([]));
-    assert_eq!(full["decisions_involving_them"], json!([]));
 }
 
 #[tokio::test]
