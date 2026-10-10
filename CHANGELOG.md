@@ -6,22 +6,23 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.39] - 2026-10-10
+
 ### Changed
 
 - if you keep your encrypted backup in storage sol pbc runs for you, it no longer carries your computer's name or your username on it. the small files that unlock your backup used to include both, readable without your key. they now say "solstone" instead. a backup you already have changes over at its next daily backup cleanup, and there's nothing for you to do.
 - agents connected to your journal now get guidance on how to search it: a few keywords rather than a sentence, how to write a date, where the things you committed to are kept, and to say so when nothing matched. this helps agents that don't have the solstone skill, such as ChatGPT.
-- when an agent looks up a person or project, it now gets what your journal has noted about them in the facets it may see, and the last day they came up there, not only the name.
+- when an agent looks up a person or project, it now gets what your journal has noted about them in the facet the agent found them in, and the last day they came up there, not only the name.
 - when an agent searches for a keyword of at least four characters that matches nothing on its own, such as "commit", it now also finds longer words that start with it, such as "commitment".
-- the agents app's ChatGPT steps now name the exact place to add your journal on chatgpt.com, and say that your journal added in ChatGPT's desktop app settings works only in Codex.
+- the agents app's ChatGPT steps now name the exact place to add your journal on chatgpt.com, and say that a journal added in ChatGPT's desktop app settings works only in Codex.
 - importing a text or markdown transcript now takes each turn's time, speaker and words from the file when it marks its turns in one of three ways, with times written to the second: headings counted from the start, such as `## 00:05:12`, followed by `**Ana Lima:** …`; `[00:05:12] Ana Lima: …`; or `Ana Lima (14:05:12)` with the words after it. in the last two, if the first time is under an hour, every time counts from the import's start time; otherwise each is read as a time of day. any other text file lands as one segment at its start time, each line as written. before, a model could change the times, speakers and words.
 
 ### Fixed
-- on windows, a local install now refuses before downloading if the GPU has less than 6 GB of memory or its memory cannot be checked. a new setup leaves thinking unchosen on those computers. the thinking page now explains failed installs and GPU memory failures at start.
 
-- if you turn on your private network before finishing in the services portal, your journal now finishes turning it on by itself once you do, within the hour. before, you had to come back, turn your private network on again and approve it a second time.
-- on windows, a journal saved inside the program folder can no longer start. move the whole journal folder outside it, then select the new location in setup.
 - on mac and linux, encrypted backup to storage sol pbc runs for you works again. since 2.0.38, no backup there finished. your backups resume on their own after this update, and everything backed up before 2.0.38 is still there.
-- activity settling no longer appears as an extra daily run for yesterday in your journal's health records. its run is recorded separately under today, while each activity keeps its own day.
+- on windows, a journal saved inside the journal's program folder now refuses to start, because reinstalling or uninstalling removes that folder. the message it shows walks you through moving it.
+- on windows, installing the local model now stops before downloading if the GPU has less than 6 GB of memory or its memory cannot be checked. a new setup leaves thinking for you to choose on those computers. the thinking page now explains why an install failed, or why the local model couldn't start for lack of GPU memory.
+- if you turn on solstone.me or your private network before finishing in the services portal, your journal now finishes turning it on by itself once you do. for your private network, finish there within the hour. before, you had to come back, turn it on again and approve it a second time.
 - when you name someone else's voice, or correct who said a line, the activities your journal already wrote from those conversations now show that person in place of "Speaker 2", as long as that speaker's named lines all name the same person.
 - if your journal wrote commitments or decisions as yours before it had marked which person is you, they now count as yours, including in your morning briefing. commitments and decisions from meetings stay as they were written.
 - in a new meeting, someone who introduces themselves, such as "my name is Dana", is listed as attending even before their voice has a name. before, they were listed only as mentioned.
@@ -34,7 +35,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on linux, the GPU permissions hint in `solstone journal check` told you to run `sol check` again, which no longer exists. it now names `solstone journal check`, and so does the readout's title.
 - when an agent searches your journal by date, a date written as 2026-10-05 now finds the same entries as 20261005. before, it found nothing. a date that isn't a real day is now refused, so the agent can correct it, instead of quietly matching nothing.
 - when an agent searches your journal with a whole sentence and no entry has every word, it now gets entries that match some of the words, and the response says so. before, it got nothing.
-- if you turn on solstone.me before finishing in the services portal, your journal now finishes turning it on by itself once you do. before, you had to come back, turn solstone.me on again and approve it a second time.
 - if your journal restarted while it was downloading the local thinking model or the transcription model, it no longer says the download is still going when nothing is downloading.
 - if your agents couldn't recall the notes they saved in your journal, or entity search wasn't available, both now work once everyday use has brought search up to date with your journal. before, they waited for a full rebuild of search, which everyday use never does.
 
