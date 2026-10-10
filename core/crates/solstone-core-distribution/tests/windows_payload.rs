@@ -5,13 +5,20 @@ use std::fs;
 use std::io::Cursor;
 
 use minisign::KeyPair;
+use solstone_core_distribution::controlled_build::{
+    BuildConfiguration, BuilderIdentity, CONTROLLED_BUILD_RECEIPT_SCHEMA_V1,
+    ControlledBuildReceipt, DependencySource, OutputIdentityEntry, SourceIdentity,
+    ValidationReference,
+};
 use solstone_core_distribution::manifest_verify::install_test_fixture_pin;
+use solstone_core_distribution::pe::PeInfo;
 use solstone_core_distribution::windows_payload::{
     WINDOWS_CED_LIBRARY, WINDOWS_ONNXRUNTIME_LIBRARY, WINDOWS_PARAKEET_MODEL,
     WINDOWS_PARAKEET_SERVER, WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE,
-    WINDOWS_PDFIUM_LIBRARY, WINDOWS_PDFIUM_WORKER, WINDOWS_PYANNOTE_MODEL,
+    WINDOWS_PDFIUM_LIBRARY, WINDOWS_PDFIUM_WORKER, WINDOWS_PYANNOTE_MODEL, WINDOWS_RFDETR_WORKER,
     WINDOWS_SILERO_VAD_MODEL, WINDOWS_SPEAKERS_ANALYZE_WORKER, WINDOWS_VAD_ANALYZE_WORKER,
-    WINDOWS_WESPEAKER_MODEL, render_windows_payload_manifest, verify_windows_payload,
+    WINDOWS_WESPEAKER_MODEL, WindowsPayloadRefusal, render_windows_payload_manifest,
+    verify_windows_payload,
 };
 
 const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -21,7 +28,8 @@ fn fixture() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temporary payload root");
     fs::create_dir_all(root.path().join("bin")).expect("bin");
     fs::create_dir_all(root.path().join("lib/solstone-core-pdf")).expect("lib");
-    fs::create_dir_all(root.path().join("lib/solstone-core-speakers-analyze")).expect("onnx lib");
+    fs::create_dir_all(root.path().join("lib/solstone-native")).expect("native lib");
+    fs::create_dir_all(root.path().join("lib/solstone-nvattest")).expect("nvattest lib");
     fs::create_dir_all(root.path().join("lib/solstone_journal_models/assets")).expect("model lib");
     fs::create_dir_all(
         root.path()
@@ -33,8 +41,8 @@ fn fixture() -> tempfile::TempDir {
             .join("lib/solstone_journal_models/assets/rfdetr"),
     )
     .expect("rfdetr model lib");
-    fs::write(root.path().join("bin/ced.dll"), b"ced dll").expect("ced");
-    fs::write(root.path().join("bin/rfdetr-cli.exe"), b"rfdetr cli").expect("rfdetr cli");
+    fs::write(root.path().join(WINDOWS_CED_LIBRARY), b"ced dll").expect("ced");
+    fs::write(root.path().join(WINDOWS_RFDETR_WORKER), b"rfdetr cli").expect("rfdetr cli");
     fs::write(
         root.path()
             .join("lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf"),
@@ -142,15 +150,15 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
 
     assert_eq!(
         verified
-            .declared_path("bin/ced.dll")
+            .declared_path(WINDOWS_CED_LIBRARY)
             .expect("declared CED path"),
         root.path().join(WINDOWS_CED_LIBRARY)
     );
     assert_eq!(
         verified
-            .declared_path("bin/rfdetr-cli.exe")
+            .declared_path(WINDOWS_RFDETR_WORKER)
             .expect("declared RF-DETR worker"),
-        root.path().join("bin/rfdetr-cli.exe")
+        root.path().join(WINDOWS_RFDETR_WORKER)
     );
     assert_eq!(
         verified
@@ -225,14 +233,26 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
     );
     assert!(verified.declared_path("bin/not-admitted.dll").is_err());
 
-    fs::write(root.path().join("bin/ced.dll"), b"changed").expect("change CED");
+    // Decoy check on the verified instance before any mutation:
+    fs::write(root.path().join("bin/ced.dll"), b"decoy ced").expect("write decoy CED");
+    assert_eq!(
+        verified.ced_library_path().expect("declared CED engine"),
+        root.path().join(WINDOWS_CED_LIBRARY)
+    );
+    let missing_decoy = verified
+        .declared_path("bin/ced.dll")
+        .expect_err("decoy path must be MissingMember");
+    assert_eq!(missing_decoy.kind, WindowsPayloadRefusal::MissingMember);
+    fs::remove_file(root.path().join("bin/ced.dll")).expect("remove decoy CED");
+
+    fs::write(root.path().join(WINDOWS_CED_LIBRARY), b"changed").expect("change CED");
     assert!(
         verify_windows_payload(root.path())
             .expect_err("changed payload")
             .to_string()
             .contains("digest")
     );
-    fs::write(root.path().join("bin/ced.dll"), b"ced dll").expect("restore CED");
+    fs::write(root.path().join(WINDOWS_CED_LIBRARY), b"ced dll").expect("restore CED");
 
     // Admission hashes every DLL; any other member is hashed when asked for.
     fs::write(root.path().join(WINDOWS_PARAKEET_MODEL), b"Parakeet mode!").expect("change model");
@@ -276,7 +296,7 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
     {
         use std::os::unix::fs::symlink;
 
-        let source = root.path().join("bin/ced.dll");
+        let source = root.path().join(WINDOWS_CED_LIBRARY);
         let replacement = root.path().join("ced.dll.replacement");
         fs::rename(&source, &replacement).expect("move CED");
         symlink(&replacement, &source).expect("symlink CED");
@@ -331,18 +351,124 @@ fn windows_component_evidence_error_conditions() {
     );
 }
 
-#[test]
-fn windows_component_evidence_happy_path() {
-    let root = fixture();
-    for comp in ["ced", "llama", "parakeet", "rfdetr", "onnx", "nvattest"] {
-        let dir = root.path().join(format!("share/provenance/{comp}"));
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("receipt.json"), b"{}").unwrap();
+fn sample_controlled_receipt(outputs: &[(&str, &str)]) -> ControlledBuildReceipt {
+    ControlledBuildReceipt {
+        schema: CONTROLLED_BUILD_RECEIPT_SCHEMA_V1.to_string(),
+        source: SourceIdentity {
+            product: solstone_core_distribution::provenance::Provenance {
+                commit: COMMIT.to_string(),
+                lock_sha256: LOCK.to_string(),
+            },
+            windows_dependency: DependencySource {
+                repository: "dep-repo".to_string(),
+                revision: "dep-rev".to_string(),
+                content_sha256: "0".repeat(64),
+            },
+        },
+        inputs: vec![],
+        builder: BuilderIdentity {
+            host: "builder-host".to_string(),
+            toolchain: "clang-cl".to_string(),
+        },
+        configuration: BuildConfiguration {
+            target_triple: "windows-x86_64".to_string(),
+            profile: "release".to_string(),
+            flags: vec![],
+            network_access_denied: true,
+        },
+        outputs: outputs
+            .iter()
+            .map(|(label, pre_sign)| OutputIdentityEntry {
+                pre_signing_sha256: (*pre_sign).to_string(),
+                label: (*label).to_string(),
+                size: 100,
+                census: PeInfo {
+                    machine: 0x8664,
+                    imports: vec![],
+                    exports: vec![],
+                    debug: None,
+                },
+            })
+            .collect(),
+        supporting: vec![],
+        validation: ValidationReference {
+            description: "val".to_string(),
+            sha256: "0".repeat(64),
+        },
     }
-    fs::write(root.path().join("bin/llama-server.exe"), b"llama server").unwrap();
-    fs::write(root.path().join("bin/vulkan-1.dll"), b"vulkan loader").unwrap();
-    // The CED model ships in the Windows payload as a pinned catalog member.
-    let ced_model_dir = root.path().join("lib/solstone_journal_models/assets/ced");
+}
+
+fn setup_evidence_tree(root: &std::path::Path) {
+    for (comp, outputs) in [
+        (
+            "ced",
+            vec![(
+                "bin/ced.dll",
+                "1111111111111111111111111111111111111111111111111111111111111111",
+            )],
+        ),
+        (
+            "onnx",
+            vec![(
+                "bin/onnxruntime.dll",
+                "2222222222222222222222222222222222222222222222222222222222222222",
+            )],
+        ),
+        (
+            "parakeet",
+            vec![(
+                "bin/parakeet-server.exe",
+                "3333333333333333333333333333333333333333333333333333333333333333",
+            )],
+        ),
+        (
+            "rfdetr",
+            vec![(
+                "bin/rfdetr-cli.exe",
+                "4444444444444444444444444444444444444444444444444444444444444444",
+            )],
+        ),
+        (
+            "llama",
+            vec![
+                (
+                    "bin/llama-server.exe",
+                    "5555555555555555555555555555555555555555555555555555555555555555",
+                ),
+                (
+                    "bin/vulkan-1.dll",
+                    "6666666666666666666666666666666666666666666666666666666666666666",
+                ),
+            ],
+        ),
+        (
+            "nvattest",
+            vec![(
+                "bin/nvattest.exe",
+                "7777777777777777777777777777777777777777777777777777777777777777",
+            )],
+        ),
+    ] {
+        let dir = root.join(format!("share/provenance/{comp}"));
+        fs::create_dir_all(&dir).unwrap();
+        let receipt = sample_controlled_receipt(&outputs);
+        fs::write(
+            dir.join("receipt.json"),
+            serde_json::to_vec(&receipt).unwrap(),
+        )
+        .unwrap();
+    }
+    fs::write(
+        root.join("lib/solstone-native/llama-server.exe"),
+        b"llama server",
+    )
+    .unwrap();
+    fs::write(
+        root.join("lib/solstone-native/vulkan-1.dll"),
+        b"vulkan loader",
+    )
+    .unwrap();
+    let ced_model_dir = root.join("lib/solstone_journal_models/assets/ced");
     fs::create_dir_all(&ced_model_dir).unwrap();
     let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     fs::copy(
@@ -350,10 +476,44 @@ fn windows_component_evidence_happy_path() {
         ced_model_dir.join("ced-tiny-q8_0.gguf"),
     )
     .unwrap();
-    // The verifier ships its CA bundle beside it; the bundle has no receipt.
-    fs::write(root.path().join("bin/nvattest.exe"), b"nvattest verifier").unwrap();
-    fs::create_dir_all(root.path().join("share/ca")).unwrap();
-    fs::write(root.path().join("share/ca/ca-bundle.pem"), b"ca bundle").unwrap();
+    fs::write(
+        root.join("lib/solstone-nvattest/nvattest.exe"),
+        b"nvattest verifier",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("share/ca")).unwrap();
+    fs::write(root.join("share/ca/ca-bundle.pem"), b"ca bundle").unwrap();
+
+    // The seven MSVC destinations: 4 under lib/solstone-native/, 3 under lib/solstone-nvattest/
+    fs::write(root.join("lib/solstone-native/msvcp140.dll"), b"msvcp140").unwrap();
+    fs::write(
+        root.join("lib/solstone-native/vcruntime140.dll"),
+        b"vcruntime140",
+    )
+    .unwrap();
+    fs::write(
+        root.join("lib/solstone-native/vcruntime140_1.dll"),
+        b"vcruntime140_1",
+    )
+    .unwrap();
+    fs::write(root.join("lib/solstone-native/vcomp140.dll"), b"vcomp140").unwrap();
+    fs::write(root.join("lib/solstone-nvattest/msvcp140.dll"), b"msvcp140").unwrap();
+    fs::write(
+        root.join("lib/solstone-nvattest/vcruntime140.dll"),
+        b"vcruntime140",
+    )
+    .unwrap();
+    fs::write(
+        root.join("lib/solstone-nvattest/vcruntime140_1.dll"),
+        b"vcruntime140_1",
+    )
+    .unwrap();
+}
+
+#[test]
+fn windows_component_evidence_happy_path() {
+    let root = fixture();
+    setup_evidence_tree(root.path());
 
     sign_payload_manifest(root.path());
 
@@ -398,6 +558,51 @@ fn windows_component_evidence_happy_path() {
             .find(|f| f.path == record.path)
             .unwrap_or_else(|| panic!("record path {} not found in manifest", record.path));
         assert_eq!(record.final_sha256, manifest_file.sha256);
+    }
+
+    // Parakeet pre-signing sha256 assertion
+    let parakeet_rec = prov_file
+        .records
+        .iter()
+        .find(|r| r.id == "parakeet-server" && r.path == "lib/solstone-native/parakeet-server.exe")
+        .expect("parakeet provenance record");
+    assert_eq!(
+        parakeet_rec.pre_signing_sha256.as_deref(),
+        Some("3333333333333333333333333333333333333333333333333333333333333333")
+    );
+    assert_ne!(
+        parakeet_rec.pre_signing_sha256.as_deref(),
+        Some(parakeet_rec.final_sha256.as_str())
+    );
+
+    // 7 MSVC provenance records assertion
+    for (dest, label) in [
+        ("lib/solstone-native/msvcp140.dll", "msvcp140.dll"),
+        ("lib/solstone-native/vcruntime140.dll", "vcruntime140.dll"),
+        (
+            "lib/solstone-native/vcruntime140_1.dll",
+            "vcruntime140_1.dll",
+        ),
+        ("lib/solstone-native/vcomp140.dll", "vcomp140.dll"),
+        ("lib/solstone-nvattest/msvcp140.dll", "msvcp140.dll"),
+        ("lib/solstone-nvattest/vcruntime140.dll", "vcruntime140.dll"),
+        (
+            "lib/solstone-nvattest/vcruntime140_1.dll",
+            "vcruntime140_1.dll",
+        ),
+    ] {
+        let pin = solstone_core_distribution::produce::windows_archives::MSVC
+            .members
+            .iter()
+            .find(|m| m.label == label)
+            .unwrap();
+        let msvc_rec = prov_file
+            .records
+            .iter()
+            .find(|r| r.id == "msvc-runtime" && r.path == dest)
+            .unwrap_or_else(|| panic!("missing msvc record for {dest}"));
+        assert_eq!(msvc_rec.inner_path.as_deref(), Some(pin.path));
+        assert_eq!(msvc_rec.extracted_sha256.as_deref(), Some(pin.sha256));
     }
 
     let comp_path = out_dir.path().join(
@@ -475,6 +680,96 @@ fn windows_component_evidence_happy_path() {
         .find(|c| c.id == "parakeet-model")
         .expect("parakeet-model present");
     assert_ne!(parakeet_server.id, parakeet_model.id);
+}
+
+#[test]
+fn windows_component_evidence_refusals() {
+    // 1. ced receipt absent: unjoined-controlled-output: ced-engine lib/solstone-native/ced.dll
+    {
+        let root = fixture();
+        setup_evidence_tree(root.path());
+        fs::remove_file(root.path().join("share/provenance/ced/receipt.json")).unwrap();
+        sign_payload_manifest(root.path());
+        let out = tempfile::tempdir().unwrap();
+        let err =
+            solstone_core_distribution::component_evidence::render_windows_component_evidence(
+                root.path(),
+                COMMIT,
+                false,
+                None,
+                out.path(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            err.message,
+            "unjoined-controlled-output: ced-engine lib/solstone-native/ced.dll"
+        );
+    }
+
+    // 2. two outputs labeled bin/ced.dll: ambiguous-controlled-output: ced-engine lib/solstone-native/ced.dll
+    {
+        let root = fixture();
+        setup_evidence_tree(root.path());
+        let dir = root.path().join("share/provenance/ced");
+        let receipt = sample_controlled_receipt(&[
+            (
+                "bin/ced.dll",
+                "1111111111111111111111111111111111111111111111111111111111111111",
+            ),
+            (
+                "bin/ced.dll",
+                "1111111111111111111111111111111111111111111111111111111111111111",
+            ),
+        ]);
+        fs::write(
+            dir.join("receipt.json"),
+            serde_json::to_vec(&receipt).unwrap(),
+        )
+        .unwrap();
+        sign_payload_manifest(root.path());
+        let out = tempfile::tempdir().unwrap();
+        let err =
+            solstone_core_distribution::component_evidence::render_windows_component_evidence(
+                root.path(),
+                COMMIT,
+                false,
+                None,
+                out.path(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            err.message,
+            "ambiguous-controlled-output: ced-engine lib/solstone-native/ced.dll"
+        );
+    }
+
+    // 3. empty pre_signing_sha256: absent-pre-sign: ced-engine lib/solstone-native/ced.dll
+    {
+        let root = fixture();
+        setup_evidence_tree(root.path());
+        let dir = root.path().join("share/provenance/ced");
+        let receipt = sample_controlled_receipt(&[("bin/ced.dll", "")]);
+        fs::write(
+            dir.join("receipt.json"),
+            serde_json::to_vec(&receipt).unwrap(),
+        )
+        .unwrap();
+        sign_payload_manifest(root.path());
+        let out = tempfile::tempdir().unwrap();
+        let err =
+            solstone_core_distribution::component_evidence::render_windows_component_evidence(
+                root.path(),
+                COMMIT,
+                false,
+                None,
+                out.path(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            err.message,
+            "absent-pre-sign: ced-engine lib/solstone-native/ced.dll"
+        );
+    }
 }
 
 #[test]

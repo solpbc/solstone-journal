@@ -1692,6 +1692,8 @@ pub fn render_windows_component_evidence(
         }
 
         let mut pre_signing_sha256 = None;
+        let mut inner_path = None;
+        let mut extracted_sha256 = None;
         let receipt_rel = match id {
             "ced-engine" => Some("share/provenance/ced/receipt.json"),
             "llama-server" | "vulkan-loader" => Some("share/provenance/llama/receipt.json"),
@@ -1709,36 +1711,58 @@ pub fn render_windows_component_evidence(
         };
         if let Some(rpath) = receipt_rel {
             let full_receipt = payload_root.join(rpath);
-            if full_receipt.exists() {
-                let bytes = std::fs::read(&full_receipt)
-                    .map_err(|e| EvidenceError::new(format!("read {rpath}: {e}")))?;
-                let receipt_sha = crate::digest::sha256_hex(&bytes);
-                if row_inputs.is_empty() {
-                    row_inputs = vec![InputRef {
-                        name: "receipt.json".to_string(),
-                        sha256: receipt_sha,
-                    }];
-                }
-                if let Ok(receipt) =
-                    crate::controlled_build::decode_controlled_build_receipt(&bytes)
-                {
-                    let member_filename = Path::new(dest)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy();
-                    if let Some(out) = receipt
-                        .outputs
-                        .iter()
-                        .find(|o| o.label == member_filename || o.label == *dest)
-                    {
-                        pre_signing_sha256 = Some(out.pre_signing_sha256.clone());
-                    }
-                }
-            } else if row_inputs.is_empty() {
+            if !full_receipt.exists() {
                 return Err(EvidenceError::new(format!(
-                    "unnamed-input: {target} {id} {dest}"
+                    "unjoined-controlled-output: {id} {dest}"
                 )));
             }
+            let bytes = std::fs::read(&full_receipt)
+                .map_err(|e| EvidenceError::new(format!("read {rpath}: {e}")))?;
+            let receipt_sha = crate::digest::sha256_hex(&bytes);
+            if row_inputs.is_empty() {
+                row_inputs = vec![InputRef {
+                    name: "receipt.json".to_string(),
+                    sha256: receipt_sha,
+                }];
+            }
+            let receipt = crate::controlled_build::decode_controlled_build_receipt(&bytes)
+                .map_err(|e| EvidenceError::new(format!("decode {rpath}: {e}")))?;
+            let member_str = match entry {
+                crate::inventory::Entry::WindowsNative { member, .. } => member.as_str(),
+                _ => {
+                    return Err(EvidenceError::new(format!(
+                        "unjoined-controlled-output: {id} {dest}"
+                    )));
+                }
+            };
+            let matches: Vec<_> = receipt
+                .outputs
+                .iter()
+                .filter(|o| o.label == member_str)
+                .collect();
+            match matches.len() {
+                0 => {
+                    return Err(EvidenceError::new(format!(
+                        "unjoined-controlled-output: {id} {dest}"
+                    )));
+                }
+                1 => {
+                    let out = matches[0];
+                    if out.pre_signing_sha256.is_empty() {
+                        return Err(EvidenceError::new(format!("absent-pre-sign: {id} {dest}")));
+                    }
+                    pre_signing_sha256 = Some(out.pre_signing_sha256.clone());
+                }
+                _ => {
+                    return Err(EvidenceError::new(format!(
+                        "ambiguous-controlled-output: {id} {dest}"
+                    )));
+                }
+            }
+        } else if id == "msvc-runtime" {
+            let (pin_path, pin_sha256) = match_msvc_pin(entry, dest)?;
+            inner_path = Some(pin_path.to_string());
+            extracted_sha256 = Some(pin_sha256.to_string());
         }
 
         let input = row_inputs
@@ -1750,9 +1774,9 @@ pub fn render_windows_component_evidence(
             id: id.to_string(),
             path: dest.clone(),
             input,
-            inner_path: None,
+            inner_path,
             alias: None,
-            extracted_sha256: None,
+            extracted_sha256,
             pre_signing_sha256,
             final_sha256: file.sha256.clone(),
         });
@@ -1863,6 +1887,33 @@ pub fn render_windows_component_evidence(
     })?;
 
     Ok(())
+}
+
+fn match_msvc_pin(
+    entry: &crate::inventory::Entry,
+    dest: &str,
+) -> Result<(&'static str, &'static str), EvidenceError> {
+    let member_str = match entry {
+        crate::inventory::Entry::WindowsNative { member, .. } => member.as_str(),
+        _ => {
+            return Err(EvidenceError::new(format!("undeclared msvc copy: {dest}")));
+        }
+    };
+    match_msvc_member_pin(member_str, dest)
+}
+
+fn match_msvc_member_pin(
+    member_str: &str,
+    dest: &str,
+) -> Result<(&'static str, &'static str), EvidenceError> {
+    let matched_pin = crate::produce::windows_archives::MSVC
+        .members
+        .iter()
+        .find(|m| m.label == member_str);
+    let Some(pin) = matched_pin else {
+        return Err(EvidenceError::new(format!("undeclared msvc copy: {dest}")));
+    };
+    Ok((pin.path, pin.sha256))
 }
 
 pub fn install_evidence_directory(
@@ -2377,8 +2428,8 @@ mod tests {
         inv.entry.push(crate::inventory::Entry::WindowsNative {
             class: Some(crate::inventory::DeliveryClass::Component),
             component: crate::inventory::WindowsNativeComponent::Parakeet,
-            member: "parakeet-server.exe".to_string(),
-            dest: "bin/parakeet-server.exe".to_string(),
+            member: "bin/parakeet-server.exe".to_string(),
+            dest: "lib/solstone-native/parakeet-server.exe".to_string(),
             mode: 0o755,
             targets: vec!["linux-x86_64".to_string()],
         });
@@ -2400,7 +2451,7 @@ mod tests {
             tree: vec![
                 ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
                 (
-                    "bin/parakeet-server.exe".into(),
+                    "lib/solstone-native/parakeet-server.exe".into(),
                     b"parakeet".to_vec(),
                     0o755,
                 ),
@@ -3975,5 +4026,29 @@ mod tests {
         let _ = fs::remove_dir_all(&bad_work);
         let _ = fs::remove_dir_all(&evidence_dir);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn match_msvc_member_pin_unknown_label_refuses() {
+        let err = match_msvc_member_pin("unknown_msvc.dll", "lib/solstone-native/unknown_msvc.dll")
+            .unwrap_err();
+        assert_eq!(
+            err.message,
+            "undeclared msvc copy: lib/solstone-native/unknown_msvc.dll"
+        );
+    }
+
+    #[test]
+    fn match_msvc_member_pin_valid_label_resolves() {
+        let (path, sha256) =
+            match_msvc_member_pin("msvcp140.dll", "lib/solstone-native/msvcp140.dll").unwrap();
+        assert_eq!(
+            path,
+            "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll"
+        );
+        assert_eq!(
+            sha256,
+            "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
+        );
     }
 }

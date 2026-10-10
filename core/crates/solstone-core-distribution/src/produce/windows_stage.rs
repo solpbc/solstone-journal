@@ -202,6 +202,7 @@ fn collect_plan<'a>(
     let mut plan = Plan::new();
     let mut binaries = BTreeSet::new();
     let mut native_members = BTreeSet::new();
+    let mut native_dests: BTreeMap<(WindowsNativeComponent, String), Vec<&str>> = BTreeMap::new();
     let mut evidence_selected = false;
     for entry in &inventory.entry {
         match entry {
@@ -252,10 +253,23 @@ fn collect_plan<'a>(
                 let bytes = native.members.get(&key).ok_or_else(|| {
                     format!("missing admitted native input: {component:?}/{member}")
                 })?;
-                if !native_members.insert(key) {
-                    return Err("duplicate native input mapping".into());
+                let seen = native_dests.entry(key.clone()).or_default();
+                seen.push(dest.as_str());
+                match seen.len() {
+                    1 => {
+                        native_members.insert(key);
+                        add_file(&mut plan, dest, *mode, Cow::Borrowed(bytes))?;
+                    }
+                    2 => {
+                        if !crate::inventory::is_allowed_msvc_repetition(member, seen[0], seen[1]) {
+                            return Err("duplicate native input mapping".into());
+                        }
+                        add_file(&mut plan, dest, *mode, Cow::Borrowed(bytes))?;
+                    }
+                    _ => {
+                        return Err("duplicate native input mapping".into());
+                    }
                 }
-                add_file(&mut plan, dest, *mode, Cow::Borrowed(bytes))?;
             }
             Entry::Copy {
                 source,
@@ -488,6 +502,7 @@ fn write_plan(root: &Path, plan: &Plan<'_>) -> Result<Vec<FileRecord>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inventory::DeliveryClass;
 
     #[test]
     fn build_evidence_uses_inventory_and_retained_bytes_exactly_once() {
@@ -678,7 +693,10 @@ mod tests {
             .unwrap();
         let plan =
             collect_plan(repo, &inventory_path, &inventory, &products, &native, &[]).unwrap();
-        assert_eq!(plan["bin/ced.dll"].bytes.as_ref(), b"admitted-original");
+        assert_eq!(
+            plan["lib/solstone-native/ced.dll"].bytes.as_ref(),
+            b"admitted-original"
+        );
         drop(plan);
         native
             .insert(WindowsNativeComponent::Ced, "unexpected", b"extra".to_vec())
@@ -867,7 +885,10 @@ mod tests {
         write_plan(&stage, &plan).unwrap();
         let staged = |dest: &str| fs::read(join_components(&stage, dest)).unwrap();
         let expected: BTreeMap<&str, Vec<u8>> = BTreeMap::from([
-            ("bin/nvattest.exe", fixture.output_exe.clone()),
+            (
+                "lib/solstone-nvattest/nvattest.exe",
+                fixture.output_exe.clone(),
+            ),
             (
                 "share/ca/ca-bundle.pem",
                 crate::nvattest_windows::test_support::FIXTURE_CA.to_vec(),
@@ -982,7 +1003,7 @@ mod tests {
         assert_eq!(
             nvattest_entries,
             vec![
-                ("bin/nvattest.exe", "bin/nvattest.exe"),
+                ("bin/nvattest.exe", "lib/solstone-nvattest/nvattest.exe"),
                 ("share/ca/ca-bundle.pem", "share/ca/ca-bundle.pem"),
                 ("LICENSE", "share/licenses/nvattest/LICENSE"),
                 ("receipt.json", "share/provenance/nvattest/receipt.json"),
@@ -1001,5 +1022,232 @@ mod tests {
             _ => false,
         });
         assert!(notice_entry);
+    }
+
+    #[test]
+    fn case_colliding_dests_refuse_with_colliding_windows_staged_member() {
+        let mut plan = Plan::new();
+        add_file(
+            &mut plan,
+            "lib/solstone-native/ced.dll",
+            0o755,
+            Cow::Borrowed(b"original"),
+        )
+        .unwrap();
+        let err = add_file(
+            &mut plan,
+            "lib/solstone-native/CED.dll",
+            0o755,
+            Cow::Borrowed(b"other"),
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("colliding Windows staged member: lib/solstone-native/CED.dll"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn staging_msvc_repetition_and_duplicate_refusal() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let inventory_path = root.path().join("inventory.toml");
+        fs::write(root.path().join("empty.list"), b"").unwrap();
+
+        // 1. the three CRT names copy from one admitted buffer onto both private dests, same bytes
+        let mut inventory = load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
+        inventory.payload = "empty.list".into();
+        inventory.entry.retain(|entry| {
+            matches!(entry, Entry::WindowsNative { component: WindowsNativeComponent::Msvc, member, .. }
+                if member == "msvcp140.dll" || member == "vcruntime140.dll" || member == "vcruntime140_1.dll")
+        });
+        assert_eq!(inventory.entry.len(), 6);
+        let products = BTreeMap::new();
+        let mut native = AdmittedWindowsNativeInputs::default();
+        native
+            .insert(
+                WindowsNativeComponent::Msvc,
+                "msvcp140.dll",
+                b"msvcp_bytes".to_vec(),
+            )
+            .unwrap();
+        native
+            .insert(
+                WindowsNativeComponent::Msvc,
+                "vcruntime140.dll",
+                b"vcruntime_bytes".to_vec(),
+            )
+            .unwrap();
+        native
+            .insert(
+                WindowsNativeComponent::Msvc,
+                "vcruntime140_1.dll",
+                b"vcruntime1_bytes".to_vec(),
+            )
+            .unwrap();
+
+        let plan =
+            collect_plan(repo, &inventory_path, &inventory, &products, &native, &[]).unwrap();
+        assert_eq!(
+            plan["lib/solstone-native/msvcp140.dll"].bytes.as_ref(),
+            b"msvcp_bytes"
+        );
+        assert_eq!(
+            plan["lib/solstone-nvattest/msvcp140.dll"].bytes.as_ref(),
+            b"msvcp_bytes"
+        );
+        assert_eq!(
+            plan["lib/solstone-native/vcruntime140.dll"].bytes.as_ref(),
+            b"vcruntime_bytes"
+        );
+        assert_eq!(
+            plan["lib/solstone-nvattest/vcruntime140.dll"]
+                .bytes
+                .as_ref(),
+            b"vcruntime_bytes"
+        );
+        assert_eq!(
+            plan["lib/solstone-native/vcruntime140_1.dll"]
+                .bytes
+                .as_ref(),
+            b"vcruntime1_bytes"
+        );
+        assert_eq!(
+            plan["lib/solstone-nvattest/vcruntime140_1.dll"]
+                .bytes
+                .as_ref(),
+            b"vcruntime1_bytes"
+        );
+
+        // 2. a missing admitted input refuses
+        let mut missing_native = AdmittedWindowsNativeInputs::default();
+        missing_native
+            .insert(
+                WindowsNativeComponent::Msvc,
+                "vcruntime140.dll",
+                b"vcruntime_bytes".to_vec(),
+            )
+            .unwrap();
+        missing_native
+            .insert(
+                WindowsNativeComponent::Msvc,
+                "vcruntime140_1.dll",
+                b"vcruntime1_bytes".to_vec(),
+            )
+            .unwrap();
+        let err = collect_plan(
+            repo,
+            &inventory_path,
+            &inventory,
+            &products,
+            &missing_native,
+            &[],
+        )
+        .err()
+        .unwrap();
+        assert!(err.contains("missing admitted native input"), "{err}");
+
+        // 3. an admitted member with no inventory row fails the coverage check
+        let mut extra_native = AdmittedWindowsNativeInputs::default();
+        extra_native
+            .insert(
+                WindowsNativeComponent::Msvc,
+                "msvcp140.dll",
+                b"msvcp_bytes".to_vec(),
+            )
+            .unwrap();
+        extra_native
+            .insert(
+                WindowsNativeComponent::Msvc,
+                "vcruntime140.dll",
+                b"vcruntime_bytes".to_vec(),
+            )
+            .unwrap();
+        extra_native
+            .insert(
+                WindowsNativeComponent::Msvc,
+                "vcruntime140_1.dll",
+                b"vcruntime1_bytes".to_vec(),
+            )
+            .unwrap();
+        extra_native
+            .insert(
+                WindowsNativeComponent::Msvc,
+                "vcomp140.dll",
+                b"vcomp".to_vec(),
+            )
+            .unwrap();
+        let err = collect_plan(
+            repo,
+            &inventory_path,
+            &inventory,
+            &products,
+            &extra_native,
+            &[],
+        )
+        .err()
+        .unwrap();
+        assert_eq!(err, "undeclared fresh Cargo or admitted native input");
+
+        // 4. a second non-CRT dest refuses with "duplicate native input mapping"
+        let mut inv_dup_non_crt = inventory.clone();
+        inv_dup_non_crt.entry = vec![
+            Entry::WindowsNative {
+                class: Some(DeliveryClass::Component),
+                component: WindowsNativeComponent::Ced,
+                member: "bin/ced.dll".into(),
+                dest: "lib/solstone-native/ced.dll".into(),
+                mode: 0o755,
+                targets: vec!["windows-x86_64".into()],
+            },
+            Entry::WindowsNative {
+                class: Some(DeliveryClass::Component),
+                component: WindowsNativeComponent::Ced,
+                member: "bin/ced.dll".into(),
+                dest: "lib/solstone-nvattest/ced.dll".into(),
+                mode: 0o755,
+                targets: vec!["windows-x86_64".into()],
+            },
+        ];
+        let mut ced_native = AdmittedWindowsNativeInputs::default();
+        ced_native
+            .insert(WindowsNativeComponent::Ced, "bin/ced.dll", b"ced".to_vec())
+            .unwrap();
+        let err = collect_plan(
+            repo,
+            &inventory_path,
+            &inv_dup_non_crt,
+            &products,
+            &ced_native,
+            &[],
+        )
+        .err()
+        .unwrap();
+        assert_eq!(err, "duplicate native input mapping");
+
+        // 5. a third CRT dest refuses with "duplicate native input mapping"
+        let mut inv_third_crt = inventory.clone();
+        inv_third_crt.entry.push(Entry::WindowsNative {
+            class: Some(DeliveryClass::Component),
+            component: WindowsNativeComponent::Msvc,
+            member: "msvcp140.dll".into(),
+            dest: "lib/solstone-native/msvcp140-third.dll".into(),
+            mode: 0o644,
+            targets: vec!["windows-x86_64".into()],
+        });
+        let err = collect_plan(
+            repo,
+            &inventory_path,
+            &inv_third_crt,
+            &products,
+            &native,
+            &[],
+        )
+        .err()
+        .unwrap();
+        assert_eq!(err, "duplicate native input mapping");
     }
 }

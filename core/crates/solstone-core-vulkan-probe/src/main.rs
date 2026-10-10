@@ -379,7 +379,7 @@ where
     let canonical = canonicalize(&declared_path)?;
     restrict()?;
     load(
-        solstone_core_win_dll_load::LoadPolicy::ApplicationDir,
+        solstone_core_win_dll_load::LoadPolicy::DllLoadDir,
         &canonical,
     )
 }
@@ -885,11 +885,17 @@ mod tests {
         let events = std::cell::RefCell::new(Vec::new());
 
         let result = open_declared_loader(
-            || Ok::<PathBuf, &'static str>(PathBuf::from("/package/bin/vulkan-1.dll")),
+            || {
+                Ok::<PathBuf, &'static str>(PathBuf::from(
+                    "/package/lib/solstone-native/vulkan-1.dll",
+                ))
+            },
             |path: &Path| {
                 events.borrow_mut().push("canonicalize");
-                assert_eq!(path, Path::new("/package/bin/vulkan-1.dll"));
-                Ok(PathBuf::from("/canonical/package/bin/vulkan-1.dll"))
+                assert_eq!(path, Path::new("/package/lib/solstone-native/vulkan-1.dll"));
+                Ok(PathBuf::from(
+                    "/canonical/package/lib/solstone-native/vulkan-1.dll",
+                ))
             },
             || {
                 events.borrow_mut().push("restrict");
@@ -897,12 +903,12 @@ mod tests {
             },
             |policy, path| {
                 events.borrow_mut().push("load");
+                assert_eq!(policy, solstone_core_win_dll_load::LoadPolicy::DllLoadDir);
+                assert_eq!(solstone_core_win_dll_load::flags_for(policy), 0x0900);
                 assert_eq!(
-                    policy,
-                    solstone_core_win_dll_load::LoadPolicy::ApplicationDir
+                    path,
+                    Path::new("/canonical/package/lib/solstone-native/vulkan-1.dll")
                 );
-                assert_eq!(solstone_core_win_dll_load::flags_for(policy), 0x0A00);
-                assert_eq!(path, Path::new("/canonical/package/bin/vulkan-1.dll"));
                 Ok("loaded_handle")
             },
         );

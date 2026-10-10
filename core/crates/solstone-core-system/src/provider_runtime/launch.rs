@@ -100,6 +100,7 @@ pub enum LocalLaunchConfig {
         selected_vram_mib: u64,
         vram_before_mib: Option<u64>,
         platform: Platform,
+        package_root: Option<PathBuf>,
     },
     Metal {
         common: LocalLaunchCommon,
@@ -183,6 +184,7 @@ impl LocalLaunchConfig {
                 selected_vram_mib,
                 vram_before_mib,
                 platform,
+                package_root: _,
             } => PlanInput {
                 schema: PLAN_INPUT_SCHEMA.into(),
                 platform: *platform,
@@ -762,6 +764,7 @@ fn observe_truth(
             selected_vram_mib: device.vram_mib,
             vram_before_mib: None,
             platform: Platform::Windows,
+            package_root: Some(pkg.package_root),
         };
         shared.record_launch_request(Some(fingerprint.clone()), launch);
         return truth(
@@ -957,6 +960,7 @@ fn observe_truth(
                 selected_vram_mib: device.vram_mib,
                 vram_before_mib: None,
                 platform: Platform::Linux,
+                package_root: None,
             }
         }
         _ => {
@@ -1380,6 +1384,15 @@ fn start_local_windows(
         return launch_failed();
     };
 
+    // llama-server lives under lib/solstone-native. Carry the package root
+    // already verified from the journal executable.
+    let package_root = match launch {
+        LocalLaunchConfig::Vulkan {
+            package_root: Some(package_root),
+            ..
+        } => package_root.clone(),
+        _ => return launch_failed(),
+    };
     let Some(current_device) = vulkan_obs
         .devices
         .iter()
@@ -1416,9 +1429,6 @@ fn start_local_windows(
     };
     let binary_path = PathBuf::from(binary_path_str);
     let Some(bin_dir) = binary_path.parent() else {
-        return launch_failed();
-    };
-    let Some(package_root) = bin_dir.parent() else {
         return launch_failed();
     };
     let current_directory = bin_dir.to_path_buf();
@@ -2049,8 +2059,8 @@ mod tests {
     ) -> (LocalLaunchConfig, ProviderFence, ProviderRuntimeState) {
         std::fs::create_dir_all(root.join("config")).unwrap();
         std::fs::create_dir_all(root.join("cache/models/qwen3.5-4b")).unwrap();
-        std::fs::create_dir_all(root.join("bin")).unwrap();
-        let bin_path = root.join("bin/llama-server.exe");
+        std::fs::create_dir_all(root.join("lib/solstone-native")).unwrap();
+        let bin_path = root.join("lib/solstone-native/llama-server.exe");
         let model_path = root.join("cache/models/qwen3.5-4b/model.gguf");
         std::fs::write(&bin_path, b"mz").unwrap();
         std::fs::write(&model_path, b"gguf").unwrap();
@@ -2074,6 +2084,7 @@ mod tests {
         let launch = LocalLaunchConfig::Vulkan {
             common,
             binary_path: Some(bin_path.display().to_string()),
+            package_root: Some(root.to_path_buf()),
             devices: vec![solstone_core_local::VulkanDevice {
                 index: 0,
                 name: "RTX 4090".into(),
@@ -2388,8 +2399,14 @@ mod tests {
             .unwrap()
             .take()
             .expect("request captured");
-        assert_eq!(req.executable, root.path().join("bin/llama-server.exe"));
-        assert_eq!(req.current_directory, root.path().join("bin"));
+        assert_eq!(
+            req.executable,
+            root.path().join("lib/solstone-native/llama-server.exe")
+        );
+        assert_eq!(
+            req.current_directory,
+            root.path().join("lib/solstone-native")
+        );
         assert_eq!(req.package_root, root.path().to_path_buf());
         assert!(!req.arguments.contains(&"--api-key".to_string()));
         assert_eq!(

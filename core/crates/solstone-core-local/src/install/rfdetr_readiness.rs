@@ -180,7 +180,7 @@ mod tests {
     fn windows_package_readiness_injected_ok_is_ready() {
         let package = Ok(WindowsRfdetrPackage {
             package_root: PathBuf::from("/pkg"),
-            binary: PathBuf::from("/pkg/bin/rfdetr-cli.exe"),
+            binary: PathBuf::from("/pkg/lib/solstone-native/rfdetr-cli.exe"),
             model: PathBuf::from(
                 "/pkg/lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf",
             ),
@@ -190,7 +190,7 @@ mod tests {
         assert_eq!(
             readiness,
             RfdetrReadiness::Ready {
-                binary: PathBuf::from("/pkg/bin/rfdetr-cli.exe"),
+                binary: PathBuf::from("/pkg/lib/solstone-native/rfdetr-cli.exe"),
                 model: PathBuf::from(
                     "/pkg/lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf"
                 ),
@@ -224,7 +224,7 @@ mod tests {
     fn windows_package_readiness_unrunnable_probe() {
         let package = Ok(WindowsRfdetrPackage {
             package_root: PathBuf::from("/pkg"),
-            binary: PathBuf::from("/pkg/bin/rfdetr-cli.exe"),
+            binary: PathBuf::from("/pkg/lib/solstone-native/rfdetr-cli.exe"),
             model: PathBuf::from(
                 "/pkg/lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf",
             ),
@@ -246,7 +246,8 @@ mod tests {
     fn windows_launch_spec_construction_and_budgets() {
         let package = WindowsRfdetrPackage {
             package_root: PathBuf::from(r"C:\Program Files\Solstone"),
-            binary: PathBuf::from(r"C:\Program Files\Solstone\bin\rfdetr-cli.exe"),
+            binary: PathBuf::from(r"C:\Program Files\Solstone")
+                .join("lib/solstone-native/rfdetr-cli.exe"),
             model: PathBuf::from(
                 r"C:\Program Files\Solstone\lib\solstone_journal_models\assets\rfdetr\rfdetr-nano-f16.gguf",
             ),
@@ -259,11 +260,11 @@ mod tests {
         );
         assert_eq!(
             help_spec.executable,
-            PathBuf::from(r"C:\Program Files\Solstone\bin\rfdetr-cli.exe")
+            PathBuf::from(r"C:\Program Files\Solstone").join("lib/solstone-native/rfdetr-cli.exe")
         );
         assert_eq!(
             help_spec.current_directory,
-            package.package_root.join("bin")
+            package.package_root.join("lib/solstone-native")
         );
         assert_eq!(help_spec.arguments, vec!["--help"]);
         assert_eq!(help_spec.environment.len(), 1);

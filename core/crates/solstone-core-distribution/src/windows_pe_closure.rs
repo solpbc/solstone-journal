@@ -3,16 +3,20 @@
 
 //! Static dependency closure of the producer's declared PE bytes.
 //!
-//! This is not a loaded-module or dynamic LoadLibrary census. Runtime feature
-//! tests still establish the actual loaded paths. Directory resolution follows
-//! the existing win-dll-load policies (ApplicationDir for ORT/CED, DllLoadDir
-//! for PDFium), never an ambient PATH or an arbitrary matching package basename.
+//! This remains a static closure, not a loaded-module census. CED, ONNX
+//! Runtime, the Vulkan loader, and PDFium are DllLoadDir images. Do not claim
+//! loaded-module precedence. Directory resolution follows the existing
+//! win-dll-load policies, never an ambient PATH or an arbitrary matching
+//! package basename.
 //! https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
 
 use std::collections::BTreeMap;
 
+use crate::inventory::is_allowed_msvc_repetition;
 use crate::pe_dependencies::{PeDependencies, inspect_dependencies};
-use crate::windows_payload::{WINDOWS_ONNXRUNTIME_LIBRARY, WINDOWS_PDFIUM_LIBRARY};
+use crate::windows_payload::{
+    WINDOWS_CED_LIBRARY, WINDOWS_ONNXRUNTIME_LIBRARY, WINDOWS_PDFIUM_LIBRARY, WINDOWS_VULKAN_LOADER,
+};
 
 // Explicit Win10/11 system contracts observed in the admitted native inputs.
 // An API-set prefix is not admission. New names require an observed import and
@@ -93,7 +97,7 @@ pub fn inspect_runtime_closure<'a>(
     members: impl IntoIterator<Item = (&'a str, &'a [u8])>,
 ) -> Result<Vec<RuntimeEdge>, String> {
     let mut images = BTreeMap::new();
-    let mut basenames = BTreeMap::new();
+    let mut basenames: BTreeMap<String, Vec<(&str, &[u8])>> = BTreeMap::new();
     for (path, bytes) in members {
         if !path.is_ascii()
             || path.contains('\\')
@@ -113,8 +117,26 @@ pub fn inspect_runtime_closure<'a>(
         if SYSTEM_DLLS.contains(&basename) {
             return Err(format!("package PE shadows a system contract: {path}"));
         }
-        if let Some(prior) = basenames.insert(basename.to_owned(), path.to_owned()) {
-            return Err(format!("case-colliding PE basenames: {prior}, {path}"));
+        let seen = basenames.entry(basename.to_owned()).or_default();
+        seen.push((path, bytes));
+        match seen.len() {
+            1 => {}
+            2 => {
+                let (prior_path, prior_bytes) = seen[0];
+                if is_allowed_msvc_repetition(basename, prior_path, path) {
+                    if prior_bytes != bytes {
+                        return Err(format!(
+                            "repeated private CRT bytes differ: {prior_path}, {path}"
+                        ));
+                    }
+                } else {
+                    return Err(format!("case-colliding PE basenames: {prior_path}, {path}"));
+                }
+            }
+            _ => {
+                let (prior_path, _) = seen[0];
+                return Err(format!("case-colliding PE basenames: {prior_path}, {path}"));
+            }
         }
         let info = inspect_dependencies(bytes).map_err(|e| format!("{path}: {e}"))?;
         if (basename.ends_with(".dll") && !info.is_dll)
@@ -130,7 +152,7 @@ pub fn inspect_runtime_closure<'a>(
 
 fn search_directory(path: &str, is_dll: bool) -> Result<&str, String> {
     let (parent, _) = path.rsplit_once('/').ok_or("PE has no package directory")?;
-    if parent == "bin" || path == WINDOWS_ONNXRUNTIME_LIBRARY {
+    if parent == "bin" {
         return Ok("bin");
     }
     let pdf_dir = WINDOWS_PDFIUM_LIBRARY.rsplit_once('/').unwrap().0;
@@ -159,6 +181,17 @@ fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<Runtim
         ] {
             for name in names {
                 let library = crate::pe_dependencies::dll_name(name)?;
+                if (path == WINDOWS_CED_LIBRARY
+                    || path == WINDOWS_ONNXRUNTIME_LIBRARY
+                    || path == WINDOWS_VULKAN_LOADER
+                    || path == WINDOWS_PDFIUM_LIBRARY)
+                    && (kind == "delay-import" || kind == "forwarder")
+                    && !SYSTEM_DLLS.contains(&library.as_str())
+                {
+                    return Err(format!(
+                        "{path}: unsupported {kind} {library} under DllLoadDir"
+                    ));
+                }
                 let member = if SYSTEM_DLLS.contains(&library.as_str()) {
                     None
                 } else {
@@ -249,7 +282,7 @@ mod tests {
                 image(true, &["vcruntime140.dll"], &[], &[]),
             ),
             (
-                "bin/vcruntime140.dll".into(),
+                "lib/solstone-native/vcruntime140.dll".into(),
                 image(true, &["kernel32.dll"], &[], &[]),
             ),
         ]);
@@ -263,7 +296,7 @@ mod tests {
                 .unwrap_err()
                 .contains("lib/solstone-core-pdf")
         );
-        images.remove("bin/vcruntime140.dll");
+        images.remove("lib/solstone-native/vcruntime140.dll");
         images.insert(
             "lib/elsewhere/vcruntime140.dll".into(),
             image(true, &[], &[], &[]),
@@ -275,15 +308,15 @@ mod tests {
     fn vulkan_loader_is_app_local_while_configuration_manager_is_system() {
         let mut images = BTreeMap::from([
             (
-                "bin/llama-server.exe".into(),
+                "lib/solstone-native/llama-server.exe".into(),
                 image(false, &["vulkan-1.dll"], &[], &[]),
             ),
             (
-                "bin/vulkan-1.dll".into(),
+                "lib/solstone-native/vulkan-1.dll".into(),
                 image(true, &["cfgmgr32.dll", "vcruntime140.dll"], &[], &[]),
             ),
             (
-                "bin/vcruntime140.dll".into(),
+                "lib/solstone-native/vcruntime140.dll".into(),
                 image(true, &["kernel32.dll"], &[], &[]),
             ),
         ]);
@@ -291,14 +324,14 @@ mod tests {
         assert!(
             edges
                 .iter()
-                .any(|e| e.member.as_deref() == Some("bin/vulkan-1.dll"))
+                .any(|e| e.member.as_deref() == Some("lib/solstone-native/vulkan-1.dll"))
         );
         assert!(
             edges
                 .iter()
                 .any(|e| e.library == "cfgmgr32.dll" && e.member.is_none())
         );
-        images.remove("bin/vulkan-1.dll");
+        images.remove("lib/solstone-native/vulkan-1.dll");
         assert!(inspect_edges(&images).is_err());
     }
 
@@ -354,5 +387,123 @@ mod tests {
 
         let images_bad = BTreeMap::from([(tool.into(), image(false, &["custom.dll"], &[], &[]))]);
         assert!(inspect_edges(&images_bad).is_err());
+    }
+
+    #[test]
+    fn identical_byte_crt_pair_and_edge_resolution() {
+        let bytes = crate::pe_dependencies::tests::image();
+        let closure = inspect_runtime_closure([
+            ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
+            ("lib/solstone-nvattest/vcruntime140.dll", bytes.as_slice()),
+        ])
+        .unwrap();
+        assert!(closure.is_empty());
+
+        let images = BTreeMap::from([
+            (
+                "lib/solstone-native/llama-server.exe".into(),
+                image(false, &["vcruntime140.dll"], &[], &[]),
+            ),
+            (
+                "lib/solstone-native/vcruntime140.dll".into(),
+                image(true, &["kernel32.dll"], &[], &[]),
+            ),
+            (
+                "lib/solstone-nvattest/vcruntime140.dll".into(),
+                image(true, &["kernel32.dll"], &[], &[]),
+            ),
+        ]);
+        let edges = inspect_edges(&images).unwrap();
+        assert!(edges.iter().any(|e| {
+            e.importer == "lib/solstone-native/llama-server.exe"
+                && e.member.as_deref() == Some("lib/solstone-native/vcruntime140.dll")
+        }));
+    }
+
+    #[test]
+    fn differing_crt_bytes_refuse() {
+        let bytes = crate::pe_dependencies::tests::image();
+        let mut diff_bytes = bytes.clone();
+        diff_bytes.push(0);
+        let err = inspect_runtime_closure([
+            ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
+            (
+                "lib/solstone-nvattest/vcruntime140.dll",
+                diff_bytes.as_slice(),
+            ),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            err,
+            "repeated private CRT bytes differ: lib/solstone-native/vcruntime140.dll, lib/solstone-nvattest/vcruntime140.dll"
+        );
+    }
+
+    #[test]
+    fn duplicate_basename_in_other_private_directory_refuses() {
+        let bytes = crate::pe_dependencies::tests::image();
+        let err = inspect_runtime_closure([
+            ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
+            ("lib/solstone-other/vcruntime140.dll", bytes.as_slice()),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            err,
+            "case-colliding PE basenames: lib/solstone-native/vcruntime140.dll, lib/solstone-other/vcruntime140.dll"
+        );
+    }
+
+    #[test]
+    fn third_path_crt_collision_refuses() {
+        let bytes = crate::pe_dependencies::tests::image();
+        let err = inspect_runtime_closure([
+            ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
+            ("lib/solstone-nvattest/vcruntime140.dll", bytes.as_slice()),
+            ("lib/solstone-other/vcruntime140.dll", bytes.as_slice()),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            err,
+            "case-colliding PE basenames: lib/solstone-native/vcruntime140.dll, lib/solstone-other/vcruntime140.dll"
+        );
+    }
+
+    #[test]
+    fn dllloaddir_refuses_non_system_delay_import_even_if_sibling_present() {
+        let images = BTreeMap::from([
+            (
+                "lib/solstone-native/ced.dll".into(),
+                image(true, &[], &["sibling.dll"], &[]),
+            ),
+            (
+                "lib/solstone-native/sibling.dll".into(),
+                image(true, &[], &[], &[]),
+            ),
+        ]);
+        let err = inspect_edges(&images).unwrap_err();
+        assert_eq!(
+            err,
+            "lib/solstone-native/ced.dll: unsupported delay-import sibling.dll under DllLoadDir"
+        );
+    }
+
+    #[test]
+    fn private_exe_resolves_sibling_delay_import() {
+        let images = BTreeMap::from([
+            (
+                "lib/solstone-native/llama-server.exe".into(),
+                image(false, &[], &["sibling.dll"], &[]),
+            ),
+            (
+                "lib/solstone-native/sibling.dll".into(),
+                image(true, &["kernel32.dll"], &[], &[]),
+            ),
+        ]);
+        let edges = inspect_edges(&images).unwrap();
+        assert!(edges.iter().any(|e| {
+            e.importer == "lib/solstone-native/llama-server.exe"
+                && e.kind == "delay-import"
+                && e.member.as_deref() == Some("lib/solstone-native/sibling.dll")
+        }));
     }
 }

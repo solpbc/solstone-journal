@@ -4,6 +4,8 @@
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 
+use solstone_core_installed_payload::windows_payload::WINDOWS_LLAMA_SERVER;
+
 use super::{lease, local_backend_choice, local_backend_choice_present, manifest, pins, status};
 
 pub fn inspect_local(input: Map<String, Value>) -> Value {
@@ -167,7 +169,7 @@ fn inspect_local_with(
                     "reason_code": "package_unavailable",
                     "message": msg,
                 }),
-                PathBuf::from("bin/llama-server.exe"),
+                PathBuf::from(WINDOWS_LLAMA_SERVER),
             ),
             Err(super::windows_engine::WindowsLlamaPackageError::Invalid(msg)) => (
                 json!({
@@ -175,7 +177,7 @@ fn inspect_local_with(
                     "reason_code": "package_invalid",
                     "message": msg,
                 }),
-                PathBuf::from("bin/llama-server.exe"),
+                PathBuf::from(WINDOWS_LLAMA_SERVER),
             ),
         };
         (true, root.join("bin"), proof, path)

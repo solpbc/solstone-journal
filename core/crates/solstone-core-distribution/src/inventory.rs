@@ -391,15 +391,39 @@ pub enum WindowsNativeMapping {
     FirstParty,
 }
 
+pub(crate) fn is_allowed_msvc_repetition(member: &str, dest_a: &str, dest_b: &str) -> bool {
+    match member {
+        "msvcp140.dll" => {
+            (dest_a == "lib/solstone-native/msvcp140.dll"
+                && dest_b == "lib/solstone-nvattest/msvcp140.dll")
+                || (dest_a == "lib/solstone-nvattest/msvcp140.dll"
+                    && dest_b == "lib/solstone-native/msvcp140.dll")
+        }
+        "vcruntime140.dll" => {
+            (dest_a == "lib/solstone-native/vcruntime140.dll"
+                && dest_b == "lib/solstone-nvattest/vcruntime140.dll")
+                || (dest_a == "lib/solstone-nvattest/vcruntime140.dll"
+                    && dest_b == "lib/solstone-native/vcruntime140.dll")
+        }
+        "vcruntime140_1.dll" => {
+            (dest_a == "lib/solstone-native/vcruntime140_1.dll"
+                && dest_b == "lib/solstone-nvattest/vcruntime140_1.dll")
+                || (dest_a == "lib/solstone-nvattest/vcruntime140_1.dll"
+                    && dest_b == "lib/solstone-native/vcruntime140_1.dll")
+        }
+        _ => false,
+    }
+}
+
 pub fn windows_native_entry_mapping(
     component: WindowsNativeComponent,
     dest: &str,
 ) -> Result<WindowsNativeMapping, InventoryError> {
     match (component, dest) {
-        (WindowsNativeComponent::Llama, "bin/llama-server.exe") => {
+        (WindowsNativeComponent::Llama, "lib/solstone-native/llama-server.exe") => {
             Ok(WindowsNativeMapping::Component("llama-server"))
         }
-        (WindowsNativeComponent::Llama, "bin/vulkan-1.dll") => {
+        (WindowsNativeComponent::Llama, "lib/solstone-native/vulkan-1.dll") => {
             Ok(WindowsNativeMapping::Component("vulkan-loader"))
         }
         (WindowsNativeComponent::Llama, "share/provenance/llama/receipt.json")
@@ -419,7 +443,7 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Notice)
         }
 
-        (WindowsNativeComponent::Ced, "bin/ced.dll") => {
+        (WindowsNativeComponent::Ced, "lib/solstone-native/ced.dll") => {
             Ok(WindowsNativeMapping::Component("ced-engine"))
         }
         (WindowsNativeComponent::Ced, "share/provenance/ced/receipt.json")
@@ -430,7 +454,7 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Notice)
         }
 
-        (WindowsNativeComponent::Onnx, "lib/solstone-core-speakers-analyze/onnxruntime.dll") => {
+        (WindowsNativeComponent::Onnx, "lib/solstone-native/onnxruntime.dll") => {
             Ok(WindowsNativeMapping::Component("onnxruntime"))
         }
         (WindowsNativeComponent::Onnx, "share/provenance/onnx/receipt.json")
@@ -441,7 +465,7 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Notice)
         }
 
-        (WindowsNativeComponent::Parakeet, "bin/parakeet-server.exe") => {
+        (WindowsNativeComponent::Parakeet, "lib/solstone-native/parakeet-server.exe") => {
             Ok(WindowsNativeMapping::Component("parakeet-server"))
         }
         (
@@ -456,7 +480,7 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Notice)
         }
 
-        (WindowsNativeComponent::Rfdetr, "bin/rfdetr-cli.exe") => {
+        (WindowsNativeComponent::Rfdetr, "lib/solstone-native/rfdetr-cli.exe") => {
             Ok(WindowsNativeMapping::Component("rfdetr-engine"))
         }
         (WindowsNativeComponent::Rfdetr, "share/provenance/rfdetr/receipt.json")
@@ -490,10 +514,13 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Notice)
         }
 
-        (WindowsNativeComponent::Msvc, "bin/msvcp140.dll")
-        | (WindowsNativeComponent::Msvc, "bin/vcruntime140.dll")
-        | (WindowsNativeComponent::Msvc, "bin/vcruntime140_1.dll")
-        | (WindowsNativeComponent::Msvc, "bin/vcomp140.dll") => {
+        (WindowsNativeComponent::Msvc, "lib/solstone-native/msvcp140.dll")
+        | (WindowsNativeComponent::Msvc, "lib/solstone-native/vcruntime140.dll")
+        | (WindowsNativeComponent::Msvc, "lib/solstone-native/vcruntime140_1.dll")
+        | (WindowsNativeComponent::Msvc, "lib/solstone-native/vcomp140.dll")
+        | (WindowsNativeComponent::Msvc, "lib/solstone-nvattest/msvcp140.dll")
+        | (WindowsNativeComponent::Msvc, "lib/solstone-nvattest/vcruntime140.dll")
+        | (WindowsNativeComponent::Msvc, "lib/solstone-nvattest/vcruntime140_1.dll") => {
             Ok(WindowsNativeMapping::Component("msvc-runtime"))
         }
         (WindowsNativeComponent::Msvc, "share/provenance/msvc/archive.json")
@@ -525,7 +552,7 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Notice)
         }
 
-        (WindowsNativeComponent::Nvattest, "bin/nvattest.exe")
+        (WindowsNativeComponent::Nvattest, "lib/solstone-nvattest/nvattest.exe")
         | (WindowsNativeComponent::Nvattest, "share/ca/ca-bundle.pem") => {
             Ok(WindowsNativeMapping::Component("nvattest"))
         }
@@ -1000,7 +1027,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
     let mut missing_targets = BTreeSet::new();
     let mut unexpected_lanes = BTreeSet::new();
     let mut unexpected_dests = BTreeSet::new();
-    let mut native_members = BTreeSet::new();
+    let mut native_members: BTreeMap<(WindowsNativeComponent, &str), Vec<&str>> = BTreeMap::new();
     let mut windows_build_evidence = false;
     for entry in &inventory.entry {
         let Some(class) = entry.class() else {
@@ -1026,6 +1053,45 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
                 "missing-class: {kind} {dest_or_source}"
             )));
         };
+
+        if let Entry::WindowsNative {
+            component,
+            member,
+            dest,
+            mode,
+            targets,
+            ..
+        } = entry
+        {
+            if targets.as_slice() != ["windows-x86_64"]
+                || !matches!(*mode, 0o644 | 0o755)
+                || member.is_empty()
+                || !member.is_ascii()
+                || member.contains(['\\', ':'])
+                || member
+                    .split('/')
+                    .any(|part| part.is_empty() || matches!(part, "." | ".."))
+            {
+                return Err(InventoryError::new("invalid Windows native entry"));
+            }
+            let dests = native_members
+                .entry((*component, member.as_str()))
+                .or_default();
+            dests.push(dest.as_str());
+            match dests.len() {
+                1 => {}
+                2 => {
+                    if *component != WindowsNativeComponent::Msvc
+                        || !is_allowed_msvc_repetition(member, dests[0], dests[1])
+                    {
+                        return Err(InventoryError::new("duplicate Windows native input member"));
+                    }
+                }
+                _ => {
+                    return Err(InventoryError::new("duplicate Windows native input member"));
+                }
+            }
+        }
 
         match entry {
             Entry::WindowsBuildEvidence { dest, .. } => {
@@ -1158,29 +1224,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             }
             windows_build_evidence = true;
         }
-        if let Entry::WindowsNative {
-            component,
-            member,
-            mode,
-            targets,
-            ..
-        } = entry
-        {
-            if targets.as_slice() != ["windows-x86_64"]
-                || !matches!(*mode, 0o644 | 0o755)
-                || member.is_empty()
-                || !member.is_ascii()
-                || member.contains(['\\', ':'])
-                || member
-                    .split('/')
-                    .any(|part| part.is_empty() || matches!(part, "." | ".."))
-            {
-                return Err(InventoryError::new("invalid Windows native entry"));
-            }
-            if !native_members.insert((*component, member.as_str())) {
-                return Err(InventoryError::new("duplicate Windows native input member"));
-            }
-        }
+
         if let Entry::PinnedNative {
             component,
             dest,
@@ -2799,7 +2843,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
-        assert_eq!(inv.entry.len(), 166);
+        assert_eq!(inv.entry.len(), 169);
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }
@@ -2937,20 +2981,46 @@ zig_gnu = "x86_64-linux-gnu.2.28"
                 break;
             }
         }
+
+        // Old dest bin/ced.dll is unmapped-windows-entry
+        let mut inv_old_ced = original.clone();
+        for entry in &mut inv_old_ced.entry {
+            if let Entry::WindowsNative {
+                component, dest, ..
+            } = entry
+                && *component == WindowsNativeComponent::Ced
+            {
+                *dest = "bin/ced.dll".into();
+                let err = super::validate_inventory(&path, &inv_old_ced)
+                    .unwrap_err()
+                    .to_string();
+                assert!(
+                    err.contains("unmapped-windows-entry: ced bin/ced.dll"),
+                    "{err}"
+                );
+                break;
+            }
+        }
     }
 
     #[test]
     fn windows_native_mappings_and_distinct_ids() {
         assert_ne!(
-            windows_native_entry_mapping(WindowsNativeComponent::Llama, "bin/llama-server.exe")
-                .unwrap(),
-            windows_native_entry_mapping(WindowsNativeComponent::Llama, "bin/vulkan-1.dll")
-                .unwrap()
+            windows_native_entry_mapping(
+                WindowsNativeComponent::Llama,
+                "lib/solstone-native/llama-server.exe"
+            )
+            .unwrap(),
+            windows_native_entry_mapping(
+                WindowsNativeComponent::Llama,
+                "lib/solstone-native/vulkan-1.dll"
+            )
+            .unwrap()
         );
         assert_ne!(
             windows_native_entry_mapping(
                 WindowsNativeComponent::Parakeet,
-                "bin/parakeet-server.exe"
+                "lib/solstone-native/parakeet-server.exe"
             )
             .unwrap(),
             windows_native_entry_mapping(
@@ -3053,5 +3123,82 @@ zig_gnu = "x86_64-linux-gnu.2.28"
         .into_iter()
         .collect();
         assert_eq!(non_catalog_ids, expected_non_catalog);
+    }
+
+    #[test]
+    fn windows_native_repetition_rules() {
+        assert!(super::is_allowed_msvc_repetition(
+            "msvcp140.dll",
+            "lib/solstone-native/msvcp140.dll",
+            "lib/solstone-nvattest/msvcp140.dll"
+        ));
+        assert!(super::is_allowed_msvc_repetition(
+            "msvcp140.dll",
+            "lib/solstone-nvattest/msvcp140.dll",
+            "lib/solstone-native/msvcp140.dll"
+        ));
+        assert!(super::is_allowed_msvc_repetition(
+            "vcruntime140.dll",
+            "lib/solstone-native/vcruntime140.dll",
+            "lib/solstone-nvattest/vcruntime140.dll"
+        ));
+        assert!(super::is_allowed_msvc_repetition(
+            "vcruntime140_1.dll",
+            "lib/solstone-native/vcruntime140_1.dll",
+            "lib/solstone-nvattest/vcruntime140_1.dll"
+        ));
+        assert!(!super::is_allowed_msvc_repetition(
+            "vcomp140.dll",
+            "lib/solstone-native/vcomp140.dll",
+            "lib/solstone-nvattest/vcomp140.dll"
+        ));
+        assert!(!super::is_allowed_msvc_repetition(
+            "ced.dll",
+            "lib/solstone-native/ced.dll",
+            "lib/solstone-nvattest/ced.dll"
+        ));
+
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let path = repo.join("core/distribution/inventory.toml");
+        let original = super::load_inventory(&path).unwrap();
+
+        // Duplicated non-CRT member
+        let mut inv_dup_non_crt = original.clone();
+        inv_dup_non_crt.entry.push(Entry::WindowsNative {
+            class: Some(DeliveryClass::Component),
+            component: WindowsNativeComponent::Ced,
+            member: "bin/ced.dll".into(),
+            dest: "lib/solstone-other/ced.dll".into(),
+            mode: 0o755,
+            targets: vec!["windows-x86_64".into()],
+        });
+        let err = super::validate_inventory(&path, &inv_dup_non_crt)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("duplicate Windows native input member"),
+            "{err}"
+        );
+
+        // Third copy of CRT member
+        let mut inv_third_crt = original.clone();
+        inv_third_crt.entry.push(Entry::WindowsNative {
+            class: Some(DeliveryClass::Component),
+            component: WindowsNativeComponent::Msvc,
+            member: "msvcp140.dll".into(),
+            dest: "lib/solstone-other/msvcp140.dll".into(),
+            mode: 0o755,
+            targets: vec!["windows-x86_64".into()],
+        });
+        let err = super::validate_inventory(&path, &inv_third_crt)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("duplicate Windows native input member"),
+            "{err}"
+        );
     }
 }

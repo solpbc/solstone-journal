@@ -39,9 +39,9 @@ impl LoadedOnnxRuntime {
 /// as with load_dll. This performs no alternate file discovery.
 pub fn load_onnx_runtime(path: &Path, api_level: u32) -> Result<LoadedOnnxRuntime, String> {
     restrict_default_dll_directories().map_err(|error| error.to_string())?;
-    // Runtime dependencies are the app-local CRT in bin plus Windows system
-    // DLLs. No cwd, PATH, or user DLL directory participates in resolution.
-    let library = load_dll(LoadPolicy::ApplicationDir, path).map_err(|error| error.to_string())?;
+    // Ordinary dependencies resolve from the DLL directory on that LoadLibraryEx;
+    // a later delay-load does not. No cwd, PATH, or user DLL directory.
+    let library = load_dll(LoadPolicy::DllLoadDir, path).map_err(|error| error.to_string())?;
     // SAFETY: the caller admitted the ONNX Runtime DLL. Its documented export
     // has this ABI; the library remains live until after every pointer use.
     let getter: libloading::Symbol<unsafe extern "system" fn() -> *const OrtApiBase> =

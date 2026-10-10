@@ -2301,11 +2301,11 @@ mod windows_payload {
         let root = real_helper_dir();
         assert_admits(&root);
         for member in [
-            "bin/nvattest.exe",
+            "lib/solstone-nvattest/nvattest.exe",
             "share/ca/ca-bundle.pem",
-            "bin/msvcp140.dll",
-            "bin/vcruntime140.dll",
-            "bin/vcruntime140_1.dll",
+            "lib/solstone-nvattest/msvcp140.dll",
+            "lib/solstone-nvattest/vcruntime140.dll",
+            "lib/solstone-nvattest/vcruntime140_1.dll",
         ] {
             let path = root.join(member);
             with_changed(
@@ -2377,8 +2377,12 @@ mod windows_payload {
         while long.to_str().unwrap().encode_utf16().count() < 300 {
             long.push("长路径段");
         }
-        std::fs::create_dir_all(long.join("bin")).unwrap();
-        std::fs::copy(root.join("bin/nvattest.exe"), long.join("bin/nvattest.exe")).unwrap();
+        std::fs::create_dir_all(long.join("lib/solstone-nvattest")).unwrap();
+        std::fs::copy(
+            root.join("lib/solstone-nvattest/nvattest.exe"),
+            long.join("lib/solstone-nvattest/nvattest.exe"),
+        )
+        .unwrap();
         assert_eq!(
             appraise(&long, &evidence()).unwrap_err(),
             GpuAppraisalReason::NvattestUnavailable

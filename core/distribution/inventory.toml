@@ -686,7 +686,7 @@ kind = "windows-native"
 class = "component"
 component = "ced"
 member = "bin/ced.dll"
-dest = "bin/ced.dll"
+dest = "lib/solstone-native/ced.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
@@ -695,7 +695,7 @@ kind = "windows-native"
 class = "component"
 component = "onnx"
 member = "bin/onnxruntime.dll"
-dest = "lib/solstone-core-speakers-analyze/onnxruntime.dll"
+dest = "lib/solstone-native/onnxruntime.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
@@ -704,7 +704,7 @@ kind = "windows-native"
 class = "component"
 component = "parakeet"
 member = "bin/parakeet-server.exe"
-dest = "bin/parakeet-server.exe"
+dest = "lib/solstone-native/parakeet-server.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
 
@@ -722,7 +722,7 @@ kind = "windows-native"
 class = "component"
 component = "rfdetr"
 member = "bin/rfdetr-cli.exe"
-dest = "bin/rfdetr-cli.exe"
+dest = "lib/solstone-native/rfdetr-cli.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
 
@@ -758,7 +758,7 @@ kind = "windows-native"
 class = "component"
 component = "msvc"
 member = "msvcp140.dll"
-dest = "bin/msvcp140.dll"
+dest = "lib/solstone-native/msvcp140.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
@@ -767,7 +767,7 @@ kind = "windows-native"
 class = "component"
 component = "msvc"
 member = "vcruntime140.dll"
-dest = "bin/vcruntime140.dll"
+dest = "lib/solstone-native/vcruntime140.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
@@ -776,7 +776,7 @@ kind = "windows-native"
 class = "component"
 component = "msvc"
 member = "vcruntime140_1.dll"
-dest = "bin/vcruntime140_1.dll"
+dest = "lib/solstone-native/vcruntime140_1.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
@@ -785,7 +785,34 @@ kind = "windows-native"
 class = "component"
 component = "msvc"
 member = "vcomp140.dll"
-dest = "bin/vcomp140.dll"
+dest = "lib/solstone-native/vcomp140.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "msvc"
+member = "msvcp140.dll"
+dest = "lib/solstone-nvattest/msvcp140.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "msvc"
+member = "vcruntime140.dll"
+dest = "lib/solstone-nvattest/vcruntime140.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "msvc"
+member = "vcruntime140_1.dll"
+dest = "lib/solstone-nvattest/vcruntime140_1.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
@@ -1450,7 +1477,7 @@ kind = "windows-native"
 class = "component"
 component = "llama"
 member = "bin/llama-server.exe"
-dest = "bin/llama-server.exe"
+dest = "lib/solstone-native/llama-server.exe"
 mode = 493
 targets = ["windows-x86_64"]
 
@@ -1459,7 +1486,7 @@ kind = "windows-native"
 class = "component"
 component = "llama"
 member = "bin/vulkan-1.dll"
-dest = "bin/vulkan-1.dll"
+dest = "lib/solstone-native/vulkan-1.dll"
 mode = 493
 targets = ["windows-x86_64"]
 
@@ -1594,7 +1621,7 @@ kind = "windows-native"
 class = "component"
 component = "nvattest"
 member = "bin/nvattest.exe"
-dest = "bin/nvattest.exe"
+dest = "lib/solstone-nvattest/nvattest.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
 

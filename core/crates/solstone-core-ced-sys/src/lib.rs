@@ -144,7 +144,7 @@ fn open_library(path: &Path) -> Result<Library, CedError> {
         restrict_default_dll_directories().map_err(|error| CedError::Library {
             detail: format!("could not restrict DLL search before loading CED: {error}"),
         })?;
-        load_dll(LoadPolicy::ApplicationDir, path).map_err(|error| CedError::Library {
+        load_dll(LoadPolicy::DllLoadDir, path).map_err(|error| CedError::Library {
             detail: format!("could not load ced engine {}: {error}", path.display()),
         })
     }

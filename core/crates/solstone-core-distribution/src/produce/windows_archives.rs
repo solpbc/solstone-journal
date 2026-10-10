@@ -24,21 +24,21 @@ impl AdmittedArchiveInput {
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct ArchivePin {
-    pub(crate) version: &'static str,
-    pub(crate) url: &'static str,
-    pub(crate) bytes: u64,
-    pub(crate) sha256: &'static str,
-    pub(crate) members: &'static [MemberPin],
+pub struct ArchivePin {
+    pub version: &'static str,
+    pub url: &'static str,
+    pub bytes: u64,
+    pub sha256: &'static str,
+    pub members: &'static [MemberPin],
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct MemberPin {
-    pub(crate) label: &'static str,
-    pub(crate) path: &'static str,
-    pub(crate) bytes: u64,
-    pub(crate) sha256: &'static str,
-    pub(crate) dll: bool,
+pub struct MemberPin {
+    pub label: &'static str,
+    pub path: &'static str,
+    pub bytes: u64,
+    pub sha256: &'static str,
+    pub dll: bool,
 }
 
 pub fn admit_restic(archive: &Path, license: &Path) -> Result<AdmittedArchiveInput, String> {
@@ -215,7 +215,7 @@ pub(crate) const RCLONE: ArchivePin = ArchivePin {
 };
 
 // Measured VSIX size, rather than its inconsistent catalog size; digest is identical.
-pub(crate) const MSVC: ArchivePin = ArchivePin {
+pub const MSVC: ArchivePin = ArchivePin {
     version: "14.44.35211.0",
     url: "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5/Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
     bytes: 3224191,

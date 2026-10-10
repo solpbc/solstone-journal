@@ -39,17 +39,21 @@ fn key() -> &'static KeyPair {
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("signed ü payload");
-    fs::create_dir_all(root.join("bin")).unwrap();
+    fs::create_dir_all(root.join("lib/solstone-nvattest")).unwrap();
     fs::create_dir_all(root.join("share/ca")).unwrap();
     fs::copy(
         std::env::current_exe().unwrap(),
-        root.join("bin/nvattest.exe"),
+        root.join("lib/solstone-nvattest/nvattest.exe"),
     )
     .unwrap();
     let system =
         PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot")).join("System32");
     for name in RUNTIME {
-        fs::copy(system.join(name), root.join("bin").join(name)).expect("VC runtime in System32");
+        fs::copy(
+            system.join(name),
+            root.join("lib/solstone-nvattest").join(name),
+        )
+        .expect("VC runtime in System32");
     }
     fs::write(root.join("share/ca/ca-bundle.pem"), b"fixture CA").unwrap();
     sign(&root);
@@ -87,11 +91,11 @@ fn signed_layout_refuses_missing_or_changed_executable_ca_and_runtime() {
     let root = dir.path().join("signed ü payload");
     assert!(locate_nvattest(&root).is_ok());
     for path in [
-        "bin/nvattest.exe",
+        "lib/solstone-nvattest/nvattest.exe",
         "share/ca/ca-bundle.pem",
-        "bin/msvcp140.dll",
-        "bin/vcruntime140.dll",
-        "bin/vcruntime140_1.dll",
+        "lib/solstone-nvattest/msvcp140.dll",
+        "lib/solstone-nvattest/vcruntime140.dll",
+        "lib/solstone-nvattest/vcruntime140_1.dll",
     ] {
         let path = root.join(path);
         let original = fs::read(&path).unwrap();
@@ -113,7 +117,11 @@ fn signed_layout_refuses_missing_or_changed_executable_ca_and_runtime() {
         );
         fs::write(&path, original).unwrap();
     }
-    fs::write(root.join("bin/unexpected.dll"), b"planted").unwrap();
+    fs::write(
+        root.join("lib/solstone-nvattest/unexpected.dll"),
+        b"planted",
+    )
+    .unwrap();
     assert_eq!(
         locate_nvattest(&root),
         Err(GpuAppraisalReason::NvattestIntegrityFailed)
@@ -159,7 +167,7 @@ fn production_spawn_clears_hostile_environment_and_uses_the_verified_directory()
     let cwd = PathBuf::from(report["cwd"].as_str().unwrap());
     assert_eq!(
         fs::canonicalize(cwd).unwrap(),
-        fs::canonicalize(root.join("bin")).unwrap()
+        fs::canonicalize(root.join("lib/solstone-nvattest")).unwrap()
     );
     assert_eq!(report["forbidden"], serde_json::json!([]));
     assert!(!report["path"].as_str().unwrap().contains("hostile"));

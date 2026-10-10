@@ -62,8 +62,8 @@ impl WindowsLlamaPackage {
     pub fn mock() -> Self {
         Self {
             package_root: PathBuf::from("C:\\test"),
-            engine: PathBuf::from("C:\\test\\bin\\llama-server.exe"),
-            loader: PathBuf::from("C:\\test\\bin\\vulkan-1.dll"),
+            engine: PathBuf::from("C:\\test\\lib\\solstone-native\\llama-server.exe"),
+            loader: PathBuf::from("C:\\test\\lib\\solstone-native\\vulkan-1.dll"),
             probe: PathBuf::from("C:\\test\\bin\\solstone-core-vulkan-probe.exe"),
             engine_sha256: "a".repeat(64),
             loader_sha256: "b".repeat(64),

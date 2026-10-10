@@ -242,6 +242,9 @@ use std::time::Instant;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use solstone_core_assets::{Artifact, Backend as AssetBackend, Platform as AssetPlatform, resolve};
+use solstone_core_installed_payload::windows_payload::{
+    WINDOWS_LLAMA_SERVER, WINDOWS_VULKAN_LOADER,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallVerb {
@@ -870,11 +873,11 @@ pub(crate) fn local_target_for_windows_package(
         "source": "signed-package",
         "members": [
             {
-                "path": "bin/llama-server.exe",
+                "path": WINDOWS_LLAMA_SERVER,
                 "sha256": package.engine_sha256,
             },
             {
-                "path": "bin/vulkan-1.dll",
+                "path": WINDOWS_VULKAN_LOADER,
                 "sha256": package.loader_sha256,
             },
             {

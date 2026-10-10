@@ -30,10 +30,11 @@ pub const WINDOWS_PAYLOAD_SCHEMA_V1: &str = "solstone.windows-installed-payload.
 pub const WINDOWS_PAYLOAD_TARGET: &str = "windows-x86_64";
 pub const WINDOWS_PAYLOAD_MANIFEST: &str = "share/provenance/windows-payload.json";
 pub const WINDOWS_PAYLOAD_SIGNATURE: &str = "share/provenance/windows-payload.json.minisig";
-/// The CED engine is a signed application-directory payload, never mutable
-/// journal state.
+/// The CED worker is a signed package executable, never an ambient sibling.
 pub const WINDOWS_CED_WORKER: &str = "bin/solstone-core-ced-analyze.exe";
-pub const WINDOWS_CED_LIBRARY: &str = "bin/ced.dll";
+/// The CED engine is a private-directory DLL loaded with DllLoadDir, never mutable
+/// journal state.
+pub const WINDOWS_CED_LIBRARY: &str = "lib/solstone-native/ced.dll";
 /// The CED model is a signed package member.
 pub const WINDOWS_CED_MODEL: &str = "lib/solstone_journal_models/assets/ced/ced-tiny-q8_0.gguf";
 /// The PDFium engine is a signed private-library payload, never a system or
@@ -47,7 +48,7 @@ pub const WINDOWS_SPEAKERS_ANALYZE_WORKER: &str = "bin/solstone-core-speakers-an
 /// The VAD helper is a signed package executable, never an ambient sibling.
 pub const WINDOWS_VAD_ANALYZE_WORKER: &str = "bin/solstone-core-vad-analyze.exe";
 /// The one shared ONNX Runtime DLL is a signed private package member.
-pub const WINDOWS_ONNXRUNTIME_LIBRARY: &str = "lib/solstone-core-speakers-analyze/onnxruntime.dll";
+pub const WINDOWS_ONNXRUNTIME_LIBRARY: &str = "lib/solstone-native/onnxruntime.dll";
 /// The speaker embedding model is a signed package member.
 pub const WINDOWS_WESPEAKER_MODEL: &str =
     "lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx";
@@ -57,7 +58,7 @@ pub const WINDOWS_PYANNOTE_MODEL: &str =
 /// The VAD model is a signed package member.
 pub const WINDOWS_SILERO_VAD_MODEL: &str = "lib/solstone_journal_models/assets/silero_vad_v6.onnx";
 /// The Parakeet server is a signed package executable, never an owner-installed service.
-pub const WINDOWS_PARAKEET_SERVER: &str = "bin/parakeet-server.exe";
+pub const WINDOWS_PARAKEET_SERVER: &str = "lib/solstone-native/parakeet-server.exe";
 /// The Parakeet model is a signed package member, never copied into journal state.
 pub const WINDOWS_PARAKEET_MODEL: &str =
     "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf";
@@ -65,14 +66,14 @@ pub const WINDOWS_PARAKEET_MODEL: &str =
 pub const WINDOWS_RESTIC_WORKER: &str = "lib/solstone-restic/restic.exe";
 pub const WINDOWS_RCLONE_WORKER: &str = "lib/solstone-rclone/rclone.exe";
 /// Required object detection uses the package engine and the bundled model.
-pub const WINDOWS_RFDETR_WORKER: &str = "bin/rfdetr-cli.exe";
+pub const WINDOWS_RFDETR_WORKER: &str = "lib/solstone-native/rfdetr-cli.exe";
 pub const WINDOWS_RFDETR_MODEL: &str =
     "lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf";
 /// Vulkan observation uses the signed probe executable and loader DLL.
 pub const WINDOWS_VULKAN_PROBE: &str = "bin/solstone-core-vulkan-probe.exe";
-pub const WINDOWS_VULKAN_LOADER: &str = "bin/vulkan-1.dll";
+pub const WINDOWS_VULKAN_LOADER: &str = "lib/solstone-native/vulkan-1.dll";
 /// Local thinking uses the signed package llama-server engine executable.
-pub const WINDOWS_LLAMA_SERVER: &str = "bin/llama-server.exe";
+pub const WINDOWS_LLAMA_SERVER: &str = "lib/solstone-native/llama-server.exe";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

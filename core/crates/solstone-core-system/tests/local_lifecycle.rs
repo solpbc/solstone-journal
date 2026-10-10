@@ -242,6 +242,7 @@ fn each_backend_plan_rejection_maps_to_launch_failed() {
         LocalLaunchConfig::Vulkan {
             common: common("test-exit"),
             binary_path: None,
+            package_root: None,
             devices: vec![VulkanDevice {
                 index: 0,
                 name: "test GPU".into(),

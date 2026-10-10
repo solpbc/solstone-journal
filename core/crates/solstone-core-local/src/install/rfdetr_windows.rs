@@ -136,7 +136,7 @@ pub fn rfdetr_windows_help_launch(
     package: &WindowsRfdetrPackage,
     system_root: OsString,
 ) -> RfdetrWindowsLaunchSpec {
-    let current_directory = package.package_root.join("bin");
+    let current_directory = package.binary.parent().unwrap().to_path_buf();
     RfdetrWindowsLaunchSpec {
         package_root: package.package_root.clone(),
         executable: package.binary.clone(),
@@ -159,7 +159,7 @@ pub fn rfdetr_windows_detect_launch(
     input: &Path,
     output: &Path,
 ) -> RfdetrWindowsLaunchSpec {
-    let current_directory = package.package_root.join("bin");
+    let current_directory = package.binary.parent().unwrap().to_path_buf();
     RfdetrWindowsLaunchSpec {
         package_root: package.package_root.clone(),
         executable: package.binary.clone(),
@@ -294,7 +294,10 @@ mod tests {
                     calls.set(calls.get() + 1);
                     let spec = rfdetr_windows_help_launch(package, OsString::from("system-root"));
                     assert_eq!(spec.executable, root.path().join(WINDOWS_RFDETR_WORKER));
-                    assert_eq!(spec.current_directory, root.path().join("bin"));
+                    assert_eq!(
+                        spec.current_directory,
+                        root.path().join(WINDOWS_RFDETR_WORKER).parent().unwrap()
+                    );
                     assert_eq!(spec.arguments, ["--help"]);
                     serde_json::json!({"runnable": true})
                 },

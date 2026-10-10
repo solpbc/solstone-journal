@@ -12,14 +12,14 @@ use std::{
 use crate::error::GpuAppraisalReason;
 
 #[cfg(windows)]
-pub(super) const BINARY: &str = "bin/nvattest.exe";
+pub(super) const BINARY: &str = "lib/solstone-nvattest/nvattest.exe";
 #[cfg(windows)]
 const CA_BUNDLE: &str = "share/ca/ca-bundle.pem";
 #[cfg(windows)]
 const RUNTIME: [&str; 3] = [
-    "bin/msvcp140.dll",
-    "bin/vcruntime140.dll",
-    "bin/vcruntime140_1.dll",
+    "lib/solstone-nvattest/msvcp140.dll",
+    "lib/solstone-nvattest/vcruntime140.dll",
+    "lib/solstone-nvattest/vcruntime140_1.dll",
 ];
 
 pub(super) fn child_path(path: &Path) -> Result<PathBuf, GpuAppraisalReason> {
@@ -100,10 +100,10 @@ pub(super) fn locate(root: &Path) -> Result<super::NvattestInstallation, GpuAppr
     }
     let binary = member(BINARY)?;
     let ca_bundle = member(CA_BUNDLE)?;
-    child_path(&root.join("bin"))?;
+    let lib_dir = child_path(&root.join("lib/solstone-nvattest"))?;
     Ok(super::NvattestInstallation {
         binary,
-        lib_dir: root.join("bin"),
+        lib_dir,
         ca_bundle,
     })
 }
