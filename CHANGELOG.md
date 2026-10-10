@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `solstone call health pipeline --day DAY` now says when it couldn't read a day's processing record, as `scan_failed` with a reason. before, on a day with a very large record, it said the day's recordings hadn't been processed.
 - on the entities page, when your journal refuses something you asked for, such as a merge or a restore, it now says why, for example that one side of a merge is blocked. before, it often said only "Entity request refused".
 - when your journal can't use what the model wrote for an activity's story, such as a story with nothing in it, the health page now says so. the activity is still left without a story; before, nothing said so.
+- the description of what was on your screen during a segment now shows in your search as soon as that segment is processed. before, it waited for the journal's daily search update, so the health page said search was catching up all day.
 
 ## [2.0.40] - 2026-10-10
 
