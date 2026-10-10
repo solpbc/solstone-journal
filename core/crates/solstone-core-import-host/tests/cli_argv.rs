@@ -129,6 +129,14 @@ fn generic_text_timestamp_writes_a_segment_from_the_stamp() {
         result.stdout
     );
     assert!(
+        result.stdout.contains("no turn times found in this file")
+            && result.stdout.contains(
+                "https://support.solstone.app/#report=v1&app=import&state=transcript%20times%20not%20recognized"
+            ),
+        "an untimed file says so and where to ask for its layout; stdout={}",
+        result.stdout
+    );
+    assert!(
         journal
             .path()
             .join("chronicle/20260818/import.text/062652_300/conversation_transcript.jsonl")
@@ -177,6 +185,11 @@ fn generic_text_v1_transcript_takes_its_times_from_the_file_with_no_model() {
             .stdout
             .contains("Generic text import complete: segments=2"),
         "stdout={}",
+        result.stdout
+    );
+    assert!(
+        !result.stdout.contains("no turn times found"),
+        "a recognized layout is not called untimed; stdout={}",
         result.stdout
     );
     let rows = |segment: &str| -> Vec<serde_json::Value> {

@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::{collections::HashMap, fs, path::Path, sync::LazyLock};
+use std::{
+    collections::HashMap,
+    fs,
+    io::{BufRead, BufReader},
+    path::Path,
+    sync::LazyLock,
+};
 
 use axum::{
     extract::{Path as AxumPath, Query, State},
@@ -457,6 +463,9 @@ pub(crate) async fn detail(
     if let Ok(segments) = value_from_file(&directory.join("segments.json")) {
         body.insert("segments_json".into(), segments);
     }
+    if untimed_transcript(&state.root, body.get("imported_json")) {
+        body.insert("untimed_transcript".into(), json!(true));
+    }
     let projection = solstone_core_import::project_import_result(&state.root, &timestamp);
     // A journal-archive merge records its results in import.json; imports from earlier
     // builds carry them in imported.json.
@@ -551,6 +560,43 @@ pub(crate) async fn detail(
     json_response(StatusCode::OK, Value::Object(body))
 }
 
+/// Whether a text import landed untimed: a segment it published says, in its header, that
+/// no entry's time was read from the file.
+fn untimed_transcript(root: &Path, imported: Option<&Value>) -> bool {
+    let Some(segments) = imported
+        .and_then(|record| record.get("segments"))
+        .and_then(Value::as_array)
+    else {
+        return false;
+    };
+    let plain =
+        |part: &str| !part.is_empty() && !part.contains(['/', '\\']) && !matches!(part, "." | "..");
+    segments.iter().any(|segment| {
+        let field = |key| segment.get(key).and_then(Value::as_str).unwrap_or("");
+        let (day, stream, key) = (field("day"), field("stream"), field("segment"));
+        if !stream.starts_with("import.text") || ![day, stream, key].into_iter().all(plain) {
+            return false;
+        }
+        let path = root
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join(key)
+            .join("conversation_transcript.jsonl");
+        let Ok(file) = fs::File::open(path) else {
+            return false;
+        };
+        let mut header = String::new();
+        if BufRead::read_line(&mut BufReader::new(file), &mut header).is_err() {
+            return false;
+        }
+        serde_json::from_str::<Value>(&header)
+            .ok()
+            .and_then(|header| header.get("untimed").and_then(Value::as_bool))
+            == Some(true)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,6 +651,60 @@ mod tests {
         // Set by the pre-existing tile-gated path, not by the new fallback (which never
         // fires here because a tile exists) — this pins that the fallback is additive.
         assert_eq!(info.values["source_display"], "Image", "{info:?}");
+    }
+
+    #[tokio::test]
+    async fn the_detail_route_says_when_a_text_import_landed_untimed() {
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        for (id, segment, header, untimed) in [
+            (
+                "20260101_120003",
+                "120003_300",
+                json!({"untimed": true}),
+                true,
+            ),
+            (
+                "20260101_130000",
+                "130000_300",
+                json!({"topics": "plans"}),
+                false,
+            ),
+        ] {
+            write_native_attempt(journal, id, "text");
+            fs::write(
+                journal.join("imports").join(id).join("imported.json"),
+                serde_json::to_vec(&json!({"segments": [
+                    {"day": "20260101", "stream": "import.text", "segment": segment}
+                ]}))
+                .unwrap(),
+            )
+            .unwrap();
+            let segment_dir = journal.join("chronicle/20260101/import.text").join(segment);
+            fs::create_dir_all(&segment_dir).unwrap();
+            fs::write(
+                segment_dir.join("conversation_transcript.jsonl"),
+                format!(
+                    "{header}\n{}\n",
+                    json!({"start": "00:00:00", "text": "hello", "source": "import"})
+                ),
+            )
+            .unwrap();
+
+            let state = AppState {
+                root: journal.to_path_buf(),
+            };
+            let response = detail(State(state), AxumPath(id.to_owned())).await;
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let body: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(
+                body.get("untimed_transcript") == Some(&json!(true)),
+                untimed,
+                "{body:?}"
+            );
+        }
     }
 
     #[tokio::test]

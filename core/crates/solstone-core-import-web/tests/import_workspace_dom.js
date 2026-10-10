@@ -2412,6 +2412,13 @@ function runDetailDropsFactsThatDoNotApply() {
   const successHtml = ImportDetail.renderDetail(cleanSuccess);
   assert.ok(successHtml.includes('<h2>where this landed</h2>'), 'a completed import says where it landed');
   assert.ok(successHtml.includes('href="#content"'), 'a completed import can lead to its imported content');
+  assert.ok(!successHtml.includes('no turn times found'), 'an import not marked untimed says nothing about times');
+  const untimedHtml = ImportDetail.renderDetail({ ...cleanSuccess, untimed_transcript: true });
+  assert.ok(
+    untimedHtml.includes('no turn times found in this file, so it landed as one segment at the import&#39;s start time')
+      && untimedHtml.includes('href="https://support.solstone.app/#report=v1&amp;app=import&amp;state=transcript%20times%20not%20recognized"'),
+    'an untimed text import says so and links where to ask for its layout'
+  );
   for (const label of ['unavailable description', 'unavailable pages', 'failed at', 'failed stage', 'error']) {
     assert.ok(!successHtml.includes(`<dt>${label}</dt>`), `a clean success says nothing about "${label}"`);
   }

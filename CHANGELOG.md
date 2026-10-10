@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- when you import a text or markdown transcript and the journal can't find turn times in it, the import now says so, both in the command's output and on the import's page, with a link to ask us to support how your transcript marks times. the file still lands as one segment at the import's start time, each line as written.
+
 ### Fixed
 
 - on the entities page, when your journal refuses something you asked for, such as a merge or a restore, it now says why, for example that one side of a merge is blocked. before, it often said only "Entity request refused".

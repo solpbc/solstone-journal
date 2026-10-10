@@ -531,9 +531,10 @@ fn run_text(
                 1,
             )
         }
-        TextImportOutcome::Success(work) => {
-            success(cli_render::generic_text_complete(work.created.len()))
-        }
+        TextImportOutcome::Success(work) => success(cli_render::generic_text_complete(
+            work.created.len(),
+            work.untimed,
+        )),
         TextImportOutcome::Failed { error, .. } => failure("", &format!("{error}\n"), 1),
     };
     (run, import_id)
