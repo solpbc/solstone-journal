@@ -229,9 +229,6 @@
           "key": {
             "type": "string"
           },
-          "observed": {
-            "type": "boolean"
-          },
           "original_key": {
             "type": "string"
           },
@@ -244,7 +241,6 @@
         },
         "required": [
           "key",
-          "observed",
           "files"
         ],
         "type": "object"
@@ -275,9 +271,9 @@
     }
   },
   "info": {
-    "description": "Generated from client_ingest_authority.json. Covers only the four Rust-served linked-device devices/ingest operations.",
+    "description": "Generated from client_ingest_authority.json. Covers only the two Rust-served linked-device devices/ingest operations: upload and segment listing.",
     "title": "Linked-device v3 ingest client contract",
-    "version": "14.0.0",
+    "version": "15.0.0",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },
@@ -520,259 +516,6 @@
         ]
       }
     },
-    "/app/devices/ingest/manifest": {
-      "get": {
-        "deprecated": true,
-        "description": "Deprecated. Return days with uploaded linked-device segment history. A device proves custody from the upload response's `file_descriptors` and reads `segments/{day}` only when its own record of an upload is missing; this operation keeps answering until devices in the field no longer call it.",
-        "operationId": "client.ingestManifest",
-        "parameters": [
-          {
-            "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
-            "in": "header",
-            "name": "X-Solstone-Protocol-Version",
-            "required": true,
-            "schema": {
-              "const": 3,
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Optional device-chosen sub-stream discriminator.",
-            "in": "query",
-            "name": "source",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "days": {
-                    "20260815": {
-                      "segments": 3
-                    }
-                  }
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "days": {
-                      "additionalProperties": {
-                        "additionalProperties": true,
-                        "properties": {
-                          "segments": {
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      },
-                      "type": "object"
-                    }
-                  },
-                  "required": [
-                    "days"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Available manifest days keyed by YYYYMMDD."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Protocol version missing or malformed.",
-            "x-reason-codes": [
-              "protocol_version_required",
-              "protocol_version_malformed"
-            ]
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "A linked-device identity is required.",
-            "x-reason-codes": [
-              "linked_device_required"
-            ]
-          },
-          "426": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Protocol version is not 3.",
-            "x-reason-codes": [
-              "protocol_version_legacy",
-              "protocol_version_future"
-            ]
-          }
-        },
-        "summary": "List linked-device ingest manifest days",
-        "tags": [
-          "client"
-        ]
-      }
-    },
-    "/app/devices/ingest/manifest/{day}": {
-      "get": {
-        "deprecated": true,
-        "description": "Deprecated. Return file names, sizes, sha256 hashes, and custody status for every physical segment on one day. Segment-map keys equal the corresponding `segments/{day}` collection item keys; each map value contains only `files`. A basename that appears once remains its key. Repeated basenames use collection aliases `{basename}~{stream}`, then `~2`, `~3`, and so on, skipping occupied names. An alias is a listing identifier, not a directory basename. The collection item carries `segment` and `stream` to correlate a collided physical segment. A within-segment effective-name clash remains `ambiguous_segment_file_name`. This operation keeps answering until devices in the field no longer call it.",
-        "operationId": "client.ingestManifestDay",
-        "parameters": [
-          {
-            "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
-            "in": "header",
-            "name": "X-Solstone-Protocol-Version",
-            "required": true,
-            "schema": {
-              "const": 3,
-              "type": "integer"
-            }
-          },
-          {
-            "description": "YYYYMMDD day.",
-            "in": "path",
-            "name": "day",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Optional device-chosen sub-stream discriminator.",
-            "in": "query",
-            "name": "source",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "day": "20260815",
-                  "segments": {
-                    "143000": {
-                      "files": [
-                        {
-                          "name": "audio.m4a",
-                          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                          "size": 4096,
-                          "status": "present"
-                        }
-                      ]
-                    }
-                  },
-                  "version": 1
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "day": {
-                      "type": "string"
-                    },
-                    "segments": {
-                      "additionalProperties": {
-                        "additionalProperties": true,
-                        "properties": {
-                          "files": {
-                            "items": {
-                              "$ref": "#/components/schemas/SegmentFile"
-                            },
-                            "type": "array"
-                          }
-                        },
-                        "required": [
-                          "files"
-                        ],
-                        "type": "object"
-                      },
-                      "type": "object"
-                    },
-                    "version": {
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "version",
-                    "day",
-                    "segments"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Day transfer manifest. Segment-map keys equal the corresponding `segments/{day}` collection keys and values contain only `files`. Aliases are listing identifiers; the collection carries the exact physical `segment` and `stream` for collided basenames. A within-segment effective-name clash remains `ambiguous_segment_file_name`."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Day path parameter or protocol version was invalid.",
-            "x-reason-codes": [
-              "day_invalid",
-              "protocol_version_required",
-              "protocol_version_malformed"
-            ]
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "A linked-device identity is required.",
-            "x-reason-codes": [
-              "linked_device_required"
-            ]
-          },
-          "426": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Protocol version is not 3.",
-            "x-reason-codes": [
-              "protocol_version_legacy",
-              "protocol_version_future"
-            ]
-          }
-        },
-        "summary": "Read linked-device transfer manifest for a day",
-        "tags": [
-          "client"
-        ]
-      }
-    },
     "/app/devices/ingest/segments/{day}": {
       "get": {
         "description": "Return segment upload history for one day as a protocol-version-3 collection envelope. The physical locator is the day, stream directory, and exact segment-directory basename. `key` is that basename unless this response repeats the basename; repeated basenames use `{basename}~{stream}`, then `~2`, `~3`, and so on, and those items also carry `segment` (the directory basename) and `stream`. `original_key` records only an upload remap of the requested key and does not identify a stream. A within-segment effective-name clash remains `ambiguous_segment_file_name`. Per-file `status` is `present`, `processed`, or `missing`. `submitted_name` appears only when the stored filename differs from the submitted one.",
@@ -822,8 +565,7 @@
                           "status": "present"
                         }
                       ],
-                      "key": "143000",
-                      "observed": true
+                      "key": "143000"
                     }
                   ],
                   "protocol_version": 3,

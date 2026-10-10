@@ -3,9 +3,10 @@
 
 //! Generated-contract oracle for the served linked-device ingest surface.
 //!
-//! This deliberately projects only the four Rust-served devices/ingest
-//! operations. Pairing and root SSE are live but orthogonal, while retired
-//! legacy routes have no live Rust implementation and must not be projected.
+//! This deliberately projects only the two Rust-served devices/ingest
+//! operations: upload and segment listing. Pairing and root SSE are live
+//! but orthogonal, while retired legacy routes have no live Rust
+//! implementation and must not be projected.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -14,7 +15,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "14.0.0";
+const BUNDLE_SEMVER: &str = "15.0.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -30,18 +31,8 @@ const ARTIFACTS: [&str; 5] = [
     "fixtures/wire-behavior.json",
     "consumer-audit.json",
 ];
-const OPERATION_SPECS: [(&str, &str, &str); 4] = [
+const OPERATION_SPECS: [(&str, &str, &str); 2] = [
     ("/app/devices/ingest", "post", "client.ingestUpload"),
-    (
-        "/app/devices/ingest/manifest",
-        "get",
-        "client.ingestManifest",
-    ),
-    (
-        "/app/devices/ingest/manifest/{day}",
-        "get",
-        "client.ingestManifestDay",
-    ),
     (
         "/app/devices/ingest/segments/{day}",
         "get",
@@ -159,7 +150,7 @@ fn selected_projection(authority: &Value) -> Value {
         "info": {
             "title": "Linked-device v3 ingest client contract",
             "version": BUNDLE_SEMVER,
-            "description": "Generated from client_ingest_authority.json. Covers only the four Rust-served linked-device devices/ingest operations.",
+            "description": "Generated from client_ingest_authority.json. Covers only the two Rust-served linked-device devices/ingest operations: upload and segment listing.",
             "x-generated": true,
             "x-generated-by": "solstone-core-repository-contracts"
         },
@@ -343,7 +334,6 @@ fn collision_listing_payload() -> Value {
         "items": [
             {
                 "key": "120000_10~browser_a",
-                "observed": false,
                 "segment": "120000_10",
                 "stream": "browser_a",
                 "files": [{
@@ -355,7 +345,6 @@ fn collision_listing_payload() -> Value {
             },
             {
                 "key": "120000_10~browser_b",
-                "observed": false,
                 "segment": "120000_10",
                 "stream": "browser_b",
                 "files": [{
@@ -511,7 +500,7 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
         "operation_ids": OPERATION_SPECS.map(|(_, _, id)| id),
         "projection_path": "projection.openapi.json",
         "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
-        "scope_rationale": "This ingest-triad bundle projects only the four Rust-served linked-device devices/ingest operations. Pairing and root SSE are live but out of scope; retired legacy operations are not projected.",
+        "scope_rationale": "This bundle projects only the two Rust-served linked-device devices/ingest operations: upload and segment listing. Pairing and root SSE are live but out of scope; retired legacy operations are not projected.",
         "supported_response_variants": [3],
         "vocabularies": [segment_file_vocabulary(), ingest_status_vocabulary()],
         "windows_linux_rollout_targets": []

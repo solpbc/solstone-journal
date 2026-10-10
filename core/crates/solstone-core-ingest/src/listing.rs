@@ -51,7 +51,6 @@ pub(crate) struct ListingSegment {
     pub(crate) stream: String,
     /// Whether this basename was repeated in the emitted response.
     pub(crate) collided: bool,
-    pub(crate) observed: bool,
     pub(crate) original_key: Option<String>,
     pub(crate) files: Vec<ListingFile>,
 }
@@ -157,7 +156,6 @@ pub(crate) fn merge_day_listing(
                 segment,
                 stream,
                 collided: false,
-                observed: false,
                 original_key,
                 files,
             });
@@ -208,7 +206,6 @@ pub(crate) fn merge_day_listing(
 pub(crate) fn segment_item_json(segment: &ListingSegment) -> Value {
     let mut item = Map::new();
     item.insert("key".to_owned(), Value::String(segment.key.clone()));
-    item.insert("observed".to_owned(), Value::Bool(segment.observed));
     item.insert("files".to_owned(), listing_files_json(&segment.files));
     if let Some(original_key) = &segment.original_key {
         item.insert(
@@ -494,7 +491,7 @@ mod tests {
             .map(String::as_str)
             .collect::<Vec<_>>();
         keys.sort_unstable();
-        assert_eq!(keys, ["files", "key", "observed"]);
+        assert_eq!(keys, ["files", "key"]);
         assert!(json["files"][0].get("submitted_name").is_none());
         assert_eq!(json["files"][0]["name"], "capture.json");
         assert_eq!(listing_files_json(&segment.files)[0]["status"], "missing");

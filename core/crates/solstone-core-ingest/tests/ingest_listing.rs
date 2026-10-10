@@ -274,7 +274,7 @@ fn stream_marker(root: &Path, day: &str, stream: &str) -> (String, Value) {
 }
 
 #[tokio::test]
-async fn native_identity_selects_only_matching_rows_on_all_routes() {
+async fn native_identity_selects_only_matching_rows_on_segments_route() {
     let journal = journal();
     let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
         .await
@@ -310,31 +310,6 @@ async fn native_identity_selects_only_matching_rows_on_all_routes() {
         b"other",
     )
     .await;
-
-    let (status, manifest) = request(
-        &app,
-        "GET",
-        "/app/devices/ingest/manifest?source=phone",
-        CID_A,
-        Vec::new(),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(manifest["days"][DAY]["segments"], 1);
-
-    let (status, day) = request(
-        &app,
-        "GET",
-        "/app/devices/ingest/manifest/20260804?source=phone",
-        CID_A,
-        Vec::new(),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(day["segments"].get("120000_1").is_some());
-    assert!(day["segments"].get("120100_1").is_none());
 
     let (status, segments) = request(
         &app,
@@ -480,7 +455,7 @@ async fn native_ingest_ignores_combined_legacy_observer_artifacts() {
 }
 
 #[tokio::test]
-async fn unparseable_durable_row_refuses_both_day_reads() {
+async fn unparseable_durable_row_refuses_segments_read() {
     let journal = journal();
     let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
         .await
@@ -489,114 +464,17 @@ async fn unparseable_durable_row_refuses_both_day_reads() {
     upload(&app, CID_A, DAY, "120000_1", "", "audio.flac", b"audio").await;
     overwrite_with_unparseable_row(journal.path(), DAY, "120000_1");
 
-    let (status, manifest) = request(
+    let (status, refusal) = request(
         &app,
         "GET",
-        "/app/devices/ingest/manifest",
-        CID_A,
-        Vec::new(),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        manifest["days"][DAY]["segments"], 1,
-        "the root manifest reads no receipts"
-    );
-    for path in [
-        "/app/devices/ingest/manifest/20260804",
         "/app/devices/ingest/segments/20260804",
-    ] {
-        let (status, refusal) = request(&app, "GET", path, CID_A, Vec::new(), None).await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{path}");
-        assert_eq!(refusal["reason_code"], "journal_read_failed", "{path}");
-    }
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn all_days_manifest_degrades_an_unreadable_stream_day() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let journal = journal();
-    let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
-        .await
-        .expect("Callosum server");
-    let app = api_router(journal.path());
-    upload(
-        &app,
-        CID_A,
-        "20260803",
-        "120000_1",
-        "",
-        "good.flac",
-        b"good",
-    )
-    .await;
-    upload(&app, CID_A, DAY, "120000_1", "", "bad.flac", b"bad").await;
-    let stream_dir = journal.path().join("chronicle").join(DAY).join("device");
-    fs::set_permissions(&stream_dir, fs::Permissions::from_mode(0o000)).expect("lock stream");
-    let readable = fs::read_dir(&stream_dir).is_ok();
-
-    let (status, manifest) = request(
-        &app,
-        "GET",
-        "/app/devices/ingest/manifest",
         CID_A,
         Vec::new(),
         None,
     )
     .await;
-    fs::set_permissions(&stream_dir, fs::Permissions::from_mode(0o755)).expect("unlock stream");
-    if readable {
-        // Running with privileges that ignore directory modes; nothing to observe.
-        return;
-    }
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(manifest["days"]["20260803"]["segments"], 1);
-    assert_eq!(manifest["days"][DAY]["error"], "journal_read_failed");
-}
-
-#[tokio::test]
-async fn all_days_manifest_counts_only_the_devices_own_stream() {
-    let journal = journal();
-    let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
-        .await
-        .expect("Callosum server");
-    let app = api_router(journal.path());
-    upload(&app, CID_A, DAY, "120000_1", "", "one.flac", b"one").await;
-    upload(&app, CID_A, DAY, "120500_1", "", "two.flac", b"two").await;
-    // Another stream's segments and a stray non-segment directory on the same day.
-    fs::create_dir_all(
-        journal
-            .path()
-            .join("chronicle")
-            .join(DAY)
-            .join("other/130000_1"),
-    )
-    .expect("sibling stream");
-    fs::create_dir_all(journal.path().join("chronicle/20260805/other/130000_1"))
-        .expect("sibling-only day");
-    fs::create_dir_all(
-        journal
-            .path()
-            .join("chronicle")
-            .join(DAY)
-            .join("device/not-a-segment"),
-    )
-    .expect("stray directory");
-
-    let (status, manifest) = request(
-        &app,
-        "GET",
-        "/app/devices/ingest/manifest",
-        CID_A,
-        Vec::new(),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(manifest["days"], json!({DAY: {"segments": 2}}));
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(refusal["reason_code"], "journal_read_failed");
 }
 
 #[tokio::test]
@@ -751,7 +629,7 @@ async fn non_collision_listing_wire_shape_is_unchanged() {
         .map(String::as_str)
         .collect::<Vec<_>>();
     keys.sort_unstable();
-    assert_eq!(keys, ["files", "key", "observed"]);
+    assert_eq!(keys, ["files", "key"]);
     assert_eq!(item["key"], "120000_10");
     let mut file_keys = item["files"][0]
         .as_object()
@@ -764,7 +642,7 @@ async fn non_collision_listing_wire_shape_is_unchanged() {
 }
 
 #[tokio::test]
-async fn takeover_collision_listing_preserves_both_histories_on_both_routes() {
+async fn takeover_collision_listing_preserves_both_histories_on_segments_route() {
     let journal = journal();
     let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
         .await
@@ -839,28 +717,6 @@ async fn takeover_collision_listing_preserves_both_histories_on_both_routes() {
                 upload_response["file_descriptors"][0]["sha256"],
                 digest(bytes)
             );
-        }
-
-        let (status, manifest) = request(
-            &app,
-            "GET",
-            "/app/devices/ingest/manifest/20261004?source=browser",
-            reader_cid,
-            Vec::new(),
-            None,
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        for (stream, bytes) in [
-            (stream_a.as_str(), bytes_a.as_slice()),
-            (stream_b.as_str(), bytes_b.as_slice()),
-        ] {
-            let key = format!("120000_10~{stream}");
-            let file = &manifest["segments"][key]["files"][0];
-            assert_eq!(file["name"], "browser_pages.jsonl");
-            assert_eq!(file["size"], bytes.len());
-            assert_eq!(file["sha256"], digest(bytes));
-            assert_eq!(file["status"], "present");
         }
     }
 

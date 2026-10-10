@@ -11,13 +11,12 @@
 //! D2: only a linked-device `AccessBasis` admits these routes.  Localhost has
 //! no device identity and is refused rather than being implicitly attributed.
 //!
-//! D3: this crate serves four published device-ingest operations:
-//! `ingestUpload`, `ingestSegments`, `ingestManifest`, and
-//! `ingestManifestDay`. `register` and bearer-credential issuance are removed
-//! by the hard cut; `ingestEvent` and `callosumStream` await a Rust Callosum
-//! client; `health` has no settled semantics. `deleteSource` is not served.
-//! The remaining deferred operations are an intentional
-//! strand delta, not missing routes.
+//! D3: this crate serves two published device-ingest operations,
+//! `ingestUpload` and `ingestSegments`. `register` and bearer-credential
+//! issuance are removed by the hard cut; `ingestEvent` and `callosumStream`
+//! await a Rust Callosum client; `health` has no settled semantics.
+//! `deleteSource` is not served. The remaining deferred operations are an
+//! intentional strand delta, not missing routes.
 //!
 //! Segment bytes and sidecars are written only through `solstone-core-segment`.
 

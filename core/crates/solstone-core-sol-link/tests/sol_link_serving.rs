@@ -1211,32 +1211,10 @@ async fn assert_get_round_trip(target: &str, status: u16, body: &[u8]) {
 const FILE_SHA256: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[test]
-fn get_ingest_manifest_success_and_rejection_round_trip() {
-    block_on(async {
-        let ok = br#"{"days":{"20260815":{"segments":3}}}"#;
-        let denied = br#"{"error":"linked device not authorized"}"#;
-        assert_get_round_trip("/app/devices/ingest/manifest", 200, ok).await;
-        assert_get_round_trip("/app/devices/ingest/manifest", 403, denied).await;
-    });
-}
-
-#[test]
-fn get_ingest_manifest_day_success_and_rejection_round_trip() {
-    block_on(async {
-        let ok = format!(
-            r#"{{"version":1,"day":"20260815","segments":{{"143000":{{"files":[{{"name":"audio.m4a","size":4096,"sha256":"{FILE_SHA256}","status":"present"}}]}}}}}}"#
-        );
-        let missing = br#"{"error":"day not found"}"#;
-        assert_get_round_trip("/app/devices/ingest/manifest/20260815", 200, ok.as_bytes()).await;
-        assert_get_round_trip("/app/devices/ingest/manifest/20260815", 404, missing).await;
-    });
-}
-
-#[test]
 fn get_ingest_segments_success_and_rejection_round_trip() {
     block_on(async {
         let ok = format!(
-            r#"{{"protocol_version":3,"total":1,"items":[{{"key":"20260815/143000","observed":true,"files":[{{"name":"audio.m4a","size":4096,"sha256":"{FILE_SHA256}","status":"present"}}]}}]}}"#
+            r#"{{"protocol_version":3,"total":1,"items":[{{"key":"20260815/143000","files":[{{"name":"audio.m4a","size":4096,"sha256":"{FILE_SHA256}","status":"present"}}]}}]}}"#
         );
         let denied = br#"{"error":"linked device not authorized"}"#;
         assert_get_round_trip(

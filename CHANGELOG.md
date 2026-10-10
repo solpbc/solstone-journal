@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- older solstone apps must update to keep syncing with your journal. minimum versions: tmux 2.0.6, linux 2.0.7, macos 2.0.15, windows 2.0.10, android 2.1.9, and ios 2.0.5 (build 107).
 - when you import a text or markdown transcript and the journal can't find turn times in it, the import now says so, both in the command's output and on the import's page, with a link to ask us to support how your transcript marks times. the file still lands as one segment at the import's start time, each line as written.
 
 ### Fixed

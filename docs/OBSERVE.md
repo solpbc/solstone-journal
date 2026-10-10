@@ -72,7 +72,7 @@ in the per-platform repositories (`solstone-linux`, `solstone-macos`,
 - **`solstone journal sense`** dispatches transcription and description jobs.
 - **`solstone journal transcribe`** creates audio transcription and speaker-analysis embeddings. Its exit-code contract is [here](transcribe-failure-and-telemetry.md).
 - **`solstone journal describe`** analyzes screen records using the category guidance in [SCREEN_CATEGORIES.md](SCREEN_CATEGORIES.md).
-- **The linked-device ingest service** handles protocol-v3 upload and manifest/day/segment reconciliation.
+- **The linked-device ingest service** handles protocol-v3 upload and segment-listing reconciliation.
 
 ### Vision input sizing
 

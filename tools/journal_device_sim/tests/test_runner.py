@@ -50,7 +50,7 @@ class FakeIngestState:
         self.status_posture_present = True
         self.posture: object = "direct"
         self.status_extra: dict[str, Any] = {}
-        self.observed: object = False
+        self.requests: list[str] = []
         self.listing_total_delta = 0
         self.hide_listing_reads = 0
         self.listing_http_status = 200
@@ -58,8 +58,6 @@ class FakeIngestState:
         self.post_http_status = 200
         self.identity_raw_body: bytes | None = None
         self.post_raw_body: bytes | None = None
-        self.day_manifest_missing = False
-        self.root_manifest_missing = False
         self.local_manager_alive = True
         self.response_mutator: Callable[[dict[str, Any]], None] | None = None
 
@@ -86,6 +84,8 @@ def handler_for(state: FakeIngestState) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:
             parsed = urlsplit(self.path)
+            with state.lock:
+                state.requests.append(parsed.path)
             if parsed.path == "/app/link/api/identity":
                 if state.identity_raw_body is not None:
                     self._raw(200, state.identity_raw_body)
@@ -136,48 +136,14 @@ def handler_for(state: FakeIngestState) -> type[BaseHTTPRequestHandler]:
                     },
                 )
                 return
-            if parsed.path.startswith("/app/devices/ingest/manifest/"):
-                if state.day_manifest_missing:
-                    self._json(404, {"reason_code": "not_found"})
-                    return
-                day = parsed.path.rsplit("/", 1)[-1]
-                with state.lock:
-                    segments = {
-                        item["listing"]["key"]: item["listing"]
-                        for item in state.items
-                        if item["day"] == day and item["source"] == source
-                    }
-                self._json(200, {"version": 1, "day": day, "segments": segments})
-                return
-            if parsed.path == "/app/devices/ingest/manifest":
-                if state.root_manifest_missing:
-                    self._json(404, {"reason_code": "not_found"})
-                    return
-                with state.lock:
-                    days = sorted(
-                        {
-                            item["day"]
-                            for item in state.items
-                            if item["source"] == source
-                        }
-                    )
-                    summaries = {
-                        day: {
-                            "segments": sum(
-                                1
-                                for item in state.items
-                                if item["day"] == day and item["source"] == source
-                            )
-                        }
-                        for day in days
-                    }
-                self._json(200, {"days": summaries})
-                return
             else:
                 self._json(404, {"reason_code": "not_found"})
                 return
 
         def do_POST(self) -> None:
+            parsed = urlsplit(self.path)
+            with state.lock:
+                state.requests.append(parsed.path)
             if self.path != "/app/devices/ingest":
                 self._json(404, {"reason_code": "not_found"})
                 return
@@ -263,11 +229,12 @@ def handler_for(state: FakeIngestState) -> type[BaseHTTPRequestHandler]:
                     landed = requested if not same_key else "080000_31"
                     listing = {
                         "key": landed,
-                        "observed": state.observed,
                         "files": files,
                     }
                     if same_key:
                         listing["original_key"] = requested
+                        listing["segment"] = landed.rsplit("/", 1)[-1]
+                        listing["stream"] = source if source else "device"
                     state.items.append(
                         {"day": day, "source": source, "listing": listing}
                     )
@@ -543,11 +510,6 @@ class RunnerTests(unittest.TestCase):
                 )
             )
             self.assertTrue(resumed_evidence["contract_reads"])
-            self.assertFalse(
-                resumed_evidence["contract_reads"][0]["segments"]["body"][
-                    "items"
-                ][0]["observed"]
-            )
 
     def test_external_bridge_never_constructs_or_authenticates_native_solstone(self) -> None:
         state = FakeIngestState()
@@ -739,10 +701,9 @@ class RunnerTests(unittest.TestCase):
             for value in (direct.state, direct.evidence, relay.state, relay.evidence):
                 self.assertNotIn(pair_secret, json.dumps(value, sort_keys=True))
 
-    def test_listing_contract_rejects_bad_total_observed_and_status(self) -> None:
+    def test_listing_contract_rejects_bad_total_and_status(self) -> None:
         cases = (
             ("total", {"listing_total_delta": 1}, "total does not match"),
-            ("observed", {"observed": "false"}, "observed must be boolean"),
             ("status", {"listing_file_status": "unknown"}, "status is invalid"),
         )
         for name, changes, expected in cases:
@@ -778,7 +739,6 @@ class RunnerTests(unittest.TestCase):
                     "source": segment.source,
                     "listing": {
                         "key": segment.segment,
-                        "observed": False,
                         "files": [listing_file],
                     },
                 }
@@ -988,35 +948,39 @@ class RunnerTests(unittest.TestCase):
             )
             self.assertTrue(bridge.stopped)
 
-    def test_final_contract_reads_require_day_and_root_manifests(self) -> None:
-        cases = (
-            ("day", "day_manifest_missing", "day manifest"),
-            ("root", "root_manifest_missing", "ingest manifest"),
-        )
-        for name, attribute, expected in cases:
-            with self.subTest(name=name), TemporaryDirectory() as temporary:
-                state = FakeIngestState()
-                setattr(state, attribute, True)
-                with FakeServer(state) as bridge_url:
-                    config = self._config(temporary, bridge_url)
-                    self.assertEqual(Simulator(config).run(), RunOutcome.FAIL)
-                evidence = json.loads(
-                    config.evidence_path.read_text(encoding="utf-8")
+    def test_final_contract_reads_verify_listing_identity_and_files_without_manifests(self) -> None:
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            config = self._config(temporary, bridge_url)
+            self.assertEqual(Simulator(config).run(), RunOutcome.PASS)
+            evidence = json.loads(config.evidence_path.read_text(encoding="utf-8"))
+            self.assertEqual(evidence["result"], "PASS")
+            self.assertTrue(evidence["contract_reads"])
+            items = evidence["contract_reads"][0]["segments"]["body"]["items"]
+            self.assertEqual(len(items), 2)
+
+            alpha_item = next(item for item in items if item["key"] == "080000_30")
+            self.assertNotIn("original_key", alpha_item)
+            self.assertTrue(alpha_item.get("files"))
+            self.assertEqual(alpha_item["files"][0]["name"], "tmux.jsonl")
+            self.assertTrue(all(f.get("status") == "present" for f in alpha_item["files"]))
+
+            collision_item = next(item for item in items if item["key"] == "080000_31")
+            self.assertEqual(collision_item.get("original_key"), "080000_30")
+            self.assertEqual(collision_item.get("segment"), "080000_31")
+            self.assertEqual(collision_item.get("stream"), "tmux")
+            self.assertTrue(collision_item.get("files"))
+            self.assertEqual(collision_item["files"][0]["name"], "tmux.jsonl")
+            self.assertTrue(all(f.get("status") == "present" for f in collision_item["files"]))
+
+            self.assertTrue(state.requests)
+            self.assertNotIn("/app/devices/ingest/manifest", state.requests)
+            self.assertTrue(
+                all(
+                    not path.startswith("/app/devices/ingest/manifest/")
+                    for path in state.requests
                 )
-                self.assertIn(expected, evidence["error"])
-                self.assertEqual(len(evidence["contract_reads"]), 1)
-                receipt = evidence["contract_reads"][0]
-                self.assertEqual(receipt["segments"]["http_status"], 200)
-                if name == "day":
-                    self.assertEqual(
-                        receipt["manifest_day"]["http_status"], 404
-                    )
-                    self.assertIsNone(receipt["manifest"])
-                else:
-                    self.assertEqual(
-                        receipt["manifest_day"]["http_status"], 200
-                    )
-                    self.assertEqual(receipt["manifest"]["http_status"], 404)
+            )
 
     def test_resumed_state_is_fully_validated(self) -> None:
         cases: tuple[tuple[str, Callable[[dict[str, Any], str], None], str], ...] = (
@@ -1506,7 +1470,6 @@ class RunnerTests(unittest.TestCase):
             target = self._write_journal_segment(simulator, "media")
             listing = {
                 "key": segment.segment,
-                "observed": False,
                 "files": [
                     {
                         "name": str(target.parent / "outside.wav"),
@@ -1685,7 +1648,6 @@ class RunnerTests(unittest.TestCase):
             segment = simulator.segments[0]
             listing_item = {
                 "key": segment.segment,
-                "observed": False,
                 "files": [
                     {
                         "name": item.submitted,
@@ -1845,7 +1807,6 @@ class RunnerTests(unittest.TestCase):
             held.symlink_to(outside)
             listing_item = {
                 "key": segment.segment,
-                "observed": False,
                 "files": [
                     {
                         "name": item.submitted,
@@ -1954,7 +1915,6 @@ class RunnerTests(unittest.TestCase):
             "key": key,
             "segment": segment,
             "stream": stream,
-            "observed": False,
             "files": [
                 {
                     "name": submitted,
@@ -2074,7 +2034,6 @@ class RunnerTests(unittest.TestCase):
             mapped_day = simulator.day_map[segment.day]
             item = {
                 "key": segment.segment,
-                "observed": False,
                 "files": [
                     {
                         "name": expected.submitted,
@@ -2357,7 +2316,6 @@ class RunnerTests(unittest.TestCase):
                     "source": segment.source,
                     "listing": {
                         "key": segment.segment,
-                        "observed": True,
                         "files": [
                             {
                                 "name": fixture.submitted,
@@ -2425,7 +2383,6 @@ class RunnerTests(unittest.TestCase):
                     "080000_30",
                     {
                         "key": "080000_30",
-                        "observed": False,
                         "files": [],
                     },
                 ),

@@ -193,8 +193,6 @@ mod tests {
         assert!(!is_exempt("/app/devices/"));
         assert!(!is_exempt("/app/devices/workspace"));
         assert!(!is_exempt("/app/devices/ingest"));
-        assert!(!is_exempt("/app/devices/ingest/manifest"));
-        assert!(!is_exempt("/app/devices/ingest/manifest/20260804"));
         assert!(!is_exempt("/app/devices/ingest/segments/20260804"));
     }
 }

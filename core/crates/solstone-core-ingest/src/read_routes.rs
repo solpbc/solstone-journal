@@ -1,136 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
-
 use axum::Json;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use serde_json::{Map, json};
+use serde_json::json;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
-use solstone_core_segment::{
-    list_days, list_stream_bindings, list_stream_segments, visible_stream_names,
-};
+use solstone_core_segment::{list_stream_bindings, visible_stream_names};
 
 use crate::health::day_read_reason;
 use crate::listing::{
-    DayListing, ListingError, listing_files_json, merge_day_listing, native_events,
-    segment_item_json,
+    DayListing, ListingError, merge_day_listing, native_events, segment_item_json,
 };
 use crate::model::ReasonCode;
 use crate::router::{IngestState, refusal};
 use crate::validation::{validate_access, validate_day, validate_protocol, validate_source};
-
-pub async fn ingest_manifest(
-    Extension(basis): Extension<AccessBasis>,
-    State(state): State<IngestState>,
-    headers: HeaderMap,
-    Query(query): Query<SourceQuery>,
-) -> Response {
-    // One listing of this device's own stream directory per day, and nothing
-    // inside any segment: no receipts are read and no file is stated. It used
-    // to fold every stream's segments and every receipt in the journal, and a
-    // device called it at the head of every sync cycle. The two day reads still
-    // read receipts and still refuse a day whose receipts are unreadable.
-    // Deprecated: a device proves custody from its upload response and reads
-    // `segments/{day}` only when its own record is missing.
-    spawn_blocking_response(OwnerReadRole::DeviceIngestManifest, move || {
-        let context = match listing_context(&state, &basis, &headers, &query) {
-            Ok(value) => value,
-            Err((code, status, detail)) => return refusal(code, status, detail),
-        };
-        let mut result = Map::new();
-        if context.native_streams.is_empty() {
-            return Json(json!({"days": result})).into_response();
-        }
-        let days = match list_days(&state.journal_root) {
-            Ok(days) => days
-                .into_iter()
-                .map(|(day, _)| day)
-                .collect::<BTreeSet<_>>(),
-            Err(_) => {
-                return refusal(
-                    ReasonCode::JournalReadFailed,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "cannot read journal",
-                );
-            }
-        };
-        for day in days {
-            let mut segments = BTreeSet::new();
-            let mut failed = false;
-            for stream in &context.native_streams {
-                match list_stream_segments(&state.journal_root, &day, stream) {
-                    Ok(found) => {
-                        for segment in found {
-                            let Ok(identity) = segment.record_identity() else {
-                                failed = true;
-                                break;
-                            };
-                            let key = identity.name.to_owned();
-                            segments.insert((stream.clone(), key));
-                        }
-                    }
-                    Err(_) => failed = true,
-                }
-            }
-            if failed {
-                let reason = day_read_reason(ListingError::JournalRead);
-                log::warn!(
-                    "device_manifest_day_unreadable day={day} reason={}",
-                    reason.as_str()
-                );
-                result.insert(day, json!({"error": reason.as_str()}));
-            } else if !segments.is_empty() {
-                result.insert(day, json!({"segments": segments.len()}));
-            }
-        }
-        Json(json!({"days": result})).into_response()
-    })
-    .await
-}
-
-pub async fn ingest_manifest_day(
-    Extension(basis): Extension<AccessBasis>,
-    State(state): State<IngestState>,
-    headers: HeaderMap,
-    Path(day): Path<String>,
-    Query(query): Query<SourceQuery>,
-) -> Response {
-    if let Err(code) = validate_day(&day) {
-        return refusal(code, StatusCode::BAD_REQUEST, "invalid day");
-    }
-    spawn_blocking_response(OwnerReadRole::DeviceIngestManifestDay, move || {
-        let context = match listing_context(&state, &basis, &headers, &query) {
-            Ok(value) => value,
-            Err((code, status, detail)) => return refusal(code, status, detail),
-        };
-        let listing = match day_listing(
-            &state,
-            &context.cid,
-            &context.source,
-            &context.native_streams,
-            &day,
-        ) {
-            Ok(listing) => listing,
-            Err(error) => return day_refusal(&day, error),
-        };
-        let segments = listing
-            .segments
-            .into_iter()
-            .map(|segment| {
-                (
-                    segment.key,
-                    json!({"files": listing_files_json(&segment.files)}),
-                )
-            })
-            .collect::<Map<_, _>>();
-        Json(json!({"version": 1, "day": day, "segments": segments})).into_response()
-    })
-    .await
-}
 
 pub async fn ingest_segments(
     Extension(basis): Extension<AccessBasis>,

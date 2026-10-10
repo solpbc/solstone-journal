@@ -3,11 +3,10 @@
 
 //! Read-only device-day listing health, for `journal doctor`.
 //!
-//! The device manifest tells a syncing device that a day is unreadable by
-//! answering `{"<day>": {"error": …}}` for it, and the device then reports
+//! A segment-day read refuses an unreadable day, and the device then reports
 //! itself offline and stops at that day. Nothing on the journal side otherwise
-//! records that a day is being refused. This runs the same per-day listing the
-//! manifest runs, for every bound device stream, and names each refused day.
+//! records that a day is being refused. This runs that same per-day listing for
+//! every bound device stream and names each refused day.
 
 use std::path::Path;
 

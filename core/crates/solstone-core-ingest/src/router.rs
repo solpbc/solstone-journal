@@ -37,7 +37,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::model::{IncomingFile, ReasonCode};
-use crate::read_routes::{ingest_manifest, ingest_manifest_day, ingest_segments};
+use crate::read_routes::ingest_segments;
 use crate::stream_identity::bind_ingest_stream;
 use crate::validation::{
     validate_access, validate_day, validate_protocol, validate_segment, validate_source,
@@ -171,11 +171,6 @@ fn api_router_with(
 ) -> Router {
     Router::new()
         .route("/app/devices/ingest", post(ingest_upload))
-        .route("/app/devices/ingest/manifest", get(ingest_manifest))
-        .route(
-            "/app/devices/ingest/manifest/{day}",
-            get(ingest_manifest_day),
-        )
         .route("/app/devices/ingest/segments/{day}", get(ingest_segments))
         .layer(DefaultBodyLimit::max(CONNECTION_BODY_LIMIT))
         .layer(RequestBodyLimitLayer::new(CONNECTION_BODY_LIMIT))
@@ -2211,34 +2206,6 @@ mod tests {
             stream_record["seq"], 1,
             "a byte-identical duplicate upload must not advance the stream chain a second time"
         );
-        let (_, manifest) = call(
-            &app,
-            "GET",
-            "/app/devices/ingest/manifest",
-            None,
-            Vec::new(),
-            basis(CID_A),
-            Some("3"),
-            &[],
-        )
-        .await;
-        assert_eq!(manifest["days"]["20260804"]["segments"], 1);
-        let (_, day) = call(
-            &app,
-            "GET",
-            "/app/devices/ingest/manifest/20260804",
-            None,
-            Vec::new(),
-            basis(CID_A),
-            Some("3"),
-            &[],
-        )
-        .await;
-        assert_eq!(
-            day["segments"]["120000_1"]["files"][0]["sha256"],
-            format!("{:x}", sha2::Sha256::digest(b"sound"))
-        );
-        assert_eq!(day["segments"]["120000_1"]["files"][0]["status"], "present");
         let (_, segments) = call(
             &app,
             "GET",
@@ -2256,6 +2223,7 @@ mod tests {
             segments["items"][0]["files"][0]["sha256"],
             format!("{:x}", sha2::Sha256::digest(b"sound"))
         );
+        assert_eq!(segments["items"][0]["files"][0]["status"], "present");
     }
 
     #[tokio::test]
@@ -4418,18 +4386,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(marker["seq"], 2);
-        let (_, day) = call(
-            &app,
-            "GET",
-            "/app/devices/ingest/manifest/20260804",
-            None,
-            Vec::new(),
-            basis(CID_A),
-            Some("3"),
-            &[],
-        )
-        .await;
-        assert_eq!(day["segments"][remapped]["files"][0]["name"], "audio.flac");
         let (_, segments) = call(
             &app,
             "GET",
@@ -4441,13 +4397,13 @@ mod tests {
             &[],
         )
         .await;
-        assert!(
-            segments["items"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|item| item["key"] == remapped)
-        );
+        let remapped_item = segments["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["key"] == remapped)
+            .expect("remapped item present");
+        assert_eq!(remapped_item["files"][0]["name"], "audio.flac");
     }
 
     #[tokio::test]
@@ -4549,7 +4505,7 @@ mod tests {
         let (_, read_body) = call(
             &app,
             "GET",
-            "/app/devices/ingest/manifest",
+            "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
             AccessBasis::Localhost,
@@ -4672,40 +4628,6 @@ mod tests {
             call_upload(&app, request, "audio.flac", b"sound").await.1["status"],
             "ok"
         );
-        let (_, manifest) = call(
-            &app,
-            "GET",
-            "/app/devices/ingest/manifest",
-            None,
-            Vec::new(),
-            basis(CID_A),
-            Some("3"),
-            &[],
-        )
-        .await;
-        assert_eq!(manifest["days"]["20260804"]["segments"], 1);
-        let (_, day) = call(
-            &app,
-            "GET",
-            "/app/devices/ingest/manifest/20260804",
-            None,
-            Vec::new(),
-            basis(CID_A),
-            Some("3"),
-            &[],
-        )
-        .await;
-        assert_eq!(
-            day["segments"]["120000_1"]["files"][0]["name"],
-            "audio.flac"
-        );
-        assert!(
-            day["segments"]["120000_1"]["files"][0]
-                .get("submitted_name")
-                .is_none()
-        );
-        assert_eq!(day["segments"]["120000_1"]["files"][0]["size"], 5);
-        assert!(day["segments"]["120000_1"]["files"][0]["sha256"].is_string());
         let (_, segments) = call(
             &app,
             "GET",
@@ -4717,7 +4639,12 @@ mod tests {
             &[],
         )
         .await;
-        assert_eq!(segments["items"][0]["files"][0]["status"], "present");
+        let file = &segments["items"][0]["files"][0];
+        assert_eq!(file["name"], "audio.flac");
+        assert!(file.get("submitted_name").is_none());
+        assert_eq!(file["size"], 5);
+        assert!(file["sha256"].is_string());
+        assert_eq!(file["status"], "present");
         let (status, refusal) = call(
             &app,
             "GET",
@@ -4734,7 +4661,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn root_manifest_reads_no_receipts_and_the_day_reads_refuse_malformed_ones() {
+    async fn malformed_receipt_refuses_segments_read_and_manifest_routes_are_not_found() {
         let dir = root();
         let root = dir.path().to_path_buf();
         let app = router(&root);
@@ -4750,19 +4677,23 @@ mod tests {
             "{\"record_type\":\"device_ingest\"}\n",
         )
         .unwrap();
-        let (status, body) = call(
-            &app,
-            "GET",
+        for path in [
             "/app/devices/ingest/manifest",
-            None,
-            Vec::new(),
-            basis(CID_A),
-            Some("3"),
-            &[],
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["days"], json!({"20260804": {"segments": 1}}));
+            "/app/devices/ingest/manifest/20260804",
+        ] {
+            let (status, _) = call(
+                &app,
+                "GET",
+                path,
+                None,
+                Vec::new(),
+                basis(CID_A),
+                Some("3"),
+                &[],
+            )
+            .await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        }
         let (status, refusal) = call(
             &app,
             "GET",

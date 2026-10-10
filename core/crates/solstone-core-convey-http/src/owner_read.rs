@@ -64,8 +64,6 @@ pub enum OwnerReadRole {
     BackupOffloadStatus,
     SourceLink,
     DeviceIngestUpload,
-    DeviceIngestManifest,
-    DeviceIngestManifestDay,
     DeviceIngestSegments,
 }
 
@@ -124,12 +122,8 @@ impl OwnerReadRole {
     /// The paired-device sync roles. Kept separate from [`Self::ALL`] because
     /// they refuse without a linked-device basis and a protocol header, so a
     /// probe that reaches an owner route does not reach these.
-    pub const DEVICE_SYNC: &'static [Self] = &[
-        Self::DeviceIngestUpload,
-        Self::DeviceIngestManifest,
-        Self::DeviceIngestManifestDay,
-        Self::DeviceIngestSegments,
-    ];
+    pub const DEVICE_SYNC: &'static [Self] =
+        &[Self::DeviceIngestUpload, Self::DeviceIngestSegments];
 
     pub fn probe_uri(&self) -> &'static str {
         match self {
@@ -190,8 +184,6 @@ impl OwnerReadRole {
             Self::BackupOffloadStatus => "/app/backup/offload/status",
             Self::SourceLink => "/source?ref=sol%3A%2F%2F20260901%2F100000_300",
             Self::DeviceIngestUpload => "/app/devices/ingest",
-            Self::DeviceIngestManifest => "/app/devices/ingest/manifest",
-            Self::DeviceIngestManifestDay => "/app/devices/ingest/manifest/20260901",
             Self::DeviceIngestSegments => "/app/devices/ingest/segments/20260901",
         }
     }

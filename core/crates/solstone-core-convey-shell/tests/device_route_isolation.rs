@@ -250,13 +250,6 @@ async fn assert_role_leaves_the_carrier_answering(role: OwnerReadRole) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_held_device_fold_does_not_silence_the_carrier() {
-    let _lock = TEST_LOCK.lock().await;
-    assert_role_leaves_the_carrier_answering(OwnerReadRole::DeviceIngestManifest).await;
-    test_hooks::reset();
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn every_device_sync_read_leaves_the_carrier_answering() {
     let _lock = TEST_LOCK.lock().await;
     for &role in OwnerReadRole::DEVICE_SYNC {

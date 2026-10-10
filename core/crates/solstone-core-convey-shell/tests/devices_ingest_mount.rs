@@ -132,19 +132,12 @@ fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
 }
 
 #[tokio::test]
-async fn omit_protocol_header_is_400_on_all_four_mounted_paths() {
+async fn omit_protocol_header_is_400_on_both_mounted_paths() {
     let journal = established_journal();
     let app = router(journal.path().to_path_buf());
     let (content_type, body) = fresh_upload();
     for (method, path, payload, content_type) in [
         ("POST", "/app/devices/ingest", body, Some(content_type)),
-        ("GET", "/app/devices/ingest/manifest", Vec::new(), None),
-        (
-            "GET",
-            "/app/devices/ingest/manifest/20260804",
-            Vec::new(),
-            None,
-        ),
         (
             "GET",
             "/app/devices/ingest/segments/20260804",
@@ -166,33 +159,6 @@ async fn omit_protocol_header_is_400_on_all_four_mounted_paths() {
 async fn protocol_3_gets_return_ingest_listing_json() {
     let journal = established_journal();
     let app = router(journal.path().to_path_buf());
-
-    let (status, _, bytes) = call(
-        &app,
-        "GET",
-        "/app/devices/ingest/manifest",
-        Vec::new(),
-        None,
-        Some("3"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let manifest = json_body(&bytes);
-    assert_eq!(manifest["days"], json!({}));
-
-    let (status, _, bytes) = call(
-        &app,
-        "GET",
-        "/app/devices/ingest/manifest/20260804",
-        Vec::new(),
-        None,
-        Some("3"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let day = json_body(&bytes);
-    assert_eq!(day["day"], DAY);
-    assert_eq!(day["segments"], json!({}));
 
     let (status, _, bytes) = call(
         &app,

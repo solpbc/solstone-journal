@@ -120,7 +120,6 @@
               }
             ],
             "key": "120000_10~browser_a",
-            "observed": false,
             "segment": "120000_10",
             "stream": "browser_a"
           },
@@ -134,7 +133,6 @@
               }
             ],
             "key": "120000_10~browser_b",
-            "observed": false,
             "segment": "120000_10",
             "stream": "browser_b"
           }
@@ -170,7 +168,6 @@
               }
             ],
             "key": "120000_10~browser_a",
-            "observed": false,
             "segment": "120000_10",
             "stream": "browser_a"
           },
@@ -184,7 +181,6 @@
               }
             ],
             "key": "120000_10~browser_a",
-            "observed": false,
             "segment": "120000_10",
             "stream": "browser_b"
           }

@@ -1095,8 +1095,6 @@ class Simulator:
                 raise SimulationFailure(
                     "ingest listing item has an invalid physical locator"
                 )
-            if not isinstance(item.get("observed"), bool):
-                raise SimulationFailure("ingest listing item observed must be boolean")
             original = item.get("original_key")
             if original is not None and (
                 not isinstance(original, str)
@@ -2419,37 +2417,11 @@ class Simulator:
                 "day": day,
                 "source": source,
                 "segments": None,
-                "manifest_day": None,
-                "manifest": None,
             }
             receipts.append(receipt)
             first = entries[0][0]
             listing = self._listing(client, first, day)
             receipt["segments"] = {"http_status": 200, "body": listing}
-            query = {"source": source} if source else None
-            day_response = self._get_json(
-                client,
-                f"/app/devices/ingest/manifest/{day}",
-                query,
-                purpose=f"day manifest {day}/{source}",
-            )
-            receipt["manifest_day"] = {
-                "http_status": day_response.status,
-                "body": day_response.body,
-            }
-            day_manifest = self._require_get_ok(
-                day_response, f"ingest day manifest {day}/{source}"
-            )
-            if (
-                day_manifest.get("version") != 1
-                or day_manifest.get("day") != day
-                or not isinstance(day_manifest.get("segments"), dict)
-            ):
-                raise SimulationFailure(
-                    f"ingest day manifest {day}/{source} has the wrong shape"
-                )
-            listed_segments = day_manifest["segments"]
-            listed_identities: set[tuple[str | None, str]] = set()
             for segment, landed in entries:
                 item = self._find_listing_item(listing, segment, landed)
                 if item is None:
@@ -2466,49 +2438,24 @@ class Simulator:
                     raise SimulationFailure(
                         f"final listing omitted physical identity for {segment.fixture_id}"
                     )
-                stream = item.get("stream")
-                listed_identities.add((stream if isinstance(stream, str) else None, physical_segment))
-                raw_day_entry = listed_segments.get(item["key"])
-                if not isinstance(raw_day_entry, dict):
-                    raise SimulationFailure(
-                        f"day manifest omitted fixture {segment.fixture_id}"
-                    )
-                matched = self._matched_files(raw_day_entry, segment)
+                if original is not None:
+                    item_segment = item.get("segment")
+                    item_stream = item.get("stream")
+                    if (
+                        not isinstance(item_segment, str)
+                        or not isinstance(item_stream, str)
+                        or physical_segment != item_segment
+                    ):
+                        raise SimulationFailure(
+                            f"final listing collision item omitted required locator metadata for {segment.fixture_id}"
+                        )
+                matched = self._matched_files(item, segment)
                 if matched is None or not {
                     entry.get("status") for entry in matched
                 }.issubset(set(segment.expectation.file_statuses)):
                     raise SimulationFailure(
-                        f"day manifest files do not attest fixture {segment.fixture_id}"
+                        f"final listing files do not attest fixture {segment.fixture_id}"
                     )
-            root_response = self._get_json(
-                client,
-                "/app/devices/ingest/manifest",
-                query,
-                purpose=f"root manifest {source}",
-            )
-            receipt["manifest"] = {
-                "http_status": root_response.status,
-                "body": root_response.body,
-            }
-            root_manifest = self._require_get_ok(
-                root_response, f"ingest manifest {source}"
-            )
-            days = root_manifest.get("days")
-            day_summary = days.get(day) if isinstance(days, dict) else None
-            segment_count = (
-                day_summary.get("segments")
-                if isinstance(day_summary, dict)
-                else None
-            )
-            distinct_landed = len(listed_identities)
-            if (
-                isinstance(segment_count, bool)
-                or not isinstance(segment_count, int)
-                or segment_count < distinct_landed
-            ):
-                raise SimulationFailure(
-                    f"ingest manifest {source} does not count mapped day {day}"
-                )
 
     def _persist_evidence(self, phase: str) -> None:
         try:

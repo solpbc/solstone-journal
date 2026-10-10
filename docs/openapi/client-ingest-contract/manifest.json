@@ -18,7 +18,7 @@
     }
   ],
   "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
-  "bundle_semver": "14.0.0",
+  "bundle_semver": "15.0.0",
   "client_protocol_version": 3,
   "component_closure": [
     "Error",
@@ -40,15 +40,15 @@
     },
     {
       "path": "fixtures/wire-behavior.json",
-      "sha256": "035e59297af21da998984910b4aa6a850d7e2e1225c79019045381bf3e17e708"
+      "sha256": "49b9303df82b6fb95dc7a651aa5197ea7d9ba5d6816c0739438508ed48added6"
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "db75a94ab97e83c56603e44d9313db86a94a2d9c4a920deaf090fe0f3358b8b0"
+      "sha256": "da61cb14e596146eb22138895b2576d60d3c09265445ade2ea84e85748e01950"
     },
     {
       "path": "vectors.json",
-      "sha256": "7c61c1238184e1440110801478daf714aba05b2472338bd98c12cd508b303d0f"
+      "sha256": "91c7c3a0378362d62ef6f0f00d19e709ca8a15d33a00bebb8e91e8a48dd70700"
     }
   ],
   "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
@@ -57,20 +57,18 @@
       "id": "openapi.client_ingest_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json",
       "role": "openapi_source",
-      "sha256": "afe354e26827d431d4766289a91c9d421edd99e67006937f7ad8d955a23a8f53"
+      "sha256": "b257020386521ad9aabd16ed9143b3c3adbb5de4246cb9b881c4faa0526df068"
     }
   ],
   "openapi_document_version": "1.0.0",
   "openapi_spec_version": "3.1.0",
   "operation_ids": [
     "client.ingestUpload",
-    "client.ingestManifest",
-    "client.ingestManifestDay",
     "client.ingestSegments"
   ],
   "projection_path": "projection.openapi.json",
   "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
-  "scope_rationale": "This ingest-triad bundle projects only the four Rust-served linked-device devices/ingest operations. Pairing and root SSE are live but out of scope; retired legacy operations are not projected.",
+  "scope_rationale": "This bundle projects only the two Rust-served linked-device devices/ingest operations: upload and segment listing. Pairing and root SSE are live but out of scope; retired legacy operations are not projected.",
   "supported_response_variants": [
     3
   ],
