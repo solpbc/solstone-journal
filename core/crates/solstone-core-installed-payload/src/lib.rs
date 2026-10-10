@@ -90,6 +90,14 @@ pub fn compiled_target() -> &'static str {
     "ios-arm64-unshipped"
 }
 
+/// Android has compile/link support but no admitted installed package.
+/// Keep this id outside canonical_target until a mobile delivery is defined.
+#[cfg(all(target_os = "android", target_arch = "aarch64"))]
+#[must_use]
+pub fn compiled_target() -> &'static str {
+    "android-arm64-unshipped"
+}
+
 #[cfg(not(any(
     all(
         target_os = "linux",
@@ -98,5 +106,6 @@ pub fn compiled_target() -> &'static str {
     all(target_os = "macos", target_arch = "aarch64"),
     all(target_os = "windows", target_arch = "x86_64"),
     all(target_os = "ios", target_arch = "aarch64"),
+    all(target_os = "android", target_arch = "aarch64"),
 )))]
 compile_error!("installed payload has no target id for this platform");

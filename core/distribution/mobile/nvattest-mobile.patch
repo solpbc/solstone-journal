@@ -1,0 +1,163 @@
+--- a/nv-attestation-sdk-cpp/CMakeLists.txt
++++ b/nv-attestation-sdk-cpp/CMakeLists.txt
+@@ -84,13 +84,17 @@
+   FEATURES "regorus/semver"
+   CRATE_TYPES "staticlib"
+ )
+-if(WIN32)
+-  # The Windows build installs nothing from crates.io beyond the copied lock.
++if(WIN32 OR ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
++  # Controlled builds install nothing from crates.io beyond the copied lock.
+   if(NVAT_OFFLINE_BUILD)
+     corrosion_set_cargo_flags(regorus_ffi --frozen --offline)
+   else()
+     corrosion_set_cargo_flags(regorus_ffi --locked)
+   endif()
++endif()
++if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
++  corrosion_set_env_vars(regorus_ffi
++    "IPHONEOS_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+ endif()
+ 
+ if (ENABLE_SCCACHE)
+@@ -231,16 +235,45 @@
+   set(_EP_CFLAGS "${CMAKE_C_FLAGS} -fPIC")
+   set(_EP_OPENSSL_CFLAGS "${_EP_CFLAGS}")
+   set(_EP_AUTOCONF_CFLAGS "${_EP_CFLAGS}")
+-  if(APPLE)
++  set(_EP_AUTOCONF_HOST "")
++  set(_EP_OPENSSL_API_FLAG "")
++  if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
++    set(_EP_OPENSSL_CFLAGS
++      "${_EP_CFLAGS} -isysroot ${NVAT_APPLE_SDKROOT} -miphoneos-version-min=${NVAT_APPLE_DEPLOYMENT_TARGET}")
++    set(_EP_AUTOCONF_CFLAGS
++      "${_EP_OPENSSL_CFLAGS} -arch ${NVAT_APPLE_ARCHITECTURE}")
++    set(_EP_AUTOCONF_HOST --host=aarch64-apple-darwin)
++  elseif(APPLE)
+     set(_EP_OPENSSL_CFLAGS
+       "${_EP_CFLAGS} -mmacosx-version-min=${NVAT_APPLE_DEPLOYMENT_TARGET}")
+     set(_EP_AUTOCONF_CFLAGS
+       "${_EP_OPENSSL_CFLAGS} -arch ${NVAT_APPLE_ARCHITECTURE}")
+   endif()
+-  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64)$")
++  if(ANDROID)
++    if(NOT CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
++      message(FATAL_ERROR "Android native builder requires arm64-v8a")
++    endif()
++    if(NOT ANDROID_PLATFORM_LEVEL MATCHES "^[0-9]+$")
++      message(FATAL_ERROR "Android native builder requires a numeric API level")
++    endif()
++    set(_EP_NDK_BIN "${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin")
++    set(_EP_CC "${_EP_NDK_BIN}/aarch64-linux-android${ANDROID_PLATFORM_LEVEL}-clang")
++    if(NOT EXISTS "${_EP_CC}")
++      message(FATAL_ERROR "Android native compiler not found: ${_EP_CC}")
++    endif()
++    set(NVAT_EP_ENV_COMMAND
++      "${CMAKE_COMMAND};-E;env;ANDROID_NDK_HOME=${CMAKE_ANDROID_NDK};PATH=${_EP_NDK_BIN}:$ENV{PATH}")
++    set(_EP_AUTOCONF_HOST --host=aarch64-linux-android)
++    set(_OPENSSL_CONFIGURE_TARGET android-arm64)
++    set(_EP_OPENSSL_API_FLAG "CPPFLAGS=-D__ANDROID_API__=${ANDROID_PLATFORM_LEVEL}")
++    corrosion_set_env_vars(regorus_ffi
++      "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=${_EP_CC}")
++  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64)$")
+     set(_OPENSSL_CONFIGURE_TARGET linux-x86_64)
+   elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+     set(_OPENSSL_CONFIGURE_TARGET linux-aarch64)
++  elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
++    set(_OPENSSL_CONFIGURE_TARGET ios64-xcrun)
+   elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+     set(_OPENSSL_CONFIGURE_TARGET darwin64-arm64-cc)
+   else()
+@@ -258,6 +291,7 @@
+     URL_HASH SHA256=a2157c2830efdec3788939b00c9b0638306d3f0bbb76dc4832ee503bb397df98
+     CONFIGURE_COMMAND ${NVAT_EP_ENV_COMMAND} <SOURCE_DIR>/Configure
+       ${_OPENSSL_CONFIGURE_TARGET}
++      ${_EP_OPENSSL_API_FLAG}
+       "CC=${_EP_CC}"
+       "CFLAGS=${_EP_OPENSSL_CFLAGS}"
+       --prefix=${OPENSSL_INSTALL_DIR}
+@@ -289,6 +323,9 @@
+ 
+   add_library(OpenSSL::Crypto STATIC IMPORTED)
+   set(_OPENSSL_SYSTEM_LIBRARIES pthread)
++  if(ANDROID)
++    set(_OPENSSL_SYSTEM_LIBRARIES "")
++  endif()
+   if(NOT APPLE)
+     list(PREPEND _OPENSSL_SYSTEM_LIBRARIES dl)
+   endif()
+@@ -312,6 +349,7 @@
+     URL https://download.gnome.org/sources/libxml2/2.11/libxml2-2.11.9.tar.xz
+     URL_HASH SHA256=780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f
+     CONFIGURE_COMMAND ${NVAT_EP_ENV_COMMAND} <SOURCE_DIR>/configure
++      ${_EP_AUTOCONF_HOST}
+       --prefix=${LIBXML2_INSTALL_DIR}
+       --libdir=${LIBXML2_INSTALL_DIR}/lib
+       --disable-shared
+@@ -341,6 +379,7 @@
+     URL https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_42/xmlsec1-1.2.42.tar.gz
+     URL_HASH SHA256=5359e3c19016ab164b505c1222ef5a2d87b34f50f85ff91d765f4aaa0df42db2
+     CONFIGURE_COMMAND ${NVAT_EP_ENV_COMMAND} <SOURCE_DIR>/configure
++      ${_EP_AUTOCONF_HOST}
+       --prefix=${XMLSEC_INSTALL_DIR}
+       --disable-shared
+       --enable-static
+@@ -371,6 +410,7 @@
+     URL https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz
+     URL_HASH SHA256=d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1
+     CONFIGURE_COMMAND ${NVAT_EP_ENV_COMMAND} <SOURCE_DIR>/configure
++      ${_EP_AUTOCONF_HOST}
+       --prefix=${CURL_INSTALL_DIR}
+       --with-openssl=${OPENSSL_INSTALL_DIR}
+       --without-libssh2
+@@ -398,10 +438,14 @@
+   file(MAKE_DIRECTORY "${CURL_INCLUDE_DIR}")
+ 
+   add_library(CURL::libcurl STATIC IMPORTED)
++  set(_CURL_SYSTEM_LIBRARIES z pthread)
++  if(ANDROID)
++    set(_CURL_SYSTEM_LIBRARIES z)
++  endif()
+   set_target_properties(CURL::libcurl PROPERTIES
+     IMPORTED_LOCATION "${CURL_INSTALL_DIR}/lib/libcurl.a"
+     INTERFACE_INCLUDE_DIRECTORIES "${CURL_INCLUDE_DIR}"
+-    INTERFACE_LINK_LIBRARIES "OpenSSL::SSL;OpenSSL::Crypto;z;pthread"
++    INTERFACE_LINK_LIBRARIES "OpenSSL::SSL;OpenSSL::Crypto;${_CURL_SYSTEM_LIBRARIES}"
+   )
+ 
+   set(LIBXML2_INCLUDE_DIR "${LIBXML2_INSTALL_DIR}/include/libxml2" CACHE PATH "Vendored libxml2 include directory" FORCE)
+--- a/nv-attestation-sdk-cpp/cmake/nvat_apple_sdk.cmake
++++ b/nv-attestation-sdk-cpp/cmake/nvat_apple_sdk.cmake
+@@ -132,6 +132,18 @@
+       "natively on an Apple Silicon arm64 host, then retry")
+   endif()
+ 
++  if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
++    if(NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
++      message(FATAL_ERROR
++        "iOS device architecture validation failed: expected exactly arm64")
++    endif()
++    if(NOT NVAT_APPLE_SDKROOT MATCHES "(^|/)iPhoneOS[^/]*[.]sdk$")
++      message(FATAL_ERROR
++        "iOS device SDK validation failed: expected an iPhoneOS SDK")
++    endif()
++    set_property(GLOBAL PROPERTY NVAT_APPLE_ARCHITECTURE_VALIDATED TRUE)
++    return()
++  endif()
+   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "")
+     message(FATAL_ERROR
+       "Apple architecture validation failed: CMAKE_SYSTEM_PROCESSOR is empty "
+--- a/nv-attestation-sdk-cpp/cmake/nvat_apple_system_link_closure.cmake
++++ b/nv-attestation-sdk-cpp/cmake/nvat_apple_system_link_closure.cmake
+@@ -73,7 +73,10 @@
+       foreach(_nvat_apple_rust_link_directory IN LISTS
+               _nvat_apple_rust_link_directories)
+         if(NOT _nvat_apple_rust_link_directory STREQUAL
+-           _nvat_apple_corrosion_sdk_link_directory)
++           _nvat_apple_corrosion_sdk_link_directory AND
++           NOT (CMAKE_SYSTEM_NAME STREQUAL "iOS" AND
++                _nvat_apple_rust_link_directory STREQUAL
++                "${NVAT_APPLE_SDKROOT}/usr/lib"))
+           message(FATAL_ERROR
+             "Darwin/arm64 Rust link-directory closure failed: target "
+             "'${_nvat_apple_rust_owner_target}' has unsupported "

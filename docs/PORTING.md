@@ -101,6 +101,7 @@ The opt-in processing bundle is a direct rpath proof. `make build-sandbox-proces
 
 ## Related
 
+- [Mobile native builds](../core/distribution/mobile/README.md)
 - [testing.md](testing.md) — `make ci` / `make ci-full`
 - [release-evidence-contract.md](release-evidence-contract.md)
 - [JOURNAL_FILESYSTEM_CONTRACT.md](JOURNAL_FILESYSTEM_CONTRACT.md) — journal root, identity, kind, and refusal vocabulary

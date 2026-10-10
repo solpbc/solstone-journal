@@ -11,3 +11,6 @@ core/distribution/nvattest-windows-NOTICES.md -text -whitespace
 core/crates/solstone-core-distribution/fixtures/nvattest-windows-build/*.json -text -whitespace
 core/crates/solstone-core-distribution/fixtures/nvattest-windows-build/*.txt -text -whitespace
 core/crates/solstone-core-distribution/fixtures/nvattest-windows-build/*.lock -text -whitespace
+
+# Unified patches use a single space to mark an empty context line.
+core/distribution/mobile/*.patch whitespace=-blank-at-eol

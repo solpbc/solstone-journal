@@ -22,7 +22,7 @@ actual=$(sha256sum -- "$work/lib/libonnxruntime.so")
 test "${actual%% *}" = "$expected" || { echo "ONNX Runtime library digest mismatch" >&2; exit 1; }
 
 export TMPDIR="$work" CARGO_INCREMENTAL=0
-export CARGO_TARGET_DIR="$root/core/target-android"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$root/core/target-android}"
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$toolchain/bin/aarch64-linux-android31-clang"
 export CC_aarch64_linux_android="$toolchain/bin/aarch64-linux-android31-clang"
 export CXX_aarch64_linux_android="$toolchain/bin/aarch64-linux-android31-clang++"

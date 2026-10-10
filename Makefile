@@ -1010,6 +1010,27 @@ check-rust-android:
 check-rust-android-prepared:
 	/bin/bash scripts/check_android_cross_build.sh "$(ANDROID_BUILD_DIR)"
 
+# Every invocation uses a new source/object/output directory. Verified downloads
+# are reusable; the default desktop CI selection does not run these costly legs.
+MOBILE_NATIVE_WORK_ROOT ?= $(CURDIR)/core/mobile-build
+MOBILE_NATIVE_CACHE_DIR ?= $(MOBILE_NATIVE_WORK_ROOT)/downloads
+MOBILE_NATIVE_JOBS ?= 6
+.PHONY: build-mobile-android build-mobile-ios check-mobile-native-android check-mobile-native-ios check-mobile-native-driver
+check-mobile-native-driver:
+	python3 -m unittest discover -s core/distribution/mobile -p test_build.py -v
+build-mobile-android: check-mobile-native-android
+build-mobile-ios: check-mobile-native-ios
+check-mobile-native-android: check-mobile-native-driver
+	@set -eu; mkdir -p "$(MOBILE_NATIVE_WORK_ROOT)/android"; \
+	run=$$(mktemp -d "$(MOBILE_NATIVE_WORK_ROOT)/android/run.XXXXXX"); \
+	python3 scripts/mobile_native_build.py --platform android --work-dir "$$run/build" \
+		--cache-dir "$(MOBILE_NATIVE_CACHE_DIR)" --jobs "$(MOBILE_NATIVE_JOBS)"
+check-mobile-native-ios: check-mobile-native-driver
+	@set -eu; mkdir -p "$(MOBILE_NATIVE_WORK_ROOT)/ios"; \
+	run=$$(mktemp -d "$(MOBILE_NATIVE_WORK_ROOT)/ios/run.XXXXXX"); \
+	python3 scripts/mobile_native_build.py --platform ios --work-dir "$$run/build" \
+		--cache-dir "$(MOBILE_NATIVE_CACHE_DIR)" --jobs "$(MOBILE_NATIVE_JOBS)"
+
 # Compile and link the whole workspace for an iOS device, plus the shipped
 # journal-mcp-endpoint feature. Compilation support only: nothing is packaged,
 # installed or run, and iOS process lifecycle stays unsupported in source.
@@ -1271,7 +1292,7 @@ parakeet-helper:
 
 # Remove parakeet helper build artifacts
 parakeet-helper-clean:
-	rm -rf core/crates/solstone-core-transcribe/parakeet-helper/.build core/crates/solstone-core-transcribe/parakeet-helper/.swiftpm core/crates/solstone-core-transcribe/parakeet-helper/Package.resolved
+	rm -rf core/crates/solstone-core-transcribe/parakeet-helper/.build core/crates/solstone-core-transcribe/parakeet-helper/.swiftpm
 
 # Build a signed/notarized macOS Apple Silicon platform wheel
 # (Darwin/arm64 only; requires Xcode CLT, Developer ID cert, and the

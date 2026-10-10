@@ -42,7 +42,7 @@ pub enum ExecutablePlatform {
 
 #[must_use]
 pub fn host_executable_platform() -> ExecutablePlatform {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         ExecutablePlatform::Linux
     }
@@ -320,6 +320,9 @@ impl InstalledPackage {
         version: &str,
         target: &str,
     ) -> Result<Self, InstalledPayloadRefusal> {
+        if matches!(target, "android-arm64-unshipped" | "ios-arm64-unshipped") {
+            return Err(refusal(code::WRONG_TARGET, guidance::WRONG_TARGET, None));
+        }
         let bytes = read_manifest_bytes(root)?;
         let loose = loose_header(&bytes)?;
         if loose.product != PRODUCT {
@@ -819,6 +822,19 @@ mod tests {
             render_installed_payload(root, PRODUCT, version, target, "aaa").expect("render");
         write_file(root, INSTALLED_PAYLOAD_MANIFEST, &bytes);
         bytes
+    }
+
+    #[test]
+    fn mobile_compile_targets_cannot_admit_installed_payloads() {
+        let root = scratch();
+        write_file(root.path(), "bin/journal", b"journal");
+        for target in ["android-arm64-unshipped", "ios-arm64-unshipped"] {
+            assert!(super::canonical_target(target).is_none());
+            seal(root.path(), COMPILED_VERSION, target);
+            let error = InstalledPackage::admit(root.path(), COMPILED_VERSION, target)
+                .expect_err("unshipped target cannot admit even a matching manifest");
+            assert_eq!(error.code, code::WRONG_TARGET);
+        }
     }
 
     fn admit(

@@ -42,6 +42,7 @@ core/target-android/
 core/android-build/
 core/target-ios/
 core/ios-build/
+core/mobile-build/
 core/crates/solstone-core-service-legacy-evidence/target/
 /dist/
 /target/

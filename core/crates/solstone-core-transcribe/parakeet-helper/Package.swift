@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "parakeet-helper",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS("26.0")],
     products: [
         .executable(name: "parakeet-helper", targets: ["parakeet-helper"])
     ],

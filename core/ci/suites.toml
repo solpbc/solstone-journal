@@ -15,6 +15,29 @@ standard = 600
 slow = 1200
 extended = 1800
 android = 7200
+mobile = 18000
+
+[[legs]]
+id = "mobile-native-android"
+make_target = "check-mobile-native-android"
+set = "platform"
+areas = ["platform", "media", "backup", "trust"]
+packages = ["workspace"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache", "host-tools"]
+timeout = "mobile"
+default_full = false
+
+[[legs]]
+id = "mobile-native-ios"
+make_target = "check-mobile-native-ios"
+set = "platform"
+areas = ["platform", "media", "backup", "trust"]
+packages = ["workspace"]
+platforms = ["macos"]
+prerequisites = ["cargo-cache", "apple-sdk", "host-tools"]
+timeout = "mobile"
+default_full = false
 
 # Opt-in compile/link canary with acquired NDK and source-built native inputs.
 [[legs]]

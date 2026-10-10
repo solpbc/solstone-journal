@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "inputs": {
+    "llama": {
+      "url": "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/d81235049384534c167caea52b85a694f6103d14",
+      "sha256": "6b58785f0a82898f4c3442417ff962e2d4b231b1bee5d033902ad90b27901e14",
+      "revision": "d81235049384534c167caea52b85a694f6103d14"
+    },
+    "parakeet": {
+      "url": "https://codeload.github.com/mudler/parakeet.cpp/tar.gz/5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f",
+      "sha256": "a6544898a6721a9ab54a8af37362cb9a79a8b50feaf16a597091790a8874debe",
+      "revision": "5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f"
+    },
+    "parakeet-ced": {
+      "url": "https://codeload.github.com/localai-org/ced.cpp/tar.gz/736a4ee46a31d4ff38b41add65ce0f2cf1aaa05f",
+      "sha256": "f2134ae9b7ec554238ddaa8ad7781532deb3cee90e019f5d180154543712c50d",
+      "revision": "736a4ee46a31d4ff38b41add65ce0f2cf1aaa05f"
+    },
+    "parakeet-voice-detect": {
+      "url": "https://codeload.github.com/localai-org/voice-detect.cpp/tar.gz/bca46bcbc2fe68169c2d7c414e9b290a7cb89911",
+      "sha256": "dab2900847397089ecfc1730bb955e21f9d15974ed94707a7ce5c3ba5e6e41b9",
+      "revision": "bca46bcbc2fe68169c2d7c414e9b290a7cb89911"
+    },
+    "nvattest": {
+      "url": "https://codeload.github.com/solpbc/attestation-sdk/tar.gz/69a71c859ec02b6e5f10616b8b8a873c230941c9",
+      "sha256": "736371a19edba6368371f713b3ed898c08866fb328648d0979333aa7523f4d80",
+      "revision": "69a71c859ec02b6e5f10616b8b8a873c230941c9"
+    },
+    "nvattest-corrosion": {
+      "url": "https://codeload.github.com/corrosion-rs/corrosion/tar.gz/6be991bb34c348dfb8344be22f3606288ea5c7fd",
+      "sha256": "84d8fbc2810af9a42e250411dcd30b8e8cc59deba196c1dcd1fb44fec459a793",
+      "revision": "6be991bb34c348dfb8344be22f3606288ea5c7fd"
+    },
+    "nvattest-regorus": {
+      "url": "https://codeload.github.com/microsoft/regorus/tar.gz/c7bf460bc160c96e38048296e5708943d2e43909",
+      "sha256": "188805b3b44b1cd2f9e8fd9b74a281b5f8eaa1c1b4087fd442afc88eccfef7cd",
+      "revision": "c7bf460bc160c96e38048296e5708943d2e43909"
+    },
+    "ggml": {
+      "url": "https://codeload.github.com/ggml-org/ggml/tar.gz/e705c5fed490514458bdd2eaddc43bd098fcce9b",
+      "revision": "e705c5fed490514458bdd2eaddc43bd098fcce9b",
+      "sha256": "77eacb7cc20c2e47ffbaa5a69fe6f9fd9da0bea2a6431b7fae1a8283cb2c4e43"
+    },
+    "ced": {
+      "url": "https://codeload.github.com/localai-org/ced.cpp/tar.gz/c04ac14b7992d00584d9e812c9bb6268598a6ce7",
+      "revision": "c04ac14b7992d00584d9e812c9bb6268598a6ce7",
+      "sha256": "51b62b35e27418e68de03166f70332af89cadf5a022b5a5c5692b7458df1f09f"
+    },
+    "rfdetr": {
+      "url": "https://codeload.github.com/solpbc/rf-detr.cpp/tar.gz/ec73712e4c933dc36e79963cab47d702c34f02bf",
+      "revision": "ec73712e4c933dc36e79963cab47d702c34f02bf",
+      "sha256": "1c7eb60194322a298ab959c6b06056edf4d9472c7bba9aa07d62003efa18f304"
+    },
+    "restic": {
+      "url": "https://codeload.github.com/restic/restic/tar.gz/v0.19.0",
+      "revision": "v0.19.0",
+      "sha256": "800779b6c4c2396971c0567b09ccdd435e03155e1a0ec94e8bbf3d98641a8bc2"
+    },
+    "rclone": {
+      "url": "https://codeload.github.com/rclone/rclone/tar.gz/v1.74.4",
+      "revision": "v1.74.4",
+      "sha256": "b8279a31a5249e4aecf04acff744ace4a2e3a169e4539a24aa67a9994f645d3b"
+    },
+    "pdfium-android": {
+      "url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7920/pdfium-android-arm64.tgz",
+      "revision": "chromium/7920",
+      "sha256": "50657e8e0f8a5d94804be7fbf6f872fa5ebaceeb401dd1450022dd63bc07f005",
+      "strip_root": false
+    },
+    "pdfium-ios": {
+      "url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7920/pdfium-ios-device-arm64.tgz",
+      "revision": "chromium/7920",
+      "sha256": "03b0f149d38ff879574a1f58aeecda158c797ef8a3c7cf31c5eef393c46f6b2f",
+      "strip_root": false
+    },
+    "openssl": {
+      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.6.5/openssl-3.6.5.tar.gz",
+      "revision": "3.6.5",
+      "sha256": "a2157c2830efdec3788939b00c9b0638306d3f0bbb76dc4832ee503bb397df98"
+    },
+    "go-android": {
+      "url": "https://go.dev/dl/go1.26.5.linux-amd64.tar.gz",
+      "revision": "go1.26.5",
+      "sha256": "5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053"
+    },
+    "go-ios": {
+      "url": "https://go.dev/dl/go1.26.5.darwin-arm64.tar.gz",
+      "revision": "go1.26.5",
+      "sha256": "efb87ff28af9a188d0536ef5d42e63dd52ba8263cd7344a993cc48dd11dedb6a"
+    },
+    "nvattest-openssl": {
+      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.6.5/openssl-3.6.5.tar.gz",
+      "sha256": "a2157c2830efdec3788939b00c9b0638306d3f0bbb76dc4832ee503bb397df98",
+      "revision": "openssl-3.6.5.tar.gz"
+    },
+    "nvattest-libxml2": {
+      "url": "https://download.gnome.org/sources/libxml2/2.11/libxml2-2.11.9.tar.xz",
+      "sha256": "780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f",
+      "revision": "libxml2-2.11.9.tar.xz"
+    },
+    "nvattest-xmlsec1": {
+      "url": "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_42/xmlsec1-1.2.42.tar.gz",
+      "sha256": "5359e3c19016ab164b505c1222ef5a2d87b34f50f85ff91d765f4aaa0df42db2",
+      "revision": "xmlsec1-1.2.42.tar.gz"
+    },
+    "nvattest-curl": {
+      "url": "https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz",
+      "sha256": "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1",
+      "revision": "curl-8.22.0.tar.gz"
+    },
+    "nvattest-zlib": {
+      "url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+      "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+      "revision": "zlib-1.3.1.tar.gz"
+    },
+    "nvattest-cli11": {
+      "url": "https://codeload.github.com/CLIUtils/CLI11/tar.gz/bfffd37e1f804ca4fae1caae106935791696b6a9",
+      "sha256": "03c9b7921b8f99ca39ae660b03ebf9bd5a3f4280201f7d04bc5639b1e0496401",
+      "revision": "bfffd37e1f804ca4fae1caae106935791696b6a9"
+    },
+    "nvattest-jwt-cpp": {
+      "url": "https://codeload.github.com/Thalhammer/jwt-cpp/tar.gz/e71e0c2d584baff06925bbb3aad683f677e4d498",
+      "sha256": "1988cbe1c930638ac4341578fb0fc0616fe39cf468a9087624b27581d81f8b51",
+      "revision": "e71e0c2d584baff06925bbb3aad683f677e4d498"
+    },
+    "nvattest-fmt": {
+      "url": "https://codeload.github.com/fmtlib/fmt/tar.gz/e69e5f977d458f2650bb346dadf2ad30c5320281",
+      "sha256": "1723f27eed50e751037f49dcdf73e33b17658f1178ea1c1f829a30bb02335745",
+      "revision": "e69e5f977d458f2650bb346dadf2ad30c5320281"
+    },
+    "nvattest-spdlog": {
+      "url": "https://codeload.github.com/gabime/spdlog/tar.gz/27cb4c76708608465c413f6d0e6b8d99a4d84302",
+      "sha256": "7d512b37019b61646cd6fd1e48f52a3cf3e098f36b33ba9c059fe51301ff40b3",
+      "revision": "27cb4c76708608465c413f6d0e6b8d99a4d84302"
+    },
+    "nvattest-json": {
+      "url": "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz",
+      "sha256": "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa",
+      "revision": "json-3.12.0.tar.xz"
+    }
+  }
+}

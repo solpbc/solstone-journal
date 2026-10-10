@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import tomllib
 import urllib.request
@@ -44,13 +45,19 @@ def acquire(pin, cache):
         if sha256(archive) != pin["sha256"]:
             raise ValueError(f"input digest mismatch: {archive}")
         return archive
-    partial = archive.with_suffix(archive.suffix + ".part")
     print(f"acquire {pin['url']}", flush=True)
-    with urllib.request.urlopen(pin["url"], timeout=120) as response, partial.open("wb") as output:
-        shutil.copyfileobj(response, output)
-    if sha256(partial) != pin["sha256"]:
-        raise ValueError(f"download digest mismatch: {partial}")
-    partial.replace(archive)
+    # Independent cold builds may share downloads, never their temporary file.
+    with tempfile.NamedTemporaryFile(dir=cache, prefix=archive.name + ".", suffix=".part", delete=False) as output:
+        partial = Path(output.name)
+        try:
+            with urllib.request.urlopen(pin["url"], timeout=120) as response:
+                shutil.copyfileobj(response, output)
+            output.close()
+            if sha256(partial) != pin["sha256"]:
+                raise ValueError(f"download digest mismatch: {partial}")
+            partial.replace(archive)
+        finally:
+            partial.unlink(missing_ok=True)
     return archive
 
 

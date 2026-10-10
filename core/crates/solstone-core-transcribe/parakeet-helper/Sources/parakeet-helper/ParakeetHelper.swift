@@ -146,6 +146,7 @@ private func macosVersionString() -> String {
 }
 
 private func swiftVersionString() -> String {
+#if os(macOS)
     let process = Process()
     let pipe = Pipe()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/swift")
@@ -170,6 +171,9 @@ private func swiftVersionString() -> String {
     } catch {
         return "unknown"
     }
+#else
+    return "unknown"
+#endif
 }
 
 private func expandedURL(path: String) -> URL {

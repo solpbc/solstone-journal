@@ -63,7 +63,7 @@ check() {
     build_env=(
         "IPHONEOS_DEPLOYMENT_TARGET=$deployment_target"
         "ORT_LIB_PATH=$work/lib"
-        "CARGO_TARGET_DIR=$root/core/target-ios"
+        "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$root/core/target-ios}"
     )
     env "${build_env[@]}" cargo build --manifest-path core/Cargo.toml --locked \
         --target "$target" --workspace --lib --bins
