@@ -1732,6 +1732,7 @@ mod tests {
         assert!(manifest.exists());
     }
 
+    #[cfg(unix)]
     #[test]
     fn later_failure_stops_before_every_remaining_cleanup_step() {
         use std::os::unix::fs::symlink;
@@ -1801,6 +1802,7 @@ mod tests {
         assert!(skill.is_symlink());
     }
 
+    #[cfg(unix)]
     #[test]
     fn matching_guarded_wrappers_are_removed_even_when_their_binary_is_no_longer_current() {
         let root = root("guarded-wrapper");
@@ -1898,6 +1900,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn two_roots_clean_in_either_order_preserving_foreign_wrappers_and_shared_state() {
         for (same_journal, first_is_a) in [false, true].into_iter().flat_map(|same_journal| {
