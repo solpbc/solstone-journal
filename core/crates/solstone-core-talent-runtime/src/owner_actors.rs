@@ -48,28 +48,35 @@ pub fn resolve_owner_actors(journal: &Path) -> Result<usize, String> {
             let records = solstone_core_facets::load_activity_records(journal, &facet, &day, true)
                 .map_err(|e| e.to_string())?;
             for record in records {
-                let Some((record_id, patch, count)) = owner_patch(&record, &owner, &owner_id)
-                else {
+                // The snapshot only finds candidates. The patch replaces whole
+                // arrays, so it is derived from the record as it stands inside
+                // the writer's lock, never from the snapshot.
+                if owner_patch(&record, &owner, &owner_id).is_none() {
+                    continue;
+                }
+                let Some(record_id) = record.get("id").and_then(Value::as_str) else {
                     continue;
                 };
                 let _guard = solstone_core_facets::hold_activity_enrichment(journal, &facet, &id)
                     .map_err(|e| e.to_string())?;
+                let mut count = 0;
                 let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true);
-                if solstone_core_facets::update_activity_record(
+                solstone_core_facets::update_activity_record_with(
                     journal,
                     &facet,
                     &day,
-                    &record_id,
-                    &patch,
+                    record_id,
+                    |current| {
+                        let (_, patch, filled) = owner_patch(current, &owner, &owner_id)?;
+                        count = filled;
+                        Some(patch)
+                    },
                     "owner_identity",
                     "resolved references to you",
                     &timestamp,
                 )
-                .map_err(|e| e.to_string())?
-                .is_some()
-                {
-                    filled += count;
-                }
+                .map_err(|e| e.to_string())?;
+                filled += count;
             }
         }
     }

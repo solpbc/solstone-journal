@@ -141,29 +141,35 @@ pub fn reresolve_changed_segments(
                     continue;
                 }
                 let speakers = SpeakerMap::read(journal, day, stream, &keys, &people);
-                let Some((record_id, patch, count)) =
-                    record_patch(&record, &people, &speakers, named)
-                else {
+                // The snapshot only finds candidates. The patch replaces whole
+                // arrays, so it is derived from the record as it stands inside
+                // the writer's lock, never from the snapshot.
+                if record_patch(&record, &people, &speakers, named).is_none() {
+                    continue;
+                }
+                let Some(record_id) = record.get("id").and_then(Value::as_str) else {
                     continue;
                 };
                 let _guard = solstone_core_facets::hold_activity_enrichment(journal, &facet, &id)
                     .map_err(|e| e.to_string())?;
+                let mut count = 0;
                 let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true);
-                if solstone_core_facets::update_activity_record(
+                solstone_core_facets::update_activity_record_with(
                     journal,
                     &facet,
                     day,
-                    &record_id,
-                    &patch,
+                    record_id,
+                    |current| {
+                        let (_, patch, changed) = record_patch(current, &people, &speakers, named)?;
+                        count = changed;
+                        Some(patch)
+                    },
                     "speaker_identify",
                     "resolved people from named voices",
                     &timestamp,
                 )
-                .map_err(|e| e.to_string())?
-                .is_some()
-                {
-                    resolved += count;
-                }
+                .map_err(|e| e.to_string())?;
+                resolved += count;
             }
         }
     }

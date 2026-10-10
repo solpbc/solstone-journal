@@ -74,7 +74,7 @@ pub use store::{
     scan_facet_relationships, seed_entities, serialize_observation_rows, set_activity_hidden,
     set_facet_entity_link_detached, set_facet_muted, settle_imported_facet_id,
     snapshot_retired_files, strip_incoming_facet_id, update_activity, update_activity_record,
-    update_detected_entity, update_facet, upsert_detection_segment,
+    update_activity_record_with, update_detected_entity, update_facet, upsert_detection_segment,
     validate_observation_operations, write_activity_file, write_facet_entity_observations,
     write_log_file, write_news_file,
 };
