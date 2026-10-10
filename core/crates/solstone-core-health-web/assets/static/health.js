@@ -848,7 +848,7 @@
     if (deviceVerdict && !deviceUnassessed) return deviceVerdict;
 
     const clients = Array.from(state.clients.values());
-    if (clients.length > 0 && clients.every(client => (now - client.lastSeen) >= STALE_MS)) {
+    if (!deviceUnassessed && clients.length > 0 && clients.every(client => (now - client.lastSeen) >= STALE_MS)) {
       const ageMs = Math.min(...clients.map(client => now - client.lastSeen));
       return {
         key: 'HEALTH_GLANCE_CLIENT_SILENT',

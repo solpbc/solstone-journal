@@ -676,6 +676,9 @@ test('unknown device knowledge cannot mute a diagnosed fault or fabricate a fail
     env.context.brainSnapshot = null;
     env.state.searchIndex = { state: 'failing', text: 'index diagnosis' };
     assert.strictEqual(env.verdict().vars.headline, 'index diagnosis');
+    env.state.clients.set('local', { lastSeen: env.clock.now - 30000 });
+    assert.strictEqual(env.verdict().vars.headline, 'index diagnosis');
+    env.state.clients.clear();
     env.state.searchIndex = null;
   }
   await env.load([device('phone')]);

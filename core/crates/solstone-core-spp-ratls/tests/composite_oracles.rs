@@ -16,8 +16,8 @@ use solstone_core_spp_attest::{
     binding::BINDING_DOMAIN,
     error::GpuAppraisalReason,
     nvgpu::{
-        GpuAppraisal, NvattestVerdict, build_gpu_appraisal, classify_nvattest_result,
-        parse_nvattest_stdout,
+        GpuAppraisal, GpuProfile, GpuProfiles, ManifestSet, NvattestVerdict, StatusMode,
+        build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout,
     },
     tlv::GpuEnvelope,
 };
@@ -167,6 +167,14 @@ fn fixture_root() -> PathBuf {
     repository_root().join("tests/fixtures/spp_attest")
 }
 
+fn fixture_profile() -> GpuProfile {
+    GpuProfile::new(
+        "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3",
+        ManifestSet::QUALIFIED_595_71_05,
+        StatusMode::OnlineNonce,
+    )
+}
+
 fn native_verdict(kind: &str, root: &Path) -> Value {
     let inputs = FixtureInputs::load(root);
     let certificates = [&inputs.ark[..], &inputs.ask[..], &inputs.vcek[..]];
@@ -200,7 +208,7 @@ fn native_verdict(kind: &str, root: &Path) -> Value {
             status_proofs: None,
         },
         &appraiser,
-        &solstone_core_spp_attest::nvgpu::GpuProfiles::production(),
+        &GpuProfiles::from_profiles(vec![fixture_profile()]),
         root,
         SystemTime::UNIX_EPOCH,
     );
@@ -323,9 +331,7 @@ fn resolve_installed_nvattest_refuses_tampered_library_before_spawn() {
         render_installed_payload,
     };
     use solstone_core_spp_attest::{
-        NvattestGpuAppraiser, NvattestInstallation,
-        nvgpu::{GpuProfiles, GpuStatusInput},
-        tlv::decode_gpu_envelope,
+        NvattestGpuAppraiser, NvattestInstallation, nvgpu::GpuStatusInput, tlv::decode_gpu_envelope,
     };
     use solstone_core_spp_ratls::resolve_installed_nvattest;
 
@@ -393,12 +399,9 @@ fn resolve_installed_nvattest_refuses_tampered_library_before_spawn() {
         lib_dir,
         ca_bundle: paths.ca_bundle,
     };
-    let profiles = GpuProfiles::production();
-    let profile = profiles
-        .select(solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS[0])
-        .unwrap();
+    let profile = fixture_profile();
     let status = GpuStatusInput {
-        profile,
+        profile: &profile,
         proofs: None,
         verification_time: SystemTime::now(),
     };

@@ -99,14 +99,9 @@ impl GpuProfile {
 // Each admitted production pin and its complete profile. This mapping is
 // separate from CPU admission: a profile here never adds its fingerprint to
 // pins.rs, and the integrity test refuses an admitted pin without a profile.
-// The current engine keeps online status during the overlap; both firmware
-// states of the sealed image use its authenticated, image-carried proofs.
+// Both firmware states of the sealed image use its authenticated,
+// image-carried proofs.
 const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[
-    (
-        "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3",
-        ManifestSet::QUALIFIED_595_71_05,
-        StatusMode::OnlineNonce,
-    ),
     (
         "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
         ManifestSet::QUALIFIED_595_71_05,
@@ -237,15 +232,6 @@ mod tests {
         for (pcr, _, _) in PRODUCTION_PROFILES {
             assert!(crate::pins::PRODUCTION_PCR_SHA256_PINS.contains(pcr));
         }
-    }
-
-    #[test]
-    fn the_current_image_keeps_online_nonce_status() {
-        let profiles = GpuProfiles::production();
-        let profile = profiles
-            .select("b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3")
-            .expect("current image profile");
-        assert_eq!(profile.status(), StatusMode::OnlineNonce);
     }
 
     #[test]

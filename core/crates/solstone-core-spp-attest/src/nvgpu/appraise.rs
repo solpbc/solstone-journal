@@ -567,11 +567,12 @@ mod tests {
         fs::write(root.join("share/ca/ca-bundle.pem"), "CA").expect("write CA bundle");
     }
 
-    fn production_profile() -> crate::nvgpu::GpuProfile {
-        crate::nvgpu::GpuProfiles::production()
-            .select(crate::pins::PRODUCTION_PCR_SHA256_PINS[0])
-            .expect("production profile")
-            .clone()
+    fn online_profile() -> crate::nvgpu::GpuProfile {
+        crate::nvgpu::GpuProfile::new(
+            "11".repeat(32),
+            crate::nvgpu::ManifestSet::QUALIFIED_595_71_05,
+            crate::nvgpu::StatusMode::OnlineNonce,
+        )
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -591,7 +592,7 @@ mod tests {
         root: &Path,
         timeout: Duration,
     ) -> Result<crate::nvgpu::GpuAppraisal, GpuAppraisalReason> {
-        let profile = production_profile();
+        let profile = online_profile();
         appraise_with(root, timeout, &profile, None)
     }
 
@@ -818,7 +819,7 @@ exec cat "$base/result.stdout"
         // The online profile ignores proofs: it neither reads nor passes them.
         let root = TempDir::new();
         install_recording_script(root.path(), &fixture_bytes("nvattest/positive.stdout"));
-        let profile = production_profile();
+        let profile = online_profile();
         appraise_with(root.path(), HELPER_DEADLINE, &profile, Some(b"ignored"))
             .expect("online appraisal");
         let argv = fs::read_to_string(root.path().join("argv")).expect("argv");
@@ -1030,7 +1031,7 @@ int main(int argc, char **argv) {{
         fs::create_dir_all(root.path()).expect("create root");
 
         let envelope = decode_gpu_envelope(&fixture_bytes("gpu-envelope.tlv")).expect("envelope");
-        let profile = production_profile();
+        let profile = online_profile();
         assert_eq!(
             NvattestGpuAppraiser.appraise(
                 &envelope,
