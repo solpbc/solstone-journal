@@ -40,7 +40,7 @@ pub use activity_records::{
     adopt_moved_activity_rows, anticipation_batch_matches_prompt, append_activity_record,
     append_edit, append_ledger_close, get_activity_record, hold_activity_enrichment,
     load_activity_records, prepare_anticipation_batch, publish_anticipation_batch,
-    set_activity_hidden, update_activity_record,
+    set_activity_hidden, update_activity_record, update_activity_record_with,
 };
 pub use awareness::{
     AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,

@@ -736,7 +736,35 @@ pub fn update_activity_record(
     note: &str,
     timestamp: &str,
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
+    update_activity_record_with(
+        root,
+        facet,
+        day,
+        record_id,
+        |_| Some(patch.clone()),
+        actor,
+        note,
+        timestamp,
+    )
+}
+
+/// Like `update_activity_record`, with the patch derived from the record as
+/// it stands under the day file's lock, so a patch that replaces a whole array
+/// can never be computed from an older copy of it. `derive` returning `None`
+/// writes no edit and returns `None`.
+#[allow(clippy::too_many_arguments)]
+pub fn update_activity_record_with(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+    derive: impl FnOnce(&ActivityRecord) -> Option<Map<String, Value>>,
+    actor: &str,
+    note: &str,
+    timestamp: &str,
+) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
     let current_id = admit_activity_destination(root, facet)?;
+    let mut derive = Some(derive);
     locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
         let rows = adopt_moved_rows(root, &current_id, rows);
         let mut result = None;
@@ -753,8 +781,11 @@ pub fn update_activity_record(
                 if id(&row) != record_id {
                     return row;
                 }
+                let Some(patch) = derive.take().and_then(|derive| derive(&row)) else {
+                    return row;
+                };
                 let mut merged = row;
-                for (key, value) in patch {
+                for (key, value) in &patch {
                     merged.insert(key.clone(), value.clone());
                 }
                 merged.insert(
@@ -1057,6 +1088,80 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_derived_update_sees_the_record_as_stored_when_it_writes() {
+        let root = tempfile::tempdir().expect("root");
+        crate::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let mut record = ActivityRecord::new();
+        record.insert("id".to_owned(), Value::String("a1".to_owned()));
+        record.insert(
+            "participation".to_owned(),
+            serde_json::json!([{"name":"Ada"}]),
+        );
+        assert!(matches!(
+            append_activity_record(root.path(), "work", "20260510", record).expect("write"),
+            AppendOutcome::Written(_)
+        ));
+        // Another writer adds an entry after a caller's snapshot was taken.
+        update_activity_record(
+            root.path(),
+            "work",
+            "20260510",
+            "a1",
+            &Map::from_iter([(
+                "participation".to_owned(),
+                serde_json::json!([{"name":"Ada"},{"name":"Bea"}]),
+            )]),
+            "participation",
+            "updated participation",
+            "2026-05-10T00:00:00Z",
+        )
+        .expect("update");
+        let path = day_path(root.path(), "work", "20260510").unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(
+            update_activity_record_with(
+                root.path(),
+                "work",
+                "20260510",
+                "a1",
+                |_| None,
+                "test",
+                "nothing",
+                "2026-05-10T00:00:01Z",
+            )
+            .expect("no-op")
+            .is_none()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let updated = update_activity_record_with(
+            root.path(),
+            "work",
+            "20260510",
+            "a1",
+            |current| {
+                let mut people = current["participation"].as_array()?.clone();
+                people.push(serde_json::json!({"name":"Cy"}));
+                Some(Map::from_iter([(
+                    "participation".to_owned(),
+                    Value::Array(people),
+                )]))
+            },
+            "test",
+            "added",
+            "2026-05-10T00:00:02Z",
+        )
+        .expect("derived update")
+        .expect("record exists");
+        let names = updated["participation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["name"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Ada", "Bea", "Cy"]);
+    }
 
     #[test]
     fn append_is_fill_only() {
