@@ -834,13 +834,16 @@ mod tests {
             &mut sink,
             Some((&STORY, PrePostState::None)),
         );
-        assert!(matches!(
-            outcome,
-            crate::RuntimeOutcome::Finished {
-                disposition: CommitDisposition::RejectedNoMutation,
-                ..
-            }
-        ));
+        let crate::RuntimeOutcome::Finished {
+            disposition: CommitDisposition::RejectedNoMutation,
+            degraded: Some(degraded),
+            ..
+        } = outcome
+        else {
+            panic!("a rejected story finishes degraded without mutation");
+        };
+        assert_eq!(degraded["reason"], "story_rejected");
+        assert_eq!(degraded["detail"], "story output is not JSON");
         assert_eq!(fs::read(&activity_path).unwrap(), unchanged);
         assert!(!root.path().join("output.md").exists());
     }

@@ -875,12 +875,26 @@ pub(crate) fn generate_and_write(
         if let Some(commit) = stage.commit {
             let parsed = match (commit.parse)(&response, prepared, &state) {
                 Ok(parsed) => parsed,
-                Err(_) if matches!(stage.stage, contract::StageId::Story) => {
+                Err(error) if matches!(stage.stage, contract::StageId::Story) => {
                     // An empty body and other parse refusals do not
                     // mutate the activity. This is a finish with
                     // RejectedNoMutation, not StageFailed, so think-cli
                     // records talent.complete and health/fail-rate that key
-                    // on talent.fail do not see it.
+                    // on talent.fail do not see it. It is marked degraded so
+                    // the day index and Health still show the activity was
+                    // left without a story.
+                    let degraded = degraded.or_else(|| {
+                        let output_tokens = usage
+                            .as_deref()
+                            .and_then(|usage| usage.get("output_tokens"))
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                        Some(Box::new(json!({
+                            "reason": "story_rejected",
+                            "detail": error.detail,
+                            "output_tokens": output_tokens,
+                        })))
+                    });
                     return RuntimeOutcome::Finished {
                         output: response,
                         disposition: CommitDisposition::RejectedNoMutation,

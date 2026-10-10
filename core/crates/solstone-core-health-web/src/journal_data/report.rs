@@ -501,23 +501,26 @@ pub(crate) fn build_synthesis_health(
         for (_, row) in scan.degraded_rows.iter().take(10) {
             let degraded = row.get("degraded").and_then(Value::as_object);
             if let Some(degraded) = degraded {
-                notes.push(note(
-                    "warn",
-                    "synthesis",
-                    &format!(
-                        "talent '{}' finished near-empty: {} output tokens ({}/{}) on {}",
-                        string(row.get("name")),
-                        degraded
-                            .get("output_tokens")
-                            .and_then(Value::as_i64)
-                            .unwrap_or(0),
-                        string(row.get("provider")),
-                        string(row.get("model")),
-                        string(row.get("day")),
-                    ),
-                    generated_at,
-                    None,
-                ));
+                let usage = format!(
+                    "{} output tokens, {}/{}",
+                    degraded
+                        .get("output_tokens")
+                        .and_then(Value::as_i64)
+                        .unwrap_or(0),
+                    string(row.get("provider")),
+                    string(row.get("model")),
+                );
+                let day = string(row.get("day"));
+                let message =
+                    if degraded.get("reason").and_then(Value::as_str) == Some("story_rejected") {
+                        format!("an activity's story on {day} couldn't be used ({usage})")
+                    } else {
+                        format!(
+                            "'{}' finished without a usable result ({usage}) on {day}",
+                            string(row.get("name")),
+                        )
+                    };
+                notes.push(note("warn", "synthesis", &message, generated_at, None));
             }
         }
         (Some(scan.failures), Some(scan.degraded))
@@ -1753,12 +1756,33 @@ mod tests {
         assert!(
             notes
                 .iter()
-                .any(|note| note.message.contains("finished near-empty"))
+                .any(|note| note.message.contains("finished without a usable result"))
         );
         assert!(
             !notes
                 .iter()
                 .any(|note| note.message.contains("counts unavailable"))
+        );
+    }
+
+    #[test]
+    fn a_rejected_story_shows_on_health() {
+        let temporary = temporary();
+        healthy_talent_guards(temporary.path(), now());
+        talent_rows(
+            temporary.path(),
+            "20260410",
+            &[
+                json!({"ts":now().timestamp_millis(),"status":"completed","degraded":{"reason":"story_rejected","detail":"story output has invalid body","output_tokens":53},"name":"conversation","provider":"local","model":"m","day":"20260410"}),
+            ],
+        );
+        let (health, notes) =
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+        assert_eq!(health.talent_degraded_outputs_24h, Some(1));
+        assert!(
+            notes
+                .iter()
+                .any(|note| note.message.contains("story on 20260410"))
         );
     }
 
@@ -1796,7 +1820,7 @@ mod tests {
             build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
         let messages = notes
             .iter()
-            .filter(|note| note.message.contains("finished near-empty"))
+            .filter(|note| note.message.contains("finished without a usable result"))
             .map(|note| note.message.as_str())
             .collect::<Vec<_>>();
         assert_eq!(messages.len(), 10);
