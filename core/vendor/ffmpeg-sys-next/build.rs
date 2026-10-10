@@ -15,11 +15,11 @@ use std::str;
 use flate2::read::GzDecoder;
 use solstone_core_ffmpeg_build_support::{
     BUILD_RUN_ID_ENV, ConfigureReceipt, ConfigureRunRecord, EVIDENCE_DIR, SourceAdmission,
-    configure_mode_args, controlled_component_args_for_audio_remux, parse_build_profile,
-    parse_component_inventory, parse_debug_env, parse_ffmpeg_pin, read_configure_receipt,
-    read_current_run_record, select_source_admission,
-    validate_controlled_component_inventory, verify_sha256,
-    write_configure_receipt, write_current_run_record,
+    configure_mode_args, controlled_component_args_for_audio_remux, msvc_crt_configure_arg,
+    parse_build_profile, parse_component_inventory, parse_debug_env, parse_ffmpeg_pin,
+    read_configure_receipt, read_current_run_record, select_source_admission,
+    validate_controlled_component_inventory, verify_sha256, write_configure_receipt,
+    write_current_run_record,
 };
 use tar::Archive;
 
@@ -662,6 +662,11 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
         .map_err(|error| io::Error::other(format!("missing required:\n  DEBUG ({error})")))?;
     let configure_mode = parse_debug_env(&debug).map_err(io::Error::other)?;
     for arg in configure_mode_args(configure_mode, cfg!(target_os = "windows")) {
+        configure.arg(arg);
+    }
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").ok();
+    let target_feature = env::var("CARGO_CFG_TARGET_FEATURE").ok();
+    if let Some(arg) = msvc_crt_configure_arg(target_env.as_deref(), target_feature.as_deref()) {
         configure.arg(arg);
     }
 
