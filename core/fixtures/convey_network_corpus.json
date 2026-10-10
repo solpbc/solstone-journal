@@ -220,7 +220,7 @@
             "PRIVATE_LINK_DISABLE_SUCCESS_CLOSED": "your private network is off. your journal is closed to devices on your network, so your other devices can't reach it.",
             "PRIVATE_LINK_NEEDS_REPAIR": "your private network needs setting up again.",
             "PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA": "open the services portal",
-            "PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL": "your consent is saved. finish turning it on in the services portal, then turn it on here again.",
+            "PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL": "your consent is saved. finish turning it on in the services portal within the hour, and your journal picks it up on its own.",
             "PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE": "private network isn't on yet",
             "PRIVATE_LINK_PORTAL_CTA": "continue to approve \u2192",
             "PRIVATE_LINK_RETRY_CTA": "try again",

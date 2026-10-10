@@ -95,7 +95,7 @@
   "PRIVATE_LINK_SETUP_SUCCESS": "your private network is on. your devices can reach your journal from anywhere.",
   "PRIVATE_LINK_SETUP_FAILED": "couldn't finish setting up your private network.",
   "PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE": "private network isn't on yet",
-  "PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL": "your consent is saved. finish turning it on in the services portal, then turn it on here again.",
+  "PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL": "your consent is saved. finish turning it on in the services portal within the hour, and your journal picks it up on its own.",
   "PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA": "open the services portal",
   "PRIVATE_LINK_DISABLE_SUCCESS": "your private network is off. devices connect directly again.",
   "PRIVATE_LINK_DISABLE_FAILED": "couldn't turn off your private network. it's still on. try again.",

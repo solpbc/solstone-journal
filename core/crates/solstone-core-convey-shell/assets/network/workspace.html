@@ -1012,8 +1012,9 @@
   let reachRevealed = false;
   let linkInitialized = false;
   // Private-link product phases that finish the setup poll.
-  const PRIVATE_LINK_TERMINAL_PHASES = new Set(['enabled', 'needs_subscription', 'revoked', 'error']);
-  const PRIVATE_LINK_POLL_TIMEOUT_MS = 900000;
+  const PRIVATE_LINK_TERMINAL_PHASES = new Set(['enabled', 'revoked', 'error']);
+  // Covers the consent wait and the hour the journal waits on a subscription.
+  const PRIVATE_LINK_POLL_TIMEOUT_MS = 4500000;
   let privateLinkRetryAction = null;
 
 
@@ -1529,7 +1530,7 @@
 
     if (phase === 'enabled') {
       headline = window.LinkCopy.PRIVATE_LINK_SETUP_SUCCESS || 'your private network is on.';
-    } else if (phase === 'needs_subscription') {
+    } else if (phase === 'subscribing') {
       headline = window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE || "private network isn't on yet";
       detail = window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL || detail;
       subscribeUrl = typeof operation.subscribe_url === 'string' ? operation.subscribe_url : '';

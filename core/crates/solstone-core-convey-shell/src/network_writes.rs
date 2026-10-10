@@ -44,6 +44,10 @@ const SERVICE: &str = "spl";
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
 const BUSY_ERROR: &str = "The service operation is already running. Try again in a moment.";
 const BUSY_DETAIL: &str = "operation already running";
+/// How long a turn-on keeps waiting once the portal says a subscription is
+/// needed. The portal keeps the consent open for the same hour.
+const SUBSCRIBE_WAIT: Duration = Duration::from_secs(60 * 60);
+const SUBSCRIBE_POLL: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug)]
 pub enum SplPollOutcome {
@@ -72,6 +76,7 @@ pub struct SplRuntimeOverride {
     pub portal_base_url: String,
     pub poll: Arc<dyn SplPoll>,
     pub enrollment: Arc<dyn SplEnrollment>,
+    pub subscribe_poll: Duration,
 }
 #[derive(Clone)]
 pub struct NetworkOperationsOverride(pub Arc<OperationRegistry>);
@@ -82,6 +87,7 @@ struct SplRuntime {
     portal_base_url: String,
     poll: Arc<dyn SplPoll>,
     enrollment: Arc<dyn SplEnrollment>,
+    subscribe_poll: Duration,
 }
 struct PortalPoll;
 struct RelayEnrollment;
@@ -164,6 +170,7 @@ pub fn router(prefix: &str) -> axum::Router {
             .to_owned(),
         poll: Arc::new(PortalPoll),
         enrollment: Arc::new(RelayEnrollment),
+        subscribe_poll: SUBSCRIBE_POLL,
     };
     axum::Router::new()
         .route(
@@ -271,6 +278,7 @@ async fn private_link_enable(
             portal_base_url: value.portal_base_url.trim_end_matches('/').to_owned(),
             poll: value.poll,
             enrollment: value.enrollment,
+            subscribe_poll: value.subscribe_poll,
         })
         .unwrap_or(runtime);
     if solstone_core_sol_link::service_identity::load_or_create_service_identity(&journal.0)
@@ -439,7 +447,8 @@ fn spawn_handoff(
         if !operations.mark_waiting(SERVICE, handle) {
             return;
         }
-        let deadline = Instant::now() + Duration::from_secs(900);
+        let mut deadline = Instant::now() + Duration::from_secs(900);
+        let mut subscribing = false;
         let result = loop {
             let poll = runtime.poll.clone();
             let base = runtime.portal_base_url.clone();
@@ -457,8 +466,21 @@ fn spawn_handoff(
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                     Ok(("revoked", _)) => break outcome(Phase::Revoked, "revoked", None),
-                    Ok(("needs_subscription", url)) => {
-                        break outcome(Phase::NeedsSubscription, "needs_subscription", url);
+                    // The portal has saved the owner's consent and is waiting on a
+                    // subscription. Keep asking: it answers approved once the purchase
+                    // lands, so paying needs no second turn-on and approval.
+                    Ok(("needs_subscription", Some(url))) => {
+                        if !subscribing {
+                            deadline = Instant::now() + SUBSCRIBE_WAIT;
+                            subscribing = true;
+                        }
+                        if Instant::now() >= deadline {
+                            break outcome(Phase::Error, "expired", None);
+                        }
+                        if !operations.note_subscribing(SERVICE, handle, url) {
+                            return;
+                        }
+                        tokio::time::sleep(runtime.subscribe_poll).await;
                     }
                     Ok(("approved", _)) => {
                         let enroll = runtime.enrollment.clone();

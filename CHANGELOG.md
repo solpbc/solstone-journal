@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - on windows, a local install now refuses before downloading if the GPU has less than 6 GB of memory or its memory cannot be checked. a new setup leaves thinking unchosen on those computers. the thinking page now explains failed installs and GPU memory failures at start.
 
+- if you turn on your private network before finishing in the services portal, your journal now finishes turning it on by itself once you do, within the hour. before, you had to come back, turn your private network on again and approve it a second time.
 - on windows, a journal saved inside the program folder can no longer start. move the whole journal folder outside it, then select the new location in setup.
 - on mac and linux, encrypted backup to storage sol pbc runs for you works again. since 2.0.38, no backup there finished. your backups resume on their own after this update, and everything backed up before 2.0.38 is still there.
 - activity settling no longer appears as an extra daily run for yesterday in your journal's health records. its run is recorded separately under today, while each activity keeps its own day.

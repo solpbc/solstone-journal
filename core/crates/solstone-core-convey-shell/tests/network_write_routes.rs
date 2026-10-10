@@ -227,6 +227,7 @@ fn overridden(
             portal_base_url: "https://portal.test".to_owned(),
             poll: poll.clone(),
             enrollment: Arc::new(FakeEnrollment(enrollment)),
+            subscribe_poll: Duration::from_millis(5),
         }));
     (app, poll)
 }
@@ -746,6 +747,64 @@ impl SplPoll for DynamicPoll {
 }
 
 #[tokio::test]
+async fn enable_needs_subscription_keeps_waiting_and_turns_on_when_the_purchase_lands() {
+    let root = journal();
+    plant_committed_identity(&root);
+    let needs = json!({"service":"spl","state":"needs_subscription","subscribe_url":"https://subscribe.test"})
+        .as_object()
+        .unwrap()
+        .clone();
+    let poll = Arc::new(DynamicPoll {
+        outcome: std::sync::Mutex::new(SplPollOutcome::Success(needs)),
+        calls: AtomicUsize::new(0),
+    });
+    let app = router(root.to_path_buf())
+        .layer(Extension(NetworkOperationsOverride(Arc::new(
+            OperationRegistry::default(),
+        ))))
+        .layer(Extension(SplRuntimeOverride {
+            portal_base_url: "https://portal.test".to_owned(),
+            poll: poll.clone(),
+            enrollment: Arc::new(FakeEnrollment(Enrollment::Token)),
+            subscribe_poll: Duration::from_millis(5),
+        }));
+    let (status, _) = request(
+        app.clone(),
+        Method::POST,
+        "/app/network/private-link/enable",
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    // Consent is saved on the portal; the turn-on stays open while the owner pays.
+    let operation = wait_operation(app.clone(), "subscribing").await;
+    assert_eq!(operation["subscribe_url"], "https://subscribe.test");
+    let asked = poll.calls.load(Ordering::Relaxed);
+    while poll.calls.load(Ordering::Relaxed) < asked + 2 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let config = || {
+        serde_json::from_slice::<Value>(
+            &fs::read(root.join("config/journal.json")).unwrap_or_default(),
+        )
+        .unwrap_or(Value::Null)
+    };
+    assert_ne!(config()["link"]["posture"], "spl");
+
+    // The purchase lands and the portal approves: no second turn-on or approval.
+    *poll.outcome.lock().unwrap() = SplPollOutcome::Success(
+        json!({"service":"spl","state":"approved","approved_at":1})
+            .as_object()
+            .unwrap()
+            .clone(),
+    );
+    wait_operation(app, "enabled").await;
+    assert_eq!(config()["link"]["posture"], "spl");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
 async fn enable_busy_keeps_original_signed_portal_url_until_terminal() {
     let root = journal();
     let instance_id = plant_committed_identity(&root);
@@ -765,6 +824,7 @@ async fn enable_busy_keeps_original_signed_portal_url_until_terminal() {
             portal_base_url: "https://portal.test".to_owned(),
             poll: poll.clone(),
             enrollment: Arc::new(FakeEnrollment(Enrollment::Token)),
+            subscribe_poll: Duration::from_millis(5),
         }));
 
     // 1. First accepted enable stores a signed URL
@@ -884,13 +944,78 @@ async fn enable_approved_writes_identity_posture_and_token() {
 #[tokio::test]
 async fn enable_consent_and_relay_outcomes_are_mapped_without_egress() {
     let cases = [
-        (SplPollOutcome::Success(json!({"service":"spl","state":"revoked"}).as_object().unwrap().clone()), Enrollment::Token, "revoked", Some("Consent was not granted")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"needs_subscription","subscribe_url":"https://subscribe.test"}).as_object().unwrap().clone()), Enrollment::Token, "needs_subscription", Some("finish turning it on in the services portal")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(409, Some("ca_pubkey already registered to another instance")), "error", Some("different identity")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(409, Some("ca_pubkey mismatch — rotation not supported in v1")), "error", Some("security key changed")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(503, None), "error", Some("isn't available")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Unreachable, "error", Some("could not be reached")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(502, None), "error", Some("error 502")),
+        (
+            SplPollOutcome::Success(
+                json!({"service":"spl","state":"revoked"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+            Enrollment::Token,
+            "revoked",
+            Some("Consent was not granted"),
+        ),
+        (
+            SplPollOutcome::Success(
+                json!({"service":"spl","state":"approved","approved_at":1})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+            Enrollment::Error(
+                409,
+                Some("ca_pubkey already registered to another instance"),
+            ),
+            "error",
+            Some("different identity"),
+        ),
+        (
+            SplPollOutcome::Success(
+                json!({"service":"spl","state":"approved","approved_at":1})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+            Enrollment::Error(
+                409,
+                Some("ca_pubkey mismatch — rotation not supported in v1"),
+            ),
+            "error",
+            Some("security key changed"),
+        ),
+        (
+            SplPollOutcome::Success(
+                json!({"service":"spl","state":"approved","approved_at":1})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+            Enrollment::Error(503, None),
+            "error",
+            Some("isn't available"),
+        ),
+        (
+            SplPollOutcome::Success(
+                json!({"service":"spl","state":"approved","approved_at":1})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+            Enrollment::Unreachable,
+            "error",
+            Some("could not be reached"),
+        ),
+        (
+            SplPollOutcome::Success(
+                json!({"service":"spl","state":"approved","approved_at":1})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+            Enrollment::Error(502, None),
+            "error",
+            Some("error 502"),
+        ),
     ];
     for (poll_result, enrollment, phase, guidance) in cases {
         let root = journal();
@@ -911,9 +1036,6 @@ async fn enable_consent_and_relay_outcomes_are_mapped_without_egress() {
                 .unwrap_or_default()
                 .contains(guidance.unwrap())
         );
-        if phase == "needs_subscription" {
-            assert_eq!(operation["subscribe_url"], "https://subscribe.test");
-        }
         assert!(poll.calls.load(Ordering::Relaxed) > 0);
         let _ = fs::remove_dir_all(root);
     }

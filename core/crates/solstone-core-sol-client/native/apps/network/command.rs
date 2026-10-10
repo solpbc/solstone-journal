@@ -13,8 +13,15 @@ use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
 const VALID_ROLES: &[&str] = &["", "phone", "observer"];
 const LINKED_SYSTEMS_HEADING: &str = "Linked systems:";
-const PRIVATE_LINK_TERMINAL_PHASES: &[&str] =
-    &["enabled", "revoked", "error", "needs_subscription"];
+// `subscribing` ends the command, not the turn-on: the journal keeps waiting
+// for the purchase on its own.
+const PRIVATE_LINK_TERMINAL_PHASES: &[&str] = &[
+    "enabled",
+    "revoked",
+    "error",
+    "subscribing",
+    "needs_subscription",
+];
 const PRIVATE_LINK_SETTING_UP: &str = "setting up your private network...";
 const PRIVATE_LINK_SETUP_SUCCESS: &str =
     "your private network is on. your devices can reach your journal from anywhere.";
@@ -22,6 +29,8 @@ const PRIVATE_LINK_SETUP_FAILED: &str = "couldn't finish setting up your private
 const PRIVATE_LINK_PORTAL_CTA: &str = "continue to approve →";
 const PRIVATE_LINK_NEEDS_SUBSCRIPTION: &str = "your private network isn't on yet. your consent is saved. \
 finish turning it on in the services portal, then turn it on here again:";
+const PRIVATE_LINK_SUBSCRIBING: &str = "your private network isn't on yet. your consent is saved. \
+finish turning it on in the services portal within the hour, and your journal picks it up on its own:";
 const PRIVATE_LINK_DISABLE_SUCCESS: &str =
     "your private network is off. devices connect directly again.";
 const PRIVATE_LINK_DISABLE_SUCCESS_CLOSED: &str = "your private network is off. your journal \
@@ -691,8 +700,15 @@ fn private_link_terminal_output(
             push_line(&mut out, PRIVATE_LINK_SETUP_SUCCESS);
             CommandOutput::success(out)
         }
-        Some("needs_subscription") => {
-            push_line(&mut out, PRIVATE_LINK_NEEDS_SUBSCRIPTION);
+        Some(phase @ ("subscribing" | "needs_subscription")) => {
+            push_line(
+                &mut out,
+                if phase == "subscribing" {
+                    PRIVATE_LINK_SUBSCRIBING
+                } else {
+                    PRIVATE_LINK_NEEDS_SUBSCRIPTION
+                },
+            );
             if let Some(url) = status
                 .get("operation")
                 .and_then(Value::as_object)
