@@ -123,6 +123,10 @@ class Element {
     this.children = [];
     this._textContent = String(value);
   }
+  set innerHTML(value) {
+    assert.strictEqual(value, '', 'this DOM harness uses element APIs for content');
+    this.replaceChildren();
+  }
 
   setAttribute(name, value) {
     this.attributes[name] = String(value);
@@ -131,10 +135,13 @@ class Element {
   }
 
   getAttribute(name) {
+    if (name.startsWith('data-')) {
+      return Object.prototype.hasOwnProperty.call(this.dataset, dataKey(name)) ? this.dataset[dataKey(name)] : null;
+    }
     return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null;
   }
 
-  hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name); }
+  hasAttribute(name) { return this.getAttribute(name) !== null; }
 
   removeAttribute(name) {
     delete this.attributes[name];
@@ -180,6 +187,7 @@ class Element {
   }
 
   focus() { this.ownerDocument.activeElement = this; }
+  scrollIntoView() { this.scrolledIntoView = true; }
 }
 
 class Document {
@@ -200,6 +208,10 @@ class Document {
   }
   querySelectorAll(selector) { return this.documentElement.querySelectorAll(selector); }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  dispatchEvent(event) {
+    for (const listener of this.listeners[event.type] || []) listener.call(this, event);
+    return true;
+  }
 }
 
 function loadHealthSource() {
@@ -464,6 +476,255 @@ test('loaded search status reaches the headline and survives a later state-read 
   await vm.runInContext('loadHealthState()', context);
   assert.strictEqual(context.readError, readError);
   assert.strictEqual(context.state.searchIndex, search);
+});
+
+function sourceBlock(source, startToken, endToken) {
+  const start = source.indexOf(startToken);
+  const end = source.indexOf(endToken, start);
+  assert.ok(start >= 0 && end > start, `production block found: ${startToken}`);
+  return source.slice(start, end);
+}
+
+function createDeviceEnvironment() {
+  const source = loadHealthSource();
+  const doc = new Document();
+  const elements = {};
+  const observeCode = sourceBlock(source, 'function observeQuietState(', 'function updateClients(');
+  const names = new Set(['registeredClientsCard', 'registeredClientsStrip',
+    ...Array.from(observeCode.matchAll(/elements\.(\w+)/g), match => match[1])]);
+  for (const name of names) {
+    elements[name] = doc.createElement('div');
+    elements[name].id = name;
+    if (name !== 'registeredClientsStrip') doc.body.appendChild(elements[name]);
+  }
+  elements.registeredClientsCard.appendChild(elements.registeredClientsStrip);
+  const observeCard = doc.createElement('div');
+  observeCard.className = 'observe-card';
+  doc.body.appendChild(observeCard);
+  const heading = doc.createElement('p');
+  heading.className = 'surface-state-heading';
+  elements.observeEmpty.appendChild(heading);
+  const clock = { now: 120000 };
+  class ControlledDate extends Date { static now() { return clock.now; } }
+  const state = {
+    registeredClients: null, registeredClientsFailed: false, registeredClientsObservedAt: null,
+    clients: new Map(), localHost: 'local', agents: new Map(), imports: new Map(),
+    services: new Map([['observe', {}]]), crashed: new Map(), health: {}, connected: true,
+  };
+  const context = vm.createContext({
+    document: doc, elements, state, Date: ControlledDate, clock, console: { warn() {} },
+    window: { location: { hash: '' }, JournalFormat: { sinceDay: () => 'synthetic day' } },
+    requestAnimationFrame: fn => fn(), CustomEvent: class { constructor(type) { this.type = type; } },
+    STALE_MS: 30000, brainSnapshot: null, connectError: false,
+    serviceName: value => value, relativeTime: value => String(value), ageAgo: value => String(value),
+    fetch: async () => ({ ok: true, json: async () => ({ clients: [] }) }),
+  });
+  context.updateStatusSummary = () => {
+    context.selection = vm.runInContext('selectGlanceSentence(state, Date.now())', context);
+  };
+  vm.runInContext([
+    sourceBlock(source, 'const HEALTH_GLANCE_COPY =', 'let brainSnapshot ='),
+    sourceBlock(source, 'function registeredClientName(', 'function formatGlanceSentence('),
+    sourceBlock(source, 'const sinceDay =', 'function requestBacklogReprocess('),
+    observeCode,
+    sourceBlock(source, 'let devicesDeepLinkScrolled =', '// Update cortex grid'),
+  ].join('\n'), context);
+  const verdict = () => vm.runInContext('selectGlanceSentence(state, Date.now())', context);
+  const render = () => vm.runInContext('renderRegisteredClients(state.registeredClients)', context);
+  const observe = () => vm.runInContext('updateObserve()', context);
+  const load = async clients => {
+    context.fetch = async route => {
+      assert.strictEqual(route, '/app/network/api/clients');
+      return { ok: true, json: async () => ({ clients }) };
+    };
+    await vm.runInContext('loadRegisteredClients()', context);
+  };
+  return { context, doc, elements, state, clock, verdict, render, observe, load };
+}
+
+function device(cid, sourceDelivery = null) {
+  return { cid, display_label: cid, capture_state: 'active', failing: false, source_delivery: sourceDelivery };
+}
+
+function rejection(reason = 'synthetic-rejection') {
+  return { state: 'needs_attention', ingest_rejection: { active_count: 1, reason_code: reason } };
+}
+
+test('source rejection stays visible through sibling success and clears only with that source', async () => {
+  const env = createDeviceEnvironment();
+  for (const sources of [{ audio: rejection() }, { audio: rejection(), location: { state: 'current' } }]) {
+    await env.load([device('phone', sources)]);
+    assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICE_FAILING');
+    assert.ok(env.verdict().vars.device.includes('audio'));
+    const rows = env.doc.querySelectorAll('.registered-client-row');
+    assert.strictEqual(rows.length, 1);
+    assert.ok(rows[0].querySelector('.registered-client-detail').textContent.includes('audio'));
+    assert.ok(rows[0].querySelector('.registered-client-tech').textContent.includes('synthetic-rejection'));
+    assert.strictEqual(rows[0].querySelector('a').getAttribute('href'), '/app/network/#devices');
+  }
+  await env.load([device('phone', { audio: rejection(), location: { state: 'current', elapsed_ms: 0 } })]);
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICE_FAILING');
+  await env.load([device('phone', { audio: { state: 'current' }, location: { state: 'current' } })]);
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_OK');
+  assert.strictEqual(env.doc.querySelector('.registered-client-detail'), null);
+});
+
+test('attention counts devices and keeps global rejection when sources are absent', async () => {
+  const env = createDeviceEnvironment();
+  const phone = device('phone', { audio: rejection(), location: rejection() });
+  await env.load([phone]);
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICE_FAILING');
+  assert.strictEqual(env.doc.querySelectorAll('.registered-client-detail').length, 2);
+  const laptop = { ...device('laptop'), capture_state: 'degraded', failing: true,
+    ingest_rejection: { active_count: 2, reason_code: 'global-rejection' } };
+  await env.load([phone, laptop]);
+  assert.strictEqual(env.verdict().vars.n, '2');
+  assert.strictEqual(env.doc.querySelectorAll('.registered-client-row').length, 2);
+  assert.ok(env.verdict().vars.devices.includes('laptop'));
+  assert.ok(env.doc.querySelectorAll('.registered-client-tech').some(el => el.textContent.includes('global-rejection')));
+});
+
+test('quiet source unknown and setup controls add no rejected-source diagnosis', async () => {
+  const env = createDeviceEnvironment();
+  for (const clients of [[], [device('phone')], [device('phone', {})],
+    [{ ...device('new phone'), capture_state: 'no_capture' }],
+    [device('phone', { audio: { state: 'unknown', ingest_rejection: null }, location: { state: 'current' } })]]) {
+    await env.load(clients);
+    assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_OK');
+    assert.strictEqual(env.doc.querySelector('.registered-client-detail'), null);
+  }
+  await env.load([device('phone', { audio: rejection(), location: { state: 'current' } })]);
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICE_FAILING');
+  for (const capture_state of ['offline', 'stale']) {
+    await env.load([{ ...device('phone'), capture_state }]);
+    assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICE_SILENT_NO_AGE');
+  }
+});
+
+test('failed refresh retains evidence and observation time until a new successful read', async () => {
+  const env = createDeviceEnvironment();
+  const clients = [device('phone', { audio: rejection() })];
+  await env.load(clients);
+  const observedAt = env.state.registeredClientsObservedAt;
+  const before = env.doc.querySelectorAll('.registered-client-detail').map(el => el.textContent);
+  env.doc.querySelector('.registered-client-tech').open = true;
+  env.doc.querySelector('.registered-client-tech summary').focus();
+  env.clock.now += 60000;
+  env.context.fetch = async () => ({ ok: false, status: 503 });
+  await vm.runInContext('loadRegisteredClients()', env.context);
+  assert.strictEqual(env.state.registeredClients, clients);
+  assert.strictEqual(env.state.registeredClientsObservedAt, observedAt);
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICES_UNAVAILABLE');
+  assert.deepStrictEqual(env.doc.querySelectorAll('.registered-client-detail').map(el => el.textContent), before);
+  assert.ok(env.doc.querySelector('[data-read-state="unavailable"]'));
+  assert.strictEqual(env.doc.querySelectorAll('.registered-client-row').length, 1);
+  assert.strictEqual(env.doc.querySelector('.registered-client-tech').open, true);
+  assert.strictEqual(env.doc.activeElement, env.doc.querySelector('.registered-client-tech summary'));
+  env.clock.now += 60000;
+  await env.load([device('phone', { audio: { state: 'current' } })]);
+  assert.strictEqual(env.state.registeredClientsObservedAt, env.clock.now);
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_OK');
+  assert.strictEqual(env.doc.querySelector('[data-read-state="unavailable"]'), null);
+  assert.strictEqual(env.doc.querySelector('.registered-client-detail'), null);
+  const healthyReadAt = env.state.registeredClientsObservedAt;
+  env.clock.now += 60000;
+  env.context.fetch = async () => { throw new Error('request failed after healthy read'); };
+  await vm.runInContext('loadRegisteredClients()', env.context);
+  assert.strictEqual(env.state.registeredClientsObservedAt, healthyReadAt);
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICES_UNAVAILABLE');
+  assert.strictEqual(env.doc.querySelectorAll('.registered-client-row').length, 1);
+  assert.ok(env.doc.querySelector('[data-read-state="unavailable"]'));
+  assert.strictEqual(env.doc.querySelector('.registered-client-label.connected'), null);
+});
+
+test('initial empty and malformed failed reads have a reachable unavailable destination', async () => {
+  for (const failure of [async () => { throw new Error('network unavailable'); },
+    async () => ({ ok: true, json: async () => ({ clients: null }) }),
+    async () => ({ ok: true, json: async () => { throw new Error('invalid JSON'); } })]) {
+    const env = createDeviceEnvironment();
+    env.context.window.location.hash = '#registeredClientsCard';
+    env.context.fetch = failure;
+    await vm.runInContext('loadRegisteredClients()', env.context);
+    assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICES_UNAVAILABLE');
+    assert.strictEqual(env.state.registeredClientsObservedAt, null);
+    assert.strictEqual(env.elements.registeredClientsCard.classList.contains('hidden'), false);
+    assert.ok(env.doc.querySelector('[data-read-state="unavailable"]'));
+    assert.strictEqual(env.doc.querySelectorAll('.registered-client-row').length, 0);
+    assert.strictEqual(env.elements.registeredClientsCard.scrolledIntoView, true);
+    await env.load([]);
+    env.context.fetch = failure;
+    await vm.runInContext('loadRegisteredClients()', env.context);
+    assert.ok(env.doc.querySelector('[data-read-state="unavailable"]'));
+    assert.strictEqual(env.doc.querySelectorAll('.registered-client-row').length, 0);
+  }
+});
+
+test('unknown device knowledge cannot mute a diagnosed fault or fabricate a failure', async () => {
+  const env = createDeviceEnvironment();
+  await env.load([{ ...device('phone'), capture_state: 'unknown' }]);
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICES_UNKNOWN');
+  await env.load([{ ...device('phone'), capture_state: 'unknown' }, device('laptop', { audio: rejection() })]);
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_DEVICE_FAILING');
+  for (const unavailable of ['failed-read', 'unknown-device']) {
+    env.state.registeredClients = [{ ...device('phone'), capture_state: 'unknown' }];
+    env.state.registeredClientsFailed = unavailable === 'failed-read';
+    env.state.crashed.set('observe', {});
+    assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_SERVICE_ATTENTION');
+    env.state.crashed.clear();
+    env.context.brainSnapshot = { state: 'blocked', headline: 'brain diagnosis' };
+    assert.strictEqual(env.verdict().vars.headline, 'brain diagnosis');
+    env.context.brainSnapshot = null;
+    env.state.searchIndex = { state: 'failing', text: 'index diagnosis' };
+    assert.strictEqual(env.verdict().vars.headline, 'index diagnosis');
+    env.state.searchIndex = null;
+  }
+  await env.load([device('phone')]);
+  env.state.agents.set('task', { event: 'start' });
+  assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_CATCHING_UP');
+});
+
+test('observe uses fresh selected evidence rather than a stale populated map', async () => {
+  const env = createDeviceEnvironment();
+  await env.load([device('phone')]);
+  env.state.registeredClientsFailed = true;
+  for (const clients of [new Map(), new Map([['local', { lastSeen: env.clock.now - 30000, mode: 'screencast', audio: { threshold_hits: 999 } }]])]) {
+    env.state.clients = clients;
+    env.observe();
+    assert.strictEqual(env.doc.querySelector('.observe-card').dataset.unavailable, 'true');
+    assert.strictEqual(env.elements.observeContent.classList.contains('hidden'), true);
+  }
+  env.state.clients.set('remote', { lastSeen: env.clock.now, mode: 'screencast', audio: { threshold_hits: 7 } });
+  env.observe();
+  assert.strictEqual(env.doc.querySelector('.observe-card').dataset.unavailable, 'false');
+  assert.strictEqual(env.elements.observeContent.classList.contains('hidden'), false);
+  assert.ok(env.elements.observeSourceNote.textContent.includes('local') === false);
+  assert.ok(env.elements.audioStatus.textContent.includes('7'));
+  assert.ok(!env.elements.audioStatus.textContent.includes('999'));
+  env.state.localHost = null;
+  env.observe();
+  assert.ok(env.elements.observeSourceNote.textContent.includes('remote'));
+  env.state.clients = new Map();
+  env.state.registeredClients = [];
+  env.observe();
+  assert.strictEqual(env.doc.querySelector('.observe-card').dataset.unavailable, 'true');
+});
+
+test('rejection details preserve disclosure and keyboard focus without taking outside focus', async () => {
+  const env = createDeviceEnvironment();
+  const client = device('<phone>', { '<audio>': rejection('<reason>') });
+  await env.load([client]);
+  const detail = env.doc.querySelector('.registered-client-tech');
+  detail.open = true;
+  detail.querySelector('summary').focus();
+  env.render();
+  const refreshed = env.doc.querySelector('.registered-client-tech');
+  assert.strictEqual(refreshed.open, true);
+  assert.strictEqual(env.doc.activeElement, refreshed.querySelector('summary'));
+  assert.ok(refreshed.textContent.includes('<reason>'));
+  assert.strictEqual(env.doc.querySelector('script'), null);
+  env.doc.body.focus();
+  env.render();
+  assert.strictEqual(env.doc.activeElement, env.doc.body);
 });
 
 async function runAsyncCases() {

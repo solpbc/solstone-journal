@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the health page now shows which source on a device had uploads turned away, even when another source is still adding material. after a successful check, if device status can't be checked again, it keeps that last result and shows when it was checked.
 - on the entities page, when your journal refuses something you asked for, such as a merge or a restore, it now says why, for example that one side of a merge is blocked. before, it often said only "Entity request refused".
 - when your journal can't use what the model wrote for an activity's story, such as a story with nothing in it, the health page now says so. the activity is still left without a story; before, nothing said so.
 

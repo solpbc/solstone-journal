@@ -16,12 +16,13 @@
     "HEALTH_GLANCE_CATCHING_UP": "catching up on {n} {tasks} in the background. last update {age}.",
     "HEALTH_GLANCE_CHECKING": "checking where your journal stands…",
     "HEALTH_GLANCE_CLIENT_SILENT": "one of your devices hasn't reached your journal recently.",
-    "HEALTH_GLANCE_DEVICE_FAILING": "{device} isn't reaching your journal.",
-    "HEALTH_GLANCE_DEVICES_FAILING": "{n} devices aren't reaching your journal: {devices}.",
+    "HEALTH_GLANCE_DEVICE_FAILING": "your journal couldn't accept uploads from {device}.",
+    "HEALTH_GLANCE_DEVICES_FAILING": "your journal couldn't accept uploads from {n} devices: {devices}.",
     "HEALTH_GLANCE_DEVICE_SILENT": "{device} hasn't added to your journal in {age}.",
     "HEALTH_GLANCE_DEVICE_SILENT_NO_AGE": "{device} hasn't added to your journal recently.",
     "HEALTH_GLANCE_DEVICES_SILENT": "{n} devices haven't added to your journal recently: {devices}.",
     "HEALTH_GLANCE_DEVICES_UNAVAILABLE": "your devices' delivery status is unavailable right now.",
+    "HEALTH_GLANCE_DEVICES_UNKNOWN": "delivery from some of your devices isn't known right now.",
     "HEALTH_GLANCE_OK": "everything's working. the solstone app last added to your journal {age}.",
     "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
     "HEALTH_GLANCE_CHECKIN_STALE": "a journal run on {name} stopped checking in with your journal.",
@@ -81,6 +82,7 @@
     cortexSeen: false,
     registeredClients: null,
     registeredClientsFailed: false,
+    registeredClientsObservedAt: null,
     services: new Map(),        // Running services
     connected: false,
     crashed: new Map(),         // Crashed services (separate from running)
@@ -734,30 +736,47 @@
       - (Number.isFinite(a.capture_elapsed_ms) ? a.capture_elapsed_ms : -1);
   }
 
+  function rejectedClientSources(client) {
+    return Object.entries(client.source_delivery || {})
+      .filter(([, source]) => source.state === 'needs_attention');
+  }
+
+  function registeredClientNeedsAttention(client) {
+    return client.failing === true || rejectedClientSources(client).length > 0;
+  }
+
+  function describeRejectedClient(client) {
+    const sources = rejectedClientSources(client).map(([name]) => name || 'default');
+    return registeredClientName(client) + (sources.length ? ` (${sources.join(', ')})` : '');
+  }
+
   // The device-delivery half of the verdict. Returns null when device delivery
   // has nothing to say, so the caller falls through to the other signals.
   function selectDeviceVerdict() {
     const clients = state.registeredClients;
+    if (state.registeredClientsFailed) {
+      return { key: 'HEALTH_GLANCE_DEVICES_UNAVAILABLE', vars: {}, action: GLANCE_DEVICES_ACTION };
+    }
     if (!Array.isArray(clients)) {
       // No derived status is its own honest state — it is never an upgrade to green.
       return {
-        key: state.registeredClientsFailed ? 'HEALTH_GLANCE_DEVICES_UNAVAILABLE' : 'HEALTH_GLANCE_CHECKING',
+        key: 'HEALTH_GLANCE_CHECKING',
         vars: {},
-        action: state.registeredClientsFailed ? GLANCE_DEVICES_ACTION : null,
+        action: null,
       };
     }
-    const failing = clients.filter(client => client.failing === true).sort(byQuietestFirst);
+    const failing = clients.filter(registeredClientNeedsAttention).sort(byQuietestFirst);
     if (failing.length === 1) {
       return {
         key: 'HEALTH_GLANCE_DEVICE_FAILING',
-        vars: { device: registeredClientName(failing[0]) },
+        vars: { device: describeRejectedClient(failing[0]) },
         action: GLANCE_DEVICES_ACTION,
       };
     }
     if (failing.length > 1) {
       return {
         key: 'HEALTH_GLANCE_DEVICES_FAILING',
-        vars: { n: String(failing.length), devices: failing.map(registeredClientName).join(', ') },
+        vars: { n: String(failing.length), devices: failing.map(describeRejectedClient).join(', ') },
         action: GLANCE_DEVICES_ACTION,
       };
     }
@@ -778,6 +797,9 @@
         vars: { n: String(silent.length), devices: silent.map(describeRegisteredClient).join(', ') },
         action: GLANCE_DEVICES_ACTION,
       };
+    }
+    if (clients.some(client => client.capture_state === 'unknown')) {
+      return { key: 'HEALTH_GLANCE_DEVICES_UNKNOWN', vars: {}, action: GLANCE_DEVICES_ACTION };
     }
     return null;
   }
@@ -822,7 +844,8 @@
 
     // Device delivery is part of the verdict, not only of the rows below it.
     const deviceVerdict = selectDeviceVerdict();
-    if (deviceVerdict) return deviceVerdict;
+    const deviceUnassessed = deviceVerdict && ['HEALTH_GLANCE_DEVICES_UNAVAILABLE', 'HEALTH_GLANCE_DEVICES_UNKNOWN', 'HEALTH_GLANCE_CHECKING'].includes(deviceVerdict.key);
+    if (deviceVerdict && !deviceUnassessed) return deviceVerdict;
 
     const clients = Array.from(state.clients.values());
     if (clients.length > 0 && clients.every(client => (now - client.lastSeen) >= STALE_MS)) {
@@ -840,6 +863,8 @@
         vars: { headline: state.searchIndex.text },
       };
     }
+
+    if (deviceVerdict) return deviceVerdict;
 
 	    if (activeAgents > 0 || activeImports > 0) {
       const catchingUp = activeAgents + activeImports;
@@ -1849,10 +1874,11 @@
   // The registered-device list is a separate population from the observe
   // stream, so "unavailable" is only true when that list is unreadable too.
   function observeQuietState() {
+    if (state.registeredClientsFailed) {
+      return { badge: 'unavailable', unavailable: true, heading: 'device activity is unavailable right now.' };
+    }
     if (!Array.isArray(state.registeredClients)) {
-      return state.registeredClientsFailed
-        ? { badge: 'unavailable', unavailable: true, heading: 'device activity is unavailable right now.' }
-        : { badge: 'checking', unavailable: false, heading: 'checking device activity…' };
+      return { badge: 'checking', unavailable: false, heading: 'checking device activity…' };
     }
     if (state.registeredClients.length === 0) {
       return { badge: 'no devices', unavailable: false, heading: 'no devices are linked to your journal yet.' };
@@ -1872,12 +1898,15 @@
           : `${name} is adding to your journal. live detail isn't being reported right now.`,
       };
     }
+    if (state.registeredClients.some(client => client.capture_state === 'unknown')) {
+      return { badge: 'unknown', unavailable: true, heading: HEALTH_GLANCE_COPY.HEALTH_GLANCE_DEVICES_UNKNOWN };
+    }
     return { badge: 'quiet', unavailable: false, heading: 'no device is reporting live activity right now.' };
   }
 
   // Update observe mode badge
   function updateObserveMode(displayedClient = null) {
-    if (state.clients.size === 0) {
+    if (!displayedClient && !Array.from(state.clients.values()).some(client => Date.now() - client.lastSeen < STALE_MS)) {
       elements.observeModeBadge.className = 'health-badge idle';
       elements.observeModeLabel.textContent = observeQuietState().badge;
       return;
@@ -1904,7 +1933,10 @@
 
   // Update observe card
   function updateObserve() {
-    const quiet = state.clients.size === 0 ? observeQuietState() : null;
+    const now = Date.now();
+    const freshClients = new Map(Array.from(state.clients.entries())
+      .filter(([, client]) => now - client.lastSeen < STALE_MS));
+    const quiet = freshClients.size === 0 ? observeQuietState() : null;
     document.querySelector('.observe-card').dataset.unavailable = String(Boolean(quiet && quiet.unavailable));
     if (quiet) {
       elements.observeEmpty.classList.remove('hidden');
@@ -1920,13 +1952,13 @@
     elements.observeEmpty.classList.add('hidden');
     elements.observeContent.classList.remove('hidden');
 
-    const confirmedPrimary = state.localHost ? state.clients.get(state.localHost) : null;
-    const fallbackEntry = Array.from(state.clients.entries())
+    const confirmedPrimary = state.localHost ? freshClients.get(state.localHost) : null;
+    const fallbackEntry = Array.from(freshClients.entries())
       .filter(([stream]) => !stream.endsWith('.tmux'))
       .sort((a, b) => (b[1].lastSeen || 0) - (a[1].lastSeen || 0))[0] || null;
     const displayedStream = confirmedPrimary ? state.localHost : (fallbackEntry ? fallbackEntry[0] : null);
     const primary = confirmedPrimary || (fallbackEntry ? fallbackEntry[1] : null);
-    const tmux = displayedStream ? state.clients.get(displayedStream + '.tmux') : null;
+    const tmux = displayedStream ? freshClients.get(displayedStream + '.tmux') : null;
     const confirmedLocal = Boolean(state.localHost && confirmedPrimary && displayedStream === state.localHost);
     if (!confirmedLocal && displayedStream) {
       elements.observeSourceNote.textContent = state.localHost
@@ -2231,8 +2263,33 @@
   // refresh must not pull the page out from under them.
   let devicesDeepLinkScrolled = false;
 
+  function renderIngestRejection(row, rejection, sourceName, key, openKeys) {
+    const detail = document.createElement('span');
+    detail.className = 'registered-client-detail';
+    const count = typeof rejection?.active_count === 'number' && Number.isFinite(rejection.active_count)
+      ? rejection.active_count : null;
+    const firstMs = typeof rejection?.first === 'string' ? Date.parse(rejection.first) : NaN;
+    const since = Number.isFinite(firstMs) ? ' since ' + sinceDay(firstMs) : '';
+    detail.textContent = (sourceName === null ? '' : (sourceName || 'default') + ': ')
+      + (count === null ? 'an upload was turned away' : uploadsTurnedAway(count)) + since;
+    row.appendChild(detail);
+    if (rejection?.reason_code) {
+      const tech = document.createElement('details');
+      tech.className = 'registered-client-tech';
+      tech.dataset.rejectionKey = key;
+      tech.open = openKeys.has(key);
+      const summary = document.createElement('summary');
+      summary.textContent = sourceName === null ? 'technical details' : `technical details: ${sourceName || 'default'}`;
+      tech.appendChild(summary);
+      const code = document.createElement('div');
+      code.textContent = 'reason code: ' + rejection.reason_code;
+      tech.appendChild(code);
+      row.appendChild(tech);
+    }
+  }
+
   function renderRegisteredClients(clients) {
-    if (!clients || clients.length === 0) {
+    if ((!clients || clients.length === 0) && !state.registeredClientsFailed) {
       elements.registeredClientsCard.classList.add('hidden');
       elements.registeredClientsStrip.innerHTML = '';
       return;
@@ -2244,12 +2301,35 @@
       const card = elements.registeredClientsCard;
       requestAnimationFrame(() => card.scrollIntoView({ block: 'start' }));
     }
-    const wasOpen = elements.registeredClientsStrip.querySelector('details')?.open || false;
+    const wasOpen = elements.registeredClientsStrip.querySelector('.registered-client-unstarted')?.open || false;
+    const openKeys = new Set(Array.from(elements.registeredClientsStrip.querySelectorAll('.registered-client-tech'))
+      .filter(detail => detail.open).map(detail => detail.dataset.rejectionKey));
+    const focusedKey = document.activeElement?.closest('.registered-client-tech')?.dataset.rejectionKey;
+    const focusedClient = document.activeElement?.closest('.registered-client-row')?.dataset.cid;
     elements.registeredClientsStrip.innerHTML = '';
+    if (state.registeredClientsFailed) {
+      const notice = document.createElement('p');
+      notice.className = 'registered-client-recovery';
+      notice.dataset.readState = 'unavailable';
+      notice.textContent = "delivery status couldn't be checked."
+        + (state.registeredClientsObservedAt === null ? ''
+          : ` last successful check: ${new Date(state.registeredClientsObservedAt).toLocaleString()}.`)
+        + (clients?.length ? ' the rows below show that last check.' : '');
+      elements.registeredClientsStrip.appendChild(notice);
+    }
+    if (!clients || clients.length === 0) {
+      const manage = document.createElement('a');
+      manage.className = 'registered-clients-manage';
+      manage.href = '/app/network/#devices';
+      manage.textContent = 'manage in network →';
+      elements.registeredClientsStrip.appendChild(manage);
+      return;
+    }
     const unstarted = document.createElement('details');
+    unstarted.className = 'registered-client-unstarted';
     unstarted.open = wasOpen;
     const summary = document.createElement('summary');
-    const unused = clients.filter(client => client.capture_state === 'no_capture' && !client.failing);
+    const unused = clients.filter(client => client.capture_state === 'no_capture' && !registeredClientNeedsAttention(client));
     summary.textContent = `devices with no material yet (${unused.length})`;
     unstarted.appendChild(summary);
     // G3-208: opening the group used to be a dead end. The action the owner
@@ -2260,10 +2340,11 @@
     manage.href = '/app/network/#devices';
     manage.textContent = 'manage in network →';
     unstarted.appendChild(manage);
-    const activityRank = client => client.failing ? 0 : client.capture_state === 'active' ? 1 : 2;
+    const activityRank = client => registeredClientNeedsAttention(client) ? 0 : client.capture_state === 'active' ? 1 : 2;
     const sorted = [...clients].sort((a, b) => activityRank(a) - activityRank(b)
       || (Date.parse(b.last_accepted_ingest_at) || 0) - (Date.parse(a.last_accepted_ingest_at) || 0));
     for (const client of sorted) {
+      const needsAttention = registeredClientNeedsAttention(client);
       let stateClass = ['connected', 'stale', 'disconnected'].includes(client.state)
         ? client.state
         : 'disconnected';
@@ -2271,16 +2352,21 @@
       if (client.capture_state === 'active') stateClass = 'connected';
       if (client.capture_state === 'stale') stateClass = 'stale';
       if (client.capture_state === 'offline') stateClass = 'disconnected';
-      if (client.failing) {
+      if (needsAttention) {
         stateClass = 'failing';
-        labelText = 'failing';
+        labelText = 'uploads rejected';
       } else if (client.capture_state === 'no_capture') {
         labelText = 'no material yet';
       } else if (client.capture_state === 'unknown') {
         labelText = 'delivery unknown';
       }
+      if (state.registeredClientsFailed) {
+        stateClass = 'disconnected';
+        labelText = 'last known: ' + labelText;
+      }
       const row = document.createElement('div');
       row.className = 'registered-client-row';
+      row.dataset.cid = client.cid;
 
       const nameEl = document.createElement('span');
       nameEl.className = 'registered-client-name';
@@ -2292,34 +2378,22 @@
       labelEl.textContent = labelText;
       row.appendChild(labelEl);
 
-      if (client.failing && client.ingest_rejection) {
-        const rej = client.ingest_rejection;
-        const count = typeof rej.active_count === 'number' && isFinite(rej.active_count)
-          ? rej.active_count
-          : null;
-        const firstMs = typeof rej.first === 'string' ? Date.parse(rej.first) : NaN;
-        const since = Number.isFinite(firstMs) ? ' since ' + sinceDay(firstMs) : '';
-        const detailEl = document.createElement('span');
-        detailEl.className = 'registered-client-detail';
-        detailEl.textContent = (count === null ? 'an upload was turned away' : uploadsTurnedAway(count)) + since;
-        row.appendChild(detailEl);
-        const recoveryEl = document.createElement('span');
-        recoveryEl.className = 'registered-client-recovery';
-        recoveryEl.textContent = 'update or restart the solstone app on ' + (client.display_label || client.device_label || 'that device');
-        row.appendChild(recoveryEl);
-        // X-02: the rejection code is an exact identifier, not a sentence. It
-        // belongs behind a disclosure, next to the row it explains.
-        if (rej.reason_code) {
-          const tech = document.createElement('details');
-          tech.className = 'registered-client-tech';
-          const techSummary = document.createElement('summary');
-          techSummary.textContent = 'technical details';
-          tech.appendChild(techSummary);
-          const code = document.createElement('div');
-          code.textContent = 'reason code: ' + rej.reason_code;
-          tech.appendChild(code);
-          row.appendChild(tech);
+      if (needsAttention) {
+        const sources = rejectedClientSources(client);
+        if (sources.length) {
+          for (const [source, delivery] of sources) {
+            renderIngestRejection(row, delivery.ingest_rejection, source,
+              JSON.stringify([client.cid, source]), openKeys);
+          }
+        } else if (client.ingest_rejection) {
+          renderIngestRejection(row, client.ingest_rejection, null,
+            JSON.stringify([client.cid, null]), openKeys);
         }
+        const manage = document.createElement('a');
+        manage.className = 'registered-clients-manage';
+        manage.href = '/app/network/#devices';
+        manage.textContent = 'manage in network →';
+        row.appendChild(manage);
       }
 
       // The chip already carries this state for a device with no delivery yet;
@@ -2337,9 +2411,18 @@
       skewEl.textContent = 'clock skew';
 	      row.appendChild(skewEl);
 
-      (client.capture_state === 'no_capture' && !client.failing ? unstarted : elements.registeredClientsStrip).appendChild(row);
+      (client.capture_state === 'no_capture' && !needsAttention ? unstarted : elements.registeredClientsStrip).appendChild(row);
     }
     if (unused.length) elements.registeredClientsStrip.appendChild(unstarted);
+    if (focusedKey) {
+      const detail = Array.from(elements.registeredClientsStrip.querySelectorAll('.registered-client-tech'))
+        .find(item => item.dataset.rejectionKey === focusedKey);
+      detail?.querySelector('summary')?.focus({ preventScroll: true });
+    } else if (focusedClient) {
+      const row = Array.from(elements.registeredClientsStrip.querySelectorAll('.registered-client-row'))
+        .find(item => item.dataset.cid === focusedClient);
+      row?.querySelector('.registered-clients-manage')?.focus({ preventScroll: true });
+    }
   }
 
   async function loadRegisteredClients() {
@@ -2350,11 +2433,13 @@
       if (!Array.isArray(payload.clients)) throw new Error('Invalid device list');
       state.registeredClientsFailed = false;
       state.registeredClients = payload.clients;
+      state.registeredClientsObservedAt = Date.now();
       renderRegisteredClients(state.registeredClients);
       updateObserve();
       document.dispatchEvent(new CustomEvent('health:devices-loaded'));
     } catch (err) {
       state.registeredClientsFailed = true;
+      renderRegisteredClients(state.registeredClients);
       updateObserve();
       console.warn('Failed to load registered clients:', err);
     }
