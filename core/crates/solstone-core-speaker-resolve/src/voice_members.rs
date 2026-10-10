@@ -84,7 +84,7 @@ fn stream_layout(source: &Value, stream: &str) -> Option<SegmentLayout> {
 
 /// The audio source a segment's speaker labels describe: the first sorted
 /// `audio.npz` / `*_audio.npz`, the same choice attribution makes.
-fn labels_source(segment: &Path) -> Option<String> {
+pub(crate) fn labels_source(segment: &Path) -> Option<String> {
     let mut stems = fs::read_dir(segment)
         .ok()?
         .filter_map(Result::ok)

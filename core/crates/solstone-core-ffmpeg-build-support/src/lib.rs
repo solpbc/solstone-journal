@@ -404,6 +404,50 @@ pub fn configure_mode_args(mode: ConfigureMode, windows: bool) -> Vec<String> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MsvcCrtChoice {
+    Static,
+    Dynamic,
+    Debug,
+}
+
+pub fn msvc_crt_configure_arg(
+    target_env: Option<&str>,
+    target_feature: Option<&str>,
+) -> Option<&'static str> {
+    if target_env != Some("msvc") {
+        return None;
+    }
+    let static_crt = target_feature
+        .unwrap_or("")
+        .split(',')
+        .any(|token| token == "crt-static");
+    Some(if static_crt {
+        "--extra-cflags=/MT"
+    } else {
+        "--extra-cflags=/MD"
+    })
+}
+
+pub fn msvc_crt_choices(args: &[String]) -> Vec<MsvcCrtChoice> {
+    let mut choices = Vec::new();
+    for value in args
+        .iter()
+        .filter_map(|arg| arg.strip_prefix("--extra-cflags="))
+    {
+        for token in value.split_ascii_whitespace() {
+            let choice = match token {
+                "/MT" | "-MT" => MsvcCrtChoice::Static,
+                "/MD" | "-MD" => MsvcCrtChoice::Dynamic,
+                "/MTd" | "-MTd" | "/MDd" | "-MDd" => MsvcCrtChoice::Debug,
+                _ => continue,
+            };
+            choices.push(choice);
+        }
+    }
+    choices
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceAdmission {
     UseArchive,
     Fetch,
@@ -1031,6 +1075,57 @@ mod tests {
                 .any(|arg| arg.contains("-O3") || arg.contains("fast"))
         );
         assert!(!release_args.iter().any(|arg| arg.contains("fast-math")));
+    }
+
+    #[test]
+    fn msvc_crt_configure_arg_and_choices_follow_locked_rules() {
+        for feature in ["crt-static", "fxsr,crt-static,sse"] {
+            let arg = msvc_crt_configure_arg(Some("msvc"), Some(feature));
+            assert_eq!(arg, Some("--extra-cflags=/MT"));
+            let choices = msvc_crt_choices(&[arg.unwrap().to_owned()]);
+            assert_eq!(choices, [MsvcCrtChoice::Static]);
+            assert!(!choices.contains(&MsvcCrtChoice::Dynamic));
+            assert!(!choices.contains(&MsvcCrtChoice::Debug));
+        }
+
+        for feature in [
+            None,
+            Some(""),
+            Some("sse"),
+            Some("not-crt-static"),
+            Some("crt-static-extra"),
+        ] {
+            let arg = msvc_crt_configure_arg(Some("msvc"), feature);
+            assert_eq!(arg, Some("--extra-cflags=/MD"));
+            let choices = msvc_crt_choices(&[arg.unwrap().to_owned()]);
+            assert_eq!(choices, [MsvcCrtChoice::Dynamic]);
+            assert!(!choices.contains(&MsvcCrtChoice::Static));
+            assert!(!choices.contains(&MsvcCrtChoice::Debug));
+        }
+
+        assert_eq!(
+            msvc_crt_configure_arg(Some("gnu"), Some("crt-static")),
+            None
+        );
+        assert_eq!(msvc_crt_configure_arg(None, Some("crt-static")), None);
+
+        let non_windows_release = configure_mode_args(ConfigureMode::Release, false);
+        assert!(non_windows_release.iter().any(|arg| arg.contains("-O3")));
+        assert!(non_windows_release.contains(&"--extra-ldflags=-flto".into()));
+        assert!(msvc_crt_choices(&non_windows_release).is_empty());
+
+        let mut debug_windows = configure_mode_args(ConfigureMode::Debug, true);
+        assert!(!debug_windows.iter().any(|arg| arg.contains("/O2")));
+        let static_arg = msvc_crt_configure_arg(Some("msvc"), Some("crt-static")).unwrap();
+        debug_windows.push(static_arg.to_owned());
+        assert_eq!(msvc_crt_choices(&debug_windows), [MsvcCrtChoice::Static]);
+
+        let mut release_windows = configure_mode_args(ConfigureMode::Release, true);
+        assert!(release_windows.contains(&"--extra-cflags=/O2".into()));
+        assert!(msvc_crt_choices(&release_windows).is_empty());
+        release_windows.push(static_arg.to_owned());
+        assert_eq!(msvc_crt_choices(&release_windows), [MsvcCrtChoice::Static]);
+        assert!(release_windows.contains(&"--extra-cflags=/O2".into()));
     }
 
     #[test]
