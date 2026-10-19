@@ -53,6 +53,44 @@ fn validate_exe(exe: &str) -> Option<&str> {
     Some(trimmed)
 }
 
+fn wrap_in_fence(lines: &[String]) -> String {
+    let body = lines.join("\n");
+    let mut max_backticks = 0;
+    let mut current_run = 0;
+    for ch in body.chars() {
+        if ch == '`' {
+            current_run += 1;
+            if current_run > max_backticks {
+                max_backticks = current_run;
+            }
+        } else {
+            current_run = 0;
+        }
+    }
+    let mut fence_len = (max_backticks + 1).max(3);
+
+    loop {
+        let mut lengthened = false;
+        for line in lines {
+            let trimmed = line.trim();
+            if !trimmed.is_empty()
+                && trimmed.chars().all(|c| c == '`')
+                && trimmed.len() >= fence_len
+            {
+                fence_len = trimmed.len() + 1;
+                lengthened = true;
+                break;
+            }
+        }
+        if !lengthened {
+            break;
+        }
+    }
+
+    let fence = "`".repeat(fence_len);
+    format!("{fence}\n{body}\n{fence}")
+}
+
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
     let mut unsupported_version = false;
@@ -315,7 +353,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
             }
             _ => {}
         }
-        let content = lines.join("\n");
+        let content = wrap_in_fence(&lines);
 
         let mut source = serde_json::Map::new();
         source.insert("kind".to_string(), Value::String(kind.to_string()));
@@ -401,7 +439,27 @@ mod tests {
         ContentResolution, Family, IndexDisposition, classify, produce_chunks,
         resolve_content_shape, resolve_spec,
     };
+    use crate::test_support::reserve_temp_path;
     use std::fs;
+    use std::path::PathBuf;
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let path = reserve_temp_path(&format!("solstone-core-format-desktop-activity-{name}"));
+            fs::create_dir_all(&path).expect("create temporary directory");
+            Self { path }
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 
     #[test]
     fn desktop_activity_classification_disposition_and_unrecognized() {
@@ -426,12 +484,13 @@ mod tests {
 
     #[test]
     fn desktop_activity_shape_sidecar_cannot_reclassify() {
-        let dir = std::env::temp_dir().join("desktop_activity_sidecar_test");
-        let _ = fs::create_dir_all(&dir);
-        let note_path = dir.join("120000_60_desktop_activity.jsonl");
+        let temp = TempDir::new("sidecar");
         let note_rel = "20260910/desk/120000_60/120000_60_desktop_activity.jsonl";
+        let note_path = temp.path.join(note_rel);
+        fs::create_dir_all(note_path.parent().unwrap()).unwrap();
+        fs::write(&note_path, "{}\n").unwrap();
         fs::write(
-            dir.join("shape.json"),
+            note_path.parent().unwrap().join("shape.json"),
             r#"{"120000_60_desktop_activity.jsonl":"Browser"}"#,
         )
         .unwrap();
@@ -440,7 +499,6 @@ mod tests {
             resolve_content_shape(&note_path, note_rel),
             ContentResolution::Indexed(Family::DesktopActivity)
         );
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -678,10 +736,112 @@ mod tests {
         assert_eq!(produced.chunks.len(), 1);
         assert!(produced.chunks[0].content.contains(r#"app: "Finder""#));
         assert_eq!(produced.error, None);
-        assert_eq!(
-            produced.warnings,
-            vec!["unsupported desktop activity version".to_string()]
-        );
+        assert_eq!(produced.warnings.len(), 1);
+        assert!(!produced.warnings[0].contains("Terminal"));
         assert_eq!(produced.agent_override.as_deref(), Some("desktop_activity"));
+    }
+
+    #[test]
+    fn desktop_activity_literal_evidence_block_and_fencing() {
+        let rel = "20260910/desk/120000_60/120000_60_desktop_activity.jsonl";
+        let raw_title = "<script>alert(1)</script> ![x](https://example.test/a.png) [open](https://example.test/p) ````\nsecond line";
+        let raw_pane = "<script>alert(1)</script> ![x](https://example.test/a.png) [open](https://example.test/p) `````\nterminal line";
+        let rows = vec![
+            serde_json::json!({
+                "v": 1,
+                "t": "desktop_activity",
+                "kind": "foreground",
+                "method": "nsworkspace",
+                "ts": 1000,
+                "end_ts": 2000,
+                "app": "TestApp",
+                "title": raw_title,
+                "url": "https://example.test/p"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            serde_json::json!({
+                "v": 1,
+                "t": "desktop_activity",
+                "kind": "terminal",
+                "method": "tmux",
+                "ts": 3000,
+                "end_ts": 4000,
+                "pane_title": raw_pane,
+                "exe": "bash"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        ];
+
+        let produced = render(rel, &rows);
+        assert_eq!(produced.error, None);
+        assert_eq!(produced.chunks.len(), 2);
+
+        for chunk in &produced.chunks {
+            assert!(chunk.content.contains("<script>alert(1)</script>"));
+            assert!(chunk.content.contains("![x](https://example.test/a.png)"));
+            assert!(chunk.content.contains("[open](https://example.test/p)"));
+            assert!(chunk.content.contains("````"));
+            assert!(chunk.content.contains(r#"\n"#));
+            assert!(!chunk.content.contains("\nsecond line"));
+            assert!(!chunk.content.contains("\nterminal line"));
+
+            let lines: Vec<&str> = chunk.content.lines().collect();
+            let first_line = lines.first().copied().unwrap();
+            let last_line = lines.last().copied().unwrap();
+            assert_eq!(first_line, last_line);
+            assert!(first_line.starts_with("```"));
+            assert!(first_line.chars().all(|c| c == '`'));
+
+            let body_lines = &lines[1..lines.len() - 1];
+            let body = body_lines.join("\n");
+            let mut max_backticks = 0;
+            let mut current_run = 0;
+            for ch in body.chars() {
+                if ch == '`' {
+                    current_run += 1;
+                    if current_run > max_backticks {
+                        max_backticks = current_run;
+                    }
+                } else {
+                    current_run = 0;
+                }
+            }
+            assert!(first_line.len() > max_backticks);
+
+            for line in body_lines {
+                let trimmed = line.trim();
+                assert!(
+                    !(trimmed.chars().all(|c| c == '`') && !trimmed.is_empty()),
+                    "body line should not be only backticks: {line}"
+                );
+            }
+        }
+
+        let foreground_chunk = &produced.chunks[0];
+        assert_eq!(
+            foreground_chunk
+                .source
+                .as_ref()
+                .unwrap()
+                .get("title")
+                .and_then(Value::as_str),
+            Some(raw_title)
+        );
+        let first_fence = produced.chunks[0].content.lines().next().unwrap();
+        assert!(
+            !foreground_chunk
+                .source
+                .as_ref()
+                .unwrap()
+                .get("title")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains(first_fence)
+        );
     }
 }

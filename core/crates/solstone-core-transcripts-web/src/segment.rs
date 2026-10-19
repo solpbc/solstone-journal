@@ -241,6 +241,9 @@ fn prepare_segment(
                 Ok(text) => {
                     let four_part_rel = format!("{day}/{stream}/{key}/{name}");
                     let produced = produce_chunks(Family::DesktopActivity, &four_part_rel, &text);
+                    for message in produced.warnings {
+                        warnings.push(warning("desktop_activity", path, message, now));
+                    }
                     for chunk in produced.chunks {
                         let timestamp = chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0);
                         chunks.push(json!({
@@ -2229,10 +2232,11 @@ mod tests {
         std::fs::create_dir_all(&segment_dir).unwrap();
 
         let row_1 = r#"{"v":1,"t":"desktop_activity","kind":"foreground","method":"nsworkspace","ts":1000,"end_ts":2000,"app":"Finder"}"#;
+        let row_unsupported = r#"{"v":999,"t":"desktop_activity","kind":"foreground","method":"nsworkspace","ts":1500,"end_ts":2500,"app":"DistinctiveSecretApp"}"#;
         let row_2 = r#"{"v":1,"t":"desktop_activity","kind":"terminal","method":"tmux","ts":3000,"end_ts":4000,"exe":"bash"}"#;
         std::fs::write(
             segment_dir.join("120000_60_desktop_activity.jsonl"),
-            format!("{row_1}\n"),
+            format!("{row_1}\n{row_unsupported}\n"),
         )
         .unwrap();
         std::fs::write(
@@ -2250,6 +2254,20 @@ mod tests {
         assert_eq!(chunks[1]["type"], "markdown");
         assert!(chunks[0]["markdown"].as_str().unwrap().contains("Finder"));
         assert!(chunks[1]["markdown"].as_str().unwrap().contains("bash"));
+
+        assert!(value["warnings"].as_u64().unwrap_or(0) >= 1);
+        let warning_details = value["warning_details"]
+            .as_array()
+            .expect("warning_details");
+        let act_warning = warning_details
+            .iter()
+            .find(|d| {
+                d["type"] == "desktop_activity"
+                    && d["message"].as_str().is_some_and(|m| !m.is_empty())
+            })
+            .expect("desktop_activity warning");
+        let msg = act_warning["message"].as_str().unwrap();
+        assert!(!msg.contains("DistinctiveSecretApp"));
 
         let prepared = crate::day::prepare_day(root, day, now)
             .map_err(|e| e.to_string())
