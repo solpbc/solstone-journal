@@ -56,7 +56,10 @@ pub fn resolve_content_shape(content_path: &Path, rel: &str) -> ContentResolutio
     if let Some(spec) = super::resolve_spec(rel)
         && matches!(
             spec.family,
-            Family::AgentMemory | Family::Workout | Family::ProtectedVideo
+            Family::AgentMemory
+                | Family::Workout
+                | Family::ProtectedVideo
+                | Family::DesktopActivity
         )
     {
         return ContentResolution::Indexed(spec.family);

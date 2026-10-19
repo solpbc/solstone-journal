@@ -236,6 +236,23 @@ fn prepare_segment(
                 }
                 Err(error) => warnings.push(warning("protected_video", path, error, now)),
             }
+        } else if name.ends_with("_desktop_activity.jsonl") {
+            match fs::read_to_string(path) {
+                Ok(text) => {
+                    let four_part_rel = format!("{day}/{stream}/{key}/{name}");
+                    let produced = produce_chunks(Family::DesktopActivity, &four_part_rel, &text);
+                    for chunk in produced.chunks {
+                        let timestamp = chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0);
+                        chunks.push(json!({
+                            "type": "markdown",
+                            "time": local_time(zone, timestamp),
+                            "timestamp": timestamp,
+                            "markdown": chunk.content,
+                        }));
+                    }
+                }
+                Err(error) => warnings.push(warning("desktop_activity", path, error, now)),
+            }
         }
     }
     warnings.extend(std::mem::take(&mut speakers.warnings));
@@ -2199,5 +2216,69 @@ mod tests {
             .expect("markdown string");
         assert_eq!(neighbor_markdown, "Neighbor speech without warning.");
         assert!(!neighbor_markdown.contains(super::POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE));
+    }
+
+    #[test]
+    fn prepare_segment_and_day_desktop_activity() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let day = "20260910";
+        let stream = "desk";
+        let key = "120000_60";
+        let segment_dir = root.join("chronicle").join(day).join(stream).join(key);
+        std::fs::create_dir_all(&segment_dir).unwrap();
+
+        let row_1 = r#"{"v":1,"t":"desktop_activity","kind":"foreground","method":"nsworkspace","ts":1000,"end_ts":2000,"app":"Finder"}"#;
+        let row_2 = r#"{"v":1,"t":"desktop_activity","kind":"terminal","method":"tmux","ts":3000,"end_ts":4000,"exe":"bash"}"#;
+        std::fs::write(
+            segment_dir.join("120000_60_desktop_activity.jsonl"),
+            format!("{row_1}\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("120000_60_a1_desktop_activity.jsonl"),
+            format!("{row_2}\n"),
+        )
+        .unwrap();
+
+        let now = chrono::Utc::now();
+
+        let value = super::prepare_segment(root, day, stream, key, now).unwrap();
+        let chunks = value["chunks"].as_array().expect("chunks array");
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0]["type"], "markdown");
+        assert_eq!(chunks[1]["type"], "markdown");
+        assert!(chunks[0]["markdown"].as_str().unwrap().contains("Finder"));
+        assert!(chunks[1]["markdown"].as_str().unwrap().contains("bash"));
+
+        let prepared = crate::day::prepare_day(root, day, now)
+            .map_err(|e| e.to_string())
+            .unwrap();
+        let act_segments: Vec<_> = prepared
+            .segments
+            .iter()
+            .filter(|s| s.types.contains(&"desktop_activity".to_string()))
+            .collect();
+        assert_eq!(act_segments.len(), 1);
+        assert_eq!(act_segments[0].types, vec!["desktop_activity".to_string()]);
+        assert_eq!(
+            act_segments[0]
+                .data_state
+                .get("desktop_activity")
+                .map(String::as_str),
+            Some("analyzed")
+        );
+        assert_eq!(act_segments[0].think.as_deref(), Some("awaiting"));
+
+        let ranges = crate::day::ranges_payload(&prepared);
+        assert_eq!(ranges["audio"].as_array().unwrap().len(), 0);
+        assert_eq!(ranges["screen"].as_array().unwrap().len(), 0);
+        let ranges_segments = ranges["segments"]
+            .as_array()
+            .expect("ranges segments member");
+        assert_eq!(ranges_segments.len(), 1);
+        assert_eq!(ranges_segments[0]["key"], key);
+        assert_eq!(ranges_segments[0]["stream"], stream);
+        assert_eq!(ranges_segments[0]["think"], "awaiting");
     }
 }

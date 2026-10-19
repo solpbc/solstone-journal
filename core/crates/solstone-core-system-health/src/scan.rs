@@ -85,11 +85,18 @@ fn segment_start_and_end(
 }
 
 fn timeline_types(data_state: &DataStateMap) -> Vec<String> {
-    ["audio", "screen", "image", "markdown", "browser"]
-        .into_iter()
-        .filter(|modality| data_state.0.contains_key(*modality))
-        .map(str::to_owned)
-        .collect()
+    [
+        "audio",
+        "screen",
+        "image",
+        "markdown",
+        "browser",
+        "desktop_activity",
+    ]
+    .into_iter()
+    .filter(|modality| data_state.0.contains_key(*modality))
+    .map(str::to_owned)
+    .collect()
 }
 
 pub fn holds_location_file(dir: &Path) -> bool {
@@ -329,6 +336,14 @@ pub(crate) fn detect_data_state(
         .iter()
         .filter(|path| is_browser_jsonl(path))
         .any(|path| has_nonempty_text(path));
+    let desktop_activity_analyzed = files
+        .iter()
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with("_desktop_activity.jsonl"))
+        })
+        .any(|path| has_nonempty_text(path));
     let mut states = BTreeMap::new();
     let mut modality_input_mtime_ms = BTreeMap::new();
     if audio != DataState::Absent {
@@ -363,6 +378,12 @@ pub(crate) fn detect_data_state(
     if browser_analyzed {
         states.insert(
             "browser".to_owned(),
+            DataState::Analyzed.as_str().to_owned(),
+        );
+    }
+    if desktop_activity_analyzed {
+        states.insert(
+            "desktop_activity".to_owned(),
             DataState::Analyzed.as_str().to_owned(),
         );
     }
@@ -1277,5 +1298,60 @@ mod tests {
             archive_audio_state(directory, &placement, Utc::now()),
             DataState::Empty
         );
+    }
+
+    #[test]
+    fn desktop_activity_segment_scan_day_sensed_and_readiness() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let day = "20260910";
+        let now = Utc::now();
+        let act_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("desk")
+            .join("120000_60");
+        fs::create_dir_all(&act_dir).unwrap();
+        write_file(
+            &act_dir,
+            "120000_60_desktop_activity.jsonl",
+            "{\"v\":1,\"t\":\"desktop_activity\",\"kind\":\"foreground\",\"method\":\"nsworkspace\",\"ts\":1000,\"end_ts\":2000,\"app\":\"Code\"}\n",
+        );
+
+        let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert_eq!(segments.len(), 1);
+        let segment = &segments[0];
+        assert_eq!(segment.types, vec!["desktop_activity".to_owned()]);
+        assert_eq!(
+            segment
+                .data_state
+                .0
+                .get("desktop_activity")
+                .map(String::as_str),
+            Some("analyzed")
+        );
+        assert!(crate::segment_fully_sensed(&segment.data_state));
+
+        let progress = std::collections::BTreeMap::new();
+        let readiness = crate::segment_readiness(root, day, segment, &progress).expect("readiness");
+        assert_eq!(readiness, crate::SegmentReadiness::Owed);
+
+        // A segment that also has screen.jsonl or audio still has those keys
+        write_file(&act_dir, "screen.jsonl", "{\"start\":0}\n");
+        let (_, _, segments_multi) = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert_eq!(segments_multi.len(), 1);
+        assert!(
+            segments_multi[0]
+                .types
+                .contains(&"desktop_activity".to_owned())
+        );
+        assert!(segments_multi[0].types.contains(&"screen".to_owned()));
+        assert!(
+            segments_multi[0]
+                .data_state
+                .0
+                .contains_key("desktop_activity")
+        );
+        assert!(segments_multi[0].data_state.0.contains_key("screen"));
     }
 }

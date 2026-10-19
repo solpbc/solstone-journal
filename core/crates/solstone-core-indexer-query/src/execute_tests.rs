@@ -3101,6 +3101,89 @@ fn protected_video_notes_are_indexed_and_searchable_by_owner_but_excluded_from_c
 }
 
 #[test]
+fn desktop_activity_notes_are_indexed_and_searchable_by_owner_but_excluded_from_connections() {
+    let root = temp_root("desktop-activity-scan");
+    let file_rel = "chronicle/20260910/desk/120000_60/120000_60_desktop_activity.jsonl";
+    let indexed_rel = "20260910/desk/120000_60/120000_60_desktop_activity.jsonl";
+    let fixture_a = r#"{"v":1,"t":"desktop_activity","kind":"foreground","method":"nsworkspace","ts":1792027800000,"end_ts":1792027800000,"app":"Finder","title":"Documents"}"#;
+    let malformed = "{\"v\":1";
+    let fixture_b = r#"{"v":1,"t":"desktop_activity","kind":"terminal","method":"tmux","ts":1000,"end_ts":2000,"exe":"bash"}"#;
+    write_rel(
+        &root,
+        file_rel,
+        &format!("{fixture_a}\n{malformed}\n{fixture_b}\n"),
+    );
+
+    // Sibling shape sidecar does not admit it to connections
+    write_rel(
+        &root,
+        "chronicle/20260910/desk/120000_60/shape.json",
+        r#"{"120000_60_desktop_activity.jsonl":"Browser"}"#,
+    );
+
+    scan_journal(&root, false).expect("scan journal");
+
+    let chunks: Vec<(i64, String, String)> = read_only(&root)
+        .prepare("SELECT rowid, content, agent FROM chunks WHERE path = ?1")
+        .expect("prepare chunk query")
+        .query_map([indexed_rel], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .expect("query chunks")
+        .collect::<Result<_, _>>()
+        .expect("collect chunks");
+    assert_eq!(chunks.len(), 2);
+    assert!(
+        chunks
+            .iter()
+            .all(|(_, _, agent)| agent == "desktop_activity")
+    );
+
+    let owner_response = owner_search(&root, OwnerBoundary, &request("Finder"), reference_date())
+        .expect("owner search");
+    assert_eq!(owner_response.results.len(), 1);
+    assert_eq!(owner_response.results[0].metadata.path, indexed_rel);
+    assert_eq!(owner_response.results[0].metadata.agent, "desktop_activity");
+
+    let boundary = connection_boundary(
+        &["Transcripts", "Entities", "Facets"],
+        ConnectionScope::WholeJournal,
+    );
+    let connection_response = connection_search(&root, &boundary, "Finder");
+    assert!(
+        connection_response
+            .results
+            .iter()
+            .all(|hit| hit.metadata.path != indexed_rel)
+    );
+
+    let row_id = chunks[0].0;
+    let owner_entry = crate::read_indexed_entry(
+        &root,
+        crate::QueryBoundary::Owner,
+        indexed_rel,
+        0,
+        row_id,
+        16384,
+    )
+    .expect("owner entry");
+    assert!(matches!(owner_entry, crate::IndexedEntry::Found(_)));
+
+    let connection_entry = crate::read_indexed_entry(
+        &root,
+        crate::QueryBoundary::Connection(boundary),
+        indexed_rel,
+        0,
+        row_id,
+        16384,
+    )
+    .expect("connection entry");
+    assert_eq!(connection_entry, crate::IndexedEntry::NotFound);
+
+    fs::remove_dir_all(root).expect("cleanup desktop activity index");
+}
+
+#[test]
 fn activity_observation_returns_the_stored_proof_or_nothing() {
     const A: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
     const B: &str = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";

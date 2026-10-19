@@ -3817,10 +3817,17 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     });
   }
 
+  function desktopActivityOnlySegments(segments) {
+    return (segments || []).filter(seg => {
+      const types = seg.types || [];
+      return types.includes('desktop_activity') && !types.includes('audio') && !types.includes('screen');
+    });
+  }
+
   function addSegmentIndicator(type, startMin, endMin, column, streams = [], state = 'analyzed', think = null, segment = null) {
     const el = document.createElement('div');
     el.className = 'tr-seg ' + (
-      type === 'screen'
+      type === 'screen' || type === 'desktop_activity'
         ? 'tr-seg-screen'
         : type === 'markdown'
           ? 'tr-seg-markdown'
@@ -3850,7 +3857,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const sortedStreams = [...streams].sort();
     const humanizedStreams = sortedStreams.map(humanizeStreamName);
     const omitType = sortedStreams.length > 0 && sortedStreams.every(s => shouldOmitStreamType(s, type));
-    const typePart = omitType ? '' : ', ' + type;
+    const typeDisplay = type === 'desktop_activity' ? 'desktop activity' : type;
+    const typePart = omitType ? '' : ', ' + typeDisplay;
     const labelPart = humanizedStreams.length ? ', ' + humanizedStreams.join(', ') : '';
     const rawSuffix = sortedStreams.length ? ' (' + sortedStreams.join(', ') + ')' : '';
     const stateSuffix = state === 'pending' ? ' · pending' : state === 'analyzing' ? ' · analyzing' : (think === 'awaiting' ? ' · ' + AWAITING_THINKING_LABEL : '');
@@ -4050,6 +4058,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const hasBrowser = seg.types.includes('browser');
       const hasImage = seg.types.includes('image');
       const isPhotoOnly = hasImage && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser;
+      const isActivityOnly = seg.types.includes('desktop_activity') && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser && !hasImage;
       const dataState = seg.data_state || {};
       const hasPendingAdvertised = (seg.types || []).some(
         type => dataState[type] && dataState[type] !== 'analyzed'
@@ -4067,6 +4076,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         pill.classList.add('tr-zoom-pill-browser');
       } else if (isPhotoOnly) {
         pill.classList.add('tr-zoom-pill-image');
+      } else if (isActivityOnly) {
+        pill.classList.add('tr-zoom-pill-screen');
       } else {
         pill.classList.add('tr-zoom-pill-screen');
       }
@@ -4077,7 +4088,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       } else if (seg.think === 'awaiting') {
         pill.classList.add('tr-zoom-pill-awaiting');
       }
-      const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : 'screen';
+      const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : isActivityOnly ? 'desktop activity' : 'screen';
 
       if (selectedSegment && selectedSegment.key === seg.key && selectedSegment.stream === seg.stream) {
         pill.classList.add('tr-active');
@@ -4086,7 +4097,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       pill.style.top = zoomY(visStart) + 'px';
       pill.style.height = Math.max(4, zoomY(visEnd) - zoomY(visStart)) + 'px';
       const duration = Math.round(visEnd - visStart);
-      const typeDesc = (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : 'screen';
+      const typeDesc = (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : isActivityOnly ? 'desktop activity' : 'screen';
       const segmentStatusLabel = hasAnalyzingAdvertised ? 'analyzing' : hasPendingAdvertised ? 'pending' : seg.think === 'awaiting' ? AWAITING_THINKING_LABEL : '';
       const statusSuffix = segmentStatusLabel ? ' · ' + segmentStatusLabel : '';
       const ariaStatusSuffix = segmentStatusLabel ? ', ' + segmentStatusLabel : '';
@@ -6597,6 +6608,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       browserOnlySegments(data.segments).forEach(seg => {
         addSegmentIndicator('browser', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
       });
+      desktopActivityOnlySegments(data.segments).forEach(seg => {
+        addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
+      });
       fetchDayBodyWindow()
         .then(payload => {
           dayBodyWindow = payload;
@@ -7108,6 +7122,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         });
         browserOnlySegments(allSegments).forEach(seg => {
           addSegmentIndicator('browser', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
+        });
+        const segsForActivity = (data.segments && data.segments.length > 0) ? data.segments : allSegments;
+        desktopActivityOnlySegments(segsForActivity).forEach(seg => {
+          addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
         });
         renderBodyEvents(dayBodyWindow);
       })

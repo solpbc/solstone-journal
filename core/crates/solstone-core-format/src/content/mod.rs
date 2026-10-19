@@ -7,6 +7,7 @@ mod ai_chat;
 mod audio;
 mod browser;
 mod day_accumulator;
+mod desktop_activity;
 mod documents;
 mod events;
 mod facet_entities;
@@ -56,6 +57,8 @@ pub enum Family {
     Workout,
     /// A pause while a protected-video window was on screen. This family is path-selected only.
     ProtectedVideo,
+    /// Desktop activity notes. This family is path-selected only.
+    DesktopActivity,
 }
 
 /// Content that can be rendered for direct consumption but is deliberately
@@ -67,7 +70,7 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 17] = [
+const ALL_FAMILIES: [Family; 18] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
@@ -85,6 +88,7 @@ const ALL_FAMILIES: [Family; 17] = [
     Family::AgentMemory,
     Family::Workout,
     Family::ProtectedVideo,
+    Family::DesktopActivity,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -292,6 +296,12 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
     FamilyPattern {
         pattern: "*/*/*/*_protected_video.jsonl",
         family: Family::ProtectedVideo,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
+    },
+    FamilyPattern {
+        pattern: "*/*/*/*_desktop_activity.jsonl",
+        family: Family::DesktopActivity,
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Excluded,
     },
@@ -576,6 +586,7 @@ pub fn produce_chunks_by_shape(
         Family::AiChat => ai_chat::render(rel_text, records),
         Family::Browser => browser::render(records),
         Family::ProtectedVideo => protected_video::render(records),
+        Family::DesktopActivity => desktop_activity::render(rel_text, records),
         Family::DayAccumulator => day_accumulator::render(rel_text, records),
         Family::FacetEntity => facet_entities::render(rel_text, records),
         Family::Observation => observations::render(rel_text, records),

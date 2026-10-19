@@ -18,6 +18,22 @@ use crate::attach::{
 };
 use crate::{AppState, TranscriptError, legacy_error_response};
 
+pub(crate) fn ranges_payload(prepared: &PreparedDay) -> serde_json::Value {
+    let mut payload = json!({
+        "audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"),
+        "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen")
+    });
+    let activity_segments: Vec<&TranscriptSegment> = prepared
+        .segments
+        .iter()
+        .filter(|seg| seg.types.as_slice() == ["desktop_activity"])
+        .collect();
+    if !activity_segments.is_empty() {
+        payload["segments"] = json!(activity_segments);
+    }
+    payload
+}
+
 pub(crate) async fn ranges(
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
@@ -34,7 +50,7 @@ pub(crate) async fn ranges(
                 Ok(value) => value,
                 Err(response) => return response,
             };
-            Json(json!({"audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen")})).into_response()
+            Json(ranges_payload(&prepared)).into_response()
         },
     )
     .await

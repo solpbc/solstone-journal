@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- the day now lists a segment that only has desktop activity notes, and you can read and search those notes.
+
 ### Fixed
 
 - on windows, when your journal can't check whether its computer can run local thinking, setup and the thinking page show local as unavailable with the reason, instead of letting you pick it and then refusing.

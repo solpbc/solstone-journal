@@ -2844,6 +2844,54 @@ mod tests {
     }
 
     #[test]
+    fn desktop_activity_check_segment_has_no_input() {
+        let root = tempfile::tempdir().unwrap();
+        let day = "20260910";
+        let segment = "120000_60";
+        let stream = "desk";
+        let dir = root
+            .path()
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join(segment);
+        fs::create_dir_all(&dir).unwrap();
+        let sources = source_config(json!({"percepts": true}));
+
+        let valid_row = r#"{"v":1,"t":"desktop_activity","kind":"foreground","method":"ax","ts":1000,"end_ts":1000,"app":"A"}"#;
+        fs::write(
+            dir.join("120000_60_desktop_activity.jsonl"),
+            format!("{valid_row}\n"),
+        )
+        .unwrap();
+
+        assert!(!check_segment_has_no_input(
+            root.path(),
+            day,
+            segment,
+            Some(stream),
+            &sources,
+            Utc::now(),
+        ));
+
+        let unsupported_row = r#"{"v":999,"t":"desktop_activity","kind":"foreground","method":"ax","ts":1000,"end_ts":1000,"app":"A"}"#;
+        fs::write(
+            dir.join("120000_60_desktop_activity.jsonl"),
+            format!("{unsupported_row}\n"),
+        )
+        .unwrap();
+
+        assert!(check_segment_has_no_input(
+            root.path(),
+            day,
+            segment,
+            Some(stream),
+            &sources,
+            Utc::now(),
+        ));
+    }
+
+    #[test]
     fn criterion_16_talent_filter_reaches_the_talents_count_key() {
         let (_root, paths, context) = fixture(
             "filtered-talents",

@@ -791,6 +791,8 @@ mod tests {
                 format!("browser_{idx}.jsonl")
             } else if comp.ends_with("_protected_video.jsonl") {
                 format!("vid_{idx}_protected_video.jsonl")
+            } else if comp.ends_with("_desktop_activity.jsonl") {
+                format!("note_{idx}_desktop_activity.jsonl")
             } else {
                 comp.to_string()
             };

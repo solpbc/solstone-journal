@@ -302,8 +302,10 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
         {
             resolution = ContentResolution::Indexed(Family::Markdown);
         }
-        let path_selected_protected_video =
-            resolution == ContentResolution::Indexed(Family::ProtectedVideo);
+        let path_selected_family = matches!(
+            resolution,
+            ContentResolution::Indexed(Family::ProtectedVideo | Family::DesktopActivity)
+        );
         // A written shape is an input contract: malformed/unreadable sidecars cannot mean empty evidence.
         let sidecar = path.with_file_name(content::SHAPE_SIDECAR_BASENAME);
         match fs::read_to_string(&sidecar) {
@@ -311,7 +313,7 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
                 let shape: Value = serde_json::from_str(&text)
                     .map_err(|e| format!("{}: {e}", sidecar.display()))?;
                 let shape = shape.as_object().ok_or("shape sidecar is not an object")?;
-                if !path_selected_protected_video && let Some(value) = shape.get(filename) {
+                if !path_selected_family && let Some(value) = shape.get(filename) {
                     resolution = value
                         .as_str()
                         .and_then(content::parse_shape_name)
@@ -327,7 +329,7 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
         ) {
             continue;
         }
-        let mut text = if resolution == ContentResolution::Indexed(Family::ProtectedVideo) {
+        let mut text = if path_selected_family {
             let raw = fs::read_to_string(&path)
                 .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
             raw.lines()
@@ -2024,6 +2026,40 @@ mod tests {
         write(&root, "facets/work/activities/20260910.jsonl", "{not json");
         let result = capture_day_sources(&root, "20260910");
         assert!(result.is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn desktop_activity_captures_sources_two_files_and_tolerates_corrupt_lines() {
+        let root = root("desktop-activity-daily");
+        let note_rel_1 = "chronicle/20260910/desk/120000_60/120000_60_desktop_activity.jsonl";
+        let note_rel_2 = "chronicle/20260910/desk/120000_60/120000_60_z1_desktop_activity.jsonl";
+        let row_1 = r#"{"v":1,"t":"desktop_activity","kind":"foreground","method":"nsworkspace","ts":1792027800000,"end_ts":1792027800000,"app":"Finder"}"#;
+        let row_2 = r#"{"v":1,"t":"desktop_activity","kind":"terminal","method":"tmux","ts":1792027850000,"end_ts":1792027860000,"exe":"bash"}"#;
+        write(&root, note_rel_1, &format!("{row_1}\n{{\n"));
+        write(&root, note_rel_2, &format!("{row_2}\n"));
+
+        // Conflicting shape.json does not change family or agent
+        write(
+            &root,
+            "chronicle/20260910/desk/120000_60/shape.json",
+            r#"{"120000_60_desktop_activity.jsonl":"Browser","120000_60_z1_desktop_activity.jsonl":"Activity"}"#,
+        );
+
+        let sources = capture_day_sources(&root, "20260910").expect("capture day sources");
+        let act_chunks = sources
+            .iter()
+            .filter(|c| c.path.ends_with("_desktop_activity.jsonl"))
+            .collect::<Vec<_>>();
+        assert_eq!(act_chunks.len(), 2);
+        assert_eq!(act_chunks[0].occurrence_time_ms, Some(1792027800000));
+        assert_eq!(act_chunks[0].agent, "desktop_activity");
+        assert!(act_chunks[0].text.contains("Finder"));
+
+        assert_eq!(act_chunks[1].occurrence_time_ms, Some(1792027850000));
+        assert_eq!(act_chunks[1].agent, "desktop_activity");
+        assert!(act_chunks[1].text.contains("bash"));
+
         fs::remove_dir_all(root).unwrap();
     }
 }
