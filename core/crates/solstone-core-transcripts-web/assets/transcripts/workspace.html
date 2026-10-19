@@ -7123,8 +7123,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         browserOnlySegments(allSegments).forEach(seg => {
           addSegmentIndicator('browser', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
         });
-        const segsForActivity = (data.segments && data.segments.length > 0) ? data.segments : allSegments;
-        desktopActivityOnlySegments(segsForActivity).forEach(seg => {
+        desktopActivityOnlySegments(allSegments).forEach(seg => {
           addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
         });
         renderBodyEvents(dayBodyWindow);

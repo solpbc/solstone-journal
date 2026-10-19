@@ -2261,6 +2261,8 @@ mod tests {
             .collect();
         assert_eq!(act_segments.len(), 1);
         assert_eq!(act_segments[0].types, vec!["desktop_activity".to_string()]);
+        assert_eq!(act_segments[0].key, key);
+        assert_eq!(act_segments[0].stream, stream);
         assert_eq!(
             act_segments[0]
                 .data_state
@@ -2270,15 +2272,7 @@ mod tests {
         );
         assert_eq!(act_segments[0].think.as_deref(), Some("awaiting"));
 
-        let ranges = crate::day::ranges_payload(&prepared);
-        assert_eq!(ranges["audio"].as_array().unwrap().len(), 0);
-        assert_eq!(ranges["screen"].as_array().unwrap().len(), 0);
-        let ranges_segments = ranges["segments"]
-            .as_array()
-            .expect("ranges segments member");
-        assert_eq!(ranges_segments.len(), 1);
-        assert_eq!(ranges_segments[0]["key"], key);
-        assert_eq!(ranges_segments[0]["stream"], stream);
-        assert_eq!(ranges_segments[0]["think"], "awaiting");
+        assert!(prepared.audio.is_empty());
+        assert!(prepared.screen.is_empty());
     }
 }
