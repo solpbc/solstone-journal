@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MessageMetadataV1",
+  "description": "Metadata sidecar schema for i18n catalog messages.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "description",
+    "context",
+    "bundles",
+    "arguments",
+    "format_intent",
+    "max_length",
+    "source_revision",
+    "risk"
+  ],
+  "properties": {
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable description of the message."
+    },
+    "context": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Contextual usage information for translators."
+    },
+    "bundles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "List of bundle identifiers this message belongs to."
+    },
+    "arguments": {
+      "type": "array",
+      "description": "List of runtime argument specifications.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Variable name of the argument without leading $."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["string", "boolean", "integer", "cardinal"],
+            "description": "Scalar type of the argument."
+          },
+          "numeric_style": {
+            "type": ["string", "null"],
+            "enum": ["ungrouped", "locale-formatted", null],
+            "description": "Formatting style for integer and cardinal arguments."
+          },
+          "min": {
+            "type": ["number", "null"],
+            "description": "Optional minimum boundary for numeric types."
+          },
+          "max": {
+            "type": ["number", "null"],
+            "description": "Optional maximum boundary for numeric types."
+          }
+        }
+      }
+    },
+    "format_intent": {
+      "type": "string",
+      "enum": ["text", "cardinal", "enum"],
+      "description": "Explicit format intent representing message structure."
+    },
+    "max_length": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum allowed character length for translations."
+    },
+    "source_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 revision hash of the source message."
+    },
+    "risk": {
+      "type": "string",
+      "enum": [
+        "routine",
+        "account",
+        "payment",
+        "legal",
+        "statutory",
+        "protocol",
+        "consent"
+      ],
+      "description": "Closed risk classification of the message."
+    },
+    "auto_merge": {
+      "type": "boolean",
+      "description": "Whether automated translation merges are permitted."
+    },
+    "approval": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["locale", "source_revision", "translation_revision"],
+      "properties": {
+        "locale": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9-]*$",
+          "description": "Approved locale tag."
+        },
+        "source_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Approved source revision hash."
+        },
+        "translation_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Approved translation revision hash."
+        }
+      },
+      "description": "Optional dual-revision approval record."
+    },
+    "protected_slots": {
+      "type": "array",
+      "description": "List of protected slot placeables.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "kind", "value"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Slot identifier."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "command",
+              "flag",
+              "accepted-input",
+              "url",
+              "mark-word",
+              "whitespace"
+            ],
+            "description": "Kind of protected content."
+          },
+          "value": {
+            "type": "string",
+            "description": "Verbatim value of the protected slot."
+          }
+        }
+      }
+    },
+    "selector": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the selector argument."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["cardinal", "string"],
+          "description": "Type of the selector argument."
+        },
+        "enum_values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Permitted enum branch keys."
+        },
+        "enum_default": {
+          "type": ["string", "null"],
+          "description": "Default enum branch key."
+        }
+      },
+      "description": "Selector specification for cardinal and enum messages."
+    }
+  }
+}

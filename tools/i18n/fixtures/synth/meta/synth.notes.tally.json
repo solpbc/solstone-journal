@@ -1,0 +1,23 @@
+{
+  "description": "Synthetic test data",
+  "context": "Synthetic test data",
+  "bundles": ["synth-app"],
+  "arguments": [
+    {
+      "name": "open",
+      "type": "boolean"
+    },
+    {
+      "name": "n",
+      "type": "integer",
+      "numeric_style": "locale-formatted",
+      "min": -1.0,
+      "max": 10.0
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 200,
+  "source_revision": "a7d465ef5c0e1c6e8806c53c1c397534fbf7cda60b4863cb001e56973b5bf20e",
+  "risk": "routine",
+  "auto_merge": false
+}

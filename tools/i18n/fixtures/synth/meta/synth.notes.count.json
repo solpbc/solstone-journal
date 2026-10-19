@@ -1,0 +1,23 @@
+{
+  "description": "Synthetic test data",
+  "context": "Synthetic test data",
+  "bundles": ["synth-app"],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped",
+      "min": 0.0,
+      "max": 10.0
+    }
+  ],
+  "format_intent": "cardinal",
+  "max_length": 200,
+  "source_revision": "1f9cba586e6835d3b470d0ccd884ebbef52c185e595e69a361fa028549a6b4da",
+  "risk": "protocol",
+  "auto_merge": true,
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  }
+}

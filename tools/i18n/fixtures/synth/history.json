@@ -1,0 +1,184 @@
+{
+  "history_version": 1,
+  "records": [
+    {
+      "id": "synth.notes.command",
+      "resource": "m73796e74682e6e6f7465732e636f6d6d616e64",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "gap",
+          "kind": "whitespace",
+          "value": " \n "
+        },
+        {
+          "name": "cmd",
+          "kind": "command",
+          "value": "  --{%}\" "
+        },
+        {
+          "name": "flag",
+          "kind": "flag",
+          "value": "--dry-run"
+        },
+        {
+          "name": "token",
+          "kind": "accepted-input",
+          "value": "YES"
+        },
+        {
+          "name": "link",
+          "kind": "url",
+          "value": "https://example.invalid/synth"
+        },
+        {
+          "name": "mark",
+          "kind": "mark-word",
+          "value": "STOP"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "synth.notes.count",
+      "resource": "m73796e74682e6e6f7465732e636f756e74",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": 0.0,
+          "max": 10.0
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "synth.notes.kind",
+      "resource": "m73796e74682e6e6f7465732e6b696e64",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "kind",
+        "type": "string",
+        "enum_values": [
+          "box",
+          "bag"
+        ],
+        "enum_default": "box"
+      }
+    },
+    {
+      "id": "synth.notes.named",
+      "resource": "m73796e74682e6e6f7465732e6e616d6564",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "synth.notes.pay",
+      "resource": "m73796e74682e6e6f7465732e706179",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "synth.notes.plain",
+      "resource": "m73796e74682e6e6f7465732e706c61696e",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "synth.notes.statute",
+      "resource": "m73796e74682e6e6f7465732e73746174757465",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "synth.notes.tally",
+      "resource": "m73796e74682e6e6f7465732e74616c6c79",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "open",
+          "type": "boolean",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "n",
+          "type": "integer",
+          "numeric_style": "locale-formatted",
+          "min": -1.0,
+          "max": 10.0
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    }
+  ]
+}

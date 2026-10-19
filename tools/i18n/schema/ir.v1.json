@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CompiledCatalogIrV1",
+  "description": "Intermediate representation byte contract for compiled i18n catalogs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ir_version",
+    "compiler",
+    "channel",
+    "source_locale",
+    "locales",
+    "messages"
+  ],
+  "properties": {
+    "ir_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of the IR specification."
+    },
+    "compiler": {
+      "type": "string",
+      "description": "Compiler version that produced the IR."
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["development", "production"],
+      "description": "Target release channel."
+    },
+    "source_locale": {
+      "type": "string",
+      "description": "Master authoring locale tag."
+    },
+    "locales": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Channel-selected translation locale tags, sorted."
+    },
+    "messages": {
+      "type": "array",
+      "description": "Compiled messages sorted by message identifier.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "resource",
+          "namespace",
+          "owner",
+          "risk",
+          "auto_merge",
+          "format_intent",
+          "max_length",
+          "description",
+          "context",
+          "bundles",
+          "source_revision",
+          "approval",
+          "arguments",
+          "protected_slots",
+          "selector",
+          "source",
+          "translations"
+        ],
+        "properties": {
+          "id": { "type": "string", "description": "Unique message identifier." },
+          "resource": { "type": "string", "description": "Lowercase hex encoded resource key." },
+          "namespace": { "type": "string", "description": "Namespace prefix of the identifier." },
+          "owner": { "type": "string", "description": "Registry owner of the namespace." },
+          "risk": { "type": "string", "description": "Risk classification." },
+          "auto_merge": { "type": "boolean", "description": "Whether auto-merge is permitted." },
+          "format_intent": { "type": "string", "description": "Format intent (text, cardinal, enum)." },
+          "max_length": { "type": "integer", "description": "Maximum character length." },
+          "description": { "type": "string", "description": "Human-readable description." },
+          "context": { "type": "string", "description": "Context string." },
+          "bundles": { "type": "array", "items": { "type": "string" }, "description": "Bundle memberships." },
+          "source_revision": { "type": "string", "description": "Source revision hash." },
+          "approval": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["source_revision", "translation_revision"],
+            "properties": {
+              "source_revision": { "type": "string", "description": "Source revision hash." },
+              "translation_revision": { "type": "string", "description": "Translation revision hash." }
+            },
+            "description": "Dual-hash approval record or null."
+          },
+          "arguments": {
+            "type": "array",
+            "description": "Argument contracts sorted by name.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "type", "numeric_style", "min", "max"],
+              "properties": {
+                "name": { "type": "string", "description": "Argument variable name." },
+                "type": { "type": "string", "description": "Scalar type." },
+                "numeric_style": { "type": ["string", "null"], "description": "Numeric format style." },
+                "min": { "type": ["number", "null"], "description": "Minimum value." },
+                "max": { "type": ["number", "null"], "description": "Maximum value." }
+              }
+            }
+          },
+          "protected_slots": {
+            "type": "array",
+            "description": "Protected slots sorted by name.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "kind", "value"],
+              "properties": {
+                "name": { "type": "string", "description": "Slot name." },
+                "kind": { "type": "string", "description": "Slot kind." },
+                "value": { "type": "string", "description": "Raw string value." }
+              }
+            }
+          },
+          "selector": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["name", "type", "enum_values", "enum_default"],
+            "properties": {
+              "name": { "type": "string", "description": "Selector variable name." },
+              "type": { "type": "string", "description": "Selector type (cardinal or string)." },
+              "enum_values": { "type": "array", "items": { "type": "string" }, "description": "Sorted enum values." },
+              "enum_default": { "type": ["string", "null"], "description": "Default enum branch key." }
+            },
+            "description": "Selector details or null."
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["branches"],
+            "properties": {
+              "branches": {
+                "type": "array",
+                "description": "Pattern branches.",
+                "items": { "$ref": "#/$defs/branch" }
+              }
+            },
+            "description": "Authoring source pattern branches."
+          },
+          "translations": {
+            "type": "array",
+            "description": "Translations sorted by locale tag.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["locale", "branches"],
+              "properties": {
+                "locale": { "type": "string", "description": "Locale tag." },
+                "branches": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/branch" },
+                  "description": "Pattern branches."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "default", "pattern"],
+      "properties": {
+        "key": { "type": ["string", "null"], "description": "Branch variant key or null." },
+        "default": { "type": "boolean", "description": "Whether this is the default branch." },
+        "pattern": {
+          "type": "array",
+          "description": "Ordered pattern elements.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "value"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["text", "arg", "slot"], "description": "Element kind." },
+              "value": { "type": "string", "description": "Element string value." }
+            }
+          }
+        }
+      }
+    }
+  }
+}

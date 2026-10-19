@@ -1,0 +1,43 @@
+{
+  "description": "Synthetic test data",
+  "context": "Synthetic test data",
+  "bundles": ["synth-app"],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 200,
+  "source_revision": "76186b006a8652ee5fa73642fd63770295c7f07de770925ad337ab404d1b3cec",
+  "risk": "consent",
+  "auto_merge": false,
+  "protected_slots": [
+    {
+      "name": "gap",
+      "kind": "whitespace",
+      "value": " \n "
+    },
+    {
+      "name": "cmd",
+      "kind": "command",
+      "value": "  --{%}\" "
+    },
+    {
+      "name": "flag",
+      "kind": "flag",
+      "value": "--dry-run"
+    },
+    {
+      "name": "token",
+      "kind": "accepted-input",
+      "value": "YES"
+    },
+    {
+      "name": "link",
+      "kind": "url",
+      "value": "https://example.invalid/synth"
+    },
+    {
+      "name": "mark",
+      "kind": "mark-word",
+      "value": "STOP"
+    }
+  ]
+}

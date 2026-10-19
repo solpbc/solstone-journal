@@ -1,0 +1,11 @@
+{
+  "description": "Synthetic test data",
+  "context": "Synthetic test data",
+  "bundles": ["synth-app"],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 200,
+  "source_revision": "48800ab4e768ad29a387fd41e669381ff32325ff873f80228e5e4823b69275f8",
+  "risk": "statutory",
+  "auto_merge": false
+}

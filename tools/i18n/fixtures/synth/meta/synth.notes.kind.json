@@ -1,0 +1,22 @@
+{
+  "description": "Synthetic test data",
+  "context": "Synthetic test data",
+  "bundles": ["synth-app"],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "max_length": 200,
+  "source_revision": "6e5cbbca906cd9cd8cc839f5bc808543dcf1f12486bf063c20cd911b9dfffa72",
+  "risk": "legal",
+  "auto_merge": false,
+  "selector": {
+    "name": "kind",
+    "type": "string",
+    "enum_values": ["box", "bag"],
+    "enum_default": "box"
+  }
+}

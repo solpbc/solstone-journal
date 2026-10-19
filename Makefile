@@ -1491,6 +1491,7 @@ STANDALONE_LOCK_MANIFESTS := \
 	tools/ios-runtime/appraisal-helper/Cargo.toml \
 	tools/ios-runtime/native/Cargo.toml \
 	tools/i18n/extract/Cargo.toml \
+	tools/i18n/Cargo.toml \
 	tools/local_thinking_install/helper/Cargo.toml \
 	tools/mobile-audio/Cargo.toml \
 	tools/mobile-serving/Cargo.toml \

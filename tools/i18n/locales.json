@@ -1,0 +1,64 @@
+{
+  "locales": [
+    {
+      "tag": "en",
+      "tier": "source",
+      "purpose": "ordinary",
+      "development": "released",
+      "production": "withheld",
+      "description": "Synthetic test data, not a product language decision."
+    },
+    {
+      "tag": "en-x-synth",
+      "tier": "release",
+      "purpose": "ordinary",
+      "development": "released",
+      "production": "released",
+      "description": "Synthetic test data, not a product language decision."
+    },
+    {
+      "tag": "en-x-draft",
+      "tier": "draft",
+      "purpose": "ordinary",
+      "development": "released",
+      "production": "released",
+      "description": "Synthetic test data, not a product language decision."
+    },
+    {
+      "tag": "en-x-test",
+      "tier": "release",
+      "purpose": "test",
+      "development": "released",
+      "production": "released",
+      "description": "Synthetic test data, not a product language decision."
+    },
+    {
+      "tag": "en-XA",
+      "tier": "test",
+      "purpose": "pseudo",
+      "development": "released",
+      "production": "released",
+      "description": "Synthetic test data, not a product language decision."
+    },
+    {
+      "tag": "ar-XB",
+      "tier": "test",
+      "purpose": "pseudo",
+      "development": "released",
+      "production": "withheld",
+      "description": "Synthetic test data, not a product language decision."
+    }
+  ],
+  "namespaces": [
+    {
+      "namespace": "synth.notes",
+      "owner": "synth"
+    }
+  ],
+  "bundles": [
+    {
+      "id": "synth-app",
+      "locales": ["en-x-synth"]
+    }
+  ]
+}

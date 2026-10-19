@@ -1,0 +1,16 @@
+{
+  "description": "Synthetic test data",
+  "context": "Synthetic test data",
+  "bundles": ["synth-app"],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 200,
+  "source_revision": "65993e695b224b2b7b40c430cec13586c7e751dc6365846c41f30e4c914d85cf",
+  "risk": "routine",
+  "auto_merge": true,
+  "approval": {
+    "locale": "en-x-synth",
+    "source_revision": "65993e695b224b2b7b40c430cec13586c7e751dc6365846c41f30e4c914d85cf",
+    "translation_revision": "d26c247cfe57b62044478a534edd307d46e8e972d30ba3e5218dc743dc98decf"
+  }
+}
