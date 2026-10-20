@@ -311,10 +311,45 @@ fn tile_key(z: u32, x: u64, y: u64) -> u64 {
     (u64::from(z) << 56) | (x << 28) | y
 }
 
+#[cfg(test)]
+thread_local! { pub static PACK_OPEN_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+
 impl Pack {
     /// Open a pack file, reading only its header and tile directory.
     pub fn open(path: &Path) -> Result<Self, PackError> {
+        #[cfg(test)]
+        PACK_OPEN_CALLS.with(|count| count.set(count.get() + 1));
+        Self::open_file(File::open(path)?)
+    }
+
+    /// Verify all bytes and parse that same open file, before native pack use.
+    pub fn open_verified(path: &Path, sha256: &str, size_bytes: u64) -> Result<Self, PackError> {
+        use sha2::{Digest, Sha256};
         let mut file = File::open(path)?;
+        if file.metadata()?.len() != size_bytes {
+            return Err(malformed("installed pack size changed"));
+        }
+        let mut digest = Sha256::new();
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let length = file.read(&mut buffer)?;
+            if length == 0 {
+                break;
+            }
+            digest.update(&buffer[..length]);
+        }
+        if !format!("{:x}", digest.finalize()).eq_ignore_ascii_case(sha256) {
+            return Err(malformed(
+                "installed pack digest changed; download it again",
+            ));
+        }
+        file.seek(SeekFrom::Start(0))?;
+        #[cfg(test)]
+        PACK_OPEN_CALLS.with(|count| count.set(count.get() + 1));
+        Self::open_file(file)
+    }
+
+    fn open_file(mut file: File) -> Result<Self, PackError> {
         let mut fixed = [0u8; 12];
         file.read_exact(&mut fixed)?;
         let header_length = Self::check_fixed(&fixed)?;

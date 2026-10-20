@@ -59,6 +59,7 @@ pub(crate) enum FollowDecision {
 #[derive(Debug, Default)]
 pub(crate) struct FollowMemory {
     launches: u32,
+    collected: bool,
     last_launch: Option<Instant>,
 }
 
@@ -107,7 +108,11 @@ impl LocalFollow {
             return FollowDecision::Hold("follow-state-unavailable");
         };
         if readiness.get("ready").and_then(Value::as_bool) == Some(true) {
+            if !memory.collected {
+                pins::collect_model_generations(journal);
+            }
             memory.reset();
+            memory.collected = true;
             return FollowDecision::Hold("ready");
         }
         let now = Instant::now();

@@ -21,6 +21,7 @@ solstone-core-convey-http.workspace = true
 solstone-core-location.workspace = true
 
 [dev-dependencies]
+sha2.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower.workspace = true

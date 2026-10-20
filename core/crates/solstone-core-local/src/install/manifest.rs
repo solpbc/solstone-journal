@@ -71,6 +71,19 @@ pub fn inventory_for_tree(root: &Path, role: &str) -> Result<Vec<Value>, String>
     Ok(output)
 }
 
+/// Inventory only named pinned members, without adopting transfer sidecars or
+/// unrelated owner files that happen to share a legacy directory.
+pub fn inventory_for_members(
+    root: &Path,
+    names: &[&str],
+    role: &str,
+) -> Result<Vec<Value>, String> {
+    names
+        .iter()
+        .map(|name| inventory_entry(&root.join(name), (*name).into(), role))
+        .collect()
+}
+
 pub fn build_manifest(
     provider: &str,
     unit: &str,

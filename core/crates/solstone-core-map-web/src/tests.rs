@@ -221,17 +221,18 @@ async fn accuracy_status_presents_failed_job_and_installed_packs() {
     fs::write(acc_dir.join("venues.slpk"), &venues_bytes).unwrap();
     fs::write(acc_dir.join("containment.slpk"), &containment_bytes).unwrap();
 
+    use sha2::{Digest, Sha256};
     let installed_record = json!({
         "version": version,
         "files": [
             {
                 "file": "venues.slpk",
-                "sha256": "fake_sha",
+                "sha256": format!("{:x}",Sha256::digest(&venues_bytes)),
                 "size_bytes": venues_bytes.len(),
             },
             {
                 "file": "containment.slpk",
-                "sha256": "fake_sha",
+                "sha256": format!("{:x}",Sha256::digest(&containment_bytes)),
                 "size_bytes": containment_bytes.len(),
             }
         ]
@@ -267,6 +268,84 @@ async fn accuracy_status_presents_failed_job_and_installed_packs() {
     assert_eq!(day["accuracy"]["job"]["reason_code"], "download_failed");
     assert_eq!(day["accuracy"]["installed"]["venues"], true);
     assert_eq!(day["accuracy"]["installed"]["containment"], true);
+}
+
+#[tokio::test]
+async fn accuracy_status_current_and_pack_load_states() {
+    let journal = location_only_journal();
+    let version = "test-v1";
+    let acc_dir = journal.path().join("cache/location/accuracy").join(version);
+    fs::create_dir_all(&acc_dir).unwrap();
+
+    let fixtures =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../solstone-core-location/fixtures/accuracy");
+    let venues_bytes = fs::read(fixtures.join("venues.slpk")).unwrap();
+    let containment_bytes = fs::read(fixtures.join("containment.slpk")).unwrap();
+
+    use sha2::{Digest, Sha256};
+    let venues_sha = format!("{:x}", Sha256::digest(&venues_bytes));
+    let containment_sha = format!("{:x}", Sha256::digest(&containment_bytes));
+
+    let offered = solstone_core_location::install::Offered {
+        version: version.to_string(),
+        files: vec![
+            solstone_core_location::install::OfferedFile {
+                file: "venues.slpk".to_string(),
+                sha256: venues_sha.to_string(),
+                size_bytes: venues_bytes.len() as u64,
+                origin_key: "assets/test/venues.slpk",
+            },
+            solstone_core_location::install::OfferedFile {
+                file: "containment.slpk".to_string(),
+                sha256: containment_sha.to_string(),
+                size_bytes: containment_bytes.len() as u64,
+                origin_key: "assets/test/containment.slpk",
+            },
+        ],
+    };
+
+    // 1. Both packs loaded and record matches -> current is true
+    fs::write(acc_dir.join("venues.slpk"), &venues_bytes).unwrap();
+    fs::write(acc_dir.join("containment.slpk"), &containment_bytes).unwrap();
+    let installed_record = json!({
+        "version": version,
+        "files": [
+            {
+                "file": "venues.slpk",
+                "sha256": venues_sha,
+                "size_bytes": venues_bytes.len(),
+            },
+            {
+                "file": "containment.slpk",
+                "sha256": containment_sha,
+                "size_bytes": containment_bytes.len(),
+            }
+        ]
+    });
+    fs::write(
+        journal
+            .path()
+            .join("cache/location/accuracy/installed.json"),
+        serde_json::to_vec_pretty(&installed_record).unwrap(),
+    )
+    .unwrap();
+
+    let accuracy = crate::accuracy::status_with_offered(journal.path(), Some(offered.clone()));
+    assert_eq!(accuracy["current"], true);
+    assert_eq!(accuracy["installed"]["venues"], true);
+    assert_eq!(accuracy["installed"]["containment"], true);
+
+    // 2. Corrupt packs: neither loads -> current is false and idle job becomes failed / download_failed
+    fs::write(acc_dir.join("venues.slpk"), b"corrupt").unwrap();
+    fs::write(acc_dir.join("containment.slpk"), b"corrupt").unwrap();
+    solstone_core_location::accuracy::release_loaded();
+
+    let accuracy = crate::accuracy::status_with_offered(journal.path(), Some(offered.clone()));
+    assert_eq!(accuracy["current"], false);
+    assert_eq!(accuracy["installed"]["venues"], false);
+    assert_eq!(accuracy["installed"]["containment"], false);
+    assert_eq!(accuracy["job"]["state"], "failed");
+    assert_eq!(accuracy["job"]["reason_code"], "integrity_failed");
 }
 
 #[tokio::test]

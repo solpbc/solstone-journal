@@ -50,7 +50,7 @@ fn inspect_with_checks(
     let (release, _, _, _) = pins::vulkan_pin(PLATFORM_KEY)
         .ok_or_else(|| failure("platform", "unsupported_platform", PLATFORM_KEY, 65))?;
     let runtime_dir = root.join("bin").join(PLATFORM_KEY).join(release);
-    let model_dir = root.join("models").join(MODEL_ID.replace('/', "__"));
+    let model_dir = pins::model_directory(&journal, MODEL_ID);
     let runtime_identity = pins::vulkan_identity(PLATFORM_KEY).expect("Darwin runtime pin");
     let model_identity = pins::model_identity(MODEL_ID).expect("Qwen 3.5 4B model pin");
     let check_manifest: fn(&Path, &Value, &[&str]) -> Value = if verify_bytes {

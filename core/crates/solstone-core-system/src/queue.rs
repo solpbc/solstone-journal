@@ -4945,7 +4945,7 @@ mod tests {
     enum SpawnPlan {
         Failure,
         #[allow(dead_code)]
-        LiveFailure(LaunchAuthority),
+        LiveFailure(Box<LaunchAuthority>),
         Process(FakeProcess),
         Panic(&'static str),
     }
@@ -4955,9 +4955,7 @@ mod tests {
         Arc::new(
             move |_, _, _| match plans.lock().expect("fake plans").pop_front() {
                 Some(SpawnPlan::Failure) => Err(QueueSpawnFailure::Clean(SpawnError::EmptyCommand)),
-                Some(SpawnPlan::LiveFailure(authority)) => {
-                    Err(QueueSpawnFailure::Live(Box::new(authority)))
-                }
+                Some(SpawnPlan::LiveFailure(authority)) => Err(QueueSpawnFailure::Live(authority)),
                 Some(SpawnPlan::Process(process)) => Ok(Arc::new(Mutex::new(Box::new(process)))),
                 Some(SpawnPlan::Panic(msg)) => panic!("{msg}"),
                 None => panic!("missing fake process plan"),
@@ -7117,7 +7115,7 @@ mod tests {
             let live_queue = queue_with_sink_and_observer(
                 true,
                 10,
-                VecDeque::from([SpawnPlan::LiveFailure(authority)]),
+                VecDeque::from([SpawnPlan::LiveFailure(Box::new(authority))]),
                 None,
                 observer,
             );

@@ -1077,6 +1077,12 @@ fn start_local_unix(
     let Some(journal_path) = journal_path else {
         return launch_failed();
     };
+    let Some(model_directory) = std::path::Path::new(&plan.model_path).parent() else {
+        return launch_failed();
+    };
+    let Ok(model_hold) = solstone_core_local::install::pins::hold_model_use(model_directory) else {
+        return launch_failed();
+    };
     if !verify_launch_artifacts(journal_path, &plan, launch) {
         return ProviderLaunchOutcome {
             status: LaunchOutcomeStatus::LaunchFailed,
@@ -1114,6 +1120,7 @@ fn start_local_unix(
         Ok(authority) => authority,
         Err(_) => return launch_failed(),
     };
+    authority.retain_resource(Arc::new(model_hold));
     let started_at = Instant::now();
     let process_id = format!("local:{}", authority.pid());
     let pid = authority.pid();
@@ -1408,6 +1415,16 @@ fn start_local_windows(
     }
 
     // 2. Verify launch artifacts on Windows
+    let Some(model_directory) = std::path::Path::new(&plan.model_path).parent() else {
+        return launch_failed();
+    };
+    let Ok(model_hold) = solstone_core_local::install::pins::hold_model_use(model_directory) else {
+        return launch_failed();
+    };
+    #[cfg(windows)]
+    let mut model_resources = crate::process::BoundedHelperResources::new();
+    #[cfg(windows)]
+    model_resources.retain(Arc::new(model_hold));
     if !verify_launch_artifacts_windows(journal_path, &plan) {
         return ProviderLaunchOutcome {
             status: LaunchOutcomeStatus::LaunchFailed,
@@ -1468,6 +1485,8 @@ fn start_local_windows(
         arguments,
         environment,
         resource_limits: None,
+        #[cfg(windows)]
+        resources: model_resources,
         spawn_options: crate::process::SpawnOptions {
             journal_root: journal_path.to_path_buf(),
             reference: "local-provider".to_owned(),
@@ -1483,6 +1502,8 @@ fn start_local_windows(
         Err(_) => return launch_failed(),
     };
 
+    #[cfg(not(windows))]
+    authority.retain_resource(Arc::new(model_hold));
     let started_at = Instant::now();
     let process_id = format!("local:{}", authority.pid());
     let pid = authority.pid();

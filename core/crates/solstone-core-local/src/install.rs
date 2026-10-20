@@ -23,6 +23,7 @@ pub mod lease;
 pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;
+mod model_cache;
 pub mod onnx_readiness;
 pub mod parakeet_readiness;
 pub mod pdfium_readiness;
@@ -990,13 +991,6 @@ fn run_with_lease(
     };
     match result {
         Ok(result) => {
-            if kind == RunKind::Local && result["backend"] == "cuda" {
-                let key = pins::platform_key();
-                if let Some((_, digest, _)) = pins::cuda_pin(&key) {
-                    let root = pins::cache_root(&journal).join("cuda").join(&key);
-                    cleanup_legacy_cuda_oci_dirs(&root, &root.join(digest));
-                }
-            }
             status::assert_current(&journal, &state)
                 .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
             let terminal = status::transition(state, "installed", None, None)
@@ -1788,7 +1782,7 @@ fn run_local_install(
             .get("mmproj_filename")
             .and_then(Value::as_str)
             .unwrap_or("");
-        let model_root = root.join("models").join(model_id.replace('/', "__"));
+        let model_root = pins::model_directory(&journal, &model_id);
         let model_proof = manifest::prove_manifest_required(
             &manifest::artifact_manifest_path(&model_root),
             &model_identity,
@@ -1860,7 +1854,10 @@ fn run_local_install(
     let _ = fs::remove_dir_all(&staging);
     fs::create_dir_all(&staging)
         .map_err(|error| failure("io", "staging_create_failed", error, 74))?;
-    let archive_path = staging.join(&filename);
+    let archive_path = pins::cache_root(&journal)
+        .join(".fetch")
+        .join(artifact.sha256)
+        .join(&filename);
     *status_value = status::write_status(
         &journal,
         status::transition(status_value.clone(), "downloading", None, None)
@@ -1877,6 +1874,8 @@ fn run_local_install(
         total_bytes,
         "download_failed",
     )?;
+    archive::verify_sha256(&archive_path, artifact.sha256)
+        .map_err(|e| failure("archive", "digest_mismatch", e, 65))?;
     archive::extract_tar_gz(&archive_path, &staging)
         .map_err(|error| failure("archive", "extract_failed", error, 65))?;
     let binary = find_file(&staging, "llama-server").ok_or_else(|| {
@@ -1924,6 +1923,7 @@ fn run_local_install(
         artifact.size_bytes,
         total_bytes,
     )?;
+    let _ = fs::remove_file(&archive_path);
     Ok(
         json!({"backend":backend,"binary_path":install_dir.join("llama-server"),"model_id":model_id}),
     )
@@ -2037,6 +2037,7 @@ fn run_parakeet_install(
     let total_bytes = parakeet_download_bytes(&key)?;
     let mut completed_bytes = 0;
     let mut binaries = Vec::new();
+    let mut completed_archives = Vec::new();
     for backend in ["cpu", "vulkan"] {
         let (release, filename, _digest, binary_name) =
             pins::parakeet_backend_pin(&key, backend)
@@ -2064,7 +2065,10 @@ fn run_parakeet_install(
         let _ = fs::remove_dir_all(&staging);
         fs::create_dir_all(&staging)
             .map_err(|error| failure("io", "staging_create_failed", error, 74))?;
-        let archive_path = staging.join(filename);
+        let archive_path = pins::parakeet_cache_root(journal)
+            .join(".fetch")
+            .join(artifact.sha256)
+            .join(filename);
         *status_value = status::write_status(
             journal,
             status::transition(status_value.clone(), "downloading", None, None)
@@ -2081,6 +2085,8 @@ fn run_parakeet_install(
             "download_failed",
         )?;
         completed_bytes += artifact.size_bytes;
+        archive::verify_sha256(&archive_path, artifact.sha256)
+            .map_err(|e| failure("archive", "digest_mismatch", e, 65))?;
         archive::extract_tar_gz(&archive_path, &staging)
             .map_err(|error| failure("archive", "extract_failed", error, 65))?;
         let binary = find_file(&staging, binary_name).ok_or_else(|| {
@@ -2116,9 +2122,13 @@ fn run_parakeet_install(
             .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
         publish_staged_tree(&staging, &install_dir)
             .map_err(|error| failure("io", "publish_failed", error, 74))?;
+        completed_archives.push(archive_path);
         binaries.push(json!({"backend": backend, "binary_path": install_dir.join(binary_name)}));
     }
     let model_path = install_parakeet_model(journal, status_value, completed_bytes, total_bytes)?;
+    for archive in completed_archives {
+        let _ = fs::remove_file(archive);
+    }
     Ok(json!({"artifact_key": key, "binaries": binaries, "model_path": model_path}))
 }
 
@@ -2174,7 +2184,7 @@ pub(crate) fn write_parakeet_model_manifest(
             .as_deref()
             .unwrap_or(""),
         json!({"pin_identity": pins::parakeet_model_identity()}),
-        manifest::inventory_for_tree(model_dir, "model")
+        manifest::inventory_for_members(model_dir, &[pins::PARAKEET_MODEL.1], "model")
             .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
         None,
         status_value.attempt_id.as_deref(),
@@ -2242,9 +2252,14 @@ fn install_model(
 
     let identity = pins::model_identity(model_id)
         .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
-    let root = pins::cache_root(journal)
-        .join("models")
-        .join(model_id.replace('/', "__"));
+    let root = pins::model_directory(journal, model_id);
+    let generation = pins::model_generation(model_id)
+        .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
+    let fetch_root = pins::model_fetch_directory(journal, model_id)
+        .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
+    fs::create_dir_all(&fetch_root).map_err(|e| failure("io", "model_dir_create_failed", e, 74))?;
+    let _write = solstone_core_artifact_download::generation::hold_write(&root)
+        .map_err(|e| failure("state", "model_in_use", e, 74))?;
     fs::create_dir_all(&root)
         .map_err(|error| failure("io", "model_dir_create_failed", error, 74))?;
     let mut files = vec![identity["filename"].as_str().unwrap()];
@@ -2254,13 +2269,52 @@ fn install_model(
     ) {
         files.push(name);
     }
+    *status_value = status::write_status(
+        journal,
+        status::transition(status_value.clone(), "downloading", None, None)
+            .map_err(|e| failure("state", "transition_failed", e, 74))?,
+    )
+    .map_err(|e| failure("state", "status_write_failed", e, 74))?;
     let mut cumulative_bytes = completed_bytes;
 
-    for name in files {
+    for name in &files {
         status::assert_current(journal, status_value)
             .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
         let artifact = select_artifact("local-model", None, None, None, Some(name))?;
-        let dest = root.join(name);
+        let dest = fetch_root.join(name);
+        if solstone_core_artifact_download::verify_sha256(&root.join(name), artifact.sha256).is_ok()
+        {
+            cumulative_bytes += artifact.size_bytes;
+            continue;
+        }
+        let member = generation
+            .files
+            .iter()
+            .find(|m| m.file == *name)
+            .expect("pinned model member");
+        if let Some(source) = pins::reusable_model_member(journal, model_id, member)
+            && fs::hard_link(source, root.join(name)).is_ok()
+        {
+            cumulative_bytes += artifact.size_bytes;
+            continue;
+        }
+        // Admission may have credited a reusable member. If hardlinks are not
+        // supported, recheck the allocation needed by the download fallback.
+        let remaining = artifact.size_bytes.saturating_sub(
+            solstone_core_artifact_download::retained_prefix_bytes(
+                &dest,
+                artifact.sha256,
+                artifact.size_bytes,
+            ),
+        );
+        if fit_report::free_bytes(&fetch_root).is_ok_and(|free| free < remaining) {
+            return Err(failure(
+                "disk",
+                "disk_space_insufficient",
+                "not enough space to finish downloading the model",
+                74,
+            ));
+        }
         retry_transient_fetch(
             status_value,
             |status_value| {
@@ -2282,6 +2336,12 @@ fn install_model(
             &MODEL_FETCH_RETRY_WAITS,
             std::thread::sleep,
         )?;
+        solstone_core_journal_io::install_retained_file(
+            &dest,
+            root.join(name),
+            solstone_core_journal_io::AtomicWriteOptions::default(),
+        )
+        .map_err(|e| failure("io", "model_publish_failed", e, 74))?;
         cumulative_bytes += artifact.size_bytes;
     }
 
@@ -2303,6 +2363,11 @@ fn install_model(
     status::assert_current(journal, status_value)
         .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
 
+    if root == generation.directory(&pins::cache_root(journal).join("models")) {
+        generation
+            .seal(&root)
+            .map_err(|e| failure("io", "model_publish_failed", e, 74))?;
+    }
     let built = manifest::build_manifest(
         "local",
         "local-model",
@@ -2311,7 +2376,7 @@ fn install_model(
             .as_deref()
             .unwrap_or(""),
         json!({"pin_identity":identity}),
-        manifest::inventory_for_tree(&root, "model")
+        manifest::inventory_for_members(&root, &files, "model")
             .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
         None,
         status_value.attempt_id.as_deref(),
@@ -2319,6 +2384,8 @@ fn install_model(
     .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
     manifest::write_manifest(&manifest::artifact_manifest_path(&root), &built)
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
+    drop(_write);
+    pins::collect_model_generations_under_install_lease(journal);
     Ok(())
 }
 
@@ -2474,64 +2541,6 @@ fn publish_staged_tree_with(
         let _ = fs::remove_dir_all(aside);
     }
     Ok(())
-}
-
-fn cleanup_legacy_cuda_oci_dirs(root: &Path, keep: &Path) {
-    let Ok(entries) = fs::read_dir(root) else {
-        return;
-    };
-    let keep_resolved = keep.canonicalize().unwrap_or_else(|_| keep.to_path_buf());
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("");
-        if path.canonicalize().ok().as_ref() != Some(&keep_resolved)
-            && is_legacy_cuda_oci_tree(&path, name)
-        {
-            let _ = fs::remove_dir_all(path);
-        }
-    }
-}
-
-fn is_legacy_cuda_oci_tree(path: &Path, name: &str) -> bool {
-    if !path.is_dir()
-        || fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
-        || name.len() != 64
-        || !name.bytes().all(|byte| byte.is_ascii_hexdigit())
-    {
-        return false;
-    }
-    let Ok(sidecar) = fs::read(path.join(".oci-install.json")) else {
-        return false;
-    };
-    let Ok(record) = serde_json::from_slice::<Value>(&sidecar) else {
-        return false;
-    };
-    let Some(record) = record.as_object() else {
-        return false;
-    };
-    let Some(image_ref) = record.get("image_ref").and_then(Value::as_str) else {
-        return false;
-    };
-    if !image_ref.ends_with(&format!("@sha256:{name}")) {
-        return false;
-    }
-    let Some(arch) = record.get("arch").and_then(Value::as_str) else {
-        return false;
-    };
-    if pins::cuda_wanted_files(arch).is_none() {
-        return false;
-    }
-    let Some(files) = record.get("files").and_then(Value::as_object) else {
-        return false;
-    };
-    files.values().all(|digest| {
-        digest.as_str().is_some_and(|digest| {
-            digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-        })
-    })
 }
 
 fn journal(object: &Map<String, Value>) -> Result<PathBuf, DispatchError> {

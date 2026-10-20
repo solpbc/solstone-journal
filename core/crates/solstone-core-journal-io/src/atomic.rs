@@ -1705,8 +1705,26 @@ pub fn install_file(
     path: impl AsRef<Path>,
     options: AtomicWriteOptions,
 ) -> Result<(), AtomicWriteError> {
-    let temporary_path = temporary_path.as_ref();
-    let path = path.as_ref();
+    install_file_policy(temporary_path.as_ref(), path.as_ref(), options, false)
+}
+
+/// Publish a durable source without deleting it when publication fails.
+#[cfg(unix)]
+pub fn install_retained_file(
+    temporary_path: impl AsRef<Path>,
+    path: impl AsRef<Path>,
+    options: AtomicWriteOptions,
+) -> Result<(), AtomicWriteError> {
+    install_file_policy(temporary_path.as_ref(), path.as_ref(), options, true)
+}
+
+#[cfg(unix)]
+fn install_file_policy(
+    temporary_path: &Path,
+    path: &Path,
+    options: AtomicWriteOptions,
+    retain_on_error: bool,
+) -> Result<(), AtomicWriteError> {
     let parent = parent_dir(path);
     fs::create_dir_all(parent).map_err(|source| io_error(path, source))?;
     let temporary_file = File::open(temporary_path).map_err(|source| io_error(path, source))?;
@@ -1720,7 +1738,7 @@ pub fn install_file(
         fsync_dir(parent);
         Ok(())
     })();
-    if operation.is_err() {
+    if operation.is_err() && !retain_on_error {
         let _ = fs::remove_file(temporary_path);
     }
     operation
@@ -1733,7 +1751,17 @@ pub fn install_file(
     path: impl AsRef<Path>,
     options: AtomicWriteOptions,
 ) -> Result<(), AtomicWriteError> {
-    windows_install::install_file(temporary_path.as_ref(), path.as_ref(), options)
+    windows_install::install_file(temporary_path.as_ref(), path.as_ref(), options, false)
+}
+
+/// Publish a durable source without deleting it when publication fails.
+#[cfg(windows)]
+pub fn install_retained_file(
+    temporary_path: impl AsRef<Path>,
+    path: impl AsRef<Path>,
+    options: AtomicWriteOptions,
+) -> Result<(), AtomicWriteError> {
+    windows_install::install_file(temporary_path.as_ref(), path.as_ref(), options, true)
 }
 
 /// Serialize and atomically replace a JSON file.

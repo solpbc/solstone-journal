@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "candidate_release": "2.0.52",
+  "predecessor": {
+    "windows_release": "2.0.51",
+    "source_commit": "c08d742b6670d2bf50a636e3f362504a3b544ba4",
+    "groups": [
+      {
+        "unit": "local-model",
+        "assets": [
+          {
+            "origin_key": "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
+            "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+            "size_bytes": 2740937888
+          },
+          {
+            "origin_key": "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
+            "sha256": "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864",
+            "size_bytes": 672423616
+          }
+        ]
+      },
+      {
+        "unit": "location-accuracy",
+        "assets": [
+          {
+            "origin_key": "assets/location-accuracy/overture-2026-09-23.1-r2/containment.slpk",
+            "sha256": "0f8f4c7270c5938ebd395e1a879a9b23ce265db10af952a0af1f79682f319063",
+            "size_bytes": 993757214
+          },
+          {
+            "origin_key": "assets/location-accuracy/overture-2026-09-23.1-r2/venues.slpk",
+            "sha256": "7bac3fd446c7d17c0c2811ccba04579b5210c69afccabaf046075437a901316e",
+            "size_bytes": 887002648
+          }
+        ]
+      }
+    ]
+  }
+}

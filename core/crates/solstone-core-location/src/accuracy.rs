@@ -97,6 +97,8 @@ pub struct Packs {
     venues: Option<Pack>,
     containment: Option<Pack>,
     identity: String,
+    pub load_failure: Option<String>,
+    _generation_hold: Option<solstone_core_journal_io::FileLock>,
 }
 
 impl std::fmt::Debug for Packs {
@@ -135,6 +137,8 @@ impl Packs {
             venues,
             containment,
             identity,
+            load_failure: None,
+            _generation_hold: None,
         }
     }
 
@@ -250,11 +254,16 @@ pub fn accuracy_root(journal: &Path) -> PathBuf {
     journal.join("cache").join("location").join("accuracy")
 }
 
+pub(crate) fn asset_root(journal: &Path) -> PathBuf {
+    journal.join("cache/location/accuracy-assets")
+}
+
 /// The record of what is installed, written last by an install.
 pub const INSTALLED_RECORD: &str = "installed.json";
 
 /// One installed file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InstalledFile {
     pub file: String,
     pub sha256: String,
@@ -263,15 +272,35 @@ pub struct InstalledFile {
 
 /// What `installed.json` says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Installed {
     pub version: String,
     #[serde(default)]
     pub folder: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_generation: Option<String>,
     pub files: Vec<InstalledFile>,
 }
 
 impl Installed {
+    pub(crate) fn valid_paths(&self) -> bool {
+        let segment = |name: &str| {
+            !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', ':'])
+        };
+        crate::cache::inventory(self).is_ok()
+            && segment(&self.version)
+            && (self.folder.is_empty() || segment(&self.folder))
+            && self.files.iter().all(|f| segment(&f.file))
+            && self
+                .cache_generation
+                .as_ref()
+                .is_none_or(|key| crate::cache::inventory(self).is_ok_and(|g| key == &g.key()))
+    }
+
     pub fn directory(&self, journal: &Path) -> PathBuf {
+        if let Some(key) = &self.cache_generation {
+            return asset_root(journal).join("generations").join(key);
+        }
         let name = if !self.folder.is_empty() {
             &self.folder
         } else {
@@ -288,7 +317,8 @@ impl Installed {
 /// Read `installed.json`, if the journal has a complete install.
 pub fn read_installed(journal: &Path) -> Option<Installed> {
     let bytes = std::fs::read(accuracy_root(journal).join(INSTALLED_RECORD)).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    let record: Installed = serde_json::from_slice(&bytes).ok()?;
+    record.valid_paths().then_some(record)
 }
 
 /// Read the install record for a fingerprint.
@@ -296,9 +326,17 @@ pub fn read_installed(journal: &Path) -> Option<Installed> {
 /// A missing file is no install. Other IO and invalid JSON are errors.
 pub fn read_installed_strict(journal: &Path) -> std::io::Result<Option<Installed>> {
     match std::fs::read(accuracy_root(journal).join(INSTALLED_RECORD)) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
+        Ok(bytes) => {
+            let record: Installed = serde_json::from_slice(&bytes)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            if !record.valid_paths() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "invalid installed accuracy paths",
+                ));
+            }
+            Ok(Some(record))
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
     }
@@ -306,22 +344,25 @@ pub fn read_installed_strict(journal: &Path) -> std::io::Result<Option<Installed
 
 fn open_installed(journal: &Path, installed: &Installed) -> Packs {
     let directory = installed.directory(journal);
+    let Ok(hold) = crate::cache::hold_use(journal, installed) else {
+        return Packs::new(None, None);
+    };
     let mut venues = None;
     let mut containment = None;
+    let mut failure = None;
     for file in &installed.files {
         let path = directory.join(&file.file);
-        // The download verified every byte; a size that moved since means
-        // the file was changed outside the journal, so it is not used.
-        if std::fs::metadata(&path).map(|metadata| metadata.len()).ok() != Some(file.size_bytes) {
-            continue;
-        }
-        match Pack::open(&path) {
+        match Pack::open_verified(&path, &file.sha256, file.size_bytes) {
             Ok(pack) if pack.kind() == PackKind::Venues => venues = Some(pack),
             Ok(pack) if pack.kind() == PackKind::Containment => containment = Some(pack),
-            _ => {}
+            Err(error) => failure = Some(error.to_string()),
+            _ => failure = Some("installed accuracy pack has the wrong type".into()),
         }
     }
-    Packs::new(venues, containment)
+    let mut packs = Packs::new(venues, containment);
+    packs._generation_hold = Some(hold);
+    packs.load_failure = failure;
+    packs
 }
 
 type LoadedPacks = Option<(PathBuf, Installed, Arc<Packs>)>;
@@ -361,10 +402,7 @@ fn read_installed_snapshot(
         return Some((installed, Some(Arc::clone(packs))));
     }
     let packs = Arc::new(open_installed(journal, &installed));
-    if !packs.has_venues() && !packs.has_containment() {
-        *loaded = None;
-        return Some((installed, None));
-    }
+
     *loaded = Some((journal.to_path_buf(), installed.clone(), Arc::clone(&packs)));
     Some((installed, Some(packs)))
 }
@@ -389,6 +427,7 @@ pub fn release_loaded() {
 pub(crate) mod tests {
     use super::*;
     use crate::pack::tests::fixture;
+    use sha2::{Digest, Sha256};
 
     const LAT: f64 = 39.7527;
     const LON: f64 = -105.0003;
@@ -501,11 +540,15 @@ pub(crate) mod tests {
         let installed = Installed {
             version: "fixture-1".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: ["venues.slpk", "containment.slpk"]
                 .iter()
                 .map(|name| InstalledFile {
                     file: (*name).to_owned(),
-                    sha256: String::new(),
+                    sha256: format!(
+                        "{:x}",
+                        Sha256::digest(std::fs::read(source.join(name)).unwrap())
+                    ),
                     size_bytes: std::fs::metadata(source.join(name)).unwrap().len(),
                 })
                 .collect(),
@@ -521,6 +564,53 @@ pub(crate) mod tests {
         assert!(packs.has_venues() && packs.has_containment());
         std::fs::remove_file(&record).unwrap();
         assert!(installed_packs(journal.path()).is_none());
+    }
+
+    #[test]
+    fn same_length_corruption_is_refused_before_both_native_parser_entries() {
+        let journal = tempfile::tempdir().unwrap();
+        let bytes = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/accuracy/venues.slpk"),
+        )
+        .unwrap();
+        let installed = Installed {
+            version: "verified".into(),
+            folder: String::new(),
+            cache_generation: None,
+            files: vec![InstalledFile {
+                file: "venues.slpk".into(),
+                sha256: format!("{:x}", Sha256::digest(&bytes)),
+                size_bytes: bytes.len() as u64,
+            }],
+        };
+        let directory = installed.directory(journal.path());
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("venues.slpk");
+        std::fs::write(&path, &bytes).unwrap();
+        crate::install::publish_installed_record(journal.path(), &installed).unwrap();
+        let before = crate::pack::PACK_OPEN_CALLS.with(|c| c.get());
+        assert!(installed_packs(journal.path()).unwrap().has_venues());
+        assert_eq!(crate::pack::PACK_OPEN_CALLS.with(|c| c.get()), before + 1);
+        release_loaded();
+        let mut corrupt = bytes.clone();
+        let last = corrupt.len() - 1;
+        corrupt[last] ^= 1;
+        std::fs::write(&path, &corrupt).unwrap();
+        let before = crate::pack::PACK_OPEN_CALLS.with(|c| c.get());
+        let packs = installed_packs(journal.path()).unwrap();
+        assert!(!packs.has_venues());
+        assert!(packs.load_failure.as_deref().unwrap().contains("digest"));
+        assert!(
+            crate::fingerprint::daily_location_fingerprint(journal.path(), "20261001").is_err()
+        );
+        assert_eq!(crate::pack::PACK_OPEN_CALLS.with(|c| c.get()), before);
+        drop(packs);
+        release_loaded();
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(crate::fingerprint::daily_location_fingerprint(journal.path(), "20261001").is_ok());
+        // Fingerprinting admits the pack and then renders the day through the
+        // normal loaded-pack path. Both use the verified native entry.
+        assert!(crate::pack::PACK_OPEN_CALLS.with(|c| c.get()) > before);
     }
 
     #[test]
@@ -559,7 +649,7 @@ pub(crate) mod tests {
                     fs::write(directory.join(name), &bytes).unwrap();
                     InstalledFile {
                         file: name.to_owned(),
-                        sha256: String::new(),
+                        sha256: format!("{:x}", Sha256::digest(&bytes)),
                         size_bytes: bytes.len() as u64,
                     }
                 })
@@ -567,6 +657,7 @@ pub(crate) mod tests {
             Installed {
                 version: version.to_owned(),
                 folder: String::new(),
+                cache_generation: None,
                 files,
             }
         };

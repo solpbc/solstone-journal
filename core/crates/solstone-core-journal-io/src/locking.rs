@@ -2059,7 +2059,25 @@ pub fn hold_lock_checked(
     options: LockOptions,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<FileLock, LockError> {
-    let path = path.as_ref();
+    hold_sidecar_lock_windows(path.as_ref(), options, checkpoint, false)
+}
+
+/// Hold a stable sidecar for concurrent readers, excluding generation removal.
+#[cfg(windows)]
+pub fn hold_shared_lock(
+    path: impl AsRef<Path>,
+    options: LockOptions,
+) -> Result<FileLock, LockError> {
+    hold_sidecar_lock_windows(path.as_ref(), options, &|| Ok(()), true)
+}
+
+#[cfg(windows)]
+fn hold_sidecar_lock_windows(
+    path: &Path,
+    options: LockOptions,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    shared: bool,
+) -> Result<FileLock, LockError> {
     let check = || {
         checkpoint()
             .map_err(|detail| io_error(path, io::Error::new(io::ErrorKind::Interrupted, detail)))
@@ -2094,7 +2112,12 @@ pub fn hold_lock_checked(
                 ),
             ));
         }
-        match try_lock_exclusive(file) {
+        let acquired = if shared {
+            try_lock_shared(file)
+        } else {
+            try_lock_exclusive(file)
+        };
+        match acquired {
             Ok(guard) => {
                 check()?;
                 return Ok(FileLock {

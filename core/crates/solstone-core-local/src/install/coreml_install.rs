@@ -1630,13 +1630,24 @@ fn download_and_commit_coreml_observed(
                 origin_key: Some(row.origin_key),
                 ..Default::default()
             };
-            let destination = staging.join(row.filename);
+            let destination = cache_dir.join(".fetch").join(row.sha256).join(row.filename);
             if let Some(dest_parent) = destination.parent() {
                 fs::create_dir_all(dest_parent).map_err(|error| {
                     CoremlInstallError::new("install_failed", error.to_string(), 74)
                 })?;
             }
             fetch(&query, &destination)?;
+            let staged = staging.join(row.filename);
+            if let Some(parent) = staged.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| CoremlInstallError::new("install_failed", e.to_string(), 74))?;
+            }
+            // A retained transfer survives later-member/publication failures.
+            // Hard links avoid a second allocation on supported owner volumes.
+            if fs::hard_link(&destination, &staged).is_err() {
+                fs::copy(&destination, &staged)
+                    .map_err(|e| CoremlInstallError::new("install_failed", e.to_string(), 74))?;
+            }
         }
         Ok(())
     })();
@@ -1705,6 +1716,9 @@ fn download_and_commit_coreml_observed(
         write,
     )?;
 
+    for row in rows {
+        let _ = fs::remove_file(cache_dir.join(".fetch").join(row.sha256).join(row.filename));
+    }
     Ok(target)
 }
 

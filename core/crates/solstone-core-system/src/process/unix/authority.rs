@@ -62,6 +62,7 @@ enum Inner {
 pub struct LaunchAuthority {
     inner: Option<Inner>,
     disposition: Disposition,
+    resources: Vec<std::sync::Arc<dyn Send + Sync>>,
 }
 
 impl fmt::Debug for LaunchAuthority {
@@ -75,6 +76,13 @@ impl fmt::Debug for LaunchAuthority {
 }
 
 impl LaunchAuthority {
+    pub(crate) fn retain_resource<T: Send + Sync + 'static>(
+        &mut self,
+        resource: std::sync::Arc<T>,
+    ) {
+        self.resources.push(resource);
+    }
+
     #[cfg(any(test, feature = "test-hooks"))]
     pub fn scripted(
         pid: u32,
@@ -88,6 +96,7 @@ impl LaunchAuthority {
                 terminate_fn: Box::new(terminate_fn),
             }),
             disposition: Disposition::IndependentLongLived,
+            resources: Vec::new(),
         }
     }
 
@@ -95,6 +104,7 @@ impl LaunchAuthority {
         Self {
             inner: Some(Inner::Managed(process)),
             disposition,
+            resources: Vec::new(),
         }
     }
 
@@ -103,6 +113,7 @@ impl LaunchAuthority {
         Self {
             inner: None,
             disposition,
+            resources: Vec::new(),
         }
     }
 
@@ -1035,6 +1046,7 @@ where
             exact_identity: None,
         }),
         disposition,
+        resources: Vec::new(),
     })
 }
 
@@ -1053,6 +1065,7 @@ where
     Ok(LaunchAuthority {
         inner: Some(Inner::Managed(process)),
         disposition,
+        resources: Vec::new(),
     })
 }
 

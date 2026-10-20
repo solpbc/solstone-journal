@@ -237,7 +237,15 @@ pub(super) fn install_file(
     temporary_path: &Path,
     path: &Path,
     options: crate::atomic::AtomicWriteOptions,
+    retain_on_error: bool,
 ) -> Result<(), AtomicWriteError> {
+    let fail_with_cleanup = |path: &Path, name: &std::ffi::OsStr, file: &File, error: io::Error| {
+        if retain_on_error {
+            io_error(path, error)
+        } else {
+            self::fail_with_cleanup(path, name, file, error)
+        }
+    };
     if let Some(mode) = options.mode
         && mode > 0o777
     {

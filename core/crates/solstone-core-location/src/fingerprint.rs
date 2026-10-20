@@ -96,10 +96,13 @@ fn collect_location_files(
 
 fn hash_accuracy(hasher: &mut Sha256, journal: &Path) -> io::Result<()> {
     hasher.update(b"accuracy");
+    let publication = crate::accuracy::hold_publication(journal).map_err(io::Error::other)?;
     let Some(installed) = read_installed_strict(journal)? else {
         hasher.update(b"absent");
         return Ok(());
     };
+    let _generation_hold = crate::cache::hold_use(journal, &installed)?;
+    drop(publication);
     hasher.update(b"present");
     write_len_bytes(hasher, installed.version.as_bytes());
     let directory = installed.directory(journal);
@@ -108,15 +111,8 @@ fn hash_accuracy(hasher: &mut Sha256, journal: &Path) -> io::Result<()> {
     hasher.update((files.len() as u64).to_be_bytes());
     for file in files {
         let path = directory.join(&file.file);
-        if fs::metadata(&path)?.len() != file.size_bytes {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "installed accuracy pack size changed",
-            ));
-        }
-        // Pack::open reads the header and tile directory, not the large payload.
-        // Bypass installed_packs' record-only cache for this admission check.
-        let pack = crate::pack::Pack::open(&path).map_err(io::Error::other)?;
+        let pack = crate::pack::Pack::open_verified(&path, &file.sha256, file.size_bytes)
+            .map_err(io::Error::other)?;
         if !matches!(
             pack.kind(),
             crate::pack::PackKind::Venues | crate::pack::PackKind::Containment
@@ -244,9 +240,10 @@ mod tests {
         let installed = Installed {
             version: "v1".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![InstalledFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "abc".to_owned(),
+                sha256: format!("{:x}", Sha256::digest(&pack_bytes)),
                 size_bytes: pack_bytes.len() as u64,
             }],
         };

@@ -3,8 +3,8 @@
 
 //! Verified artifact download primitives shared by native installers.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
@@ -147,7 +147,7 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<String, ArchiveError
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    if actual != expected {
+    if !actual.eq_ignore_ascii_case(expected) {
         return Err(ArchiveError::DigestMismatch {
             expected: expected.to_owned(),
             actual,
@@ -165,18 +165,18 @@ pub fn download_runtime_fetch(
     destination: &Path,
     mut progress: impl FnMut(u64, Option<u64>),
 ) -> Result<bool, ArchiveError> {
-    if destination.is_file() {
-        match verify_sha256(destination, handle.sha256()) {
-            Ok(_) => return Ok(false),
-            Err(ArchiveError::DigestMismatch { .. }) => {}
-            Err(error) => return Err(error),
-        }
-    }
-
     #[cfg(feature = "runtime-fetch-test")]
     {
         let fake_opt = FAKE_RUNTIME_FETCH.with(|cell| cell.borrow().clone());
         if let Some(fake) = fake_opt {
+            if destination.is_file()
+                && destination
+                    .metadata()
+                    .is_ok_and(|meta| meta.len() == handle.size_bytes())
+                && verify_sha256(destination, handle.sha256()).is_ok()
+            {
+                return Ok(false);
+            }
             let url = format!("https://{OWNER_ORIGIN_HOST}/{}", handle.origin_key());
             let bytes = fake.fetch(&url, handle.sha256(), handle.size_bytes())?;
             write_and_verify_bytes(&bytes, handle.sha256(), handle.size_bytes(), destination)?;
@@ -224,8 +224,7 @@ pub fn download_runtime_fetch(
         destination,
         &policy,
         &mut progress,
-    )?;
-    Ok(true)
+    )
 }
 
 #[cfg(feature = "runtime-fetch-test")]
@@ -276,14 +275,6 @@ pub fn ensure_verified_url(
         return Err(ArchiveError::HostRefused { host: parsed.host });
     }
 
-    if destination.is_file() {
-        match verify_sha256(destination, sha256) {
-            Ok(_) => return Ok(false),
-            Err(ArchiveError::DigestMismatch { .. }) => {}
-            Err(error) => return Err(error),
-        }
-    }
-
     #[cfg(feature = "runtime-fetch-test")]
     let (extra_hosts, allow_http) = BUILDER_FETCH_LOOPBACK
         .with(|cell| cell.borrow().clone())
@@ -320,102 +311,15 @@ pub fn ensure_verified_url(
         destination,
         &policy,
         &mut progress,
-    )?;
-    Ok(true)
+    )
 }
 
-fn download_verified_url_internal(
-    url: &str,
-    sha256: &str,
-    expected_size: Option<u64>,
-    destination: &Path,
-    policy: &DownloadHostPolicy<'_>,
-    progress: &mut dyn FnMut(u64, Option<u64>),
-) -> Result<(), ArchiveError> {
-    let mut current = validate_url(url, policy)?;
-    let agent = ureq::agent();
-    let mut followed = 0_u8;
-    let response = loop {
-        let response = agent
-            .get(current.as_str())
-            .config()
-            .max_redirects(0)
-            .http_status_as_error(false)
-            .build()
-            .call()
-            .map_err(|error| ArchiveError::OriginUnavailable {
-                host: current.host.clone(),
-                message: error.to_string(),
-            })?;
-        if !response.status().is_redirection() {
-            break response;
-        }
-        if followed == MAX_REDIRECT_HOPS {
-            return Err(ArchiveError::RedirectHopLimitExceeded {
-                limit: MAX_REDIRECT_HOPS,
-            });
-        }
-        let location = response
-            .headers()
-            .get("location")
-            .and_then(|value| value.to_str().ok())
-            .ok_or_else(|| {
-                ArchiveError::Download("redirect response has no Location header".to_owned())
-            })?;
-        let resolved = resolve_location(&current, location)?;
-        current = validate_url(&resolved.as_str(), policy)?;
-        followed += 1;
-    };
-    if !response.status().is_success() {
-        return Err(ArchiveError::OriginUnavailable {
-            host: current.host.clone(),
-            message: format!("unexpected HTTP status {}", response.status()),
-        });
-    }
-    let parent = destination
-        .parent()
-        .ok_or_else(|| ArchiveError::Download("destination has no parent".to_owned()))?;
-    fs::create_dir_all(parent)?;
-    let filename = destination
-        .file_name()
-        .ok_or_else(|| ArchiveError::Download("destination has no file name".to_owned()))?;
-    let temporary = parent.join(format!(".{}.part", filename.to_string_lossy()));
-    let result = (|| {
-        let mut out = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&temporary)?;
-        let mut body = response.into_body().into_reader();
-        let mut received = 0_u64;
-        let mut chunk = [0_u8; 64 * 1024];
-        loop {
-            let size = body.read(&mut chunk)?;
-            if size == 0 {
-                break;
-            }
-            out.write_all(&chunk[..size])?;
-            received += size as u64;
-            progress(received, expected_size);
-        }
-        out.sync_all()?;
-        if let Some(expected) = expected_size
-            && received != expected
-        {
-            return Err(ArchiveError::SizeMismatch {
-                expected,
-                actual: received,
-            });
-        }
-        verify_sha256(&temporary, sha256)?;
-        fs::rename(&temporary, destination)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
+pub mod generation;
+
+mod resume;
+
+use resume::download_verified_url_internal;
+pub use resume::retained_prefix_bytes;
 
 #[derive(Debug, Clone)]
 struct AbsoluteUrl {

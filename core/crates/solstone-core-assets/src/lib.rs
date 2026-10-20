@@ -10,6 +10,7 @@ use serde::Serialize;
 
 pub mod fetch_mint;
 pub mod fetch_set;
+pub mod windows_predecessor;
 pub use fetch_mint::{FetchMintError, RuntimeFetchHandle, RuntimeFetchQuery, mint_runtime_fetch};
 #[cfg(feature = "runtime-fetch-test")]
 pub use fetch_mint::{
@@ -20,6 +21,9 @@ pub use fetch_mint::{
 pub use fetch_set::with_bundled_ids_override;
 pub use fetch_set::{
     FetchSetError, RuntimeFetch, bundled_ids, cmp_utf16_code_units, runtime_fetch_set, unit_id,
+};
+pub use windows_predecessor::{
+    PredecessorAsset, PredecessorGroup, PredecessorRelease, WindowsPredecessor, windows_predecessor,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]

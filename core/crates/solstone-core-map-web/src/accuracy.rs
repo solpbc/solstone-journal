@@ -21,15 +21,22 @@ use crate::AppState;
 
 /// Everything the map app shows about the choice.
 pub(crate) fn status(journal: &Path) -> Value {
-    let offered = install::offered();
+    status_with_offered(journal, install::offered())
+}
+
+pub(crate) fn status_with_offered(
+    journal: &Path,
+    offered: Option<solstone_core_location::install::Offered>,
+) -> Value {
     let snapshot = installed_snapshot(journal);
     let installed = snapshot.as_ref().map(|(installed, _)| installed);
     let packs = snapshot.as_ref().and_then(|(_, packs)| packs.as_ref());
-    let job = match install::accuracy_job(journal) {
+    let raw_job = install::accuracy_job(journal);
+    let mut job = match &raw_job {
         None => json!({"state": "idle"}),
         Some(job) if job.state == "downloading" => {
             json!({
-                "state": "downloading",
+                "state": if job.phase.as_deref() == Some("verifying") { "verifying" } else { "downloading" },
                 "source": job.source,
                 "received": job.received.unwrap_or(0),
                 "total": job.total.unwrap_or(0),
@@ -42,6 +49,23 @@ pub(crate) fn status(journal: &Path) -> Value {
             })
         }
     };
+    let has_both_packs = packs
+        .as_ref()
+        .is_some_and(|p| p.has_venues() && p.has_containment());
+    let current = match (&offered, &installed) {
+        (Some(offered), Some(installed)) => offered.is_installed(installed) && has_both_packs,
+        _ => false,
+    };
+    if current && raw_job.is_none() {
+        job = json!({"state":"ready"});
+    }
+    if installed.is_some() && !has_both_packs && raw_job.is_none() {
+        job = json!({
+            "state": "failed",
+            "reason_code": "integrity_failed",
+            "detail": packs.and_then(|p| p.load_failure.as_deref()).unwrap_or("installed accuracy packs could not be verified"),
+        });
+    }
     json!({
         "offered": offered.as_ref().map(|offered| json!({
             "version": offered.version,
@@ -54,10 +78,7 @@ pub(crate) fn status(journal: &Path) -> Value {
             "venues": packs.as_ref().is_some_and(|packs| packs.has_venues()),
             "containment": packs.as_ref().is_some_and(|packs| packs.has_containment()),
         })),
-        "current": match (&offered, &installed) {
-            (Some(offered), Some(installed)) => offered.is_installed(installed),
-            _ => false,
-        },
+        "current": current,
         "attributions": packs.as_ref().map(|packs| packs.attributions()).unwrap_or_default(),
         "notices": packs.as_ref().map(|packs| packs.notices()).unwrap_or_default(),
         "job": job,

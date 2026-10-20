@@ -15,7 +15,6 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -27,8 +26,8 @@ use solstone_core_journal_io::{
 };
 
 use crate::accuracy::{
-    INSTALLED_RECORD, Installed, InstalledFile, accuracy_root, hold_publication, read_installed,
-    release_loaded,
+    INSTALLED_RECORD, Installed, InstalledFile, accuracy_root, asset_root, hold_publication,
+    read_installed, release_loaded,
 };
 
 /// The catalog unit the two files belong to.
@@ -42,7 +41,7 @@ pub struct OfferedFile {
     pub file: String,
     pub sha256: String,
     pub size_bytes: u64,
-    origin_key: &'static str,
+    pub origin_key: &'static str,
 }
 
 /// What this build offers to download.
@@ -156,6 +155,8 @@ pub enum JobSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccuracyJob {
     pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
     pub source: JobSource,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub received: Option<u64>,
@@ -240,28 +241,69 @@ fn files_match_offered(directory: &Path, offered: &Offered) -> bool {
     true
 }
 
-static COUNTER: AtomicUsize = AtomicUsize::new(0);
+fn generation(
+    offered: &Offered,
+) -> io::Result<solstone_core_artifact_download::generation::Generation> {
+    use solstone_core_artifact_download::generation::{Generation, Member};
+    Generation::new(
+        UNIT,
+        offered
+            .files
+            .iter()
+            .map(|f| Member {
+                file: f.file.clone(),
+                sha256: f.sha256.clone(),
+                size_bytes: f.size_bytes,
+            })
+            .collect(),
+    )
+}
 
-/// Remove version directories `installed.json` does not name. Best effort: a
-/// file this process still has open is removed on a later pass.
-fn sweep(journal: &Path, keep: Option<&str>) {
-    let Ok(entries) = fs::read_dir(accuracy_root(journal)) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if Some(name_str.as_ref()) != keep {
-                let _ = fs::remove_dir_all(&path);
-            }
-        }
+fn sweep(journal: &Path, _keep: Option<&str>) {
+    crate::cache::sweep(journal, offered().as_ref());
+}
+
+fn maintain(journal: &Path, offer: Option<&Offered>) -> Result<(), InstallError> {
+    let _admission = hold_daily_location_admission(journal)
+        .map_err(|e| InstallError::Write(io::Error::other(e)))?;
+    let _publication =
+        hold_publication(journal).map_err(|e| InstallError::Write(io::Error::other(e)))?;
+    if let Some(installed) =
+        crate::accuracy::read_installed_strict(journal).map_err(InstallError::Write)?
+    {
+        crate::cache::remember_legacy(journal, &installed).map_err(InstallError::Write)?;
     }
+    if let (Some(mut installed), Some(offer)) = (read_installed(journal), offer)
+        && installed.cache_generation.is_none()
+        && offer.is_installed(&installed)
+        && files_match_offered(&installed.directory(journal), offer)
+    {
+        let inventory = generation(offer).map_err(InstallError::Write)?;
+        let target = inventory.directory(&asset_root(journal).join("generations"));
+        let _hold = solstone_core_artifact_download::generation::hold_write(&target)
+            .map_err(InstallError::Write)?;
+        if !inventory.is_sealed(&target) {
+            inventory
+                .back_from(&installed.directory(journal), &target)
+                .map_err(InstallError::Write)?;
+        }
+        installed.cache_generation = Some(inventory.key());
+        atomic_replace(
+            accuracy_root(journal).join(INSTALLED_RECORD),
+            &serde_json::to_vec(&installed)
+                .map_err(|e| InstallError::Write(io::Error::other(e)))?,
+            AtomicWriteOptions::default(),
+        )
+        .map_err(|e| InstallError::Write(io::Error::other(e)))?;
+        release_loaded();
+    }
+    crate::cache::sweep(journal, offer);
+    Ok(())
 }
 
 /// Refresh installed accuracy packs if previously installed and catalog pins moved.
 pub fn refresh_installed(journal: &Path) -> Result<(), InstallError> {
+    maintain(journal, offered().as_ref())?;
     if read_installed(journal).is_none() {
         return Ok(());
     }
@@ -295,6 +337,7 @@ pub fn refresh_installed_with_fetch(
     available: &mut impl FnMut(&Path) -> io::Result<u64>,
     fetch: &mut impl FnMut(&OfferedFile, &Path, &mut dyn FnMut(u64)) -> Result<(), InstallError>,
 ) -> Result<(), InstallError> {
+    maintain(journal, Some(offered))?;
     let Some(installed) = read_installed(journal) else {
         return Ok(());
     };
@@ -362,6 +405,7 @@ fn reserve_worker(
         journal,
         &AccuracyJob {
             state: "downloading".to_owned(),
+            phase: None,
             source,
             received: Some(0),
             total: Some(offered.size_bytes()),
@@ -456,227 +500,207 @@ fn install_reserved_offer(
             return Ok(None);
         }
         let incumbent = read_installed(journal);
-        if let Some(installed) = &incumbent {
-            let live_dir = installed.directory(journal);
-            if files_match_offered(&live_dir, offered) {
-                let _admission = hold_daily_location_admission(journal)
-                    .map_err(|error| InstallError::Write(io::Error::other(error.to_string())))?;
-                let _publication = hold_publication(journal)
-                    .map_err(|error| InstallError::Write(io::Error::other(error.to_string())))?;
-                let current_record = read_installed(journal);
-                if canceled().map_err(InstallError::Write)?
-                    || (source == JobSource::Automatic && current_record.is_none())
+        let inventory = generation(offered).map_err(InstallError::Write)?;
+        let generations = asset_root(journal).join("generations");
+        let target = inventory.directory(&generations);
+        let shared = solstone_core_artifact_download::generation::hold_use(&target)
+            .map_err(InstallError::Write)?;
+        let needs_publication = !inventory.is_sealed(&target);
+        let _target_hold = if needs_publication {
+            drop(shared);
+            solstone_core_artifact_download::generation::hold_write(&target)
+                .map_err(InstallError::Write)?
+        } else {
+            shared
+        };
+        let legacy = incumbent
+            .as_ref()
+            .filter(|installed| files_match_offered(&installed.directory(journal), offered));
+        if let Some(legacy) = legacy
+            && !inventory.is_sealed(&target)
+        {
+            inventory
+                .back_from(&legacy.directory(journal), &target)
+                .map_err(InstallError::Write)?;
+        }
+        if !inventory.is_sealed(&target) {
+            let staging = asset_root(journal).join(".fetch");
+            fs::create_dir_all(&staging).map_err(InstallError::Write)?;
+            let remaining: u64 = offered
+                .files
+                .iter()
+                .map(|f| {
+                    if solstone_core_artifact_download::retained_prefix_bytes(
+                        &target.join(&f.file),
+                        &f.sha256,
+                        f.size_bytes,
+                    ) == f.size_bytes
+                    {
+                        return 0;
+                    }
+                    f.size_bytes.saturating_sub(
+                        solstone_core_artifact_download::retained_prefix_bytes(
+                            &staging.join(&f.file),
+                            &f.sha256,
+                            f.size_bytes,
+                        ),
+                    )
+                })
+                .sum();
+            let needed = remaining.saturating_add(HEADROOM_BYTES);
+            let free = available(&staging).map_err(InstallError::Write)?;
+            if free < needed {
+                return Err(InstallError::NotEnoughSpace {
+                    needed,
+                    available: free,
+                });
+            }
+            let total = offered.size_bytes();
+            let mut done = 0u64;
+            let mut last_progress_write = Instant::now();
+            for file in &offered.files {
+                let destination = staging.join(&file.file);
+                if solstone_core_artifact_download::retained_prefix_bytes(
+                    &target.join(&file.file),
+                    &file.sha256,
+                    file.size_bytes,
+                ) == file.size_bytes
                 {
-                    remove_job(journal);
+                    done += file.size_bytes;
+                    continue;
+                }
+                fetch(file, &destination, &mut |received| {
+                    progress(done + received, total);
+                    if last_progress_write.elapsed() < Duration::from_secs(1) {
+                        return;
+                    }
+                    if let Ok(_admission) = hold_daily_location_admission(journal)
+                        && canceled().is_ok_and(|canceled| !canceled)
+                    {
+                        let _ = write_job(
+                            journal,
+                            &AccuracyJob {
+                                state: "downloading".into(),
+                                phase: None,
+                                source,
+                                received: Some(done + received),
+                                total: Some(total),
+                                reason_code: None,
+                            },
+                        );
+                    }
+                    last_progress_write = Instant::now();
+                })?;
+                if canceled().map_err(InstallError::Write)? {
                     return Ok(None);
                 }
-                let incumbent_dir = current_record
-                    .as_ref()
-                    .map(|r| r.directory(journal))
-                    .unwrap_or(live_dir);
-                let folder_name = incumbent_dir
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                let folder = if folder_name != offered.version {
-                    folder_name
-                } else {
-                    String::new()
-                };
-                let new_installed = Installed {
-                    version: offered.version.clone(),
-                    folder,
-                    files: offered
-                        .files
-                        .iter()
-                        .map(|file| InstalledFile {
-                            file: file.file.clone(),
-                            sha256: file.sha256.clone(),
-                            size_bytes: file.size_bytes,
-                        })
-                        .collect(),
-                };
-                let mut bytes = serde_json::to_vec_pretty(&new_installed)
-                    .map_err(|error| InstallError::Write(io::Error::other(error.to_string())))?;
-                bytes.push(b'\n');
-                atomic_replace(
-                    root.join(INSTALLED_RECORD),
-                    &bytes,
+                done += file.size_bytes;
+                progress(done, total);
+            }
+            {
+                let _admission = hold_daily_location_admission(journal)
+                    .map_err(|e| InstallError::Write(io::Error::other(e)))?;
+                if canceled().map_err(InstallError::Write)? {
+                    return Ok(None);
+                }
+                write_job(
+                    journal,
+                    &AccuracyJob {
+                        state: "downloading".into(),
+                        phase: Some("verifying".into()),
+                        source,
+                        received: Some(total),
+                        total: Some(total),
+                        reason_code: None,
+                    },
+                )
+                .map_err(InstallError::Write)?;
+            }
+            fs::create_dir_all(&target).map_err(InstallError::Write)?;
+            for file in &offered.files {
+                if solstone_core_artifact_download::retained_prefix_bytes(
+                    &target.join(&file.file),
+                    &file.sha256,
+                    file.size_bytes,
+                ) == file.size_bytes
+                {
+                    continue;
+                }
+                if solstone_core_artifact_download::retained_prefix_bytes(
+                    &staging.join(&file.file),
+                    &file.sha256,
+                    file.size_bytes,
+                ) != file.size_bytes
+                {
+                    return Err(InstallError::Download {
+                        file: file.file.clone(),
+                        detail: "downloaded pack failed size or digest verification".into(),
+                    });
+                }
+                // Keep transfer sidecars out of the immutable inventory. Moving
+                // the verified member does not allocate another multi-GB copy.
+                solstone_core_journal_io::install_retained_file(
+                    staging.join(&file.file),
+                    target.join(&file.file),
                     AtomicWriteOptions::default(),
                 )
-                .map_err(|error| InstallError::Write(io::Error::other(error.to_string())))?;
-
-                let keep = if !new_installed.folder.is_empty() {
-                    &new_installed.folder
-                } else {
-                    &new_installed.version
-                };
-                sweep(journal, Some(keep));
-                remove_job(journal);
-                release_loaded();
-                return Ok(Some(new_installed));
+                .map_err(|e| InstallError::Write(io::Error::other(e)))?;
             }
         }
-
-        let needed = offered.size_bytes() + HEADROOM_BYTES;
-        let free = available(&root).map_err(InstallError::Write)?;
-        if free < needed {
-            return Err(InstallError::NotEnoughSpace {
-                needed,
-                available: free,
-            });
+        if needs_publication {
+            inventory.seal(&target).map_err(InstallError::Write)?;
         }
-
-        let mut staging = None;
-        for _ in 0..1024 {
-            let candidate = root.join(format!(
-                ".{}.stage.{}.{}",
-                offered.version,
-                std::process::id(),
-                COUNTER.fetch_add(1, Ordering::Relaxed)
-            ));
-            match fs::create_dir(&candidate) {
-                Ok(()) => {
-                    staging = Some(candidate);
-                    break;
-                }
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(InstallError::Write(error)),
-            }
-        }
-        let staging = staging.ok_or_else(|| {
-            InstallError::Write(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "no free location accuracy staging directory",
-            ))
-        })?;
-
-        let total = offered.size_bytes();
-        let mut done = 0u64;
-        let mut last_progress_write = Instant::now();
-        for file in &offered.files {
-            let destination = staging.join(&file.file);
-            if let Some(dest_parent) = destination.parent()
-                && let Err(error) = fs::create_dir_all(dest_parent)
-            {
-                let _ = fs::remove_dir_all(&staging);
-                return Err(InstallError::Write(error));
-            }
-            let file_size = file.size_bytes;
-            if let Err(error) = fetch(file, &destination, &mut |received| {
-                progress(done + received, total);
-                // This is display progress, not a download checkpoint. A durable
-                // replacement after every network read can stall the transfer on
-                // Windows. Leave time between completed writes, including when
-                // the write itself is slow.
-                if last_progress_write.elapsed() < Duration::from_secs(1) {
-                    return;
-                }
-                let prog_job = AccuracyJob {
-                    state: "downloading".to_string(),
-                    source,
-                    received: Some(done + received),
-                    total: Some(total),
-                    reason_code: None,
-                };
-                if let Ok(_admission) = hold_daily_location_admission(journal)
-                    && canceled().is_ok_and(|canceled| !canceled)
-                {
-                    let _ = write_job(journal, &prog_job);
-                }
-                last_progress_write = Instant::now();
-            }) {
-                let _ = fs::remove_dir_all(&staging);
-                return Err(error);
-            }
-            if canceled().map_err(InstallError::Write)? {
-                let _ = fs::remove_dir_all(&staging);
-                return Ok(None);
-            }
-            done += file_size;
-            progress(done, total);
-        }
-
         let _admission = hold_daily_location_admission(journal)
-            .map_err(|error| InstallError::Write(io::Error::other(error.to_string())))?;
-
-        let _publication = hold_publication(journal)
-            .map_err(|error| InstallError::Write(io::Error::other(error.to_string())))?;
-        let current_record = read_installed(journal);
+            .map_err(|e| InstallError::Write(io::Error::other(e)))?;
+        let _publication =
+            hold_publication(journal).map_err(|e| InstallError::Write(io::Error::other(e)))?;
         if canceled().map_err(InstallError::Write)?
-            || (source == JobSource::Automatic && current_record.is_none())
+            || (source == JobSource::Automatic && read_installed(journal).is_none())
         {
-            let _ = fs::remove_dir_all(&staging);
             remove_job(journal);
             return Ok(None);
         }
-
-        // Every publication gets an immutable generation, even under the same
-        // offered version. A prior interrupted publication may already occupy a
-        // candidate name; never overwrite it or strand subsequent retries.
-        let mut target = None;
-        for _ in 0..1024 {
-            let folder = format!(
-                "{}.{}.{}",
-                offered.version,
-                std::process::id(),
-                COUNTER.fetch_add(1, Ordering::Relaxed)
-            );
-            let directory = root.join(&folder);
-            if !directory.exists() {
-                target = Some((directory, folder));
-                break;
-            }
+        // The legacy folder stays in the shared record for frozen releases.
+        // They ignore cache_generation and can reuse their original pack set.
+        let folder = incumbent
+            .as_ref()
+            .map(|i| {
+                if i.folder.is_empty() {
+                    i.version.clone()
+                } else {
+                    i.folder.clone()
+                }
+            })
+            .unwrap_or_else(|| offered.version.clone());
+        if let Some(old) = &incumbent {
+            crate::cache::remember_legacy(journal, old).map_err(InstallError::Write)?;
         }
-        let (target_dir, folder) = target.ok_or_else(|| {
-            InstallError::Write(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "no free location accuracy generation",
-            ))
-        })?;
-
-        if let Err(error) = fs::rename(&staging, &target_dir) {
-            let _ = fs::remove_dir_all(&staging);
-            return Err(InstallError::Write(error));
-        }
-
         let new_installed = Installed {
             version: offered.version.clone(),
             folder,
+            cache_generation: Some(inventory.key()),
             files: offered
                 .files
                 .iter()
-                .map(|file| InstalledFile {
-                    file: file.file.clone(),
-                    sha256: file.sha256.clone(),
-                    size_bytes: file.size_bytes,
+                .map(|f| InstalledFile {
+                    file: f.file.clone(),
+                    sha256: f.sha256.clone(),
+                    size_bytes: f.size_bytes,
                 })
                 .collect(),
         };
-        let mut bytes = serde_json::to_vec_pretty(&new_installed).map_err(|error| {
-            let _ = fs::remove_dir_all(&target_dir);
-            InstallError::Write(io::Error::other(error.to_string()))
-        })?;
+        let mut bytes = serde_json::to_vec_pretty(&new_installed)
+            .map_err(|e| InstallError::Write(io::Error::other(e)))?;
         bytes.push(b'\n');
-
-        if let Err(error) = atomic_replace(
+        atomic_replace(
             root.join(INSTALLED_RECORD),
             &bytes,
             AtomicWriteOptions::default(),
-        ) {
-            let _ = fs::remove_dir_all(&target_dir);
-            return Err(InstallError::Write(io::Error::other(error.to_string())));
-        }
-
-        let keep = if !new_installed.folder.is_empty() {
-            &new_installed.folder
-        } else {
-            &new_installed.version
-        };
-        sweep(journal, Some(keep));
-        remove_job(journal);
+        )
+        .map_err(|e| InstallError::Write(io::Error::other(e)))?;
         release_loaded();
-
+        sweep(journal, None);
+        remove_job(journal);
         Ok(Some(new_installed))
     };
 
@@ -690,6 +714,7 @@ fn install_reserved_offer(
             }
             let failed_job = AccuracyJob {
                 state: "failed".to_string(),
+                phase: None,
                 source,
                 received: None,
                 total: None,
@@ -710,6 +735,15 @@ pub fn publish_installed_record(journal: &Path, installed: &Installed) -> Result
         .map_err(|error| InstallError::Write(io::Error::other(error.to_string())))?;
     let _publication = hold_publication(journal)
         .map_err(|error| InstallError::Write(io::Error::other(error.to_string())))?;
+    if !installed.valid_paths() {
+        return Err(InstallError::Write(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid installed accuracy paths",
+        )));
+    }
+    if let Some(old) = read_installed(journal) {
+        crate::cache::remember_legacy(journal, &old).map_err(InstallError::Write)?;
+    }
     let root = accuracy_root(journal);
     fs::create_dir_all(&root).map_err(InstallError::Write)?;
     let mut bytes = serde_json::to_vec_pretty(installed).unwrap_or_default();
@@ -753,6 +787,10 @@ pub fn remove(journal: &Path) -> io::Result<()> {
         AtomicWriteOptions::default(),
     )
     .map_err(|error| io::Error::other(error.to_string()))?;
+    let revoked = read_installed(journal);
+    if let Some(old) = &revoked {
+        crate::cache::remember_legacy(journal, old)?;
+    }
     release_loaded();
     remove_job(journal);
     match fs::remove_file(accuracy_root(journal).join(INSTALLED_RECORD)) {
@@ -761,6 +799,9 @@ pub fn remove(journal: &Path) -> io::Result<()> {
         Err(error) => return Err(error),
     }
     sweep(journal, None);
+    if let Some(old) = &revoked {
+        crate::cache::remove_legacy(journal, old)?;
+    }
     Ok(())
 }
 
@@ -768,6 +809,7 @@ pub fn remove(journal: &Path) -> io::Result<()> {
 mod tests {
     use super::*;
     use crate::accuracy::installed_packs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     #[cfg(feature = "full-tests")]
     use std::sync::mpsc;
     #[cfg(feature = "full-tests")]
@@ -783,9 +825,11 @@ mod tests {
         let installed = Installed {
             version: "v9".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![InstalledFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "aa".to_owned(),
+                sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+                    .to_owned(),
                 size_bytes: 1,
             }],
         };
@@ -810,7 +854,7 @@ mod tests {
         receiver.recv().unwrap();
         worker.join().unwrap();
         assert!(root.join(INSTALLED_RECORD).exists());
-        assert!(!root.join("old").exists());
+        assert!(root.join("old").exists());
 
         let guard = hold_daily_location_admission(journal.path()).unwrap();
         let path = journal.path().to_path_buf();
@@ -834,7 +878,7 @@ mod tests {
     }
 
     #[test]
-    fn removing_clears_the_record_and_the_files() {
+    fn removing_clears_the_record_and_preserves_unknown_files() {
         let journal = tempfile::tempdir().unwrap();
         let root = accuracy_root(journal.path());
         fs::create_dir_all(root.join("v1")).unwrap();
@@ -842,7 +886,7 @@ mod tests {
         fs::write(root.join(INSTALLED_RECORD), b"{}").unwrap();
         remove(journal.path()).unwrap();
         assert!(!root.join(INSTALLED_RECORD).exists());
-        assert!(!root.join("v1").exists());
+        assert!(root.join("v1").exists());
         remove(journal.path()).unwrap();
     }
 
@@ -859,7 +903,8 @@ mod tests {
             version: "v2".to_owned(),
             files: vec![OfferedFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "aa".to_owned(),
+                sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+                    .to_owned(),
                 size_bytes: 3,
                 origin_key: "assets/location-accuracy/v2/venues.slpk",
             }],
@@ -867,9 +912,11 @@ mod tests {
         let mut installed = Installed {
             version: "v2".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![InstalledFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "aa".to_owned(),
+                sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+                    .to_owned(),
                 size_bytes: 3,
             }],
         };
@@ -909,7 +956,8 @@ mod tests {
             version: "v2".to_owned(),
             files: vec![OfferedFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "aa".to_owned(),
+                sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+                    .to_owned(),
                 size_bytes: 3,
                 origin_key: "assets/location-accuracy/v2/venues.slpk",
             }],
@@ -917,9 +965,11 @@ mod tests {
         let installed = Installed {
             version: "v2".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![InstalledFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "aa".to_owned(),
+                sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+                    .to_owned(),
                 size_bytes: 3,
             }],
         };
@@ -963,9 +1013,10 @@ mod tests {
         let installed = Installed {
             version: "v2".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![InstalledFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "stale_sha".to_owned(),
+                sha256: "0".repeat(64),
                 size_bytes: content.len() as u64,
             }],
         };
@@ -1003,15 +1054,18 @@ mod tests {
         let installed = Installed {
             version: "v2".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![
                 InstalledFile {
                     file: "f1.bin".to_owned(),
-                    sha256: "s1".to_owned(),
+                    sha256: "d7c25c67b3f46c44d589ed345b787a15494bf827e57571063d330bf04877e0b9"
+                        .to_owned(),
                     size_bytes: 8,
                 },
                 InstalledFile {
                     file: "f2.bin".to_owned(),
-                    sha256: "s2".to_owned(),
+                    sha256: "498e0513748e47f13db570dd2017d46a27230fced471bd9c66ed20567568bde4"
+                        .to_owned(),
                     size_bytes: 8,
                 },
             ],
@@ -1024,13 +1078,15 @@ mod tests {
             files: vec![
                 OfferedFile {
                     file: "f1.bin".to_owned(),
-                    sha256: "new_s1".to_owned(),
+                    sha256: "6039092f70864b935e614eaf0ff41bcb91357e8e746997f9af55f5b9f7f8f684"
+                        .to_owned(),
                     size_bytes: 4,
                     origin_key: "k1",
                 },
                 OfferedFile {
                     file: "f2.bin".to_owned(),
-                    sha256: "new_s2".to_owned(),
+                    sha256: "d504f01608b7a8b04349a9ccf4630f4917e67cc4eb6803da31ed503e04a00c68"
+                        .to_owned(),
                     size_bytes: 4,
                     origin_key: "k2",
                 },
@@ -1077,15 +1133,18 @@ mod tests {
         let installed = Installed {
             version: "v2".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![
                 InstalledFile {
                     file: "f1.bin".to_owned(),
-                    sha256: "s1".to_owned(),
+                    sha256: "d7c25c67b3f46c44d589ed345b787a15494bf827e57571063d330bf04877e0b9"
+                        .to_owned(),
                     size_bytes: 8,
                 },
                 InstalledFile {
                     file: "f2.bin".to_owned(),
-                    sha256: "s2".to_owned(),
+                    sha256: "498e0513748e47f13db570dd2017d46a27230fced471bd9c66ed20567568bde4"
+                        .to_owned(),
                     size_bytes: 8,
                 },
             ],
@@ -1097,13 +1156,15 @@ mod tests {
             files: vec![
                 OfferedFile {
                     file: "f1.bin".to_owned(),
-                    sha256: "new_s1".to_owned(),
+                    sha256: "6039092f70864b935e614eaf0ff41bcb91357e8e746997f9af55f5b9f7f8f684"
+                        .to_owned(),
                     size_bytes: 4,
                     origin_key: "k1",
                 },
                 OfferedFile {
                     file: "f2.bin".to_owned(),
-                    sha256: "new_s2".to_owned(),
+                    sha256: "d504f01608b7a8b04349a9ccf4630f4917e67cc4eb6803da31ed503e04a00c68"
+                        .to_owned(),
                     size_bytes: 4,
                     origin_key: "k2",
                 },
@@ -1131,8 +1192,14 @@ mod tests {
         let target_dir = updated.directory(journal.path());
         assert_eq!(fs::read(target_dir.join("f1.bin")).unwrap(), b"new1");
         assert_eq!(fs::read(target_dir.join("f2.bin")).unwrap(), b"new2");
-        assert_eq!(updated.files[0].sha256, "new_s1");
-        assert_eq!(updated.files[1].sha256, "new_s2");
+        assert_eq!(
+            updated.files[0].sha256,
+            "6039092f70864b935e614eaf0ff41bcb91357e8e746997f9af55f5b9f7f8f684"
+        );
+        assert_eq!(
+            updated.files[1].sha256,
+            "d504f01608b7a8b04349a9ccf4630f4917e67cc4eb6803da31ed503e04a00c68"
+        );
 
         for entry in fs::read_dir(&root).unwrap().flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
@@ -1160,9 +1227,11 @@ mod tests {
         let installed = Installed {
             version: "v2".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![InstalledFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "old_sha".to_owned(),
+                sha256: "f5fe596ea3d308b881c55f3a49a8b4a3e24c625b70417b7ef36991d48e8d2948"
+                    .to_owned(),
                 size_bytes: 10,
             }],
         };
@@ -1172,7 +1241,8 @@ mod tests {
             version: "v2".to_owned(),
             files: vec![OfferedFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "new_sha".to_owned(),
+                sha256: "3ac6c03ee14dfa66846d2cc860324888fceecaed43f4e73fe924b36ebda0f1a5"
+                    .to_owned(),
                 size_bytes: 4,
                 origin_key: "k",
             }],
@@ -1207,9 +1277,10 @@ mod tests {
         let installed = Installed {
             version: "v2".to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![InstalledFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "different_sha".to_owned(),
+                sha256: "1".repeat(64),
                 size_bytes: 3,
             }],
         };
@@ -1222,7 +1293,8 @@ mod tests {
             version: "v2".to_owned(),
             files: vec![OfferedFile {
                 file: "venues.slpk".to_owned(),
-                sha256: "aa".to_owned(),
+                sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+                    .to_owned(),
                 size_bytes: 3,
                 origin_key: "k",
             }],
@@ -1271,6 +1343,7 @@ mod tests {
         let installed = Installed {
             version: version.to_owned(),
             folder: String::new(),
+            cache_generation: None,
             files: vec![
                 InstalledFile {
                     file: "containment.slpk".to_owned(),
@@ -1319,7 +1392,7 @@ mod tests {
 
         let mut changed_version_offer = setup_fixtures(journal.path(), "v1").0;
         changed_version_offer.version = "v2".to_owned();
-        changed_version_offer.files[0].sha256 = "different_sha_v2".to_owned();
+        changed_version_offer.files[0].sha256 = "2".repeat(64);
 
         let mut failing_fetch =
             |_file: &OfferedFile, _dest: &Path, _progress: &mut dyn FnMut(u64)| {
@@ -1347,7 +1420,7 @@ mod tests {
 
         // Same version changed digest
         let mut same_version_offer = setup_fixtures(journal.path(), "v1").0;
-        same_version_offer.files[0].sha256 = "different_sha".to_owned();
+        same_version_offer.files[0].sha256 = "1".repeat(64);
         let res2 = refresh_installed_with_fetch(
             journal.path(),
             &same_version_offer,
@@ -1371,8 +1444,8 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         let (offered, mut installed) = setup_fixtures(journal.path(), "v1");
         // Corrupt hashes in installed.json to simulate an older record
-        installed.files[0].sha256 = "stale_hash1".to_string();
-        installed.files[1].sha256 = "stale_hash2".to_string();
+        installed.files[0].sha256 = "3".repeat(64);
+        installed.files[1].sha256 = "4".repeat(64);
         publish_installed_record(journal.path(), &installed).unwrap();
 
         let mut fetch = |_file: &OfferedFile,
@@ -1634,7 +1707,11 @@ mod tests {
 
         let mut new_offered = offered;
         new_offered.version = "v2".to_owned();
-        new_offered.files[0].sha256 = "different_sha".to_owned();
+        let changed_name = new_offered.files[0].file.clone();
+        let mut changed_bytes = fs::read(source.join(&changed_name)).unwrap();
+        let last = changed_bytes.len() - 1;
+        changed_bytes[last] ^= 1;
+        new_offered.files[0].sha256 = format!("{:x}", Sha256::digest(&changed_bytes));
 
         let mut failing_fetch =
             |_file: &OfferedFile, _dest: &Path, _progress: &mut dyn FnMut(u64)| {
@@ -1661,7 +1738,11 @@ mod tests {
 
         // Succeeding refresh deletes job.json
         let mut ok_fetch = |file: &OfferedFile, dest: &Path, _progress: &mut dyn FnMut(u64)| {
-            fs::copy(source.join(&file.file), dest).unwrap();
+            if file.file == changed_name {
+                fs::write(dest, &changed_bytes).unwrap();
+            } else {
+                fs::copy(source.join(&file.file), dest).unwrap();
+            }
             Ok(())
         };
         refresh_installed_with_fetch(
@@ -1687,6 +1768,7 @@ mod tests {
         // 7a: Explicit downloading job, refresh lock timeout does not write or change it
         let explicit_job = AccuracyJob {
             state: "downloading".to_string(),
+            phase: None,
             source: JobSource::Explicit,
             received: Some(10),
             total: Some(100),
@@ -1713,6 +1795,7 @@ mod tests {
         // 7b: Automatic downloading job, explicit install returns Busy and does not write or change it
         let auto_job = AccuracyJob {
             state: "downloading".to_string(),
+            phase: None,
             source: JobSource::Automatic,
             received: Some(20),
             total: Some(200),
@@ -1743,7 +1826,7 @@ mod tests {
         let (offered, _installed) = setup_fixtures(journal.path(), "v1");
         let mut new_offered = offered;
         new_offered.version = "v2".to_owned();
-        new_offered.files[0].sha256 = "different_sha".to_owned();
+        new_offered.files[0].sha256 = "0".repeat(64);
 
         let mut fetch =
             |_: &OfferedFile, _: &Path, _: &mut dyn FnMut(u64)| -> Result<(), InstallError> {
@@ -1766,3 +1849,7 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+#[path = "install_generation_tests.rs"]
+mod generation_tests;

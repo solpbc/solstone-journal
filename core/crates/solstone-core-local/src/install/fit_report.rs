@@ -117,10 +117,21 @@ pub fn build_parakeet_fit_report_with_free_bytes(
         },
     };
     let cache = pins::parakeet_cache_root(journal);
+    let (repo, filename, revision, digest, size) = pins::PARAKEET_MODEL;
+    let destination = cache
+        .join("models")
+        .join(repo.replace('/', "__"))
+        .join(revision)
+        .join(filename);
+    let remaining = size.saturating_sub(solstone_core_artifact_download::retained_prefix_bytes(
+        &destination,
+        digest,
+        size,
+    ));
     let disk = disk_check(
         &cache,
         available,
-        &[("parakeet GGUF model", pins::PARAKEET_MODEL.4)],
+        &[("parakeet GGUF model", remaining)],
         &[
             "parakeet CPU server tarball",
             "parakeet Vulkan server tarball",
@@ -252,12 +263,35 @@ pub fn build_local_fit_report(
     };
     let ram = local_ram_check(model_id, available_ram);
     let mut known = local_model_downloads(model_id);
+    if let (Some(generation), Some(staging)) = (
+        pins::model_generation(model_id),
+        pins::model_fetch_directory(journal, model_id),
+    ) {
+        let installed = pins::model_directory(journal, model_id);
+        for (index, name) in ["Qwen3.5-4B-Q4_K_M.gguf", "mmproj-F16.gguf"]
+            .iter()
+            .enumerate()
+        {
+            if let Some(member) = generation.files.iter().find(|m| m.file == *name) {
+                known[index].1 = pins::remaining_model_member_bytes(
+                    journal, model_id, member, &installed, &staging,
+                );
+            }
+        }
+    }
     let unknown = if os_name == "windows" {
         Vec::new()
     } else if os_name == "linux" && backend_choice.backend == Backend::Cuda {
         match pins::cuda_pin(&artifact_key) {
-            Some((_, _, size)) => {
-                known.push(("CUDA llama-server tarball", size));
+            Some((_, digest, size)) => {
+                let archive = pins::cache_root(journal)
+                    .join(".fetch")
+                    .join(digest)
+                    .join(format!("llama-{digest}.tar.gz"));
+                let remaining = size.saturating_sub(
+                    solstone_core_artifact_download::retained_prefix_bytes(&archive, digest, size),
+                );
+                known.push(("CUDA llama-server tarball", remaining));
                 Vec::new()
             }
             None => vec!["llama-server tarball"],

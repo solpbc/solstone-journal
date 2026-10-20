@@ -335,7 +335,7 @@ fn download_artifact_refuses_disallowed_redirect_target_in_envelope() {
             .unwrap();
     });
     let destination = root.join("artifact");
-    let artifact = fixture_artifact(format!("http://{address}/start"), "artifact", b"");
+    let artifact = fixture_artifact(format!("http://{address}/start"), "artifact", b"expected");
     let error = download_verified(
         &artifact,
         &destination,
@@ -487,7 +487,7 @@ fn download_artifact_reports_redirect_hop_limit() {
         6
     });
     let destination = root.join("artifact");
-    let artifact = fixture_artifact(format!("http://{address}/start"), "artifact", b"");
+    let artifact = fixture_artifact(format!("http://{address}/start"), "artifact", b"expected");
     let error = download_verified(
         &artifact,
         &destination,
@@ -519,7 +519,7 @@ fn download_verified_reports_size_mismatch_before_digest_mismatch() {
     let destination = root.join("artifact");
     let mut artifact = fixture_artifact(format!("http://{address}"), "artifact", b"hello");
     artifact.size_bytes = 4;
-    artifact.sha256 = "00";
+    artifact.sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
     assert!(matches!(
         download_verified(
             &artifact,
@@ -576,7 +576,7 @@ fn download_digest_mismatch_removes_destination_and_partial_file() {
     });
     let destination = root.join("artifact.tar.gz");
     let mut artifact = fixture_artifact(format!("http://{address}"), "artifact.tar.gz", b"hello");
-    artifact.sha256 = "00";
+    artifact.sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
     assert!(matches!(
         download_verified(
             &artifact,
@@ -597,7 +597,11 @@ fn userinfo_origin_is_refused_before_any_accept() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
-    let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+    let artifact = fixture_artifact(
+        "https://github.com/upstream".to_owned(),
+        "artifact",
+        b"expected",
+    );
     let origin_base_url = format!("http://{address}@blocked.test");
     let loopback = RuntimeFetchLoopback {
         allowed_hosts: vec!["blocked.test".to_owned()],
@@ -617,8 +621,11 @@ fn userinfo_origin_is_refused_before_any_accept() {
 fn origin_failures_have_a_distinct_reason_code_and_retain_the_host() {
     let root = temp("download-origin-failures");
     let (_reservation, refused_address) = held_refusal_reservation();
-    let refused_artifact =
-        fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+    let refused_artifact = fixture_artifact(
+        "https://github.com/upstream".to_owned(),
+        "artifact",
+        b"expected",
+    );
     let refused_base = format!("http://{refused_address}");
     assert_origin_unavailable(
         &refused_artifact,
@@ -631,7 +638,11 @@ fn origin_failures_have_a_distinct_reason_code_and_retain_the_host() {
     let tls_address = tls_listener.local_addr().unwrap();
     let tls_host = loopback_host(tls_address);
     let tls_server = record_tls_hosts(tls_listener, 1);
-    let tls_artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+    let tls_artifact = fixture_artifact(
+        "https://github.com/upstream".to_owned(),
+        "artifact",
+        b"expected",
+    );
     let tls_base = format!("https://{tls_address}");
     let tls_loopback = RuntimeFetchLoopback {
         allowed_hosts: vec!["127.0.0.1".into()],
@@ -655,7 +666,11 @@ fn origin_http_statuses_map_to_origin_unreachable() {
             1,
             format!("HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
         );
-        let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+        let artifact = fixture_artifact(
+            "https://github.com/upstream".to_owned(),
+            "artifact",
+            b"expected",
+        );
         assert_origin_unavailable(
             &artifact,
             &root.join("artifact"),
@@ -1198,4 +1213,45 @@ fn builder_fetch_refuses_the_owner_host_and_loopback_fetches_only_inside_the_gua
     assert_eq!(fs::read(&dest_loopback).unwrap(), payload);
 
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn interrupted_coreml_install_resumes_after_staging_is_discarded() {
+    use std::time::{Duration, Instant};
+    let temporary = tempfile::tempdir().unwrap();
+    let home = temporary.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let configured = temporary.path().join("cache");
+    let config = coreml_config(&configured);
+    let artifact = coreml_row("Encoder.mlmodelc/weights/weight.bin", b"abcd");
+    let rows = [&artifact];
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = thread::spawn(move || {
+        let mut requests = Vec::new();
+        for response in [b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nab".as_slice(),b"HTTP/1.1 206 Partial Content\r\nContent-Length: 2\r\nContent-Range: bytes 2-3/4\r\nConnection: close\r\n\r\ncd".as_slice()] {
+            let deadline=Instant::now()+Duration::from_secs(5);
+            let mut stream=loop { match listener.accept() { Ok((s,_))=>break s,Err(e) if e.kind()==ErrorKind::WouldBlock && Instant::now()<deadline=>thread::sleep(Duration::from_millis(10)),e=>panic!("expected CoreML request: {e:?}") } };
+            stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap(); requests.push(request(&mut stream).to_ascii_lowercase()); stream.write_all(response).unwrap();
+        }
+        requests
+    });
+    with_runtime_fetch_loopback(loopback(&base), || {
+        assert!(install_coreml_with_rows(&home, &config, false, &rows).is_err());
+        let transfer = configured
+            .join(".fetch")
+            .join(artifact.sha256)
+            .join(artifact.filename);
+        assert_eq!(
+            solstone_core_artifact_download::retained_prefix_bytes(&transfer, artifact.sha256, 4),
+            2
+        );
+        let root = install_coreml_with_rows(&home, &config, false, &rows).unwrap();
+        assert_eq!(fs::read(root.join(artifact.filename)).unwrap(), b"abcd");
+        assert!(!transfer.exists());
+    });
+    let requests = server.join().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[1].contains("range: bytes=2-\r\n"));
 }

@@ -3612,7 +3612,8 @@ mod tests {
     }
     #[test]
     fn unusable_advertised_accuracy_pack_refuses_and_restoration_publishes() {
-        for broken in ["missing", "truncated", "unreadable"] {
+        use sha2::{Digest, Sha256};
+        for broken in ["missing", "truncated", "unreadable", "same-size-corruption"] {
             let root = tempfile::tempdir().unwrap();
             let (context, identity, request) = fixture(root.path(), true);
             activate_location(&context.journal);
@@ -3625,7 +3626,7 @@ mod tests {
             let pack = accuracy.join("test/venues.slpk");
             fs::create_dir_all(pack.parent().unwrap()).unwrap();
             fs::write(&pack, &bytes).unwrap();
-            fs::write(accuracy.join("installed.json"), serde_json::to_vec(&json!({"version":"test","files":[{"file":"venues.slpk","sha256":"fixture","size_bytes":bytes.len()}]})).unwrap()).unwrap();
+            fs::write(accuracy.join("installed.json"), serde_json::to_vec(&json!({"version":"test","files":[{"file":"venues.slpk","sha256":format!("{:x}", Sha256::digest(&bytes)),"size_bytes":bytes.len()}]})).unwrap()).unwrap();
             stamp_fingerprint(&context.journal, &identity, 4);
             let before = load_daily_unit_record(&context.journal, &identity)
                 .unwrap()
@@ -3633,6 +3634,11 @@ mod tests {
             match broken {
                 "missing" => fs::remove_file(&pack).unwrap(),
                 "truncated" => fs::write(&pack, &bytes[..12]).unwrap(),
+                "same-size-corruption" => {
+                    let mut corrupt = bytes.clone();
+                    *corrupt.last_mut().unwrap() ^= 1;
+                    fs::write(&pack, corrupt).unwrap();
+                }
                 _ => {
                     #[cfg(unix)]
                     {

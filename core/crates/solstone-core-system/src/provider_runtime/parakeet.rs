@@ -1220,6 +1220,7 @@ fn start_parakeet(
             cpu_rate_per_10_000: PROVIDER_CPU_RATE_PER_10_000,
             committed_memory_bytes: PROVIDER_COMMITTED_MEMORY_BYTES,
         }),
+        resources: Default::default(),
         spawn_options: SpawnOptions {
             journal_root: launch.journal_path.clone(),
             reference: format!("parakeet-provider:{}", fence.generation),

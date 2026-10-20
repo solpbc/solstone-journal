@@ -73,6 +73,7 @@ impl ManagedProcess {
         options: SpawnOptions,
         current_directory: &std::path::Path,
         resource_limits: Option<(u32, usize)>,
+        resources: super::bounded::BoundedHelperResources,
     ) -> Result<Self, SpawnError> {
         if cmd.is_empty() {
             return Err(SpawnError::EmptyCommand);
@@ -101,7 +102,7 @@ impl ManagedProcess {
             Ok(owner) => owner,
             Err(failure) => {
                 return Err(SpawnError::Spawn(io::Error::other(
-                    reservation.launch_failure(failure, Default::default()),
+                    reservation.launch_failure(failure, resources),
                 )));
             }
         };
@@ -113,7 +114,7 @@ impl ManagedProcess {
             writer,
             log_path,
             reservation,
-            Default::default(),
+            resources,
         )
     }
 

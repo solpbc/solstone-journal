@@ -118,6 +118,12 @@ pub struct StagedWindowsPayload {
     pub unsigned_manifest_sha256: String,
 }
 
+pub fn refuse_unupdated_windows_predecessor(candidate: &str) -> Result<(), String> {
+    solstone_core_assets::windows_predecessor()
+        .map_err(str::to_owned)?
+        .validate(candidate)
+}
+
 /// Consumes live-Cargo evidence, not paths to old binaries or replacement logs.
 /// The checkout's canonical inventory and content must still match that build.
 /// The Windows command joins every native component through its typed admission.
@@ -127,6 +133,21 @@ pub fn stage_windows_payload(
     native: &AdmittedWindowsNativeInputs,
     destination: &Path,
 ) -> Result<(StagedWindowsPayload, PublishedWindowsPayload), WindowsPublishFailure> {
+    let version =
+        crate::produce::workspace_version(&checkout.join("core/Cargo.toml")).map_err(|e| {
+            WindowsPublishFailure {
+                state: crate::windows_publish::PublicationState::NotPublished,
+                destination: destination.to_path_buf(),
+                retained_stage: None,
+                detail: e.to_string(),
+            }
+        })?;
+    refuse_unupdated_windows_predecessor(&version).map_err(|e| WindowsPublishFailure {
+        state: crate::windows_publish::PublicationState::NotPublished,
+        destination: destination.to_path_buf(),
+        retained_stage: None,
+        detail: e,
+    })?;
     assemble_windows_payload(destination, |stage| {
         let source = &product.evidence().source;
         if &capture_source(checkout)? != source {
@@ -1252,5 +1273,13 @@ mod tests {
         .err()
         .unwrap();
         assert_eq!(err, "duplicate native input mapping");
+    }
+
+    #[test]
+    fn windows_predecessor_refusal_and_identity() {
+        let record = solstone_core_assets::windows_predecessor().unwrap();
+        assert!(refuse_unupdated_windows_predecessor(&record.candidate_release).is_ok());
+        assert!(refuse_unupdated_windows_predecessor(&record.predecessor.windows_release).is_err());
+        assert!(refuse_unupdated_windows_predecessor("999.0.0").is_err());
     }
 }

@@ -88,8 +88,6 @@ pub use append::append_text;
 pub use append::run_with_bound_append_open_barrier;
 #[cfg(any(unix, windows))]
 pub use append::{append_text_bound_checked, append_text_checked};
-#[cfg(any(unix, windows))]
-pub use atomic::install_file;
 pub use atomic::is_publication_candidate_name;
 pub use atomic::serialize_json_bytes;
 #[cfg(unix)]
@@ -128,6 +126,8 @@ pub use atomic::{
 };
 #[cfg(windows)]
 pub use atomic::{atomic_replace_detailed_bound, atomic_replace_detailed_bound_checked};
+#[cfg(any(unix, windows))]
+pub use atomic::{install_file, install_retained_file};
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use atomic::{
     run_with_bound_publication_faults, run_with_bound_publication_faults_and_barrier,
@@ -204,7 +204,7 @@ pub use legacy_log_alias::{
     LegacyAliasTarget, cleanup_legacy_log_aliases, observe_legacy_alias_symlink,
     remove_observed_legacy_alias_symlink,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use locking::hold_shared_lock;
 #[cfg(any(unix, windows))]
 pub use locking::lock_is_held;

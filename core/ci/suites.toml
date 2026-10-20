@@ -267,7 +267,7 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 runtime = "none"
-features = ["runtime-fetch-test"]
+features = ["runtime-fetch-test", "full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-auth-flow"

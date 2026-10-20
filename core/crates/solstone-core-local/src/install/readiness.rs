@@ -83,7 +83,7 @@ fn inspect_local_with(
         crate::nvidia::BackendSelection::Selected(choice) => choice,
         crate::nvidia::BackendSelection::IntegrityBlocked => {
             let root = pins::cache_root(&journal);
-            let model_root = root.join("models").join(model_id.replace('/', "__"));
+            let model_root = pins::model_directory(&journal, model_id);
             let model_identity = pins::model_identity(model_id).unwrap_or(Value::Null);
             let model_file = model_identity
                 .get("filename")
@@ -205,7 +205,7 @@ fn inspect_local_with(
         let path = binary_root.join("llama-server");
         (platform_supported, binary_root, proof, path)
     };
-    let model_root = root.join("models").join(model_id.replace('/', "__"));
+    let model_root = pins::model_directory(&journal, model_id);
     let model_identity = pins::model_identity(model_id).unwrap_or(Value::Null);
     let model_file = model_identity
         .get("filename")
@@ -302,7 +302,7 @@ pub fn inspect_local_installed(journal: &Path, model_id: &str) -> Value {
             });
         (pins::vulkan_pin(&key).is_some(), installed)
     };
-    let model_root = root.join("models").join(model_id.replace('/', "__"));
+    let model_root = pins::model_directory(journal, model_id);
     let model_identity = pins::model_identity(model_id).unwrap_or(Value::Null);
     let model_file = model_identity
         .get("filename")

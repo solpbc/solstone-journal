@@ -821,6 +821,140 @@ pub fn parakeet_host_artifact_key() -> Result<String, UnsupportedParakeetPlatfor
     parakeet_artifact_key(std::env::consts::OS, std::env::consts::ARCH)
 }
 
+/// Complete model/projector identity; a projector pin move creates a new sibling.
+pub fn model_generation(
+    model_id: &str,
+) -> Option<solstone_core_artifact_download::generation::Generation> {
+    use solstone_core_artifact_download::generation::{Generation, Member};
+    let identity = model_identity(model_id)?;
+    let mut files = Vec::new();
+    for (name_key, sha_key) in [("filename", "sha256"), ("mmproj_filename", "mmproj_sha256")] {
+        let name = identity[name_key].as_str()?;
+        let sha = identity[sha_key].as_str()?;
+        let asset = solstone_core_assets::resolve("local-model", None, None)
+            .into_iter()
+            .find(|a| a.filename == name && a.sha256 == sha)?;
+        files.push(Member {
+            file: name.into(),
+            sha256: sha.into(),
+            size_bytes: asset.size_bytes,
+        });
+    }
+    let mut generation = Generation::new("local-model", files).ok()?;
+    generation.identity = identity;
+    Some(generation)
+}
+
+/// Reuse a matching legacy install in place. New pin sets live beside it,
+/// never inside a tree recursively inventoried by an older release.
+pub fn model_directory(journal: &Path, model_id: &str) -> PathBuf {
+    let root = cache_root(journal).join("models");
+    let legacy = root.join(model_id.replace('/', "__"));
+    let Some(identity) = model_identity(model_id) else {
+        return legacy;
+    };
+    let legacy_manifest = super::manifest::artifact_manifest_path(&legacy);
+    let matching = std::fs::read(&legacy_manifest)
+        .ok()
+        .filter(|bytes| bytes.len() <= 65536)
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .is_some_and(|record| record["source"]["pin_identity"] == identity);
+    if matching {
+        return legacy;
+    }
+    model_generation(model_id)
+        .map(|g| g.directory(&root))
+        .unwrap_or(legacy)
+}
+
+pub fn model_fetch_directory(journal: &Path, model_id: &str) -> Option<PathBuf> {
+    model_generation(model_id)?;
+    Some(cache_root(journal).join(".fetch").join("models"))
+}
+
+/// A pinned member reusable without allocating another model copy.
+pub(crate) fn reusable_model_member(
+    journal: &Path,
+    model_id: &str,
+    member: &solstone_core_artifact_download::generation::Member,
+) -> Option<PathBuf> {
+    let root = cache_root(journal).join("models");
+    let flat = root.join(model_id.replace('/', "__"));
+    if solstone_core_artifact_download::generation::Generation::new(
+        "local-model",
+        vec![member.clone()],
+    )
+    .ok()?
+    .verify(&flat)
+    {
+        return Some(flat.join(&member.file));
+    }
+    solstone_core_artifact_download::generation::reusable_member(&root, member)
+}
+
+pub(crate) fn remaining_model_member_bytes(
+    journal: &Path,
+    model_id: &str,
+    member: &solstone_core_artifact_download::generation::Member,
+    installed: &Path,
+    staging: &Path,
+) -> u64 {
+    if reusable_model_member(journal, model_id, member).is_some() {
+        return 0;
+    }
+    let credit = solstone_core_artifact_download::retained_prefix_bytes(
+        &installed.join(&member.file),
+        &member.sha256,
+        member.size_bytes,
+    )
+    .max(solstone_core_artifact_download::retained_prefix_bytes(
+        &staging.join(&member.file),
+        &member.sha256,
+        member.size_bytes,
+    ));
+    member.size_bytes.saturating_sub(credit)
+}
+
+pub fn hold_model_use(directory: &Path) -> std::io::Result<solstone_core_journal_io::FileLock> {
+    solstone_core_artifact_download::generation::hold_use(directory)
+}
+
+pub fn collect_model_generations(journal: &Path) {
+    let Ok(Some(_lease)) = super::lease::acquire(journal, "local") else {
+        return;
+    };
+    collect_model_generations_under_install_lease(journal);
+}
+
+/// Called only while the successful installer owns the existing local lease.
+pub(crate) fn collect_model_generations_under_install_lease(journal: &Path) {
+    let Some(current) = model_generation("local/qwen3.5-4b") else {
+        return;
+    };
+    let root = cache_root(journal).join("models");
+    let legacy = model_directory(journal, "local/qwen3.5-4b");
+    let target = current.directory(&root);
+    if legacy != target
+        && !current.is_sealed(&target)
+        && current.verify(&legacy)
+        && let Ok(_hold) = solstone_core_artifact_download::generation::hold_write(&target)
+        && let Err(error) = current.back_from(&legacy, &target)
+    {
+        log::warn!("could not retain verified model generation: {error}");
+    }
+    if let Err(error) = super::model_cache::collect_legacy(journal, &current) {
+        log::warn!("could not clean obsolete legacy model: {error}");
+    }
+    if let Err(error) = solstone_core_artifact_download::generation::collect(
+        &root,
+        "local-model",
+        std::slice::from_ref(&current),
+        true,
+    ) {
+        log::warn!("could not clean obsolete model generations: {error}");
+    }
+}
+
 pub fn paths(journal: &Path, key: &str, model_id: Option<&str>) -> Value {
     let vulkan = LLAMA_SERVER_PINS.iter().find(|pin| pin.0 == key);
     let cuda = CUDA_ARTIFACTS.iter().find(|pin| pin.0 == key);
@@ -830,7 +964,7 @@ pub fn paths(journal: &Path, key: &str, model_id: Option<&str>) -> Value {
         "cache_root": root,
         "binary_path": vulkan.map(|pin| root.join("bin").join(key).join(pin.1).join(pin.4)),
         "cuda_binary_path": cuda.map(|pin| root.join("cuda").join(key).join(pin.2).join("llama-server")),
-        "model_dir": model_id.map(|id| root.join("models").join(id.replace('/', "__"))),
+        "model_dir": model_id.map(|id| model_directory(journal,id)),
     })
 }
 pub fn pins_json() -> Value {

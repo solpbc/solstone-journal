@@ -40,6 +40,8 @@ pub struct IndependentProviderRequest {
     pub arguments: Vec<String>,
     pub environment: BTreeMap<OsString, OsString>,
     pub resource_limits: Option<IndependentProviderResourceLimits>,
+    #[cfg(windows)]
+    pub resources: super::bounded::BoundedHelperResources,
     pub spawn_options: SpawnOptions,
 }
 
@@ -172,7 +174,13 @@ pub fn launch_independent_provider(
         .resource_limits
         .map(|limits| (limits.cpu_rate_per_10_000, limits.committed_memory_bytes));
     launch_managed(Disposition::IndependentLongLived, move || {
-        ManagedProcess::spawn_package_owned(command, options, &canonical.current_directory, limits)
+        ManagedProcess::spawn_package_owned(
+            command,
+            options,
+            &canonical.current_directory,
+            limits,
+            request.resources,
+        )
     })
     .map_err(|_| IndependentProviderError::LaunchFailed)
 }
@@ -193,6 +201,8 @@ mod tests {
                 OsString::from("C:\\Windows"),
             )]),
             resource_limits: None,
+            #[cfg(windows)]
+            resources: Default::default(),
             spawn_options: SpawnOptions {
                 journal_root: PathBuf::from("journal"),
                 reference: "provider-test".to_owned(),

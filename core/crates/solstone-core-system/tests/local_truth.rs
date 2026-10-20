@@ -680,9 +680,11 @@ fn windows_follow_launches_once_when_the_model_pin_moves() {
         readiness["proof"]["model"]["status"],
         "missing-or-mismatched"
     );
+    // The moved pin selects an empty sibling; the older flat generation stays
+    // available for downgrade while prior opt-in still admits one update.
     assert_eq!(
         readiness["proof"]["model"]["reason_code"],
-        "manifest_pin_mismatch"
+        "manifest_missing"
     );
 
     let launched = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -720,7 +722,7 @@ fn windows_follow_launches_once_when_the_model_pin_moves() {
         assert_eq!(obs.phase, RuntimePhase::ArtifactNotReady);
         assert_eq!(
             obs.reason_code.as_ref().map(ReasonCode::as_str),
-            Some("artifact-stale")
+            Some("manifest-missing")
         );
     }
 
@@ -776,7 +778,7 @@ fn windows_follow_launches_once_for_an_abandoned_install() {
     // install in progress; the follow starts the one that will be.
     assert_eq!(
         obs.reason_code.as_ref().map(ReasonCode::as_str),
-        Some("artifact-stale")
+        Some("manifest-missing")
     );
     assert_eq!(launched.lock().unwrap().len(), 1);
     let _ = std::fs::remove_dir_all(root);

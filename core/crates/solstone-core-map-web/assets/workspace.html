@@ -768,7 +768,9 @@
       : "a visit your phone reports is named by the places within your phone's margin of error: \"near Blue Bottle Coffee\".";
     let body;
     let actions = "";
-    if (job.state === "downloading") {
+    if (job.state === "verifying") {
+      body = `<p role="status">checking location accuracy before using it. you can keep using your journal.</p>`;
+    } else if (job.state === "downloading") {
       body = `<p>downloading location accuracy: ${escapeHtml(bytes(job.received))} of ${escapeHtml(bytes(job.total))}. you can keep using your journal while it downloads.</p>
         <progress max="${Number(job.total) || 1}" value="${Number(job.received) || 0}"></progress>`;
       if (installed && job.source === "automatic") actions = `<button type="button" data-accuracy="remove">remove location accuracy</button>`;
@@ -776,6 +778,10 @@
       body = `<p>location accuracy is on. ${escapeHtml(what)}</p>`;
       actions = `<button type="button" data-accuracy="remove">remove location accuracy</button>
         <span class="map-muted">frees ${escapeHtml(bytes(installed.size_bytes))}; names go back to the nearby town.</span>`;
+    } else if (installed && job.state === "failed" && !(installed.venues && installed.containment)) {
+      body = `<p>location accuracy is unavailable.</p>`;
+      actions = `${offered ? `<button type="button" data-accuracy="download">download again</button>` : ""}
+        <button type="button" data-accuracy="remove">remove location accuracy</button>`;
     } else if (installed && offered) {
       body = `<p>location accuracy is on. a newer download is ready from updates.solstone.app: ${escapeHtml(bytes(offered.size_bytes))}.</p>`;
       actions = `<button type="button" data-accuracy="download">update</button>
@@ -790,6 +796,7 @@
     }
     const failures = {
       not_enough_space: `there isn't enough free space: location accuracy needs ${bytes(offered?.size_bytes)} free, plus some room to spare.`,
+      integrity_failed: "location accuracy failed its file check. download it again before using it.",
       download_failed: "location accuracy couldn't be downloaded. try again in a while.",
       write_failed: "location accuracy couldn't be saved in your journal's folder.",
       nothing_offered: "this version of your journal has no location accuracy download.",
@@ -844,7 +851,7 @@
       button.addEventListener("click", () => accuracyAction(button.getAttribute("data-accuracy"), data));
     });
     clearTimeout(accuracyTimer);
-    if (status?.job?.state === "downloading") {
+    if (["downloading", "verifying"].includes(status?.job?.state)) {
       accuracyTimer = setTimeout(async () => {
         if (!root.isConnected) return;
         const next = await window.apiJson("/app/map/api/accuracy").catch(() => null);
@@ -897,7 +904,7 @@
     root.querySelectorAll("[data-accuracy]").forEach((button) => {
       button.addEventListener("click", () => accuracyAction(button.getAttribute("data-accuracy"), data));
     });
-    if (data.accuracy?.job?.state === "downloading") showAccuracy(data.accuracy, data);
+    if (["downloading", "verifying"].includes(data.accuracy?.job?.state)) showAccuracy(data.accuracy, data);
     drawMap(data);
   }
 

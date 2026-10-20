@@ -13,10 +13,9 @@ use std::time::{Duration, Instant};
 use super::metal_candidate;
 use super::test_hooks::{inspect_parakeet, stage_ready_parakeet};
 use super::{
-    InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, fetch_runtime_member,
-    fingerprint, flatten_binary_bundle, hoist_binary, lease, local_backend_choice, manifest,
-    parakeet_target_for_install, pins, publish_staged_tree_with, readiness, status,
-    write_parakeet_model_manifest,
+    InstallVerb, archive, dispatch, fetch_runtime_member, fingerprint, flatten_binary_bundle,
+    hoist_binary, lease, local_backend_choice, manifest, parakeet_target_for_install, pins,
+    publish_staged_tree_with, readiness, status, write_parakeet_model_manifest,
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -591,11 +590,22 @@ fn preflip_fixture_preserves_paths_and_native_pins_json_fields() {
                 .join("llama-server"),
         );
     }
-    assert_eq!(
-        path_value(
-            &pins::paths(journal, PARAKEET_TEST_KEY, Some("local/qwen3.5-4b"),)["model_dir"]
-        ),
+    let model_dir =
+        path_value(&pins::paths(journal, PARAKEET_TEST_KEY, Some("local/qwen3.5-4b"))["model_dir"]);
+    assert_ne!(
+        model_dir,
         PathBuf::from(fixture["paths"]["local_model_dir"].as_str().unwrap())
+    );
+    assert_eq!(
+        model_dir.parent(),
+        Some(pins::cache_root(journal).join("models").as_path())
+    );
+    assert!(
+        model_dir
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("g-")
     );
     for row in fixture["parakeet_server"].as_array().unwrap() {
         let identity = pins::parakeet_backend_identity(
@@ -2045,32 +2055,6 @@ fn backend_choice_selects_cuda_when_hardware_qualifies_and_a_pin_exists() {
 }
 
 #[test]
-fn legacy_cuda_cleanup_requires_the_original_validated_sidecar_shape() {
-    let root = temp("legacy-cleanup");
-    let keep = root.join("keep");
-    fs::create_dir_all(&keep).unwrap();
-    let valid = root.join("a".repeat(64));
-    fs::create_dir_all(&valid).unwrap();
-    fs::write(
-        valid.join(".oci-install.json"),
-        json!({
-            "image_ref": format!("ghcr.io/example@sha256:{}", valid.file_name().unwrap().to_string_lossy()),
-            "arch": "amd64",
-            "files": {"llama-server": "b".repeat(64)},
-        })
-        .to_string(),
-    )
-    .unwrap();
-    let invalid = root.join("c".repeat(64));
-    fs::create_dir_all(&invalid).unwrap();
-    fs::write(invalid.join(".oci-install.json"), "{}").unwrap();
-    cleanup_legacy_cuda_oci_dirs(&root, &keep);
-    assert!(!valid.exists());
-    assert!(invalid.exists());
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn manifest_proof_rejects_malformed_json_and_escaping_inventory_paths() {
     let root = temp("manifest-proof");
     let path = root.join("manifest.json");
@@ -2339,11 +2323,17 @@ fn pin_tables_cover_every_pinned_platform() {
                 .join(release)
                 .join(binary)
         );
+        let model_dir = path_value(&paths["model_dir"]);
         assert_eq!(
-            path_value(&paths["model_dir"]),
-            pins::cache_root(root)
-                .join("models")
-                .join("local__qwen3.5-4b")
+            model_dir.parent(),
+            Some(pins::cache_root(root).join("models").as_path())
+        );
+        assert!(
+            model_dir
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("g-")
         );
         assert_eq!(pins::vulkan_identity(key).unwrap()["sha256"], *digest);
     }
@@ -2658,10 +2648,15 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
     );
     let model_dir = PathBuf::from(local_paths["model_dir"].as_str().unwrap());
     assert_eq!(
-        model_dir,
-        pins::cache_root(journal)
-            .join("models")
-            .join("local__qwen3.5-4b")
+        model_dir.parent(),
+        Some(pins::cache_root(journal).join("models").as_path())
+    );
+    assert!(
+        model_dir
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("g-")
     );
     let local_readiness = readiness::inspect_local(
         serde_json::from_value(json!({
@@ -2704,17 +2699,11 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
     let local_identity = pins::model_identity("local/qwen3.5-4b").unwrap();
     assert_eq!(
         model_dir.join(local_identity["filename"].as_str().unwrap()),
-        pins::cache_root(journal)
-            .join("models")
-            .join("local__qwen3.5-4b")
-            .join("Qwen3.5-4B-Q4_K_M.gguf")
+        path_value(&local_readiness["artifacts"]["model_path"])
     );
     assert_eq!(
         model_dir.join(local_identity["mmproj_filename"].as_str().unwrap()),
-        pins::cache_root(journal)
-            .join("models")
-            .join("local__qwen3.5-4b")
-            .join("mmproj-F16.gguf")
+        path_value(&local_readiness["artifacts"]["projector_path"])
     );
     let parakeet = pins::parakeet_paths(journal, key);
     assert_eq!(
@@ -5616,4 +5605,305 @@ fn a_dropped_model_download_is_tried_again_and_a_mismatch_is_not() {
         result.unwrap_err().envelope.error.unwrap().reason_code,
         "attempt_superseded"
     );
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(feature = "runtime-fetch-test")]
+#[test]
+fn interrupted_model_installer_keeps_prefix_across_attempts_and_preserves_legacy_tree() {
+    use solstone_core_artifact_download::{RuntimeFetchLoopback, with_runtime_fetch_loopback};
+    use solstone_core_assets::with_runtime_fetch_target;
+    let journal = tempfile::tempdir().unwrap();
+    let legacy = pins::cache_root(journal.path()).join("models/local__qwen3.5-4b");
+    fs::create_dir_all(&legacy).unwrap();
+    fs::write(legacy.join("owner-file"), b"preserve").unwrap();
+    let mut old_identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    old_identity["sha256"] = json!("0".repeat(64));
+    let old_manifest = manifest::build_manifest(
+        "local",
+        "local-model",
+        "old",
+        json!({"pin_identity":old_identity}),
+        vec![],
+        None,
+        None,
+    )
+    .unwrap();
+    manifest::write_manifest(&manifest::artifact_manifest_path(&legacy), &old_manifest).unwrap();
+    let mut status = status::begin_or_replace(
+        journal.path(),
+        "local",
+        "{}".into(),
+        "fixture".into(),
+        None,
+        "resolving",
+        None,
+    )
+    .unwrap();
+    let artifact = super::select_artifact(
+        "local-model",
+        None,
+        None,
+        None,
+        Some("Qwen3.5-4B-Q4_K_M.gguf"),
+    )
+    .unwrap();
+    let total = artifact.size_bytes;
+    let (base, server) = interrupted_installer_server(total, 6);
+    with_runtime_fetch_target("windows-x86_64", || {
+        with_runtime_fetch_loopback(
+            RuntimeFetchLoopback {
+                base_url: base,
+                allowed_hosts: vec!["127.0.0.1".into()],
+                allow_http: true,
+            },
+            || {
+                for _ in 0..2 {
+                    assert!(
+                        super::install_model(
+                            journal.path(),
+                            "local/qwen3.5-4b",
+                            &mut status,
+                            0,
+                            total
+                        )
+                        .is_err()
+                    );
+                    let target = pins::model_fetch_directory(journal.path(), "local/qwen3.5-4b")
+                        .unwrap()
+                        .join(artifact.filename);
+                    assert_eq!(
+                        solstone_core_artifact_download::retained_prefix_bytes(
+                            &target,
+                            artifact.sha256,
+                            total
+                        ),
+                        64
+                    );
+                    assert_eq!(status.install_state, "downloading");
+                }
+            },
+        )
+    });
+    let requests = server.join().unwrap();
+    assert_eq!(requests.len(), 6);
+    assert!(!requests[0].contains("range:"));
+    assert!(
+        requests[1..]
+            .iter()
+            .all(|r| r.contains("range: bytes=64-\r\n"))
+    );
+    assert_eq!(fs::read(legacy.join("owner-file")).unwrap(), b"preserve");
+    assert_eq!(
+        fs::read(manifest::artifact_manifest_path(&legacy)).unwrap(),
+        serde_json::to_vec_pretty(&old_manifest)
+            .unwrap()
+            .into_iter()
+            .chain(*b"\n")
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(feature = "runtime-fetch-test")]
+fn interrupted_installer_server(
+    total: u64,
+    requests_count: usize,
+) -> (String, std::thread::JoinHandle<Vec<String>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let mut requests = Vec::new();
+        for index in 0..requests_count {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((s, _)) => break s,
+                    Err(e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            && std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(10))
+                    }
+                    e => panic!("expected installer request: {e:?}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut one = [0];
+                stream.read_exact(&mut one).unwrap();
+                request.push(one[0]);
+                assert!(request.len() < 16384);
+            }
+            requests.push(String::from_utf8(request).unwrap().to_ascii_lowercase());
+            if index == 0 {
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+                )
+                .unwrap();
+                stream.write_all(&[b'x'; 64]).unwrap();
+            } else {
+                stream.write_all(b"HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            }
+        }
+        requests
+    });
+    (base, server)
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(feature = "runtime-fetch-test")]
+#[test]
+fn runtime_installer_retries_keep_transfers_outside_discarded_staging() {
+    use solstone_core_artifact_download::{RuntimeFetchLoopback, with_runtime_fetch_loopback};
+    use solstone_core_assets::with_runtime_fetch_target;
+    for parakeet in [false, true] {
+        let journal = tempfile::tempdir().unwrap();
+        let key = "x86_64-unknown-linux-gnu";
+        let target = if parakeet {
+            json!({"artifact_key": key})
+        } else {
+            json!({"backend":"vulkan", "runtime_pin":{"artifact_key":key}})
+        };
+        let kind = if parakeet { "parakeet" } else { "local" };
+        let mut state = status::begin_or_replace(
+            journal.path(),
+            kind,
+            target.to_string(),
+            "fixture".into(),
+            None,
+            "resolving",
+            None,
+        )
+        .unwrap();
+        let artifact = super::select_artifact(
+            if parakeet {
+                "parakeet-server"
+            } else {
+                "llama-server-vulkan"
+            },
+            Some(solstone_core_assets::Platform::LinuxX64),
+            parakeet.then_some(solstone_core_assets::Backend::Cpu),
+            Some(key),
+            None,
+        )
+        .unwrap();
+        let (base, server) = interrupted_installer_server(artifact.size_bytes, 2);
+        with_runtime_fetch_target("linux-x86_64", || {
+            with_runtime_fetch_loopback(
+                RuntimeFetchLoopback {
+                    base_url: base,
+                    allowed_hosts: vec!["127.0.0.1".into()],
+                    allow_http: true,
+                },
+                || {
+                    for _ in 0..2 {
+                        let result = if parakeet {
+                            super::run_parakeet_install(journal.path(), &mut state)
+                        } else {
+                            super::run_local_install(
+                                json!({"journal":journal.path()}).as_object().unwrap(),
+                                &mut state,
+                                std::time::Instant::now(),
+                            )
+                        };
+                        assert!(result.is_err());
+                        let root = if parakeet {
+                            pins::parakeet_cache_root(journal.path())
+                        } else {
+                            pins::cache_root(journal.path())
+                        };
+                        let destination = root
+                            .join(".fetch")
+                            .join(artifact.sha256)
+                            .join(artifact.filename);
+                        assert_eq!(
+                            solstone_core_artifact_download::retained_prefix_bytes(
+                                &destination,
+                                artifact.sha256,
+                                artifact.size_bytes
+                            ),
+                            64
+                        );
+                    }
+                },
+            )
+        });
+        let requests = server.join().unwrap();
+        assert!(!requests[0].contains("range:"));
+        assert!(requests[1].contains("range: bytes=64-\r\n"));
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(feature = "runtime-fetch-test")]
+#[test]
+fn parakeet_model_retry_admits_disk_for_only_the_remaining_prefix() {
+    use solstone_core_artifact_download::{RuntimeFetchLoopback, with_runtime_fetch_loopback};
+    use solstone_core_assets::with_runtime_fetch_target;
+    let journal = tempfile::tempdir().unwrap();
+    let artifact = super::select_artifact(
+        "parakeet-model",
+        None,
+        None,
+        None,
+        Some(pins::PARAKEET_MODEL.1),
+    )
+    .unwrap();
+    let mut state = status::begin_or_replace(
+        journal.path(),
+        "parakeet",
+        "{}".into(),
+        "fixture".into(),
+        None,
+        "resolving",
+        None,
+    )
+    .unwrap();
+    let (base, server) = interrupted_installer_server(artifact.size_bytes, 2);
+    with_runtime_fetch_target("linux-x86_64", || {
+        with_runtime_fetch_loopback(
+            RuntimeFetchLoopback {
+                base_url: base,
+                allowed_hosts: vec!["127.0.0.1".into()],
+                allow_http: true,
+            },
+            || {
+                for _ in 0..2 {
+                    assert!(
+                        super::install_parakeet_model(
+                            journal.path(),
+                            &mut state,
+                            0,
+                            artifact.size_bytes
+                        )
+                        .is_err()
+                    );
+                    let fit = super::fit_report::build_parakeet_fit_report_with_free_bytes(
+                        journal.path(),
+                        "linux",
+                        "x86_64",
+                        Ok(artifact.size_bytes - 64),
+                    );
+                    assert_ne!(
+                        fit.checks
+                            .iter()
+                            .find(|c| c.name == "disk")
+                            .unwrap()
+                            .severity,
+                        super::fit_report::FitSeverity::Blocked
+                    );
+                }
+            },
+        )
+    });
+    let requests = server.join().unwrap();
+    assert!(!requests[0].contains("range:"));
+    assert!(requests[1].contains("range: bytes=64-\r\n"));
 }

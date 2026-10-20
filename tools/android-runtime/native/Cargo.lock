@@ -4261,8 +4261,12 @@ dependencies = [
 name = "solstone-core-artifact-download"
 version = "2.0.52"
 dependencies = [
+ "log",
+ "serde",
+ "serde_json",
  "sha2 0.10.9",
  "solstone-core-assets",
+ "solstone-core-journal-io",
  "thiserror 2.0.20",
  "ureq",
 ]

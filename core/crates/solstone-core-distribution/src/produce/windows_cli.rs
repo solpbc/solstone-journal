@@ -644,6 +644,9 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
     if capture_source(repo)? != before {
         return Err("product source changed during native input admission".into());
     }
+    let candidate_version =
+        super::workspace_version(&repo.join("core/Cargo.toml")).map_err(|e| e.to_string())?;
+    super::windows_stage::refuse_unupdated_windows_predecessor(&candidate_version)?;
     let product = build_windows_product(repo, &inventory, &args.logs, &inputs.ffmpeg_archive.0)?;
     // Retain the actual operator file, including original spelling, independently
     // of the inventory and original dependency receipts. No input file is a grant.

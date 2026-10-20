@@ -16,6 +16,7 @@
 pub mod accuracy;
 pub mod area;
 pub mod asset;
+mod cache;
 pub mod day;
 pub mod fingerprint;
 pub mod install;
