@@ -1022,7 +1022,6 @@ mod tests {
             "{}\n",
         )
         .unwrap();
-        solstone_core_system::daily_coverage::register_daily_day(root.path(), DAY, now()).unwrap();
         let mut sent = 0;
         let result = run_cli_with(
             &words(&[DAY, "--owed"]),
@@ -1064,7 +1063,6 @@ mod tests {
             "{}\n",
         )
         .unwrap();
-        solstone_core_system::daily_coverage::register_daily_day(root.path(), DAY, now()).unwrap();
         let result = run_cli_with(
             &words(&[DAY, "--owed", "--json"]),
             root.path(),

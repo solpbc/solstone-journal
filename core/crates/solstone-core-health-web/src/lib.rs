@@ -52,6 +52,8 @@ pub fn routes(journal_root: PathBuf) -> Router {
 pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
     let state_root = journal_root.clone();
     let state_clock = clock.clone();
+    let media_root = journal_root.clone();
+    let media_clock = clock.clone();
     let log_root = journal_root.clone();
     let info_root = journal_root.clone();
     let brain_root = journal_root.clone();
@@ -66,6 +68,10 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
         .route(
             "/app/health/api/state",
             get(move || state(state_root.clone(), state_clock.clone())),
+        )
+        .route(
+            "/app/health/api/media-backlog",
+            get(move || journal_data::media_backlog(media_root.clone(), media_clock.now())),
         )
         .route(
             "/app/health/api/log",

@@ -166,16 +166,10 @@ public class ServingActivity extends Activity {
     }
     void show(JSONObject row) { ui.post(()->status.setText(row.toString())); }
     void unpackPayload(String asset, File destination) throws IOException {
-        String[] children = getAssets().list(asset);
-        if (children.length > 0) {
-            if (!destination.mkdirs() && !destination.isDirectory()) throw new IOException("payload directory unavailable");
-            for (String child: children) unpackPayload(asset+"/"+child, new File(destination, child));
-        } else {
-            try(InputStream input = getAssets().open(asset); FileOutputStream output = new FileOutputStream(destination)) {
-                byte[] buffer = new byte[16384]; int n;
-                while((n = input.read(buffer)) != -1) output.write(buffer, 0, n);
-            }
-        }
+        PackagedPayload.unpack(new PackagedPayload.Assets() {
+            public String[] list(String name) throws IOException { return getAssets().list(name); }
+            public InputStream open(String name) throws IOException { return getAssets().open(name); }
+        }, asset, destination);
     }
     // Debug USB automation writes this file through run-as, which has the app UID.
     // Intent extras and external IPC never carry owner requests.

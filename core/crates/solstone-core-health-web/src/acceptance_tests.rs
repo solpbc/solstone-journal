@@ -20,6 +20,86 @@ mod tests {
     use crate::{Clock, backlog, routes_with_clock};
     use solstone_core_system_health::INDEX_TEXT_OK;
 
+    #[cfg(feature = "full-tests")]
+    #[tokio::test]
+    async fn media_backlog_route_preserves_owner_time_and_avoids_unrelated_reports() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        for name in ["config", "facets", "entities", "chronicle", "talents"] {
+            fs::create_dir(root.join(name)).unwrap();
+        }
+        fs::write(root.join("config/journal.json"), serde_json::to_vec(&json!({
+            "identity":{"timezone":"America/Denver"},
+            "providers":{"active":{"provider":"test"}},
+            "processing":{"mode":"deferred","gate":{"time_window":{"enabled":true,"start":"02:00","end":"06:00"}}}
+        })).unwrap()).unwrap();
+        let old_segment = root.join("chronicle/20200101/120000_60");
+        fs::create_dir_all(&old_segment).unwrap();
+        fs::write(old_segment.join("screen.jsonl"), "{}\n").unwrap();
+        fs::create_dir_all(root.join("chronicle/20200101/health")).unwrap();
+        fs::write(
+            root.join("chronicle/20200101/health/stream.updated"),
+            "updated\n",
+        )
+        .unwrap();
+        for (hour, expected) in [(9, "window_open"), (13, "waiting_for_window")] {
+            let now = Utc.with_ymd_and_hms(2026, 10, 20, hour, 0, 0).unwrap();
+            let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now));
+            let response = router
+                .oneshot(
+                    Request::get("/app/health/api/media-backlog")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+            let body: Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
+            assert_eq!(body["segment_backlog"]["drain_state"], expected);
+            assert_eq!(body["segment_backlog"]["not_sensed"], 1);
+            let local = now.with_timezone(&chrono_tz::America::Denver);
+            let full = crate::journal_data::build_health_report(
+                root,
+                (local.date_naive(), local.date_naive()),
+                local,
+            )
+            .unwrap();
+            assert_eq!(
+                body["segment_backlog"],
+                serde_json::to_value(full).unwrap()["segment_backlog"]
+            );
+        }
+        #[cfg(unix)]
+        {
+            // A media-only read has no dependency on the full report's facet inventory.
+            fs::remove_dir(root.join("facets")).unwrap();
+            std::os::unix::fs::symlink("facets", root.join("facets")).unwrap();
+            let now = Utc.with_ymd_and_hms(2026, 10, 20, 9, 0, 0).unwrap();
+            let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now));
+            let narrow = router
+                .clone()
+                .oneshot(
+                    Request::get("/app/health/api/media-backlog")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(narrow.status(), 200);
+            let full = router
+                .oneshot(
+                    Request::get("/api/health/summary")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(full.status(), 500);
+        }
+    }
+
     struct StubIndexMetadata {
         entries: Mutex<BTreeMap<PathBuf, std::io::Result<SystemTime>>>,
     }

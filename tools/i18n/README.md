@@ -60,7 +60,7 @@ The output's `cases.json` supplies synthetic inputs and a structured `call_contr
 
 Rust and gettext refuse locale-formatted numbers. ESM uses native Intl; Apple uses Foundation; Android supplies an ICU number-format helper. The pinned Rust plural reader supports the initial English profile; Arabic quantities require declared bounds within -100..100 because its larger-value rules differ from current native readers. Unsupported plural-rule families refuse.
 
-Android writes the selected locale that sorts first by tag into `values/` as its default table, plus each selected locale's qualified table. Coverage still requires every declared cell; the default table cannot satisfy a missing translation. Private-use tags require an explicit native projection. WebExtension output likewise requires explicit native locale folders.
+Android writes the catalog's source locale into `values/` when that locale is selected for the bundle and channel. Otherwise it uses the selected locale that sorts first by tag. Each selected locale also gets its own qualified table. Coverage still requires every declared cell; the default table cannot satisfy a missing translation. Private-use tags require an explicit native projection. WebExtension output likewise requires explicit native locale folders.
 
 InfoPlist/AppShortcuts catalogs, desktop/AppStream, winget and store-listing publication are outside these generators. Test locale declarations and generated fixtures must stay out of application packaging.
 
@@ -106,3 +106,9 @@ Use `reconcile` to compare presentation IDs with the catalog's ID set. Generate 
 The [locale harnesses](locale/README.md) reject a run unless its requested locale canary succeeds. On glibc, the runner builds private locales and starts the command with the verified environment. Rust standard formatting ignores that environment; check the localization adapter's rendered output separately.
 
 Apple tests must call the canary inside the actual test process and declare test localizations in the test target. The disposable Foundation check covers the harness; it does not qualify simulator or SwiftUI rendering. Test declarations and fixtures must stay out of application packaging.
+
+## shared push catalog
+
+The journal owns [`i18n/push`](../../i18n/push), a small shared message set for phone notifications and synthetic rendering tests. `en-US` supplies English. `en-GB` is a labelled test locale, excluded by production channel selection even though its release flag is set. It is not a supported product language.
+
+Export the catalog with `export`, then import that bundle into each client with `import`. Commit the retained import lock and generated native resources with the client. Pin the compiler revision and registry with the bundle. Generate production resources with `--channel production`; generate test resources separately with `--channel development`. Test resources belong only in local test artifacts and never in a store upload.

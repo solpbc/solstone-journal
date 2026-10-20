@@ -757,9 +757,9 @@
     try {
       let payload;
       if (window.apiJson) {
-        payload = await window.apiJson('/api/health/summary', { noAuthRedirect: true });
+        payload = await window.apiJson('/app/health/api/media-backlog', { noAuthRedirect: true });
       } else {
-        const response = await fetch('/api/health/summary', { headers: { Accept: 'application/json' } });
+        const response = await fetch('/app/health/api/media-backlog', { headers: { Accept: 'application/json' } });
         if (!response.ok) throw new Error('summary fetch failed');
         payload = await response.json();
       }
@@ -860,7 +860,6 @@
 
   async function readHealthState() {
     clearHealthStateError();
-    loadMediaBacklog();
     try {
       const payload = await getJson('/app/health/api/state');
       renderWorkProgress(payload.work);
@@ -869,6 +868,9 @@
       renderAgentErrorsState(payload.agent_errors);
     } catch (error) {
       renderHealthStateError(error);
+    } finally {
+      // This independent detail must not compete with the initial index read.
+      loadMediaBacklog();
     }
   }
 

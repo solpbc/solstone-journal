@@ -207,16 +207,7 @@ pub(crate) fn build_health_report(
             .then(left.message.cmp(&right.message))
     });
     let consumer_signal = build_consumer_signal_health(journal_root)?;
-    let display = solstone_core_system::processing::read_display_snapshot(journal_root);
-    let segment_backlog = build_segment_backlog_health(
-        journal_root,
-        utc_now,
-        display,
-        display.available,
-        utc_now
-            .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
-            .time(),
-    )?;
+    let segment_backlog = read_segment_backlog_health(journal_root, utc_now)?;
     Ok(HealthReport {
         generated_at,
         range: (
@@ -738,6 +729,21 @@ use solstone_core_system::processing::{
     DisplayPowersaveSettings, GateSettings, ProcessingSettings, TimeWindowSettings,
     evaluate_display_powersave,
 };
+
+pub(crate) fn read_segment_backlog_health(
+    journal_root: &Path,
+    now: DateTime<Utc>,
+) -> Result<SegmentBacklogHealth, HealthError> {
+    let display = solstone_core_system::processing::read_display_snapshot(journal_root);
+    build_segment_backlog_health(
+        journal_root,
+        now,
+        display,
+        display.available,
+        now.with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
+            .time(),
+    )
+}
 
 fn build_segment_backlog_health(
     journal_root: &Path,

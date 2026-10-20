@@ -1285,19 +1285,6 @@ fn catchup_selector_with_merge_rewritten_speaker_labels() {
         fp26
     );
 
-    let adoption = json!({
-        "version": 1,
-        "first_closed_day": "20260425",
-        "cursor": null,
-        "adopted": ["20260425", "20260426", "20260427"],
-        "pending": ["20260425", "20260426", "20260427"]
-    });
-    fs::write(
-        journal.0.join("health/daily-adoption.json"),
-        serde_json::to_vec(&adoption).unwrap(),
-    )
-    .unwrap();
-
     let future_ts = 2_000_000_000.0;
     let state = json!({
         "version": 1,
@@ -1331,14 +1318,10 @@ fn catchup_selector_with_merge_rewritten_speaker_labels() {
     .unwrap();
 
     let now = UNIX_EPOCH + Duration::from_secs(1_777_420_800); // 2026-04-28
-    let eligible =
-        solstone_core_system::daily_coverage::reconcile_days(&journal.0, &[], now.into())
-            .unwrap()
-            .into_iter()
-            .filter(|day| {
-                solstone_core_system::catchup::eligible_or_fail_open(&journal.0, day, now)
-            })
-            .collect::<Vec<_>>();
+    let eligible = ["20260425", "20260426", "20260427"]
+        .into_iter()
+        .filter(|day| solstone_core_system::catchup::eligible_or_fail_open(&journal.0, day, now))
+        .collect::<Vec<_>>();
 
-    assert_eq!(eligible, vec!["20260427".to_string()]);
+    assert_eq!(eligible, ["20260427"]);
 }

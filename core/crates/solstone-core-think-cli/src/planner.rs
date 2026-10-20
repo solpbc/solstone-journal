@@ -544,17 +544,29 @@ fn priority(
     priority
 }
 
-/// Missing daily outputs complete history alongside that day's recordings.
-/// A mixed day takes the same band; explicit owner/import priorities win.
+/// A past day's daily outputs complete history alongside its recordings when
+/// one was never made or its own day's evidence changed, as when the walk
+/// re-senses that day. The entity review reads only the seven days before its
+/// day, which the newest-first walk re-senses after it, so its re-make waits
+/// for band 6 rather than repeating once per day the walk passes. A mixed day
+/// takes the same band; explicit owner/import priorities win.
 fn daily_priority(
     mut priority: WorkPriority,
     coverage: &daily_coverage::DailyCoverage,
 ) -> WorkPriority {
     if priority.band == WorkBand::Remake
-        && coverage
-            .units
-            .iter()
-            .any(|unit| unit.state.is_owed() && unit.owed_by.as_deref() == Some("never_made"))
+        && coverage.units.iter().any(|unit| {
+            unit.state.is_owed()
+                && match unit.owed_by.as_deref() {
+                    Some("never_made") => true,
+                    Some("evidence_changed") => {
+                        solstone_core_indexer::daily_evidence::evidence_day_offsets(
+                            &unit.identity.name,
+                        ) == [0]
+                    }
+                    _ => false,
+                }
+        })
     {
         priority.band = WorkBand::Completing;
     }
@@ -1210,7 +1222,7 @@ fn inspect_day(
                 }
             }
         }
-        day < today.format("%Y%m%d").to_string().as_str()
+        let queued = day < today.format("%Y%m%d").to_string().as_str()
             && queue_daily(
                 journal,
                 day,
@@ -1226,7 +1238,10 @@ fn inspect_day(
             && work
                 .candidates
                 .last()
-                .is_some_and(|candidate| queue.admits_command(candidate.request.cmd.as_wire()))
+                .is_some_and(|candidate| queue.admits_command(candidate.request.cmd.as_wire()));
+        // A band-6 daily runs only after all history, so a segment owed only
+        // its publication must not wait for it: the range would stop there.
+        queued && p.band != WorkBand::Remake
     };
     for (segment, p, readiness) in owed_segments {
         report.band(p.band).segments_owed += 1;
@@ -2838,11 +2853,26 @@ mod tests {
         let missing = daily_priority(priority(day, None, today, None), &coverage);
         assert_eq!(missing.band, WorkBand::Completing);
         assert_eq!(missing.source_time, 19990102000000);
+        // Re-sensed recordings re-owe the made outputs, which follow them too.
         for unit in &mut coverage.units {
             unit.owed_by = Some("evidence_changed".into());
         }
+        assert_eq!(
+            daily_priority(priority(day, None, today, None), &coverage),
+            missing
+        );
+        // An entity review re-owed by the days before it waits for band 6.
+        for unit in &mut coverage.units {
+            unit.identity.name = "entities:entities_review".into();
+        }
         let remake = daily_priority(priority(day, None, today, None), &coverage);
         assert_eq!(remake.band, WorkBand::Remake);
+        for owed_by in ["contract_changed", "retry", "conflict", "unconfirmed_write"] {
+            for unit in &mut coverage.units {
+                unit.owed_by = Some(owed_by.into());
+            }
+            assert_eq!(daily_priority(remake, &coverage), remake, "{owed_by}");
+        }
         let index = coverage
             .units
             .iter()
@@ -3164,7 +3194,7 @@ mod tests {
     }
 
     #[test]
-    fn discovery_reaches_old_segments_with_no_adoption_and_never_queues_their_day_first() {
+    fn discovery_reaches_old_segments_and_never_queues_their_day_first() {
         let root = fixture("local");
         for day in [
             "19990101", "20000101", "20010101", "20020101", "20030101", "20040101",
@@ -3172,27 +3202,18 @@ mod tests {
             segment(root.path(), day, "120000_60");
         }
         let queue = queue(root.path());
-        for state in [
-            None,
-            Some("{"),
-            Some("{\"version\":999,\"first_closed_day\":\"20990101\"}"),
-        ] {
-            if let Some(state) = state {
-                std::fs::write(root.path().join("health/daily-adoption.json"), state).unwrap();
-            }
-            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
-            let report = solstone_core_system::work_inventory::read(root.path())
-                .unwrap()
-                .unwrap();
-            assert_eq!(report.days_total, 6);
-            assert_eq!(report.days_inspected, 6);
-            assert_eq!(report.oldest_day.as_deref(), Some("19990101"));
-            assert_eq!(report.bands[4].segments_owed, 6);
-            assert_eq!(queue.collect_queue_counts()["pending"], 4);
-            assert!(queue.contains_reference("supervisor-work-20040101-notes-120000_60"));
-            assert!(!queue.contains_reference("supervisor-work-19990101-notes-120000_60"));
-            assert!(!queue.contains_reference("supervisor-work-20040101-daily"));
-        }
+        reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+        let report = solstone_core_system::work_inventory::read(root.path())
+            .unwrap()
+            .unwrap();
+        assert_eq!(report.days_total, 6);
+        assert_eq!(report.days_inspected, 6);
+        assert_eq!(report.oldest_day.as_deref(), Some("19990101"));
+        assert_eq!(report.bands[4].segments_owed, 6);
+        assert_eq!(queue.collect_queue_counts()["pending"], 4);
+        assert!(queue.contains_reference("supervisor-work-20040101-notes-120000_60"));
+        assert!(!queue.contains_reference("supervisor-work-19990101-notes-120000_60"));
+        assert!(!queue.contains_reference("supervisor-work-20040101-daily"));
     }
 
     #[test]
@@ -4184,32 +4205,40 @@ mod tests {
         assert!(queue.contains_reference("supervisor-work-19990101-notes-120000_60"));
     }
 
-    /// History is walking older days while a newer older day only waits to
-    /// have its finished outputs updated. The range follows the walk, the
-    /// update is still counted as left, and a pass in progress keeps showing
-    /// the last finished line.
+    /// The history walk re-senses an older day whose outputs were already made.
+    /// Its outputs are re-made in band 5, right after its recordings, and hold
+    /// the range until then. Its entity review reads the days before it, which
+    /// the walk reaches later: that residual waits for band 6, so the walk
+    /// passing those days never re-makes it again, and the range follows the
+    /// walk. A pass in progress keeps showing the last finished line.
     #[test]
-    fn updating_older_days_does_not_hold_the_range_behind_the_walk() {
+    fn a_resensed_old_day_is_remade_with_its_recordings_and_its_review_waits() {
         let root = fixture("local");
         let journal = root.path();
+        solstone_core_facets::create_facet(journal, "work", "Work", "", "", "", None).unwrap();
+        // The walk is on 19990101, an older day still owing a recording.
         segment(journal, "19990101", "120000_60");
-        let updated = "19990105";
-        std::fs::create_dir_all(journal.join("chronicle").join(updated)).unwrap();
-        let coverage = daily_coverage::read_daily_coverage(journal, updated).unwrap();
-        let mut made = 0;
-        for unit in &coverage.units {
-            if unit.evidence_revision.is_empty() || unit.contract_digest.is_empty() {
-                continue;
-            }
-            let stale = "0".repeat(64);
+        let walked = "19990110";
+        thought_without_receipt(journal, walked, &["120000_60"]);
+        let recording = journal
+            .join("chronicle")
+            .join(walked)
+            .join("notes/120000_60");
+        std::fs::create_dir_all(recording.join("talents")).unwrap();
+        std::fs::write(
+            recording.join("talents/facets.json"),
+            r#"[{"facet":"work"}]"#,
+        )
+        .unwrap();
+        let save = |unit: &daily_coverage::UnitCoverage, evidence: &str| {
             let mut record = solstone_core_journal_io::DailyUnitRecord::new(
                 unit.identity.clone(),
-                &stale,
+                evidence,
                 &unit.contract_digest,
             );
             record.status = solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput;
             record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
-                evidence_revision: stale,
+                evidence_revision: evidence.into(),
                 contract_digest: unit.contract_digest.clone(),
                 status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
                 packet_digest: Some("a".repeat(64)),
@@ -4218,19 +4247,121 @@ mod tests {
                 committed_at_ms: 1,
             });
             solstone_core_journal_io::save_daily_unit_record(journal, &record).unwrap();
-            made += 1;
+        };
+        let review =
+            |unit: &daily_coverage::UnitCoverage| unit.identity.name == "entities:entities_review";
+        let coverage = daily_coverage::read_daily_coverage(journal, walked).unwrap();
+        let made: Vec<_> = coverage
+            .units
+            .iter()
+            .filter(|unit| !unit.evidence_revision.is_empty() && !unit.contract_digest.is_empty())
+            .cloned()
+            .collect();
+        assert!(made.iter().any(review));
+        assert!(made.iter().any(|unit| !review(unit)));
+        // Made from the earlier sensing: every made output's evidence changed.
+        for unit in &made {
+            save(unit, &"0".repeat(64));
         }
-        assert!(made > 0);
+        // The walk's own day owes its never-made outputs in band 5.
+        let walk_owed = daily_coverage::read_daily_coverage(journal, "19990101")
+            .unwrap()
+            .units
+            .iter()
+            .filter(|unit| unit.state.is_owed())
+            .count() as u64;
         let queue = queue(journal);
         reconcile(journal, &queue, &AtomicBool::new(false)).unwrap();
         let inventory = solstone_core_system::work_inventory::read(journal)
             .unwrap()
             .unwrap();
-        assert!(inventory.bands[5].daily_units_owed > 0);
+        assert!(inventory.bands[4].daily_units_owed > walk_owed);
+        assert_eq!(inventory.bands[5].daily_units_owed, 0);
+        assert!(queue.contains_reference("supervisor-work-19990110-daily"));
         let history = inventory.history.clone().unwrap();
-        assert_eq!(history.caught_up_since.as_deref(), Some("19990102"));
-        assert_eq!(history.segments_owed, 1);
-        assert!(history.daily_units_owed > inventory.bands[4].daily_units_owed);
+        assert_eq!(history.caught_up_since.as_deref(), Some("19990111"));
+        // Its run re-makes the set, then the walk re-senses the days before it.
+        queue.shutdown();
+        let queue = super::tests::queue(journal);
+        for unit in &made {
+            save(unit, &unit.evidence_revision);
+        }
+        let residual = |coverage: &daily_coverage::DailyCoverage| {
+            coverage
+                .units
+                .iter()
+                .filter(|unit| unit.state.is_owed())
+                .map(|unit| (unit.identity.name.clone(), unit.owed_by.clone()))
+                .collect::<Vec<_>>()
+        };
+        let mut published = false;
+        for older in ["19990109", "19990108", "19990103"] {
+            solstone_core_facets::save_detected_entity(
+                journal,
+                "work",
+                older,
+                "Person",
+                &format!("Wren {older}"),
+                "Joined the launch call.",
+            )
+            .unwrap();
+            let coverage = daily_coverage::read_daily_coverage(journal, walked).unwrap();
+            assert_eq!(
+                residual(&coverage),
+                [(
+                    "entities:entities_review".to_owned(),
+                    Some("evidence_changed".to_owned())
+                )]
+            );
+            assert_eq!(
+                daily_priority(
+                    priority(walked, None, chrono::Utc::now().date_naive(), None),
+                    &coverage
+                )
+                .band,
+                WorkBand::Remake
+            );
+            reconcile(journal, &queue, &AtomicBool::new(false)).unwrap();
+            let inventory = solstone_core_system::work_inventory::read(journal)
+                .unwrap()
+                .unwrap();
+            assert_eq!(inventory.bands[4].daily_units_owed, walk_owed);
+            assert_eq!(inventory.bands[5].daily_units_owed, 1);
+            let history = inventory.history.clone().unwrap();
+            if !published {
+                // Owed only its publication, the recording does not wait for
+                // the band-6 daily: it is published on its own, in band 5.
+                assert!(queue.contains_reference("supervisor-work-19990110-notes-120000_60"));
+                assert_eq!(history.caught_up_since.as_deref(), Some("19990111"));
+                let input =
+                    solstone_core_system_health::newest_segment_input_ms(&recording).unwrap();
+                solstone_core_system::segment_publication::publish(
+                    journal,
+                    &recording,
+                    input,
+                    |_, _| {
+                        Ok(
+                            solstone_core_indexer_store::scan::RescanFileStatus::Indexed {
+                                warnings: Vec::new(),
+                            },
+                        )
+                    },
+                )
+                .unwrap();
+                published = true;
+                reconcile(journal, &queue, &AtomicBool::new(false)).unwrap();
+            }
+            let inventory = solstone_core_system::work_inventory::read(journal)
+                .unwrap()
+                .unwrap();
+            let history = inventory.history.clone().unwrap();
+            assert_eq!(history.caught_up_since.as_deref(), Some("19990102"));
+            assert_eq!(history.segments_owed, 1);
+        }
+        let inventory = solstone_core_system::work_inventory::read(journal)
+            .unwrap()
+            .unwrap();
+        let history = inventory.history.clone().unwrap();
         // Stop leaves the last durable snapshot intact; freshness is a read.
         assert_eq!(
             reconcile(journal, &queue, &AtomicBool::new(true)).unwrap_err(),
@@ -4264,11 +4395,7 @@ mod tests {
         );
         assert!(!progress.current_at(chrono::Utc::now().timestamp_millis()));
         // A daily output never made on that newer day still holds the range.
-        let unmade = coverage
-            .units
-            .iter()
-            .find(|unit| !unit.evidence_revision.is_empty() && !unit.contract_digest.is_empty())
-            .unwrap();
+        let unmade = made.iter().find(|unit| !review(unit)).unwrap();
         solstone_core_journal_io::save_daily_unit_record(
             journal,
             &solstone_core_journal_io::DailyUnitRecord::new(
@@ -4284,7 +4411,7 @@ mod tests {
             .unwrap()
             .history
             .unwrap();
-        assert_eq!(history.caught_up_since.as_deref(), Some("19990106"));
+        assert_eq!(history.caught_up_since.as_deref(), Some("19990111"));
         queue.shutdown();
     }
 

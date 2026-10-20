@@ -22,8 +22,9 @@ for generated in [classes,dex,host_classes]:
   if generated.exists():shutil.rmtree(generated)
   generated.mkdir()
 owner=root/'src/app/solstone/development/journal'
-run([java/'bin/javac','-d',host_classes,owner/'ThinkingAdmission.java',owner/'JournalExecution.java',owner/'ServingConnection.java',root/'tests/ThinkingAdmissionTest.java'])
+run([java/'bin/javac','-d',host_classes,owner/'ThinkingAdmission.java',owner/'JournalExecution.java',owner/'ServingConnection.java',owner/'PackagedPayload.java',root/'tests/ThinkingAdmissionTest.java',root/'tests/PackagedPayloadTest.java'])
 run([java/'bin/java','-cp',host_classes,'app.solstone.development.journal.ThinkingAdmissionTest'])
+run([java/'bin/java','-cp',host_classes,'app.solstone.development.journal.PackagedPayloadTest'])
 run([java/'bin/javac','-source','8','-target','8','-cp',jar,'-d',classes,*sorted((root/'src').rglob('*.java'))])
 env=os.environ.copy(); env['JAVA_HOME']=str(java); env['PATH']=str(java/'bin')+':'+env.get('PATH',''); os.environ.update(env)
 run([tools/'d8','--lib',jar,'--min-api','31','--output',dex,*sorted(classes.rglob('*.class'))])

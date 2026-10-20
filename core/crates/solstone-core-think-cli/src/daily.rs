@@ -37,13 +37,6 @@ pub(crate) fn run(
     if configs.is_empty() {
         return Ok(ModeResult::default());
     }
-    if configs.iter().any(|config| !excluded(config, stream)) {
-        solstone_core_system::daily_coverage::register_daily_day(
-            &context.journal,
-            &context.day,
-            chrono::Utc::now(),
-        )?;
-    }
     let status = Map::from_iter([
         ("mode".to_owned(), Value::String("daily".to_owned())),
         ("day".to_owned(), Value::String(context.day.clone())),

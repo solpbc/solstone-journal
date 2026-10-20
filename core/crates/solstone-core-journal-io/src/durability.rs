@@ -79,7 +79,6 @@ pub enum ArtifactId {
     HealthMarkerStream,
     HealthMarkerDaily,
     CatchupState,
-    DailyAdoption,
     SyncHeartbeat,
     CallosumSock,
     ActivityWork,
@@ -340,13 +339,6 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::Wipeable,
         parser: ParserKind::WholeJson,
         rationale: "retry attempts and backoff watermarks; set aside and rebuilt by the next write",
-    },
-    DurableArtifact {
-        id: ArtifactId::DailyAdoption,
-        path: "health/daily-adoption.json",
-        class: DurabilityClass::Wipeable,
-        parser: ParserKind::WholeJson,
-        rationale: "adoption bookkeeping; the accepted unit records are the authority",
     },
     DurableArtifact {
         id: ArtifactId::SyncHeartbeat,
@@ -979,10 +971,10 @@ mod tests {
     #[test]
     fn semantic_validation_failure_sets_aside() {
         let directory = TempDir::new().expect("temporary root");
-        let path = directory.path().join("adoption.json");
+        let path = directory.path().join("catchup-state.json");
         fs::write(&path, b"{\"version\":2}").expect("write");
         let read = read_json_durable_validated::<serde_json::Value>(
-            ArtifactId::DailyAdoption,
+            ArtifactId::CatchupState,
             &path,
             |val| {
                 if val["version"] == 1 {

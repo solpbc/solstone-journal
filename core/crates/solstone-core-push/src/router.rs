@@ -20,7 +20,8 @@ use solstone_core_convey_http::identity::{AccessBasis, LinkedDeviceCid};
 use solstone_core_sol_link::ledger::{AuthorizedClientsRead, read_authorized_clients};
 use time::OffsetDateTime;
 
-use crate::envelope::{Notification, PushKey, SealedEnvelope, seal};
+use crate::capability::grant_matches;
+use crate::envelope::{Notification, PushKey, SealedEnvelope, seal_for_recipient};
 use crate::model::{
     PushEnvironment, PushPlatform, ReasonCode, StatusResponse, TestItem, TestResponse,
     device_token_is_valid, mask_target, sanitize_reason,
@@ -69,6 +70,14 @@ pub(crate) fn api_router_with_transport(
         })
 }
 
+fn presentation_requested(headers: &axum::http::HeaderMap) -> bool {
+    let mut values = headers.get_all("x-solstone-push-presentation").iter();
+    match (values.next(), values.next()) {
+        (Some(value), None) => value.as_bytes() == b"1",
+        _ => false,
+    }
+}
+
 async fn register_push_device(
     State(state): State<PushState>,
     basis: Option<Extension<AccessBasis>>,
@@ -77,6 +86,7 @@ async fn register_push_device(
     let Some(cid) = linked_device_cid(basis) else {
         return linked_device_required();
     };
+    let present = presentation_requested(request.headers());
     let body = match to_bytes(request.into_body(), REGISTER_BODY_LIMIT).await {
         Ok(body) => body,
         Err(_) => return push_request_invalid("request body must be valid JSON"),
@@ -91,9 +101,14 @@ async fn register_push_device(
             bundle_id,
             environment,
             push_key,
-        } => state
-            .registry
-            .register_ios(&cid, device_token, bundle_id, environment, push_key),
+        } => state.registry.register_ios(
+            &cid,
+            device_token,
+            bundle_id,
+            environment,
+            push_key,
+            present,
+        ),
         Registration::Android {
             endpoint,
             p256dh,
@@ -101,7 +116,7 @@ async fn register_push_device(
             push_key,
         } => state
             .registry
-            .register_android(&cid, endpoint, p256dh, auth, push_key),
+            .register_android(&cid, endpoint, p256dh, auth, push_key, present),
     };
     match result {
         Ok((is_created, item)) => {
@@ -204,7 +219,21 @@ async fn push_test(State(state): State<PushState>) -> Response {
     #[cfg(not(test))]
     let now = OffsetDateTime::now_utc();
 
-    let handle = tokio::task::spawn_blocking(move || execute_push_test(state, now));
+    #[cfg(test)]
+    let test_read_fault = crate::capability::get_test_read_fault();
+
+    let handle = tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        if test_read_fault {
+            crate::capability::set_test_read_fault(true);
+        }
+        let res = execute_push_test(state, now);
+        #[cfg(test)]
+        if test_read_fault {
+            crate::capability::clear_test_capability_hooks();
+        }
+        res
+    });
 
     match handle.await {
         Ok(response) => response,
@@ -240,8 +269,8 @@ pub(crate) fn deliver_notification(
     only_failed: Option<&HashSet<String>>,
 ) -> DeliveryOutcome {
     let registry = PushRegistry::new(journal_root);
-    let loaded_devices = match registry.read_devices_locked() {
-        Ok(devices) => devices,
+    let (loaded_devices, grants) = match registry.read_devices_locked() {
+        Ok(res) => res,
         Err(error) => return DeliveryOutcome::Refused(Refused::RegistryUnavailable(error)),
     };
 
@@ -296,9 +325,19 @@ pub(crate) fn deliver_notification(
                 bundle_id,
                 environment,
                 push_key,
-                ..
+                registered_at,
             } => {
                 if authorized_cids.contains(&cid) {
+                    let capable = grants.iter().any(|g| {
+                        grant_matches(
+                            g,
+                            PushPlatform::Ios,
+                            &cid,
+                            &device_token,
+                            &push_key,
+                            &registered_at,
+                        )
+                    });
                     let mut hasher = sha2::Sha256::new();
                     sha2::Digest::update(&mut hasher, b"ios\0");
                     sha2::Digest::update(&mut hasher, cid.as_bytes());
@@ -321,6 +360,7 @@ pub(crate) fn deliver_notification(
                         push_key,
                         target,
                         device_hash,
+                        capable,
                     ));
                 }
             }
@@ -330,9 +370,19 @@ pub(crate) fn deliver_notification(
                 p256dh,
                 auth,
                 push_key,
-                ..
+                registered_at,
             } => {
                 if authorized_cids.contains(&cid) {
+                    let capable = grants.iter().any(|g| {
+                        grant_matches(
+                            g,
+                            PushPlatform::Android,
+                            &cid,
+                            &endpoint,
+                            &push_key,
+                            &registered_at,
+                        )
+                    });
                     let mut hasher = sha2::Sha256::new();
                     sha2::Digest::update(&mut hasher, b"android\0");
                     sha2::Digest::update(&mut hasher, cid.as_bytes());
@@ -346,7 +396,15 @@ pub(crate) fn deliver_notification(
                         continue;
                     }
 
-                    to_dispatch_android.push((cid, endpoint, p256dh, auth, push_key, device_hash));
+                    to_dispatch_android.push((
+                        cid,
+                        endpoint,
+                        p256dh,
+                        auth,
+                        push_key,
+                        device_hash,
+                        capable,
+                    ));
                 }
             }
         }
@@ -389,7 +447,9 @@ pub(crate) fn deliver_notification(
 
     // 3. Dispatch Android devices
     if !to_dispatch_android.is_empty() {
-        for (_cid, endpoint, p256dh_b64, auth_b64, push_key, dev_hash) in to_dispatch_android {
+        for (_cid, endpoint, p256dh_b64, auth_b64, push_key, dev_hash, capable) in
+            to_dispatch_android
+        {
             let (target, origin) = match crate::endpoint::endpoint_target(&endpoint) {
                 Some((host, Some(port))) => {
                     let origin = format!("https://{host}:{port}");
@@ -426,7 +486,7 @@ pub(crate) fn deliver_notification(
                 continue;
             };
 
-            let sealed = match seal(&push_key, notification) {
+            let sealed = match seal_for_recipient(&push_key, notification, capable) {
                 Ok(s) => s,
                 Err(_) => {
                     delivered_items.push(DeliveredItem {
@@ -776,6 +836,7 @@ struct DispatchResultItem {
     reason: Option<String>,
 }
 
+#[allow(clippy::type_complexity)]
 fn dispatch_ios_push_tests_inner(
     journal_root: &Path,
     portal_base: &str,
@@ -788,6 +849,7 @@ fn dispatch_ios_push_tests_inner(
         PushKey,
         String,
         String,
+        bool,
     )],
     now: OffsetDateTime,
     notification: &Notification,
@@ -802,7 +864,7 @@ fn dispatch_ios_push_tests_inner(
         Err(reason) => {
             return devices
                 .iter()
-                .map(|(_, _, _, _, _, target, dev_hash)| DeliveredItem {
+                .map(|(_, _, _, _, _, target, dev_hash, _)| DeliveredItem {
                     item: TestItem {
                         platform: PushPlatform::Ios,
                         target: target.clone(),
@@ -822,8 +884,8 @@ fn dispatch_ios_push_tests_inner(
         let mut chunk_to_send = Vec::new();
         let mut batch_results = Vec::new();
 
-        for (_cid, token_str, _bundle, env, key, target, dev_hash) in chunk {
-            match seal(key, notification) {
+        for (_cid, token_str, _bundle, env, key, target, dev_hash, capable) in chunk {
+            match seal_for_recipient(key, notification, *capable) {
                 Ok(sealed) => {
                     sealed_envelopes.push(sealed);
                     let env_str = match env {
@@ -1300,6 +1362,7 @@ pub(crate) fn load_registration_for_test(body: &[u8]) -> Result<Registration, St
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io;
     use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
@@ -1316,8 +1379,9 @@ mod tests {
     use time::OffsetDateTime;
     use tower::ServiceExt;
 
-    use super::{api_router, api_router_with_transport};
-    use crate::envelope::{PushKey, open_envelope};
+    use super::{DeliveryOutcome, api_router, api_router_with_transport, deliver_notification};
+    use crate::envelope::{Notification, PushKey, open_envelope};
+    use crate::model::PushPlatform;
     use crate::relay::{RelayFault, RelayReply, RelayTransport};
     use crate::store::set_test_clock;
     use crate::test_log;
@@ -1497,19 +1561,22 @@ mod tests {
         }
     }
 
-    async fn call_raw(
+    async fn call_raw_with_headers(
         app: &axum::Router,
         method: &str,
         uri: &str,
         body: impl Into<Body>,
         basis: Option<AccessBasis>,
+        extra_headers: &[(&str, &str)],
     ) -> (StatusCode, Vec<u8>) {
-        let mut request = Request::builder()
+        let mut builder = Request::builder()
             .method(method)
             .uri(uri)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(body.into())
-            .expect("request");
+            .header(header::CONTENT_TYPE, "application/json");
+        for (k, v) in extra_headers {
+            builder = builder.header(*k, *v);
+        }
+        let mut request = builder.body(body.into()).expect("request");
         if let Some(basis) = basis {
             request.extensions_mut().insert(basis);
         }
@@ -1521,14 +1588,26 @@ mod tests {
         (status, bytes.to_vec())
     }
 
-    async fn call(
+    async fn call_raw(
         app: &axum::Router,
         method: &str,
         uri: &str,
         body: impl Into<Body>,
         basis: Option<AccessBasis>,
+    ) -> (StatusCode, Vec<u8>) {
+        call_raw_with_headers(app, method, uri, body, basis, &[]).await
+    }
+
+    async fn call_with_headers(
+        app: &axum::Router,
+        method: &str,
+        uri: &str,
+        body: impl Into<Body>,
+        basis: Option<AccessBasis>,
+        extra_headers: &[(&str, &str)],
     ) -> (StatusCode, Value) {
-        let (status, bytes) = call_raw(app, method, uri, body, basis).await;
+        let (status, bytes) =
+            call_raw_with_headers(app, method, uri, body, basis, extra_headers).await;
         let val: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
             panic!(
                 "JSON response from bytes: {}",
@@ -1536,6 +1615,16 @@ mod tests {
             )
         });
         (status, val)
+    }
+
+    async fn call(
+        app: &axum::Router,
+        method: &str,
+        uri: &str,
+        body: impl Into<Body>,
+        basis: Option<AccessBasis>,
+    ) -> (StatusCode, Value) {
+        call_with_headers(app, method, uri, body, basis, &[]).await
     }
 
     fn valid_register_body(token: &str, bundle_id: &str, push_key: &str) -> Vec<u8> {
@@ -4338,5 +4427,946 @@ mod tests {
         }
 
         test_log::set_capture_level(log::LevelFilter::Info);
+    }
+
+    #[tokio::test]
+    async fn presentation_header_only_exact_one_opts_in() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let app = api_router(root.path(), PORTAL_URL);
+        let t = OffsetDateTime::from_unix_timestamp(1_758_672_000).unwrap();
+        set_test_clock(Some(t));
+
+        // 1. iOS: header raw "1" creates matching grant
+        let (s_ios, b_ios) = call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+        assert_eq!(s_ios, StatusCode::CREATED);
+        assert_eq!(b_ios["platform"], "ios");
+        assert_eq!(b_ios["target"], "...cdef");
+        assert_eq!(b_ios["environment"], "development");
+        assert_eq!(b_ios["registered_at"], "2025-09-24T00:00:00Z");
+        let ios_obj = b_ios.as_object().unwrap();
+        let mut ios_keys: Vec<&str> = ios_obj.keys().map(String::as_str).collect();
+        ios_keys.sort();
+        assert_eq!(
+            ios_keys,
+            ["environment", "platform", "registered_at", "target"]
+        );
+
+        let cap_path = root.path().join("config/push-capabilities.json");
+        let cap_doc: crate::capability::CapabilityDocument =
+            serde_json::from_slice(&fs::read(&cap_path).unwrap()).unwrap();
+        assert_eq!(cap_doc.grants.len(), 1);
+        let key = PushKey::from_bytes(
+            URL_SAFE_NO_PAD
+                .decode(VALID_KEY_B64)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        assert!(crate::capability::grant_matches(
+            &cap_doc.grants[0],
+            PushPlatform::Ios,
+            CID_A,
+            TOKEN_A1,
+            &key,
+            "2025-09-24T00:00:00Z",
+        ));
+
+        // 2. Android: header raw "1" creates matching grant
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+        let (s_and, b_and) = call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/1",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+        assert_eq!(s_and, StatusCode::CREATED);
+        assert_eq!(b_and["platform"], "android");
+        assert_eq!(b_and["target"], "push.example.com");
+        assert_eq!(b_and["registered_at"], "2025-09-24T00:00:00Z");
+        let and_obj = b_and.as_object().unwrap();
+        let mut and_keys: Vec<&str> = and_obj.keys().map(String::as_str).collect();
+        and_keys.sort();
+        assert_eq!(and_keys, ["platform", "registered_at", "target"]);
+
+        let cap_doc: crate::capability::CapabilityDocument =
+            serde_json::from_slice(&fs::read(&cap_path).unwrap()).unwrap();
+        assert_eq!(cap_doc.grants.len(), 2);
+
+        // 3. Bad headers do not create / leave grants when re-registering with frozen clock:
+        // Headers to test: Absent, "2", "true", "1 ", "", two "1"s
+        let bad_header_sets: Vec<&[(&str, &str)]> = vec![
+            &[],
+            &[("x-solstone-push-presentation", "2")],
+            &[("x-solstone-push-presentation", "true")],
+            &[("x-solstone-push-presentation", "1 ")],
+            &[("x-solstone-push-presentation", "")],
+            &[
+                ("x-solstone-push-presentation", "1"),
+                ("x-solstone-push-presentation", "1"),
+            ],
+        ];
+
+        for bad_headers in bad_header_sets {
+            // Re-opt in first so a grant is present
+            let (s_in, _) = call_with_headers(
+                &app,
+                "POST",
+                "/api/push/register",
+                valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+                Some(basis(CID_A)),
+                &[("x-solstone-push-presentation", "1")],
+            )
+            .await;
+            assert_eq!(s_in, StatusCode::OK);
+            let doc_before: crate::capability::CapabilityDocument =
+                serde_json::from_slice(&fs::read(&cap_path).unwrap()).unwrap();
+            assert!(doc_before.grants.iter().any(|g| g.identity == TOKEN_A1));
+
+            // Re-register with bad headers at frozen clock
+            let (s_bad, _) = call_with_headers(
+                &app,
+                "POST",
+                "/api/push/register",
+                valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+                Some(basis(CID_A)),
+                bad_headers,
+            )
+            .await;
+            assert_eq!(s_bad, StatusCode::OK);
+
+            let doc_after: crate::capability::CapabilityDocument =
+                serde_json::from_slice(&fs::read(&cap_path).unwrap()).unwrap();
+            assert!(
+                !doc_after.grants.iter().any(|g| g.identity == TOKEN_A1),
+                "grant remained after re-register with bad header set {:?}",
+                bad_headers
+            );
+        }
+
+        // Unknown JSON key still 400 push_request_invalid and does not write a grant
+        let bad_body = serde_json::to_vec(&json!({
+            "platform": "ios",
+            "device_token": TOKEN_A2,
+            "bundle_id": "org.example",
+            "environment": "development",
+            "push_key": VALID_KEY_B64,
+            "extra_key": "disallowed"
+        }))
+        .unwrap();
+        let (s_invalid, b_invalid) = call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            bad_body,
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+        assert_eq!(s_invalid, StatusCode::BAD_REQUEST);
+        assert_eq!(b_invalid["reason_code"], "push_request_invalid");
+
+        let doc_final: crate::capability::CapabilityDocument =
+            serde_json::from_slice(&fs::read(&cap_path).unwrap()).unwrap();
+        assert!(!doc_final.grants.iter().any(|g| g.identity == TOKEN_A2));
+
+        set_test_clock(None);
+        crate::capability::clear_test_capability_hooks();
+    }
+
+    #[tokio::test]
+    async fn opted_in_registry_row_keeps_current_device_keys() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let app = api_router(root.path(), PORTAL_URL);
+        set_test_clock(None);
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+
+        let (s1, _) = call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+        assert_eq!(s1, StatusCode::CREATED);
+
+        let (s2, _) = call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/1",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+        assert_eq!(s2, StatusCode::CREATED);
+
+        let reg_path = root.path().join("config/push-registry.json");
+        let reg_bytes = fs::read(&reg_path).expect("read push-registry.json");
+
+        // Deserializes cleanly as RegistryV2
+        let parsed_v2: crate::store::RegistryV2 =
+            serde_json::from_slice(&reg_bytes).expect("deserialize RegistryV2");
+        assert_eq!(parsed_v2.devices.len(), 2);
+
+        // Raw json check on each device object
+        let reg_val: Value = serde_json::from_slice(&reg_bytes).unwrap();
+        let devices = reg_val["devices"].as_array().unwrap();
+        assert_eq!(devices.len(), 2);
+
+        for dev in devices {
+            let obj = dev.as_object().unwrap();
+            let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+            keys.sort();
+            let platform = dev["platform"].as_str().unwrap();
+            if platform == "ios" {
+                assert_eq!(
+                    keys,
+                    [
+                        "bundle_id",
+                        "cid",
+                        "device_token",
+                        "environment",
+                        "platform",
+                        "push_key",
+                        "registered_at"
+                    ]
+                );
+            } else if platform == "android" {
+                assert_eq!(
+                    keys,
+                    [
+                        "auth",
+                        "cid",
+                        "endpoint",
+                        "p256dh",
+                        "platform",
+                        "push_key",
+                        "registered_at"
+                    ]
+                );
+            } else {
+                panic!("unexpected platform: {platform}");
+            }
+            assert!(dev.get("presentation").is_none());
+            assert!(dev.get("identity").is_none());
+            assert!(dev.get("grants").is_none());
+        }
+
+        crate::capability::clear_test_capability_hooks();
+    }
+
+    #[tokio::test]
+    async fn mixed_batch_presentation_follows_current_binding() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+
+        // 4 recipients:
+        // 1. Opted-in iOS
+        call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+
+        // 2. Headerless iOS
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A2, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+        )
+        .await;
+
+        // 3. Opted-in Android
+        call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/opted_in",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+
+        // 4. Headerless Android
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/headerless",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+
+        // POST /api/push/test
+        let (s_test, b_test) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        assert_eq!(s_test, StatusCode::OK);
+        assert_eq!(b_test["items"].as_array().unwrap().len(), 4);
+
+        let push_key = PushKey::from_bytes(
+            URL_SAFE_NO_PAD
+                .decode(VALID_KEY_B64)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        let ua_priv: [u8; 32] = URL_SAFE_NO_PAD
+            .decode(TEST_UA_PRIV_B64)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let ua_auth: [u8; 16] = URL_SAFE_NO_PAD
+            .decode(TEST_AUTH_B64)
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        // Check iOS calls
+        {
+            let calls = transport.calls.lock().unwrap();
+            let dispatch_call = calls
+                .iter()
+                .find(|(url, _, _)| url.ends_with("/push/dispatch"))
+                .expect("iOS dispatch call");
+            let dispatch_body: Value = serde_json::from_slice(&dispatch_call.1).unwrap();
+            let ios_devs = dispatch_body["devices"].as_array().unwrap();
+            assert_eq!(ios_devs.len(), 2);
+
+            let dev_opted_ios = ios_devs
+                .iter()
+                .find(|d| d["token"] == TOKEN_A1)
+                .expect("opted ios");
+            let dev_hdr_ios = ios_devs
+                .iter()
+                .find(|d| d["token"] == TOKEN_A2)
+                .expect("headerless ios");
+
+            let env_opted_ios_bytes = URL_SAFE_NO_PAD
+                .decode(dev_opted_ios["envelope"].as_str().unwrap())
+                .unwrap();
+            let opened_opted_ios = crate::envelope::open_push(&push_key, &env_opted_ios_bytes)
+                .expect("open opted ios");
+            let pres_ios = opened_opted_ios.presentation.expect("pres on opted ios");
+            assert_eq!(pres_ios.title.code, "push.test.title");
+            assert_eq!(pres_ios.body.code, "push.test.body");
+            assert!(pres_ios.title.args.is_empty());
+            assert!(pres_ios.body.args.is_empty());
+            assert_eq!(
+                pres_ios.title.fallback_en,
+                opened_opted_ios.notification.title
+            );
+            assert_eq!(pres_ios.title.fallback_en, "solstone");
+            assert_eq!(
+                pres_ios.body.fallback_en,
+                opened_opted_ios.notification.body
+            );
+            assert_eq!(
+                pres_ios.body.fallback_en,
+                "test notification from your journal."
+            );
+
+            let env_hdr_ios_bytes = URL_SAFE_NO_PAD
+                .decode(dev_hdr_ios["envelope"].as_str().unwrap())
+                .unwrap();
+            let opened_hdr_ios =
+                crate::envelope::open_push(&push_key, &env_hdr_ios_bytes).expect("open hdr ios");
+            assert!(opened_hdr_ios.presentation.is_none());
+
+            // Check Android calls
+            let bytes_calls = transport.bytes_calls.lock().unwrap();
+            assert_eq!(bytes_calls.len(), 2);
+            let call_opted_and = bytes_calls
+                .iter()
+                .find(|(url, _, _)| url.contains("opted_in"))
+                .expect("opted android");
+            let call_hdr_and = bytes_calls
+                .iter()
+                .find(|(url, _, _)| url.contains("headerless"))
+                .expect("hdr android");
+
+            let pt_opted_and =
+                crate::web_push::decrypt_web_push_for_test(&ua_priv, &ua_auth, &call_opted_and.2)
+                    .expect("decrypt opted android");
+            let opened_opted_and =
+                crate::envelope::open_push(&push_key, &pt_opted_and).expect("open opted android");
+            let pres_and = opened_opted_and
+                .presentation
+                .expect("pres on opted android");
+            assert_eq!(pres_and.title.code, "push.test.title");
+            assert_eq!(pres_and.body.code, "push.test.body");
+            assert!(pres_and.title.args.is_empty());
+            assert!(pres_and.body.args.is_empty());
+            assert_eq!(
+                pres_and.title.fallback_en,
+                opened_opted_and.notification.title
+            );
+            assert_eq!(pres_and.title.fallback_en, "solstone");
+            assert_eq!(
+                pres_and.body.fallback_en,
+                opened_opted_and.notification.body
+            );
+            assert_eq!(
+                pres_and.body.fallback_en,
+                "test notification from your journal."
+            );
+
+            let pt_hdr_and =
+                crate::web_push::decrypt_web_push_for_test(&ua_priv, &ua_auth, &call_hdr_and.2)
+                    .expect("decrypt hdr android");
+            let opened_hdr_and =
+                crate::envelope::open_push(&push_key, &pt_hdr_and).expect("open hdr android");
+            assert!(opened_hdr_and.presentation.is_none());
+        }
+
+        // Headerless re-register of the opted-in devices
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+        )
+        .await;
+
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/opted_in",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+
+        transport.calls.lock().unwrap().clear();
+        transport.bytes_calls.lock().unwrap().clear();
+
+        // Second POST /api/push/test: recipients now have no presentation key
+        let (s_test2, _) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        assert_eq!(s_test2, StatusCode::OK);
+
+        let calls2 = transport.calls.lock().unwrap();
+        let dispatch_call2 = calls2
+            .iter()
+            .find(|(url, _, _)| url.ends_with("/push/dispatch"))
+            .expect("iOS dispatch 2");
+        let dispatch_body2: Value = serde_json::from_slice(&dispatch_call2.1).unwrap();
+        for dev in dispatch_body2["devices"].as_array().unwrap() {
+            let env_bytes = URL_SAFE_NO_PAD
+                .decode(dev["envelope"].as_str().unwrap())
+                .unwrap();
+            let opened = crate::envelope::open_push(&push_key, &env_bytes).unwrap();
+            assert!(opened.presentation.is_none());
+        }
+
+        let bytes_calls2 = transport.bytes_calls.lock().unwrap();
+        assert_eq!(bytes_calls2.len(), 2);
+        for (_, _, body) in bytes_calls2.iter() {
+            let pt = crate::web_push::decrypt_web_push_for_test(&ua_priv, &ua_auth, body).unwrap();
+            let opened = crate::envelope::open_push(&push_key, &pt).unwrap();
+            assert!(opened.presentation.is_none());
+        }
+
+        crate::capability::clear_test_capability_hooks();
+    }
+
+    #[tokio::test]
+    async fn weekly_delivery_to_opted_in_device_has_no_presentation() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+
+        // Register iOS with header 1
+        call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+
+        // Register Android with header 1
+        call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/1",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+
+        let now = OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap();
+        let weekly_notif = Notification {
+            at: now,
+            kind: "weekly".to_owned(),
+            title: "your week is ready".to_owned(),
+            body: "".to_owned(),
+            open: Some("/app/home/week/2026-09-24".to_owned()),
+        };
+
+        let outcome = deliver_notification(
+            root.path(),
+            PORTAL_URL,
+            now,
+            &weekly_notif,
+            &*transport,
+            None,
+        );
+        let batch_res = match outcome {
+            DeliveryOutcome::Delivered(r) => r,
+            other => panic!("expected Delivered, got {other:?}"),
+        };
+        assert_eq!(batch_res.len(), 2);
+        assert_eq!(batch_res[0].item.outcome, "sent");
+        assert_eq!(batch_res[1].item.outcome, "sent");
+
+        let push_key = PushKey::from_bytes(
+            URL_SAFE_NO_PAD
+                .decode(VALID_KEY_B64)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        let ua_priv: [u8; 32] = URL_SAFE_NO_PAD
+            .decode(TEST_UA_PRIV_B64)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let ua_auth: [u8; 16] = URL_SAFE_NO_PAD
+            .decode(TEST_AUTH_B64)
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        // iOS check
+        let calls = transport.calls.lock().unwrap();
+        let dispatch_call = calls
+            .iter()
+            .find(|(url, _, _)| url.ends_with("/push/dispatch"))
+            .expect("dispatch");
+        let dispatch_body: Value = serde_json::from_slice(&dispatch_call.1).unwrap();
+        let dev = &dispatch_body["devices"][0];
+        let env_bytes = URL_SAFE_NO_PAD
+            .decode(dev["envelope"].as_str().unwrap())
+            .unwrap();
+        let opened_ios = crate::envelope::open_push(&push_key, &env_bytes).expect("open ios");
+        assert_eq!(opened_ios.notification.kind, "weekly");
+        assert_eq!(opened_ios.notification.title, "your week is ready");
+        assert!(opened_ios.presentation.is_none());
+
+        // Android check
+        let bytes_calls = transport.bytes_calls.lock().unwrap();
+        let pt = crate::web_push::decrypt_web_push_for_test(&ua_priv, &ua_auth, &bytes_calls[0].2)
+            .expect("decrypt android");
+        let opened_and = crate::envelope::open_push(&push_key, &pt).expect("open android");
+        assert_eq!(opened_and.notification.kind, "weekly");
+        assert_eq!(opened_and.notification.title, "your week is ready");
+        assert!(opened_and.presentation.is_none());
+
+        // Assert no sealed plaintext contains push.proof.
+        assert!(!String::from_utf8_lossy(&pt).contains("push.proof."));
+
+        crate::capability::clear_test_capability_hooks();
+    }
+
+    #[tokio::test]
+    async fn capability_faults_still_deliver_english() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        let cap_path = root.path().join("config/push-capabilities.json");
+        let push_key = PushKey::from_bytes(
+            URL_SAFE_NO_PAD
+                .decode(VALID_KEY_B64)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+
+        let assert_no_secrets = |logs: &[(log::Level, String, String)]| {
+            for (lvl, _, msg) in logs {
+                if *lvl == log::Level::Warn {
+                    assert!(!msg.contains("solstone"), "secret in log: {msg}");
+                    assert!(!msg.contains("test notification"), "secret in log: {msg}");
+                    assert!(!msg.contains(VALID_KEY_B64), "secret in log: {msg}");
+                    assert!(!msg.contains(TOKEN_A1), "secret in log: {msg}");
+                    assert!(
+                        !msg.contains("https://push.example.com"),
+                        "secret in log: {msg}"
+                    );
+                }
+            }
+        };
+
+        // 1. Missing file, headerless register, test delivery: legacy plaintext
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert!(!cap_path.exists());
+
+        call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        {
+            let calls = transport.calls.lock().unwrap();
+            let dispatch = calls
+                .iter()
+                .find(|(u, _, _)| u.ends_with("/push/dispatch"))
+                .unwrap();
+            let body_val: Value = serde_json::from_slice(&dispatch.1).unwrap();
+            let env_str = body_val["devices"][0]["envelope"].as_str().unwrap();
+            let env_bytes = URL_SAFE_NO_PAD.decode(env_str).unwrap();
+            let opened = crate::envelope::open_push(&push_key, &env_bytes).unwrap();
+            assert!(opened.presentation.is_none());
+        }
+
+        // 2. Plant a malformed capability file, headerless device, test delivery:
+        // legacy plaintext, warn "push presentation capability malformed"
+        fs::write(&cap_path, b"not JSON").unwrap();
+        test_log::clear();
+        transport.calls.lock().unwrap().clear();
+
+        call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        {
+            let calls = transport.calls.lock().unwrap();
+            let dispatch = calls
+                .iter()
+                .find(|(u, _, _)| u.ends_with("/push/dispatch"))
+                .unwrap();
+            let body_val: Value = serde_json::from_slice(&dispatch.1).unwrap();
+            let env_str = body_val["devices"][0]["envelope"].as_str().unwrap();
+            let env_bytes = URL_SAFE_NO_PAD.decode(env_str).unwrap();
+            let opened = crate::envelope::open_push(&push_key, &env_bytes).unwrap();
+            assert!(opened.presentation.is_none());
+        }
+        let logs = test_log::records();
+        assert!(
+            logs.iter().any(|(lvl, _, msg)| *lvl == Level::Warn
+                && msg.contains("push presentation capability malformed")),
+            "expected warn for malformed capability"
+        );
+        assert_no_secrets(&logs);
+
+        // 3. Injected read fault during test delivery:
+        // legacy plaintext, warn "push presentation capability unreadable"
+        crate::capability::set_test_read_fault(true);
+        test_log::clear();
+        transport.calls.lock().unwrap().clear();
+
+        call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        {
+            let calls = transport.calls.lock().unwrap();
+            let dispatch = calls
+                .iter()
+                .find(|(u, _, _)| u.ends_with("/push/dispatch"))
+                .unwrap();
+            let body_val: Value = serde_json::from_slice(&dispatch.1).unwrap();
+            let env_str = body_val["devices"][0]["envelope"].as_str().unwrap();
+            let env_bytes = URL_SAFE_NO_PAD.decode(env_str).unwrap();
+            let opened = crate::envelope::open_push(&push_key, &env_bytes).unwrap();
+            assert!(opened.presentation.is_none());
+        }
+        let logs_rf = test_log::records();
+        assert!(
+            logs_rf.iter().any(|(lvl, _, msg)| *lvl == Level::Warn
+                && msg.contains("push presentation capability unreadable")),
+            "expected warn for unreadable capability"
+        );
+        assert_no_secrets(&logs_rf);
+        crate::capability::clear_test_capability_hooks();
+
+        // 4. Injected write hook that always errors, first opt-in register:
+        // HTTP 201, body still existing item, warn "push presentation capability write failed",
+        // no matching grant, following test delivery has no presentation
+        crate::capability::set_test_write_hook(Some(Box::new(|_| {
+            Err(io::Error::other("write error"))
+        })));
+        test_log::clear();
+
+        let (s_opt, b_opt) = call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A2, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+        assert_eq!(s_opt, StatusCode::CREATED);
+        assert_eq!(b_opt["platform"], "ios");
+        assert_eq!(b_opt["target"], "...3210");
+
+        let logs_wf = test_log::records();
+        assert!(
+            logs_wf.iter().any(|(lvl, _, msg)| *lvl == Level::Warn
+                && msg.contains("push presentation capability write failed")),
+            "expected warn for capability write failure"
+        );
+        assert_no_secrets(&logs_wf);
+        crate::capability::clear_test_capability_hooks();
+
+        transport.calls.lock().unwrap().clear();
+        call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        {
+            let calls = transport.calls.lock().unwrap();
+            let dispatch = calls
+                .iter()
+                .find(|(u, _, _)| u.ends_with("/push/dispatch"))
+                .unwrap();
+            let body_val: Value = serde_json::from_slice(&dispatch.1).unwrap();
+            let dev_a2 = body_val["devices"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|d| d["token"] == TOKEN_A2)
+                .unwrap();
+            let env_bytes = URL_SAFE_NO_PAD
+                .decode(dev_a2["envelope"].as_str().unwrap())
+                .unwrap();
+            let opened = crate::envelope::open_push(&push_key, &env_bytes).unwrap();
+            assert!(opened.presentation.is_none());
+        }
+
+        // 5. Frozen TEST_CLOCK, successful opt-in, then a write hook that returns Err
+        // only when the document contains a grant for that identity and Ok for a withdrawal.
+        // Re-register with header 1 and the same key. Response is 200. Following test delivery has no presentation.
+        let t = OffsetDateTime::from_unix_timestamp(1_758_672_000).unwrap();
+        set_test_clock(Some(t));
+
+        let (s_opt1, _) = call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+        assert_eq!(s_opt1, StatusCode::OK);
+
+        let target_ident = TOKEN_A1.to_string();
+        crate::capability::set_test_write_hook(Some(Box::new(move |doc| {
+            if doc.grants.iter().any(|g| g.identity == target_ident) {
+                Err(io::Error::other("fault"))
+            } else {
+                Ok(())
+            }
+        })));
+
+        let (s_re, _) = call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+        assert_eq!(s_re, StatusCode::OK);
+
+        transport.calls.lock().unwrap().clear();
+        call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        {
+            let calls = transport.calls.lock().unwrap();
+            let dispatch = calls
+                .iter()
+                .find(|(u, _, _)| u.ends_with("/push/dispatch"))
+                .unwrap();
+            let body_val: Value = serde_json::from_slice(&dispatch.1).unwrap();
+            let dev_a1 = body_val["devices"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|d| d["token"] == TOKEN_A1)
+                .unwrap();
+            let env_bytes = URL_SAFE_NO_PAD
+                .decode(dev_a1["envelope"].as_str().unwrap())
+                .unwrap();
+            let opened = crate::envelope::open_push(&push_key, &env_bytes).unwrap();
+            assert!(opened.presentation.is_none());
+        }
+
+        crate::capability::clear_test_capability_hooks();
+        set_test_clock(None);
+    }
+
+    #[tokio::test]
+    async fn presentation_too_large_falls_back_per_recipient() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        // Two recipients:
+        // Recipient 1: iOS TOKEN_A1 with header 1 (capable)
+        call_with_headers(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+            &[("x-solstone-push-presentation", "1")],
+        )
+        .await;
+
+        // Recipient 2: iOS TOKEN_A2 headerless
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A2, "org.example", VALID_KEY_B64),
+            Some(basis(CID_A)),
+        )
+        .await;
+
+        let now = OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap();
+
+        // Batch 1: legacy JSON under 1024 bytes, presentation JSON at least 1024
+        let notif_large = Notification {
+            at: now,
+            kind: "test".to_owned(),
+            title: "solstone".to_owned(),
+            body: "a".repeat(850),
+            open: None,
+        };
+
+        let outcome = deliver_notification(
+            root.path(),
+            PORTAL_URL,
+            now,
+            &notif_large,
+            &*transport,
+            None,
+        );
+        let batch_res = match outcome {
+            DeliveryOutcome::Delivered(r) => r,
+            other => panic!("expected Delivered, got {other:?}"),
+        };
+        assert_eq!(batch_res.len(), 2);
+        assert_eq!(batch_res[0].item.outcome, "sent");
+        assert_eq!(batch_res[1].item.outcome, "sent");
+
+        let push_key = PushKey::from_bytes(
+            URL_SAFE_NO_PAD
+                .decode(VALID_KEY_B64)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        let calls = transport.calls.lock().unwrap();
+        let dispatch = calls
+            .iter()
+            .find(|(u, _, _)| u.ends_with("/push/dispatch"))
+            .unwrap();
+        let body_val: Value = serde_json::from_slice(&dispatch.1).unwrap();
+        let devs = body_val["devices"].as_array().unwrap();
+        assert_eq!(devs.len(), 2);
+
+        // Both received legacy plaintext
+        for dev in devs {
+            let env_bytes = URL_SAFE_NO_PAD
+                .decode(dev["envelope"].as_str().unwrap())
+                .unwrap();
+            let opened = crate::envelope::open_push(&push_key, &env_bytes).unwrap();
+            assert!(opened.presentation.is_none());
+            assert_eq!(opened.notification.body.len(), 850);
+        }
+        drop(calls);
+
+        // Batch 2: legacy JSON at least 1024 bytes
+        let notif_too_large = Notification {
+            at: now,
+            kind: "test".to_owned(),
+            title: "solstone".to_owned(),
+            body: "a".repeat(1024),
+            open: None,
+        };
+
+        let outcome2 = deliver_notification(
+            root.path(),
+            PORTAL_URL,
+            now,
+            &notif_too_large,
+            &*transport,
+            None,
+        );
+        let batch_res2 = match outcome2 {
+            DeliveryOutcome::Delivered(r) => r,
+            other => panic!("expected Delivered, got {other:?}"),
+        };
+        assert_eq!(batch_res2.len(), 2);
+        assert_eq!(batch_res2[0].item.outcome, "failed");
+        assert_eq!(batch_res2[1].item.outcome, "failed");
+
+        crate::capability::clear_test_capability_hooks();
     }
 }

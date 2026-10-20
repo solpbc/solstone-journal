@@ -220,7 +220,7 @@ pub fn publish(
                 }
                 Target::Android => {
                     for bundle in &bundles {
-                        generate_android_target(bundle, &stage_dir)?;
+                        generate_android_target(bundle, &stage_dir, &catalog.config.source_locale)?;
                     }
                 }
                 Target::Webextension => {

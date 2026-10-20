@@ -833,12 +833,8 @@ pub fn compute_daily_evidence_cached(
         // generated the night its day closes, when every later day is still
         // today or the future, and it is frozen once its morning has passed
         // (`solstone_core_system::daily_coverage::accepted_reuse`).
-        let offsets: Vec<i64> = match hook.as_str() {
-            "entities:entities_review" => (-7..=-1).collect(),
-            _ => vec![0],
-        };
         let mut sources = Vec::new();
-        for offset in offsets {
+        for offset in evidence_day_offsets(&hook) {
             let d = (date + Duration::days(offset)).format("%Y%m%d").to_string();
             sources.extend(if hook == "entities:entities_review" {
                 capture_facet_day_sources(journal, &d, "entities", facet)?.sources
@@ -870,6 +866,16 @@ pub fn compute_daily_evidence_cached(
         contract,
         evidence,
     })
+}
+
+/// The days, relative to its own, whose sources a daily unit's evidence reads.
+/// The entity review reads only the seven days before its day, so its evidence
+/// changes when those days do, never with its own.
+pub fn evidence_day_offsets(hook: &str) -> Vec<i64> {
+    match hook {
+        "entities:entities_review" => (-7..=-1).collect(),
+        _ => vec![0],
+    }
 }
 
 /// Today in the journal's owner zone.

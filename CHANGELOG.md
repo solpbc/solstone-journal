@@ -13,14 +13,17 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - on windows, setup in the journal window now has the sun behind it, moving with the time of day, as it does on mac.
+- when your journal works through an older day's recordings again, it now remakes that day's daily outputs right after them, instead of after all older history. its entity review still waits until older history is done. until the rest are remade, health's line about older history counts that day as still to do.
 
 ### Fixed
 
+- health shows processing progress sooner when you open it.
 - on windows, home in the journal window shows download progress in sizes like 1.2 GB of 4.8 GB, instead of two bare numbers.
 - on windows, pairing the solstone app on the journal's own computer no longer shows the linux commands.
 - long morning briefings and entity reviews keep their instructions intact. if those instructions and context won't fit your model, the run stops.
 - if your thinking provider refuses an activity because it's too long, your journal sets it aside instead of trying the same request every hour. you can try it again after changing your thinking choice.
 - the health page's backup spot-check now says it checked 1 of 52 parts of your backup, as the backup page does, instead of a bare 42/52.
+- health's line about older history no longer stops at a day whose recordings are finished but not yet searchable. those recordings now become searchable on their own.
 
 ## [2.0.52] - 2026-10-20
 

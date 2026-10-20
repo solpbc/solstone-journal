@@ -396,21 +396,6 @@ fn run_with_phase_process(
         &mut total,
         |journal, now_ms, fields| helpers::emit(journal, now_ms, "daily_complete", fields),
     );
-    if args.stream.is_none()
-        && let Err(error) = solstone_core_system::daily_coverage::settle_daily_day(
-            &context.journal,
-            &context.day,
-            &context.talent_root,
-            &context.apps_root,
-            Utc::now(),
-        )
-    {
-        log::warn!(
-            "could not settle {} in daily reconciliation: {error}",
-            context.day
-        );
-    }
-
     Ok(total)
 }
 

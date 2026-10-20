@@ -9,6 +9,7 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod capability;
 mod endpoint;
 pub mod envelope;
 mod model;

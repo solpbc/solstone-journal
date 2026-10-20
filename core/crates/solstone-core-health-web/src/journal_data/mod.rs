@@ -70,6 +70,16 @@ async fn summary(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
     .await
 }
 
+pub(crate) async fn media_backlog(root: PathBuf, now: chrono::DateTime<chrono::Utc>) -> Response {
+    spawn_blocking_response(OwnerReadRole::HealthMediaBacklog, move || {
+        match report::read_segment_backlog_health(&root, now) {
+            Ok(backlog) => Json(serde_json::json!({"segment_backlog":backlog})).into_response(),
+            Err(error) => error_response(error),
+        }
+    })
+    .await
+}
+
 async fn full(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
     summary(root, Query(query)).await
 }

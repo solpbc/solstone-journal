@@ -24,7 +24,7 @@
 };
   const VERIFICATION_SUBSET = {
     one: "checked all of your backup this week.",
-    part: "checked 1 of {total} parts of your backup, a different part each week.",
+    part: "checked 1 of {total} parts of your backup.",
   };
   const unavailable = "backup status is unavailable right now.";
   const incomplete = BACKUP_ERROR_REASONS.incomplete;
@@ -51,19 +51,11 @@
   // part this week's turn landed on. It is never a count of snapshots or of
   // parts checked, so the sentence reports one part out of m and nothing else.
   function verificationSubsetLine(value) {
-    if (typeof value !== 'string') return '';
-    const parts = value.split('/');
-    if (parts.length !== 2) return '';
-    const selected = Number(parts[0]);
-    const total = Number(parts[1]);
-    if (!Number.isFinite(selected) || !Number.isFinite(total) || total <= 0) return '';
-    // The only producer today is verification_subset_for_week, which always
-    // emits '/52', so the one-part branch is unreachable from this journal.
-    // It is kept rather than dropped: the selector is restic's, a future
-    // schedule that reads the whole pack in one turn would emit '1/1', and a
-    // sentence saying "1 of 1 parts" is the failure it would land as.
-    return total === 1
-      ? VERIFICATION_SUBSET.one
+    if (typeof value !== 'string' || !/^\d+\/\d+$/.test(value)) return '';
+    const [selected, total] = value.split('/').map(Number);
+    if (!Number.isSafeInteger(selected) || !Number.isSafeInteger(total)
+        || selected <= 0 || total <= 0 || selected > total) return '';
+    return total === 1 ? VERIFICATION_SUBSET.one
       : VERIFICATION_SUBSET.part.replace('{total}', String(total));
   }
 

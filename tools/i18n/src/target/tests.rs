@@ -1404,7 +1404,7 @@ assert.throws(() => {
         let out_dir = owned_out_dir.path();
         let _ = fs::remove_dir_all(out_dir);
         let err_col =
-            crate::target::android::generate_android_target(&bundle, out_dir).unwrap_err();
+            crate::target::android::generate_android_target(&bundle, out_dir, "en").unwrap_err();
         assert_eq!(err_col[0].rule, "locale-qualifier");
         assert!(
             !out_dir.exists(),
@@ -1568,6 +1568,81 @@ assert.throws(() => {
     }
 
     #[test]
+    fn android_default_prefers_selected_source_over_earlier_test_locale() {
+        let mut catalog = LoadedCatalog::load_and_validate(
+            Path::new("fixtures/targets"),
+            Channel::Development,
+            None,
+        )
+        .unwrap();
+        let mut source = catalog
+            .registry
+            .locales
+            .iter()
+            .find(|l| l.tag == "en")
+            .unwrap()
+            .clone();
+        source.tag = "en-US".into();
+        source.android_qualifier = Some("en-rUS".into());
+        let mut translated = source.clone();
+        translated.tag = "en-GB".into();
+        translated.android_qualifier = Some("en-rGB".into());
+        let id = "synth.notes.anchor";
+        let translated_message = catalog.translations["en-x-synth"][id].clone();
+        catalog.config.source_locale = "en-US".into();
+        catalog.registry.locales = vec![source, translated];
+        catalog.registry.bundles = vec![crate::locale::BundleEntry {
+            id: "source-default".into(),
+            locales: vec!["en-US".into(), "en-GB".into()],
+        }];
+        catalog.source_messages.retain(|key, _| key == id);
+        catalog.metadata.retain(|key, _| key == id);
+        catalog.metadata.get_mut(id).unwrap().bundles = vec!["source-default".into()];
+        catalog.translations = std::collections::HashMap::from([
+            ("en-US".into(), catalog.source_messages.clone()),
+            (
+                "en-GB".into(),
+                std::collections::HashMap::from([(id.into(), translated_message)]),
+            ),
+        ]);
+        let owned = TestDirectory::new("android-source-default");
+        publish(
+            &catalog,
+            Channel::Development,
+            None,
+            &[Target::Android],
+            owned.path(),
+        )
+        .unwrap();
+        let cell = owned.path().join("android/source-default");
+        let source_bytes = fs::read_to_string(cell.join("values-en-rUS/strings.xml")).unwrap();
+        let translated_bytes = fs::read_to_string(cell.join("values-en-rGB/strings.xml")).unwrap();
+        assert!(source_bytes.contains("\"anchor-plain\""));
+        assert!(translated_bytes.contains("\"tr-synth-anchor\""));
+        assert_ne!(source_bytes, translated_bytes);
+        assert_eq!(
+            fs::read_to_string(cell.join("values/strings.xml")).unwrap(),
+            source_bytes
+        );
+        catalog.config.source_locale = "en".into();
+        let fallback = TestDirectory::new("android-unselected-source-default");
+        publish(
+            &catalog,
+            Channel::Development,
+            None,
+            &[Target::Android],
+            fallback.path(),
+        )
+        .unwrap();
+        let fallback_cell = fallback.path().join("android/source-default");
+        assert_eq!(
+            fs::read_to_string(fallback_cell.join("values/strings.xml")).unwrap(),
+            translated_bytes
+        );
+        assert!(!fallback_cell.join("values-en").exists());
+    }
+
+    #[test]
     fn test_android_default_values_table_walk() {
         use crate::target::model::{TargetBundle, TargetMessage};
 
@@ -1629,7 +1704,7 @@ assert.throws(() => {
         let owned_single_out = TestDirectory::new("test_android_single_synth_out");
         let single_out = owned_single_out.path();
         let _ = fs::remove_dir_all(single_out);
-        crate::target::android::generate_android_target(&single_bundle, single_out).unwrap();
+        crate::target::android::generate_android_target(&single_bundle, single_out, "en").unwrap();
 
         let synth_def_bytes =
             fs::read(single_out.join("android/synth-app/values/strings.xml")).unwrap();
@@ -2332,7 +2407,7 @@ assert.throws(() => {
             ],
         };
         let owned = TestDirectory::new("android-whitespace");
-        crate::target::android::generate_android_target(&bundle, owned.path()).unwrap();
+        crate::target::android::generate_android_target(&bundle, owned.path(), "en").unwrap();
         let case = TestCase {
             target: "android".into(),
             bundle: bundle.id.clone(),

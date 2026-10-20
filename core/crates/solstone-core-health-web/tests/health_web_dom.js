@@ -185,6 +185,8 @@ class Element {
     return child;
   }
 
+  remove() { if (this.parentElement) this.parentElement.removeChild(this); }
+
   insertBefore(node, child) {
     if (node.parentElement) node.parentElement.removeChild(node);
     node.parentElement = this;
@@ -1204,6 +1206,25 @@ test('backup producer facts survive failed refresh and recover without a mislead
     'removing resolved technical details keeps keyboard focus at the backup status');
 });
 
+test('Health backup verification describes one checked part and rejects invalid selectors', async () => {
+  const env = createBackupEnvironment();
+  const readSubset = async checked_subset => {
+    const snapshot = backupSnapshot(successfulBackup);
+    snapshot.last_verification.checked_subset = checked_subset;
+    await env.read(snapshot);
+    return env.facts.querySelectorAll('dd')[4].textContent;
+  };
+  const first = await readSubset('1/52');
+  assert.strictEqual(await readSubset('42/52'), first);
+  assert.ok(first.includes('1 of 52'));
+  assert.ok(!first.includes('1/52'));
+  assert.ok((await readSubset('1/1')).includes('all of your backup'));
+  const unknown = await readSubset(undefined);
+  for (const invalid of ['/1', '0/1', '2/1', '1.5/52', '1/0', '-1/52', '1/9007199254740992']) {
+    assert.strictEqual(await readSubset(invalid), unknown);
+  }
+});
+
 test('backup off, unknown, incomplete, active and changed-destination history stay distinct', async () => {
   const env = createBackupEnvironment();
   await env.read({ ...backupSnapshot(null), enabled: false });
@@ -1722,6 +1743,51 @@ test('mediaBacklogLine remains after speechSetup in brain card', async () => {
   assert.strictEqual(env.speechSetup.nextSibling, mediaBacklog);
   const children = env.brain.children;
   assert.ok(children.indexOf(env.speechSetup) < children.indexOf(mediaBacklog));
+});
+
+test('primary Health settles before its independent media read, which renders positive and zero counts', async () => {
+  const env = createSpeechEnvironment();
+  const calls = [];
+  let finishPrimary;
+  let finishMedia;
+  env.context.getJson = url => {
+    calls.push(url);
+    return new Promise(resolve => { finishPrimary = resolve; });
+  };
+  env.context.window.apiJson = url => {
+    calls.push(url);
+    return new Promise(resolve => { finishMedia = resolve; });
+  };
+  Object.assign(env.context, {
+    clearHealthStateError() {}, renderWorkProgress() {}, renderBacklogState() {},
+    renderAgentErrorsState() {}, renderHealthStateError() {},
+  });
+  vm.runInContext(sourceBlock(env.source, 'function renderMediaBacklog(', 'function renderWorkProgress('), env.context);
+  vm.runInContext(sourceBlock(env.source, 'async function readHealthState()', 'let timeoutFired ='), env.context);
+  const primary = vm.runInContext('readHealthState()', env.context);
+  assert.deepStrictEqual(calls, ['/app/health/api/state']);
+  finishPrimary({ work: {}, search_index: {}, backlog: {}, agent_errors: {} });
+  await primary;
+  assert.deepStrictEqual(calls, ['/app/health/api/state', '/app/health/api/media-backlog']);
+  assert.strictEqual(env.doc.getElementById('mediaBacklogLine'), null);
+  finishMedia({ segment_backlog: { not_sensed: 7 } });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.ok(env.doc.getElementById('mediaBacklogLine').textContent.includes('7'));
+  env.context.window.apiJson = async url => {
+    calls.push(url);
+    return { segment_backlog: { not_sensed: 0 } };
+  };
+  await vm.runInContext('loadMediaBacklog()', env.context);
+  assert.strictEqual(env.doc.getElementById('mediaBacklogLine'), null);
+  let reportedError = false;
+  const mediaCallsBeforeFailure = calls.filter(url => url === '/app/health/api/media-backlog').length;
+  env.context.getJson = async () => { throw new Error('primary failed'); };
+  env.context.renderHealthStateError = () => { reportedError = true; };
+  await vm.runInContext('readHealthState()', env.context);
+  assert.ok(reportedError);
+  assert.strictEqual(calls.filter(url => url === '/app/health/api/media-backlog').length, mediaCallsBeforeFailure + 1);
+  assert.ok(!calls.includes('/api/health/summary'));
 });
 
 test('initHealth fires health:initial-ready while speech setup read is still pending', async () => {

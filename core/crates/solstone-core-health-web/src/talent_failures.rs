@@ -3,12 +3,18 @@
 
 use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
+use serde::de::{IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 
 /// Today's talent failures, "today" being the journal's owner-zone day.
 pub fn today(root: &std::path::Path) -> (Vec<Value>, bool) {
+    today_at(root, Utc::now())
+}
+
+fn today_at(root: &std::path::Path, now: chrono::DateTime<Utc>) -> (Vec<Value>, bool) {
     let zone = solstone_core_journal_config::owner_zone(root);
-    let wanted = Utc::now().with_timezone(&zone).format("%Y%m%d").to_string();
+    let wanted = now.with_timezone(&zone).format("%Y%m%d").to_string();
     let directory = root.join("talents");
     let Ok(entries) = std::fs::read_dir(directory) else {
         return (Vec::new(), true);
@@ -28,9 +34,7 @@ pub fn today(root: &std::path::Path) -> (Vec<Value>, bool) {
         match std::fs::read_to_string(&path) {
             Ok(lines) => {
                 for line in lines.lines() {
-                    if let Ok(value) = serde_json::from_str::<Value>(line)
-                        && execution_day(&value, zone).as_deref() == Some(&wanted)
-                    {
+                    if let Some(value) = execution_row(line, &wanted, zone) {
                         all.push(value);
                     }
                 }
@@ -38,6 +42,50 @@ pub fn today(root: &std::path::Path) -> (Vec<Value>, bool) {
             Err(_) => ok = false,
         }
     }
+    (failures(all), ok)
+}
+
+// Historical log files can hold executions from today. Read their timestamps,
+// then allocate the full object only for rows this response will actually use.
+struct ExecutionTimestamp(Option<Value>);
+
+impl<'de> Deserialize<'de> for ExecutionTimestamp {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct TimestampVisitor;
+        impl<'de> Visitor<'de> for TimestampVisitor {
+            type Value = ExecutionTimestamp;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a talent log object")
+            }
+
+            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+                let mut timestamp = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "ts" {
+                        // serde_json::Value keeps the last duplicate key.
+                        timestamp = Some(map.next_value::<Value>()?);
+                    } else {
+                        map.next_value::<IgnoredAny>()?;
+                    }
+                }
+                Ok(ExecutionTimestamp(timestamp))
+            }
+        }
+        deserializer.deserialize_map(TimestampVisitor)
+    }
+}
+
+fn execution_row(line: &str, wanted: &str, zone: Tz) -> Option<Value> {
+    let timestamp = serde_json::from_str::<ExecutionTimestamp>(line).ok()?.0;
+    if execution_day(timestamp.as_ref(), zone).as_deref() != Some(wanted) {
+        return None;
+    }
+    // Preserve full-Value validation, including malformed non-timestamp fields.
+    serde_json::from_str(line).ok()
+}
+
+fn failures(all: Vec<Value>) -> Vec<Value> {
     let mut successes: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
     let mut errors = Vec::new();
     for value in all {
@@ -64,7 +112,7 @@ pub fn today(root: &std::path::Path) -> (Vec<Value>, bool) {
         }
     }
     errors.sort_by_key(|(_, ts, _)| *ts);
-    (errors.into_iter().filter(|(name,ts,_)| successes.get(name).copied().unwrap_or(0)<=*ts).map(|(_,ts,obj)| json!({"type":"agent","id":use_id(obj.get("use_id")),"name":obj.get("name"),"ts":ts,"service":"cortex","error":"thinking error","reason_code":string_or_null(obj.get("reason_code")),"provider":string_or_null(obj.get("provider")),"model":string_or_null(obj.get("model"))})).collect(),ok)
+    errors.into_iter().filter(|(name,ts,_)| successes.get(name).copied().unwrap_or(0)<=*ts).map(|(_,ts,obj)| json!({"type":"agent","id":use_id(obj.get("use_id")),"name":obj.get("name"),"ts":ts,"service":"cortex","error":"thinking error","reason_code":string_or_null(obj.get("reason_code")),"provider":string_or_null(obj.get("provider")),"model":string_or_null(obj.get("model"))})).collect()
 }
 
 fn timestamp(value: Option<&Value>) -> Option<i64> {
@@ -90,8 +138,8 @@ fn timestamp(value: Option<&Value>) -> Option<i64> {
         _ => None,
     }
 }
-fn execution_day(value: &Value, zone: Tz) -> Option<String> {
-    let ts = timestamp(value.get("ts"))?;
+fn execution_day(value: Option<&Value>, zone: Tz) -> Option<String> {
+    let ts = timestamp(value)?;
     if ts <= 0 {
         return None;
     };
@@ -119,8 +167,9 @@ fn use_id(value: Option<&Value>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{timestamp, use_id};
-    use serde_json::json;
+    use super::{execution_day, execution_row, timestamp, use_id};
+    use chrono::{TimeZone, Utc};
+    use serde_json::{Value, json};
 
     #[test]
     fn timestamp_and_use_id_match_python_scalar_coercions() {
@@ -130,5 +179,97 @@ mod tests {
         assert_eq!(use_id(Some(&json!(42))), "42");
         assert_eq!(use_id(Some(&json!(true))), "True");
         assert_eq!(use_id(Some(&json!(0))), "");
+    }
+
+    #[test]
+    fn timestamp_selection_matches_full_value_parsing() {
+        let now = Utc.with_ymd_and_hms(2026, 10, 20, 0, 30, 0).unwrap();
+        let today = now.timestamp_millis();
+        let yesterday = today - 86_400_000;
+        let lines = [
+            format!(r#"{{"ts":{today},"name":"kept","status":"error"}}"#),
+            format!(r#"{{"ts":{yesterday},"ts":{today}}}"#),
+            format!(r#"{{"ts":{today},"ts":{yesterday}}}"#),
+            format!(r#"{{"ts":{today},"ts":null}}"#),
+            format!(r#"{{"ts":{today},"ts":"invalid"}}"#),
+            format!(r#"{{"nested":{{"ts":{today}}},"ts":{yesterday}}}"#),
+            format!(r#"{{"ts":" {today} "}}"#),
+            format!(r#"{{"ts":{today}.9}}"#),
+            format!(r#"{{"ts":{today},"other":1e999}}"#),
+            format!(r#"{{"ts":{today}}} trailing"#),
+            format!(r#"{{"ts":{today},"unfinished":["#),
+            r#"{"ts":true}"#.into(),
+            r#"{"ts":0}"#.into(),
+            r#"{"ts":-1}"#.into(),
+            r#"{"ts":18446744073709551615}"#.into(),
+            r#"{"ts":{"nested":1}}"#.into(),
+            r#"{"ts":[1]}"#.into(),
+            r#"{"missing":"timestamp"}"#.into(),
+            r#"[{"ts":1}]"#.into(),
+            r#"null"#.into(),
+            r#"123"#.into(),
+            String::new(),
+        ];
+        let mut selected = 0;
+        for zone in [chrono_tz::UTC, chrono_tz::America::Denver] {
+            for wanted in ["20261019", "20261020"] {
+                for line in &lines {
+                    let expected = serde_json::from_str::<Value>(line).ok().filter(|row| {
+                        execution_day(row.get("ts"), zone).as_deref() == Some(wanted)
+                    });
+                    let actual = execution_row(line, wanted, zone);
+                    selected += usize::from(actual.is_some());
+                    assert_eq!(actual, expected, "{zone} {wanted}: {line}");
+                }
+            }
+        }
+        assert!(selected > 0);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn current_execution_errors_cross_filename_days_and_keep_read_failures() {
+        let root = tempfile::tempdir().unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 10, 20, 12, 0, 0).unwrap();
+        let ts = now.timestamp_millis();
+        std::fs::create_dir(root.path().join("config")).unwrap();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            r#"{"identity":{"timezone":"UTC"}}"#,
+        )
+        .unwrap();
+        let talents = root.path().join("talents");
+        std::fs::create_dir(&talents).unwrap();
+        let rows = [
+            json!({"ts":ts-86_400_000,"name":"old","status":"error"}),
+            json!({"ts":ts-2,"name":"recovered","status":"error"}),
+            json!({"ts":ts-1,"name":"still-failed","status":"error","use_id":"kept"}),
+        ];
+        std::fs::write(
+            talents.join("20000101.jsonl"),
+            rows.iter()
+                .map(|row| format!("{row}\n"))
+                .collect::<String>(),
+        )
+        .unwrap();
+        std::fs::write(
+            talents.join("20000102.jsonl"),
+            format!(
+                "{}\n",
+                json!({"ts":ts,"name":"recovered","status":"completed"})
+            ),
+        )
+        .unwrap();
+        std::fs::write(talents.join("20000103.jsonl"), [0xff]).unwrap();
+        let (errors, ok) = super::today_at(root.path(), now);
+        assert!(!ok);
+        assert_eq!(
+            errors,
+            vec![json!({
+                "type":"agent","id":"kept","name":"still-failed","ts":ts-1,
+                "service":"cortex","error":"thinking error","reason_code":null,
+                "provider":null,"model":null,
+            })]
+        );
     }
 }
