@@ -1424,7 +1424,7 @@ fn start_local_windows(
     #[cfg(windows)]
     let mut model_resources = crate::process::BoundedHelperResources::new();
     #[cfg(windows)]
-    model_resources.retain(Arc::new(model_hold));
+    model_resources.retain(Arc::new(std::sync::Mutex::new(model_hold)));
     if !verify_launch_artifacts_windows(journal_path, &plan) {
         return ProviderLaunchOutcome {
             status: LaunchOutcomeStatus::LaunchFailed,

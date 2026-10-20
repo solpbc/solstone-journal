@@ -314,8 +314,8 @@ fn linked_legacy_root_and_directory_never_authorize_retirement() {
     {
         let result = std::process::Command::new("cmd.exe")
             .args(["/d", "/c", "mklink", "/J"])
-            .arg(&flat)
-            .arg(outside.path())
+            .arg(flat.to_string_lossy().replace('/', "\\"))
+            .arg(outside.path().to_string_lossy().replace('/', "\\"))
             .output()
             .unwrap();
         assert!(
@@ -341,8 +341,8 @@ fn linked_legacy_root_and_directory_never_authorize_retirement() {
     {
         let result = std::process::Command::new("cmd.exe")
             .args(["/d", "/c", "mklink", "/J"])
-            .arg(&models)
-            .arg(&external_models)
+            .arg(models.to_string_lossy().replace('/', "\\"))
+            .arg(external_models.to_string_lossy().replace('/', "\\"))
             .output()
             .unwrap();
         assert!(result.status.success());

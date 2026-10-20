@@ -98,7 +98,7 @@ pub struct Packs {
     containment: Option<Pack>,
     identity: String,
     pub load_failure: Option<String>,
-    _generation_hold: Option<solstone_core_journal_io::FileLock>,
+    _generation_hold: Option<Mutex<solstone_core_journal_io::FileLock>>,
 }
 
 impl std::fmt::Debug for Packs {
@@ -360,7 +360,7 @@ fn open_installed(journal: &Path, installed: &Installed) -> Packs {
         }
     }
     let mut packs = Packs::new(venues, containment);
-    packs._generation_hold = Some(hold);
+    packs._generation_hold = Some(Mutex::new(hold));
     packs.load_failure = failure;
     packs
 }
