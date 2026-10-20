@@ -356,6 +356,9 @@ pub(super) fn download_verified_url_internal(
         .open(&partial)?;
     if start == 0 {
         sync_file(&out)?;
+        // Unix exposes a directory sync for the new name. Windows checkpoints
+        // the file handle above; it has no corresponding directory flush.
+        #[cfg(unix)]
         solstone_core_journal_io::sync_root(partial.parent().expect("partial parent"))
             .map_err(|e| ArchiveError::Download(e.to_string()))?;
     }
