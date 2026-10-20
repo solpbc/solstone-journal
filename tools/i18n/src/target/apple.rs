@@ -102,35 +102,24 @@ fn generate_xcstrings_json(
                                 }),
                             );
                         }
-                        if is_locale_formatted {
-                            loc_map.insert(
-                                loc.tag.clone(),
-                                json!({
-                                    "variations": {
-                                        "plural": plural_map
-                                    }
-                                }),
-                            );
-                        } else {
-                            loc_map.insert(
-                                loc.tag.clone(),
-                                json!({
-                                    "stringUnit": {
-                                        "state": "translated",
-                                        "value": "%#@quantity@"
-                                    },
-                                    "substitutions": {
-                                        "quantity": {
-                                            "argNum": sel_arg_num,
-                                            "formatSpecifier": "lld",
-                                            "variations": {
-                                                "plural": plural_map
-                                            }
+                        loc_map.insert(
+                            loc.tag.clone(),
+                            json!({
+                                "stringUnit": {
+                                    "state": "translated",
+                                    "value": "%#@quantity@"
+                                },
+                                "substitutions": {
+                                    "quantity": {
+                                        "argNum": sel_arg_num,
+                                        "formatSpecifier": "lld",
+                                        "variations": {
+                                            "plural": plural_map
                                         }
                                     }
-                                }),
-                            );
-                        }
+                                }
+                            }),
+                        );
                     }
                 }
                 strings_map.insert(
@@ -229,6 +218,7 @@ pub fn render_apple_template(
                     .as_ref()
                     .map(|s| s.name.as_str())
                     .unwrap_or("count");
+                out.push('\u{2068}');
                 if is_ungrouped_cardinal && arg_spec.name == sel_name {
                     let display_pos = msg.meta.arguments.len() + 1;
                     out.push_str(&format!("%{}$@", display_pos));
@@ -247,6 +237,7 @@ pub fn render_apple_template(
                         }
                     }
                 }
+                out.push('\u{2069}');
             }
         }
     }
@@ -272,9 +263,7 @@ fn generate_apple_swift(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
                 .ok_or_else(|| vec![Fault::new("enum-variant", "*", &msg.id)])?;
             let def_key = crate::target::model::enum_variant_resource_key(&msg.resource_key, def);
             s.push_str(&format!("        case \"{}\":\n", msg.id));
-            s.push_str("            guard let val = enumArg else { return ");
-            s.push_str(&format!("\"{}\"", def_key));
-            s.push_str(" }\n");
+            s.push_str("            guard let val = enumArg else { fatalError(\"Missing enum argument\") }\n");
             s.push_str("            switch val {\n");
             for v in &sel.enum_values {
                 let v_key = crate::target::model::enum_variant_resource_key(&msg.resource_key, v);
@@ -292,25 +281,8 @@ fn generate_apple_swift(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
             ));
         }
     }
-    s.push_str("        default: return messageId\n");
+    s.push_str("        default: fatalError(\"Unknown message identity\")\n");
     s.push_str("        }\n");
-    s.push_str("    }\n\n");
-
-    s.push_str("    public static func selectCategoryEn(count: Int64) -> String {\n");
-    s.push_str("        if count == 1 || count == -1 {\n");
-    s.push_str("            return \"one\"\n");
-    s.push_str("        }\n");
-    s.push_str("        return \"other\"\n");
-    s.push_str("    }\n\n");
-
-    s.push_str("    public static func selectCategoryAr(count: Int64) -> String {\n");
-    s.push_str("        let v = count < 0 ? (count == Int64.min ? Int64.max : -count) : count\n");
-    s.push_str("        if v == 0 { return \"zero\" }\n");
-    s.push_str("        if v == 1 { return \"one\" }\n");
-    s.push_str("        if v == 2 { return \"two\" }\n");
-    s.push_str("        if v >= 3 && v <= 10 { return \"few\" }\n");
-    s.push_str("        if v >= 11 && v <= 99 { return \"many\" }\n");
-    s.push_str("        return \"other\"\n");
     s.push_str("    }\n\n");
 
     s.push_str("    public static func formatIntegerUngrouped(_ val: Int64) -> String {\n");

@@ -1,0 +1,33 @@
+{
+  "description": "Synthetic runtime contract control",
+  "context": "Synthetic test only",
+  "surfaces": [
+    "synthetic-fixture"
+  ],
+  "bundles": [
+    "synth-app"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 1000,
+  "source_revision": "0c16ee53647469142a914b5678fc275217732b945c00473d197eb289aaf052db",
+  "risk": "routine",
+  "auto_merge": false,
+  "protected_slots": [
+    {
+      "name": "gap",
+      "kind": "whitespace",
+      "value": " \n "
+    },
+    {
+      "name": "fmt",
+      "kind": "accepted-input",
+      "value": "%n %1$s $NAME$ \\ \" { }"
+    }
+  ]
+}

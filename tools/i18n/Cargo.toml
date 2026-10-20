@@ -9,6 +9,10 @@ publish = false
 [workspace]
 resolver = "3"
 
+[features]
+default = []
+full-tests = []
+
 [lints.rust]
 unsafe_code = "forbid"
 

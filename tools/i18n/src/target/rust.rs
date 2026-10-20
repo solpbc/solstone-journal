@@ -10,6 +10,27 @@ use std::path::Path;
 
 pub fn generate_rust_target(bundle: &TargetBundle, dest_dir: &Path) -> Result<(), Vec<Fault>> {
     for msg in &bundle.messages {
+        if msg.meta.format_intent == FormatIntent::Cardinal {
+            let selector = msg
+                .meta
+                .selector
+                .as_ref()
+                .ok_or_else(|| vec![Fault::catalog("invalid-metadata")])?;
+            let quantity = msg
+                .meta
+                .arguments
+                .iter()
+                .find(|arg| arg.name == selector.name)
+                .ok_or_else(|| vec![Fault::catalog("invalid-metadata")])?;
+            let min = quantity.min.unwrap_or(i32::MIN as f64);
+            let max = quantity.max.unwrap_or(i32::MAX as f64);
+            // The pinned Rust plural dependency diverges from native CLDR Arabic rules outside this interval.
+            for locale in &bundle.locales {
+                if locale.cardinal.as_deref() == Some("ar") && (min < -100.0 || max > 100.0) {
+                    return Err(vec![Fault::new("cardinal-range", &locale.tag, &msg.id)]);
+                }
+            }
+        }
         for arg in &msg.meta.arguments {
             if arg.numeric_style == Some(crate::vocab::NumericStyle::LocaleFormatted) {
                 return Err(vec![Fault::new("locale-formatted", "*", &msg.id)]);

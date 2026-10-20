@@ -1,0 +1,26 @@
+{
+  "description": "Synthetic runtime contract control",
+  "context": "Synthetic test only",
+  "surfaces": [
+    "synthetic-fixture"
+  ],
+  "bundles": [
+    "synth-app"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "max_length": 1000,
+  "source_revision": "1af57f44f4b6bb03fcdb3015bcf4f5199192739f17c4790c3f0e6019bfd0c973",
+  "risk": "routine",
+  "auto_merge": false,
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  }
+}

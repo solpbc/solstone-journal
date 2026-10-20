@@ -1,0 +1,36 @@
+{
+  "description": "Synthetic runtime contract control",
+  "context": "Synthetic test only",
+  "surfaces": [
+    "synthetic-fixture"
+  ],
+  "bundles": [
+    "synth-app"
+  ],
+  "arguments": [
+    {
+      "name": "a-b",
+      "type": "string"
+    },
+    {
+      "name": "a_b",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "max_length": 1000,
+  "source_revision": "b35e5a69c2e0e723b0168797802f5fb08f5eb87e013fb5dfdfd2ea102765152d",
+  "risk": "routine",
+  "auto_merge": false,
+  "selector": {
+    "name": "a-b",
+    "type": "string",
+    "enum_values": [
+      "Box",
+      "box",
+      "in-bag",
+      "in_bag"
+    ],
+    "enum_default": "Box"
+  }
+}

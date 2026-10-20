@@ -1,0 +1,28 @@
+{
+  "description": "Synthetic exact protected whitespace and escape control",
+  "context": "Synthetic fixture only",
+  "surfaces": [
+    "synthetic-fixture"
+  ],
+  "bundles": [
+    "synth-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 1000,
+  "source_revision": "a02f214d68a816a636246272088ca22512df21ba25407551b2ae1bd23b9e4138",
+  "risk": "routine",
+  "auto_merge": false,
+  "protected_slots": [
+    {
+      "name": "gap",
+      "kind": "whitespace",
+      "value": "  \t\r"
+    },
+    {
+      "name": "literal",
+      "kind": "command",
+      "value": "\\n &lt; %"
+    }
+  ]
+}

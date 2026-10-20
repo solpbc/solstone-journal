@@ -1,0 +1,167 @@
+{
+  "history_version": 1,
+  "records": [
+    {
+      "id": "synth.notes.countprobe",
+      "resource": "m73796e74682e6e6f7465732e636f756e7470726f6265",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "synth.notes.enumprobe",
+      "resource": "m73796e74682e6e6f7465732e656e756d70726f6265",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "a-b",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "a_b",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "a-b",
+        "type": "string",
+        "enum_values": [
+          "Box",
+          "box",
+          "in-bag",
+          "in_bag"
+        ],
+        "enum_default": "Box"
+      }
+    },
+    {
+      "id": "synth.notes.escapeprobe",
+      "resource": "m73796e74682e6e6f7465732e65736361706570726f6265",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "gap",
+          "kind": "whitespace",
+          "value": " \n "
+        },
+        {
+          "name": "fmt",
+          "kind": "accepted-input",
+          "value": "%n %1$s $NAME$ \\ \" { }"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "synth.notes.mixedprobe",
+      "resource": "m73796e74682e6e6f7465732e6d6978656470726f6265",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "open",
+          "type": "boolean",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "n",
+          "type": "integer",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "synth.notes.percentprobe",
+      "resource": "m73796e74682e6e6f7465732e70657263656e7470726f6265",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "synth.notes.spacesprobe",
+      "resource": "m73796e74682e6e6f7465732e73706163657370726f6265",
+      "namespace": "synth.notes",
+      "owner": "synth",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "gap",
+          "kind": "whitespace",
+          "value": "  \t\r"
+        },
+        {
+          "name": "literal",
+          "kind": "command",
+          "value": "\\n &lt; %"
+        }
+      ],
+      "selector": null
+    }
+  ]
+}

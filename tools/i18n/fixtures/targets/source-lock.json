@@ -82,13 +82,13 @@
     {
       "id": "synth.notes.forms",
       "source": "112e5c6f8e14fc9ad5310e02fca78bbb988362d1be66181b9b8100dcb0dee750",
-      "contract": "1f92fc2dfaddc39b15b43c7399a26bd9788474e3e7b4aee3d96c58a692c18cba",
+      "contract": "40448a6fff1ddd2661e829eaceb87c03f705a8ec638e54e201f8ddcf5bc818be",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": [
         {
           "locale": "ar",
           "source": "112e5c6f8e14fc9ad5310e02fca78bbb988362d1be66181b9b8100dcb0dee750",
-          "contract": "1f92fc2dfaddc39b15b43c7399a26bd9788474e3e7b4aee3d96c58a692c18cba",
+          "contract": "40448a6fff1ddd2661e829eaceb87c03f705a8ec638e54e201f8ddcf5bc818be",
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         },
         {

@@ -81,29 +81,12 @@ fn generate_webextension_messages_json(
             None => return Err(vec![Fault::new("missing-translation", locale, &msg.id)]),
         };
 
-        let mut placeholders_map = Map::new();
-        let mut msg_str = String::new();
+        let mut raw_content = String::new();
 
         for el in &parsed.branches[0].pattern {
             match el.kind {
                 ElementKind::Text => {
-                    let mut i = 0;
-                    let bytes = el.value.as_bytes();
-                    while i < bytes.len() {
-                        if bytes[i..].starts_with(b"%1$s") {
-                            msg_str.push_str("%1$$s");
-                            i += 4;
-                        } else if bytes[i..].starts_with(b"%n") {
-                            msg_str.push_str("%n");
-                            i += 2;
-                        } else if bytes[i] == b'$' {
-                            msg_str.push_str("$$");
-                            i += 1;
-                        } else {
-                            msg_str.push(bytes[i] as char);
-                            i += 1;
-                        }
-                    }
+                    raw_content.push_str(&el.value);
                 }
                 ElementKind::Slot => {
                     let slot = msg
@@ -112,25 +95,7 @@ fn generate_webextension_messages_json(
                         .iter()
                         .find(|s| s.name == el.value)
                         .ok_or_else(|| vec![Fault::catalog("io-error")])?;
-
-                    let ph_key = el.value.to_ascii_lowercase();
-                    msg_str.push_str(&format!("${}$", ph_key));
-
-                    let mut content_str = String::new();
-                    for c in slot.value.chars() {
-                        if c == '$' {
-                            content_str.push_str("$$");
-                        } else {
-                            content_str.push(c);
-                        }
-                    }
-
-                    placeholders_map.insert(
-                        ph_key,
-                        json!({
-                            "content": content_str
-                        }),
-                    );
+                    raw_content.push_str(&slot.value);
                 }
                 ElementKind::Arg => {
                     // Webextension dynamic messages are prohibited by validator
@@ -139,14 +104,15 @@ fn generate_webextension_messages_json(
             }
         }
 
-        let mut entry = json!({
-            "message": msg_str,
-            "description": msg.meta.description
+        let entry = json!({
+            "message": "$SAFE$",
+            "description": msg.meta.description,
+            "placeholders": {
+                "safe": {
+                    "content": raw_content
+                }
+            }
         });
-
-        if !placeholders_map.is_empty() {
-            entry["placeholders"] = JsonValue::Object(placeholders_map);
-        }
 
         root_map.insert(msg.resource_key.clone(), entry);
     }

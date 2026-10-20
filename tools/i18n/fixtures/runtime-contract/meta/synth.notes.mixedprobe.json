@@ -1,0 +1,30 @@
+{
+  "description": "Synthetic runtime contract control",
+  "context": "Synthetic test only",
+  "surfaces": [
+    "synthetic-fixture"
+  ],
+  "bundles": [
+    "synth-app"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "open",
+      "type": "boolean"
+    },
+    {
+      "name": "n",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 1000,
+  "source_revision": "448e0c25fac071400f0c44c0a323c475f1db3f5f3faea753f0809e97ca804c42",
+  "risk": "routine",
+  "auto_merge": false
+}

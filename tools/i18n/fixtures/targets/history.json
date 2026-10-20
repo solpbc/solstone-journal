@@ -72,8 +72,8 @@
           "name": "count",
           "type": "cardinal",
           "numeric_style": "ungrouped",
-          "min": -2147483648.0,
-          "max": 2147483647.0
+          "min": -100.0,
+          "max": 100.0
         }
       ],
       "protected_slots": [],

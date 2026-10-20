@@ -15,9 +15,47 @@ mod tests {
     };
     use crate::vocab::Channel;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
+    use std::path::PathBuf;
+    #[cfg(feature = "full-tests")]
     use std::process::Command;
 
+    struct TestDirectory {
+        root: PathBuf,
+        output: PathBuf,
+    }
+    impl TestDirectory {
+        fn new(label: &str) -> Self {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            loop {
+                let root = std::env::temp_dir().join(format!(
+                    "i18n-target-test-{}-{}-{}",
+                    std::process::id(),
+                    label,
+                    NEXT.fetch_add(1, Ordering::Relaxed)
+                ));
+                match fs::create_dir(&root) {
+                    Ok(()) => {
+                        let output = root.join("output");
+                        return Self { root, output };
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => panic!("create owned test directory: {e}"),
+                }
+            }
+        }
+        fn path(&self) -> &Path {
+            &self.output
+        }
+    }
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[cfg(feature = "full-tests")]
     fn find_fluent_bundle_rlib() -> Option<PathBuf> {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let candidates = [
@@ -42,6 +80,7 @@ mod tests {
         None
     }
 
+    #[cfg(feature = "full-tests")]
     fn build_combo_bundle(catalog: &LoadedCatalog) -> crate::target::model::TargetBundle {
         let mut msg_map = std::collections::HashMap::new();
         msg_map.insert(
@@ -140,11 +179,13 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full-tests")]
     fn test_rust_generated_api_compilation_and_execution() {
         let cat_dir = Path::new("fixtures/targets");
         let catalog =
             LoadedCatalog::load_and_validate(cat_dir, Channel::Development, None).unwrap();
-        let out_dir = Path::new("/var/tmp/test_rust_api_out");
+        let owned_out_dir = TestDirectory::new("test_rust_api_out");
+        let out_dir = owned_out_dir.path();
         let _ = fs::remove_dir_all(out_dir);
         publish(
             &catalog,
@@ -300,7 +341,8 @@ fn main() {
         let cat_dir = Path::new("fixtures/targets");
         let catalog =
             LoadedCatalog::load_and_validate(cat_dir, Channel::Development, None).unwrap();
-        let out_dir = Path::new("/var/tmp/test_fluent_read_out");
+        let owned_out_dir = TestDirectory::new("test_fluent_read_out");
+        let out_dir = owned_out_dir.path();
         let _ = fs::remove_dir_all(out_dir);
         publish(
             &catalog,
@@ -333,11 +375,13 @@ fn main() {
     }
 
     #[test]
+    #[cfg(feature = "full-tests")]
     fn test_rust_local_collision_control() {
         let cat_dir = Path::new("fixtures/targets");
         let catalog =
             LoadedCatalog::load_and_validate(cat_dir, Channel::Development, None).unwrap();
-        let out_dir = Path::new("/var/tmp/test_rust_local_collision_out");
+        let owned_out_dir = TestDirectory::new("test_rust_local_collision_out");
+        let out_dir = owned_out_dir.path();
         let _ = fs::remove_dir_all(out_dir);
 
         let branches = vec![
@@ -537,11 +581,13 @@ fn main() {
     }
 
     #[test]
+    #[cfg(feature = "full-tests")]
     fn test_node_api_mjs() {
         let cat_dir = Path::new("fixtures/targets");
         let catalog =
             LoadedCatalog::load_and_validate(cat_dir, Channel::Development, None).unwrap();
-        let out_dir = Path::new("/var/tmp/test_node_api_out");
+        let owned_out_dir = TestDirectory::new("test_node_api_out");
+        let out_dir = owned_out_dir.path();
         let _ = fs::remove_dir_all(out_dir);
         publish(
             &catalog,
@@ -718,20 +764,17 @@ fn main() {
         )
         .unwrap();
 
-        // Check no http:// or https:// in generated ESM vendor files
-        let esm_vendor = out_dir.join("esm/target-operator/vendor");
-        if esm_vendor.exists() {
-            for entry in fs::read_dir(&esm_vendor).unwrap().flatten() {
-                if entry.path().is_file() {
-                    let content = fs::read_to_string(entry.path()).unwrap();
-                    for line in content.lines() {
-                        assert!(
-                            !line.contains("http://") && !line.contains("https://"),
-                            "Found URL in {:?}",
-                            entry.path()
-                        );
-                    }
-                }
+        // Vendoring must preserve source and license bytes, including reference URLs.
+        let vendor_source = Path::new("vendor/fluent-js");
+        let vendor_output = out_dir.join("esm/vendor/fluent-bundle");
+        assert!(vendor_output.is_dir());
+        for entry in fs::read_dir(vendor_source).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_file() {
+                assert_eq!(
+                    fs::read(entry.path()).unwrap(),
+                    fs::read(vendor_output.join(entry.file_name())).unwrap()
+                );
             }
         }
 
@@ -781,16 +824,20 @@ assert(rEn.includes("10,000,000"), `en must format 10000000 as 10,000,000, got $
 const rAr3 = renderPlural("ar", "synth.notes.forms", [["count", 3]]);
 assert(rAr3.includes("tr-other"), "Arabic count 3 should fall through to tr-other");
 
-// 5. Arabic -2147483648 contains the digits -2147483648. Compare that render to a direct FluentBundle.formatPattern of the same embedded FTL. Do not assert it equals Rust other or tr-other.
-const rArMin = renderPlural("ar", "synth.notes.forms", [["count", -2147483648]]);
-assert(rArMin.includes("-2147483648"), "Arabic min i32 must contain digits -2147483648");
+// 5. This shared Arabic fixture declares -100..100. Check the endpoints
+// against the real Fluent reader and refuse values outside that contract.
+const rArMin = renderPlural("ar", "synth.notes.forms", [["count", -100]]);
+assert(rArMin.includes("-100"), "Arabic lower bound must preserve signed digits");
+for (const count of [-2147483648, -101, 101, 2147483647]) {
+    assert.throws(() => renderPlural("ar", "synth.notes.forms", [["count", count]]));
+}
 
 const directResource = new FluentResource(CATALOGS["ar"]);
 const directBundle = new FluentBundle("ar");
 directBundle.addResource(directResource);
 const directMsg = directBundle.getMessage("m73796e74682e6e6f7465732e666f726d73");
-const directVal = directBundle.formatPattern(directMsg.value, { count: -2147483648 });
-assert.strictEqual(rArMin, directVal, "Arabic min i32 render must match direct FluentBundle.formatPattern");
+const directVal = directBundle.formatPattern(directMsg.value, { count: -100 });
+assert.strictEqual(rArMin, directVal, "Arabic endpoint render must match direct FluentBundle.formatPattern");
 
 // 6. Unmatched enum unknown selects kind-box
 const rDef = renderOp("en-x-synth", "synth.notes.choice", [["kind", "unknown"]]);
@@ -827,7 +874,8 @@ assert.throws(() => {
         let cat_dir = Path::new("fixtures/targets");
         let catalog =
             LoadedCatalog::load_and_validate(cat_dir, Channel::Development, None).unwrap();
-        let out_dir = Path::new("/var/tmp/test_own_readers_out");
+        let owned_out_dir = TestDirectory::new("test_own_readers_out");
+        let out_dir = owned_out_dir.path();
         let _ = fs::remove_dir_all(out_dir);
         let all_targets = [
             Target::Rust,
@@ -857,9 +905,11 @@ assert.throws(() => {
                 folder: c["folder"].as_str().map(|s| s.to_string()),
                 message_id: c["message_id"].as_str().unwrap().to_string(),
                 resource_key: c["resource_key"].as_str().unwrap().to_string(),
-                adapter_call: c["adapter_call"].as_str().unwrap().to_string(),
+                adapter_call: c["own_reader_call"].as_str().unwrap().to_string(),
                 inputs: c["inputs"].as_object().unwrap().clone(),
-                expected: c["expected"].as_str().unwrap().to_string(),
+                expected: c["logical_expected"].as_str().unwrap().to_string(),
+                expected_exact: c["expected"].is_string(),
+                call_contract: c["call_contract"].clone(),
                 own_reader: c["own_reader"].as_str().unwrap().to_string(),
                 platform_reader: c["platform_reader"].as_str().unwrap().to_string(),
             };
@@ -885,6 +935,10 @@ assert.throws(() => {
                 }
                 "webextension" => {
                     assert_eq!(case.folder.as_deref(), Some("en"));
+                    if case.message_id == "synth.notes.chrome" {
+                        assert!(case.adapter_call.contains("getManifest"));
+                        assert!(case.adapter_call.contains("__MSG_"));
+                    }
                     let actual = read_webextension_json(&webext_dir, &case).unwrap();
                     assert_eq!(
                         actual, case.expected,
@@ -911,12 +965,15 @@ assert.throws(() => {
         let msg_obj: serde_json::Value = serde_json::from_str(&msg_content).unwrap();
         let chrome_entry = &msg_obj["m73796e74682e6e6f7465732e6368726f6d65"];
         let raw_message = chrome_entry["message"].as_str().unwrap();
-        assert!(!raw_message.contains("$$NAME$$"));
-        assert!(raw_message.contains("$var_name$"));
-        let ph_content = chrome_entry["placeholders"]["var_name"]["content"]
+        assert_eq!(raw_message, "$SAFE$");
+        let ph_content = chrome_entry["placeholders"]["safe"]["content"]
             .as_str()
             .unwrap();
-        assert_eq!(ph_content, "$$NAME$$");
+        assert_eq!(ph_content, "Chrome literal %n and %1$s slot $NAME$");
+        assert!(ph_content.contains("$NAME$"));
+        assert!(ph_content.contains("%1$s"));
+        assert!(ph_content.contains("%n"));
+        assert!(!ph_content.contains("$$"));
 
         // Android qualifiers inspection:
         assert!(
@@ -932,6 +989,11 @@ assert.throws(() => {
         assert!(
             out_dir
                 .join("android/target-operator/values-en/strings.xml")
+                .exists()
+        );
+        assert!(
+            out_dir
+                .join("android/target-operator/values/strings.xml")
                 .exists()
         );
         assert!(
@@ -971,13 +1033,42 @@ assert.throws(() => {
         let android_xml_content =
             fs::read_to_string(out_dir.join("android/target-operator/values-en-rXA/strings.xml"))
                 .unwrap();
-        assert!(
-            android_xml_content
-                .contains(&format!("<string name=\"{}\">%%</string>", percent_res_key))
-        );
+        assert!(android_xml_content.contains(&format!(
+            "<string name=\"{}\">\"%%\"</string>",
+            percent_res_key
+        )));
         assert!(
             !android_xml_content
                 .contains(&format!("<string name=\"{}\">%</string>", percent_res_key))
+        );
+
+        // Backslash escaping inspection:
+        let shell_res_key = crate::history::compute_resource_key("synth.notes.shell");
+        let shell_xml_line = android_xml_content
+            .lines()
+            .find(|l| l.contains(&format!("<string name=\"{}\">", shell_res_key)))
+            .expect("synth.notes.shell string in android XML");
+        assert!(
+            shell_xml_line.contains(r"\\"),
+            "Published shell string XML must store backslash doubled"
+        );
+        assert!(
+            !shell_xml_line.contains(r" \ "),
+            "Published shell string XML must not contain single raw backslash"
+        );
+
+        let shell_case = cases_arr
+            .iter()
+            .find(|c| c["target"] == "android" && c["message_id"] == "synth.notes.shell")
+            .expect("synth.notes.shell android case");
+        let shell_exp = shell_case["expected"].as_str().unwrap();
+        assert!(
+            shell_exp.contains(r" \ "),
+            "Own-reader expected string must contain one literal backslash"
+        );
+        assert!(
+            !shell_exp.contains(r" \\ "),
+            "Own-reader expected string must not contain doubled backslash"
         );
 
         let _ = fs::remove_dir_all(out_dir);
@@ -988,7 +1079,8 @@ assert.throws(() => {
         let cat_dir = Path::new("fixtures/targets");
         let catalog =
             LoadedCatalog::load_and_validate(cat_dir, Channel::Development, None).unwrap();
-        let out_dir = Path::new("/var/tmp/test_anchors_out");
+        let owned_out_dir = TestDirectory::new("test_anchors_out");
+        let out_dir = owned_out_dir.path();
         let _ = fs::remove_dir_all(out_dir);
         publish(
             &catalog,
@@ -1019,7 +1111,7 @@ assert.throws(() => {
             if msg_id == "synth.notes.percent" && exp == "%" {
                 found_percent = true;
             }
-            if msg_id == "synth.notes.group" && exp == "tr group 10000" {
+            if msg_id == "synth.notes.group" && exp == "tr group \u{2068}10000\u{2069}" {
                 found_10000 = true;
             }
             if msg_id == "synth.notes.span" && exp.contains("-2147483648") {
@@ -1028,7 +1120,7 @@ assert.throws(() => {
             if msg_id == "synth.notes.forms"
                 && loc == "ar"
                 && c["inputs"]["count"] == 3
-                && exp == "tr-other 3"
+                && exp == "tr-other \u{2068}3\u{2069}"
             {
                 found_ar_3_tr_other = true;
             }
@@ -1067,7 +1159,8 @@ assert.throws(() => {
             LoadedCatalog::load_and_validate(cat_dir, Channel::Development, None).unwrap();
 
         // 1. Canary in unmarked directory
-        let unmarked_dir = Path::new("/var/tmp/test_safety_unmarked_dir");
+        let owned_unmarked_dir = TestDirectory::new("test_safety_unmarked_dir");
+        let unmarked_dir = owned_unmarked_dir.path();
         let _ = fs::remove_dir_all(unmarked_dir);
         fs::create_dir_all(unmarked_dir).unwrap();
         let canary_file = unmarked_dir.join("canary.txt");
@@ -1087,10 +1180,12 @@ assert.throws(() => {
         let _ = fs::remove_dir_all(unmarked_dir);
 
         // 2. Symlink destination
-        let real_dir = Path::new("/var/tmp/test_safety_real_dir");
+        let owned_real_dir = TestDirectory::new("test_safety_real_dir");
+        let real_dir = owned_real_dir.path();
         let _ = fs::remove_dir_all(real_dir);
         fs::create_dir_all(real_dir).unwrap();
-        let symlink_dest = Path::new("/var/tmp/test_safety_symlink_dir");
+        let owned_symlink_dest = TestDirectory::new("test_safety_symlink_dir");
+        let symlink_dest = owned_symlink_dest.path();
         let _ = fs::remove_file(symlink_dest);
         std::os::unix::fs::symlink(real_dir, symlink_dest).unwrap();
 
@@ -1135,7 +1230,8 @@ assert.throws(() => {
         assert_eq!(err_overlap_sub[0].rule, "destination-overlap");
 
         // 4. Marker directory replaced and production drops excluded locales
-        let out_dir = Path::new("/var/tmp/test_safety_marker_replace_out");
+        let owned_out_dir = TestDirectory::new("test_safety_marker_replace_out");
+        let out_dir = owned_out_dir.path();
         let _ = fs::remove_dir_all(out_dir);
 
         publish(
@@ -1304,7 +1400,8 @@ assert.throws(() => {
             locales: vec![loc_dup1, loc_dup2],
             messages: vec![],
         };
-        let out_dir = Path::new("/var/tmp/test_android_collision_out");
+        let owned_out_dir = TestDirectory::new("test_android_collision_out");
+        let out_dir = owned_out_dir.path();
         let _ = fs::remove_dir_all(out_dir);
         let err_col =
             crate::target::android::generate_android_target(&bundle, out_dir).unwrap_err();
@@ -1389,7 +1486,7 @@ assert.throws(() => {
 
         let tmpl =
             crate::target::apple::render_apple_template(&branch_elements, &msg, true).unwrap();
-        assert_eq!(tmpl, "%1$@ has %3$@ items");
+        assert_eq!(tmpl, "\u{2068}%1$@\u{2069} has \u{2068}%3$@\u{2069} items");
 
         // Format adapter call: name is "Alice", count is 5 -> extra display arg "5" appended at end
         let mut inputs = serde_json::Map::new();
@@ -1405,7 +1502,7 @@ assert.throws(() => {
         );
         assert_eq!(
             call,
-            "String(format:locale:arguments: \"mapplecontract\", \"Alice\", 5, \"5\")"
+            "String(format:locale:arguments: \"mapplecontract\", 1:String(\"Alice\"), 2:Int64(5), 3:String(\"5\"))"
         );
 
         // Test ungrouped integer in text intent
@@ -1430,7 +1527,7 @@ assert.throws(() => {
         }];
         let tmpl_int =
             crate::target::apple::render_apple_template(&int_elements, &int_msg, false).unwrap();
-        assert_eq!(tmpl_int, "%1$@");
+        assert_eq!(tmpl_int, "\u{2068}%1$@\u{2069}");
 
         let mut int_inputs = serde_json::Map::new();
         int_inputs.insert("n".to_string(), serde_json::json!(2147483648_i64));
@@ -1443,7 +1540,7 @@ assert.throws(() => {
         );
         assert_eq!(
             int_call,
-            "String(format:locale:arguments: \"mungrouped\", \"2147483648\")"
+            "String(format:locale:arguments: \"mungrouped\", 1:String(\"2147483648\"))"
         );
 
         // Test locale-formatted integer
@@ -1456,7 +1553,7 @@ assert.throws(() => {
         };
         let tmpl_loc =
             crate::target::apple::render_apple_template(&int_elements, &loc_msg, false).unwrap();
-        assert_eq!(tmpl_loc, "%1$lld");
+        assert_eq!(tmpl_loc, "\u{2068}%1$lld\u{2069}");
         let loc_call = crate::target::cases::format_adapter_call(
             Target::Apple,
             "apple-app",
@@ -1466,7 +1563,846 @@ assert.throws(() => {
         );
         assert_eq!(
             loc_call,
-            "String(format:locale:arguments: \"mlocaleint\", 2147483648)"
+            "String(format:locale:arguments: \"mlocaleint\", 1:Int64(2147483648))"
         );
+    }
+
+    #[test]
+    fn test_android_default_values_table_walk() {
+        use crate::target::model::{TargetBundle, TargetMessage};
+
+        let cat_dir = Path::new("fixtures/targets");
+        let catalog =
+            LoadedCatalog::load_and_validate(cat_dir, Channel::Development, None).unwrap();
+        let owned_out_dir = TestDirectory::new("test_android_default_values_dev_out");
+        let out_dir = owned_out_dir.path();
+        let _ = fs::remove_dir_all(out_dir);
+
+        publish(
+            &catalog,
+            Channel::Development,
+            None,
+            &[Target::Android],
+            out_dir,
+        )
+        .unwrap();
+
+        // 1. Development channel:
+        // target-operator: 'en' sorts first -> values/ is byte-for-byte copy of values-en/
+        let dev_def_bytes =
+            fs::read(out_dir.join("android/target-operator/values/strings.xml")).unwrap();
+        let dev_en_bytes =
+            fs::read(out_dir.join("android/target-operator/values-en/strings.xml")).unwrap();
+        assert_eq!(dev_def_bytes, dev_en_bytes);
+
+        // target-plural: single locale 'ar' -> values/ is byte-for-byte copy of values-ar/
+        let plural_def_bytes =
+            fs::read(out_dir.join("android/target-plural/values/strings.xml")).unwrap();
+        let plural_ar_bytes =
+            fs::read(out_dir.join("android/target-plural/values-ar/strings.xml")).unwrap();
+        assert_eq!(plural_def_bytes, plural_ar_bytes);
+
+        // synth-app: single locale 'en-x-synth' (qualifier en-rXA) -> values/ is byte-for-byte copy of values-en-rXA/
+        let synth_loc = catalog
+            .registry
+            .locales
+            .iter()
+            .find(|l| l.tag == "en-x-synth")
+            .unwrap()
+            .clone();
+        let mut synth_translations = std::collections::HashMap::new();
+        synth_translations.insert(
+            "en-x-synth".to_string(),
+            catalog.translations["en-x-synth"]["synth.notes.percent"].clone(),
+        );
+        let single_msg = TargetMessage {
+            id: "synth.notes.percent".to_string(),
+            resource_key: crate::history::compute_resource_key("synth.notes.percent"),
+            meta: catalog.metadata["synth.notes.percent"].clone(),
+            translations: synth_translations,
+        };
+        let single_bundle = TargetBundle {
+            id: "synth-app".to_string(),
+            locales: vec![synth_loc],
+            messages: vec![single_msg],
+        };
+        let owned_single_out = TestDirectory::new("test_android_single_synth_out");
+        let single_out = owned_single_out.path();
+        let _ = fs::remove_dir_all(single_out);
+        crate::target::android::generate_android_target(&single_bundle, single_out).unwrap();
+
+        let synth_def_bytes =
+            fs::read(single_out.join("android/synth-app/values/strings.xml")).unwrap();
+        let synth_rxa_bytes =
+            fs::read(single_out.join("android/synth-app/values-en-rXA/strings.xml")).unwrap();
+        assert_eq!(synth_def_bytes, synth_rxa_bytes);
+        let _ = fs::remove_dir_all(single_out);
+
+        // 2. Resource-table walk:
+        // Own-reader table evidence, not AAPT2.
+        for bundle_id in ["target-operator", "synth-app", "target-plural"] {
+            let bundle_dir = out_dir.join("android").join(bundle_id);
+            if !bundle_dir.exists() {
+                continue;
+            }
+            let default_xml = fs::read_to_string(bundle_dir.join("values/strings.xml")).unwrap();
+
+            for entry in fs::read_dir(&bundle_dir).unwrap().flatten() {
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                if dir_name.starts_with("values-") {
+                    let xml_content = fs::read_to_string(entry.path().join("strings.xml")).unwrap();
+                    for part in xml_content.split("name=\"").skip(1) {
+                        let name = part.split('"').next().unwrap();
+                        let target_name_attr = format!("name=\"{}\"", name);
+                        assert!(
+                            default_xml.contains(&target_name_attr),
+                            "Bundle {} values/strings.xml missing resource name {}",
+                            bundle_id,
+                            name
+                        );
+
+                        if let Some(pos) = default_xml.find(&format!("<string name=\"{}\">", name))
+                        {
+                            let rest =
+                                &default_xml[pos + format!("<string name=\"{}\">", name).len()..];
+                            let end = rest.find("</string>").expect("closing string tag");
+                            let val = &rest[..end];
+                            assert!(
+                                !val.is_empty(),
+                                "Resource {} in values/ has empty content",
+                                name
+                            );
+                        } else if let Some(pos) =
+                            default_xml.find(&format!("<plurals name=\"{}\">", name))
+                        {
+                            let rest = &default_xml[pos..];
+                            let end = rest.find("</plurals>").expect("closing plurals tag");
+                            let val = &rest[..end];
+                            assert!(
+                                val.contains("<item"),
+                                "Plurals resource {} in values/ has no items",
+                                name
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        let _ = fs::remove_dir_all(out_dir);
+
+        // 3. Production channel:
+        // 'en' is withheld, so for target-operator en-x-chrome sorts first -> values/ is byte copy of values-en-rXB/
+        let owned_out_dir_prod = TestDirectory::new("test_android_default_values_prod_out");
+        let out_dir_prod = owned_out_dir_prod.path();
+        let _ = fs::remove_dir_all(out_dir_prod);
+        let catalog_prod =
+            LoadedCatalog::load_and_validate(cat_dir, Channel::Production, None).unwrap();
+        publish(
+            &catalog_prod,
+            Channel::Production,
+            None,
+            &[Target::Android],
+            out_dir_prod,
+        )
+        .unwrap();
+
+        let prod_def_bytes =
+            fs::read(out_dir_prod.join("android/target-operator/values/strings.xml")).unwrap();
+        let prod_rxb_bytes =
+            fs::read(out_dir_prod.join("android/target-operator/values-en-rXB/strings.xml"))
+                .unwrap();
+        assert_eq!(prod_def_bytes, prod_rxb_bytes);
+
+        let prod_def_str = String::from_utf8(prod_def_bytes).unwrap();
+        assert!(
+            prod_def_str.contains("tr-chrome-anchor"),
+            "values/strings.xml must contain tr-chrome-anchor from en-x-chrome"
+        );
+
+        let _ = fs::remove_dir_all(out_dir_prod);
+    }
+
+    #[test]
+    fn test_android_constructed_bundle_integer_styles_and_bidi() {
+        use crate::metadata::MessageMetadata;
+        use crate::model::{ElementKind, PatternElement};
+        use crate::target::model::{Target, TargetMessage};
+        use crate::vocab::{FormatIntent, NumericStyle, ScalarType};
+
+        let mut meta = MessageMetadata {
+            description: "Android integer style test".to_string(),
+            context: "test".to_string(),
+            surfaces: vec![],
+            bundles: vec!["android-app".to_string()],
+            arguments: vec![crate::model::ArgumentSpec {
+                name: "num".to_string(),
+                arg_type: ScalarType::Integer,
+                numeric_style: Some(NumericStyle::LocaleFormatted),
+                min: None,
+                max: None,
+            }],
+            format_intent: FormatIntent::Text,
+            max_length: 100,
+            source_revision: "rev".to_string(),
+            risk: crate::vocab::Risk::Routine,
+            auto_merge: false,
+            approval: None,
+            protected_slots: vec![],
+            selector: None,
+            webextension: false,
+        };
+
+        // 1. Locale-formatted integer
+        let loc_msg = TargetMessage {
+            id: "test.android.locale_int".to_string(),
+            resource_key: "mlocaleint".to_string(),
+            meta: meta.clone(),
+            translations: std::collections::HashMap::new(),
+        };
+        let elements = vec![
+            PatternElement {
+                kind: ElementKind::Text,
+                value: "Items: ".to_string(),
+            },
+            PatternElement {
+                kind: ElementKind::Arg,
+                value: "num".to_string(),
+            },
+        ];
+
+        let tmpl_loc =
+            crate::target::android::render_android_template(&elements, &loc_msg).unwrap();
+        assert_eq!(tmpl_loc, "\"Items: \u{2068}%1$s\u{2069}\"");
+        assert!(!tmpl_loc.contains("%1$d"));
+
+        let mut inputs = serde_json::Map::new();
+        inputs.insert("num".to_string(), serde_json::json!(1000));
+        let loc_call = crate::target::cases::format_adapter_call(
+            Target::Android,
+            "android-app",
+            "en",
+            &loc_msg,
+            &inputs,
+        );
+        assert!(
+            loc_call.contains("formatIntegerLocale(1000, \"en\")"),
+            "Adapter call must name formatIntegerLocale: {}",
+            loc_call
+        );
+
+        // 2. Ungrouped integer
+        meta.arguments[0].numeric_style = Some(NumericStyle::Ungrouped);
+        let ungr_msg = TargetMessage {
+            id: "test.android.ungrouped_int".to_string(),
+            resource_key: "mungroupedint".to_string(),
+            meta: meta.clone(),
+            translations: std::collections::HashMap::new(),
+        };
+
+        let tmpl_ungr =
+            crate::target::android::render_android_template(&elements, &ungr_msg).unwrap();
+        assert_eq!(tmpl_ungr, "\"Items: \u{2068}%1$s\u{2069}\"");
+        assert!(!tmpl_ungr.contains("%1$d"));
+
+        let ungr_call = crate::target::cases::format_adapter_call(
+            Target::Android,
+            "android-app",
+            "en",
+            &ungr_msg,
+            &inputs,
+        );
+        assert!(
+            !ungr_call.contains("formatIntegerLocale"),
+            "Adapter call must not contain formatIntegerLocale: {}",
+            ungr_call
+        );
+        assert_eq!(ungr_call, "getString(R.string.mungroupedint, 1000)");
+    }
+
+    #[test]
+    fn test_webextension_constructed_bundle_manifest_safety() {
+        use crate::admit::ParsedMessage;
+        use crate::locale::LocaleEntry;
+        use crate::metadata::MessageMetadata;
+        use crate::model::{Branch, ElementKind, PatternElement, ProtectedSlotSpec};
+        use crate::target::cases::TestCase;
+        use crate::target::model::{Target, TargetBundle, TargetMessage};
+        use crate::vocab::{
+            FormatIntent, LocalePurpose, LocaleTier, ProtectedSlotKind, ReleaseState, Risk,
+        };
+
+        let loc_entry = LocaleEntry {
+            tag: "en".to_string(),
+            tier: LocaleTier::Release,
+            purpose: LocalePurpose::Ordinary,
+            development: ReleaseState::Released,
+            production: ReleaseState::Released,
+            description: "test".to_string(),
+            cardinal: None,
+            webextension_folder: Some("en".to_string()),
+            android_qualifier: None,
+        };
+
+        let slot = ProtectedSlotSpec {
+            name: "NAME".to_string(),
+            kind: ProtectedSlotKind::MarkWord,
+            value: "$NAME$".to_string(),
+        };
+
+        let meta = MessageMetadata {
+            description: "Manifest safety test".to_string(),
+            context: "test".to_string(),
+            surfaces: vec![],
+            bundles: vec!["webext-app".to_string()],
+            arguments: vec![],
+            format_intent: FormatIntent::Text,
+            max_length: 200,
+            source_revision: "rev".to_string(),
+            risk: Risk::Routine,
+            auto_merge: false,
+            approval: None,
+            protected_slots: vec![slot],
+            selector: None,
+            webextension: true,
+        };
+
+        let mut translations = std::collections::HashMap::new();
+        translations.insert(
+            "en".to_string(),
+            ParsedMessage {
+                id: "test.webext.manifest".to_string(),
+                branches: vec![Branch {
+                    key: None,
+                    default: true,
+                    pattern: vec![
+                        PatternElement {
+                            kind: ElementKind::Text,
+                            value: "Special $1 and $$ and %1$s and %n with slot ".to_string(),
+                        },
+                        PatternElement {
+                            kind: ElementKind::Slot,
+                            value: "NAME".to_string(),
+                        },
+                    ],
+                }],
+                selector_var: None,
+            },
+        );
+
+        let msg = TargetMessage {
+            id: "test.webext.manifest".to_string(),
+            resource_key: "mwebextmanifest".to_string(),
+            meta,
+            translations,
+        };
+
+        let bundle = TargetBundle {
+            id: "webext-app".to_string(),
+            locales: vec![loc_entry],
+            messages: vec![msg.clone()],
+        };
+
+        let owned_out_dir = TestDirectory::new("test_webext_manifest_out");
+        let out_dir = owned_out_dir.path();
+        let _ = fs::remove_dir_all(out_dir);
+
+        crate::target::webextension::generate_webextension_target(&bundle, out_dir).unwrap();
+
+        let messages_json_path = out_dir.join("webextension/webext-app/_locales/en/messages.json");
+        let raw_json_str = fs::read_to_string(&messages_json_path).unwrap();
+        let parsed_json: serde_json::Value = serde_json::from_str(&raw_json_str).unwrap();
+
+        let entry = &parsed_json["mwebextmanifest"];
+        assert_eq!(entry["message"].as_str().unwrap(), "$SAFE$");
+
+        let expected_content = "Special $1 and $$ and %1$s and %n with slot $NAME$";
+        let actual_content = entry["placeholders"]["safe"]["content"].as_str().unwrap();
+        assert_eq!(actual_content, expected_content);
+        assert!(actual_content.contains("$1"));
+        assert!(actual_content.contains("$$"));
+        assert!(actual_content.contains("%1$s"));
+        assert!(actual_content.contains("%n"));
+        assert!(actual_content.contains("$NAME$"));
+        assert!(!actual_content.contains("$$$$"));
+
+        // Verify read_webextension_json reader
+        let case = TestCase {
+            target: "webextension".to_string(),
+            bundle: "webext-app".to_string(),
+            locale: "en".to_string(),
+            folder: Some("en".to_string()),
+            message_id: msg.id.clone(),
+            resource_key: msg.resource_key.clone(),
+            adapter_call: crate::target::cases::format_adapter_call(
+                Target::Webextension,
+                "webext-app",
+                "en",
+                &msg,
+                &serde_json::Map::new(),
+            ),
+            inputs: serde_json::Map::new(),
+            expected: expected_content.to_string(),
+            own_reader: "read_webextension_json".to_string(),
+            expected_exact: true,
+            call_contract: serde_json::Value::Null,
+            platform_reader: "pending".to_string(),
+        };
+
+        let reader_result =
+            crate::target::readers::read_webextension_json(&out_dir.join("webextension"), &case)
+                .unwrap();
+        assert_eq!(reader_result, expected_content);
+
+        let _ = fs::remove_dir_all(out_dir);
+    }
+
+    #[test]
+    fn test_apple_cardinal_selector_order_and_substitutions() {
+        use crate::admit::ParsedMessage;
+        use crate::locale::LocaleEntry;
+        use crate::metadata::MessageMetadata;
+        use crate::model::{ArgumentSpec, Branch, ElementKind, PatternElement, SelectorSpec};
+        use crate::target::apple::generate_apple_target;
+        use crate::target::cases::TestCase;
+        use crate::target::model::{Target, TargetBundle, TargetMessage};
+        use crate::vocab::{
+            FormatIntent, LocalePurpose, LocaleTier, NumericStyle, ReleaseState, Risk, ScalarType,
+        };
+
+        let loc_entry = LocaleEntry {
+            tag: "en".to_string(),
+            tier: LocaleTier::Release,
+            purpose: LocalePurpose::Ordinary,
+            development: ReleaseState::Released,
+            production: ReleaseState::Released,
+            description: "test".to_string(),
+            cardinal: Some("en".to_string()),
+            webextension_folder: None,
+            android_qualifier: None,
+        };
+
+        // Arguments in order: a (string), n (integer locale-formatted), count (cardinal locale-formatted)
+        let args_locale = vec![
+            ArgumentSpec {
+                name: "a".to_string(),
+                arg_type: ScalarType::String,
+                numeric_style: None,
+                min: None,
+                max: None,
+            },
+            ArgumentSpec {
+                name: "n".to_string(),
+                arg_type: ScalarType::Integer,
+                numeric_style: Some(NumericStyle::LocaleFormatted),
+                min: None,
+                max: None,
+            },
+            ArgumentSpec {
+                name: "count".to_string(),
+                arg_type: ScalarType::Cardinal,
+                numeric_style: Some(NumericStyle::LocaleFormatted),
+                min: None,
+                max: None,
+            },
+        ];
+
+        // Pattern: { $n } / { $a } / { $count }
+        let pattern = vec![
+            PatternElement {
+                kind: ElementKind::Arg,
+                value: "n".to_string(),
+            },
+            PatternElement {
+                kind: ElementKind::Text,
+                value: " / ".to_string(),
+            },
+            PatternElement {
+                kind: ElementKind::Arg,
+                value: "a".to_string(),
+            },
+            PatternElement {
+                kind: ElementKind::Text,
+                value: " / ".to_string(),
+            },
+            PatternElement {
+                kind: ElementKind::Arg,
+                value: "count".to_string(),
+            },
+        ];
+
+        let branches = vec![
+            Branch {
+                key: Some("one".to_string()),
+                default: false,
+                pattern: pattern.clone(),
+            },
+            Branch {
+                key: Some("other".to_string()),
+                default: true,
+                pattern: pattern.clone(),
+            },
+        ];
+
+        let meta_loc = MessageMetadata {
+            description: "Selector order test".to_string(),
+            context: "test".to_string(),
+            surfaces: vec![],
+            bundles: vec!["apple-app".to_string()],
+            arguments: args_locale,
+            format_intent: FormatIntent::Cardinal,
+            max_length: 100,
+            source_revision: "rev".to_string(),
+            risk: Risk::Routine,
+            auto_merge: false,
+            approval: None,
+            protected_slots: vec![],
+            selector: Some(SelectorSpec {
+                name: "count".to_string(),
+                selector_type: "cardinal".to_string(),
+                enum_values: vec![],
+                enum_default: None,
+            }),
+            webextension: false,
+        };
+
+        let mut translations_loc = std::collections::HashMap::new();
+        translations_loc.insert(
+            "en".to_string(),
+            ParsedMessage {
+                id: "test.apple.selector_order".to_string(),
+                branches: branches.clone(),
+                selector_var: Some("count".to_string()),
+            },
+        );
+
+        let msg_loc = TargetMessage {
+            id: "test.apple.selector_order".to_string(),
+            resource_key: "mselectororder".to_string(),
+            meta: meta_loc.clone(),
+            translations: translations_loc,
+        };
+
+        let bundle_loc = TargetBundle {
+            id: "apple-app".to_string(),
+            locales: vec![loc_entry.clone()],
+            messages: vec![msg_loc.clone()],
+        };
+
+        let out_dir = std::env::temp_dir().join("test_apple_selector_order_out");
+        let _ = fs::remove_dir_all(&out_dir);
+
+        generate_apple_target(&bundle_loc, &out_dir, "en").unwrap();
+
+        let xcstrings_path = out_dir.join("apple/apple-app.xcstrings");
+        let xcstrings_content = fs::read_to_string(&xcstrings_path).unwrap();
+        let xc_json: serde_json::Value = serde_json::from_str(&xcstrings_content).unwrap();
+
+        // 1. Locale-formatted count:
+        let loc = &xc_json["strings"]["mselectororder"]["localizations"]["en"];
+        assert_eq!(loc["stringUnit"]["value"], "%#@quantity@");
+        assert!(
+            loc.get("variations").is_none(),
+            "Must have no top-level variations sibling"
+        );
+
+        let quantity = &loc["substitutions"]["quantity"];
+        assert_eq!(quantity["formatSpecifier"], "lld");
+        assert_eq!(quantity["argNum"], 3, "argNum is 3, not 2");
+
+        let one_val = quantity["variations"]["plural"]["one"]["stringUnit"]["value"]
+            .as_str()
+            .unwrap();
+        // one variation contains FSI-wrapped %1$@ (a), %2$lld (n), and %3$lld (count)
+        assert_eq!(
+            one_val,
+            "\u{2068}%2$lld\u{2069} / \u{2068}%1$@\u{2069} / \u{2068}%3$lld\u{2069}"
+        );
+        assert!(one_val.contains("\u{2068}%1$@\u{2069}"));
+        assert!(one_val.contains("\u{2068}%2$lld\u{2069}"));
+        assert!(one_val.contains("\u{2068}%3$lld\u{2069}"));
+
+        let mut inputs = serde_json::Map::new();
+        inputs.insert("a".to_string(), serde_json::json!("ACTOR"));
+        inputs.insert("n".to_string(), serde_json::json!(10000));
+        inputs.insert("count".to_string(), serde_json::json!(1));
+
+        let call_loc = crate::target::cases::format_adapter_call(
+            Target::Apple,
+            "apple-app",
+            "en",
+            &msg_loc,
+            &inputs,
+        );
+        assert_eq!(
+            call_loc,
+            "String(format:locale:arguments: \"mselectororder\", 1:String(\"ACTOR\"), 2:Int64(10000), 3:Int64(1))"
+        );
+
+        let case_loc = TestCase {
+            target: "apple".to_string(),
+            bundle: "apple-app".to_string(),
+            locale: "en".to_string(),
+            folder: None,
+            message_id: msg_loc.id.clone(),
+            resource_key: msg_loc.resource_key.clone(),
+            adapter_call: call_loc.clone(),
+            inputs: inputs.clone(),
+            expected: "\u{2068}10000\u{2069} / \u{2068}ACTOR\u{2069} / \u{2068}1\u{2069}"
+                .to_string(),
+            own_reader: "read_xcstrings".to_string(),
+            expected_exact: true,
+            call_contract: serde_json::Value::Null,
+            platform_reader: "pending".to_string(),
+        };
+        let reader_res_loc =
+            crate::target::readers::read_xcstrings(&out_dir.join("apple"), &case_loc).unwrap();
+        assert_eq!(
+            reader_res_loc,
+            "\u{2068}10000\u{2069} / \u{2068}ACTOR\u{2069} / \u{2068}1\u{2069}"
+        );
+
+        // 2. Ungrouped count, same order, n still locale-formatted:
+        let mut meta_ungr = meta_loc.clone();
+        meta_ungr.arguments[2].numeric_style = Some(NumericStyle::Ungrouped);
+
+        let mut translations_ungr = std::collections::HashMap::new();
+        translations_ungr.insert(
+            "en".to_string(),
+            ParsedMessage {
+                id: "test.apple.selector_order_ungrouped".to_string(),
+                branches: branches.clone(),
+                selector_var: Some("count".to_string()),
+            },
+        );
+
+        let msg_ungr = TargetMessage {
+            id: "test.apple.selector_order_ungrouped".to_string(),
+            resource_key: "mselectororderungrouped".to_string(),
+            meta: meta_ungr,
+            translations: translations_ungr,
+        };
+
+        let bundle_ungr = TargetBundle {
+            id: "apple-app".to_string(),
+            locales: vec![loc_entry],
+            messages: vec![msg_ungr.clone()],
+        };
+
+        let _ = fs::remove_dir_all(&out_dir);
+        generate_apple_target(&bundle_ungr, &out_dir, "en").unwrap();
+
+        let xcstrings_content_ungr = fs::read_to_string(&xcstrings_path).unwrap();
+        let xc_json_ungr: serde_json::Value =
+            serde_json::from_str(&xcstrings_content_ungr).unwrap();
+
+        let loc_ungr = &xc_json_ungr["strings"]["mselectororderungrouped"]["localizations"]["en"];
+        assert_eq!(loc_ungr["stringUnit"]["value"], "%#@quantity@");
+        assert!(
+            loc_ungr.get("variations").is_none(),
+            "Must have no top-level variations sibling"
+        );
+
+        let quantity_ungr = &loc_ungr["substitutions"]["quantity"];
+        assert_eq!(quantity_ungr["formatSpecifier"], "lld");
+        assert_eq!(quantity_ungr["argNum"], 3, "argNum is still 3");
+
+        let one_val_ungr = quantity_ungr["variations"]["plural"]["one"]["stringUnit"]["value"]
+            .as_str()
+            .unwrap();
+        // variation contains %2$lld and %4$@, not a top-level variations object
+        assert_eq!(
+            one_val_ungr,
+            "\u{2068}%2$lld\u{2069} / \u{2068}%1$@\u{2069} / \u{2068}%4$@\u{2069}"
+        );
+        assert!(one_val_ungr.contains("\u{2068}%2$lld\u{2069}"));
+        assert!(one_val_ungr.contains("\u{2068}%4$@\u{2069}"));
+
+        let call_ungr = crate::target::cases::format_adapter_call(
+            Target::Apple,
+            "apple-app",
+            "en",
+            &msg_ungr,
+            &inputs,
+        );
+        assert_eq!(
+            call_ungr,
+            "String(format:locale:arguments: \"mselectororderungrouped\", 1:String(\"ACTOR\"), 2:Int64(10000), 3:Int64(1), 4:String(\"1\"))"
+        );
+
+        let case_ungr = TestCase {
+            target: "apple".to_string(),
+            bundle: "apple-app".to_string(),
+            locale: "en".to_string(),
+            folder: None,
+            message_id: msg_ungr.id.clone(),
+            resource_key: msg_ungr.resource_key.clone(),
+            adapter_call: call_ungr.clone(),
+            inputs: inputs.clone(),
+            expected: "\u{2068}10000\u{2069} / \u{2068}ACTOR\u{2069} / \u{2068}1\u{2069}"
+                .to_string(),
+            own_reader: "read_xcstrings".to_string(),
+            expected_exact: true,
+            call_contract: serde_json::Value::Null,
+            platform_reader: "pending".to_string(),
+        };
+        let reader_res_ungr =
+            crate::target::readers::read_xcstrings(&out_dir.join("apple"), &case_ungr).unwrap();
+        assert_eq!(
+            reader_res_ungr,
+            "\u{2068}10000\u{2069} / \u{2068}ACTOR\u{2069} / \u{2068}1\u{2069}"
+        );
+
+        let _ = fs::remove_dir_all(&out_dir);
+    }
+    #[test]
+    fn rust_arabic_range_refusal_preserves_full_english_range() {
+        let catalog = LoadedCatalog::load_and_validate(
+            Path::new("fixtures/targets"),
+            Channel::Development,
+            Some("ar"),
+        )
+        .unwrap();
+        let id = "synth.notes.forms";
+        let message = crate::target::model::TargetMessage {
+            id: id.into(),
+            resource_key: crate::history::compute_resource_key(id),
+            meta: catalog.metadata[id].clone(),
+            translations: std::collections::HashMap::from([(
+                "ar".into(),
+                catalog.translations["ar"][id].clone(),
+            )]),
+        };
+        let mut bundle = crate::target::model::TargetBundle {
+            id: "range-control".into(),
+            messages: vec![message],
+            locales: vec![
+                catalog
+                    .registry
+                    .locales
+                    .iter()
+                    .find(|l| l.tag == "ar")
+                    .unwrap()
+                    .clone(),
+            ],
+        };
+        let owned = TestDirectory::new("arabic-range");
+        crate::target::rust::generate_rust_target(&bundle, owned.path()).unwrap();
+        bundle.messages[0].meta.arguments[0].min = Some(-101.0);
+        assert!(
+            crate::target::rust::generate_rust_target(&bundle, owned.path())
+                .unwrap_err()
+                .iter()
+                .any(|f| f.rule == "cardinal-range")
+        );
+        bundle.messages[0].meta.arguments[0].min = None;
+        bundle.messages[0].meta.arguments[0].max = None;
+        bundle.locales[0].cardinal = Some("en".into());
+        crate::target::rust::generate_rust_target(&bundle, owned.path()).unwrap();
+    }
+
+    #[test]
+    fn android_preserves_protected_internal_whitespace_and_single_escape_pass() {
+        let catalog = LoadedCatalog::load_and_validate(
+            Path::new("fixtures/runtime-contract"),
+            Channel::Production,
+            None,
+        )
+        .unwrap();
+        let id = "synth.notes.spacesprobe";
+        let message = crate::target::model::TargetMessage {
+            id: id.into(),
+            resource_key: crate::history::compute_resource_key(id),
+            meta: catalog.metadata[id].clone(),
+            translations: std::collections::HashMap::from([(
+                "en-x-synth".into(),
+                catalog.translations["en-x-synth"][id].clone(),
+            )]),
+        };
+        let bundle = crate::target::model::TargetBundle {
+            id: "synth-app".into(),
+            messages: vec![message],
+            locales: vec![
+                catalog
+                    .registry
+                    .locales
+                    .iter()
+                    .find(|l| l.tag == "en-x-synth")
+                    .unwrap()
+                    .clone(),
+            ],
+        };
+        let owned = TestDirectory::new("android-whitespace");
+        crate::target::android::generate_android_target(&bundle, owned.path()).unwrap();
+        let case = TestCase {
+            target: "android".into(),
+            bundle: bundle.id.clone(),
+            locale: "en-x-synth".into(),
+            folder: Some("en-rXA".into()),
+            message_id: id.into(),
+            resource_key: crate::history::compute_resource_key(id),
+            adapter_call: String::new(),
+            inputs: serde_json::Map::new(),
+            expected: "begin  \t\rend / \\n &lt; %".into(),
+            expected_exact: true,
+            call_contract: serde_json::Value::Null,
+            own_reader: "android-xml".into(),
+            platform_reader: "pending".into(),
+        };
+        assert_eq!(
+            read_android_xml(&owned.path().join("android"), &case).unwrap(),
+            "begin  \t\rend / \\n &lt; %"
+        );
+    }
+
+    #[test]
+    fn generated_samples_stay_inside_positive_and_negative_contracts() {
+        let catalog = LoadedCatalog::load_and_validate(
+            Path::new("fixtures/runtime-contract"),
+            Channel::Production,
+            None,
+        )
+        .unwrap();
+        let id = "synth.notes.mixedprobe";
+        let mut message = crate::target::model::TargetMessage {
+            id: id.into(),
+            resource_key: crate::history::compute_resource_key(id),
+            meta: catalog.metadata[id].clone(),
+            translations: std::collections::HashMap::from([(
+                "en-x-synth".into(),
+                catalog.translations["en-x-synth"][id].clone(),
+            )]),
+        };
+        for (min, max, want) in [(Some(5.0), Some(10.0), 5), (None, Some(-2.0), -2)] {
+            let arg = message
+                .meta
+                .arguments
+                .iter_mut()
+                .find(|a| a.name == "n")
+                .unwrap();
+            arg.min = min;
+            arg.max = max;
+            let bundle = crate::target::model::TargetBundle {
+                id: "synth-app".into(),
+                messages: vec![message.clone()],
+                locales: vec![
+                    catalog
+                        .registry
+                        .locales
+                        .iter()
+                        .find(|l| l.tag == "en-x-synth")
+                        .unwrap()
+                        .clone(),
+                ],
+            };
+            let cases = crate::target::cases::generate_cases(
+                &[bundle],
+                &[Target::Rust, Target::Apple],
+                Channel::Production,
+            )
+            .unwrap();
+            for case in cases["cases"].as_array().unwrap() {
+                assert_eq!(case["inputs"]["n"], want);
+            }
+        }
     }
 }

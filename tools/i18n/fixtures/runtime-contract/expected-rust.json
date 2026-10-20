@@ -1,0 +1,553 @@
+{
+  "entry": "rust/synth-app/api.rs",
+  "cases": [
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.enumprobe",
+      "arguments": [
+        [
+          "a_b",
+          "second"
+        ],
+        [
+          "a-b",
+          "Box"
+        ]
+      ],
+      "expected": "upper \u2068Box\u2069 / \u2068second\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.enumprobe",
+      "arguments": [
+        [
+          "a_b",
+          "second"
+        ],
+        [
+          "a-b",
+          "box"
+        ]
+      ],
+      "expected": "lower \u2068box\u2069 / \u2068second\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.enumprobe",
+      "arguments": [
+        [
+          "a_b",
+          "second"
+        ],
+        [
+          "a-b",
+          "in-bag"
+        ]
+      ],
+      "expected": "hyphen \u2068in-bag\u2069 / \u2068second\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.enumprobe",
+      "arguments": [
+        [
+          "a_b",
+          "second"
+        ],
+        [
+          "a-b",
+          "in_bag"
+        ]
+      ],
+      "expected": "underscore \u2068in_bag\u2069 / \u2068second\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.enumprobe",
+      "arguments": [
+        [
+          "a_b",
+          "second"
+        ],
+        [
+          "a-b",
+          "unknown"
+        ]
+      ],
+      "expected": "upper \u2068unknown\u2069 / \u2068second\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "cardinal",
+            "value": -2147483648
+          }
+        ]
+      ],
+      "expected": "other \u2068-2147483648\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "cardinal",
+            "value": -1
+          }
+        ]
+      ],
+      "expected": "one \u2068-1\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "cardinal",
+            "value": 0
+          }
+        ]
+      ],
+      "expected": "other \u20680\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "cardinal",
+            "value": 1
+          }
+        ]
+      ],
+      "expected": "one \u20681\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "cardinal",
+            "value": 10000
+          }
+        ]
+      ],
+      "expected": "other \u206810000\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "cardinal",
+            "value": 2147483647
+          }
+        ]
+      ],
+      "expected": "other \u20682147483647\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": -9007199254740991
+          }
+        ],
+        [
+          "open",
+          true
+        ],
+        [
+          "name",
+          "\u03c0 %n"
+        ]
+      ],
+      "expected": "translated mixed \u2068-9007199254740991\u2069 / \u2068\u03c0 %n\u2069 / \u2068true\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": 2147483648
+          }
+        ],
+        [
+          "open",
+          true
+        ],
+        [
+          "name",
+          "\u03c0 %n"
+        ]
+      ],
+      "expected": "translated mixed \u20682147483648\u2069 / \u2068\u03c0 %n\u2069 / \u2068true\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": 9007199254740991
+          }
+        ],
+        [
+          "open",
+          true
+        ],
+        [
+          "name",
+          "\u03c0 %n"
+        ]
+      ],
+      "expected": "translated mixed \u20689007199254740991\u2069 / \u2068\u03c0 %n\u2069 / \u2068true\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": 10000
+          }
+        ],
+        [
+          "open",
+          false
+        ],
+        [
+          "name",
+          "\u03c0 %n"
+        ]
+      ],
+      "expected": "translated mixed \u206810000\u2069 / \u2068\u03c0 %n\u2069 / \u2068false\u2069"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.escapeprobe",
+      "arguments": [
+        [
+          "name",
+          "%2$n"
+        ]
+      ],
+      "expected": " \n translated literal %n %1$s $NAME$ \\ \" { } / \u2068%2$n\u2069 \n "
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.percentprobe",
+      "arguments": [],
+      "expected": "100% %n %1$s $NAME$"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": 1.25
+          }
+        ],
+        [
+          "open",
+          true
+        ],
+        [
+          "name",
+          "name"
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": 9007199254740992
+          }
+        ],
+        [
+          "open",
+          true
+        ],
+        [
+          "name",
+          "name"
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": -9007199254740992
+          }
+        ],
+        [
+          "open",
+          true
+        ],
+        [
+          "name",
+          "name"
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "cardinal",
+            "value": -2147483649
+          }
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "cardinal",
+            "value": 2147483648
+          }
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "cardinal",
+            "value": 1.5
+          }
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.countprobe",
+      "arguments": [
+        [
+          "count",
+          {
+            "type": "integer",
+            "value": 1
+          }
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": 1
+          }
+        ],
+        [
+          "open",
+          "true"
+        ],
+        [
+          "name",
+          "name"
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": 1
+          }
+        ],
+        [
+          "open",
+          true
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": 1
+          }
+        ],
+        [
+          "open",
+          true
+        ],
+        [
+          "name",
+          "name"
+        ],
+        [
+          "unused",
+          "x"
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.mixedprobe",
+      "arguments": [
+        [
+          "n",
+          {
+            "type": "integer",
+            "value": 1
+          }
+        ],
+        [
+          "open",
+          true
+        ],
+        [
+          "name",
+          "name"
+        ],
+        [
+          "name",
+          "second"
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.escapeprobe",
+      "arguments": [
+        [
+          "name",
+          "name"
+        ],
+        [
+          "gap",
+          "changed"
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.enumprobe",
+      "arguments": [
+        [
+          "a-b",
+          true
+        ],
+        [
+          "a_b",
+          "second"
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.enumprobe",
+      "arguments": [
+        [
+          "a_b",
+          "second"
+        ]
+      ],
+      "expected_error": true
+    },
+    {
+      "locale": "zz-QQ",
+      "message_id": "synth.notes.percentprobe",
+      "arguments": [],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.absent",
+      "arguments": [],
+      "expected_error": true
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.spacesprobe",
+      "arguments": [],
+      "expected": "begin  \t\rend / \\n &lt; %"
+    },
+    {
+      "locale": "en-x-synth",
+      "message_id": "synth.notes.spacesprobe",
+      "arguments": [
+        [
+          "gap",
+          "spoofed"
+        ]
+      ],
+      "expected_error": true
+    }
+  ]
+}

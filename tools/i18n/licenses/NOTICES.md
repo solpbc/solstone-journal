@@ -40,3 +40,4 @@
 - zerofrom 0.1.8 - Unicode-3.0
 - zerovec 0.11.8 - Unicode-3.0
 
+The ESM target also vendors @fluent/bundle 0.18.0 under Apache-2.0. Its original source and [license](../vendor/fluent-js/LICENSE) are distributed unchanged with emitted resources.

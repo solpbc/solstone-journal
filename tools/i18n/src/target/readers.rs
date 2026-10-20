@@ -142,27 +142,23 @@ pub fn read_xcstrings(apple_dir: &Path, case: &TestCase) -> Result<String, Strin
             return Err("No stringUnit, substitutions, or variations in xcstrings".to_string());
         };
 
-    if is_split {
-        let count_val = case
-            .inputs
-            .get("count")
-            .and_then(|v| v.as_i64())
-            .or_else(|| case.inputs.values().find_map(|v| v.as_i64()))
-            .unwrap_or(1);
-        let ungrouped = oracle::format_integer_ungrouped(count_val);
-        let display_pos = case.inputs.len() + 1;
-        let placeholder = format!("%{}$@", display_pos);
-        if !template.contains(&placeholder) {
-            return Err(format!(
-                "Expected template to contain ungrouped display placeholder '{}', got '{}'",
-                placeholder, template
-            ));
-        }
-        let replaced = template.replace(&placeholder, &ungrouped);
-        render_placeholders(&replaced, &case.inputs)
+    let count_val = case
+        .inputs
+        .get("count")
+        .and_then(|v| v.as_i64())
+        .or_else(|| case.inputs.values().find_map(|v| v.as_i64()))
+        .unwrap_or(1);
+    let ungrouped = oracle::format_integer_ungrouped(count_val);
+    let display_pos = case.inputs.len() + 1;
+    let placeholder = format!("%{}$@", display_pos);
+
+    let replaced = if is_split && template.contains(&placeholder) {
+        template.replace(&placeholder, &ungrouped)
     } else {
-        render_placeholders(&template, &case.inputs)
-    }
+        template
+    };
+
+    render_apple_placeholders(&replaced, &case.inputs, &case.adapter_call)
 }
 
 pub fn read_android_xml(android_dir: &Path, case: &TestCase) -> Result<String, String> {
@@ -206,7 +202,7 @@ pub fn read_android_xml(android_dir: &Path, case: &TestCase) -> Result<String, S
             .find("</string>")
             .ok_or("Malformed XML string closing")?;
         let raw = &rest[..end];
-        clean_android_raw(raw)
+        clean_android_raw(raw)?
     } else if let Some(pos) = content.find(&format!("<plurals name=\"{}\">", target_key)) {
         let rest = &content[pos..];
         let end_plurals = rest
@@ -239,7 +235,7 @@ pub fn read_android_xml(android_dir: &Path, case: &TestCase) -> Result<String, S
             let item_end = item_rest.find("</item>").ok_or("Malformed item closing")?;
             &item_rest[..item_end]
         };
-        clean_android_raw(raw)
+        clean_android_raw(raw)?
     } else {
         return Err(format!("Key {} not found in XML", target_key));
     };
@@ -247,21 +243,43 @@ pub fn read_android_xml(android_dir: &Path, case: &TestCase) -> Result<String, S
     render_placeholders(&template, &case.inputs)
 }
 
-fn clean_android_raw(raw: &str) -> String {
+fn clean_android_raw(raw: &str) -> Result<String, String> {
     let unquoted = if raw.starts_with('"') && raw.ends_with('"') && raw.len() >= 2 {
         &raw[1..raw.len() - 1]
     } else {
         raw
     };
 
-    unquoted
-        .replace("&amp;", "&")
+    let xml = unquoted
         .replace("&lt;", "<")
         .replace("&gt;", ">")
-        .replace("\\'", "'")
-        .replace("\\\"", "\"")
-        .replace("\\\\", "\\")
-        .replace("\\n", "\n")
+        .replace("&amp;", "&");
+    let mut chars = xml.chars();
+    let mut out = String::new();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next().ok_or("Incomplete Android escape")? {
+            '\\' => out.push('\\'),
+            '"' => out.push('"'),
+            '\'' => out.push('\''),
+            'n' => out.push('\n'),
+            't' => out.push('\t'),
+            'u' => {
+                let digits: String = chars.by_ref().take(4).collect();
+                if digits.len() != 4 {
+                    return Err("Incomplete Android Unicode escape".into());
+                }
+                let value = u32::from_str_radix(&digits, 16)
+                    .map_err(|_| "Invalid Android Unicode escape")?;
+                out.push(char::from_u32(value).ok_or("Invalid Android scalar")?);
+            }
+            _ => return Err("Unknown Android escape".into()),
+        }
+    }
+    Ok(out)
 }
 
 pub fn read_webextension_json(webextension_dir: &Path, case: &TestCase) -> Result<String, String> {
@@ -284,20 +302,21 @@ pub fn read_webextension_json(webextension_dir: &Path, case: &TestCase) -> Resul
         .and_then(|v| v.as_str())
         .ok_or("Missing message string")?;
 
-    let mut result = raw_msg.to_string();
-    if let Some(placeholders) = entry.get("placeholders").and_then(|v| v.as_object()) {
-        for (ph_name, ph_val) in placeholders {
-            let ph_token = format!("${}$", ph_name);
-            let ph_content = ph_val.get("content").and_then(|c| c.as_str()).unwrap_or("");
-            let resolved_content = ph_content.replace("$$", "$");
-            result = result.replace(&ph_token, &resolved_content);
-        }
+    if raw_msg != "$SAFE$" {
+        return Err(format!(
+            "Expected message == \"$SAFE$\", got \"{}\"",
+            raw_msg
+        ));
     }
 
-    result = result.replace("%1$$s", "%1$s");
-    result = result.replace("$$", "$");
+    let safe_content = entry
+        .get("placeholders")
+        .and_then(|v| v.get("safe"))
+        .and_then(|v| v.get("content"))
+        .and_then(|v| v.as_str())
+        .ok_or("Missing placeholders.safe.content")?;
 
-    Ok(result)
+    Ok(safe_content.to_string())
 }
 
 pub fn read_gettext_po(gettext_dir: &Path, case: &TestCase) -> Result<String, String> {
@@ -433,4 +452,50 @@ fn render_placeholders(
     result = result.replace('\x00', "%");
 
     Ok(result)
+}
+
+fn render_apple_placeholders(
+    template: &str,
+    inputs: &serde_json::Map<String, JsonValue>,
+    adapter_call: &str,
+) -> Result<String, String> {
+    if let Some(pos) = adapter_call.find("arguments: ") {
+        let rest = &adapter_call[pos + "arguments: ".len()..];
+        if let Some(first_comma) = rest.find(',') {
+            let args_part = &rest[first_comma + 1..];
+            let trimmed = args_part.trim();
+            let trimmed = if let Some(stripped) = trimmed.strip_suffix(')') {
+                stripped.trim()
+            } else {
+                trimmed
+            };
+            let mut result = template.replace("%%", "\x00");
+            for piece in trimmed.split(", ") {
+                let piece = piece.trim();
+                if let Some(colon) = piece.find(':')
+                    && let Ok(idx) = piece[..colon].trim().parse::<usize>()
+                {
+                    let val_part = &piece[colon + 1..];
+                    if let Some(start_paren) = val_part.find('(')
+                        && let Some(end_paren) = val_part.rfind(')')
+                    {
+                        let inner = &val_part[start_paren + 1..end_paren];
+                        let clean_val =
+                            if inner.starts_with('"') && inner.ends_with('"') && inner.len() >= 2 {
+                                &inner[1..inner.len() - 1]
+                            } else {
+                                inner
+                            };
+                        result = result.replace(&format!("%{}$@", idx), clean_val);
+                        result = result.replace(&format!("%{}$lld", idx), clean_val);
+                        result = result.replace(&format!("%{}$d", idx), clean_val);
+                        result = result.replace(&format!("%{}$s", idx), clean_val);
+                    }
+                }
+            }
+            result = result.replace('\x00', "%");
+            return Ok(result);
+        }
+    }
+    render_placeholders(template, inputs)
 }

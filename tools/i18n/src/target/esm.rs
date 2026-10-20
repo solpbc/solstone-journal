@@ -80,21 +80,16 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         let entry = entry?;
         let file_type = entry.file_type()?;
         let file_name = entry.file_name();
-        let file_name_str = file_name.to_string_lossy();
-        if file_name_str == "package.json" {
-            continue;
-        }
         let dest_child = dst.join(&file_name);
         if file_type.is_dir() {
             copy_dir_recursive(&entry.path(), &dest_child)?;
+        } else if file_type.is_file() {
+            fs::copy(entry.path(), dest_child)?;
         } else {
-            let content = fs::read_to_string(entry.path())?;
-            let cleaned: String = content
-                .lines()
-                .filter(|line| !line.contains("http://") && !line.contains("https://"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            fs::write(dest_child, cleaned)?;
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "unsupported vendored file kind",
+            ));
         }
     }
     Ok(())

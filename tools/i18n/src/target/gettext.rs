@@ -226,7 +226,9 @@ pub fn render_gettext_template(
                     .find(|(_, a)| a.name == el.value)
                     .ok_or_else(|| vec![Fault::catalog("io-error")])?;
                 let idx = pos + 1;
+                out.push('\u{2068}');
                 out.push_str(&format!("%{}$s", idx));
+                out.push('\u{2069}');
             }
         }
     }
@@ -258,33 +260,8 @@ fn generate_select_header(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
     s.push_str("#include <stdint.h>\n");
     s.push_str("#include <string.h>\n\n");
 
-    s.push_str("typedef enum {\n");
-    s.push_str("    CATEGORY_ZERO,\n");
-    s.push_str("    CATEGORY_ONE,\n");
-    s.push_str("    CATEGORY_TWO,\n");
-    s.push_str("    CATEGORY_FEW,\n");
-    s.push_str("    CATEGORY_MANY,\n");
-    s.push_str("    CATEGORY_OTHER\n");
-    s.push_str("} PluralCategory;\n\n");
-
-    s.push_str("static inline PluralCategory select_plural_category_en(int64_t count) {\n");
-    s.push_str("    if (count == 1 || count == -1) {\n");
-    s.push_str("        return CATEGORY_ONE;\n");
-    s.push_str("    }\n");
-    s.push_str("    return CATEGORY_OTHER;\n");
-    s.push_str("}\n\n");
-
-    s.push_str("static inline PluralCategory select_plural_category_ar(int64_t count) {\n");
-    s.push_str("    if (count == -1 || count == 1) return CATEGORY_ONE;\n");
-    s.push_str("    if (count == 0) return CATEGORY_ZERO;\n");
-    s.push_str("    if (count == 2 || count == -2) return CATEGORY_TWO;\n");
-    s.push_str("    uint64_t v = count < 0 ? (uint64_t)(-(count + 1)) + 1 : (uint64_t)count;\n");
-    s.push_str("    if (v >= 3 && v <= 10) return CATEGORY_FEW;\n");
-    s.push_str("    if (v >= 11 && v <= 99) return CATEGORY_MANY;\n");
-    s.push_str("    return CATEGORY_OTHER;\n");
-    s.push_str("}\n\n");
-
     s.push_str("static inline const char* resolve_enum_key(const char* message_id, const char* enum_arg) {\n");
+    s.push_str("    if (!message_id) return NULL;\n");
     for msg in &bundle.messages {
         if msg.meta.format_intent == FormatIntent::Enum {
             let sel = msg.meta.selector.as_ref().unwrap();
@@ -297,8 +274,7 @@ fn generate_select_header(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
                 "    if (strcmp(message_id, \"{}\") == 0) {{\n",
                 msg.id
             ));
-            s.push_str("        if (!enum_arg) return ");
-            s.push_str(&format!("\"{}\";\n", def_key));
+            s.push_str("        if (!enum_arg) return NULL;\n");
             for v in &sel.enum_values {
                 let v_key = crate::target::model::enum_variant_resource_key(&msg.resource_key, v);
                 s.push_str(&format!(
@@ -315,7 +291,7 @@ fn generate_select_header(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
             ));
         }
     }
-    s.push_str("    return message_id;\n");
+    s.push_str("    return NULL;\n");
     s.push_str("}\n\n");
 
     s.push_str("#endif // SELECT_H\n");

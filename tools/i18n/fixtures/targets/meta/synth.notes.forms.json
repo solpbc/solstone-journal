@@ -8,8 +8,8 @@
     {
       "name": "count",
       "type": "cardinal",
-      "min": -2147483648,
-      "max": 2147483647,
+      "min": -100,
+      "max": 100,
       "numeric_style": "ungrouped"
     }
   ],

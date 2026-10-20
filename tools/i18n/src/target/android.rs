@@ -4,7 +4,7 @@
 use crate::fault::Fault;
 use crate::model::ElementKind;
 use crate::target::model::TargetBundle;
-use crate::vocab::{FormatIntent, ScalarType};
+use crate::vocab::FormatIntent;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -39,13 +39,27 @@ pub fn generate_android_target(bundle: &TargetBundle, dest_dir: &Path) -> Result
     fs::create_dir_all(&bundle_dir).map_err(|_| vec![Fault::catalog("io-error")])?;
 
     // 1. Generate values-<qual>/strings.xml for each locale
-    for (loc, qual) in resolved_quals {
+    for (loc, qual) in &resolved_quals {
         let values_dir = bundle_dir.join(format!("values-{}", qual));
         fs::create_dir_all(&values_dir).map_err(|_| vec![Fault::catalog("io-error")])?;
 
         let xml_content = generate_strings_xml(bundle, &loc.tag)?;
         let xml_path = values_dir.join("strings.xml");
         fs::write(&xml_path, xml_content.as_bytes())
+            .map_err(|_| vec![Fault::catalog("io-error")])?;
+    }
+
+    // Default values/ table:
+    // Contract: the default file is a byte-for-byte copy of the channel-selected locale
+    // whose tag sorts first. Also write values-<qual>/ for every selected locale, including that one.
+    // Use that locale's own cells. Do not substitute source English unless that first tag is the selected source locale.
+    // Do not copy an excluded locale. Do not emit b+ folders.
+    if let Some((first_loc, _)) = resolved_quals.iter().min_by_key(|(loc, _)| &loc.tag) {
+        let default_values_dir = bundle_dir.join("values");
+        fs::create_dir_all(&default_values_dir).map_err(|_| vec![Fault::catalog("io-error")])?;
+        let default_xml_content = generate_strings_xml(bundle, &first_loc.tag)?;
+        let default_xml_path = default_values_dir.join("strings.xml");
+        fs::write(&default_xml_path, default_xml_content.as_bytes())
             .map_err(|_| vec![Fault::catalog("io-error")])?;
     }
 
@@ -150,49 +164,30 @@ pub fn render_android_template(
                     .find(|(_, a)| a.name == el.value)
                     .ok_or_else(|| vec![Fault::catalog("io-error")])?;
                 let idx = pos + 1;
-                match arg_spec.arg_type {
-                    ScalarType::Integer | ScalarType::Cardinal => {
-                        raw.push_str(&format!("%{}$d", idx));
-                    }
-                    ScalarType::String | ScalarType::Boolean => {
-                        raw.push_str(&format!("%{}$s", idx));
-                    }
-                }
+                raw.push('\u{2068}');
+                let _ = arg_spec;
+                raw.push_str(&format!("%{}$s", idx));
+                raw.push('\u{2069}');
             }
         }
     }
 
-    let has_boundary_ws =
-        raw.starts_with(char::is_whitespace) || raw.ends_with(char::is_whitespace);
-
-    let mut out = String::new();
-    if has_boundary_ws {
-        out.push('"');
-        for c in raw.chars() {
-            match c {
-                '&' => out.push_str("&amp;"),
-                '<' => out.push_str("&lt;"),
-                '>' => out.push_str("&gt;"),
-                '"' => out.push_str("\\\""),
-                '\\' => out.push_str("\\\\"),
-                '\n' => out.push_str("\\n"),
-                _ => out.push(c),
-            }
-        }
-        out.push('"');
-    } else {
-        for c in raw.chars() {
-            match c {
-                '&' => out.push_str("&amp;"),
-                '<' => out.push_str("&lt;"),
-                '>' => out.push_str("&gt;"),
-                '\'' => out.push_str("\\'"),
-                '"' => out.push_str("\\\""),
-                '\n' => out.push_str("\\n"),
-                _ => out.push(c),
-            }
+    // Android collapses unquoted internal whitespace and interprets backslash escapes.
+    let mut out = String::from("\"");
+    for c in raw.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '\"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            _ => out.push(c),
         }
     }
+    out.push('\"');
 
     Ok(out)
 }
@@ -215,8 +210,7 @@ fn generate_select_java(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
                 .ok_or_else(|| vec![Fault::new("enum-variant", "*", &msg.id)])?;
             let def_key = crate::target::model::enum_variant_resource_key(&msg.resource_key, def);
             s.push_str(&format!("            case \"{}\":\n", msg.id));
-            s.push_str("                if (enumArg == null) return ");
-            s.push_str(&format!("\"{}\";\n", def_key));
+            s.push_str("                if (enumArg == null) throw new IllegalArgumentException(\"Missing enum argument\");\n");
             s.push_str("                switch (enumArg) {\n");
             for v in &sel.enum_values {
                 let v_key = crate::target::model::enum_variant_resource_key(&msg.resource_key, v);
@@ -237,23 +231,10 @@ fn generate_select_java(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
             ));
         }
     }
-    s.push_str("            default: return messageId;\n");
+    s.push_str(
+        "            default: throw new IllegalArgumentException(\"Unknown message identity\");\n",
+    );
     s.push_str("        }\n");
-    s.push_str("    }\n\n");
-
-    s.push_str("    public static String selectCategoryEn(long count) {\n");
-    s.push_str("        if (count == 1 || count == -1) return \"one\";\n");
-    s.push_str("        return \"other\";\n");
-    s.push_str("    }\n\n");
-
-    s.push_str("    public static String selectCategoryAr(long count) {\n");
-    s.push_str("        if (count == -1 || count == 1) return \"one\";\n");
-    s.push_str("        if (count == 0) return \"zero\";\n");
-    s.push_str("        if (count == 2 || count == -2) return \"two\";\n");
-    s.push_str("        long v = count < 0 ? (count == Long.MIN_VALUE ? Long.MAX_VALUE : -count) : count;\n");
-    s.push_str("        if (v >= 3 && v <= 10) return \"few\";\n");
-    s.push_str("        if (v >= 11 && v <= 99) return \"many\";\n");
-    s.push_str("        return \"other\";\n");
     s.push_str("    }\n\n");
 
     s.push_str("    public static String formatIntegerUngrouped(long val) {\n");
