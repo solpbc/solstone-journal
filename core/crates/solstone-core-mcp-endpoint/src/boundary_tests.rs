@@ -12116,6 +12116,7 @@ fn get_activity_sources_mixed_coverage_partial_units_and_unreadable_flag() {
     assert_eq!(res["unreadable"], true);
 }
 
+#[cfg(unix)]
 #[test]
 fn get_activity_sources_escaping_leaves_fail_closed_without_leaking() {
     let journal = base_activity_journal();
@@ -12141,11 +12142,8 @@ fn get_activity_sources_escaping_leaves_fail_closed_without_leaking() {
     fs::write(&ext_imported, format!("# Secret\n{sentinel}\n")).unwrap();
     fs::write(&ext_audio, format!("{{\"text\":\"{sentinel}\"}}\n")).unwrap();
 
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(&ext_imported, seg_dir.join("imported.md")).unwrap();
-        std::os::unix::fs::symlink(&ext_audio, seg_dir.join("audio.jsonl")).unwrap();
-    }
+    std::os::unix::fs::symlink(&ext_imported, seg_dir.join("imported.md")).unwrap();
+    std::os::unix::fs::symlink(&ext_audio, seg_dir.join("audio.jsonl")).unwrap();
 
     write_activity_line(
         journal.path(),
@@ -12176,6 +12174,7 @@ fn get_activity_sources_escaping_leaves_fail_closed_without_leaking() {
     assert!(!format!("{err:?}").contains(sentinel));
 }
 
+#[cfg(unix)]
 #[test]
 fn get_activity_sources_poisoned_sibling_fails_closed_without_leaking() {
     let journal = base_activity_journal();
@@ -12206,7 +12205,6 @@ fn get_activity_sources_poisoned_sibling_fails_closed_without_leaking() {
     let ext_imported = ext_dir.path().join("poison_imported.md");
     fs::write(&ext_imported, format!("{poison_sentinel}\n")).unwrap();
 
-    #[cfg(unix)]
     std::os::unix::fs::symlink(&ext_imported, seg_dir.join("imported.md")).unwrap();
 
     write_activity_line(
