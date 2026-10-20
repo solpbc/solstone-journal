@@ -15,16 +15,99 @@ use std::{
     ffi::{CStr, CString, OsStr, c_char},
     path::{Path, PathBuf},
     sync::{
-        LazyLock, Mutex, Once, OnceLock,
+        Arc, LazyLock, Mutex, Once, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static CANCEL: AtomicBool = AtomicBool::new(false);
-static ROOT: Mutex<Option<JournalRoot>> = Mutex::new(None);
+static ROOT: Mutex<Option<Arc<JournalRoot>>> = Mutex::new(None);
 static QUERY: Mutex<Option<OwnerIndex>> = Mutex::new(None);
-static SERVING: Mutex<Option<journal_mobile_serving::MobileServing>> = Mutex::new(None);
+struct ServingInstance {
+    serving: journal_mobile_serving::MobileServing,
+    processing: Option<journal_mobile_serving::foreground::ForegroundProcessingHost>,
+}
+impl ServingInstance {
+    fn status(&self) -> Value {
+        let mut status = self.serving.status();
+        if let Some(host) = &self.processing {
+            #[cfg(feature = "audio")]
+            {
+                status["audio"] = host.audio_status();
+            }
+            if host.failed() {
+                status["failed"] = json!(true);
+            }
+        }
+        status
+    }
+    fn drain(&self) -> Result<(), String> {
+        // Keep both actual owners in SERVING until both checked drains succeed.
+        let processing = self
+            .processing
+            .as_ref()
+            .map(|host| host.shutdown())
+            .transpose();
+        let serving = self.serving.shutdown_for_retirement();
+        if processing.is_err() || serving.is_err() {
+            return Err("processing or serving drain failed; journal retained".into());
+        }
+        Ok(())
+    }
+}
+static SERVING: Mutex<Option<ServingInstance>> = Mutex::new(None);
+static SERVING_STOP: Mutex<Option<journal_mobile_serving::MobileServingStop>> = Mutex::new(None);
+static PROCESSING_STOP: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+// Low bit closes admission; a queued operation keeps its ingress lifetime.
+static PROCESSING_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+fn close_processing_admission(state: &AtomicU64) {
+    let _ = state.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |generation| {
+        Some(generation.wrapping_add(2) | 1)
+    });
+}
+fn admit_processing(v: &Value, state: &AtomicU64) -> Result<u64, String> {
+    let generation = v["admissionGeneration"]
+        .as_u64()
+        .ok_or("processing admission required")?;
+    if state.load(Ordering::SeqCst) != generation {
+        return Err("processing admission changed".into());
+    }
+    Ok(generation)
+}
+fn open_processing_admission(state: &AtomicU64, generation: u64) -> bool {
+    state
+        .compare_exchange(
+            generation,
+            generation & !1,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        )
+        .is_ok()
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn journal_ios_processing_generation() -> u64 {
+    PROCESSING_GENERATION.load(Ordering::SeqCst)
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn journal_ios_processing_request_stop() {
+    close_processing_admission(&PROCESSING_GENERATION);
+    if let Some(stop) = PROCESSING_STOP
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .as_ref()
+    {
+        stop.store(true, Ordering::Release);
+    }
+    if let Some(stop) = SERVING_STOP
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .as_ref()
+    {
+        stop.request_stop();
+    }
+}
 static PAYLOAD: Mutex<Option<PathBuf>> = Mutex::new(None);
 #[cfg(target_os = "ios")]
 static BACKUP_ADMISSION_DIAGNOSTIC: Mutex<&'static str> = Mutex::new("not_attempted");
@@ -201,6 +284,21 @@ fn wifi_address() -> Result<std::net::Ipv4Addr, String> {
 }
 fn run(v: Value) -> Result<Value, String> {
     let op = v["op"].as_str().ok_or("missing operation")?;
+    if op == "serve-stop" {
+        journal_ios_processing_request_stop();
+    }
+    let generation = if matches!(
+        op,
+        "serve-start" | "serve-generate" | "serve-talent" | "audio-enable" | "audio-resume"
+    ) {
+        let generation = admit_processing(&v, &PROCESSING_GENERATION)?;
+        if op != "serve-start" && generation & 1 != 0 {
+            return Err("processing is stopped".into());
+        }
+        Some(generation)
+    } else {
+        None
+    };
     if op == "serve-crash" {
         std::process::abort();
     }
@@ -225,7 +323,9 @@ fn run(v: Value) -> Result<Value, String> {
             }
         } else {
             std::fs::create_dir_all(&requested).map_err(|e| e.to_string())?;
-            *guard = Some(JournalRoot::open(&requested).map_err(|e| e.to_string())?);
+            *guard = Some(Arc::new(
+                JournalRoot::open(&requested).map_err(|e| e.to_string())?,
+            ));
         }
     }
     let root = guard.as_ref().ok_or("open the journal first")?;
@@ -234,6 +334,8 @@ fn run(v: Value) -> Result<Value, String> {
     let p = root.canonical_path();
     match op {
         "serve-start" => {
+            let generation = generation.unwrap();
+            admit_processing(&v, &PROCESSING_GENERATION)?;
             let mut serving = SERVING.lock().map_err(|e| e.to_string())?;
             if serving.is_some() {
                 return Err("serving already started".into());
@@ -284,14 +386,58 @@ fn run(v: Value) -> Result<Value, String> {
                     Err(error) => return Err(error.to_string()),
                 }
             }
-            let runtime = journal_mobile_serving::MobileServing::start_with_payload(
+            let runtime = match journal_mobile_serving::MobileServing::start_with_payload_for_retirement_observed(
                 p.to_owned(),
                 address,
                 payload.clone(),
-            )?;
+                Arc::new(move || PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
+                Arc::new(move |stop| {
+                    *SERVING_STOP.lock().unwrap_or_else(|p| p.into_inner()) = Some(stop.clone());
+                    if PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1 {
+                        stop.request_stop();
+                    }
+                }),
+            ) {
+                Ok(runtime) => runtime,
+                Err(failure) => {
+                    let (message, owner) = failure.into_parts();
+                    *serving = owner.map(|owner| ServingInstance { serving: *owner, processing: None });
+                    journal_ios_processing_request_stop();
+                    return Err(message);
+                }
+            };
+            let processing_stop = Arc::new(AtomicBool::new(false));
+            *PROCESSING_STOP.lock().unwrap_or_else(|p| p.into_inner()) =
+                Some(Arc::clone(&processing_stop));
+            let backup = runtime.backup_dependencies();
+            *serving = Some(ServingInstance {
+                serving: runtime,
+                processing: None,
+            });
+            let host = journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_cancellation(
+                Arc::clone(root), &payload,
+                Arc::new(move || PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
+                processing_stop, backup,
+            );
+            let host = match host {
+                Ok(host) => host,
+                Err(error) => {
+                    journal_ios_processing_request_stop();
+                    return Err(error);
+                }
+            };
+            let current = serving.as_mut().unwrap();
+            current.processing = Some(host);
+            if let Err(error) = current.processing.as_mut().unwrap().start_workers() {
+                journal_ios_processing_request_stop();
+                return Err(error);
+            }
+            if !open_processing_admission(&PROCESSING_GENERATION, generation) {
+                journal_ios_processing_request_stop();
+                return Err("stop requested during startup; journal retained".into());
+            }
             *PAYLOAD.lock().map_err(|e| e.to_string())? = Some(payload);
-            let status = runtime.status();
-            *serving = Some(runtime);
+            let status = current.status();
             Ok(json!({"address":address.to_string(),"status":status}))
         }
         #[cfg(feature = "audio")]
@@ -314,25 +460,33 @@ fn run(v: Value) -> Result<Value, String> {
                 _ => models.join("tdt-0.6b-v3-q8_0.gguf"),
             };
             let mut serving = SERVING.lock().map_err(|e| e.to_string())?;
-            let serving = serving.as_mut().ok_or("serving is stopped")?;
-            serving.enable_audio(models.clone(), model, scratch)?;
-            Ok(serving.status())
+            admit_processing(&v, &PROCESSING_GENERATION)?;
+            let current = serving.as_mut().ok_or("serving is stopped")?;
+            let host = current.processing.as_ref().ok_or("processing is stopped")?;
+            host.enable_audio(models.clone(), model, scratch)?;
+            Ok(current.status())
         }
         #[cfg(feature = "audio")]
         "audio-cancel" | "audio-resume" => {
             let serving = SERVING.lock().map_err(|e| e.to_string())?;
             let serving = serving.as_ref().ok_or("serving is stopped")?;
+            let host = serving.processing.as_ref().ok_or("processing is stopped")?;
             if op == "audio-cancel" {
-                serving.cancel_audio()?;
+                host.cancel_audio();
             } else {
-                serving.resume_audio()?;
+                admit_processing(&v, &PROCESSING_GENERATION)?;
+                host.resume_audio();
             }
             Ok(serving.status())
         }
         "serve-stop" => {
-            if let Some(serving) = SERVING.lock().map_err(|e| e.to_string())?.take() {
-                serving.shutdown();
+            let mut serving = SERVING.lock().map_err(|e| e.to_string())?;
+            if let Some(current) = serving.as_ref() {
+                current.drain()?;
             }
+            serving.take();
+            *SERVING_STOP.lock().unwrap_or_else(|p| p.into_inner()) = None;
+            *PROCESSING_STOP.lock().unwrap_or_else(|p| p.into_inner()) = None;
             GENERATE.drain_idle_pool();
             PAYLOAD.lock().map_err(|e| e.to_string())?.take();
             Ok(json!({"stopped":true}))
@@ -344,15 +498,18 @@ fn run(v: Value) -> Result<Value, String> {
                 .clone()
                 .ok_or("serving is stopped")?;
             let raw = v["payload"].as_str().ok_or("missing thinking request")?;
+            let generation = generation.unwrap();
+            let cancelled = || {
+                PROCESSING_GENERATION.load(Ordering::SeqCst) != generation
+                    || root.revalidate_canonical_binding().is_err()
+            };
+            if cancelled() {
+                return Err("processing is stopped".into());
+            }
+            let cancellation = solstone_core_generate::Cancellation::from_fn(&cancelled);
             let generate = |request: &solstone_core_generate::GenerateRequest| {
-                solstone_core_generate_wire::respond(
-                    request,
-                    &GENERATE,
-                    p,
-                    |_| None,
-                    &solstone_core_generate::Cancellation::never(),
-                )
-                .map_err(solstone_core_generate::ClientError::Decode)
+                solstone_core_generate_wire::respond(request, &GENERATE, p, |_| None, &cancellation)
+                    .map_err(solstone_core_generate::ClientError::Decode)
             };
             if op == "serve-generate" {
                 let request = solstone_core_generate_wire::parse_one_shot_request(raw)?;
@@ -377,7 +534,7 @@ fn run(v: Value) -> Result<Value, String> {
                 &context,
                 &generate,
                 &mut events,
-                &solstone_core_generate::Cancellation::never(),
+                &cancellation,
             );
             Ok(json!({"outcome":format!("{outcome:?}"),
                 "events":String::from_utf8(events).map_err(|e|e.to_string())?}))
@@ -446,7 +603,7 @@ fn run(v: Value) -> Result<Value, String> {
                     let payload: Value =
                         serde_json::from_str(v["payload"].as_str().ok_or("missing owner request")?)
                             .map_err(|e| e.to_string())?;
-                    let response = serving.request_owner(
+                    let response = serving.serving.request_owner(
                         payload["method"].as_str().ok_or("missing method")?,
                         payload["uri"].as_str().ok_or("missing URI")?,
                         payload["body"].as_str().unwrap_or(""),
@@ -538,6 +695,12 @@ fn run(v: Value) -> Result<Value, String> {
             let mut files = Vec::new();
             collect(p, p, &mut files)?;
             Ok(json!({"files":files}))
+        }
+        "serve-export-admit" => {
+            if SERVING.lock().map_err(|e| e.to_string())?.is_some() {
+                return Err("stop serving before exporting a snapshot".into());
+            }
+            Ok(json!({"validated":true}))
         }
         "prepare-export" => {
             if SERVING.lock().map_err(|e| e.to_string())?.is_some() {
@@ -1176,6 +1339,39 @@ fn retire_active_before_transport(
         let _ = state.handle_event(AppraisalEvent::Malformed(diagnostic.into()));
         let _ = state.handle_event(AppraisalEvent::RetiredWithoutLaunch);
     })
+}
+
+#[cfg(test)]
+mod processing_admission_tests {
+    use super::*;
+
+    #[test]
+    fn stop_during_startup_cannot_reopen_the_previous_lifetime() {
+        let state = AtomicU64::new(1);
+        let queued_start = json!({"admissionGeneration":1});
+        let generation = admit_processing(&queued_start, &state).unwrap();
+        close_processing_admission(&state);
+        assert!(!open_processing_admission(&state, generation));
+        assert!(admit_processing(&queued_start, &state).is_err());
+        let current = state.load(Ordering::SeqCst);
+        assert!(open_processing_admission(&state, current));
+        assert_eq!(state.load(Ordering::SeqCst) & 1, 0);
+        assert!(admit_processing(&queued_start, &state).is_err());
+    }
+
+    #[test]
+    fn queued_work_does_not_adopt_a_restart() {
+        let state = AtomicU64::new(1);
+        assert!(open_processing_admission(&state, 1));
+        let queued_work = json!({"admissionGeneration":0});
+        assert_eq!(admit_processing(&queued_work, &state).unwrap(), 0);
+        close_processing_admission(&state);
+        assert!(admit_processing(&queued_work, &state).is_err());
+        let restart = state.load(Ordering::SeqCst);
+        assert!(open_processing_admission(&state, restart));
+        assert!(admit_processing(&queued_work, &state).is_err());
+        assert!(admit_processing(&json!({}), &state).is_err());
+    }
 }
 
 #[cfg(test)]

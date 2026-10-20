@@ -174,7 +174,6 @@ impl MobileServing {
 
     /// Install the embedding app's stop signal before listener exposure or
     /// registration waits. A refused startup still returns its actual owner.
-    #[cfg(not(target_os = "ios"))]
     pub fn start_with_payload_for_retirement_observed(
         root: PathBuf,
         address: SocketAddrV4,
@@ -235,12 +234,27 @@ impl MobileServing {
         let early_cancelled = Arc::clone(&cancelled);
         let handle = runtime
             .block_on(async {
+                let startup = solstone_core_convey_shell::EmbeddedStartup {
+                    cancelled: Arc::clone(&cancelled),
+                    stop_ready: Arc::new(move |convey, backup| {
+                        let signal = MobileServingStop {
+                            convey,
+                            services: early_shutdown.clone(),
+                            backup,
+                        };
+                        stop_ready(signal.clone());
+                        if early_cancelled() {
+                            signal.request_stop();
+                        }
+                    }),
+                };
                 #[cfg(target_os = "ios")]
                 let binding = bind_embedded_device_door_with_root(
                     Arc::clone(&root),
                     address,
                     payload_root,
                     solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf()),
+                    startup,
                 );
                 #[cfg(not(target_os = "ios"))]
                 let binding = bind_embedded_device_door_with_routes_and_startup(
@@ -248,26 +262,11 @@ impl MobileServing {
                     address,
                     payload_root,
                     solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf()),
-                    solstone_core_convey_shell::EmbeddedStartup {
-                        cancelled: Arc::clone(&cancelled),
-                        stop_ready: Arc::new(move |convey, backup| {
-                            let signal = MobileServingStop {
-                                convey,
-                                services: early_shutdown.clone(),
-                                backup,
-                            };
-                            stop_ready(signal.clone());
-                            if early_cancelled() {
-                                signal.request_stop();
-                            }
-                        }),
-                    },
+                    startup,
                 );
                 binding.await
             })
             .map_err(|e| e.to_string())?;
-        #[cfg(target_os = "ios")]
-        let _ = (early_shutdown, early_cancelled, stop_ready);
         let (ready, registered) = oneshot::channel();
         let brain_task = runtime.spawn(brain::run(Arc::clone(&root), stop.clone(), ready));
         let (backup_ready, subscribed) = oneshot::channel();

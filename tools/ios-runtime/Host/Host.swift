@@ -734,12 +734,16 @@ final class PendingReply: @unchecked Sendable {
     return try await call(s, request, label)
   }
   func servingCall(_ request: Request, _ label: String) async throws -> [String: Any] {
+    var admitted = request
+    admitted.admissionGeneration = request.admissionGeneration ?? journal_ios_processing_generation()
+    let queuedRequest = admitted
     if request.op == "serve-stop" {
+      journal_ios_processing_request_stop()
       await cancelAndDrain()
     }
     let start = ProcessInfo.processInfo.systemUptime
     let reply: Reply = await withCheckedContinuation { continuation in
-      Engine.queue.async { continuation.resume(returning: Engine.execute(request)) }
+      Engine.queue.async { continuation.resume(returning: Engine.execute(queuedRequest)) }
     }
     let obj = try JSONSerialization.jsonObject(with: Data(reply.json.utf8)) as! [String: Any]
     log(label, ["roundtrip_ms": (ProcessInfo.processInfo.systemUptime - start) * 1000, "reply": obj])
@@ -769,8 +773,24 @@ final class PendingReply: @unchecked Sendable {
       }
     }
   }
+  func stopServing() {
+    // This signal bypasses the queue a provider call may currently occupy.
+    journal_ios_processing_request_stop()
+    log("serve.stop-requested", ["generation": journal_ios_processing_generation()])
+    Task {
+      do {
+        result = String(describing: try await servingCall(request("serve-stop"), "serve.stopped"))
+      } catch {
+        status = "operation failed: \(error)"
+        result = status
+      }
+    }
+  }
   func export() async throws {
     guard !servingActive else { throw NSError(domain: "stop-serving-before-export", code: 1) }
+    if args.contains("--serve") {
+      _ = try await servingCall(request("serve-export-admit"), "export.host-admission")
+    }
     let exported = try await invoke(request("export"), "export")
     for file in [
       "indexer/journal.sqlite", "indexer/journal.sqlite-wal", "checkpoint.bin", "committed.bin",
@@ -782,10 +802,12 @@ final class PendingReply: @unchecked Sendable {
       }
     }
   }
-  func serve(_ duration: Int) async throws {
+  func serve(_ duration: Int, admissionGeneration: UInt64) async throws {
     let port = Int(argument("--port", "37657")) ?? 37657
+    var startRequest = request("serve-start", count: port)
+    startRequest.admissionGeneration = admissionGeneration
     _ = try await servingCall(request("open"), "serve.open")
-    _ = try await servingCall(request("serve-start", count: port), "serve.start")
+    _ = try await servingCall(startRequest, "serve.start")
     if args.contains("--audio") {
       _ = try await servingCall(
         request("audio-enable", mode: argument("--audio-mode", "reopen")), "audio.enabled")
@@ -855,6 +877,7 @@ final class PendingReply: @unchecked Sendable {
   func start() async {
     guard !started else { return }
     started = true
+    let startupGeneration = journal_ios_processing_generation()
     let backupAdmitted = journal_ios_backup_admit()
     let backupDiagnosticPointer = journal_ios_backup_admission_diagnostic()
     let backupDiagnostic = backupDiagnosticPointer.map { String(cString: $0) } ?? "unavailable"
@@ -928,7 +951,7 @@ final class PendingReply: @unchecked Sendable {
         to: output.appendingPathComponent("host.txt"))
       try await reopen()
       if scenario == "serving" {
-        try await serve(duration)
+        try await serve(duration, admissionGeneration: startupGeneration)
         return
       }
       _ = try await invoke(
@@ -1046,6 +1069,8 @@ final class PendingReply: @unchecked Sendable {
         HStack {
           Button("open / reconnect") { runner.command("open") }
           Button("cancel") { runner.command("cancel") }
+          Button("stop journal") { runner.stopServing() }
+            .accessibilityIdentifier("runtime-stop")
         }
         HStack {
           Button("add sample memories") { runner.command("seed") }
@@ -1058,6 +1083,7 @@ final class PendingReply: @unchecked Sendable {
       .task { await runner.start() }
       .onChange(of: scenePhase) { newPhase in
         if newPhase != .active {
+          journal_ios_processing_request_stop()
           Task {
             await cancelAndDrain()
           }

@@ -12,6 +12,7 @@ struct Request: Codable, Sendable {
   var mode: String = "reopen"
   var payload: String = ""
   var storage: String = "private"
+  var admissionGeneration: UInt64? = nil
 }
 struct ServingCommand: Codable { var id: String; var request: Request }
 struct Reply: Codable, Sendable { var json: String }

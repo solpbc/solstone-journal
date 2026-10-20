@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 #include <stdbool.h>
+#include <stdint.h>
 
 char *journal_runtime(const char *input);
 void journal_runtime_free(char *result);
+uint64_t journal_ios_processing_generation(void);
+void journal_ios_processing_request_stop(void);
 char *runtime_resources(void);
 void runtime_resources_free(char *result);
 

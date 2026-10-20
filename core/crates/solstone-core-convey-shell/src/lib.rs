@@ -506,6 +506,7 @@ pub async fn bind_embedded_device_door_with_root(
     address: std::net::SocketAddrV4,
     payload_root: Option<PathBuf>,
     agents_routes: Router,
+    startup: EmbeddedStartup,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     root.revalidate_canonical_binding()
         .map_err(ConveyServeError::EmbeddedRoot)?;
@@ -525,7 +526,15 @@ pub async fn bind_embedded_device_door_with_root(
     );
     root.revalidate_canonical_binding()
         .map_err(ConveyServeError::EmbeddedRoot)?;
-    bind_embedded_router(journal_root, address, app, backup_deps, Some(root), None).await
+    bind_embedded_router(
+        journal_root,
+        address,
+        app,
+        backup_deps,
+        Some(root),
+        Some(startup),
+    )
+    .await
 }
 
 #[cfg(feature = "host")]

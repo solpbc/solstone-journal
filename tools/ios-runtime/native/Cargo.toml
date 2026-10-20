@@ -16,7 +16,7 @@ sha2 = "0.10"
 chrono = "0.4"
 libc = "0.2"
 log = "0.4"
-journal-mobile-serving = { path = "../../mobile-serving" }
+journal-mobile-serving = { path = "../../mobile-serving", features = ["processing"] }
 solstone-core-journal-io = { path = "../../../core/crates/solstone-core-journal-io", features = ["test-hooks"] }
 solstone-core-indexer-store = { path = "../../../core/crates/solstone-core-indexer-store" }
 solstone-core-indexer-query = { path = "../../../core/crates/solstone-core-indexer-query" }

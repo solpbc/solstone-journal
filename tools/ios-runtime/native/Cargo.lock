@@ -2267,6 +2267,8 @@ name = "journal-mobile-serving"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
+ "chrono-tz",
  "journal-mobile-audio",
  "log",
  "ort",
@@ -2279,13 +2281,23 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-convey-shell",
  "solstone-core-cortex",
+ "solstone-core-cortex-client",
+ "solstone-core-depict",
+ "solstone-core-facets",
+ "solstone-core-generate",
  "solstone-core-generate-wire",
  "solstone-core-indexer-store",
+ "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-maintenance",
  "solstone-core-mcp-endpoint",
+ "solstone-core-sense",
+ "solstone-core-speaker-resolve",
+ "solstone-core-speakers",
  "solstone-core-spl",
+ "solstone-core-system",
+ "solstone-core-think-cli",
  "solstone-core-transcribe",
  "tokio",
 ]
@@ -4482,6 +4494,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-cli"
+version = "2.0.52"
+dependencies = [
+ "solstone-core-cli-boundary",
+ "solstone-core-doctor",
+ "solstone-core-format",
+ "solstone-core-operational-logs",
+ "solstone-core-setup",
+ "solstone-core-system-health",
+ "unicode-general-category",
+]
+
+[[package]]
 name = "solstone-core-cli-boundary"
 version = "2.0.52"
 
@@ -4610,6 +4635,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-cortex-client"
+version = "2.0.52"
+dependencies = [
+ "serde_json",
+ "solstone-core-callosum",
+ "solstone-core-journal-io",
+ "tokio",
+]
+
+[[package]]
 name = "solstone-core-depict"
 version = "2.0.52"
 dependencies = [
@@ -4661,6 +4696,37 @@ dependencies = [
  "toml_edit",
  "windows-sys 0.61.2",
  "zip",
+]
+
+[[package]]
+name = "solstone-core-doctor"
+version = "2.0.52"
+dependencies = [
+ "chrono",
+ "nix 0.30.1",
+ "plist",
+ "rustix",
+ "serde",
+ "serde_json",
+ "solstone-core-brain",
+ "solstone-core-callosum",
+ "solstone-core-distribution",
+ "solstone-core-facets",
+ "solstone-core-ingest",
+ "solstone-core-installation-identity",
+ "solstone-core-journal",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-local",
+ "solstone-core-processing-record",
+ "solstone-core-setup",
+ "solstone-core-skill-state",
+ "solstone-core-sol-link",
+ "solstone-core-system",
+ "solstone-core-system-health",
+ "solstone-core-transcribe",
+ "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5383,6 +5449,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-operational-logs"
+version = "2.0.52"
+dependencies = [
+ "chrono",
+ "solstone-core-journal-io",
+ "solstone-core-system",
+ "solstone-core-system-health",
+]
+
+[[package]]
 name = "solstone-core-processing-record"
 version = "2.0.52"
 dependencies = [
@@ -5574,6 +5650,30 @@ dependencies = [
  "solstone-core-system",
  "tokio",
 ]
+
+[[package]]
+name = "solstone-core-setup"
+version = "2.0.52"
+dependencies = [
+ "chrono",
+ "nix 0.30.1",
+ "serde",
+ "serde_json",
+ "solstone-core-check",
+ "solstone-core-installation-identity",
+ "solstone-core-journal",
+ "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
+ "solstone-core-journal-io",
+ "solstone-core-service-unit",
+ "solstone-core-skill-state",
+ "solstone-core-system",
+ "toml_edit",
+]
+
+[[package]]
+name = "solstone-core-skill-state"
+version = "2.0.52"
 
 [[package]]
 name = "solstone-core-sol-client"
@@ -5910,6 +6010,41 @@ dependencies = [
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
  "solstone-core-transcripts",
+]
+
+[[package]]
+name = "solstone-core-think-cli"
+version = "2.0.52"
+dependencies = [
+ "chrono",
+ "glob",
+ "log",
+ "rapidfuzz",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "solstone-core-brain",
+ "solstone-core-callosum",
+ "solstone-core-cli",
+ "solstone-core-cortex-client",
+ "solstone-core-facets",
+ "solstone-core-format",
+ "solstone-core-import",
+ "solstone-core-indexer",
+ "solstone-core-indexer-store",
+ "solstone-core-journal",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-journal-stats-cli",
+ "solstone-core-local",
+ "solstone-core-segment",
+ "solstone-core-sense",
+ "solstone-core-system",
+ "solstone-core-system-health",
+ "solstone-core-talent-cli",
+ "solstone-core-talent-config",
+ "solstone-core-talent-runtime",
+ "tokio",
 ]
 
 [[package]]
