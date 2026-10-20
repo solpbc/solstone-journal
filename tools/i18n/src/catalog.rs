@@ -38,6 +38,7 @@ impl CatalogConfig {
 
 #[derive(Debug)]
 pub struct LoadedCatalog {
+    pub root: std::path::PathBuf,
     pub config: CatalogConfig,
     pub source_messages: HashMap<String, ParsedMessage>,
     pub metadata: HashMap<String, MessageMetadata>,
@@ -393,6 +394,7 @@ impl LoadedCatalog {
             Err(faults)
         } else {
             Ok(Self {
+                root: catalog_dir.to_path_buf(),
                 config,
                 source_messages: source_file.messages,
                 metadata: metadata_map,

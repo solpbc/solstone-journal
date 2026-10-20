@@ -32,6 +32,7 @@ pub struct MessageMetadata {
     pub approval: Option<ApprovalRecord>,
     pub protected_slots: Vec<ProtectedSlotSpec>,
     pub selector: Option<SelectorSpec>,
+    pub webextension: bool,
 }
 
 impl MessageMetadata {
@@ -59,6 +60,7 @@ impl MessageMetadata {
             "approval",
             "protected_slots",
             "selector",
+            "webextension",
         ];
 
         for key in obj.keys() {
@@ -477,6 +479,16 @@ impl MessageMetadata {
             }
         }
 
+        let webextension = match obj.get("webextension") {
+            Some(Value::Bool(b)) => *b,
+            Some(_) => return Err(Fault::new("unknown-field", "*", message_id)),
+            None => false,
+        };
+
+        if webextension && (!arguments.is_empty() || selector.is_some()) {
+            return Err(Fault::new("webextension-dynamic", "*", message_id));
+        }
+
         Ok(Self {
             description: description.to_string(),
             context: context.to_string(),
@@ -491,6 +503,7 @@ impl MessageMetadata {
             approval,
             protected_slots,
             selector,
+            webextension,
         })
     }
 }

@@ -756,6 +756,7 @@ fn test_admitted_branch_rules() {
             enum_values: vec![],
             enum_default: None,
         }),
+        webextension: false,
     };
 
     // 1. Cardinal default when other is not default
@@ -827,6 +828,7 @@ fn test_admitted_branch_rules() {
         approval: None,
         protected_slots: vec![],
         selector: None,
+        webextension: false,
     };
     let mut unknown_arg_msg = ParsedMessage {
         id: "test.plain".to_string(),
@@ -931,6 +933,7 @@ fn test_protected_slot_rules() {
             enum_values: vec![],
             enum_default: None,
         }),
+        webextension: false,
     };
 
     let src = ParsedMessage {
@@ -1786,6 +1789,7 @@ fn test_markup_rules() {
             value: "<b>".to_string(),
         }],
         selector: None,
+        webextension: false,
     };
     let mut msg = ParsedMessage {
         id: "msg".to_string(),

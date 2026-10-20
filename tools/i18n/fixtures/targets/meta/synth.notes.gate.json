@@ -1,0 +1,24 @@
+{
+  "description": "Synthetic gate",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-operator"
+  ],
+  "arguments": [
+    {
+      "name": "open",
+      "type": "boolean",
+      "min": null,
+      "max": null
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "63fc76bdb2eb1e92af336a3957f5944f3bf3b1eca342fd6b178f5306af875bf8",
+  "risk": "routine",
+  "auto_merge": false,
+  "protected_slots": [],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

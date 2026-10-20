@@ -1,0 +1,17 @@
+{
+  "description": "Synthetic percent",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-operator"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "9d2277e119d5d785929716458bdcff0e6a3dfe326a86199faef3a62f1accf6da",
+  "risk": "routine",
+  "auto_merge": false,
+  "protected_slots": [],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

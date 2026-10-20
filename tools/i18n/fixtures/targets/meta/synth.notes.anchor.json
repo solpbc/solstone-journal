@@ -1,0 +1,17 @@
+{
+  "description": "Synthetic anchor",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-operator"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "90f3f00f395eeb468685c01be87280c33941878e094de0238a9248ddad96f403",
+  "risk": "routine",
+  "auto_merge": false,
+  "protected_slots": [],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

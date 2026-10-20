@@ -1,0 +1,33 @@
+{
+  "description": "Synthetic choice",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-operator"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string",
+      "min": null,
+      "max": null
+    }
+  ],
+  "format_intent": "enum",
+  "max_length": 100,
+  "source_revision": "5fd836a2b185233ccaeb241da4e242d574a1af6ef6f4c148b54111c9b73c1948",
+  "risk": "routine",
+  "auto_merge": false,
+  "selector": {
+    "type": "string",
+    "name": "kind",
+    "enum_values": [
+      "box",
+      "bag"
+    ],
+    "enum_default": "box"
+  },
+  "protected_slots": [],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

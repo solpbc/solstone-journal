@@ -19,6 +19,59 @@ pub fn validate_locale_tag(tag: &str) -> bool {
         .all(|&b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
+pub fn validate_webextension_folder(folder: &str) -> bool {
+    if let Some((lang, region)) = folder.split_once('_') {
+        if region.contains('_') {
+            return false;
+        }
+        let lang_bytes = lang.as_bytes();
+        if !(lang_bytes.len() == 2 || lang_bytes.len() == 3)
+            || !lang_bytes.iter().all(|b| b.is_ascii_lowercase())
+        {
+            return false;
+        }
+        let reg_bytes = region.as_bytes();
+        if !(reg_bytes.len() >= 2 && reg_bytes.len() <= 4) {
+            return false;
+        }
+        if !reg_bytes[0].is_ascii_uppercase() {
+            return false;
+        }
+        reg_bytes[1..].iter().all(|b| b.is_ascii_alphabetic())
+    } else {
+        let bytes = folder.as_bytes();
+        (bytes.len() == 2 || bytes.len() == 3) && bytes.iter().all(|b| b.is_ascii_lowercase())
+    }
+}
+
+pub fn validate_android_qualifier(q: &str) -> bool {
+    if let Some((lang, reg)) = q.split_once("-r") {
+        let lang_bytes = lang.as_bytes();
+        let reg_bytes = reg.as_bytes();
+        (lang_bytes.len() == 2 || lang_bytes.len() == 3)
+            && lang_bytes.iter().all(|b| b.is_ascii_lowercase())
+            && reg_bytes.len() == 2
+            && reg_bytes.iter().all(|b| b.is_ascii_uppercase())
+    } else {
+        let bytes = q.as_bytes();
+        (bytes.len() == 2 || bytes.len() == 3) && bytes.iter().all(|b| b.is_ascii_lowercase())
+    }
+}
+
+pub fn is_standard_formatting_locale(tag: &str) -> bool {
+    if let Some((lang, region)) = tag.split_once('-') {
+        let lang_bytes = lang.as_bytes();
+        let reg_bytes = region.as_bytes();
+        (lang_bytes.len() == 2 || lang_bytes.len() == 3)
+            && lang_bytes.iter().all(|b| b.is_ascii_lowercase())
+            && reg_bytes.len() == 2
+            && reg_bytes.iter().all(|b| b.is_ascii_uppercase())
+    } else {
+        let bytes = tag.as_bytes();
+        (bytes.len() == 2 || bytes.len() == 3) && bytes.iter().all(|b| b.is_ascii_lowercase())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LocaleEntry {
@@ -28,6 +81,12 @@ pub struct LocaleEntry {
     pub development: ReleaseState,
     pub production: ReleaseState,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cardinal: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webextension_folder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub android_qualifier: Option<String>,
 }
 
 impl LocaleEntry {
@@ -82,6 +141,22 @@ impl LocaleRegistry {
             }
             if !locale_tags.insert(locale.tag.as_str()) {
                 return Err(Fault::catalog("duplicate-locale"));
+            }
+            if let Some(cardinal) = &locale.cardinal
+                && cardinal != "en"
+                && cardinal != "ar"
+            {
+                return Err(Fault::catalog("plural-rule"));
+            }
+            if let Some(folder) = &locale.webextension_folder
+                && !validate_webextension_folder(folder)
+            {
+                return Err(Fault::catalog("webextension-folder"));
+            }
+            if let Some(qualifier) = &locale.android_qualifier
+                && !validate_android_qualifier(qualifier)
+            {
+                return Err(Fault::catalog("locale-qualifier"));
             }
         }
 

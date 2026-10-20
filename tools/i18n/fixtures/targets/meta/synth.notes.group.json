@@ -1,0 +1,25 @@
+{
+  "description": "Synthetic group",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-operator"
+  ],
+  "arguments": [
+    {
+      "name": "n",
+      "type": "integer",
+      "min": -1,
+      "max": 100000,
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "66c31c1526fda7029d141f63adfc68e4e7b23ad46951936ef904ca2b066e31cf",
+  "risk": "routine",
+  "auto_merge": false,
+  "protected_slots": [],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

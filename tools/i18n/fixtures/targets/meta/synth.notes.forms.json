@@ -1,0 +1,29 @@
+{
+  "description": "Synthetic forms",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-plural"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "min": -2147483648,
+      "max": 2147483647,
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "max_length": 100,
+  "source_revision": "112e5c6f8e14fc9ad5310e02fca78bbb988362d1be66181b9b8100dcb0dee750",
+  "risk": "routine",
+  "auto_merge": false,
+  "selector": {
+    "type": "cardinal",
+    "name": "count"
+  },
+  "protected_slots": [],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

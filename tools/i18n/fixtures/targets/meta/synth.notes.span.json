@@ -1,0 +1,29 @@
+{
+  "description": "Synthetic span",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-operator"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "min": -2147483648,
+      "max": 2147483647,
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "max_length": 100,
+  "source_revision": "4593ea492b2a3b2492271e05248b65a01fd6f564294554191d1b8969d85d4d32",
+  "risk": "routine",
+  "auto_merge": false,
+  "selector": {
+    "type": "cardinal",
+    "name": "count"
+  },
+  "protected_slots": [],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "description": "Synthetic label",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-operator"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string",
+      "min": null,
+      "max": null
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "a7e3b6094481263f166a2b48b84a0471d6b1bf1f41c6f5c46bc47bbe04d34f54",
+  "risk": "routine",
+  "auto_merge": false,
+  "protected_slots": [],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

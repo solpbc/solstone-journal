@@ -1,0 +1,55 @@
+{
+  "description": "Synthetic shell",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-operator"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string",
+      "min": null,
+      "max": null
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 200,
+  "source_revision": "9704ae5f6eb41e49a6745c0c64336a28d21590397963f83621c82f2bc167d838",
+  "risk": "routine",
+  "auto_merge": false,
+  "protected_slots": [
+    {
+      "name": "gap",
+      "kind": "whitespace",
+      "value": " \n\t "
+    },
+    {
+      "name": "cmd",
+      "kind": "command",
+      "value": " --flag={val}% "
+    },
+    {
+      "name": "flag",
+      "kind": "flag",
+      "value": "--opt"
+    },
+    {
+      "name": "token",
+      "kind": "accepted-input",
+      "value": "TOKEN"
+    },
+    {
+      "name": "link",
+      "kind": "url",
+      "value": "https://example.invalid/shell"
+    },
+    {
+      "name": "mark",
+      "kind": "mark-word",
+      "value": "MARK"
+    }
+  ],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

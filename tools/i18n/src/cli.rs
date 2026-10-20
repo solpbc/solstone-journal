@@ -53,6 +53,7 @@ where
         "coverage" => run_coverage(&args[2..]),
         "import" => run_import(&args[2..]),
         "export" => run_export(&args[2..]),
+        "targets" => run_targets(&args[2..]),
         unknown => {
             eprintln!("Unknown command: {}", unknown);
             print_usage();
@@ -75,7 +76,8 @@ fn print_usage() {
          pseudo <catalog> --out <dir>\n\
          coverage <catalog> --channel <development|production>\n\
          import <bundle> --dest <dir>\n\
-         export <catalog> --out <dir>\n"
+         export <catalog> --out <dir>\n\
+         targets <catalog> --channel <development|production> [--locale <tag>] --out <dir> --target <rust|esm|apple|android|webextension|gettext> [--target ...]\n"
     );
 }
 
@@ -845,4 +847,102 @@ fn parse_channel_and_locale_args(
 
     let ch = channel.ok_or_else(|| "Missing required --channel argument".to_string())?;
     Ok((catalog_dir, ch, locale))
+}
+
+fn run_targets(args: &[String]) -> i32 {
+    let mut catalog_dir = None;
+    let mut channel = None;
+    let mut locale = None;
+    let mut out_dir = None;
+    let mut targets = Vec::new();
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--channel" if i + 1 < args.len() => {
+                match args[i + 1].as_str() {
+                    "development" => channel = Some(Channel::Development),
+                    "production" => channel = Some(Channel::Production),
+                    other => {
+                        eprintln!("Unknown channel: {}", other);
+                        return 1;
+                    }
+                }
+                i += 2;
+            }
+            "--locale" if i + 1 < args.len() => {
+                locale = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--out" if i + 1 < args.len() => {
+                out_dir = Some(PathBuf::from(&args[i + 1]));
+                i += 2;
+            }
+            "--target" if i + 1 < args.len() => {
+                match crate::target::Target::parse(&args[i + 1]) {
+                    Some(t) => targets.push(t),
+                    None => {
+                        eprintln!("Unknown target: {}", args[i + 1]);
+                        return 1;
+                    }
+                }
+                i += 2;
+            }
+            arg if !arg.starts_with("--") && catalog_dir.is_none() => {
+                catalog_dir = Some(PathBuf::from(arg));
+                i += 1;
+            }
+            other => {
+                eprintln!("Unknown argument: {}", other);
+                return 1;
+            }
+        }
+    }
+
+    let cat_path = match catalog_dir {
+        Some(p) => p,
+        None => {
+            eprintln!("Missing catalog directory");
+            return 1;
+        }
+    };
+    let ch = match channel {
+        Some(c) => c,
+        None => {
+            eprintln!("Missing required --channel argument");
+            return 1;
+        }
+    };
+    let out_path = match out_dir {
+        Some(p) => p,
+        None => {
+            eprintln!("Missing required --out argument");
+            return 1;
+        }
+    };
+    if targets.is_empty() {
+        eprintln!("At least one --target is required");
+        return 1;
+    }
+
+    let catalog = match LoadedCatalog::load_and_validate(&cat_path, ch, locale.as_deref()) {
+        Ok(c) => c,
+        Err(faults) => {
+            for f in faults {
+                eprintln!("{}", f);
+            }
+            return 1;
+        }
+    };
+
+    if let Err(faults) =
+        crate::target::publish(&catalog, ch, locale.as_deref(), &targets, &out_path)
+    {
+        for f in faults {
+            eprintln!("{}", f);
+        }
+        return 1;
+    }
+
+    0
 }

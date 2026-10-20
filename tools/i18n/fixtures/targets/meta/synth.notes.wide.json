@@ -1,0 +1,23 @@
+{
+  "description": "Synthetic wide",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-operator"
+  ],
+  "arguments": [
+    {
+      "name": "n",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "d154982aeee6a5042b20c07fc1e09cb2ab3ec907fb0cb120c86ebff4e768f282",
+  "risk": "routine",
+  "auto_merge": false,
+  "protected_slots": [],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

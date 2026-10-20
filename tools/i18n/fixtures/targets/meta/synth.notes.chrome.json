@@ -1,0 +1,24 @@
+{
+  "description": "Synthetic chrome",
+  "context": "Synthetic test",
+  "bundles": [
+    "target-chrome"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "b819788f8a8518415ea21bcdea75e7943ea114ff31b3c34358d2f9fe3586c0e8",
+  "risk": "routine",
+  "auto_merge": false,
+  "webextension": true,
+  "protected_slots": [
+    {
+      "name": "var_name",
+      "kind": "mark-word",
+      "value": "$NAME$"
+    }
+  ],
+  "surfaces": [
+    "synthetic-fixture"
+  ]
+}

@@ -18,6 +18,7 @@ pub mod protected;
 pub mod pseudo;
 pub mod publish;
 pub mod scalar;
+pub mod target;
 pub mod vocab;
 
 #[cfg(test)]

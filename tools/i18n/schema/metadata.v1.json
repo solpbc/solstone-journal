@@ -187,6 +187,10 @@
         }
       },
       "description": "Selector specification for cardinal and enum messages."
+    },
+    "webextension": {
+      "type": "boolean",
+      "description": "Whether the message is eligible for WebExtension export."
     }
   }
 }
