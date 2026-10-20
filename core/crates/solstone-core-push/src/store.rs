@@ -14,8 +14,12 @@ use solstone_core_journal_io::{
     AtomicWriteError, JsonWriteOptions, LockError, LockOptions, hold_lock, write_json,
 };
 use solstone_core_sol_link::ledger::{AuthorizedClientsRead, read_authorized_clients};
-use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
+use time::{Duration, OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
+use crate::capability::{
+    CapabilityDocument, CapabilityGrant, CapabilityReadStatus, grant_matches,
+    read_capability_document, write_capability_document,
+};
 use crate::envelope::PushKey;
 use crate::model::{
     PushDeviceItem, PushEnvironment, PushPlatform, device_token_is_valid, mask_target,
@@ -59,6 +63,7 @@ impl PushRegistry {
         bundle_id: String,
         environment: PushEnvironment,
         push_key: PushKey,
+        present: bool,
     ) -> Result<(bool, PushDeviceItem), PushStoreError> {
         let _lock = hold_lock(
             &self.path,
@@ -85,18 +90,46 @@ impl PushRegistry {
         });
         let is_created = existing_index.is_none();
 
+        let mut removed_identities =
+            vec![(PushPlatform::Ios, cid_str.to_string(), device_token.clone())];
+
         // Steal: drop any other row with this token on another CID
         devices.retain(|d| match d {
             StoredDevice::Ios {
                 cid: row_cid,
                 device_token: row_token,
                 ..
-            } => row_token != &device_token || row_cid == cid_str,
+            } if row_token == &device_token && row_cid != cid_str => {
+                removed_identities.push((PushPlatform::Ios, row_cid.clone(), row_token.clone()));
+                false
+            }
             _ => true,
         });
 
-        let registered_at = now_rfc3339_utc()?;
+        let registry_timestamps: Vec<&str> = devices
+            .iter()
+            .map(|d| match d {
+                StoredDevice::Ios { registered_at, .. }
+                | StoredDevice::Android { registered_at, .. } => registered_at.as_str(),
+            })
+            .collect();
+
+        let natural_registered_at = now_rfc3339_utc()?;
         let target = mask_target(&device_token);
+
+        let cap_path = self.path.with_file_name("push-capabilities.json");
+        let cap_outcome = prepare_capabilities_for_register(
+            &cap_path,
+            &removed_identities,
+            &registry_timestamps,
+            PushPlatform::Ios,
+            cid_str,
+            &device_token,
+            &push_key,
+            &natural_registered_at,
+            present,
+        );
+        let registered_at = cap_outcome.effective_registered_at.clone();
 
         let new_device = StoredDevice::Ios {
             cid: cid_str.to_owned(),
@@ -132,7 +165,22 @@ impl PushRegistry {
             version: 2,
             devices,
         };
+
         self.write_registry(&registry)?;
+
+        let new_grant = if present {
+            Some(CapabilityGrant {
+                platform: PushPlatform::Ios,
+                cid: cid_str.to_owned(),
+                identity: device_token,
+                push_key,
+                registered_at: registered_at.clone(),
+            })
+        } else {
+            None
+        };
+
+        finish_register_capabilities(&cap_path, cap_outcome, new_grant);
 
         Ok((
             is_created,
@@ -152,6 +200,7 @@ impl PushRegistry {
         p256dh: String,
         auth: String,
         push_key: PushKey,
+        present: bool,
     ) -> Result<(bool, PushDeviceItem), PushStoreError> {
         let _lock = hold_lock(
             &self.path,
@@ -178,20 +227,52 @@ impl PushRegistry {
         });
         let is_created = existing_index.is_none();
 
+        let mut removed_identities =
+            vec![(PushPlatform::Android, cid_str.to_string(), endpoint.clone())];
+
         // Steal: drop any other row with this endpoint on another CID
         devices.retain(|d| match d {
             StoredDevice::Android {
                 cid: row_cid,
                 endpoint: row_endpoint,
                 ..
-            } => row_endpoint != &endpoint || row_cid == cid_str,
+            } if row_endpoint == &endpoint && row_cid != cid_str => {
+                removed_identities.push((
+                    PushPlatform::Android,
+                    row_cid.clone(),
+                    row_endpoint.clone(),
+                ));
+                false
+            }
             _ => true,
         });
 
-        let registered_at = now_rfc3339_utc()?;
+        let registry_timestamps: Vec<&str> = devices
+            .iter()
+            .map(|d| match d {
+                StoredDevice::Ios { registered_at, .. }
+                | StoredDevice::Android { registered_at, .. } => registered_at.as_str(),
+            })
+            .collect();
+
+        let natural_registered_at = now_rfc3339_utc()?;
         let target = crate::endpoint::endpoint_target(&endpoint)
             .map(|(host, _)| host)
             .unwrap_or_else(|| "invalid".to_owned());
+
+        let cap_path = self.path.with_file_name("push-capabilities.json");
+        let cap_outcome = prepare_capabilities_for_register(
+            &cap_path,
+            &removed_identities,
+            &registry_timestamps,
+            PushPlatform::Android,
+            cid_str,
+            &endpoint,
+            &push_key,
+            &natural_registered_at,
+            present,
+        );
+        let registered_at = cap_outcome.effective_registered_at.clone();
 
         let new_device = StoredDevice::Android {
             cid: cid_str.to_owned(),
@@ -227,7 +308,22 @@ impl PushRegistry {
             version: 2,
             devices,
         };
+
         self.write_registry(&registry)?;
+
+        let new_grant = if present {
+            Some(CapabilityGrant {
+                platform: PushPlatform::Android,
+                cid: cid_str.to_owned(),
+                identity: endpoint,
+                push_key,
+                registered_at: registered_at.clone(),
+            })
+        } else {
+            None
+        };
+
+        finish_register_capabilities(&cap_path, cap_outcome, new_grant);
 
         Ok((
             is_created,
@@ -276,7 +372,15 @@ impl PushRegistry {
                 version: 2,
                 devices,
             };
-            self.write_registry(&registry)?;
+            let cap_path = self.path.with_file_name("push-capabilities.json");
+            let removed_identities = [(
+                PushPlatform::Ios,
+                cid_str.to_string(),
+                device_token.to_string(),
+            )];
+            handle_deregister_capabilities(&cap_path, &removed_identities, || {
+                self.write_registry(&registry)
+            })?;
         }
         Ok(removed)
     }
@@ -317,7 +421,15 @@ impl PushRegistry {
                 version: 2,
                 devices,
             };
-            self.write_registry(&registry)?;
+            let cap_path = self.path.with_file_name("push-capabilities.json");
+            let removed_identities = [(
+                PushPlatform::Android,
+                cid_str.to_string(),
+                endpoint.to_string(),
+            )];
+            handle_deregister_capabilities(&cap_path, &removed_identities, || {
+                self.write_registry(&registry)
+            })?;
         }
         Ok(removed)
     }
@@ -336,9 +448,40 @@ impl PushRegistry {
         let mut devices = loaded.registry.devices;
 
         let initial_len = devices.len();
+        let mut removed_identities = Vec::new();
         devices.retain(|d| match d {
-            StoredDevice::Ios { cid: row_cid, .. } => row_cid != cid,
-            StoredDevice::Android { cid: row_cid, .. } => row_cid != cid,
+            StoredDevice::Ios {
+                cid: row_cid,
+                device_token,
+                ..
+            } => {
+                if row_cid == cid {
+                    removed_identities.push((
+                        PushPlatform::Ios,
+                        row_cid.clone(),
+                        device_token.clone(),
+                    ));
+                    false
+                } else {
+                    true
+                }
+            }
+            StoredDevice::Android {
+                cid: row_cid,
+                endpoint,
+                ..
+            } => {
+                if row_cid == cid {
+                    removed_identities.push((
+                        PushPlatform::Android,
+                        row_cid.clone(),
+                        endpoint.clone(),
+                    ));
+                    false
+                } else {
+                    true
+                }
+            }
         });
 
         let removed = devices.len() != initial_len;
@@ -348,12 +491,17 @@ impl PushRegistry {
                 version: 2,
                 devices,
             };
-            self.write_registry(&registry)?;
+            let cap_path = self.path.with_file_name("push-capabilities.json");
+            handle_deregister_capabilities(&cap_path, &removed_identities, || {
+                self.write_registry(&registry)
+            })?;
         }
         Ok(removed)
     }
 
-    pub(crate) fn read_devices_locked(&self) -> Result<Vec<StoredDevice>, PushStoreError> {
+    pub(crate) fn read_devices_locked(
+        &self,
+    ) -> Result<(Vec<StoredDevice>, Vec<CapabilityGrant>), PushStoreError> {
         let _lock = hold_lock(
             &self.path,
             LockOptions {
@@ -364,7 +512,14 @@ impl PushRegistry {
         .map_err(PushStoreError::Lock)?;
 
         let loaded = self.read_registry()?;
-        Ok(loaded.registry.devices)
+        let cap_path = self.path.with_file_name("push-capabilities.json");
+        let grants = match read_capability_document(&cap_path) {
+            CapabilityReadStatus::Ready(g) => g,
+            CapabilityReadStatus::Missing
+            | CapabilityReadStatus::Malformed
+            | CapabilityReadStatus::Unreadable => Vec::new(),
+        };
+        Ok((loaded.registry.devices, grants))
     }
 
     pub(crate) fn status(&self) -> Result<(Vec<PushDeviceItem>, usize), PushStoreError> {
@@ -565,6 +720,286 @@ fn check_v1_shape(val: &serde_json::Value) -> Option<usize> {
     Some(devices_obj.len())
 }
 
+fn disambiguate_registered_at(
+    natural_registered_at: &str,
+    registry_timestamps: &[&str],
+    known_grants: &[CapabilityGrant],
+) -> String {
+    let mut occupied: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    occupied.insert(natural_registered_at);
+    for &ts in registry_timestamps {
+        occupied.insert(ts);
+    }
+    for grant in known_grants {
+        occupied.insert(&grant.registered_at);
+    }
+
+    let natural_instant =
+        parse_registered_at(natural_registered_at).unwrap_or_else(OffsetDateTime::now_utc);
+    let mut max_instant = natural_instant;
+    for &ts in &occupied {
+        if let Some(parsed) = parse_registered_at(ts)
+            && parsed > max_instant
+        {
+            max_instant = parsed;
+        }
+    }
+
+    for step in 1..=10_000i64 {
+        let candidate = max_instant + Duration::nanoseconds(step);
+        if let Ok(mut formatted) = candidate.format(&Rfc3339) {
+            if formatted.ends_with("+00:00") {
+                formatted.truncate(formatted.len() - 6);
+                formatted.push('Z');
+            }
+            if formatted.ends_with('Z')
+                && !occupied.contains(formatted.as_str())
+                && parse_registered_at(&formatted).is_some()
+            {
+                return formatted;
+            }
+        }
+    }
+
+    for step in 1..=120i64 {
+        let candidate = max_instant + Duration::seconds(step);
+        if let Ok(mut formatted) = candidate.format(&Rfc3339) {
+            if formatted.ends_with("+00:00") {
+                formatted.truncate(formatted.len() - 6);
+                formatted.push('Z');
+            }
+            if formatted.ends_with('Z')
+                && !occupied.contains(formatted.as_str())
+                && parse_registered_at(&formatted).is_some()
+            {
+                return formatted;
+            }
+        }
+    }
+
+    let candidate = max_instant + Duration::seconds(121);
+    if let Ok(mut formatted) = candidate.format(&Rfc3339) {
+        if formatted.ends_with("+00:00") {
+            formatted.truncate(formatted.len() - 6);
+            formatted.push('Z');
+        }
+        if formatted.ends_with('Z')
+            && !occupied.contains(formatted.as_str())
+            && parse_registered_at(&formatted).is_some()
+        {
+            return formatted;
+        }
+    }
+
+    let fallback = OffsetDateTime::now_utc() + Duration::seconds(122);
+    let mut formatted = fallback.format(&Rfc3339).unwrap();
+    if formatted.ends_with("+00:00") {
+        formatted.truncate(formatted.len() - 6);
+        formatted.push('Z');
+    }
+    formatted
+}
+
+struct CapRegistrationOutcome {
+    effective_registered_at: String,
+    should_publish: bool,
+    grants_to_publish: Option<Vec<CapabilityGrant>>,
+    is_malformed: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_capabilities_for_register(
+    cap_path: &Path,
+    removed_identities: &[(PushPlatform, String, String)],
+    registry_timestamps: &[&str],
+    platform: PushPlatform,
+    cid: &str,
+    identity: &str,
+    push_key: &PushKey,
+    natural_registered_at: &str,
+    present: bool,
+) -> CapRegistrationOutcome {
+    let read_status = read_capability_document(cap_path);
+    match read_status {
+        CapabilityReadStatus::Malformed => CapRegistrationOutcome {
+            effective_registered_at: natural_registered_at.to_string(),
+            should_publish: true,
+            grants_to_publish: Some(Vec::new()),
+            is_malformed: true,
+        },
+        CapabilityReadStatus::Unreadable => {
+            let empty_doc = CapabilityDocument {
+                version: 1,
+                grants: Vec::new(),
+            };
+            let effective_registered_at = if write_capability_document(cap_path, empty_doc).is_ok()
+            {
+                natural_registered_at.to_string()
+            } else {
+                disambiguate_registered_at(natural_registered_at, registry_timestamps, &[])
+            };
+            CapRegistrationOutcome {
+                effective_registered_at,
+                should_publish: false,
+                grants_to_publish: None,
+                is_malformed: false,
+            }
+        }
+        CapabilityReadStatus::Missing => prepare_from_base(
+            cap_path,
+            removed_identities,
+            registry_timestamps,
+            platform,
+            cid,
+            identity,
+            push_key,
+            natural_registered_at,
+            present,
+            Vec::new(),
+        ),
+        CapabilityReadStatus::Ready(base) => prepare_from_base(
+            cap_path,
+            removed_identities,
+            registry_timestamps,
+            platform,
+            cid,
+            identity,
+            push_key,
+            natural_registered_at,
+            present,
+            base,
+        ),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_from_base(
+    cap_path: &Path,
+    removed_identities: &[(PushPlatform, String, String)],
+    registry_timestamps: &[&str],
+    platform: PushPlatform,
+    cid: &str,
+    identity: &str,
+    push_key: &PushKey,
+    natural_registered_at: &str,
+    present: bool,
+    base: Vec<CapabilityGrant>,
+) -> CapRegistrationOutcome {
+    let cleared: Vec<CapabilityGrant> = base
+        .iter()
+        .filter(|g| {
+            !removed_identities
+                .iter()
+                .any(|(p, c, id)| g.platform == *p && &g.cid == c && &g.identity == id)
+        })
+        .cloned()
+        .collect();
+
+    if cleared != base {
+        let write_res = write_capability_document(
+            cap_path,
+            CapabilityDocument {
+                version: 1,
+                grants: cleared.clone(),
+            },
+        );
+        if write_res.is_ok() {
+            CapRegistrationOutcome {
+                effective_registered_at: natural_registered_at.to_string(),
+                should_publish: present,
+                grants_to_publish: Some(cleared),
+                is_malformed: false,
+            }
+        } else {
+            let collides = base.iter().any(|g| {
+                grant_matches(g, platform, cid, identity, push_key, natural_registered_at)
+            });
+            let effective_registered_at = if collides {
+                disambiguate_registered_at(natural_registered_at, registry_timestamps, &base)
+            } else {
+                natural_registered_at.to_string()
+            };
+            CapRegistrationOutcome {
+                effective_registered_at,
+                should_publish: false,
+                grants_to_publish: None,
+                is_malformed: false,
+            }
+        }
+    } else {
+        CapRegistrationOutcome {
+            effective_registered_at: natural_registered_at.to_string(),
+            should_publish: present,
+            grants_to_publish: Some(cleared),
+            is_malformed: false,
+        }
+    }
+}
+
+fn finish_register_capabilities(
+    cap_path: &Path,
+    outcome: CapRegistrationOutcome,
+    new_grant: Option<CapabilityGrant>,
+) {
+    if outcome.is_malformed {
+        let grants = if let Some(grant) = new_grant {
+            vec![grant]
+        } else {
+            Vec::new()
+        };
+        let _ = write_capability_document(cap_path, CapabilityDocument { version: 1, grants });
+    } else if let (true, Some(mut grants), Some(grant)) =
+        (outcome.should_publish, outcome.grants_to_publish, new_grant)
+    {
+        grants.push(grant);
+        let _ = write_capability_document(cap_path, CapabilityDocument { version: 1, grants });
+    }
+}
+
+fn handle_deregister_capabilities(
+    cap_path: &Path,
+    removed_identities: &[(PushPlatform, String, String)],
+    write_registry: impl FnOnce() -> Result<(), PushStoreError>,
+) -> Result<(), PushStoreError> {
+    let read_status = read_capability_document(cap_path);
+    let base = match read_status {
+        CapabilityReadStatus::Ready(g) => g,
+        CapabilityReadStatus::Missing => Vec::new(),
+        CapabilityReadStatus::Malformed | CapabilityReadStatus::Unreadable => {
+            write_registry()?;
+            let _ = write_capability_document(
+                cap_path,
+                CapabilityDocument {
+                    version: 1,
+                    grants: Vec::new(),
+                },
+            );
+            return Ok(());
+        }
+    };
+
+    let cleared: Vec<CapabilityGrant> = base
+        .iter()
+        .filter(|g| {
+            !removed_identities
+                .iter()
+                .any(|(p, c, id)| g.platform == *p && &g.cid == c && &g.identity == id)
+        })
+        .cloned()
+        .collect();
+
+    if cleared != base {
+        let _ = write_capability_document(
+            cap_path,
+            CapabilityDocument {
+                version: 1,
+                grants: cleared,
+            },
+        );
+    }
+    write_registry()
+}
+
 /// Remove all registered push devices associated with the specified linked device CID.
 pub fn remove_cid_registrations(journal_root: &Path, cid: &str) -> Result<(), PushStoreError> {
     let registry = PushRegistry::new(journal_root);
@@ -626,10 +1061,10 @@ impl Error for PushStoreError {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-struct RegistryV2 {
-    version: u32,
+pub(crate) struct RegistryV2 {
+    pub(crate) version: u32,
     #[serde(default)]
-    devices: Vec<StoredDevice>,
+    pub(crate) devices: Vec<StoredDevice>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -919,6 +1354,7 @@ mod tests {
                 "org.example".to_owned(),
                 PushEnvironment::Development,
                 key(),
+                false,
             ),
             Err(PushStoreError::Unauthorized)
         ));
@@ -929,6 +1365,7 @@ mod tests {
                 ANDROID_P256DH.to_owned(),
                 ANDROID_AUTH.to_owned(),
                 key(),
+                false,
             ),
             Err(PushStoreError::Unauthorized)
         ));
@@ -951,6 +1388,7 @@ mod tests {
                 "org.example".to_owned(),
                 PushEnvironment::Development,
                 key(),
+                false,
             )
         });
         started_rx.recv().unwrap();
@@ -984,6 +1422,7 @@ mod tests {
             "org.example".to_owned(),
             PushEnvironment::Development,
             key(),
+            false,
         )
         .unwrap();
         reg.register_ios(
@@ -992,6 +1431,7 @@ mod tests {
             "org.example".to_owned(),
             PushEnvironment::Development,
             key(),
+            false,
         )
         .unwrap();
         reg.register_android(
@@ -1000,6 +1440,7 @@ mod tests {
             ANDROID_P256DH.to_owned(),
             ANDROID_AUTH.to_owned(),
             key(),
+            false,
         )
         .unwrap();
         reg.register_ios(
@@ -1008,6 +1449,7 @@ mod tests {
             "org.example".to_owned(),
             PushEnvironment::Development,
             key_b,
+            false,
         )
         .unwrap();
         reg.register_android(
@@ -1016,6 +1458,7 @@ mod tests {
             ANDROID_P256DH.to_owned(),
             ANDROID_AUTH.to_owned(),
             key_b,
+            false,
         )
         .unwrap();
         assert_eq!(reg.device_count().unwrap(), 5);
@@ -1023,7 +1466,7 @@ mod tests {
         remove_cid_registrations(root.path(), CID_A).unwrap();
         assert_eq!(reg.device_count().unwrap(), 2);
 
-        let devices = reg.read_devices_locked().unwrap();
+        let (devices, _) = reg.read_devices_locked().unwrap();
         assert_eq!(devices.len(), 2);
         assert_eq!(devices[0].cid(), CID_B);
         assert_eq!(devices[1].cid(), CID_B);
@@ -1050,6 +1493,7 @@ mod tests {
             "org.example".to_owned(),
             PushEnvironment::Development,
             key(),
+            false,
         )
         .unwrap();
         reg.register_ios(
@@ -1058,6 +1502,7 @@ mod tests {
             "org.example".to_owned(),
             PushEnvironment::Development,
             key(),
+            false,
         )
         .unwrap();
         assert_eq!(reg.device_count().unwrap(), 2);
@@ -1077,6 +1522,7 @@ mod tests {
                     "org.example.concurrent".to_owned(),
                     PushEnvironment::Development,
                     PushKey::from_bytes(VALID_KEY),
+                    false,
                 );
             }));
         }
@@ -1099,6 +1545,7 @@ mod tests {
             "org.example".to_owned(),
             PushEnvironment::Development,
             key(),
+            false,
         )
         .unwrap();
         reg.register_ios(
@@ -1107,6 +1554,7 @@ mod tests {
             "org.example".to_owned(),
             PushEnvironment::Development,
             key(),
+            false,
         )
         .unwrap();
         reg.register_android(
@@ -1115,6 +1563,7 @@ mod tests {
             ANDROID_P256DH.to_owned(),
             ANDROID_AUTH.to_owned(),
             key(),
+            false,
         )
         .unwrap();
         assert_eq!(reg.device_count().unwrap(), 3);
@@ -1156,9 +1605,513 @@ mod tests {
                 "org.example".to_owned(),
                 PushEnvironment::Development,
                 key(),
+                false,
             )
             .is_err()
         );
         assert_eq!(fs::read(reg.path()).unwrap(), before);
+    }
+
+    #[test]
+    fn frozen_clock_headerless_reregister_drops_grant() {
+        let root = TempDir::new_in("/var/tmp").expect("journal root");
+        let t = OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap();
+        set_test_clock(Some(t));
+        let reg = registry(&root);
+
+        // Register with present = true
+        let (created, item1) = reg
+            .register_ios(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                key(),
+                true,
+            )
+            .expect("register ios");
+        assert!(created);
+
+        let (devices, grants) = reg.read_devices_locked().expect("read locked");
+        assert_eq!(devices.len(), 1);
+        assert_eq!(grants.len(), 1);
+        let StoredDevice::Ios {
+            registered_at: ref reg_at_1,
+            ..
+        } = devices[0]
+        else {
+            panic!("expected ios device");
+        };
+        assert!(grant_matches(
+            &grants[0],
+            PushPlatform::Ios,
+            CID_A,
+            TOKEN_1,
+            &key(),
+            reg_at_1,
+        ));
+
+        // Re-register headerless with frozen clock, same key and identity
+        let (created2, item2) = reg
+            .register_ios(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                key(),
+                false,
+            )
+            .expect("re-register ios");
+        assert!(!created2);
+        assert_eq!(item1.registered_at, item2.registered_at);
+
+        let (devices2, grants2) = reg.read_devices_locked().expect("read locked");
+        assert_eq!(devices2.len(), 1);
+        assert!(grants2.is_empty());
+        let StoredDevice::Ios {
+            registered_at: ref reg_at_2,
+            ..
+        } = devices2[0]
+        else {
+            panic!("expected ios device");
+        };
+        assert_eq!(reg_at_1, reg_at_2);
+        assert!(!grants2.iter().any(|g| grant_matches(
+            g,
+            PushPlatform::Ios,
+            CID_A,
+            TOKEN_1,
+            &key(),
+            reg_at_2,
+        )));
+
+        // Registry file still deserializes cleanly as RegistryV2
+        let file_contents = fs::read_to_string(reg.path()).expect("read registry");
+        let parsed_reg: RegistryV2 =
+            serde_json::from_str(&file_contents).expect("deserialize registry");
+        assert_eq!(parsed_reg.devices.len(), 1);
+
+        set_test_clock(None);
+    }
+
+    #[test]
+    fn replaced_key_changed_identity_and_steal_do_not_match_old_grant() {
+        let root = TempDir::new_in("/var/tmp").expect("journal root");
+        set_test_clock(None);
+        let reg = registry(&root);
+
+        // Register initial row with opt-in
+        reg.register_ios(
+            &cid(CID_A),
+            TOKEN_1.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            key(),
+            true,
+        )
+        .unwrap();
+
+        let (_devices, grants) = reg.read_devices_locked().unwrap();
+        assert_eq!(grants.len(), 1);
+
+        // 1. New push key without opt-in leaves grant unmatched
+        let new_key = PushKey::from_bytes([88u8; 32]);
+        reg.register_ios(
+            &cid(CID_A),
+            TOKEN_1.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            new_key,
+            false,
+        )
+        .unwrap();
+        let (devices_after_key, grants_after_key) = reg.read_devices_locked().unwrap();
+        assert!(grants_after_key.is_empty());
+        let StoredDevice::Ios {
+            ref push_key,
+            ref registered_at,
+            ..
+        } = devices_after_key[0]
+        else {
+            panic!();
+        };
+        assert_eq!(push_key, &new_key);
+        assert!(!grants_after_key.iter().any(|g| grant_matches(
+            g,
+            PushPlatform::Ios,
+            CID_A,
+            TOKEN_1,
+            push_key,
+            registered_at,
+        )));
+
+        // 2. Steal onto another CID drops stolen-from row and leaves grant unmatched
+        reg.register_ios(
+            &cid(CID_A),
+            TOKEN_1.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            key(),
+            true,
+        )
+        .unwrap();
+
+        // CID_B steals TOKEN_1
+        reg.register_ios(
+            &cid(CID_B),
+            TOKEN_1.to_owned(),
+            "org.example.b".to_owned(),
+            PushEnvironment::Development,
+            key(),
+            false,
+        )
+        .unwrap();
+
+        let (devices_after_steal, grants_after_steal) = reg.read_devices_locked().unwrap();
+        // Stolen-from row on CID_A is gone
+        assert_eq!(devices_after_steal.len(), 1);
+        assert_eq!(devices_after_steal[0].cid(), CID_B);
+        // Grant for CID_A's token is gone
+        assert!(!grants_after_steal.iter().any(|g| g.cid == CID_A));
+        assert!(grants_after_steal.is_empty());
+    }
+
+    #[test]
+    fn deregister_and_remove_cid_drop_grants() {
+        let root = TempDir::new_in("/var/tmp").expect("journal root");
+        set_test_clock(None);
+        let reg = registry(&root);
+
+        // Register iOS and Android with opt-in
+        reg.register_ios(
+            &cid(CID_A),
+            TOKEN_1.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            key(),
+            true,
+        )
+        .unwrap();
+        reg.register_android(
+            &cid(CID_A),
+            ENDPOINT_1.to_owned(),
+            ANDROID_P256DH.to_owned(),
+            ANDROID_AUTH.to_owned(),
+            key(),
+            true,
+        )
+        .unwrap();
+
+        let (_, grants) = reg.read_devices_locked().unwrap();
+        assert_eq!(grants.len(), 2);
+
+        // Deregister iOS removes its grant
+        assert!(reg.deregister_ios(&cid(CID_A), TOKEN_1).unwrap());
+        let (_, grants_after_ios) = reg.read_devices_locked().unwrap();
+        assert_eq!(grants_after_ios.len(), 1);
+        assert_eq!(grants_after_ios[0].identity, ENDPOINT_1);
+
+        // Deregister Android removes its grant
+        assert!(reg.deregister_android(&cid(CID_A), ENDPOINT_1).unwrap());
+        let (_, grants_after_android) = reg.read_devices_locked().unwrap();
+        assert!(grants_after_android.is_empty());
+
+        // Register multiple across CID_A and CID_B
+        reg.register_ios(
+            &cid(CID_A),
+            TOKEN_1.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            key(),
+            true,
+        )
+        .unwrap();
+        reg.register_ios(
+            &cid(CID_B),
+            TOKEN_2.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            key(),
+            true,
+        )
+        .unwrap();
+        let (_, grants_before_remove) = reg.read_devices_locked().unwrap();
+        assert_eq!(grants_before_remove.len(), 2);
+
+        // remove_cid_registrations on CID_A drops CID_A grants and keeps CID_B
+        remove_cid_registrations(root.path(), CID_A).unwrap();
+        let (devices_after_remove, grants_after_remove) = reg.read_devices_locked().unwrap();
+        assert_eq!(devices_after_remove.len(), 1);
+        assert_eq!(devices_after_remove[0].cid(), CID_B);
+        assert_eq!(grants_after_remove.len(), 1);
+        assert_eq!(grants_after_remove[0].cid, CID_B);
+    }
+
+    #[test]
+    fn stale_grant_and_expired_row_are_not_capable() {
+        let root = TempDir::new_in("/var/tmp").expect("journal root");
+        let t_old = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let t_now = OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap();
+        set_test_clock(Some(t_old));
+        let reg = registry(&root);
+
+        reg.register_ios(
+            &cid(CID_A),
+            TOKEN_1.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            key(),
+            true,
+        )
+        .unwrap();
+
+        // 1. Stale grant timestamp does not match
+        let (devices, grants) = reg.read_devices_locked().unwrap();
+        assert_eq!(grants.len(), 1);
+        let grant_stale = CapabilityGrant {
+            registered_at: "2020-01-01T00:00:00Z".to_owned(),
+            ..grants[0].clone()
+        };
+        let StoredDevice::Ios {
+            ref registered_at, ..
+        } = devices[0]
+        else {
+            panic!()
+        };
+        assert!(!grant_matches(
+            &grant_stale,
+            PushPlatform::Ios,
+            CID_A,
+            TOKEN_1,
+            &key(),
+            registered_at,
+        ));
+
+        // 2. Row older than 30 days is filtered out by deliver_notification cutoff
+        let notif = crate::envelope::Notification {
+            at: t_now,
+            kind: "test".to_owned(),
+            title: "solstone".to_owned(),
+            body: "test".to_owned(),
+            open: None,
+        };
+        let outcome = crate::router::deliver_notification(
+            root.path(),
+            "https://portal.example.com",
+            t_now,
+            &notif,
+            &crate::relay::UreqRelay::default(),
+            None,
+        );
+        // Because row was registered > 30 days ago, deliver_notification finds no eligible recipient
+        assert!(matches!(
+            outcome,
+            crate::router::DeliveryOutcome::Refused(crate::router::Refused::NoRecipient)
+        ));
+
+        set_test_clock(None);
+    }
+
+    #[test]
+    fn capability_write_fault_on_frozen_clock_reregister_keeps_english_row() {
+        let root = TempDir::new_in("/var/tmp").expect("journal root");
+        let t = OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap();
+        set_test_clock(Some(t));
+        let reg = registry(&root);
+
+        // Opt in at a frozen TEST_CLOCK
+        let (created, item1) = reg
+            .register_ios(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                key(),
+                true,
+            )
+            .expect("initial opt-in succeeds");
+        assert!(created);
+        assert_eq!(item1.registered_at, "2026-09-24T00:00:00Z");
+
+        // Set write hook to return Err for every document
+        crate::capability::set_test_write_hook(Some(Box::new(|_| {
+            Err(io::Error::other("write hook fault"))
+        })));
+
+        // Headerless re-register with the same key and identity returns Ok
+        let (created2, item2) = reg
+            .register_ios(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                key(),
+                false,
+            )
+            .expect("headerless re-register under fault succeeds");
+        assert!(!created2);
+
+        crate::capability::clear_test_capability_hooks();
+        set_test_clock(None);
+
+        // After clear_test_capability_hooks, grant_matches against current row is false
+        let (devices, grants) = reg.read_devices_locked().expect("read devices");
+        assert_eq!(devices.len(), 1);
+        let StoredDevice::Ios {
+            registered_at: ref stored_at,
+            ..
+        } = devices[0]
+        else {
+            panic!("expected ios device");
+        };
+        assert_eq!(stored_at, &item2.registered_at);
+        assert_ne!(stored_at, "2026-09-24T00:00:00Z");
+
+        assert_eq!(grants.len(), 1);
+        assert!(!crate::capability::grant_matches(
+            &grants[0],
+            PushPlatform::Ios,
+            cid(CID_A).as_str(),
+            TOKEN_1,
+            &key(),
+            stored_at,
+        ));
+
+        // parse_registered_at accepts the stored registered_at
+        assert!(parse_registered_at(stored_at).is_some());
+        assert!(stored_at.ends_with('Z'));
+
+        // The registry still deserializes as RegistryV2
+        let file_contents = fs::read_to_string(reg.path()).expect("read registry");
+        let parsed_reg: RegistryV2 =
+            serde_json::from_str(&file_contents).expect("deserialize registry");
+        assert_eq!(parsed_reg.devices.len(), 1);
+    }
+
+    #[test]
+    fn unreadable_capability_write_fault_repeated_reregister_advances_registered_at() {
+        let root = TempDir::new_in("/var/tmp").expect("journal root");
+        let t = OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap();
+        set_test_clock(Some(t));
+        let clock_str = "2026-09-24T00:00:00Z";
+        let reg = registry(&root);
+
+        // 1. Opt in with no fault. registered_at is the clock string. The grant matches that row.
+        let (created, item1) = reg
+            .register_ios(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                key(),
+                true,
+            )
+            .expect("initial opt-in succeeds");
+        assert!(created);
+        assert_eq!(item1.registered_at, clock_str);
+
+        let (devices1, grants1) = reg.read_devices_locked().expect("read devices");
+        assert_eq!(devices1.len(), 1);
+        assert_eq!(grants1.len(), 1);
+        assert!(crate::capability::grant_matches(
+            &grants1[0],
+            PushPlatform::Ios,
+            cid(CID_A).as_str(),
+            TOKEN_1,
+            &key(),
+            &item1.registered_at,
+        ));
+
+        // 2. Inject read fault and a write hook that always returns Err.
+        crate::capability::set_test_read_fault(true);
+        crate::capability::set_test_write_hook(Some(Box::new(|_| {
+            Err(io::Error::other("write hook fault"))
+        })));
+
+        let (created2, item2) = reg
+            .register_ios(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                key(),
+                false,
+            )
+            .expect("headerless re-register under fault succeeds");
+        assert!(!created2);
+
+        let parsed_t2 = parse_registered_at(&item2.registered_at).expect("parses t2");
+        assert!(item2.registered_at.ends_with('Z'));
+        let parsed_clock = parse_registered_at(clock_str).expect("parses clock");
+        assert!(parsed_t2 > parsed_clock);
+
+        crate::capability::clear_test_capability_hooks();
+        let (devices2, grants2) = reg.read_devices_locked().expect("read devices");
+        assert_eq!(devices2.len(), 1);
+        assert_eq!(grants2.len(), 1);
+        let StoredDevice::Ios {
+            registered_at: ref stored_at2,
+            ..
+        } = devices2[0]
+        else {
+            panic!("expected ios device");
+        };
+        assert_eq!(stored_at2, &item2.registered_at);
+        assert!(!crate::capability::grant_matches(
+            &grants2[0],
+            PushPlatform::Ios,
+            cid(CID_A).as_str(),
+            TOKEN_1,
+            &key(),
+            stored_at2,
+        ));
+
+        // 3. Repeat the same read+write fault and headerless re-register.
+        crate::capability::set_test_read_fault(true);
+        crate::capability::set_test_write_hook(Some(Box::new(|_| {
+            Err(io::Error::other("write hook fault"))
+        })));
+
+        let (created3, item3) = reg
+            .register_ios(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                key(),
+                false,
+            )
+            .expect("second headerless re-register under fault succeeds");
+        assert!(!created3);
+
+        let parsed_t3 = parse_registered_at(&item3.registered_at).expect("parses t3");
+        assert!(item3.registered_at.ends_with('Z'));
+        assert!(parsed_t3 > parsed_t2);
+        assert_ne!(item3.registered_at, clock_str);
+        assert_ne!(item3.registered_at, item2.registered_at);
+
+        crate::capability::clear_test_capability_hooks();
+        set_test_clock(None);
+
+        let (devices3, grants3) = reg.read_devices_locked().expect("read devices");
+        assert_eq!(devices3.len(), 1);
+        let StoredDevice::Ios {
+            registered_at: ref stored_at3,
+            ..
+        } = devices3[0]
+        else {
+            panic!("expected ios device");
+        };
+        assert_eq!(stored_at3, &item3.registered_at);
+        for grant in &grants3 {
+            assert!(!crate::capability::grant_matches(
+                grant,
+                PushPlatform::Ios,
+                cid(CID_A).as_str(),
+                TOKEN_1,
+                &key(),
+                stored_at3,
+            ));
+        }
     }
 }

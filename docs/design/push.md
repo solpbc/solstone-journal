@@ -12,8 +12,9 @@ to purge push registrations for unpaired devices.
 ## Domain ownership
 
 `core/crates/solstone-core-push/` is the sole writer for
-`journal/config/push-registry.json` and `journal/config/push-vapid.json`. The
-retired `journal/config/push_devices.json` path is not read, written, or
+`journal/config/push-registry.json`, `journal/config/push-vapid.json`, and
+`journal/config/push-capabilities.json`. The retired
+`journal/config/push_devices.json` path is not read, written, or
 migrated.
 
 The registry is one JSON document containing an array of registered devices:
@@ -75,6 +76,35 @@ every Android registration until each device subscribes again. The only recovery
 for a corrupt file is to remove it; the next GET creates a new key and strands
 those registrations. The journal does not silently replace a corrupt key.
 
+### Presentation Capability Grants
+
+`journal/config/push-capabilities.json` holds the grant list of devices opted into
+localized push presentation, stored as a separate file alongside `config/push-registry.json`
+and `config/push-vapid.json`. It is not part of either document.
+
+```json
+{
+  "version": 1,
+  "grants": [
+    {
+      "platform": "ios",
+      "cid": "sha256:...",
+      "identity": "0123456789abcdef",
+      "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+      "registered_at": "2026-09-24T00:00:00Z"
+    }
+  ]
+}
+```
+
+A grant is honored only when all five fields (`platform`, `cid`, raw token or endpoint
+`identity`, `push_key`, and exact `registered_at` string) match the current registry row.
+Headerless re-register, key replacement, token/endpoint change, steal, deregister, and CID
+removal withdraw the grant. A stale, malformed, unreadable, or missing capability file does
+not grant presentation and does not block English delivery.
+
+A capability read or write failure never turns register into 503; the register still succeeds and delivery stays English-only; a failed capability update stores a later `registered_at` that does not reuse the clock value, a current registry row timestamp, or a known grant timestamp, which `parse_registered_at` accepts, so the stale grant does not match. Registry lock and registry write failures stay 503.
+
 ### Migration and Rollback
 
 A legacy v1 registry (keyed by CID without a version field or `push_key`) is
@@ -112,6 +142,11 @@ The handler first requires an `AccessBasis::LinkedDevice`; localhost, pairing
 peers, and missing identities receive `403 linked_device_required` before the
 request body is examined. The identity comes from the connection CID, never
 from JSON.
+
+Clients may supply the optional request header `X-Solstone-Push-Presentation: 1`
+on `POST /api/push/register` (exactly one header, raw value `1`) to opt into
+localized push presentation. Any other state (absent, repeated, empty, or other
+value) does not opt in. The JSON body and the device response gain no field.
 
 For `platform: "ios"`, the JSON object requires:
 - `platform`: `"ios"`
@@ -193,7 +228,7 @@ Unauthenticated round-trip device test.
 - Outcome mapping: any 2xx is `sent` (the push service accepted the message); 404 and 410 are `revoked`; any other status is `failed` / `endpoint_rejected_<status>`; timeout is `endpoint_timeout`; connect or other transport failure is `endpoint_unreachable`. ntfy cannot report an unsubscribe, so `revoked` depends on the service returning 404 or 410. A distributor that uses a private CA fails as `endpoint_unreachable`.
 - Isolation: An iOS relay failure does not skip Android sends. A VAPID failure does not skip iOS sends. An Android-only send does not contact the relay and does not load the link identity.
 - Worst case is 60 seconds for the relay token, plus 60 seconds per relay batch, plus 30 seconds per Android device. There is no overall bound.
-- Logging: At ureq `trace`, ureq logs full requests, including the VAPID JWT and the relay bearer. The journal default level is `warn`. This crate's own log lines do not include the endpoint URL, keys, or JWT.
+- Logging: At ureq `trace`, ureq logs full requests, including the VAPID JWT and the relay bearer. The journal default level is `warn`. This crate's own log lines do not include the endpoint URL, keys, or JWT. Capability warn lines do not contain notification text, fallback text, push keys, device tokens, endpoint URLs, or JWTs.
 - An app build that predates `push_key` gets `400` on register and DELETE, so it never becomes a recipient.
 
 With eligible devices, it returns:
@@ -232,6 +267,22 @@ Plaintext notifications serialize canonical JSON:
 {"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"...","open":"/app/..."}
 ```
 
+For test notifications only, capable devices receive a `presentation` object:
+
+```json
+{
+  "title": {"v":1,"catalog_epoch":1,"code":"push.test.title","args":{},"fallback_en":"solstone"},
+  "body": {"v":1,"catalog_epoch":1,"code":"push.test.body","args":{},"fallback_en":"test notification from your journal."}
+}
+```
+
+Weekly notifications stay the legacy object with no presentation field.
+
 `open` is optional and validated to start with `/app/` without relative navigation
 segments (`.` or `..`). Sealed envelopes serialize as 1404-character URL-safe
 unpadded base64 strings.
+
+The envelope length stays 1053 bytes (1024-byte padded payload). If the presentation
+form is 1024 bytes or more and the legacy form fits, that recipient gets legacy English;
+if legacy does not fit, that recipient fails and other recipients in the batch are still
+attempted.

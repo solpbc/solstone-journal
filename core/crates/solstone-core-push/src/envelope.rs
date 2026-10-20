@@ -83,6 +83,21 @@ pub struct Notification {
     pub open: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Presentation {
+    pub(crate) title: PresentationMessage,
+    pub(crate) body: PresentationMessage,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PresentationMessage {
+    pub(crate) v: u32,
+    pub(crate) catalog_epoch: u32,
+    pub(crate) code: String,
+    pub(crate) args: serde_json::Map<String, serde_json::Value>,
+    pub(crate) fallback_en: String,
+}
+
 #[derive(Serialize)]
 struct CanonicalNotificationJson<'a> {
     v: u32,
@@ -92,6 +107,23 @@ struct CanonicalNotificationJson<'a> {
     body: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     open: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    presentation: Option<CanonicalPresentationJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct CanonicalPresentationJson<'a> {
+    title: CanonicalPresentationMessage<'a>,
+    body: CanonicalPresentationMessage<'a>,
+}
+
+#[derive(Serialize)]
+struct CanonicalPresentationMessage<'a> {
+    v: u32,
+    catalog_epoch: u32,
+    code: &'a str,
+    args: &'a serde_json::Map<String, serde_json::Value>,
+    fallback_en: &'a str,
 }
 
 #[allow(dead_code)]
@@ -105,6 +137,19 @@ struct ParsedNotificationJson {
     body: String,
     #[serde(default)]
     open: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_presentation_field")]
+    presentation: Option<serde_json::Value>,
+}
+
+#[allow(dead_code)]
+fn deserialize_presentation_field<'de, D>(
+    deserializer: D,
+) -> Result<Option<serde_json::Value>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let val = serde_json::Value::deserialize(deserializer)?;
+    Ok(Some(val))
 }
 
 /// A sealed notification envelope ready for delivery.
@@ -205,12 +250,13 @@ pub fn seal(key: &PushKey, notification: &Notification) -> Result<SealedEnvelope
     let mut nonce = [0u8; NONCE_LEN];
     let rng = SystemRandom::new();
     rng.fill(&mut nonce).map_err(|_| SealError::Random)?;
-    seal_inner(key, notification, &nonce)
+    seal_inner(key, notification, None, &nonce)
 }
 
 fn seal_inner(
     key: &PushKey,
     notification: &Notification,
+    presentation: Option<&Presentation>,
     nonce: &[u8; NONCE_LEN],
 ) -> Result<SealedEnvelope, SealError> {
     if let Some(open) = &notification.open
@@ -222,6 +268,23 @@ fn seal_inner(
     let at_utc = notification.at.to_offset(UtcOffset::UTC);
     let at_str = format_notification_at(at_utc);
 
+    let presentation_canonical = presentation.map(|p| CanonicalPresentationJson {
+        title: CanonicalPresentationMessage {
+            v: p.title.v,
+            catalog_epoch: p.title.catalog_epoch,
+            code: &p.title.code,
+            args: &p.title.args,
+            fallback_en: &p.title.fallback_en,
+        },
+        body: CanonicalPresentationMessage {
+            v: p.body.v,
+            catalog_epoch: p.body.catalog_epoch,
+            code: &p.body.code,
+            args: &p.body.args,
+            fallback_en: &p.body.fallback_en,
+        },
+    });
+
     let canonical = CanonicalNotificationJson {
         v: 1,
         at: at_str,
@@ -229,6 +292,7 @@ fn seal_inner(
         title: &notification.title,
         body: &notification.body,
         open: notification.open.as_deref(),
+        presentation: presentation_canonical,
     };
 
     let json_bytes = serde_json::to_vec(&canonical).map_err(|_| SealError::Auth)?;
@@ -261,20 +325,59 @@ fn seal_inner(
     Ok(SealedEnvelope { bytes: envelope })
 }
 
+pub(crate) fn seal_for_recipient(
+    key: &PushKey,
+    notification: &Notification,
+    capable: bool,
+) -> Result<SealedEnvelope, SealError> {
+    let mut nonce = [0u8; NONCE_LEN];
+    let rng = SystemRandom::new();
+    rng.fill(&mut nonce).map_err(|_| SealError::Random)?;
+
+    if capable && notification.kind == "test" {
+        let pres = Presentation {
+            title: PresentationMessage {
+                v: 1,
+                catalog_epoch: 1,
+                code: "push.test.title".to_owned(),
+                args: serde_json::Map::new(),
+                fallback_en: notification.title.clone(),
+            },
+            body: PresentationMessage {
+                v: 1,
+                catalog_epoch: 1,
+                code: "push.test.body".to_owned(),
+                args: serde_json::Map::new(),
+                fallback_en: notification.body.clone(),
+            },
+        };
+        match seal_inner(key, notification, Some(&pres), &nonce) {
+            Ok(sealed) => Ok(sealed),
+            Err(SealError::TooLarge { .. }) => seal_inner(key, notification, None, &nonce),
+            Err(err) => Err(err),
+        }
+    } else {
+        seal_inner(key, notification, None, &nonce)
+    }
+}
+
 #[cfg(test)]
 fn seal_with_nonce(
     key: &PushKey,
     notification: &Notification,
+    presentation: Option<&Presentation>,
     nonce: &[u8; NONCE_LEN],
 ) -> Result<SealedEnvelope, SealError> {
-    seal_inner(key, notification, nonce)
+    seal_inner(key, notification, presentation, nonce)
 }
 
-#[allow(dead_code)]
-pub(crate) fn open_envelope(
-    key: &PushKey,
-    envelope_bytes: &[u8],
-) -> Result<Notification, SealError> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct OpenedPush {
+    pub(crate) notification: Notification,
+    pub(crate) presentation: Option<Presentation>,
+}
+
+pub(crate) fn open_push(key: &PushKey, envelope_bytes: &[u8]) -> Result<OpenedPush, SealError> {
     if envelope_bytes.is_empty() {
         return Err(SealError::Auth);
     }
@@ -330,12 +433,100 @@ pub(crate) fn open_envelope(
         return Err(SealError::Auth);
     }
 
-    Ok(Notification {
-        at,
-        kind: parsed.kind,
-        title: parsed.title,
-        body: parsed.body,
-        open: parsed.open,
+    let presentation = match parsed.presentation {
+        Some(val) => Some(parse_presentation_value(val)?),
+        None => None,
+    };
+
+    Ok(OpenedPush {
+        notification: Notification {
+            at,
+            kind: parsed.kind,
+            title: parsed.title,
+            body: parsed.body,
+            open: parsed.open,
+        },
+        presentation,
+    })
+}
+
+#[allow(dead_code)]
+pub(crate) fn open_envelope(
+    key: &PushKey,
+    envelope_bytes: &[u8],
+) -> Result<Notification, SealError> {
+    open_push(key, envelope_bytes).map(|opened| opened.notification)
+}
+
+fn parse_presentation_value(value: serde_json::Value) -> Result<Presentation, SealError> {
+    let serde_json::Value::Object(map) = value else {
+        return Err(SealError::Auth);
+    };
+    if map.len() != 2 || !map.contains_key("title") || !map.contains_key("body") {
+        return Err(SealError::Auth);
+    }
+    let title_val = map.get("title").cloned().ok_or(SealError::Auth)?;
+    let body_val = map.get("body").cloned().ok_or(SealError::Auth)?;
+    let title = parse_presentation_message(title_val)?;
+    let body = parse_presentation_message(body_val)?;
+    Ok(Presentation { title, body })
+}
+
+fn parse_presentation_message(value: serde_json::Value) -> Result<PresentationMessage, SealError> {
+    let serde_json::Value::Object(map) = value else {
+        return Err(SealError::Auth);
+    };
+    if map.len() != 5
+        || !map.contains_key("v")
+        || !map.contains_key("catalog_epoch")
+        || !map.contains_key("code")
+        || !map.contains_key("args")
+        || !map.contains_key("fallback_en")
+    {
+        return Err(SealError::Auth);
+    }
+
+    let v_u64 = map
+        .get("v")
+        .and_then(|v| v.as_u64())
+        .ok_or(SealError::Auth)?;
+    let v = u32::try_from(v_u64).map_err(|_| SealError::Auth)?;
+
+    let epoch_u64 = map
+        .get("catalog_epoch")
+        .and_then(|v| v.as_u64())
+        .ok_or(SealError::Auth)?;
+    let catalog_epoch = u32::try_from(epoch_u64).map_err(|_| SealError::Auth)?;
+
+    let code = map
+        .get("code")
+        .and_then(|v| v.as_str())
+        .ok_or(SealError::Auth)?
+        .to_owned();
+
+    let args_obj = map
+        .get("args")
+        .and_then(|v| v.as_object())
+        .ok_or(SealError::Auth)?;
+
+    for val in args_obj.values() {
+        if val.is_object() || val.is_array() {
+            return Err(SealError::Auth);
+        }
+    }
+
+    let fallback_en = map
+        .get("fallback_en")
+        .and_then(|v| v.as_str())
+        .ok_or(SealError::Auth)?
+        .to_owned();
+
+    Ok(PresentationMessage {
+        v,
+        catalog_epoch,
+        code,
+        args: args_obj.clone(),
+        fallback_en,
     })
 }
 
@@ -498,7 +689,7 @@ mod tests {
 
         // Case a
         let notif_a = test_notification_a();
-        let sealed_a = seal_with_nonce(&key_a, &notif_a, &nonce_a_bytes).expect("seal a");
+        let sealed_a = seal_with_nonce(&key_a, &notif_a, None, &nonce_a_bytes).expect("seal a");
         let b64url_a = sealed_a.as_base64url();
         assert_eq!(b64url_a, VECTOR_A_B64URL);
         assert_eq!(sealed_a.bytes.len(), ENVELOPE_LEN);
@@ -523,13 +714,14 @@ mod tests {
             title: &notif_a2.title,
             body: &notif_a2.body,
             open: notif_a2.open.as_deref(),
+            presentation: None,
         })
         .unwrap();
         assert_eq!(
             json_a2,
             r#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"test notification from your journal.","open":"/app/health"}"#
         );
-        let sealed_a2 = seal_with_nonce(&key_a, &notif_a2, &nonce_a_bytes).expect("seal a2");
+        let sealed_a2 = seal_with_nonce(&key_a, &notif_a2, None, &nonce_a_bytes).expect("seal a2");
         let opened_a2 = open_envelope(&key_a, &sealed_a2.bytes).expect("open a2");
         assert_eq!(opened_a2, notif_a2);
 
@@ -541,7 +733,7 @@ mod tests {
             body: "test with 0x80: Ѐ.".to_owned(),
             open: None,
         };
-        let sealed_b = seal_with_nonce(&key_a, &notif_b, &nonce_a_bytes).expect("seal b");
+        let sealed_b = seal_with_nonce(&key_a, &notif_b, None, &nonce_a_bytes).expect("seal b");
         let opened_b = open_envelope(&key_a, &sealed_b.bytes).expect("open b");
         assert_eq!(opened_b, notif_b);
 
@@ -576,7 +768,7 @@ mod tests {
             body: body_c,
             open: None,
         };
-        let sealed_c = seal_with_nonce(&key_a, &notif_c, &nonce_a_bytes).expect("seal c");
+        let sealed_c = seal_with_nonce(&key_a, &notif_c, None, &nonce_a_bytes).expect("seal c");
         let opened_c = open_envelope(&key_a, &sealed_c.bytes).expect("open c");
         assert_eq!(opened_c, notif_c);
 
@@ -589,7 +781,7 @@ mod tests {
             body: body_d,
             open: None,
         };
-        let err_d = seal_with_nonce(&key_a, &notif_d, &nonce_a_bytes).unwrap_err();
+        let err_d = seal_with_nonce(&key_a, &notif_d, None, &nonce_a_bytes).unwrap_err();
         assert_eq!(err_d, SealError::TooLarge { len: 1024 });
 
         // Case e: Corrupted tag (last byte flipped)
@@ -621,6 +813,7 @@ mod tests {
             title: &notif_subsec.title,
             body: &notif_subsec.body,
             open: None,
+            presentation: None,
         };
         assert_eq!(canonical_subsec.at, "2026-09-24T00:00:00Z");
 
@@ -641,6 +834,7 @@ mod tests {
             title: &notif_offset.title,
             body: &notif_offset.body,
             open: None,
+            presentation: None,
         };
         assert_eq!(canonical_offset.at, "2026-09-24T00:00:00Z");
 
@@ -717,5 +911,193 @@ mod tests {
                 serde_json::from_slice(&existing_bytes).expect("parse existing vectors file");
             assert_eq!(existing_file, vector_file, "vectors file drift detected");
         }
+    }
+
+    fn seal_raw_json(
+        key: &PushKey,
+        json_bytes: &[u8],
+        nonce: &[u8; NONCE_LEN],
+    ) -> Result<Vec<u8>, SealError> {
+        if json_bytes.len() >= PADDED_PAYLOAD_LEN {
+            return Err(SealError::TooLarge {
+                len: json_bytes.len(),
+            });
+        }
+        let mut padded = Vec::with_capacity(PADDED_PAYLOAD_LEN);
+        padded.extend_from_slice(json_bytes);
+        padded.push(0x80);
+        padded.resize(PADDED_PAYLOAD_LEN, 0x00);
+
+        let unbound_key =
+            UnboundKey::new(&aead::AES_256_GCM, key.as_bytes()).map_err(|_| SealError::Auth)?;
+        let less_safe_key = LessSafeKey::new(unbound_key);
+        let aead_nonce = Nonce::assume_unique_for_key(*nonce);
+
+        let mut ciphertext = padded;
+        less_safe_key
+            .seal_in_place_append_tag(aead_nonce, Aad::from([PROTOCOL_VERSION]), &mut ciphertext)
+            .map_err(|_| SealError::Auth)?;
+
+        let mut envelope = Vec::with_capacity(ENVELOPE_LEN);
+        envelope.push(PROTOCOL_VERSION);
+        envelope.extend_from_slice(nonce);
+        envelope.extend_from_slice(&ciphertext);
+        Ok(envelope)
+    }
+
+    #[test]
+    fn open_envelope_accepts_legacy_and_defined_presentation() {
+        let key = PushKey::from_bytes([42u8; 32]);
+        let legacy_notif = Notification {
+            at: OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap(),
+            kind: "test".to_owned(),
+            title: "solstone".to_owned(),
+            body: "test notification from your journal.".to_owned(),
+            open: Some("/app/health".to_owned()),
+        };
+
+        // Seal with presentation None
+        let sealed_legacy = seal(&key, &legacy_notif).expect("seal legacy");
+        let opened_legacy = open_push(&key, &sealed_legacy.bytes).expect("open legacy");
+        assert_eq!(opened_legacy.notification, legacy_notif);
+        assert!(opened_legacy.presentation.is_none());
+
+        // Seal via seal_for_recipient with capable = true
+        let sealed_capable = seal_for_recipient(&key, &legacy_notif, true).expect("seal capable");
+        let opened_capable = open_push(&key, &sealed_capable.bytes).expect("open capable");
+        assert_eq!(opened_capable.notification.kind, legacy_notif.kind);
+        assert_eq!(opened_capable.notification.open, legacy_notif.open);
+        assert_eq!(opened_capable.notification.title, legacy_notif.title);
+        assert_eq!(opened_capable.notification.body, legacy_notif.body);
+
+        let pres = opened_capable.presentation.expect("presentation present");
+        assert_eq!(pres.title.v, 1);
+        assert_eq!(pres.title.catalog_epoch, 1);
+        assert_eq!(pres.title.code, "push.test.title");
+        assert!(pres.title.args.is_empty());
+        assert_eq!(pres.title.fallback_en, "solstone");
+
+        assert_eq!(pres.body.v, 1);
+        assert_eq!(pres.body.catalog_epoch, 1);
+        assert_eq!(pres.body.code, "push.test.body");
+        assert!(pres.body.args.is_empty());
+        assert_eq!(
+            pres.body.fallback_en,
+            "test notification from your journal."
+        );
+    }
+
+    #[test]
+    fn open_envelope_rejects_unknown_outer_field_and_keeps_foreign_message() {
+        let key = PushKey::from_bytes([77u8; 32]);
+        let nonce = [1u8; NONCE_LEN];
+
+        // Foreign message: v: 2, catalog_epoch: 9, code: "push.test.other"
+        let foreign_notif = Notification {
+            at: OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap(),
+            kind: "test".to_owned(),
+            title: "solstone".to_owned(),
+            body: "test".to_owned(),
+            open: None,
+        };
+        let foreign_pres = Presentation {
+            title: PresentationMessage {
+                v: 2,
+                catalog_epoch: 9,
+                code: "push.test.other".to_owned(),
+                args: serde_json::Map::new(),
+                fallback_en: "solstone foreign".to_owned(),
+            },
+            body: PresentationMessage {
+                v: 2,
+                catalog_epoch: 9,
+                code: "push.test.other".to_owned(),
+                args: serde_json::Map::new(),
+                fallback_en: "test foreign".to_owned(),
+            },
+        };
+        let sealed_foreign = seal_with_nonce(&key, &foreign_notif, Some(&foreign_pres), &nonce)
+            .expect("seal foreign");
+        let opened_foreign = open_push(&key, &sealed_foreign.bytes).expect("open foreign");
+        let pres = opened_foreign.presentation.expect("pres");
+        assert_eq!(pres.title.v, 2);
+        assert_eq!(pres.title.catalog_epoch, 9);
+        assert_eq!(pres.title.code, "push.test.other");
+        assert_eq!(pres.title.fallback_en, "solstone foreign");
+
+        // Extra top-level JSON key fails SealError::Auth
+        let extra_outer = br#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"test","unknown_extra":123}"#;
+        let env_extra = seal_raw_json(&key, extra_outer, &nonce).unwrap();
+        assert_eq!(
+            open_envelope(&key, &env_extra).unwrap_err(),
+            SealError::Auth
+        );
+
+        // presentation: null fails SealError::Auth
+        let pres_null = br#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"test","presentation":null}"#;
+        let env_null = seal_raw_json(&key, pres_null, &nonce).unwrap();
+        assert_eq!(open_envelope(&key, &env_null).unwrap_err(), SealError::Auth);
+
+        // args containing an object fails SealError::Auth
+        let args_obj = br#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"test","presentation":{"title":{"v":1,"catalog_epoch":1,"code":"push.test.title","args":{"nested":{}},"fallback_en":"s"},"body":{"v":1,"catalog_epoch":1,"code":"push.test.body","args":{},"fallback_en":"b"}}}"#;
+        let env_args_obj = seal_raw_json(&key, args_obj, &nonce).unwrap();
+        assert_eq!(
+            open_envelope(&key, &env_args_obj).unwrap_err(),
+            SealError::Auth
+        );
+    }
+
+    #[test]
+    fn seal_for_recipient_falls_back_when_presentation_does_not_fit() {
+        let key = PushKey::from_bytes([88u8; 32]);
+
+        // Presentation overhead:
+        // {"title":{"v":1,"catalog_epoch":1,"code":"push.test.title","args":{},"fallback_en":"solstone"},"body":{"v":1,"catalog_epoch":1,"code":"push.test.body","args":{},"fallback_en":""}}
+        // In CanonicalNotificationJson:
+        // prefix: `{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"`
+        // suffix: `","presentation":{"title":{"v":1,"catalog_epoch":1,"code":"push.test.title","args":{},"fallback_en":"solstone"},"body":{"v":1,"catalog_epoch":1,"code":"push.test.body","args":{},"fallback_en":"`
+        // end: `"}}}`
+        // We craft body length such that presentation JSON length >= 1024 and legacy JSON length <= 1023.
+        let notif_prefix =
+            r#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":""#;
+        let notif_suffix = r#""}"#;
+        let legacy_overhead = notif_prefix.len() + notif_suffix.len();
+
+        // Let body be 850 'a's:
+        // legacy JSON length = legacy_overhead + 850 = 84 + 850 = 934 (<= 1023)
+        // With presentation:
+        // title fallback_en is "solstone" (8 bytes)
+        // body fallback_en is 850 bytes
+        // presentation overhead is > 150 bytes, so total presentation JSON length >= 934 + 150 = 1084 (>= 1024)
+        let notif_large = Notification {
+            at: OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap(),
+            kind: "test".to_owned(),
+            title: "solstone".to_owned(),
+            body: "a".repeat(850),
+            open: None,
+        };
+
+        let sealed = seal_for_recipient(&key, &notif_large, true).expect("fallback seal succeeds");
+        assert_eq!(sealed.bytes.len(), ENVELOPE_LEN);
+        let opened = open_push(&key, &sealed.bytes).expect("open fallback");
+        assert!(opened.presentation.is_none());
+        assert_eq!(opened.notification.body.len(), 850);
+
+        // A legacy JSON length >= 1024 returns TooLarge for both capable true and false
+        let notif_too_large = Notification {
+            at: OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap(),
+            kind: "test".to_owned(),
+            title: "solstone".to_owned(),
+            body: "a".repeat(1024 - legacy_overhead),
+            open: None,
+        };
+        assert!(matches!(
+            seal_for_recipient(&key, &notif_too_large, true),
+            Err(SealError::TooLarge { .. })
+        ));
+        assert!(matches!(
+            seal_for_recipient(&key, &notif_too_large, false),
+            Err(SealError::TooLarge { .. })
+        ));
     }
 }
