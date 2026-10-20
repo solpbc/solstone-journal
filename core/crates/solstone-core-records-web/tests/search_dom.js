@@ -194,4 +194,24 @@ test('renderHit drops an agent label the stream label already says, and keeps an
   assert.strictEqual(agentShown({ stream: 'ja1r', agent_label: 'Describe' }), true);
 });
 
+test('screen-text continuation hits retain their segment citation and direct link', () => {
+  const env = seededSearch();
+  for (const prefix of ['', 'chronicle/']) {
+    const card = env.window.renderHit({
+      path: prefix + '20260403/ja1r/090000_300/talents/screen_text.md',
+      stream: 'ja1r', segment: '090000_300', minute: '02:05',
+      text: 'a continuation chunk without its original heading',
+    }, '/app/transcripts/20260403');
+    assert.strictEqual(card.querySelector('.search-citation').textContent, '090000_300 · 02:05');
+    const links = card.querySelectorAll('a');
+    assert.strictEqual(links.length, 1);
+    assert.strictEqual(links[0].href, '/app/transcripts/20260403?stream=ja1r#090000_300');
+  }
+  const ordinary = env.window.renderHit({
+    path: '20260403/ja1r/090000_300/screen.jsonl', stream: 'ja1r', text: 'ordinary',
+  }, '/app/transcripts/20260403');
+  assert.strictEqual(ordinary.querySelectorAll('.search-citation').length, 0);
+  assert.strictEqual(ordinary.querySelectorAll('a')[0].href, '/app/transcripts/20260403?stream=ja1r#090000_300');
+});
+
 console.log(`DOM CASES: ${cases} passed`);

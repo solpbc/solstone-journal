@@ -450,9 +450,13 @@ fn ac25_a_refusal_is_recorded_and_the_owner_can_tell_it_from_a_served_call() {
         .filter_map(|entry| entry.reason.clone())
         .collect::<Vec<_>>();
     reasons.sort();
-    assert_eq!(reasons.len(), 2);
-    assert!(reasons.iter().all(|reason| !reason.trim().is_empty()));
-    assert_ne!(reasons[0], reasons[1]);
+    assert_eq!(
+        reasons,
+        [
+            "this connection does not have the transcripts or screen_text category",
+            "this connection has no read permission",
+        ]
+    );
 }
 
 #[test]

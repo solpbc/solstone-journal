@@ -50,6 +50,8 @@
  function sourceLink(hit){
   const path=String(hit.path||'');
   if(path.startsWith('entity_search:'))return '/app/entities/#'+encodeURIComponent(path.slice('entity_search:'.length));
+  const screen=/^(?:chronicle\/)?(\d{8})\/([^/]+)\/([^/]+)\/talents\/screen_text\.md$/.exec(path);
+  if(screen)return '/app/transcripts/'+screen[1]+'?stream='+encodeURIComponent(screen[2])+'#'+encodeURIComponent(screen[3]);
   const segment=/^(?:chronicle\/)?(\d{8})\/(?:(?<stream>[^/]+)\/)?([^/]+)\/(?:audio|screen|[^/]+_(?:audio|screen))\.jsonl/.exec(path);
   if(segment)return '/app/transcripts/'+segment[1]+(segment.groups.stream?'?stream='+encodeURIComponent(segment.groups.stream):'')+'#'+encodeURIComponent(segment[3]);
   const location=/^(?:chronicle\/)?(\d{8})\/location\.md$/.exec(path);
@@ -99,6 +101,7 @@
    meta.append(streamSpan);
   }
   if(recordTime)meta.append(node('span','',recordTime));
+  if(hit.segment)meta.append(node('span','search-citation',String(hit.segment)+(hit.minute?' · '+String(hit.minute):'')));
   card.append(meta);const text=node('p','search-excerpt');
   text.append(excerpt(hit.text));
   card.append(text);

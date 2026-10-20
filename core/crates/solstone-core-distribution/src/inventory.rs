@@ -2121,13 +2121,19 @@ mod tests {
     }
 
     #[test]
-    fn admitted_binaries_include_pdf_vad_ced_and_screen_ocr_helpers() {
+    fn admitted_binary_count_is_thirteen_and_names_the_helpers() {
         let inventory = committed();
         let bins = inventory.required_bins();
         // Moved 10 -> 11 when sound tagging gained `solstone-core-ced-analyze`.
         // CED was previously `dlopen`ed in-process by musl-static binaries,
         // which have no dynamic loader, so it could never load in a shipped
         // build; it now ships as a zig-gnu-2.27 helper like its siblings.
+        // Windows added `journal-app`; screen OCR adds its isolated helper.
+        assert_eq!(
+            bins.len(),
+            13,
+            "admitted-binary count must move with the inventory, not widen"
+        );
         assert!(bins.contains("solstone-core-pdf"));
         assert!(bins.contains("solstone-core-vad-analyze"));
         assert!(bins.contains("solstone-core-ced-analyze"));
@@ -2859,6 +2865,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
+        assert_eq!(inv.entry.len(), 174);
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }
