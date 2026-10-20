@@ -1,0 +1,31 @@
+{
+  "description": "Synthetic native rendering proof; not a user feature.",
+  "context": "Notification after device-side decryption; no owner content.",
+  "bundles": [
+    "PushMessages"
+  ],
+  "surfaces": [
+    "phone",
+    "notification-extension"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "max_length": 200,
+  "source_revision": "25ec811f515d00d86d8c23902c2831297765bd57436818479785abb85ba74ef9",
+  "risk": "routine",
+  "auto_merge": true,
+  "selector": {
+    "name": "state",
+    "type": "string",
+    "enum_values": [
+      "ready",
+      "waiting"
+    ],
+    "enum_default": "waiting"
+  }
+}

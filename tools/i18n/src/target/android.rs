@@ -23,7 +23,11 @@ pub fn resolve_android_qualifier(loc: &crate::locale::LocaleEntry) -> Result<Str
     }
 }
 
-pub fn generate_android_target(bundle: &TargetBundle, dest_dir: &Path) -> Result<(), Vec<Fault>> {
+pub fn generate_android_target(
+    bundle: &TargetBundle,
+    dest_dir: &Path,
+    source_locale: &str,
+) -> Result<(), Vec<Fault>> {
     // Check qualifier resolution and collisions before creating directories
     let mut seen_quals = HashSet::new();
     let mut resolved_quals = Vec::new();
@@ -49,12 +53,14 @@ pub fn generate_android_target(bundle: &TargetBundle, dest_dir: &Path) -> Result
             .map_err(|_| vec![Fault::catalog("io-error")])?;
     }
 
-    // Default values/ table:
-    // Contract: the default file is a byte-for-byte copy of the channel-selected locale
-    // whose tag sorts first. Also write values-<qual>/ for every selected locale, including that one.
-    // Use that locale's own cells. Do not substitute source English unless that first tag is the selected source locale.
-    // Do not copy an excluded locale. Do not emit b+ folders.
-    if let Some((first_loc, _)) = resolved_quals.iter().min_by_key(|(loc, _)| &loc.tag) {
+    // Prefer the selected source locale for unqualified fallback. If the source is
+    // not selected in this bundle/channel, retain sorted-first selected cells.
+    // Qualified tables always retain their own locale's data.
+    let default_locale = resolved_quals
+        .iter()
+        .find(|(loc, _)| loc.tag == source_locale)
+        .or_else(|| resolved_quals.iter().min_by_key(|(loc, _)| &loc.tag));
+    if let Some((first_loc, _)) = default_locale {
         let default_values_dir = bundle_dir.join("values");
         fs::create_dir_all(&default_values_dir).map_err(|_| vec![Fault::catalog("io-error")])?;
         let default_xml_content = generate_strings_xml(bundle, &first_loc.tag)?;

@@ -106,38 +106,89 @@
       "production": "released",
       "cardinal": "en",
       "description": "Synthetic test data, not a product language decision."
+    },
+    {
+      "tag": "en-US",
+      "tier": "source",
+      "purpose": "ordinary",
+      "development": "released",
+      "production": "released",
+      "cardinal": "en",
+      "android_qualifier": "en-rUS",
+      "description": "Source English for the shared push catalog."
+    },
+    {
+      "tag": "en-GB",
+      "tier": "test",
+      "purpose": "test",
+      "development": "released",
+      "production": "released",
+      "cardinal": "en",
+      "android_qualifier": "en-rGB",
+      "description": "Labelled test locale for integration; not a launch language."
     }
   ],
   "namespaces": [
     {
       "namespace": "synth.notes",
       "owner": "synth"
+    },
+    {
+      "namespace": "push.test",
+      "owner": "journal"
+    },
+    {
+      "namespace": "push.proof",
+      "owner": "journal"
     }
   ],
   "bundles": [
     {
       "id": "synth-app",
-      "locales": ["en-x-synth"]
+      "locales": [
+        "en-x-synth"
+      ]
     },
     {
       "id": "target-a",
-      "locales": ["en-x-l1", "en-x-l2"]
+      "locales": [
+        "en-x-l1",
+        "en-x-l2"
+      ]
     },
     {
       "id": "target-b",
-      "locales": ["en-x-l2", "en-x-l3"]
+      "locales": [
+        "en-x-l2",
+        "en-x-l3"
+      ]
     },
     {
       "id": "target-plural",
-      "locales": ["ar"]
+      "locales": [
+        "ar"
+      ]
     },
     {
       "id": "target-operator",
-      "locales": ["en-x-synth", "en-x-chrome", "en"]
+      "locales": [
+        "en-x-synth",
+        "en-x-chrome",
+        "en"
+      ]
     },
     {
       "id": "target-chrome",
-      "locales": ["en-x-chrome"]
+      "locales": [
+        "en-x-chrome"
+      ]
+    },
+    {
+      "id": "PushMessages",
+      "locales": [
+        "en-US",
+        "en-GB"
+      ]
     }
   ]
 }

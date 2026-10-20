@@ -1,0 +1,82 @@
+{
+  "history_version": 1,
+  "records": [
+    {
+      "id": "push.proof.count",
+      "resource": "m707573682e70726f6f662e636f756e74",
+      "namespace": "push.proof",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": 0.0,
+          "max": 10000.0
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "push.proof.state",
+      "resource": "m707573682e70726f6f662e7374617465",
+      "namespace": "push.proof",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "state",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "state",
+        "type": "string",
+        "enum_values": [
+          "ready",
+          "waiting"
+        ],
+        "enum_default": "waiting"
+      }
+    },
+    {
+      "id": "push.test.body",
+      "resource": "m707573682e746573742e626f6479",
+      "namespace": "push.test",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "push.test.title",
+      "resource": "m707573682e746573742e7469746c65",
+      "namespace": "push.test",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    }
+  ]
+}

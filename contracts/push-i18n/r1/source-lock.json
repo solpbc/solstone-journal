@@ -1,0 +1,61 @@
+{
+  "lock_version": 1,
+  "messages": [
+    {
+      "id": "push.proof.count",
+      "source": "d61bc3d990d506de57b9e9c933d83b2d03ca4119c1315c9d363b796ac69dd11b",
+      "contract": "f467c26cef01ac083326ee171c3ecefd35e1e5e4656000b253810cab6d9efccc",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": [
+        {
+          "locale": "en-GB",
+          "source": "d61bc3d990d506de57b9e9c933d83b2d03ca4119c1315c9d363b796ac69dd11b",
+          "contract": "f467c26cef01ac083326ee171c3ecefd35e1e5e4656000b253810cab6d9efccc",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
+    },
+    {
+      "id": "push.proof.state",
+      "source": "25ec811f515d00d86d8c23902c2831297765bd57436818479785abb85ba74ef9",
+      "contract": "05300af71db102cb86411659d134ae76e0178126976bcd6d18da4aababf61edd",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": [
+        {
+          "locale": "en-GB",
+          "source": "25ec811f515d00d86d8c23902c2831297765bd57436818479785abb85ba74ef9",
+          "contract": "05300af71db102cb86411659d134ae76e0178126976bcd6d18da4aababf61edd",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
+    },
+    {
+      "id": "push.test.body",
+      "source": "b3570d088b7e3daadf37b24aafaf3967cbb3f7dd0233e64de71847ebf5d72a71",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": [
+        {
+          "locale": "en-GB",
+          "source": "b3570d088b7e3daadf37b24aafaf3967cbb3f7dd0233e64de71847ebf5d72a71",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
+    },
+    {
+      "id": "push.test.title",
+      "source": "bf38593db11de7fe3f5a21bc5fad9ba9de265ad0f9c30825d125df8f075566a3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": [
+        {
+          "locale": "en-GB",
+          "source": "bf38593db11de7fe3f5a21bc5fad9ba9de265ad0f9c30825d125df8f075566a3",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
+    }
+  ]
+}
