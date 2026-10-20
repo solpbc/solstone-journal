@@ -19,13 +19,14 @@ pub use pin::install_test_fixture_pin;
 pub use pin::{PRODUCT_PIN, resolve_pin, signed_package_pin_environment, verify_pinned_signature};
 
 pub use posix::{
-    COMPILED_VERSION, CurrentInstalledMember, ExecutablePlatform, INSTALLED_PAYLOAD_MANIFEST,
-    INSTALLED_PAYLOAD_SCHEMA, INSTALLED_PAYLOAD_SIGNATURE, InstalledPackage,
-    InstalledPayloadRefusal, PRODUCT, TARGET_LINUX_AARCH64, TARGET_LINUX_X86_64,
+    COMPILED_VERSION, CurrentInstalledMember, CurrentScreenOcrBundle, ExecutablePlatform,
+    INSTALLED_PAYLOAD_MANIFEST, INSTALLED_PAYLOAD_SCHEMA, INSTALLED_PAYLOAD_SIGNATURE,
+    InstalledPackage, InstalledPayloadRefusal, PRODUCT, TARGET_LINUX_AARCH64, TARGET_LINUX_X86_64,
     TARGET_MACOS_ARM64, bin_parent_root, canonical_target, digest_matches,
     host_executable_platform, locate_installed_package, package_root_from_executable_path,
-    read_member, render_installed_payload, resolve_current_member, resolve_member, sha256_hex,
-    validate_relative, verify_installed_package,
+    read_member, render_installed_payload, resolve_current_member,
+    resolve_current_screen_ocr_bundle, resolve_member, sha256_hex, validate_relative,
+    verify_installed_package,
 };
 
 pub use windows_payload::WINDOWS_PAYLOAD_TARGET as TARGET_WINDOWS_X86_64;
@@ -42,6 +43,7 @@ pub mod code {
     pub const UNEXPECTED_FILE: &str = "unexpected-file";
     pub const MEMBER_UNREADABLE: &str = "member-unreadable";
     pub const UNSAFE_PATH: &str = "unsafe-path";
+    pub const SCREEN_OCR_UNQUALIFIED: &str = "screen-ocr-unqualified";
 }
 
 pub mod guidance {
@@ -58,6 +60,7 @@ pub mod guidance {
     pub const MEMBER_UNREADABLE: &str = "part of your journal's install couldn't be read; if it keeps happening, reinstall your journal.";
     pub const UNSAFE_PATH: &str =
         "part of your journal's install isn't what it should be; reinstall your journal.";
+    pub const SCREEN_OCR_UNAVAILABLE: &str = "screen OCR is unavailable on this target.";
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]

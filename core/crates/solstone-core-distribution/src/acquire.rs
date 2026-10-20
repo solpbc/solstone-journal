@@ -161,7 +161,7 @@ struct Flags {
 }
 
 pub fn usage() -> &'static str {
-    "usage: solstone-distribution acquire <ffmpeg|ffmpeg-windows-tools|onnx|pdfium|builder-inputs|cmake-windows|python-windows|catalog-inputs> [FLAG]"
+    "usage: solstone-distribution acquire <ffmpeg|ffmpeg-windows-tools|onnx|pdfium|screen-ocr|builder-inputs|cmake-windows|python-windows|catalog-inputs> [FLAG]"
 }
 
 pub fn run(args: &[String]) -> Result<(), AcquireError> {
@@ -175,6 +175,21 @@ pub fn run(args: &[String]) -> Result<(), AcquireError> {
         "ffmpeg-windows-tools" => acquire_ffmpeg_windows_tools(&repo, flags.dest.as_deref())?,
         "onnx" => acquire_onnx(&repo, &flags)?,
         "pdfium" => acquire_pdfium(&repo, &flags)?,
+        "screen-ocr" => {
+            let target = flags
+                .target
+                .as_deref()
+                .ok_or_else(|| AcquireError::new("acquire screen-ocr requires --target"))?;
+            let cache = flags
+                .cache_dir
+                .as_deref()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| {
+                    crate::pinned_stage::catalog_input_cache_dir(&repo).join("screen-ocr")
+                });
+            crate::screen_ocr::acquire_from_repo(&repo, target, &cache)
+                .map_err(AcquireError::new)?;
+        }
         "builder-inputs" => acquire_builder_inputs(&repo, flags.dest.as_deref())?,
         "cmake-windows" => acquire_cmake_windows(&repo, flags.dest.as_deref())?,
         "python-windows" => acquire_python_windows(&repo, flags.dest.as_deref())?,

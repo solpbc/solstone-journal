@@ -4953,6 +4953,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-generate-wire",
+ "solstone-core-installed-payload",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
@@ -4962,6 +4963,8 @@ dependencies = [
  "solstone-core-system",
  "temp-env",
  "tempfile",
+ "toml_edit",
+ "unicode-normalization",
 ]
 
 [[package]]

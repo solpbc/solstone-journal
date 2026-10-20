@@ -490,6 +490,42 @@ identities = [
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
+kind = "screen-ocr"
+class = "component"
+dest_dir = "lib/solstone-screen-ocr"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+class = "first-party"
+package = "solstone-screen-ocr-helper"
+bin = "solstone-screen-ocr-helper"
+dest = "bin/solstone-screen-ocr-helper.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+class = "first-party"
+package = "solstone-screen-ocr-helper"
+bin = "solstone-screen-ocr-helper"
+dest = "bin/solstone-screen-ocr-helper"
+mode = 0o755
+lane = "zig-gnu-2.27"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "bin"
+class = "first-party"
+package = "solstone-screen-ocr-helper"
+bin = "solstone-screen-ocr-helper"
+dest = "bin/solstone-screen-ocr-helper"
+mode = 0o755
+lane = "apple-native"
+targets = ["macos-arm64"]
+
+[[entry]]
 kind = "pdfium"
 class = "component"
 dest_dir = "lib/solstone-core-pdf"

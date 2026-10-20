@@ -58,6 +58,7 @@ mod restic_rclone_stage;
 pub mod rfdetr_windows;
 pub mod rfdetr_windows_source;
 pub mod rpm;
+pub mod screen_ocr;
 pub mod select;
 pub mod sign;
 pub mod stage;

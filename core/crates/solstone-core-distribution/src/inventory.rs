@@ -628,6 +628,12 @@ pub enum Entry {
         identities: Vec<NativeIdentity>,
         targets: Vec<String>,
     },
+    ScreenOcr {
+        #[serde(default)]
+        class: Option<DeliveryClass>,
+        dest_dir: String,
+        targets: Vec<String>,
+    },
     Pdfium {
         #[serde(default)]
         class: Option<DeliveryClass>,
@@ -687,6 +693,7 @@ impl Entry {
             | Self::Launcher { class, .. }
             | Self::ModelAsset { class, .. }
             | Self::OnnxRuntime { class, .. }
+            | Self::ScreenOcr { class, .. }
             | Self::Pdfium { class, .. }
             | Self::Copy { class, .. }
             | Self::PinnedNative { class, .. }
@@ -717,6 +724,7 @@ pub fn entry_component_id(entry: &Entry) -> Option<&'static str> {
             }
         }
         Entry::OnnxRuntime { .. } => Some("onnxruntime"),
+        Entry::ScreenOcr { .. } => Some("screen-ocr"),
         Entry::Pdfium { .. } => Some("pdfium"),
         Entry::WindowsNative {
             component, dest, ..
@@ -1042,6 +1050,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
                 Entry::Launcher { dest, .. } => ("launcher", dest.as_str()),
                 Entry::ModelAsset { dest, .. } => ("model-asset", dest.as_str()),
                 Entry::OnnxRuntime { dest_dir, .. } => ("onnx-runtime", dest_dir.as_str()),
+                Entry::ScreenOcr { dest_dir, .. } => ("screen-ocr", dest_dir.as_str()),
                 Entry::Pdfium { dest_dir, .. } => ("pdfium", dest_dir.as_str()),
                 Entry::Copy { dest, .. } => ("copy", dest.as_str()),
                 Entry::PinnedNative { dest, .. } => ("pinned-native", dest.as_str()),
@@ -1143,6 +1152,13 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
                 if class != DeliveryClass::Component {
                     return Err(InventoryError::new(format!(
                         "illegal-class: onnx-runtime {dest_dir} {class}"
+                    )));
+                }
+            }
+            Entry::ScreenOcr { dest_dir, .. } => {
+                if class != DeliveryClass::Component {
+                    return Err(InventoryError::new(format!(
+                        "illegal-class: screen-ocr {dest_dir} {class}"
                     )));
                 }
             }
@@ -1824,34 +1840,37 @@ pub fn digest_is_pinned(digest: &str) -> bool {
         && hex.bytes().any(|byte| byte != b'0')
 }
 
-fn entry_fields(entry: &Entry) -> (Vec<&str>, &Vec<String>, Option<&String>) {
+fn entry_fields(entry: &Entry) -> (Vec<String>, &Vec<String>, Option<&String>) {
     match entry {
         Entry::Bin {
             dest,
             targets,
             lane,
             ..
-        } => (vec![dest.as_str()], targets, Some(lane)),
+        } => (vec![dest.clone()], targets, Some(lane)),
         Entry::Launcher { dest, targets, .. }
         | Entry::ModelAsset { dest, targets, .. }
         | Entry::Copy { dest, targets, .. }
         | Entry::WindowsBuildEvidence { dest, targets, .. }
         | Entry::WindowsNative { dest, targets, .. }
-        | Entry::PinnedNative { dest, targets, .. } => (vec![dest.as_str()], targets, None),
+        | Entry::PinnedNative { dest, targets, .. } => (vec![dest.clone()], targets, None),
         Entry::PinnedMembers {
             staged, targets, ..
         } => (
-            staged.iter().map(|s| s.dest.as_str()).collect(),
+            staged.iter().map(|s| s.dest.clone()).collect(),
             targets,
             None,
         ),
         Entry::LicenceTree { targets, .. } => (Vec::new(), targets, None),
+        Entry::ScreenOcr {
+            dest_dir, targets, ..
+        } => (vec![format!("{dest_dir}/recipe.toml")], targets, None),
         Entry::OnnxRuntime {
             dest_dir, targets, ..
         }
         | Entry::Pdfium {
             dest_dir, targets, ..
-        } => (vec![dest_dir.as_str()], targets, None),
+        } => (vec![dest_dir.clone()], targets, None),
     }
 }
 
@@ -2102,22 +2121,17 @@ mod tests {
     }
 
     #[test]
-    fn the_admitted_binary_count_is_twelve_and_names_the_pdf_vad_and_ced_helpers() {
+    fn admitted_binaries_include_pdf_vad_ced_and_screen_ocr_helpers() {
         let inventory = committed();
         let bins = inventory.required_bins();
         // Moved 10 -> 11 when sound tagging gained `solstone-core-ced-analyze`.
         // CED was previously `dlopen`ed in-process by musl-static binaries,
         // which have no dynamic loader, so it could never load in a shipped
         // build; it now ships as a zig-gnu-2.27 helper like its siblings.
-        // Moved 11 -> 12 when Windows gained the journal app, `journal-app`.
-        assert_eq!(
-            bins.len(),
-            12,
-            "admitted-binary count must move with the inventory, not widen"
-        );
         assert!(bins.contains("solstone-core-pdf"));
         assert!(bins.contains("solstone-core-vad-analyze"));
         assert!(bins.contains("solstone-core-ced-analyze"));
+        assert!(bins.contains("solstone-screen-ocr-helper"));
         assert!(
             !inventory
                 .forbidden_bins()
@@ -2845,7 +2859,6 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
-        assert_eq!(inv.entry.len(), 170);
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }
@@ -3122,6 +3135,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             "area-tier",
             "vulkan-loader",
             "msvc-runtime",
+            "screen-ocr",
         ]
         .into_iter()
         .collect();

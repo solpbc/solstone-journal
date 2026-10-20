@@ -13,6 +13,7 @@ mod merge;
 mod notify;
 pub mod pipeline;
 pub mod request;
+pub(crate) mod screen_ocr;
 pub mod selection;
 pub mod session;
 mod winnow;

@@ -356,6 +356,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
                 &inventory_path,
                 &inventory,
                 target_id,
+                &std::collections::BTreeMap::new(),
                 None,
                 None,
                 None,

@@ -353,6 +353,23 @@ pub fn declared_records(
                     ));
                 }
             }
+            Entry::ScreenOcr { targets, .. } => {
+                if !targets.iter().any(|item| item == target_id) {
+                    continue;
+                }
+                let bundle = crate::screen_ocr::prepare_for_inventory(
+                    repo,
+                    catalog_cache,
+                    inventory,
+                    target_id,
+                    artifacts,
+                )
+                .map_err(|error| format!("screen OCR bundle: {error}"))?
+                .ok_or_else(|| format!("missing required:\n  screen OCR bundle {target_id}"))?;
+                for (dest, mode, digest) in crate::screen_ocr::declared_files(&bundle) {
+                    records.push(FileRecord::file(dest, stage::recorded_mode(mode), digest));
+                }
+            }
             Entry::Pdfium {
                 dest_dir, targets, ..
             } => {
