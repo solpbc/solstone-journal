@@ -135,9 +135,10 @@
   }
   function lastRequestCopy(connection, separator = ' · ') { if (!connection.last_request_at) return ''; return `${separator}${connection.activity_complete ? 'last' : 'latest found'} ${esc(formatAgentTimestamp(connection.last_request_at))}`; }
   const categoryGloss = {
-    transcripts: 'what was said in your recordings and imports, as text. never the audio or the screen frames themselves.',
+    transcripts: 'what was said in your recordings and imports, as text. never the audio or the screen images themselves. screen text has its own permission.',
     entities: 'the people, places and projects your journal knows, and what it has noted about them.',
     facets: 'the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.',
+    screen_text: 'text recognized from your screens, with the time it appeared. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.',
   };
 
   // ---- your own: agents on this computer --------------------------------------------------------
@@ -632,8 +633,8 @@
 
   function picker(connection) {
     const read = connection?.permission?.read;
-    const cats = read?.categories || ['transcripts','entities','facets'];
-    return `<div class="field"><label for="scope">which part of your journal</label><select id="scope"><option value="whole_journal"${read?.scope?.kind !== 'facets' ? ' selected' : ''}>your whole journal</option><option value="facets"${read?.scope?.kind === 'facets' ? ' selected' : ''}>only facets you choose</option></select><span class="meta" id="scope-gloss">your whole journal includes everything now and anything added later, including facets you create later. chosen facets grow with their contents; facets you create later are not included.</span></div><div class="checks" aria-label="what kinds of material">${['transcripts','entities','facets'].map(cat => `<label class="check"><input type="checkbox" name="category" value="${cat}"${cats.includes(cat) ? ' checked' : ''}><span><strong>${cat}</strong><small class="meta">${categoryGloss[cat]}</small></span></label>`).join('')}</div><div class="field" id="facet-field"><span class="meta">facets</span><div class="checks">${state.facets.map(facet => `<label class="check"><input type="checkbox" name="facet" value="${esc(facet.name)}"${read?.scope?.ids?.includes(facet.id) ? ' checked' : ''}><span style="color:${esc(facet.color || 'var(--orange)')}">●</span> ${esc(facet.title)}</label>`).join('')}</div></div>`;
+    const cats = read?.categories || ['transcripts','entities','facets','screen_text'];
+    return `<div class="field"><label for="scope">which part of your journal</label><select id="scope"><option value="whole_journal"${read?.scope?.kind !== 'facets' ? ' selected' : ''}>your whole journal</option><option value="facets"${read?.scope?.kind === 'facets' ? ' selected' : ''}>only facets you choose</option></select><span class="meta" id="scope-gloss">your whole journal includes everything now and anything added later, including facets you create later. chosen facets grow with their contents; facets you create later are not included.</span></div><div class="checks" aria-label="what kinds of material">${['transcripts','entities','facets','screen_text'].map(cat => `<label class="check"><input type="checkbox" name="category" value="${cat}"${cats.includes(cat) ? ' checked' : ''}><span><strong>${cat === 'screen_text' ? 'screen text' : cat}</strong><small class="meta">${categoryGloss[cat]}</small></span></label>`).join('')}</div><div class="field" id="facet-field"><span class="meta">facets</span><div class="checks">${state.facets.map(facet => `<label class="check"><input type="checkbox" name="facet" value="${esc(facet.name)}"${read?.scope?.ids?.includes(facet.id) ? ' checked' : ''}><span style="color:${esc(facet.color || 'var(--orange)')}">●</span> ${esc(facet.title)}</label>`).join('')}</div></div>`;
   }
 
 

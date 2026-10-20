@@ -75,6 +75,7 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolEr
         Some("transcripts") => Some(AdmittedCategory::Transcripts),
         Some("entities") => Some(AdmittedCategory::Entities),
         Some("facets") => Some(AdmittedCategory::Facets),
+        Some("screen_text") => Some(AdmittedCategory::ScreenText),
         Some(_) => return Err(ToolError::InvalidInput),
     };
     Ok(ValidatedSearch {

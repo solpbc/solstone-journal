@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
+use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Value;
 use rusqlite::{
     Connection, Error, ErrorCode, OpenFlags, OptionalExtension, params, params_from_iter,
@@ -251,6 +252,35 @@ fn search_on_connection(
     let (plan, relaxed) = resolve_plan(connection, request, reference_date, compilation)?;
     let order = order_for_plan(plan.has_live_match_expression);
     let results = connection.fetch_hits(&plan, request.limit, request.offset, order)?;
+    let results = if let Some(journal) = connection.journal_root() {
+        let mut filtered = Vec::with_capacity(results.len());
+        let mut source_checks = BTreeMap::new();
+        for hit in results {
+            if solstone_core_format::content::screen_text::is_screen_text_path(&hit.metadata.path)
+                && !*source_checks
+                    .entry((
+                        hit.metadata.path.clone(),
+                        hit.metadata.source_digest.clone(),
+                    ))
+                    .or_insert_with(|| {
+                        solstone_core_indexer_store::screen_text_current_digest(
+                            &connection.connection,
+                            journal,
+                            &hit.metadata.path,
+                        )
+                        .ok()
+                        .flatten()
+                        .is_some_and(|digest| Some(&digest) == hit.metadata.source_digest.as_ref())
+                    })
+            {
+                continue;
+            }
+            filtered.push(hit);
+        }
+        filtered
+    } else {
+        results
+    };
     let counts = request
         .counts
         .then(|| connection.aggregate_counts(&plan, relaxed))
@@ -424,6 +454,13 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
     clause.push(')');
     plan.where_clause.push_str(" AND ");
     plan.where_clause.push_str(&clause);
+    if !boundary
+        .categories()
+        .contains(&AdmittedCategory::ScreenText)
+    {
+        plan.where_clause
+            .push_str(" AND NOT solstone_screen_text_path(chunks.path)");
+    }
 }
 
 fn category_placeholders(count: usize) -> String {
@@ -437,6 +474,7 @@ fn category_sql_name(category: AdmittedCategory) -> &'static str {
         AdmittedCategory::Transcripts => "transcripts",
         AdmittedCategory::Entities => "entities",
         AdmittedCategory::Facets => "facets",
+        AdmittedCategory::ScreenText => "screen_text",
     }
 }
 
@@ -476,6 +514,25 @@ pub fn open_owner_index(
 }
 
 impl OwnerIndex {
+    /// Check the source identity captured with a screen-text hit before release.
+    /// Ordinary families retain their existing release rules.
+    pub fn screen_text_hit_current(&self, hit: &SearchHit) -> bool {
+        if !solstone_core_format::content::screen_text::is_screen_text_path(&hit.metadata.path) {
+            return true;
+        }
+        let Some(journal) = self.connection.journal_root() else {
+            return false;
+        };
+        solstone_core_indexer_store::screen_text_current_digest(
+            &self.connection.connection,
+            journal,
+            &hit.metadata.path,
+        )
+        .ok()
+        .flatten()
+        .is_some_and(|digest| Some(&digest) == hit.metadata.source_digest.as_ref())
+    }
+
     /// Search using this reader without opening another SQLite connection.
     ///
     /// Each invocation finishes its statements; it does not retain a read
@@ -542,6 +599,10 @@ impl OwnerIndex {
     pub fn inject_fetch_failure(&mut self) {
         self.connection.injected_fetch_failure = true;
     }
+
+    pub fn raw_connection(&self) -> &Connection {
+        &self.connection.connection
+    }
 }
 
 #[cfg(test)]
@@ -570,6 +631,12 @@ pub(crate) struct QueryConnection {
     injected_fetch_failure: bool,
 }
 
+impl QueryConnection {
+    pub(crate) fn journal_root(&self) -> Option<&Path> {
+        self.path.parent().and_then(|p| p.parent())
+    }
+}
+
 fn visible_rows(clause: &str) -> String {
     format!("{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE})")
 }
@@ -595,7 +662,7 @@ fn open_index_reader(
     connection
         .execute_batch("PRAGMA busy_timeout=5000;")
         .map_err(|error| classify_sql_error(path.clone(), error))?;
-    let mut connection = QueryConnection::new(connection, path);
+    let mut connection = QueryConnection::new(connection, path)?;
     connection.require_nonempty_chunks(boundary)?;
     Ok(connection)
 }
@@ -943,8 +1010,21 @@ pub fn indexed_path_has_later_chunk(
 }
 
 impl QueryConnection {
-    pub(crate) fn new(connection: Connection, path: PathBuf) -> Self {
-        Self {
+    pub(crate) fn new(connection: Connection, path: PathBuf) -> Result<Self, IndexAccessError> {
+        connection
+            .create_scalar_function(
+                "solstone_screen_text_path",
+                1,
+                FunctionFlags::SQLITE_UTF8
+                    | FunctionFlags::SQLITE_DETERMINISTIC
+                    | FunctionFlags::SQLITE_INNOCUOUS,
+                |context| {
+                    let path: String = context.get(0)?;
+                    Ok(solstone_core_format::content::screen_text::is_screen_text_path(&path))
+                },
+            )
+            .map_err(|error| classify_sql_error(path.clone(), error))?;
+        Ok(Self {
             connection,
             path,
             #[cfg(any(test, feature = "test-hooks"))]
@@ -957,7 +1037,37 @@ impl QueryConnection {
             injected_aggregate_failure: false,
             #[cfg(any(test, feature = "test-hooks"))]
             injected_fetch_failure: false,
-        }
+        })
+    }
+
+    fn screen_text_projection(
+        &self,
+    ) -> Result<(&'static str, &'static str, String), IndexAccessError> {
+        let has_table = |name: &str| -> Result<bool, IndexAccessError> {
+            self.connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)",
+                    [name],
+                    |row| row.get(0),
+                )
+                .map_err(|error| self.classify(error))
+        };
+        let mut joins = String::new();
+        let offset = if has_table("chunk_group_offset")? {
+            joins.push_str(
+                " LEFT JOIN (SELECT path, idx, offset_ms FROM chunk_group_offset) USING(path, idx)",
+            );
+            "offset_ms"
+        } else {
+            "NULL"
+        };
+        let digest = if has_table("screen_text_source")? {
+            joins.push_str(" LEFT JOIN (SELECT path, sha256 AS screen_text_digest FROM screen_text_source) USING(path)");
+            "screen_text_digest"
+        } else {
+            "NULL"
+        };
+        Ok((offset, digest, joins))
     }
 
     fn require_nonempty_chunks(
@@ -1146,8 +1256,9 @@ impl QueryConnection {
             }
             self.fetch_hits_calls += 1;
         }
+        let (offset_expr, digest_expr, joins) = self.screen_text_projection()?;
         let sql = format!(
-            "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), rowid FROM chunks WHERE {} {ordering} LIMIT ? OFFSET ?",
+            "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), chunks.rowid, {offset_expr}, {digest_expr} FROM chunks{joins} WHERE {} {ordering} LIMIT ? OFFSET ?",
             plan.where_clause
         );
         let mut values = plan.params.clone();
@@ -1167,9 +1278,12 @@ impl QueryConnection {
                 let stream: Option<String> = row.get(5)?;
                 let idx: i64 = row.get(6)?;
                 let score: f64 = row.get(7)?;
+                let row_id: i64 = row.get(8)?;
+                let group_offset_ms: Option<i64> = row.get(9)?;
+                let source_digest: Option<String> = row.get(10)?;
                 let agent = agent.unwrap_or_default();
                 Ok(SearchHit {
-                    row_id: row.get(8)?,
+                    row_id,
                     id: format!("{path}:{idx}"),
                     text: content,
                     metadata: SearchMetadata {
@@ -1179,6 +1293,8 @@ impl QueryConnection {
                         stream: stream.unwrap_or_default(),
                         path,
                         idx,
+                        group_offset_ms,
+                        source_digest,
                     },
                     score,
                 })
@@ -1224,8 +1340,9 @@ impl QueryConnection {
         } else {
             ("0.0", "ORDER BY day DESC, rowid DESC")
         };
+        let (offset_expr, digest_expr, joins) = self.screen_text_projection()?;
         let sql = format!(
-            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, rowid FROM chunks WHERE {} AND day IN ({placeholders}) {order_clause}",
+            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, chunks.rowid, {offset_expr}, {digest_expr} FROM chunks{joins} WHERE {} AND day IN ({placeholders}) {order_clause}",
             plan.where_clause
         );
         let mut values = plan.params.clone();
@@ -1251,9 +1368,12 @@ impl QueryConnection {
                 let stream: Option<String> = row.get(5)?;
                 let idx: i64 = row.get(6)?;
                 let score: f64 = row.get(7)?;
+                let row_id: i64 = row.get(8)?;
+                let group_offset_ms: Option<i64> = row.get(9)?;
+                let source_digest: Option<String> = row.get(10)?;
                 let agent = agent.unwrap_or_default();
                 Ok(SearchHit {
-                    row_id: row.get(8)?,
+                    row_id,
                     id: format!("{path}:{idx}"),
                     text: content,
                     metadata: SearchMetadata {
@@ -1263,14 +1383,44 @@ impl QueryConnection {
                         stream: stream.unwrap_or_default(),
                         path,
                         idx,
+                        group_offset_ms,
+                        source_digest,
                     },
                     score,
                 })
             })
             .map_err(|error| self.classify(error))?;
 
+        let journal_root = self.journal_root().map(Path::to_path_buf);
+        let mut source_checks = BTreeMap::new();
         for hit_res in rows {
             let hit = hit_res.map_err(|error| self.classify(error))?;
+            if day_hits_map
+                .get(&hit.metadata.day)
+                .is_none_or(|hits| hits.len() >= per_day_limit)
+            {
+                continue;
+            }
+            if solstone_core_format::content::screen_text::is_screen_text_path(&hit.metadata.path)
+                && let Some(journal) = journal_root.as_deref()
+                && !*source_checks
+                    .entry((
+                        hit.metadata.path.clone(),
+                        hit.metadata.source_digest.clone(),
+                    ))
+                    .or_insert_with(|| {
+                        solstone_core_indexer_store::screen_text_current_digest(
+                            &self.connection,
+                            journal,
+                            &hit.metadata.path,
+                        )
+                        .ok()
+                        .flatten()
+                        .is_some_and(|digest| Some(&digest) == hit.metadata.source_digest.as_ref())
+                    })
+            {
+                continue;
+            }
             let day = &hit.metadata.day;
             if let Some(list) = day_hits_map.get_mut(day)
                 && list.len() < per_day_limit
@@ -1472,7 +1622,7 @@ pub(crate) fn search_with_connection_for_test(
     request: &SearchRequest,
     reference_date: NaiveDate,
 ) -> Result<(SearchResponse, QueryCounters), IndexAccessError> {
-    let mut connection = QueryConnection::new(connection, path);
+    let mut connection = QueryConnection::new(connection, path)?;
     let compilation = compile_query(&request.query, reference_date);
     let response = search_on_connection(&mut connection, request, reference_date, compilation)?;
     Ok((
@@ -1490,7 +1640,7 @@ pub(crate) fn agents_with_connection_for_test(
     connection: Connection,
     path: PathBuf,
 ) -> Result<(Vec<String>, QueryCounters), IndexAccessError> {
-    let mut connection = QueryConnection::new(connection, path);
+    let mut connection = QueryConnection::new(connection, path)?;
     let agents = connection.agents()?;
     Ok((
         agents,

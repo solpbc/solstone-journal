@@ -438,9 +438,14 @@ where
     let mut candidate = format!("{}_1", wall.format("%H%M%S"));
 
     for _ in 0..MAX_SEGMENT_ATTEMPTS {
-        let segment = find_available_segment(&stream_directory, &candidate, MAX_SEGMENT_ATTEMPTS)
-            .map_err(AuditWriteError::SegmentAllocation)?
-            .ok_or(AuditWriteError::NoAvailableSegment)?;
+        let Some(segment) =
+            find_available_segment(&stream_directory, &candidate, MAX_SEGMENT_ATTEMPTS)
+                .map_err(AuditWriteError::SegmentAllocation)?
+        else {
+            // A bounded random walk can revisit occupied coordinates during a
+            // burst. Spend the remaining admission retries before failing closed.
+            continue;
+        };
         let segment_directory = segment_path(journal_root, &day_key, &segment, AUDIT_STREAM, true)
             .map_err(AuditWriteError::SegmentPath)?;
         sync_audit_parent_chain(journal_root, &day_key, &segment)?;

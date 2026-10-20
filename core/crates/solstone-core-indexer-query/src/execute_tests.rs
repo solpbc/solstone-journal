@@ -2298,7 +2298,7 @@ fn fetch_day_hits_one_statement_no_union() {
 
     let fetch_stmts: Vec<&String> = trace
         .iter()
-        .filter(|sql| sql.contains("SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), rowid FROM chunks WHERE"))
+        .filter(|sql| sql.contains("SELECT content, path, day, facet, agent, stream, idx,"))
         .collect();
 
     assert_eq!(fetch_stmts.len(), 1, "exactly one fetch statement executed");
@@ -3389,4 +3389,204 @@ fn activity_observation_returns_the_stored_proof_or_nothing() {
     );
     assert!(!root.join(path).exists());
     fs::remove_dir_all(root).expect("cleanup activity observation");
+}
+
+#[test]
+fn group_offset_populates_when_present_and_none_when_absent() {
+    let (root, connection) = seeded_root("group-offset-presence");
+    let normal_path = "20260101/default/100000_60/talents/audio.md";
+    let screen_path = "20260101/default/100000_60/talents/screen_text.md";
+    insert(
+        &connection,
+        "audio content",
+        normal_path,
+        "20260101",
+        "work",
+        "transcripts",
+        "default",
+        0,
+    );
+    insert(
+        &connection,
+        "screen content",
+        screen_path,
+        "20260101",
+        "work",
+        "screen_text",
+        "default",
+        0,
+    );
+    let screen_file_path = root.join("chronicle").join(screen_path);
+    std::fs::create_dir_all(screen_file_path.parent().unwrap()).unwrap();
+    std::fs::write(&screen_file_path, "screen content").unwrap();
+    let hex_digest = "88a67de787e2e89a916694b7bf13a7a54602f6c18ae2a74ffece7154681630dd";
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS screen_text_source(path TEXT PRIMARY KEY, sha256 TEXT NOT NULL, bytes INTEGER NOT NULL, indexed_ms INTEGER NOT NULL)",
+        [],
+    ).unwrap();
+    connection
+        .execute(
+            "INSERT INTO screen_text_source(path, sha256, bytes, indexed_ms) VALUES (?, ?, ?, ?)",
+            rusqlite::params![screen_path, hex_digest, 14, 1000],
+        )
+        .unwrap();
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS chunk_group_offset(path TEXT NOT NULL, idx INTEGER NOT NULL, offset_ms INTEGER NOT NULL, PRIMARY KEY(path, idx))",
+        [],
+    ).unwrap();
+    connection
+        .execute(
+            "INSERT INTO chunk_group_offset(path, idx, offset_ms) VALUES (?, ?, ?)",
+            rusqlite::params![screen_path, 0, 42_000],
+        )
+        .unwrap();
+    drop(connection);
+
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open owner index");
+    let request = SearchRequest {
+        query: "content".to_string(),
+        limit: 10,
+        offset: 0,
+        day: None,
+        day_from: None,
+        day_to: None,
+        facet: None,
+        agent: None,
+        stream: None,
+        time_bucket: None,
+        relax: false,
+        counts: false,
+        order: Order::Relevance,
+    };
+    let response = owner_index
+        .search(&request, NaiveDate::from_ymd_opt(2026, 1, 1).unwrap())
+        .expect("search");
+    assert_eq!(response.results.len(), 2);
+    let screen_hit = response
+        .results
+        .iter()
+        .find(|h| h.metadata.path == screen_path)
+        .unwrap();
+    assert_eq!(screen_hit.metadata.group_offset_ms, Some(42_000));
+    let audio_hit = response
+        .results
+        .iter()
+        .find(|h| h.metadata.path == normal_path)
+        .unwrap();
+    assert_eq!(audio_hit.metadata.group_offset_ms, None);
+    assert!(owner_index.screen_text_hit_current(screen_hit));
+    std::fs::write(&screen_file_path, "screen replacement").unwrap();
+    solstone_core_indexer_store::scan::rescan_file(&root, &screen_file_path).unwrap();
+    assert!(!owner_index.screen_text_hit_current(screen_hit));
+    let replaced = owner_index
+        .search(
+            &SearchRequest::new("replacement", Order::Relevance),
+            reference_date(),
+        )
+        .unwrap();
+    assert_eq!(replaced.results.len(), 1);
+    assert!(owner_index.screen_text_hit_current(&replaced.results[0]));
+    drop(owner_index);
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn three_category_boundary_count_is_zero_for_screen_text_path_even_when_stored_as_transcripts() {
+    let (root, connection) = seeded_root("three-category-screen-text-leak");
+    let screen_path = "20260101/default/100000_60/talents/screen_text.md";
+    insert(
+        &connection,
+        "stale screen text row",
+        screen_path,
+        "20260101",
+        "work",
+        "transcripts",
+        "default",
+        0,
+    );
+    drop(connection);
+
+    let boundary = connection_boundary(
+        &["transcripts", "entities", "facets"],
+        ConnectionScope::WholeJournal,
+    );
+    let response = connection_search(&root, &boundary, "screen");
+    assert_eq!(response.results.len(), 0);
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn screen_text_schema_absence_preserves_ordinary_search() {
+    let (root, connection) = seeded_root("before-screen-text-schema");
+    insert(
+        &connection,
+        "ordinary upgrade witness",
+        "20260101/default/100000_60/talents/audio.md",
+        "20260101",
+        "work",
+        "transcripts",
+        "default",
+        0,
+    );
+    connection
+        .execute_batch("DROP TABLE chunk_group_offset; DROP TABLE screen_text_source;")
+        .unwrap();
+    drop(connection);
+    let mut index = open_owner_index(&root, OwnerBoundary).unwrap();
+    let request = SearchRequest::new("ordinary upgrade witness", Order::Relevance);
+    let result = index.search(&request, reference_date()).unwrap();
+    assert_eq!(result.results.len(), 1);
+    assert_eq!(result.results[0].metadata.group_offset_ms, None);
+    let resolved = index.resolve_counts(&request, reference_date()).unwrap();
+    let days = index
+        .fetch_day_hits(&resolved.plan, &["20260101".to_owned()], 5)
+        .unwrap();
+    assert_eq!(days[0].1.len(), 1);
+    drop(index);
+    let connection = read_only(&root);
+    let recreated: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='chunk_group_offset')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!recreated, "reader must not upgrade the schema");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn screen_text_denial_preserves_case_and_near_name_siblings() {
+    let (root, connection) = seeded_root("screen-text-exact-family");
+    for name in [
+        "screen_text.md",
+        "screen-text.md",
+        "screenXtext.md",
+        "SCREEN_TEXT.md",
+        "screen_text_extra.md",
+    ] {
+        let path = format!("20260101/default/100000_60/talents/{name}");
+        insert(
+            &connection,
+            "nearname witness",
+            &path,
+            "20260101",
+            "work",
+            "transcripts",
+            "default",
+            0,
+        );
+        seed_classification(&connection, &path, "transcripts", "segment_assigned", &[]);
+    }
+    drop(connection);
+    let boundary = connection_boundary(&["transcripts"], ConnectionScope::WholeJournal);
+    let response = connection_search(&root, &boundary, "nearname witness");
+    assert_eq!(response.results.len(), 4);
+    assert!(
+        response
+            .results
+            .iter()
+            .all(|hit| !hit.metadata.path.ends_with("/screen_text.md"))
+    );
+    fs::remove_dir_all(root).unwrap();
 }

@@ -79,12 +79,21 @@ const WEEK: ToolRequirement = ToolRequirement {
     whole_journal: true,
     any_of: false,
 };
+const SEARCH: ToolRequirement = ToolRequirement {
+    read: &[AdmittedCategory::Transcripts, AdmittedCategory::ScreenText],
+    whole_journal: false,
+    any_of: true,
+};
 /// `list_activities` mints activity references under a facets grant, and search
-/// mints entry references under a transcripts grant. Advertising `fetch` for
-/// either grant lets those references round-trip. The call still refuses an
-/// entry without transcripts and an activity without facets.
+/// mints entry references under a transcripts or screen_text grant. Advertising `fetch` for
+/// any grant lets those references round-trip. The call still refuses an
+/// entry without transcripts or screen_text and an activity without facets.
 const FETCH: ToolRequirement = ToolRequirement {
-    read: &[AdmittedCategory::Transcripts, AdmittedCategory::Facets],
+    read: &[
+        AdmittedCategory::Transcripts,
+        AdmittedCategory::Facets,
+        AdmittedCategory::ScreenText,
+    ],
     whole_journal: false,
     any_of: true,
 };
@@ -122,16 +131,16 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::Search,
         wire_name: "search",
         title: "search the journal",
-        description: "search what this connection may see of the owner's journal: short summaries of conversations and work sessions, activities and their stories, imported documents and calendar events, and notes about people and projects. use a few keywords such as names or topics, not a sentence. days are YYYYMMDD or YYYY-MM-DD. search does not read conversations word for word. when a result lists transcript segments, read them with get_transcript before saying who said, promised or decided something. when a result shows more_segments, fetch it for more. an activity result includes hidden, true or false. trust that field. the text can mention hidden without the activity being hidden. if an activity you just saw disappears, search again; a changed activity file stays out until the journal indexes it.",
+        description: "search what this connection may see of the owner's journal: short summaries of conversations and work sessions, activities and their stories, text recognized from screens, imported documents and calendar events, and notes about people and projects. screen text says what was visible, not what the owner read, typed or did. use a few keywords such as names or topics, not a sentence. days are YYYYMMDD or YYYY-MM-DD. search does not read conversations word for word. when a result lists transcript segments, read them with get_transcript before saying who said, promised or decided something. when a result shows more_segments, fetch it for more. an activity result includes hidden, true or false. trust that field. the text can mention hidden without the activity being hidden. if an activity you just saw disappears, search again; a changed activity file stays out until the journal indexes it.",
         input_schema: search_input_schema,
-        requires: TRANSCRIPTS,
+        requires: SEARCH,
         audit_name: solstone_core_mcp_audit::ToolName::Search,
     },
     ToolEntry {
         tool_name: crate::jsonrpc::ToolName::Fetch,
         wire_name: "fetch",
         title: "read a journal entry",
-        description: "read the full text of an entry returned by search. pass its reference unchanged. when the entry lists transcript segments, read them with get_transcript. if it still shows more_segments, call list_transcripts for that day and the entry's time. an activity includes hidden, true or false, along with its text. trust that field. the text can mention hidden without the activity being hidden. if the reference does not resolve, search again.",
+        description: "read the text of an entry returned by search. pass its reference unchanged. if next_reference is present, pass it as reference to fetch the next part. join the text parts in order. when the entry lists transcript segments, read them with get_transcript. if it still shows more_segments, call list_transcripts for that day and the entry's time. an activity includes hidden, true or false, along with its text. trust that field. the text can mention hidden without the activity being hidden. if the reference does not resolve, search again.",
         input_schema: fetch_input_schema,
         requires: FETCH,
         audit_name: solstone_core_mcp_audit::ToolName::Fetch,
@@ -524,6 +533,7 @@ pub(crate) fn category_token(category: &AdmittedCategory) -> &'static str {
         AdmittedCategory::Transcripts => "transcripts",
         AdmittedCategory::Entities => "entities",
         AdmittedCategory::Facets => "facets",
+        AdmittedCategory::ScreenText => "screen_text",
     }
 }
 
@@ -729,6 +739,7 @@ mod tests {
             AdmittedCategory::Transcripts,
             AdmittedCategory::Entities,
             AdmittedCategory::Facets,
+            AdmittedCategory::ScreenText,
         ]
         .into_iter()
         .collect()

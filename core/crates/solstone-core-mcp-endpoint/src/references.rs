@@ -76,6 +76,10 @@ pub(crate) struct EntryReference {
     pub activity_proof: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_identity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byte_offset: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -421,6 +425,8 @@ mod tests {
                     row_id: 9,
                     activity_proof: None,
                     record_identity: None,
+                    source_digest: None,
+                    byte_offset: None,
                 }),
             )
             .unwrap();

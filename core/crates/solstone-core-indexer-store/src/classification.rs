@@ -423,15 +423,16 @@ fn unclassified(path: &str) -> ChunkClassification {
     }
 }
 
-fn category_name(category: AdmittedCategory) -> &'static str {
+pub(crate) fn category_name(category: AdmittedCategory) -> &'static str {
     match category {
         AdmittedCategory::Transcripts => "transcripts",
         AdmittedCategory::Entities => "entities",
         AdmittedCategory::Facets => "facets",
+        AdmittedCategory::ScreenText => "screen_text",
     }
 }
 
-fn basis_name(basis: ScopeBasis) -> &'static str {
+pub(crate) fn basis_name(basis: ScopeBasis) -> &'static str {
     match basis {
         ScopeBasis::FacetOwned => "facet_owned",
         ScopeBasis::SegmentAssigned => "segment_assigned",

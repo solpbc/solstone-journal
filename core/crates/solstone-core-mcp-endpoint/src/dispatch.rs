@@ -341,10 +341,8 @@ fn scope_refusal(
     None
 }
 
-/// An activity reference needs the facets category. An entry reference needs
-/// transcripts. `fetch` is advertised when either category is present, and this
-/// check keeps the other target on its own category. An unresolved token is
-/// left for the tool to report as a missing reference.
+/// A reference follows its target's registered material category. An unresolved
+/// token is left for the tool to report as a missing reference.
 fn fetch_target_category_refusal(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
@@ -361,10 +359,18 @@ fn fetch_target_category_refusal(
         return None;
     };
     let missing = match target {
-        ReferenceTarget::Entry(_)
-            if !snapshot.categories.contains(&AdmittedCategory::Transcripts) =>
-        {
-            AdmittedCategory::Transcripts
+        ReferenceTarget::Entry(entry) => {
+            let path = entry.path.strip_prefix("chronicle/").unwrap_or(&entry.path);
+            let spec = solstone_core_format::content::resolve_spec(path)?;
+            let solstone_core_format::content::IndexDisposition::Admitted { category, .. } =
+                spec.disposition
+            else {
+                return None;
+            };
+            if snapshot.categories.contains(&category) {
+                return None;
+            }
+            category
         }
         ReferenceTarget::Activity(_)
             if !snapshot.categories.contains(&AdmittedCategory::Facets) =>
@@ -643,6 +649,7 @@ fn audit_permission_snapshot(
             solstone_core_indexer_query::AdmittedCategory::Transcripts => "transcripts".to_owned(),
             solstone_core_indexer_query::AdmittedCategory::Entities => "entities".to_owned(),
             solstone_core_indexer_query::AdmittedCategory::Facets => "facets".to_owned(),
+            solstone_core_indexer_query::AdmittedCategory::ScreenText => "screen_text".to_owned(),
         })
         .collect();
     let (scope, facet_ids) = match &snapshot.scope {
@@ -1200,6 +1207,7 @@ fn search(
         })
         .transpose()?;
     let mut results = Vec::new();
+    let mut screen_text_checks = std::collections::BTreeMap::new();
     let mut response_checks = 0;
     // The owner's coordinates for each hit released. ⚠ These never enter
     // `results`: the wire response carries no path or chunk index.
@@ -1319,6 +1327,18 @@ fn search(
                 None
             };
 
+            let is_screen_text =
+                solstone_core_format::content::screen_text::is_screen_text_path(&hit.metadata.path);
+            let (source_digest, byte_offset) = if is_screen_text {
+                let Some(sha256) = hit.metadata.source_digest.clone() else {
+                    live_dropped = true;
+                    continue;
+                };
+                (Some(sha256), Some(0))
+            } else {
+                (None, None)
+            };
+
             #[cfg(feature = "test-hooks")]
             crate::source_freeze_barrier::checkpoint(
                 crate::source_freeze_barrier::FreezePoint::Before,
@@ -1336,7 +1356,7 @@ fn search(
                 activity_record: record.as_ref(),
             }];
             let mut checker = LiveTranscriptPages;
-            if allowed {
+            if allowed && !is_screen_text {
                 issue_segment_links(
                     journal_root,
                     principal,
@@ -1353,7 +1373,15 @@ fn search(
                 crate::source_freeze_barrier::FreezePoint::After,
             );
 
-            if !allowed {
+            if !allowed
+                || source_digest.as_deref().is_some_and(|digest| {
+                    !*screen_text_checks
+                        .entry((hit.metadata.path.clone(), digest.to_owned()))
+                        .or_insert_with(|| {
+                            screen_text_identity_current(journal_root, &hit.metadata.path, digest)
+                        })
+                })
+            {
                 live_dropped = true;
                 continue;
             }
@@ -1371,6 +1399,8 @@ fn search(
                         row_id: hit.row_id,
                         activity_proof,
                         record_identity,
+                        source_digest,
+                        byte_offset,
                     }),
                 )
                 .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
@@ -1380,6 +1410,18 @@ fn search(
                 "snippet": snippet(&served_text),
                 "reference": reference,
             });
+            if let Some(offset_ms) = hit.metadata.group_offset_ms {
+                if let Some(segment) =
+                    solstone_core_format::content::screen_text::screen_text_segment(
+                        &hit.metadata.path,
+                    )
+                {
+                    value["segment"] = Value::String(segment.to_owned());
+                }
+                value["minute"] = Value::String(
+                    solstone_core_format::content::screen_text::screen_text_minute(offset_ms),
+                );
+            }
             let is_story_activity = record
                 .as_ref()
                 .and_then(|r| r.get("story"))
@@ -1620,6 +1662,16 @@ fn verified_markdown_document(
     (chunk.content == indexed).then_some(full_text)
 }
 
+fn screen_text_identity_current(journal_root: &Path, path: &str, pinned_digest: &str) -> bool {
+    let Ok(connection) = solstone_core_indexer_store::open_index_reader(journal_root) else {
+        return false;
+    };
+    solstone_core_indexer_store::screen_text_current_digest(&connection, journal_root, path)
+        .ok()
+        .flatten()
+        .is_some_and(|digest| digest == pinned_digest)
+}
+
 fn fetch(
     journal_root: &Path,
     principal: DispatchPrincipal<'_>,
@@ -1635,9 +1687,71 @@ fn fetch(
         .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
     match target {
         ReferenceTarget::Entry(entry) => {
+            let is_screen_text =
+                solstone_core_format::content::screen_text::is_screen_text_path(&entry.path);
             let boundary = boundary(snapshot, None, None);
             if !live_allows(journal_root, &boundary, &entry.path, Some(&entry.stream)) {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+            }
+            if is_screen_text {
+                #[cfg(feature = "test-hooks")]
+                crate::source_freeze_barrier::checkpoint(
+                    crate::source_freeze_barrier::FreezePoint::Before,
+                );
+                let (Some(source_digest), Some(byte_offset)) =
+                    (entry.source_digest.as_deref(), entry.byte_offset)
+                else {
+                    return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                };
+                let Ok(conn) = solstone_core_indexer_store::open_index_reader(journal_root) else {
+                    return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                };
+                let page = solstone_core_indexer_store::screen_text_pinned_page(
+                    &conn,
+                    journal_root,
+                    &entry.path,
+                    source_digest,
+                    byte_offset,
+                )
+                .ok()
+                .flatten()
+                .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                let mut value = json!({
+                    "title": entry_title(&entry.day),
+                    "date": entry.day,
+                    "text": page.text,
+                });
+                if let Some(next_off) = page.next_offset {
+                    let next_ref = codec()
+                        .mint(
+                            principal.connection,
+                            snapshot.generation,
+                            ReferenceTarget::Entry(EntryReference {
+                                day: entry.day.clone(),
+                                stream: entry.stream.clone(),
+                                path: entry.path.clone(),
+                                idx: entry.idx,
+                                row_id: entry.row_id,
+                                activity_proof: None,
+                                record_identity: None,
+                                source_digest: Some(source_digest.to_owned()),
+                                byte_offset: Some(next_off),
+                            }),
+                        )
+                        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                    value["next_reference"] = json!(next_ref);
+                }
+                #[cfg(feature = "test-hooks")]
+                crate::source_freeze_barrier::checkpoint(
+                    crate::source_freeze_barrier::FreezePoint::After,
+                );
+                if !crate::source_release::check_indexed_source_release(journal_root, &entry.path)
+                    || !screen_text_identity_current(journal_root, &entry.path, source_digest)
+                {
+                    return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                }
+                let target = format!("{}#{}", entry.path, entry.idx);
+                return Ok(Prepared::new(value, 1, vec![target]));
             }
             let (text, hidden, record) = match admit_activity(
                 journal_root,

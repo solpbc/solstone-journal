@@ -307,7 +307,7 @@ Local pairing and OAuth client registration are documented in
 for bearer tokens (`--token LABEL`) and OAuth clients (`--oauth CLIENT_ID`).
 A new token has no read access until you grant it: an agent using it sees only
 `save_memory` and `recall_memory`. Grant before the agent connects, for example
-`solstone journal mcp permission set --token LABEL --category transcripts --category entities --category facets`
+`solstone journal mcp permission set --token LABEL --category transcripts --category entities --category facets --category screen_text`
 (no `--facet` means the whole journal). An agent that connected first keeps its
 old tool list until it reconnects.
 `solstone journal mcp probe` runs one permissioned tool call locally without starting a listener.

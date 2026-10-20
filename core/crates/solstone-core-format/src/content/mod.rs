@@ -28,6 +28,8 @@ use serde_json::{Map, Value};
 use crate::chunker::format_markdown;
 use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns_for_root};
 
+pub mod screen_text;
+
 pub use crate::matcher::PatternRoot;
 pub use projections::{render_browser_text, render_morning_briefing_text, render_raw_screen_text};
 pub use shape::{SHAPE_SIDECAR_BASENAME, parse_shape_name, resolve_content_shape};
@@ -59,6 +61,8 @@ pub enum Family {
     ProtectedVideo,
     /// Desktop activity notes. This family is path-selected only.
     DesktopActivity,
+    /// Text recognized from screens. This family is path-selected only.
+    ScreenText,
 }
 
 /// Content that can be rendered for direct consumption but is deliberately
@@ -70,7 +74,7 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 18] = [
+const ALL_FAMILIES: [Family; 19] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
@@ -89,6 +93,7 @@ const ALL_FAMILIES: [Family; 18] = [
     Family::Workout,
     Family::ProtectedVideo,
     Family::DesktopActivity,
+    Family::ScreenText,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +124,7 @@ pub struct IndexChunk {
     pub content: String,
     pub occurrence_time_ms: Option<OccurrenceTimeMs>,
     pub source: Option<Map<String, Value>>,
+    pub group_offset_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,6 +155,7 @@ pub enum AdmittedCategory {
     Transcripts,
     Entities,
     Facets,
+    ScreenText,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -241,6 +248,15 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
         family: Family::DayAccumulator,
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Excluded,
+    },
+    FamilyPattern {
+        pattern: "*/*/*/talents/screen_text.md",
+        family: Family::ScreenText,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::ScreenText,
+            basis: ScopeBasis::SegmentAssigned,
+        },
     },
     FamilyPattern {
         pattern: "*/*/*/talents/*.md",
@@ -593,10 +609,20 @@ pub fn produce_chunks_by_shape(
             error: Some("agent-memory notes render from literal text".to_string()),
             warnings: Vec::new(),
         },
+        Family::ScreenText => ProducedChunks {
+            chunks: Vec::new(),
+            agent_override: None,
+            header: None,
+            error: Some("screen-text renders from text, not records; call produce_chunks with the file text".to_string()),
+            warnings: Vec::new(),
+        },
     }
 }
 
 pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
+    if family == Family::ScreenText {
+        return screen_text::produce_screen_text_chunks(text);
+    }
     if family == Family::AgentMemory {
         return ProducedChunks {
             chunks: if text.trim().is_empty() {
@@ -606,6 +632,7 @@ pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
                     content: text.to_string(),
                     occurrence_time_ms: None,
                     source: None,
+                    group_offset_ms: None,
                 }]
             },
             agent_override: Some("memory".to_string()),
@@ -624,6 +651,7 @@ pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
                     content: chunk.markdown,
                     occurrence_time_ms: None,
                     source: None,
+                    group_offset_ms: None,
                 })
                 .collect(),
             agent_override: None,
@@ -700,6 +728,7 @@ pub(super) fn recorded_chunk(
         content,
         occurrence_time_ms: Some(OccurrenceTimeMs(occurrence_time_ms)),
         source: Some(source.clone()),
+        group_offset_ms: None,
     }
 }
 

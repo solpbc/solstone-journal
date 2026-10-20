@@ -4971,7 +4971,7 @@ fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
                     "Until you grant it read access, an agent using this token sees only save_memory and recall_memory. To let it read your whole journal (add --facet NAME to allow only that facet):"
                 );
                 println!(
-                    "  solstone journal mcp permission set --token {:?} --category transcripts --category entities --category facets",
+                    "  solstone journal mcp permission set --token {:?} --category transcripts --category entities --category facets --category screen_text",
                     created.label
                 );
                 println!(
@@ -5358,12 +5358,14 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                 Ok(k) => k,
                 Err(code) => return code,
             };
-            if categories
-                .iter()
-                .any(|category| !matches!(category.as_str(), "transcripts" | "entities" | "facets"))
-            {
+            if categories.iter().any(|category| {
+                !matches!(
+                    category.as_str(),
+                    "transcripts" | "entities" | "facets" | "screen_text"
+                )
+            }) {
                 eprintln!(
-                    "solstone journal mcp permission set: category must be transcripts, entities, or facets"
+                    "solstone journal mcp permission set: category must be transcripts, entities, facets, or screen_text"
                 );
                 return ExitCode::from(EXIT_DATAERR);
             }
