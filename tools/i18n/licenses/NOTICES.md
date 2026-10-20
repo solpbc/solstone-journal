@@ -5,24 +5,38 @@
 - cpufeatures 0.2.17 - MIT OR Apache-2.0
 - crypto-common 0.1.7 - MIT OR Apache-2.0
 - digest 0.10.7 - MIT OR Apache-2.0
+- displaydoc 0.2.7 - MIT OR Apache-2.0
+- fluent-bundle 0.16.0 - Apache-2.0 OR MIT
+- fluent-langneg 0.13.1 - Apache-2.0 OR MIT
 - fluent-syntax 0.12.0 - Apache-2.0 OR MIT
 - generic-array 0.14.7 - MIT
+- intl-memoizer 0.5.3 - Apache-2.0 OR MIT
+- intl_pluralrules 7.0.2 - Apache-2.0 OR MIT
 - itoa 1.0.18 - MIT OR Apache-2.0
 - libc 0.2.191 - MIT OR Apache-2.0
 - memchr 2.8.3 - Unlicense OR MIT
 - proc-macro2 1.0.107 - MIT OR Apache-2.0
 - quote 1.0.47 - MIT OR Apache-2.0
+- rustc-hash 2.1.3 - Apache-2.0 OR MIT
 - ryu 1.0.23 - Apache-2.0 OR BSL-1.0
+- self_cell 1.3.0 - Apache-2.0 OR GPL-2.0-only
 - serde 1.0.228 - MIT OR Apache-2.0
 - serde_core 1.0.228 - MIT OR Apache-2.0
 - serde_derive 1.0.228 - MIT OR Apache-2.0
 - serde_json 1.0.145 - MIT OR Apache-2.0
 - sha2 0.10.9 - MIT OR Apache-2.0
+- smallvec 1.16.3 - MIT OR Apache-2.0
 - syn 2.0.119 - MIT OR Apache-2.0
 - syn 3.0.9 - MIT OR Apache-2.0
 - thiserror 2.0.21 - MIT OR Apache-2.0
 - thiserror-impl 2.0.21 - MIT OR Apache-2.0
+- tinystr 0.8.4 - Unicode-3.0
+- type-map 0.5.1 - MIT OR Apache-2.0
 - typenum 1.20.1 - MIT OR Apache-2.0
+- unic-langid 0.9.6 - MIT OR Apache-2.0
+- unic-langid-impl 0.9.6 - MIT OR Apache-2.0
 - unicode-ident 1.0.27 - (MIT OR Apache-2.0) AND Unicode-3.0
 - version_check 0.9.5 - MIT/Apache-2.0
+- zerofrom 0.1.8 - Unicode-3.0
+- zerovec 0.11.8 - Unicode-3.0
 
