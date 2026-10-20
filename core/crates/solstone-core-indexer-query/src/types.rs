@@ -67,6 +67,7 @@ impl ConnectionBoundary {
                 "Transcripts" | "transcripts" => AdmittedCategory::Transcripts,
                 "Entities" | "entities" => AdmittedCategory::Entities,
                 "Facets" | "facets" => AdmittedCategory::Facets,
+                "ScreenText" | "screen_text" => AdmittedCategory::ScreenText,
                 value => {
                     return Err(ConnectionBoundaryError::UnknownCategory {
                         token: value.to_string(),
@@ -96,6 +97,11 @@ impl ConnectionBoundary {
         if !classification.eligible || classification.unclassified {
             return false;
         }
+        if !self.categories.contains(&AdmittedCategory::ScreenText)
+            && solstone_core_format::content::screen_text::is_screen_text_path(&classification.path)
+        {
+            return false;
+        }
         let Some(category) = classification.category.and_then(category_from_sql_name) else {
             return false;
         };
@@ -121,6 +127,7 @@ fn category_from_sql_name(value: &str) -> Option<AdmittedCategory> {
         "transcripts" => Some(AdmittedCategory::Transcripts),
         "entities" => Some(AdmittedCategory::Entities),
         "facets" => Some(AdmittedCategory::Facets),
+        "screen_text" => Some(AdmittedCategory::ScreenText),
         _ => None,
     }
 }
@@ -284,6 +291,11 @@ pub struct SearchMetadata {
     pub stream: String,
     pub path: String,
     pub idx: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_offset_ms: Option<i64>,
+    /// Source identity read in the same SQLite statement as this chunk.
+    #[serde(skip)]
+    pub source_digest: Option<String>,
 }
 
 /// Search rows and optional requested counts.

@@ -397,6 +397,25 @@ vm.runInContext(sourceLinkBackSrc, context, { filename: 'source_link_back.js' })
 
 let caseCount = 0;
 
+// Literal screen text preserves visible addresses rather than inventing citations.
+{
+  caseCount++;
+  const address = 'sol://20260914/default/090000_300';
+  const raw = `## 00:12 · terminal\n- ${address}\n- \\~\\~paid\\~\\~`;
+  const normal = window.AppServices.renderMarkdown(raw);
+  assert.ok(normal.includes('/source?ref='), 'default source linking stays active');
+  const literal = window.AppServices.renderMarkdown(raw, { literalValues: true });
+  assert.ok(literal.includes(address), 'recognized address stays visible verbatim');
+  assert.ok(!literal.includes('/source?ref='), 'literal text has no inferred source link');
+  assert.ok(!literal.includes('<del>'), 'escaped recognized tildes stay literal');
+  const numbered = window.AppServices.renderMarkdown(String.raw`- 1\. approved`, { literalValues: true });
+  assert.ok(!numbered.includes('<ol'), 'recognized numbering does not create a nested list');
+  assert.ok(numbered.includes('1. approved'), 'recognized numbering stays visible');
+  const urls = window.AppServices.renderMarkdown('- https://example.test/a?x=1\n- www.example.test\n- owner@example.test', { literalValues: true });
+  assert.ok(!urls.includes('<a '), 'literal values do not acquire GFM URL or email autolinks');
+  assert.ok(urls.includes('https://example.test/a?x=1'), 'bare URL stays visible verbatim');
+}
+
 // 1. Test Sanitizer hook cases from corpus
 for (const sc of corpus.sanitizer_cases) {
   caseCount++;

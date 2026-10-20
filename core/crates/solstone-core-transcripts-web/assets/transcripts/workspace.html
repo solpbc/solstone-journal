@@ -4468,7 +4468,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     }
 
     const mdStems = Object.keys(data.md_files || {}).sort((a, b) => a.localeCompare(b));
-    mdStems.forEach(stem => addTab(`md-${stem}`, stem));
+    mdStems.forEach(stem => addTab(`md-${stem}`, stem === 'screen_text' ? 'screen text' : stem));
 
     tabsContainer.classList.add('visible');
   }
@@ -4542,7 +4542,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       } else if (tabId.startsWith('md-')) {
         const stem = tabId.slice(3);
         const content = (segmentData.md_files || {})[stem] || '';
-        pane.innerHTML = `<div class="tr-md-content">${window.AppServices.renderMarkdown(content)}</div>`;
+        pane.innerHTML = `<div class="tr-md-content">${window.AppServices.renderMarkdown(content, { literalValues: stem === 'screen_text' })}</div>`;
       }
     }
 

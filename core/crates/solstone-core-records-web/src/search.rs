@@ -152,6 +152,7 @@ pub(crate) fn search_response_with_index(
     debug_assert_eq!(page.len(), day_hits_vec.len());
 
     let mut day_results = Vec::new();
+    let mut source_checks = std::collections::BTreeMap::new();
     let facets = facets(journal_root);
     let has_memory_hits = day_hits_vec.iter().any(|(_, hits)| {
         hits.iter()
@@ -164,6 +165,10 @@ pub(crate) fn search_response_with_index(
         let results = hits
             .into_iter()
             .filter_map(|hit| {
+                if !*source_checks.entry((hit.metadata.path.clone(), hit.metadata.source_digest.clone()))
+                    .or_insert_with(|| owner_index.screen_text_hit_current(&hit)) {
+                    return None;
+                }
                 let memory = if hit.metadata.stream.starts_with("agent-memory-") {
                     let connection = memory_index.as_ref()?;
                     Some(owner_memory_descriptor(
@@ -206,6 +211,15 @@ pub(crate) fn search_response_with_index(
                     "idx": hit.metadata.idx,
                     "score": hit.score,
                 });
+                if let Some(offset_ms) = hit.metadata.group_offset_ms {
+                    if let Some(segment) =
+                        solstone_core_format::content::screen_text::screen_text_segment(&hit.metadata.path)
+                    {
+                        hit_obj["segment"] = Value::String(segment.to_owned());
+                    }
+                    hit_obj["minute"] =
+                        Value::String(solstone_core_format::content::screen_text::screen_text_minute(offset_ms));
+                }
                 if let Some((creation_label, origin)) = memory {
                     hit_obj["creation_label"] = Value::String(creation_label);
                     hit_obj["origin"] = origin;
@@ -1231,5 +1245,76 @@ mod facet_reader_tests {
             r#"["not an object"]"#
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn screen_text_search_hit_citation_and_digest_filtering() {
+        async fn body_to_json(response: axum::response::Response) -> Value {
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body");
+            serde_json::from_slice(&bytes).expect("json body")
+        }
+
+        let root = std::env::temp_dir().join(format!(
+            "solstone-test-search-screentext-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let screen_dir = root.join("chronicle/20260101/default/100000_60/talents");
+        std::fs::create_dir_all(&screen_dir).unwrap();
+        let screen_file = screen_dir.join("screen_text.md");
+        let audio_file = screen_dir.join("audio.md");
+        std::fs::write(&screen_file, "## 00:12 · terminal\nscreen test content\n").unwrap();
+        std::fs::write(&audio_file, "audio test content\n").unwrap();
+
+        solstone_core_indexer_store::scan::scan_journal(&root, true).unwrap();
+
+        // 1. Timed hit has segment and minute; hit with no offset omits both
+        let resp = search_response(
+            root.clone(),
+            SearchQuery {
+                q: Some("content".to_string()),
+                ..Default::default()
+            },
+        );
+        let val = body_to_json(resp).await;
+        let days = val["days"].as_array().unwrap();
+        let day_0 = &days[0];
+        let hits = day_0["results"].as_array().unwrap();
+        assert_eq!(hits.len(), 2);
+
+        let screen_hit = hits
+            .iter()
+            .find(|h| h["path"].as_str().unwrap().ends_with("screen_text.md"))
+            .unwrap();
+        assert_eq!(screen_hit["segment"], "100000_60");
+        assert_eq!(screen_hit["minute"], "00:12");
+        assert!(screen_hit.get("group_offset_ms").is_none());
+
+        let audio_hit = hits
+            .iter()
+            .find(|h| h["path"].as_str().unwrap().ends_with("audio.md"))
+            .unwrap();
+        assert!(audio_hit.get("segment").is_none());
+        assert!(audio_hit.get("minute").is_none());
+        assert!(audio_hit.get("group_offset_ms").is_none());
+
+        // 2. Digest mismatch omits the hit
+        std::fs::write(&screen_file, "modified content that does not match digest").unwrap();
+        let resp2 = search_response(
+            root.clone(),
+            SearchQuery {
+                q: Some("content".to_string()),
+                ..Default::default()
+            },
+        );
+        let val2 = body_to_json(resp2).await;
+        let days2 = val2["days"].as_array().unwrap();
+        let hits2 = days2[0]["results"].as_array().unwrap();
+        assert_eq!(hits2.len(), 1);
+        assert!(hits2[0]["path"].as_str().unwrap().ends_with("audio.md"));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

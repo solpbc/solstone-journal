@@ -46,10 +46,13 @@ use crate::db::{
     EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, IndexBuildLifecycle, delete_chunk_classification,
     mark_index_build_complete, open_index_admitted, prune_authored_chat_paths_admitted,
     read_chunk_classification_backfill, read_entity_search_watermark, read_index_build_state,
-    read_segment_aggregate_migration, replace_chunk_classification, write_entity_search_watermark,
-    write_segment_aggregate_migration,
+    read_segment_aggregate_migration, replace_chunk_classification, sqlite_table_exists,
+    write_entity_search_watermark, write_segment_aggregate_migration,
 };
 use crate::generation::{ScanReceipt, WRITER_VERSION, record_scan};
+use crate::screen_text::screen_text_source_current;
+#[cfg(test)]
+use crate::screen_text::{screen_text_current_digest, screen_text_pinned_bytes_match};
 use crate::writer_admission::{IndexAdmission, check_test_seam};
 
 const MERGE_STEP: i64 = 32;
@@ -325,6 +328,8 @@ fn delete_file_chunks(
     }
     delete_chunk_classification(conn, path)?;
     conn.execute("DELETE FROM memory_originals WHERE path=?", [path])?;
+    conn.execute("DELETE FROM chunk_group_offset WHERE path=?", [path])?;
+    conn.execute("DELETE FROM screen_text_source WHERE path=?", [path])?;
     Ok(())
 }
 
@@ -548,6 +553,7 @@ fn scan_journal_pass(
             Ok(mtime) => {
                 let needs_index = if memory_note
                     || written_activity(path, rel)
+                    || solstone_core_format::content::screen_text::is_screen_text_path(rel)
                     || missing_memberships.contains(rel)
                 {
                     // Memory readiness and activity file bytes can change inside
@@ -658,6 +664,12 @@ fn scan_journal_pass(
         if family == Family::Activity
             && db_mtimes.get(rel.as_str()) == Some(mtime)
             && activity_source_current(&conn, rel, path)?
+        {
+            continue;
+        }
+        if family == Family::ScreenText
+            && db_mtimes.get(rel.as_str()) == Some(mtime)
+            && screen_text_file_current(&conn, journal, rel)?
         {
             continue;
         }
@@ -1613,6 +1625,7 @@ fn migrate_segment_aggregate(
         };
         let family = match classify(&rel) {
             ContentResolution::Indexed(Family::Markdown) => Family::Markdown,
+            ContentResolution::Indexed(Family::ScreenText) => Family::ScreenText,
             _ => {
                 tx.rollback()?;
                 return Ok(SegmentMigrationOutcome::Blocked(format!(
@@ -1884,6 +1897,36 @@ fn stored_entity_search_count(conn: &Connection) -> Result<i64, StoreError> {
     Ok(stored.unwrap_or(0))
 }
 
+fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{:02x}", b);
+    }
+    s
+}
+
+fn screen_text_file_current(
+    conn: &Connection,
+    journal: &Path,
+    rel: &str,
+) -> Result<bool, StoreError> {
+    if !screen_text_source_current(conn, journal, rel)? {
+        return Ok(false);
+    }
+    if !sqlite_table_exists(conn, "chunk_classification")? {
+        return Ok(false);
+    }
+    let category: Option<String> = conn
+        .query_row(
+            "SELECT category FROM chunk_classification WHERE path=?",
+            [rel],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(category.as_deref() == Some("screen_text"))
+}
+
 enum FileUpdate<'a> {
     Force,
     IfChanged,
@@ -1917,6 +1960,7 @@ fn ensure_file_current(
         && (family != Family::Activity || activity_source_current(conn, rel, path)?)
         && (family != Family::AgentMemory
             || (memory_original.is_some() && memory_original_exists(conn, rel)?))
+        && (family != Family::ScreenText || screen_text_file_current(conn, journal, rel)?)
     {
         return Ok(Vec::new());
     }
@@ -2000,11 +2044,32 @@ fn index_file(
             record_activity_provenance(conn, rowid, &digest, hidden_flag(chunk.source.as_ref()))
                 .map_err(|error| format!("activity provenance insert failed for {rel}: {error}"))?;
         }
+        if let Some(offset_ms) = chunk.group_offset_ms {
+            conn.execute(
+                "INSERT INTO chunk_group_offset(path, idx, offset_ms) VALUES (?, ?, ?)",
+                params![rel, idx as i64, offset_ms],
+            )
+            .map_err(|error| format!("chunk group offset insert failed for {rel}: {error}"))?;
+        }
         record_chunk_source(conn, Some(rowid), Some(rel), stream.as_deref())
             .map_err(|error| format!("chunk source mapping failed for {rel}: {error}"))?;
     }
     replace_chunk_classification(conn, &classification)
         .map_err(|error| format!("classification insert failed for {rel}: {error}"))?;
+    if family == Family::ScreenText {
+        let digest = digest_bytes(text.as_bytes());
+        let hash_hex = hex_encode(&digest);
+        let byte_len = text.len() as i64;
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        conn.execute(
+            "REPLACE INTO screen_text_source(path, sha256, bytes, indexed_ms) VALUES (?, ?, ?, ?)",
+            params![rel, hash_hex, byte_len, now_ms],
+        )
+        .map_err(|error| format!("screen text source insert failed for {rel}: {error}"))?;
+    }
     if let Some(original) = memory_original {
         let origin_json = serde_json::to_string(&original.origin)
             .map_err(|error| format!("memory origin serialization failed for {rel}: {error}"))?;
@@ -7934,5 +7999,74 @@ not json
         let conn = open_index(&root).unwrap();
         assert_eq!(ghost_edge_count(&conn), 1);
         assert!(crate::generation::read_last_scan(&conn).unwrap().is_none());
+    }
+
+    #[test]
+    fn screen_text_pin_matches_release_bytes_without_a_file_and_stale_category_is_not_current() {
+        use solstone_core_format::content::{AdmittedCategory, ScopeBasis};
+
+        let root = temp_root("screen-text-pin-matches");
+        let conn = open_index(&root).expect("open index");
+
+        let rel = "20260914/default/090000_300/talents/screen_text.md";
+        let visible_bytes = b"visible";
+        let visible_sha256 = hex_encode(&digest_bytes(visible_bytes));
+        conn.execute(
+            "INSERT INTO screen_text_source(path, sha256, bytes, indexed_ms) VALUES (?1, ?2, ?3, 1000)",
+            params![rel, visible_sha256, visible_bytes.len() as i64],
+        )
+        .unwrap();
+
+        assert!(
+            screen_text_pinned_bytes_match(&conn, rel, visible_bytes, &visible_sha256).unwrap()
+        );
+        assert!(!screen_text_pinned_bytes_match(&conn, rel, b"other", &visible_sha256).unwrap());
+
+        assert_eq!(screen_text_current_digest(&conn, &root, rel).unwrap(), None);
+
+        let file_path = root.join("chronicle").join(rel);
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, visible_bytes).unwrap();
+
+        replace_chunk_classification(
+            &conn,
+            &ChunkClassification {
+                path: rel.to_string(),
+                category: Some(crate::classification::category_name(
+                    AdmittedCategory::Transcripts,
+                )),
+                basis: Some(crate::classification::basis_name(
+                    ScopeBasis::SegmentAssigned,
+                )),
+                eligible: true,
+                unclassified: false,
+                facet_ids: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        assert!(!screen_text_file_current(&conn, &root, rel).unwrap());
+
+        replace_chunk_classification(
+            &conn,
+            &ChunkClassification {
+                path: rel.to_string(),
+                category: Some(crate::classification::category_name(
+                    AdmittedCategory::ScreenText,
+                )),
+                basis: Some(crate::classification::basis_name(
+                    ScopeBasis::SegmentAssigned,
+                )),
+                eligible: true,
+                unclassified: false,
+                facet_ids: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        assert!(screen_text_file_current(&conn, &root, rel).unwrap());
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

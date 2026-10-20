@@ -10,7 +10,7 @@ use std::process::ExitCode;
 
 use serde_json::Value;
 use solstone_core_cli_boundary::DESCRIBE_USAGE;
-use solstone_core_describe::selection::{CategoryOverride, Importance};
+use solstone_core_describe::selection::CategoryOverride;
 use solstone_core_describe::{WinnowConfig, pipeline, process_video_metadata};
 use solstone_core_journal::{
     detect_checkout_root, discover_home, installed_site_packages_from_executable_dir,
@@ -397,32 +397,9 @@ fn read_config(journal_path: &Path) -> Result<DescribeConfig, CliError> {
                 )
             })?,
     };
-    let category_overrides = match describe.get("categories") {
-        None => BTreeMap::new(),
-        Some(Value::Object(categories)) => categories
-            .iter()
-            .filter_map(|(name, value)| (!value.is_null()).then_some((name, value)))
-            .map(|(name, value)| {
-                let value = value.as_object().ok_or_else(|| {
-                    CliError::Config(format!("describe.categories.{name} must be an object"))
-                })?;
-                let importance = match value.get("importance") {
-                    None => None,
-                    Some(Value::String(value)) => Some(Importance::parse(value).ok_or_else(|| {
-                        CliError::Config(format!("describe.categories.{name}.importance must be ignore, low, normal, or high"))
-                    })?),
-                    Some(_) => return Err(CliError::Config(format!("describe.categories.{name}.importance must be a string"))),
-                };
-                let extraction = match value.get("extraction") {
-                    None => None,
-                    Some(Value::String(value)) => Some(value.clone()),
-                    Some(_) => return Err(CliError::Config(format!("describe.categories.{name}.extraction must be a string"))),
-                };
-                Ok((name.clone(), CategoryOverride { importance, extraction }))
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()?,
-        Some(_) => return Err(CliError::Config("describe.categories must be an object".to_owned())),
-    };
+    let category_overrides =
+        solstone_core_describe::selection::parse_category_overrides(describe.get("categories"))
+            .map_err(CliError::Config)?;
     Ok(DescribeConfig {
         winnow: result,
         redact_rules,

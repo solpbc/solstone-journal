@@ -30,8 +30,13 @@ solstone-core-assets.workspace = true
 solstone-core-callosum.workspace = true
 base64 = "0.22.1"
 chrono.workspace = true
+sha2.workspace = true
+unicode-normalization.workspace = true
 
 solstone-core-system.workspace = true
+solstone-core-installed-payload.workspace = true
+solstone-core-indexer-todo.workspace = true
+toml_edit = { workspace = true, features = ["serde"] }
 
 [features]
 test-fixture-pin = ["solstone-core-distribution/test-fixture-pin"]
@@ -57,7 +62,6 @@ required-features = ["test-stubs"]
 
 [dev-dependencies]
 temp-env = "0.3.6"
-sha2.workspace = true
 solstone-core-distribution.workspace = true
 solstone-core-generate-wire.workspace = true
 ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "software-scaling", "build"] }

@@ -233,12 +233,89 @@ pub struct InstalledPackage {
 
 /// One verified final member of the installation running this process.
 /// No caller-supplied package root or digest constructs this value.
+#[derive(Debug)]
 pub struct CurrentInstalledMember {
     package: InstalledPackage,
     relative: String,
     path: PathBuf,
     bytes: u64,
     sha256: String,
+}
+
+/// The exact helper bundle members used by describe. Each member has been
+/// admitted from the running package manifest and digest checked before this
+/// value is returned.
+#[derive(Debug)]
+pub struct CurrentScreenOcrBundle {
+    pub helper: CurrentInstalledMember,
+    pub recipe: CurrentInstalledMember,
+    pub detector: CurrentInstalledMember,
+    pub recognizer: CurrentInstalledMember,
+    pub dictionary: CurrentInstalledMember,
+    pub runtime_library: CurrentInstalledMember,
+    pub runtime_dependency: Option<CurrentInstalledMember>,
+}
+
+pub fn resolve_current_screen_ocr_bundle() -> Result<CurrentScreenOcrBundle, InstalledPayloadRefusal>
+{
+    resolve_screen_ocr_bundle(
+        crate::compiled_target(),
+        cfg!(target_env = "gnu"),
+        resolve_current_member,
+    )
+}
+
+#[cfg(test)]
+fn resolve_current_screen_ocr_bundle_from_executable(
+    executable: &Path,
+) -> Result<CurrentScreenOcrBundle, InstalledPayloadRefusal> {
+    resolve_screen_ocr_bundle(
+        crate::compiled_target(),
+        cfg!(target_env = "gnu"),
+        |relative| resolve_current_member_from_executable(executable, relative),
+    )
+}
+
+fn screen_ocr_runtime_members(
+    target: &str,
+    target_uses_gnu: bool,
+) -> Result<(&'static str, Option<&'static str>), InstalledPayloadRefusal> {
+    match (target, target_uses_gnu) {
+        (TARGET_LINUX_X86_64, true) => Ok((
+            "libonnxruntime.so.1.31.0",
+            Some("libonnxruntime_providers_shared.so"),
+        )),
+        (TARGET_MACOS_ARM64, false) => Ok(("libonnxruntime.1.31.0.dylib", None)),
+        _ => Err(refusal(
+            code::SCREEN_OCR_UNQUALIFIED,
+            guidance::SCREEN_OCR_UNAVAILABLE,
+            None,
+        )),
+    }
+}
+
+fn resolve_screen_ocr_bundle(
+    target: &str,
+    target_uses_gnu: bool,
+    mut resolve: impl FnMut(&str) -> Result<CurrentInstalledMember, InstalledPayloadRefusal>,
+) -> Result<CurrentScreenOcrBundle, InstalledPayloadRefusal> {
+    let (runtime_name, dependency_name) = screen_ocr_runtime_members(target, target_uses_gnu)?;
+
+    Ok(CurrentScreenOcrBundle {
+        helper: resolve(if cfg!(target_os = "windows") {
+            "bin/solstone-screen-ocr-helper.exe"
+        } else {
+            "bin/solstone-screen-ocr-helper"
+        })?,
+        recipe: resolve("lib/solstone-screen-ocr/recipe.toml")?,
+        detector: resolve("lib/solstone-screen-ocr/models/detector.onnx")?,
+        recognizer: resolve("lib/solstone-screen-ocr/models/recognizer.onnx")?,
+        dictionary: resolve("lib/solstone-screen-ocr/models/dictionary.txt")?,
+        runtime_library: resolve(&format!("lib/solstone-screen-ocr/runtime/{runtime_name}"))?,
+        runtime_dependency: dependency_name
+            .map(|name| resolve(&format!("lib/solstone-screen-ocr/runtime/{name}")))
+            .transpose()?,
+    })
 }
 
 impl CurrentInstalledMember {
@@ -879,6 +956,54 @@ mod tests {
         fs::write(&path, bytes).expect("write");
     }
 
+    fn screen_ocr_tree(root: &Path, include_runtime_dependency: bool) -> PathBuf {
+        write_file(root, "bin/solstone-core", &elf(b"probe"));
+        write_file(root, "bin/solstone-screen-ocr-helper", b"helper executable");
+        write_file(root, "lib/solstone-screen-ocr/recipe.toml", b"recipe");
+        write_file(
+            root,
+            "lib/solstone-screen-ocr/models/detector.onnx",
+            b"detector",
+        );
+        write_file(
+            root,
+            "lib/solstone-screen-ocr/models/recognizer.onnx",
+            b"recognizer",
+        );
+        write_file(
+            root,
+            "lib/solstone-screen-ocr/models/dictionary.txt",
+            b"dictionary\n",
+        );
+        #[cfg(target_os = "linux")]
+        let runtime = "libonnxruntime.so.1.31.0";
+        #[cfg(target_os = "macos")]
+        let runtime = "libonnxruntime.1.31.0.dylib";
+        #[cfg(target_os = "windows")]
+        let runtime = "onnxruntime.dll";
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        let dependency = Some(if cfg!(target_os = "windows") {
+            "onnxruntime_providers_shared.dll"
+        } else {
+            "libonnxruntime_providers_shared.so"
+        });
+        #[cfg(target_os = "macos")]
+        let dependency: Option<&str> = None;
+        write_file(
+            root,
+            &format!("lib/solstone-screen-ocr/runtime/{runtime}"),
+            b"runtime library",
+        );
+        if include_runtime_dependency && let Some(dependency) = dependency {
+            write_file(
+                root,
+                &format!("lib/solstone-screen-ocr/runtime/{dependency}"),
+                b"runtime dependency",
+            );
+        }
+        root.join("bin/solstone-core")
+    }
+
     fn seal(root: &Path, version: &str, target: &str) -> Vec<u8> {
         let bytes =
             render_installed_payload(root, PRODUCT, version, target, "aaa").expect("render");
@@ -935,6 +1060,165 @@ mod tests {
         member.revalidate().unwrap();
         write_file(root, relative, &unsigned);
         assert_eq!(member.revalidate().unwrap_err().code, code::MEMBER_CHANGED);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn current_screen_ocr_resolver_uses_exact_installed_members() {
+        let directory = scratch();
+        let root = directory.path();
+        let executable = screen_ocr_tree(root, true);
+        seal(root, COMPILED_VERSION, crate::compiled_target());
+
+        let bundle = super::resolve_current_screen_ocr_bundle_from_executable(&executable)
+            .expect("complete installed helper bundle");
+        assert_eq!(
+            bundle.helper.relative_path(),
+            "bin/solstone-screen-ocr-helper"
+        );
+        assert_eq!(
+            bundle.recipe.relative_path(),
+            "lib/solstone-screen-ocr/recipe.toml"
+        );
+        assert_eq!(
+            bundle.detector.relative_path(),
+            "lib/solstone-screen-ocr/models/detector.onnx"
+        );
+        assert_eq!(
+            bundle.recognizer.relative_path(),
+            "lib/solstone-screen-ocr/models/recognizer.onnx"
+        );
+        assert_eq!(
+            bundle.dictionary.relative_path(),
+            "lib/solstone-screen-ocr/models/dictionary.txt"
+        );
+        #[cfg(target_os = "linux")]
+        assert_eq!(
+            bundle.runtime_library.relative_path(),
+            "lib/solstone-screen-ocr/runtime/libonnxruntime.so.1.31.0"
+        );
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            bundle.runtime_library.relative_path(),
+            "lib/solstone-screen-ocr/runtime/libonnxruntime.1.31.0.dylib"
+        );
+        if let Some(dependency) = bundle.runtime_dependency.as_ref() {
+            assert!(
+                dependency
+                    .relative_path()
+                    .starts_with("lib/solstone-screen-ocr/runtime/")
+            );
+        }
+    }
+
+    #[test]
+    fn screen_ocr_runtime_admission_matches_qualified_targets_only() {
+        for (target, target_uses_gnu, runtime, dependency) in [
+            (
+                TARGET_LINUX_X86_64,
+                true,
+                "libonnxruntime.so.1.31.0",
+                Some("libonnxruntime_providers_shared.so"),
+            ),
+            (
+                crate::TARGET_MACOS_ARM64,
+                false,
+                "libonnxruntime.1.31.0.dylib",
+                None,
+            ),
+        ] {
+            assert_eq!(
+                super::screen_ocr_runtime_members(target, target_uses_gnu).unwrap(),
+                (runtime, dependency)
+            );
+            let mut paths = Vec::new();
+            let error = super::resolve_screen_ocr_bundle(target, target_uses_gnu, |relative| {
+                paths.push(relative.to_owned());
+                Err(super::refusal("probe", crate::guidance::WRONG_TARGET, None))
+            })
+            .expect_err("the fixture resolver stops after proving target admission");
+            assert_eq!(error.code, "probe");
+            assert_eq!(paths, ["bin/solstone-screen-ocr-helper"]);
+        }
+
+        for (target, target_uses_gnu) in [
+            (TARGET_LINUX_X86_64, false), // musl or another non-GNU Linux ABI
+            (crate::TARGET_LINUX_AARCH64, true),
+            (crate::TARGET_WINDOWS_X86_64, false),
+        ] {
+            let mut calls = 0;
+            let error = super::resolve_screen_ocr_bundle(target, target_uses_gnu, |_| {
+                calls += 1;
+                Err(super::refusal(
+                    "unexpected-member-lookup",
+                    crate::guidance::WRONG_TARGET,
+                    None,
+                ))
+            })
+            .expect_err("unqualified runtime target is refused before member lookup");
+            assert_eq!(error.code, code::SCREEN_OCR_UNQUALIFIED);
+            assert_eq!(calls, 0);
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn current_screen_ocr_resolver_rejects_missing_private_runtime_dependency() {
+        let missing_dir = scratch();
+        let missing_executable = screen_ocr_tree(missing_dir.path(), false);
+        seal(
+            missing_dir.path(),
+            COMPILED_VERSION,
+            crate::compiled_target(),
+        );
+        let missing = super::resolve_current_screen_ocr_bundle_from_executable(&missing_executable)
+            .expect_err("missing private runtime dependency");
+        assert_eq!(missing.code, code::MEMBER_MISSING);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn current_screen_ocr_resolver_rejects_changed_model_member() {
+        let changed_dir = scratch();
+        let changed_executable = screen_ocr_tree(changed_dir.path(), true);
+        seal(
+            changed_dir.path(),
+            COMPILED_VERSION,
+            crate::compiled_target(),
+        );
+        write_file(
+            changed_dir.path(),
+            "lib/solstone-screen-ocr/models/detector.onnx",
+            b"tampered",
+        );
+        let changed = super::resolve_current_screen_ocr_bundle_from_executable(&changed_executable)
+            .expect_err("same-sized changed model");
+        assert_eq!(changed.code, code::MEMBER_CHANGED);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn current_screen_ocr_resolver_rejects_bundle_path_escape() {
+        let directory = scratch();
+        let root = directory.path();
+        let executable = screen_ocr_tree(root, true);
+        seal(root, COMPILED_VERSION, crate::compiled_target());
+
+        let models = root.join("lib/solstone-screen-ocr/models");
+        fs::remove_file(models.join("detector.onnx")).unwrap();
+        fs::remove_file(models.join("recognizer.onnx")).unwrap();
+        fs::remove_file(models.join("dictionary.txt")).unwrap();
+        fs::remove_dir(&models).unwrap();
+        let outside = directory.path().join("outside-models");
+        fs::create_dir(&outside).unwrap();
+        write_file(&outside, "detector.onnx", b"detector");
+        write_file(&outside, "recognizer.onnx", b"recognizer");
+        write_file(&outside, "dictionary.txt", b"dictionary\n");
+        std::os::unix::fs::symlink(&outside, &models).unwrap();
+
+        let error = super::resolve_current_screen_ocr_bundle_from_executable(&executable)
+            .expect_err("symlink escape from private bundle");
+        assert_eq!(error.code, code::UNSAFE_PATH);
     }
 
     #[cfg(unix)]

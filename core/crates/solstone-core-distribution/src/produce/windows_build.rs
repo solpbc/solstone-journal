@@ -29,6 +29,22 @@ pub struct WindowsCargoEvidence {
     pub ffmpeg_run_id: String,
     pub ffmpeg_source_sha256: String,
     pub files: Vec<WindowsCargoOutput>,
+    pub screen_ocr_helper: ScreenOcrCargoEvidence,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ScreenOcrCargoEvidence {
+    pub target: String,
+    pub manifest_sha256: String,
+    pub lock_sha256: String,
+    pub recipe_sha256: String,
+    pub oar_revision: String,
+    pub argv: Vec<String>,
+    pub actual_exit_code: i32,
+    pub stdout_sha256: String,
+    pub stderr_sha256: String,
+    pub artifact_sha256: String,
+    pub artifact_bytes: u64,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -141,7 +157,19 @@ pub fn build_windows_product(
     let stderr = read_bounded(&stderr_path, LOG_LIMIT)?;
     let text = std::str::from_utf8(&stdout).map_err(|e| format!("Cargo JSON is not UTF-8: {e}"))?;
     require_finished_cargo(text)?;
-    let artifacts = super::bind_cargo_json(text, TRIPLE).map_err(|e| e.to_string())?;
+    let mut artifacts = super::bind_cargo_json(text, TRIPLE).map_err(|e| e.to_string())?;
+    let screen_ocr = build_screen_ocr_helper(checkout, &target_dir, log_directory, &epoch)?;
+    let screen_ocr_id = ArtifactId {
+        package: crate::screen_ocr::HELPER_PACKAGE.into(),
+        bin: crate::screen_ocr::HELPER_BIN.into(),
+        triple: TRIPLE.into(),
+    };
+    artifacts.insert(screen_ocr_id.clone(), screen_ocr.path.clone());
+    if capture_source(checkout)? != source {
+        return Err(
+            "product source or Cargo.lock changed during independent helper compilation".into(),
+        );
+    }
     crate::select::refuse_wrong_triple(
         inventory,
         crate::windows_payload::WINDOWS_PAYLOAD_TARGET,
@@ -172,7 +200,17 @@ pub fn build_windows_product(
             .path
             .canonicalize()
             .map_err(|e| format!("{}: {e}", bin.path.display()))?;
-        if path.parent() != Some(expected_parent.as_path())
+        let expected_bin_parent = if bin.package == crate::screen_ocr::HELPER_PACKAGE {
+            target_dir
+                .join("screen-ocr-helper")
+                .join(TRIPLE)
+                .join("release")
+                .canonicalize()
+                .map_err(|e| format!("resolve independent screen OCR output directory: {e}"))?
+        } else {
+            expected_parent.clone()
+        };
+        if path.parent() != Some(expected_bin_parent.as_path())
             || path.file_name().and_then(|s| s.to_str())
                 != Some(format!("{}.exe", bin.bin).as_str())
         {
@@ -181,12 +219,12 @@ pub fn build_windows_product(
                 path.display()
             ));
         }
-        let data = read_bounded(
-            &release_root
-                .canonical_path()
-                .join(format!("{}.exe", bin.bin)),
-            PE_LIMIT,
-        )?;
+        let data = read_bounded(&path, PE_LIMIT)?;
+        if bin.package == crate::screen_ocr::HELPER_PACKAGE
+            && sha256_hex(&data) != screen_ocr.evidence.artifact_sha256
+        {
+            return Err("independent screen OCR helper changed after its build receipt".into());
+        }
         let info = crate::pe_dependencies::inspect_dependencies(&data)
             .map_err(|e| format!("{}: {e}", path.display()))?;
         if info.is_dll {
@@ -249,6 +287,7 @@ pub fn build_windows_product(
         ffmpeg_run_id,
         ffmpeg_source_sha256,
         files,
+        screen_ocr_helper: screen_ocr.evidence,
     };
     let evidence_bytes = serde_json::to_vec_pretty(&evidence).map_err(|e| e.to_string())?;
     create_log(&log_directory.join("cargo-evidence.json"))?
@@ -260,6 +299,135 @@ pub fn build_windows_product(
         artifacts,
         bytes,
     })
+}
+
+fn build_screen_ocr_helper(
+    checkout: &Path,
+    target_dir: &Path,
+    log_directory: &Path,
+    epoch: &str,
+) -> Result<BuiltScreenOcrHelper, String> {
+    let manifest_path = checkout.join(crate::screen_ocr::HELPER_MANIFEST);
+    let lock_path = checkout.join(crate::screen_ocr::HELPER_LOCK);
+    let recipe_path = checkout.join(crate::screen_ocr::RECIPE);
+    let manifest = read_bounded(&manifest_path, 4 * 1024 * 1024)?;
+    let lock = read_bounded(&lock_path, 64 * 1024 * 1024)?;
+    let recipe_bytes = read_bounded(&recipe_path, 1024 * 1024)?;
+    crate::screen_ocr::verify_oar_revision(&recipe_bytes, &lock)?;
+    let recipe = crate::screen_ocr::Recipe::load(&recipe_bytes)?;
+    let lock_sha256 = sha256_hex(&lock);
+
+    let helper_target = target_dir.join("screen-ocr-helper");
+    fs::create_dir(&helper_target)
+        .map_err(|error| format!("fresh independent screen OCR target required: {error}"))?;
+    let argv = screen_ocr_cargo_argv();
+    let stdout_path = log_directory.join("screen-ocr-cargo.stdout");
+    let stderr_path = log_directory.join("screen-ocr-cargo.stderr");
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(checkout)
+        .args(&argv)
+        .env("CARGO_TARGET_DIR", &helper_target)
+        .env("CARGO_INCREMENTAL", "0")
+        .env("SOURCE_DATE_EPOCH", epoch)
+        .env("ZERO_AR_DATE", "1")
+        .env("CARGO_BUILD_JOBS", "2")
+        .env("CARGO_ENCODED_RUSTFLAGS", "-Ctarget-feature=+crt-static")
+        .env_remove("RUSTFLAGS")
+        .env_remove("RUSTC_WRAPPER")
+        .env_remove("RUSTC_WORKSPACE_WRAPPER")
+        .env(super::OFFLINE, "1")
+        .stdin(Stdio::null());
+    let status = capture_build_command(
+        &mut command,
+        &stdout_path,
+        &stderr_path,
+        &log_directory.join("screen-ocr-cargo.exit.json"),
+    )?;
+    if !status.success() {
+        return Err(format!(
+            "independent screen OCR Cargo failed with actual exit {:?}; original logs retained at {}",
+            status.code(),
+            log_directory.display()
+        ));
+    }
+    let stdout = read_bounded(&stdout_path, LOG_LIMIT)?;
+    let stderr = read_bounded(&stderr_path, LOG_LIMIT)?;
+    let text = std::str::from_utf8(&stdout)
+        .map_err(|error| format!("screen OCR Cargo JSON is not UTF-8: {error}"))?;
+    require_finished_cargo(text)?;
+    let artifacts = super::bind_cargo_json(text, TRIPLE).map_err(|error| error.to_string())?;
+    let expected_id = ArtifactId {
+        package: crate::screen_ocr::HELPER_PACKAGE.into(),
+        bin: crate::screen_ocr::HELPER_BIN.into(),
+        triple: TRIPLE.into(),
+    };
+    if artifacts.len() != 1 {
+        return Err("independent screen OCR build emitted an unexpected artifact set".into());
+    }
+    let path = artifacts
+        .get(&expected_id)
+        .ok_or("independent screen OCR helper artifact is missing or wrong-triple")?
+        .canonicalize()
+        .map_err(|error| format!("resolve independent screen OCR helper: {error}"))?;
+    let expected_parent = helper_target
+        .join(TRIPLE)
+        .join("release")
+        .canonicalize()
+        .map_err(|error| format!("resolve independent screen OCR output directory: {error}"))?;
+    if path.parent() != Some(expected_parent.as_path())
+        || path.file_name().and_then(|name| name.to_str())
+            != Some(format!("{}.exe", crate::screen_ocr::HELPER_BIN).as_str())
+    {
+        return Err("independent screen OCR helper escaped its fresh target output".into());
+    }
+    let artifact = read_bounded(&path, PE_LIMIT)?;
+    if artifact.is_empty()
+        || sha256_hex(&read_bounded(&lock_path, 64 * 1024 * 1024)?) != lock_sha256
+    {
+        return Err("independent screen OCR artifact or lock changed during build".into());
+    }
+    Ok(BuiltScreenOcrHelper {
+        path,
+        evidence: ScreenOcrCargoEvidence {
+            target: TRIPLE.into(),
+            manifest_sha256: sha256_hex(&manifest),
+            lock_sha256,
+            recipe_sha256: sha256_hex(&recipe_bytes),
+            oar_revision: recipe.source.oar_revision,
+            argv,
+            actual_exit_code: status
+                .code()
+                .ok_or("screen OCR Cargo success has no native exit code")?,
+            stdout_sha256: sha256_hex(&stdout),
+            stderr_sha256: sha256_hex(&stderr),
+            artifact_sha256: sha256_hex(&artifact),
+            artifact_bytes: artifact.len() as u64,
+        },
+    })
+}
+
+struct BuiltScreenOcrHelper {
+    path: PathBuf,
+    evidence: ScreenOcrCargoEvidence,
+}
+
+fn screen_ocr_cargo_argv() -> Vec<String> {
+    [
+        "build",
+        "--manifest-path",
+        crate::screen_ocr::HELPER_MANIFEST,
+        "--locked",
+        "--offline",
+        "--release",
+        "--target",
+        TRIPLE,
+        "--message-format=json",
+        "--jobs",
+        "2",
+    ]
+    .map(str::to_owned)
+    .to_vec()
 }
 
 fn cargo_argv(inventory: &Inventory) -> Result<Vec<String>, String> {
@@ -290,6 +458,7 @@ fn cargo_argv(inventory: &Inventory) -> Result<Vec<String>, String> {
             && targets
                 .iter()
                 .any(|t| t == crate::windows_payload::WINDOWS_PAYLOAD_TARGET)
+            && package != crate::screen_ocr::HELPER_PACKAGE
         {
             args.extend(["-p".into(), package.clone(), "--bin".into(), bin.clone()]);
             if package == "solstone-core" && bin == "solstone-core" {
@@ -637,5 +806,19 @@ mod tests {
             1,
             "the agent connector is compiled into the Windows journal exactly once"
         );
+        assert!(
+            !argv
+                .iter()
+                .any(|argument| argument == crate::screen_ocr::HELPER_PACKAGE)
+        );
+        let helper = screen_ocr_cargo_argv();
+        assert!(
+            helper
+                .windows(2)
+                .any(|pair| { pair == ["--manifest-path", crate::screen_ocr::HELPER_MANIFEST] })
+        );
+        assert!(helper.iter().any(|argument| argument == "--locked"));
+        assert!(helper.windows(2).any(|pair| pair == ["--target", TRIPLE]));
+        assert!(!helper.iter().any(|argument| argument == "core/Cargo.toml"));
     }
 }

@@ -119,6 +119,7 @@ fn render_record(record: &JsonObject, detected_day: Option<&str>) -> IndexChunk 
         content: lines.join("\n"),
         occurrence_time_ms: entity_timestamp(record, detected_day).map(OccurrenceTimeMs),
         source: Some(record.clone()),
+        group_offset_ms: None,
     }
 }
 

@@ -2501,7 +2501,7 @@ async fn set_permission(
             StatusCode::BAD_REQUEST,
         );
     }
-    let allowed = ["transcripts", "entities", "facets"];
+    let allowed = ["transcripts", "entities", "facets", "screen_text"];
     if body.categories.is_empty()
         || body
             .categories

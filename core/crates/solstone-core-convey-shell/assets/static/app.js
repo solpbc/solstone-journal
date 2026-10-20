@@ -1397,13 +1397,16 @@ window.AppServices = {
    * Render user-supplied markdown into sanitized HTML. Calls marked + DOMPurify.
    * Throws if `marked` or `DOMPurify` isn't loaded (shell is broken; fail loudly).
    */
-  renderMarkdown(raw) {
+  renderMarkdown(raw, { literalValues = false } = {}) {
     configureMarkdownSanitizer();
     const container = document.createElement('div');
     container.innerHTML = DOMPurify.sanitize(
-      markdownParser.parse(String(raw || '')),
+      markdownParser.parse(String(raw || ''), { gfm: !literalValues }),
       { FORBID_TAGS: MARKDOWN_FORBIDDEN_TAGS }
     );
+
+    // Code-built screen text keeps literal source-address text as evidence.
+    if (literalValues) return container.innerHTML;
 
     // Replace autolink text with classified labels while keeping custom text
     const existingLinks = container.querySelectorAll ? container.querySelectorAll('a') : [];

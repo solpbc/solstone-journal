@@ -992,7 +992,10 @@ mod tests {
     use serde_json::json;
     use solstone_core_processing_record::vocab;
 
-    use super::{day_timestamp, local_time, local_wall_instant, strip_speaker_prefix, timestamp};
+    use super::{
+        day_timestamp, local_time, local_wall_instant, prepare_segment, strip_speaker_prefix,
+        timestamp,
+    };
 
     #[test]
     fn timestamps_accept_floats_and_non_positive_times_are_blank() {
@@ -1030,6 +1033,26 @@ mod tests {
         }
         let instant = Utc.with_ymd_and_hms(2026, 7, 31, 15, 0, 5).unwrap();
         assert_eq!(local_time(denver, instant.timestamp_millis()), "09:00:05");
+    }
+
+    #[test]
+    fn md_files_includes_screen_text_and_neighbor_stem() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let seg_dir = root.join("chronicle/20260101/default/100000_60");
+        let talents_dir = seg_dir.join("talents");
+        std::fs::create_dir_all(&talents_dir).unwrap();
+        std::fs::write(
+            talents_dir.join("screen_text.md"),
+            "## 00:12 · code\ncontent",
+        )
+        .unwrap();
+        std::fs::write(talents_dir.join("summary.md"), "# Summary\nmeeting notes").unwrap();
+
+        let val = prepare_segment(root, "20260101", "default", "100000_60", Utc::now()).unwrap();
+        let md_files = val["md_files"].as_object().unwrap();
+        assert!(md_files.contains_key("screen_text"));
+        assert!(md_files.contains_key("summary"));
     }
 
     #[test]

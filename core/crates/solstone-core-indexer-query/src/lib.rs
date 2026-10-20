@@ -44,6 +44,7 @@ pub use own_memory::{
     own_memory_candidate_statement, own_memory_candidates, read_own_memory_row,
 };
 pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
+pub use solstone_core_indexer_store::screen_text_source_current;
 pub use temporal::{TemporalExtraction, extract_temporal_references};
 pub use types::{
     AdmittedCategory, ConnectionBoundary, ConnectionBoundaryError, ConnectionCorpusRefusal,

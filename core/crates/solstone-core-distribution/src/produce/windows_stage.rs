@@ -134,13 +134,21 @@ pub fn stage_windows_payload(
         }
         let inventory_path = checkout.join("core/distribution/inventory.toml");
         let inventory = load_inventory(&inventory_path).map_err(|e| e.to_string())?;
-        let plan = collect_plan(
+        let screen_ocr = crate::screen_ocr::prepare_for_inventory(
+            checkout,
+            &crate::pinned_stage::catalog_input_cache_dir(checkout),
+            &inventory,
+            WINDOWS_PAYLOAD_TARGET,
+            product.artifacts(),
+        )?;
+        let plan = collect_plan_with_screen_ocr(
             checkout,
             &inventory_path,
             &inventory,
             product.bytes(),
             native,
             product.evidence_bytes(),
+            screen_ocr.as_ref(),
         )?;
         if &capture_source(checkout)? != source {
             return Err("staging source changed while capturing content".into());
@@ -186,6 +194,7 @@ fn render_checked_manifest(
     Ok(bytes)
 }
 
+#[cfg(test)]
 fn collect_plan<'a>(
     checkout: &Path,
     inventory_path: &Path,
@@ -193,6 +202,26 @@ fn collect_plan<'a>(
     products: &'a BTreeMap<ArtifactId, Vec<u8>>,
     native: &'a AdmittedWindowsNativeInputs,
     build_evidence: &'a [u8],
+) -> Result<Plan<'a>, String> {
+    collect_plan_with_screen_ocr(
+        checkout,
+        inventory_path,
+        inventory,
+        products,
+        native,
+        build_evidence,
+        None,
+    )
+}
+
+fn collect_plan_with_screen_ocr<'a>(
+    checkout: &Path,
+    inventory_path: &Path,
+    inventory: &Inventory,
+    products: &'a BTreeMap<ArtifactId, Vec<u8>>,
+    native: &'a AdmittedWindowsNativeInputs,
+    build_evidence: &'a [u8],
+    screen_ocr: Option<&'a crate::screen_ocr::StagedBundle>,
 ) -> Result<Plan<'a>, String> {
     let target = inventory
         .target
@@ -217,6 +246,26 @@ fn collect_plan<'a>(
                 }
                 evidence_selected = true;
                 add_file(&mut plan, dest, *mode, Cow::Borrowed(build_evidence))?;
+            }
+            Entry::ScreenOcr {
+                dest_dir, targets, ..
+            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+                let bundle = screen_ocr.ok_or("missing prepared ScreenOcr bundle")?;
+                if bundle.target != target.id {
+                    return Err("ScreenOcr bundle target mismatch".into());
+                }
+                let prefix = format!("{dest_dir}/");
+                if bundle.files.is_empty()
+                    || bundle
+                        .files
+                        .iter()
+                        .any(|file| !file.dest.starts_with(&prefix))
+                {
+                    return Err("ScreenOcr bundle escaped its inventory destination".into());
+                }
+                for file in &bundle.files {
+                    add_file(&mut plan, &file.dest, file.mode, Cow::Borrowed(&file.bytes))?;
+                }
             }
             Entry::Bin {
                 package,
@@ -379,9 +428,13 @@ fn collect_plan<'a>(
             _ => {}
         }
     }
+    let screen_ocr_selected = inventory.entry.iter().any(|entry| {
+        matches!(entry, Entry::ScreenOcr { targets, .. } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET))
+    });
     if binaries.len() != products.len()
         || native_members.len() != native.members.len()
         || (!build_evidence.is_empty() && !evidence_selected)
+        || screen_ocr_selected != screen_ocr.is_some()
     {
         return Err("undeclared fresh Cargo or admitted native input".into());
     }
@@ -536,6 +589,101 @@ mod tests {
         inventory.entry.clear();
         assert!(
             collect_plan(repo, &inventory_path, &inventory, &products, &native, bytes).is_err()
+        );
+    }
+
+    #[test]
+    fn windows_screen_ocr_bundle_is_required_targeted_and_confined_to_inventory_dir() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let inventory_path = repo.join("core/distribution/inventory.toml");
+        let mut inventory = load_inventory(&inventory_path).unwrap();
+        inventory
+            .entry
+            .retain(|entry| matches!(entry, Entry::ScreenOcr { .. }));
+        assert_eq!(inventory.entry.len(), 1);
+
+        let root = tempfile::tempdir().unwrap();
+        inventory.payload = "empty.list".into();
+        fs::write(root.path().join("empty.list"), b"").unwrap();
+        let fixture_inventory = root.path().join("inventory.toml");
+        let products = BTreeMap::new();
+        let native = AdmittedWindowsNativeInputs::default();
+        let bundle = crate::screen_ocr::StagedBundle {
+            target: WINDOWS_PAYLOAD_TARGET.into(),
+            files: vec![crate::screen_ocr::StagedFile {
+                dest: "lib/solstone-screen-ocr/runtime/onnxruntime.dll".into(),
+                mode: 0o755,
+                bytes: b"fixture runtime".to_vec(),
+            }],
+        };
+        let plan = collect_plan_with_screen_ocr(
+            repo,
+            &fixture_inventory,
+            &inventory,
+            &products,
+            &native,
+            &[],
+            Some(&bundle),
+        )
+        .unwrap();
+        assert_eq!(
+            plan["lib/solstone-screen-ocr/runtime/onnxruntime.dll"]
+                .bytes
+                .as_ref(),
+            b"fixture runtime"
+        );
+        assert!(
+            collect_plan_with_screen_ocr(
+                repo,
+                &fixture_inventory,
+                &inventory,
+                &products,
+                &native,
+                &[],
+                None,
+            )
+            .is_err()
+        );
+
+        let wrong_target = crate::screen_ocr::StagedBundle {
+            target: "linux-x86_64".into(),
+            files: bundle.files.clone(),
+        };
+        assert!(
+            collect_plan_with_screen_ocr(
+                repo,
+                &fixture_inventory,
+                &inventory,
+                &products,
+                &native,
+                &[],
+                Some(&wrong_target),
+            )
+            .is_err()
+        );
+
+        let escaped = crate::screen_ocr::StagedBundle {
+            target: WINDOWS_PAYLOAD_TARGET.into(),
+            files: vec![crate::screen_ocr::StagedFile {
+                dest: "lib/other/runtime.dll".into(),
+                mode: 0o755,
+                bytes: b"fixture runtime".to_vec(),
+            }],
+        };
+        assert!(
+            collect_plan_with_screen_ocr(
+                repo,
+                &fixture_inventory,
+                &inventory,
+                &products,
+                &native,
+                &[],
+                Some(&escaped),
+            )
+            .is_err()
         );
     }
 

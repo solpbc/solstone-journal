@@ -584,6 +584,25 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                     generations: &mut generations,
                 })?,
             );
+            let helper = build_screen_ocr_helper(
+                &checkout,
+                &target_dir,
+                &target.triple_apple,
+                &host,
+                None,
+                &wrappers,
+                &BTreeMap::new(),
+                &remap.join("\x1f"),
+                &epoch,
+            )?;
+            artifacts.insert(
+                ArtifactId {
+                    package: crate::screen_ocr::HELPER_PACKAGE.into(),
+                    bin: crate::screen_ocr::HELPER_BIN.into(),
+                    triple: target.triple_apple.clone(),
+                },
+                helper,
+            );
             build_parakeet_helper(&checkout)?;
             return finish_produce(FinishProduce {
                 args: &args,
@@ -725,6 +744,29 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             })?,
         );
 
+        let mut helper_vars = gnu_env.vars.clone();
+        helper_vars.remove("ORT_LIB_PATH");
+        helper_vars.remove("ORT_PREFER_DYNAMIC_LINK");
+        let helper = build_screen_ocr_helper(
+            &checkout,
+            &target_dir,
+            &target.triple_gnu,
+            &host,
+            Some(zig_dir),
+            &wrappers,
+            &helper_vars,
+            &gnu_rustflags,
+            &epoch,
+        )?;
+        artifacts.insert(
+            ArtifactId {
+                package: crate::screen_ocr::HELPER_PACKAGE.into(),
+                bin: crate::screen_ocr::HELPER_BIN.into(),
+                triple: target.triple_gnu.clone(),
+            },
+            helper,
+        );
+
         finish_produce(FinishProduce {
             args: &args,
             inventory: &inventory,
@@ -791,7 +833,10 @@ fn bins_for_resolved_lane(
                 lane: entry_lane,
                 targets,
                 ..
-            } if target.lane_for(entry_lane) == lane && targets.contains(&target.id) => {
+            } if package != crate::screen_ocr::HELPER_PACKAGE
+                && target.lane_for(entry_lane) == lane
+                && targets.contains(&target.id) =>
+            {
                 Some((package.clone(), bin.clone()))
             }
             _ => None,
@@ -1467,6 +1512,67 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
     bind_cargo_json(&stdout, lane.triple).map_err(|error| ProduceError::new(error.to_string()))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn build_screen_ocr_helper(
+    checkout: &Path,
+    target_dir: &Path,
+    triple: &str,
+    host: &str,
+    zig_dir: Option<&Path>,
+    wrapper_dir: &Path,
+    vars: &BTreeMap<String, String>,
+    rustflags: &str,
+    epoch: &str,
+) -> Result<PathBuf, ProduceError> {
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(checkout)
+        .env("CARGO_TARGET_DIR", target_dir)
+        .env("CARGO_INCREMENTAL", "0")
+        .env("SOURCE_DATE_EPOCH", epoch)
+        .env("ZERO_AR_DATE", "1")
+        .env("TZ", "UTC")
+        .env("LC_ALL", "C.UTF-8")
+        .env("LANG", "C.UTF-8")
+        .env("CARGO_ENCODED_RUSTFLAGS", rustflags)
+        .env(OFFLINE, "1")
+        .args([
+            "build",
+            "--manifest-path",
+            crate::screen_ocr::HELPER_MANIFEST,
+            "--locked",
+            "--offline",
+            "--release",
+            "--target",
+            triple,
+        ]);
+    apply_lane_toolchain(&mut command, host, triple, vars, zig_dir, wrapper_dir);
+    let output = command
+        .output()
+        .map_err(|error| ProduceError::new(format!("screen OCR helper cargo: {error}")))?;
+    if !output.status.success() {
+        return Err(ProduceError::new(format!(
+            "screen OCR helper build failed for {triple}:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    let artifact =
+        target_dir
+            .join(triple)
+            .join("release")
+            .join(if triple == "x86_64-pc-windows-msvc" {
+                format!("{}.exe", crate::screen_ocr::HELPER_BIN)
+            } else {
+                crate::screen_ocr::HELPER_BIN.to_owned()
+            });
+    if !artifact.is_file() {
+        return Err(ProduceError::new(format!(
+            "screen OCR helper artifact missing for {triple}"
+        )));
+    }
+    Ok(artifact)
+}
+
 fn require_single_ffmpeg_out_dir(
     out_dirs: Vec<PathBuf>,
     target: &str,
@@ -1756,20 +1862,6 @@ fn write_stage(
 ) -> Result<StagedWrite, ProduceError> {
     let _xz_tars = crate::pinned_stage::XzTarScope::enter();
     select::stage_selected(selection, stage)?;
-    let archives = stage_layout(
-        repo,
-        catalog_cache,
-        inventory_path,
-        inventory,
-        target_id,
-        onnx,
-        pdfium,
-        sealed_archives,
-        stage,
-    )?;
-    let records = stage::staged_records(stage)?;
-    let payload = load_payload(inventory_path, inventory)
-        .map_err(|error| ProduceError::new(error.to_string()))?;
     let artifacts = selection
         .bins
         .iter()
@@ -1784,6 +1876,21 @@ fn write_stage(
             )
         })
         .collect();
+    let archives = stage_layout(
+        repo,
+        catalog_cache,
+        inventory_path,
+        inventory,
+        target_id,
+        &artifacts,
+        onnx,
+        pdfium,
+        sealed_archives,
+        stage,
+    )?;
+    let records = stage::staged_records(stage)?;
+    let payload = load_payload(inventory_path, inventory)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
     let declared = record::declared_records(
         inventory,
         target_id,
@@ -1867,6 +1974,7 @@ pub(crate) fn stage_layout(
     inventory_path: &Path,
     inventory: &Inventory,
     target_id: &str,
+    artifacts: &BTreeMap<ArtifactId, PathBuf>,
     onnx: Option<(&onnx_runtime::TargetSpec, &onnx_runtime::StagedRuntime)>,
     pdfium: Option<(&pdfium::TargetSpec, &pdfium::StagedRuntime)>,
     sealed_archives: Option<&SealedArchiveSet>,
@@ -1992,6 +2100,25 @@ pub(crate) fn stage_layout(
                 })?;
                 onnx_runtime::write_staged_runtime(spec, runtime, &stage.join(dest_dir))
                     .map_err(|error| ProduceError::new(error.to_string()))?;
+            }
+            Entry::ScreenOcr { targets, .. } => {
+                if !targets.iter().any(|item| item == target_id) {
+                    continue;
+                }
+                let bundle = crate::screen_ocr::prepare_for_inventory(
+                    repo,
+                    catalog_cache,
+                    inventory,
+                    target_id,
+                    artifacts,
+                )
+                .map_err(ProduceError::new)?
+                .ok_or_else(|| {
+                    ProduceError::new(format!(
+                        "missing required:\n  screen OCR bundle {target_id}"
+                    ))
+                })?;
+                crate::screen_ocr::stage_files(&bundle, stage).map_err(ProduceError::new)?;
             }
             Entry::Pdfium {
                 dest_dir,
@@ -3495,7 +3622,7 @@ class = "notice"
                         | crate::inventory::PinnedInput::AuthorityCommitted { .. },
                     ..
                 }
-            )
+            ) && !matches!(entry, Entry::ScreenOcr { .. })
         });
         let artifacts_root = tempfile::Builder::new()
             .prefix("solstone-distribution-linux-stage-artifacts-")

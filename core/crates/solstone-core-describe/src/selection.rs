@@ -45,6 +45,56 @@ pub struct CategoryOverride {
     pub extraction: Option<String>,
 }
 
+/// The shared strict schema for owner category overrides. Callers may reread
+/// current privacy policy without changing the C/S/E invocation's snapshot.
+pub fn parse_category_overrides(
+    value: Option<&Value>,
+) -> Result<BTreeMap<String, CategoryOverride>, String> {
+    let categories = match value {
+        None => return Ok(BTreeMap::new()),
+        Some(Value::Object(categories)) => categories,
+        Some(_) => return Err("describe.categories must be an object".to_owned()),
+    };
+    categories
+        .iter()
+        .filter(|(_, value)| !value.is_null())
+        .map(|(name, value)| {
+            let value = value
+                .as_object()
+                .ok_or_else(|| format!("describe.categories.{name} must be an object"))?;
+            let importance = match value.get("importance") {
+                None => None,
+                Some(Value::String(value)) => Some(Importance::parse(value).ok_or_else(|| {
+                    format!(
+                        "describe.categories.{name}.importance must be ignore, low, normal, or high"
+                    )
+                })?),
+                Some(_) => {
+                    return Err(format!(
+                        "describe.categories.{name}.importance must be a string"
+                    ));
+                }
+            };
+            let extraction = match value.get("extraction") {
+                None => None,
+                Some(Value::String(value)) => Some(value.clone()),
+                Some(_) => {
+                    return Err(format!(
+                        "describe.categories.{name}.extraction must be a string"
+                    ));
+                }
+            };
+            Ok((
+                name.clone(),
+                CategoryOverride {
+                    importance,
+                    extraction,
+                },
+            ))
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub struct CategorizedFrame {
     pub frame_id: u64,

@@ -172,7 +172,7 @@ fn stored_classification(
 }
 
 fn static_category(value: &str) -> Option<&'static str> {
-    ["transcripts", "entities", "facets"]
+    ["transcripts", "entities", "facets", "screen_text"]
         .into_iter()
         .find(|name| *name == value)
 }

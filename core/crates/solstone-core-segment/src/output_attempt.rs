@@ -440,6 +440,11 @@ impl InputObservation {
         self.facts.size
     }
 
+    /// SHA-256 of the exact source bytes admitted before processing.
+    pub fn input_sha256(&self) -> [u8; 32] {
+        self.facts.digest
+    }
+
     /// Revalidate under segment exclusion and retain it through publication.
     pub fn commit<'a>(&self, claims: &'a OutputClaims) -> Result<SegmentCommit<'a>> {
         if !claims.outputs.contains(&self.path.with_extension("jsonl")) {

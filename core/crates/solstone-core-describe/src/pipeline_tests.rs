@@ -1450,3 +1450,138 @@ fn owner_retry_reaches_describe_writer_and_keeps_retained_partial_rows() {
     assert!(record.held);
     assert!(record.attempt.is_none());
 }
+
+#[test]
+fn ocr_saved_record_and_faults_preserve_actual_pipeline_requests_and_verdicts() {
+    use crate::screen_ocr::{OcrFailure, OcrWorker, OcrWorkerFactory, RawOccurrence};
+    struct Worker {
+        failure: Option<OcrFailure>,
+        ordinal: u64,
+    }
+    impl OcrWorker for Worker {
+        fn recognize(&mut self, _: &[u8]) -> Result<Vec<RawOccurrence>, OcrFailure> {
+            if let Some(failure) = self.failure {
+                return Err(failure);
+            }
+            self.ordinal += 1;
+            Ok(vec![RawOccurrence {
+                line_order: 0,
+                text: format!("extra literal {}", self.ordinal),
+                confidence: Some(0.9),
+                geometry: Vec::new(),
+                recurrence: 0,
+            }])
+        }
+    }
+    struct Ocr {
+        available: bool,
+        failure: Option<OcrFailure>,
+    }
+    impl OcrWorkerFactory for Ocr {
+        fn recipe_id(&mut self) -> String {
+            "authored-test-recipe".to_owned()
+        }
+        fn create(&mut self) -> Result<Option<Box<dyn OcrWorker>>, OcrFailure> {
+            Ok(self.available.then(|| {
+                Box::new(Worker {
+                    failure: self.failure,
+                    ordinal: 0,
+                }) as Box<dyn OcrWorker>
+            }))
+        }
+    }
+    fn rows(test: &TestRun) -> Vec<Value> {
+        if !test.artifact().exists() {
+            return Vec::new();
+        }
+        test.rows().into_iter().map(|row| {
+            if row.get("_solstone_processing").is_some() {
+                json!({"state":row["_solstone_processing"]["state"], "reason":row["_solstone_processing"]["reason_code"]})
+            } else {
+                json!({"frame_id":row["frame_id"],"timestamp":row["timestamp"],"analysis":row["analysis"],"content":row["content"],"enhanced":row["enhanced"],"error":row["error"],"pending":row["pending"]})
+            }
+        }).collect()
+    }
+    for mode in [
+        "success",
+        "all-c-failed",
+        "provider-blocked",
+        "extraction-blocked",
+    ] {
+        let mut baseline = None;
+        for (available, failure) in [
+            (false, None),
+            (true, None),
+            (true, Some(OcrFailure::Protocol)),
+            (true, Some(OcrFailure::Timeout)),
+        ] {
+            let mut test = TestRun::new("ocr-paired");
+            let segment = test.journal.join("chronicle/20261020/desktop/090000_300");
+            fs::create_dir_all(&segment).unwrap();
+            test.video = segment.join("a_screen.webm");
+            fs::write(&test.video, "authored raw input").unwrap();
+            let factory = ScriptedFactory::new(move |request| {
+                if mode == "provider-blocked"
+                    || (mode == "extraction-blocked"
+                        && request.context.starts_with("observe.describe.")
+                        && request.context != "observe.describe.frame")
+                {
+                    return no_engine(request);
+                }
+                if mode == "all-c-failed" && request.context == "observe.describe.frame" {
+                    return refused(request, false, false, None);
+                }
+                default_response(request)
+            });
+            let mut options = test.options(false, vec!["model-only redaction rule".to_owned()]);
+            options.max_extractions = 1;
+            let outcome = super::run_decoded_with_ocr_factory(
+                options,
+                &factory,
+                decoded(&[1, 2, 3, 4]),
+                &mut Ocr { available, failure },
+            );
+            let observation = (
+                outcome.as_ref().err().map(|error| match error {
+                    RunError::Blocked(_) => "blocked",
+                    RunError::Internal(_) => "internal",
+                }),
+                factory.requests(),
+                rows(&test),
+            );
+            if let Some(expected) = &baseline {
+                assert_eq!(&observation, expected, "mode {mode}");
+            } else {
+                baseline = Some(observation);
+            }
+            let public = segment.join("talents/screen_text.md");
+            if available && failure.is_none() {
+                let record = fs::read_to_string(public).unwrap();
+                assert!(
+                    record.contains("extra literal 4"),
+                    "even non-E/failed-C frames contribute in {mode}"
+                );
+                assert!(!record.contains("model-only redaction rule"));
+                if mode == "extraction-blocked" {
+                    let sources = crate::screen_ocr::load_segment_sidecars(&segment);
+                    assert_eq!(sources.len(), 1);
+                    assert_eq!(
+                        sources[0].frames[0].word_overlap.extraction,
+                        crate::screen_ocr::ExtractionTextState::Failed
+                    );
+                    assert_eq!(
+                        sources[0].frames[1].word_overlap.extraction,
+                        crate::screen_ocr::ExtractionTextState::NotReached
+                    );
+                }
+                let pending = solstone_core_indexer_todo::inspect(&test.journal).unwrap();
+                assert_eq!(
+                    pending.keys,
+                    vec!["20261020/desktop/090000_300/talents/screen_text.md"]
+                );
+            } else {
+                assert!(!public.exists());
+            }
+        }
+    }
+}

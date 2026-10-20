@@ -40,6 +40,64 @@ impl Drop for Journal {
 const NOTE: &str = "20260101/desktop/120000_300/talents/activity.md";
 
 #[test]
+fn screen_text_path_hints_build_timed_pins_and_remove_all_derived_rows() {
+    let journal = Journal::new();
+    let rel = "20260101/desktop/120000_300/talents/screen_text.md";
+    let source = journal.save(
+        rel,
+        "# screen text\n\n## 00:12 · terminal\n- queued literal\n",
+    );
+    let lease = hold_lock(db_path(journal.path()), Default::default()).unwrap();
+    enqueue_path(journal.path(), &source).unwrap();
+    assert!(!db_path(journal.path()).exists());
+    assert_eq!(inspect(journal.path()).unwrap().keys, [rel]);
+    drop(lease);
+
+    let report = drain_now(journal.path()).unwrap();
+    assert_eq!((report.processed, report.failed), (1, 0));
+    let conn = open_index(journal.path()).unwrap();
+    let category: String = conn
+        .query_row(
+            "SELECT category FROM chunk_classification WHERE path=?",
+            [rel],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(category, "screen_text");
+    let offset_ms: i64 = conn
+        .query_row(
+            "SELECT offset_ms FROM chunk_group_offset WHERE path=?",
+            [rel],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(offset_ms, 12_000);
+    assert!(crate::screen_text_source_current(&conn, journal.path(), rel).unwrap());
+    drop(conn);
+
+    fs::remove_file(&source).unwrap();
+    enqueue_path(journal.path(), &source).unwrap();
+    assert_eq!(drain_now(journal.path()).unwrap().failed, 0);
+    let conn = open_index(journal.path()).unwrap();
+    for table in [
+        "files",
+        "chunks",
+        "chunk_classification",
+        "chunk_group_offset",
+        "screen_text_source",
+    ] {
+        let remaining: i64 = conn
+            .query_row(
+                &format!("SELECT count(*) FROM {table} WHERE path=?"),
+                [rel],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(remaining, 0, "removal retained rows in {table}");
+    }
+}
+
+#[test]
 fn observation_save_and_removal_queue_without_the_index_writer() {
     let journal = Journal::new();
     journal.save("facets/work/entities/alice/entity.json", "{}");

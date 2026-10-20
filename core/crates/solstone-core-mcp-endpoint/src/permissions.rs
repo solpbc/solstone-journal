@@ -68,6 +68,7 @@ impl ReadPermission {
                 "transcripts".to_string(),
                 "entities".to_string(),
                 "facets".to_string(),
+                "screen_text".to_string(),
             ],
             scope: ReadScope::WholeJournal,
         }
@@ -262,6 +263,7 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
             "transcripts" => Some(AdmittedCategory::Transcripts),
             "entities" => Some(AdmittedCategory::Entities),
             "facets" => Some(AdmittedCategory::Facets),
+            "screen_text" => Some(AdmittedCategory::ScreenText),
             _ => None,
         })
         .collect();
@@ -497,7 +499,10 @@ mod tests {
     fn default_whole_journal_read_has_expected_shape() {
         let read = ReadPermission::default_whole_journal();
         assert_eq!(read.scope, ReadScope::WholeJournal);
-        assert_eq!(read.categories, vec!["transcripts", "entities", "facets"]);
+        assert_eq!(
+            read.categories,
+            vec!["transcripts", "entities", "facets", "screen_text"]
+        );
     }
 
     #[test]
@@ -691,6 +696,7 @@ mod tests {
                     AdmittedCategory::Transcripts,
                     AdmittedCategory::Entities,
                     AdmittedCategory::Facets,
+                    AdmittedCategory::ScreenText,
                 ]
                 .into_iter()
                 .collect(),

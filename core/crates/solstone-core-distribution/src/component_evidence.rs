@@ -778,6 +778,7 @@ fn entry_targets(entry: &crate::inventory::Entry) -> &[String] {
         | crate::inventory::Entry::Launcher { targets, .. }
         | crate::inventory::Entry::ModelAsset { targets, .. }
         | crate::inventory::Entry::OnnxRuntime { targets, .. }
+        | crate::inventory::Entry::ScreenOcr { targets, .. }
         | crate::inventory::Entry::Pdfium { targets, .. }
         | crate::inventory::Entry::Copy { targets, .. }
         | crate::inventory::Entry::PinnedNative { targets, .. }
@@ -883,6 +884,33 @@ pub fn name_receipt_inputs(
                     name: spec.archive_name.to_string(),
                     sha256: spec.archive_sha256.to_string(),
                 }]
+            }
+            crate::inventory::Entry::ScreenOcr { .. } => {
+                let recipe = crate::screen_ocr::Recipe::load(include_bytes!(
+                    "../../../screen-ocr-helper/recipe.toml"
+                ))
+                .map_err(EvidenceError::new)?;
+                let runtime = recipe.runtime_archive(target).ok_or_else(|| {
+                    EvidenceError::new(format!("unnamed-input: {target} {id} {dest}"))
+                })?;
+                vec![
+                    InputRef {
+                        name: recipe.models.detector.filename.clone(),
+                        sha256: recipe.models.detector.sha256.clone(),
+                    },
+                    InputRef {
+                        name: recipe.models.recognizer.filename.clone(),
+                        sha256: recipe.models.recognizer.sha256.clone(),
+                    },
+                    InputRef {
+                        name: "inference.yml".into(),
+                        sha256: recipe.models.dictionary.source_sha256.clone(),
+                    },
+                    InputRef {
+                        name: runtime.filename.clone(),
+                        sha256: runtime.sha256.clone(),
+                    },
+                ]
             }
             crate::inventory::Entry::PinnedMembers { input, .. } => {
                 vec![pinned_input_ref(input).ok_or_else(|| {
@@ -2016,6 +2044,7 @@ fn entry_dest_str(entry: &crate::inventory::Entry) -> String {
     match entry {
         crate::inventory::Entry::ModelAsset { dest, .. } => dest.clone(),
         crate::inventory::Entry::OnnxRuntime { dest_dir, .. } => dest_dir.clone(),
+        crate::inventory::Entry::ScreenOcr { dest_dir, .. } => dest_dir.clone(),
         crate::inventory::Entry::Pdfium { dest_dir, .. } => dest_dir.clone(),
         crate::inventory::Entry::WindowsNative { dest, .. } => dest.clone(),
         crate::inventory::Entry::Bin { dest, .. } => dest.clone(),
@@ -2044,6 +2073,7 @@ fn entry_dest_matches(entry: &crate::inventory::Entry, path: &str) -> bool {
                 || id.aliases.iter().any(|a| format!("{dest_dir}/{a}") == path)
         }),
         crate::inventory::Entry::Pdfium { dest_dir, .. } => path.starts_with(dest_dir),
+        crate::inventory::Entry::ScreenOcr { dest_dir, .. } => path.starts_with(dest_dir),
         crate::inventory::Entry::WindowsNative { dest, .. } => dest == path,
         crate::inventory::Entry::Bin { dest, .. } => dest == path,
         crate::inventory::Entry::Launcher { dest, .. } => dest == path,

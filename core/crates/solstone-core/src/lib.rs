@@ -97,6 +97,7 @@ mod mcp_endpoint_public_surface_tests {
                     AdmittedCategory::Transcripts,
                     AdmittedCategory::Entities,
                     AdmittedCategory::Facets,
+                    AdmittedCategory::ScreenText,
                 ]
                 .into_iter()
                 .collect(),
@@ -124,5 +125,10 @@ mod mcp_endpoint_public_surface_tests {
                 reason: "no_permission"
             }
         );
+    }
+
+    #[test]
+    fn mcp_permission_lifecycle() {
+        owner_permission_show_set_clear_lifecycle();
     }
 }

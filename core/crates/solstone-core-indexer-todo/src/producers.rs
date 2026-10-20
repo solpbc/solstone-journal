@@ -21,6 +21,10 @@ pub const PRODUCERS: &[(Family, &str)] = &[
     (Family::Observation, "entity facet observations"),
     (Family::Documents, "think segment publication"),
     (Family::Screen, "think segment publication"),
+    (
+        Family::ScreenText,
+        "describe screen-text publication and removal",
+    ),
     (Family::Sense, "think segment publication"),
     (Family::MorningBriefing, "daily talent publication"),
     (Family::AgentMemory, "memory note publication"),

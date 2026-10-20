@@ -47,6 +47,7 @@ impl ConsentSelection {
                 "transcripts".to_owned(),
                 "entities".to_owned(),
                 "facets".to_owned(),
+                "screen_text".to_owned(),
             ],
         }
     }
@@ -432,7 +433,11 @@ fn chosen_categories(pairs: &[(String, String)]) -> Vec<String> {
     pairs
         .iter()
         .filter(|(key, value)| {
-            key == "category" && matches!(value.as_str(), "transcripts" | "entities" | "facets")
+            key == "category"
+                && matches!(
+                    value.as_str(),
+                    "transcripts" | "entities" | "facets" | "screen_text"
+                )
         })
         .map(|(_, value)| value.clone())
         .collect()
@@ -683,7 +688,7 @@ fn consent_page_named(
         ConsentStage::Choose { .. } => "",
     };
     let choices = format!(
-        r#"<fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" required{whole_checked}> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets" required{facets_checked}> <strong>only the facets you choose</strong><br><span class="muted">{facets_hint}just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset>{facet_list}<fieldset><legend>what kinds of material</legend><label class="check"><input type="checkbox" name="category" value="transcripts"{transcripts_checked}> <strong>transcripts</strong><br><span class="muted">what was said in your recordings and imports, as text. never the audio or the screen frames themselves.</span></label><label class="check"><input type="checkbox" name="category" value="entities"{entities_checked}> <strong>entities</strong><br><span class="muted">the people, places and projects your journal knows, and what it has noted about them.</span></label><label class="check"><input type="checkbox" name="category" value="facets"{category_facets_checked}> <strong>facets</strong><br><span class="muted">the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.</span></label></fieldset>"#,
+        r#"<fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" required{whole_checked}> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets" required{facets_checked}> <strong>only the facets you choose</strong><br><span class="muted">{facets_hint}just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset>{facet_list}<fieldset><legend>what kinds of material</legend><label class="check"><input type="checkbox" name="category" value="transcripts"{transcripts_checked}> <strong>transcripts</strong><br><span class="muted">what was said in your recordings and imports, as text. never the audio or the screen images themselves. screen text has its own permission.</span></label><label class="check"><input type="checkbox" name="category" value="entities"{entities_checked}> <strong>entities</strong><br><span class="muted">the people, places and projects your journal knows, and what it has noted about them.</span></label><label class="check"><input type="checkbox" name="category" value="facets"{category_facets_checked}> <strong>facets</strong><br><span class="muted">the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.</span></label><label class="check"><input type="checkbox" name="category" value="screen_text"{screen_text_checked}> <strong>screen text</strong><br><span class="muted">text recognized from your screens, with the time it appeared. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.</span></label></fieldset>"#,
         whole_checked = checked(selection.scope == Some("whole_journal")),
         facets_checked = checked(selection.scope == Some("facets")),
         facet_list = match stage {
@@ -699,6 +704,12 @@ fn consent_page_named(
         entities_checked = checked(selection.categories.iter().any(|value| value == "entities")),
         category_facets_checked =
             checked(selection.categories.iter().any(|value| value == "facets")),
+        screen_text_checked = checked(
+            selection
+                .categories
+                .iter()
+                .any(|value| value == "screen_text")
+        ),
     );
     let body = match stage {
         ConsentStage::Code {

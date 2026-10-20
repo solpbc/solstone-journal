@@ -7,7 +7,7 @@
 # about identical files.
 export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 
-.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-shipped-features build-sandbox-processing dev-package check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-call-http-only check-tools-http-only require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
+.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-shipped-features build-sandbox-processing dev-package screen-ocr-rust-notices check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-call-http-only check-tools-http-only require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
 # Default target: build the native workspace.
 all: build
@@ -142,6 +142,7 @@ override ONNX_RUNTIME_HOST_DIGEST :=
 override ONNX_RUNTIME_HOST_HASH_PROGRAM :=
 override ONNX_RUNTIME_HOST_HASH_ARGS :=
 override ONNX_RUNTIME_HOST_LOADER_ENV :=
+override SCREEN_OCR_HELPER_HOST_TRIPLE :=
 
 ifeq ($(HOST_SYSTEM),Linux)
 ifneq ($(filter x86_64 amd64,$(HOST_ARCH)),)
@@ -165,6 +166,15 @@ override ONNX_RUNTIME_HOST_HASH_ARGS := -a 256
 override ONNX_RUNTIME_HOST_LOADER_ENV := DYLD_LIBRARY_PATH
 endif
 endif
+
+ifeq ($(ONNX_RUNTIME_HOST_TARGET),linux-x86_64)
+override SCREEN_OCR_HELPER_HOST_TRIPLE := x86_64-unknown-linux-gnu
+else ifeq ($(ONNX_RUNTIME_HOST_TARGET),linux-aarch64)
+override SCREEN_OCR_HELPER_HOST_TRIPLE := aarch64-unknown-linux-gnu
+else ifeq ($(ONNX_RUNTIME_HOST_TARGET),macos-arm64)
+override SCREEN_OCR_HELPER_HOST_TRIPLE := aarch64-apple-darwin
+endif
+override SCREEN_OCR_HELPER_BUILD_DIR := $(RUST_TARGET_DIR)/$(SCREEN_OCR_HELPER_HOST_TRIPLE)/release
 
 override ONNX_RUNTIME_HOST_LINK_DIR := $(REPO_ROOT)/target/speakers-analyze-runtime-link/$(ONNX_RUNTIME_HOST_TARGET)
 override ONNX_RUNTIME_HASH_PROBE_TEXT := solstone checksum verifier probe
@@ -476,6 +486,7 @@ ci-prep-ffmpeg:
 
 ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf ci-full-prep-ios
 	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire catalog-inputs --target $(ONNX_RUNTIME_HOST_TARGET)
+	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire screen-ocr --target $(ONNX_RUNTIME_HOST_TARGET)
 
 ci-full-prep-cargo: ci-prep-ffmpeg
 	@$(REQUIRE_CARGO)
@@ -530,14 +541,15 @@ build-sandbox-processing:
 # the installed package beside the executable, so a checkout build refuses them;
 # run the binaries from dev-package/bin instead (a sandbox does). Fetches the
 # host target's pinned inputs into the catalog cache first, and carries the
-# ONNX Runtime build-sandbox-processing staged, which the helpers' rpath finds
-# beside their bin, and the pinned PDFium the PDF worker loads from
-# lib/solstone-core-pdf.
-dev-package: build-shipped-features build-sandbox-processing $(PDF_RUNTIME_HOST_LINK_DIR)
+# ONNX Runtime build-sandbox-processing staged, the pinned PDFium, and the
+# independent screen OCR helper/model/private-runtime closure.
+dev-package: screen-ocr-rust-notices build-shipped-features build-sandbox-processing $(PDF_RUNTIME_HOST_LINK_DIR)
 	@$(REQUIRE_SUPPORTED_ONNX_HOST)
 	@set -eu; $(REQUIRE_PDF_HOST_RUNTIME)
 	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire catalog-inputs --target $(ONNX_RUNTIME_HOST_TARGET)
-	$(SOLSTONE_DISTRIBUTION) dev-package "$(RUST_TARGET_DIR)/dev-package" --bin-dir "$(RUST_TARGET_DIR)/debug" --runtime-root "$(RUST_TARGET_DIR)" --source-commit "$$(git rev-parse HEAD)"
+	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire screen-ocr --target $(ONNX_RUNTIME_HOST_TARGET)
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" cargo build --manifest-path core/screen-ocr-helper/Cargo.toml --locked --release --target $(SCREEN_OCR_HELPER_HOST_TRIPLE)
+	$(SOLSTONE_DISTRIBUTION) dev-package "$(RUST_TARGET_DIR)/dev-package" --bin-dir "$(RUST_TARGET_DIR)/debug" --runtime-root "$(RUST_TARGET_DIR)" --screen-ocr-helper-dir "$(SCREEN_OCR_HELPER_BUILD_DIR)" --source-commit "$$(git rev-parse HEAD)"
 
 check-rust-sandbox-processing-build:
 	@set -eu; \
@@ -704,6 +716,11 @@ SOLSTONE_DISTRIBUTION := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-
 # itself stays offline and consumes the files this writes.
 SOLSTONE_DISTRIBUTION_ACQUIRE := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-distribution --bin solstone-distribution --locked --
 
+# The helper has an independent lock and notice closure. Generate its source
+# index before either release or development staging consumes the bundle.
+screen-ocr-rust-notices:
+	$(PYTHON) scripts/distribution_rust_notices.py --write --screen-ocr
+
 # Export selector values directly instead of interpolating them into a shell
 # command. This preserves comma- or space-separated values literally and keeps
 # metacharacters from becoming shell syntax.
@@ -724,7 +741,7 @@ check-rust-ci-topology:
 	$(SOLSTONE_CI_RUNNER) validate
 
 .PHONY: check-rust-distribution check-rust-distribution-under-poison check-rust-distribution-cleanroom check-systemd-test
-check-rust-distribution:
+check-rust-distribution: screen-ocr-rust-notices
 	$(call run-rust-gate-under-poison,check-rust-distribution-under-poison,$(DISTRIBUTION_FORBIDDEN_TOOLS))
 
 # Live Docker/Podman oracle over already-produced x86_64 artifacts. Set
@@ -1480,6 +1497,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-ci-topology
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-unit
+	@$(MAKE) check-rust-screen-ocr-helper
 	@$(MAKE) --no-print-directory RUST_CODE_EVIDENCE_CONTEXT=ci report-rust-code-evidence
 
 # Resolve every standalone Cargo graph too: workspace-only CI cannot see their
@@ -1488,6 +1506,7 @@ ci-under-poison:
 # workspace gates run --locked) and core/vendor/ (upstream locks cargo never
 # resolves); the check fails when they disagree.
 STANDALONE_LOCK_MANIFESTS := \
+	core/screen-ocr-helper/Cargo.toml \
 	core/crates/solstone-core-service-legacy-evidence/Cargo.toml \
 	tools/android-runtime/native/Cargo.toml \
 	tools/ios-runtime/appraisal-helper/Cargo.toml \
@@ -1609,3 +1628,9 @@ check-contract:
 # the Python generator wrote a file nothing reads.
 core-fixtures:
 	@echo "category registry is native (solstone-core-describe-categories); nothing to generate." >&2
+
+.PHONY: check-rust-screen-ocr-helper
+check-rust-screen-ocr-helper:
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/screen-ocr-helper" cargo fmt --manifest-path core/screen-ocr-helper/Cargo.toml -- --check
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/screen-ocr-helper" cargo clippy --manifest-path core/screen-ocr-helper/Cargo.toml --all-targets --locked --offline -- -D warnings
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/screen-ocr-helper" cargo test --manifest-path core/screen-ocr-helper/Cargo.toml --lib --locked --offline

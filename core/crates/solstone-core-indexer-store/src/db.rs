@@ -103,11 +103,25 @@ eligible INTEGER NOT NULL CHECK (eligible IN (0, 1)),
 unclassified INTEGER NOT NULL CHECK (unclassified IN (0, 1)),
 CHECK (
     (eligible = 1 AND unclassified = 0
-     AND category IN ('transcripts', 'entities', 'facets')
+     AND category IN ('transcripts', 'entities', 'facets', 'screen_text')
      AND basis IN ('facet_owned', 'segment_assigned', 'journal_wide'))
     OR (eligible = 0 AND unclassified = 0 AND category IS NULL AND basis IS NULL)
     OR (eligible = 0 AND unclassified = 1 AND category IS NULL AND basis IS NULL)
 )
+)";
+pub(crate) const CREATE_CHUNK_GROUP_OFFSET: &str = "\
+CREATE TABLE IF NOT EXISTS chunk_group_offset(
+path TEXT NOT NULL,
+idx INTEGER NOT NULL,
+offset_ms INTEGER NOT NULL,
+PRIMARY KEY(path, idx)
+)";
+pub(crate) const CREATE_SCREEN_TEXT_SOURCE: &str = "\
+CREATE TABLE IF NOT EXISTS screen_text_source(
+path TEXT PRIMARY KEY,
+sha256 TEXT NOT NULL,
+bytes INTEGER NOT NULL,
+indexed_ms INTEGER NOT NULL
 )";
 pub(crate) const CREATE_CHUNK_CLASSIFICATION_FACETS: &str = "\
 CREATE TABLE IF NOT EXISTS chunk_classification_facets(
@@ -288,6 +302,8 @@ pub(crate) fn reset_index_admitted(
     tx.execute("DROP TABLE IF EXISTS chunk_classification_facets", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_classification", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_classification_backfill", [])?;
+    tx.execute("DROP TABLE IF EXISTS chunk_group_offset", [])?;
+    tx.execute("DROP TABLE IF EXISTS screen_text_source", [])?;
     // A reset builds a new index: it carries this writer's stamp, not one the
     // gate let through because it could not be read.
     tx.execute("DROP TABLE IF EXISTS index_meta", [])?;
@@ -339,6 +355,8 @@ pub fn prune_chunks_by_stream(
     let mut files = 0;
     for path in paths {
         delete_chunk_classification(&tx, &path)?;
+        tx.execute("DELETE FROM chunk_group_offset WHERE path=?", [&path])?;
+        tx.execute("DELETE FROM screen_text_source WHERE path=?", [&path])?;
         files += tx.execute("DELETE FROM files WHERE path=?", [path])? as u64;
     }
     tx.commit()?;
@@ -398,6 +416,8 @@ pub(crate) fn prune_by_paths_admitted(
         delete_chunk_source_rowids(&tx, &chunk_rowids)?;
         counts.chunks += execute_prune_predicate(&tx, "chunks", &pred)?;
         execute_prune_predicate(&tx, "memory_originals", &pred)?;
+        execute_prune_predicate(&tx, "chunk_group_offset", &pred)?;
+        execute_prune_predicate(&tx, "screen_text_source", &pred)?;
         counts.files += execute_prune_predicate(&tx, "files", &pred)?;
         execute_prune_predicate(&tx, "edges", &pred)?;
         execute_prune_predicate(&tx, "edge_files", &pred)?;
@@ -520,6 +540,7 @@ fn ensure_schema(
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), StoreError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    migrate_chunk_classification_screen_text(&tx)?;
     repair_missing_classification_facets(&tx)?;
     let chunks_existed = sqlite_table_exists(&tx, "chunks")?;
     let rebuilt = migrate_legacy_chunks(&tx)?;
@@ -613,6 +634,59 @@ pub(crate) fn migrate_legacy_chunks(conn: &Connection) -> Result<bool, StoreErro
     Ok(true)
 }
 
+pub(crate) fn migrate_chunk_classification_screen_text(
+    conn: &Connection,
+) -> Result<(), StoreError> {
+    if !sqlite_table_exists(conn, "chunk_classification")? {
+        return Ok(());
+    }
+    let sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chunk_classification'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(sql) = sql else {
+        return Ok(());
+    };
+    if sql.contains("'screen_text'") {
+        return Ok(());
+    }
+
+    conn.execute(
+        "CREATE TEMPORARY TABLE temp_cc AS SELECT * FROM chunk_classification",
+        [],
+    )?;
+    let has_facets = sqlite_table_exists(conn, "chunk_classification_facets")?;
+    if has_facets {
+        conn.execute(
+            "CREATE TEMPORARY TABLE temp_ccf AS SELECT * FROM chunk_classification_facets",
+            [],
+        )?;
+        conn.execute("DROP TABLE chunk_classification_facets", [])?;
+    }
+    conn.execute("DROP TABLE chunk_classification", [])?;
+    conn.execute(CREATE_CHUNK_CLASSIFICATION, [])?;
+    conn.execute(
+        "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) \
+         SELECT path, category, basis, eligible, unclassified FROM temp_cc",
+        [],
+    )?;
+    conn.execute("DROP TABLE temp_cc", [])?;
+    if has_facets {
+        conn.execute(CREATE_CHUNK_CLASSIFICATION_FACETS, [])?;
+        conn.execute(CREATE_CHUNK_CLASSIFICATION_FACETS_INDEX, [])?;
+        conn.execute(
+            "INSERT INTO chunk_classification_facets(path, facet_id) \
+             SELECT path, facet_id FROM temp_ccf",
+            [],
+        )?;
+        conn.execute("DROP TABLE temp_ccf", [])?;
+    }
+    Ok(())
+}
+
 fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_FILES, [])?;
     conn.execute(CREATE_CHUNKS, [])?;
@@ -633,6 +707,8 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_CHUNK_CLASSIFICATION_FACETS, [])?;
     conn.execute(CREATE_CHUNK_CLASSIFICATION_FACETS_INDEX, [])?;
     conn.execute(CREATE_CHUNK_CLASSIFICATION_BACKFILL, [])?;
+    conn.execute(CREATE_CHUNK_GROUP_OFFSET, [])?;
+    conn.execute(CREATE_SCREEN_TEXT_SOURCE, [])?;
     conn.execute(CREATE_ACTIVITY_PROVENANCE, [])?;
     conn.execute(CREATE_ACTIVITY_MEMBERSHIP, [])?;
     conn.execute(
@@ -1094,6 +1170,62 @@ mod tests {
         );
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup reset state root");
+    }
+
+    #[test]
+    fn chunk_classification_migration_adds_screen_text_and_preserves_facets() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE chunk_classification(
+                path TEXT PRIMARY KEY,
+                category TEXT,
+                basis TEXT,
+                eligible INTEGER NOT NULL CHECK (eligible IN (0, 1)),
+                unclassified INTEGER NOT NULL CHECK (unclassified IN (0, 1)),
+                CHECK (
+                    (eligible = 1 AND unclassified = 0
+                     AND category IN ('transcripts', 'entities', 'facets')
+                     AND basis IN ('facet_owned', 'segment_assigned', 'journal_wide'))
+                    OR (eligible = 0 AND unclassified = 0 AND category IS NULL AND basis IS NULL)
+                    OR (eligible = 0 AND unclassified = 1 AND category IS NULL AND basis IS NULL)
+                )
+            );
+            CREATE TABLE chunk_classification_facets(
+                path TEXT NOT NULL,
+                facet_id TEXT NOT NULL,
+                PRIMARY KEY(path, facet_id),
+                FOREIGN KEY(path) REFERENCES chunk_classification(path) ON DELETE CASCADE
+            );
+            INSERT INTO chunk_classification VALUES ('test/path.md', 'transcripts', 'segment_assigned', 1, 0);
+            INSERT INTO chunk_classification_facets VALUES ('test/path.md', 'facet-123');",
+        )
+        .unwrap();
+
+        migrate_chunk_classification_screen_text(&conn).unwrap();
+
+        let cat: String = conn
+            .query_row(
+                "SELECT category FROM chunk_classification WHERE path = 'test/path.md'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cat, "transcripts");
+
+        let facet: String = conn
+            .query_row(
+                "SELECT facet_id FROM chunk_classification_facets WHERE path = 'test/path.md'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(facet, "facet-123");
+
+        conn.execute(
+            "INSERT INTO chunk_classification VALUES ('screen/path.md', 'screen_text', 'segment_assigned', 1, 0)",
+            [],
+        )
+        .unwrap();
     }
 
     #[test]

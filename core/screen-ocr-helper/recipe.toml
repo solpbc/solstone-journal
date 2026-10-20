@@ -1,0 +1,82 @@
+schema_version = 1
+protocol_version = 1
+
+[source]
+oar_git = "https://github.com/GreatV/oar-ocr"
+oar_revision = "84817f58d7a0932d5368a9fa18105ba5d842af29"
+oar_default_features = false
+oar_features = ["simd"]
+ort_version = "2.0.0-rc.13"
+ort_features = ["std", "load-dynamic"]
+
+[settings]
+cpu_only = true
+telemetry = false
+ort_intra_threads = 1
+ort_inter_threads = 1
+rayon_threads = 1
+image_batch_size = 1
+region_batch_size = 1
+detector_score_threshold = 0.2
+detector_box_threshold = 0.4
+detector_unclip_ratio = 1.4
+detector_max_candidates = 3000
+detector_limit_side_len = 1920
+detector_limit_type = "max"
+detector_max_side_len = 4096
+recognizer_score_threshold = 0.0
+
+[limits]
+max_header_bytes = 4096
+max_png_bytes = 33554432
+max_decoded_pixels = 40000000
+max_dictionary_bytes = 1048576
+max_regions = 3000
+max_response_bytes = 33554432
+max_text_bytes = 4096
+max_geometry_points = 16
+max_request_id_bytes = 128
+max_diagnostic_bytes = 512
+
+[models.detector]
+filename = "detector.onnx"
+url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.onnx"
+sha256 = "193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8"
+
+[models.recognizer]
+filename = "recognizer.onnx"
+url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/2612ab37152ae0a677521bae4e1e3d4fb4cf7c30/inference.onnx"
+sha256 = "9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6"
+
+[models.dictionary]
+filename = "dictionary.txt"
+source_url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/2612ab37152ae0a677521bae4e1e3d4fb4cf7c30/inference.yml"
+source_sha256 = "66170210bad538e83fff3c4a3867e547d6bf20b50d64b20347c4b913f3034ea1"
+materialized_entries = 6904
+materialized_final_newline = true
+materialized_sha256 = "c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd"
+
+[runtime]
+version = "1.31.0"
+linux_max_glibc = "2.34"
+linux_build_lane = "GNU Zig"
+
+[runtime.linux_x86_64]
+filename = "onnxruntime-1.31.0-cp313-cp313-manylinux_2_28_x86_64.whl"
+url = "https://files.pythonhosted.org/packages/0d/ac/67ebbaab4b3083f2a6b27ee6c4aa400c7f8d6c72b5499aac7e4cd6ba74f5/onnxruntime-1.31.0-cp313-cp313-manylinux_2_28_x86_64.whl"
+sha256 = "37fd78cee5160c7a43a1730ccb3682ffd880af9c9e80385d625c0c2f8b125809"
+
+[runtime.macos_arm64]
+filename = "onnxruntime-1.31.0-cp313-cp313-macosx_14_0_arm64.whl"
+url = "https://files.pythonhosted.org/packages/e0/2b/117f94d73a3bac4276c285c47e384e1b3ea67b191aa4c7592df9d3f4a136/onnxruntime-1.31.0-cp313-cp313-macosx_14_0_arm64.whl"
+sha256 = "0ba02a44acb6203040354d9a1f160e3f37a43feac7bb05caa3e0ea545efed505"
+
+[runtime.linux_aarch64]
+filename = "onnxruntime-1.31.0-cp313-cp313-manylinux_2_28_aarch64.whl"
+url = "https://files.pythonhosted.org/packages/8a/d0/3677fe93ec0fa3c637744aa4c3ae6ef89a93ee229cd3c5157820f267c7bd/onnxruntime-1.31.0-cp313-cp313-manylinux_2_28_aarch64.whl"
+sha256 = "ad663106f6eeff3d454f24a786450459d07f30e74863851104fc1b8b3f368127"
+
+[runtime.windows_x86_64]
+filename = "onnxruntime-1.31.0-cp313-cp313-win_amd64.whl"
+url = "https://files.pythonhosted.org/packages/c4/86/05ed2056f43b27aaf12ebc592ebd9037a26bed315958cf882f43425fd469/onnxruntime-1.31.0-cp313-cp313-win_amd64.whl"
+sha256 = "73e0165d58ece068c2a8a1c477c90b38e5a8adbbd399fdfdfd4bd79cbc28ff8d"

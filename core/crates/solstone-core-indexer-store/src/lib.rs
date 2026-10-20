@@ -12,6 +12,7 @@ pub mod migrations;
 pub mod reconcile;
 pub mod retention;
 pub mod scan;
+mod screen_text;
 pub mod status;
 pub mod todo;
 pub(crate) mod writer_admission;
@@ -24,6 +25,11 @@ pub use classification_batch::{
 pub use db::open_index_reader;
 pub use retention::RetentionIndex;
 pub use scan::{SavedPublicationAttempt, SavedPublicationOutcome, attempt_saved_publication};
+
+pub use screen_text::{
+    screen_text_current_digest, screen_text_pinned_bytes_match, screen_text_pinned_page,
+    screen_text_source_current,
+};
 
 #[cfg(test)]
 mod test_support;

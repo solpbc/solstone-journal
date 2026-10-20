@@ -944,7 +944,7 @@ fn process_segment(
         let talents = segment.path.join("talents");
         let stem_filter = |stem: &str| match &sources.talents {
             TalentSource::Disabled => false,
-            TalentSource::All => true,
+            TalentSource::All => stem != "screen_text",
             TalentSource::Only(stems) => stems.contains(stem),
         };
         match iter_talent_text_projections(&talents, "", Some(&stem_filter)) {

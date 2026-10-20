@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- your journal recognizes text from recorded screens on apple silicon macs and linux computers with intel or amd processors. find it in search, including commands, errors and reference numbers. connected agents can read it when you enable screen text in their permissions; existing connections keep their current permissions. masking passwords and other secrets is best effort; your written redaction rules do not apply to screen text.
 - `solstone journal doctor` now shows recorded backup problems and the last successful copy, with dates and qualifications for incomplete or older setups.
 
 ### Changed
