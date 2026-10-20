@@ -2730,6 +2730,7 @@ fn oracle_symlink_chain_and_production_commit_verification() {
     let root = temp("oracle-symlink-chain");
     let staging = root.join("staging");
     let nested = staging.join("llama-b11429");
+    #[cfg(unix)]
     let target = root.join("target");
     fs::create_dir_all(&nested).unwrap();
     fs::write(nested.join("LICENSE"), b"MIT").unwrap();
@@ -4071,7 +4072,7 @@ mod runtime_fetch_seam_tests {
             present: true,
             sha256: None,
             config: Some(
-                json!({"transcribe": {"parakeet": {"cache_dir": root.display().to_string()}}})
+                json!({"transcribe": {"parakeet": {"cache_dir": root.join("cache")}}})
                     .as_object()
                     .unwrap()
                     .clone(),
@@ -5730,6 +5731,7 @@ fn interrupted_installer_server(
                     e => panic!("expected installer request: {e:?}"),
                 }
             };
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(std::time::Duration::from_secs(2)))
                 .unwrap();

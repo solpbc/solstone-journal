@@ -3520,7 +3520,7 @@ mod tests {
         let journal3 = root3.path();
         let home3 = root3.path().join("home");
         fs::create_dir_all(&home3).unwrap();
-        let cfg3 = config(journal3);
+        let cfg3 = config(&journal3.join("cache"));
         let offered = row("m.bin", b"bytes");
         let r_refresh = refresh_with_rows(
             journal3,
@@ -3549,7 +3549,7 @@ mod tests {
             },
         )
         .unwrap();
-        let cfg4 = config(journal4);
+        let cfg4 = config(&journal4.join("cache"));
         let r_refresh2 = refresh_with_rows(
             journal4,
             &home4,
@@ -3566,9 +3566,14 @@ mod tests {
         let journal5 = root5.path();
         let home5 = root5.path().join("home");
         fs::create_dir_all(&home5).unwrap();
-        let cfg5 = config(journal5);
+        let blocked_cache = root5.path().join("blocked-cache");
+        fs::write(&blocked_cache, b"not a cache directory").unwrap();
+        let cfg5 = config(&blocked_cache);
         let r_heal = heal_missing_parakeet_coreml(journal5, &home5, &cfg5);
-        assert!(r_heal.is_err() || matches!(r_heal, Ok(CoremlHeal::Failed(_))));
+        assert!(
+            r_heal.is_err() || matches!(r_heal, Ok(CoremlHeal::Failed(_))),
+            "expected the obstructed cache to fail without fetching: {r_heal:?}"
+        );
         assert!(
             super::super::lease::acquire(journal5, "parakeet")
                 .unwrap()

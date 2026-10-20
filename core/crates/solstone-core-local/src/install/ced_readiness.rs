@@ -13,8 +13,7 @@ use serde_json::{Value, json};
 use solstone_core_installed_payload::guidance;
 #[cfg(windows)]
 use solstone_core_installed_payload::windows_payload::{
-    WINDOWS_CED_LIBRARY, WINDOWS_CED_MODEL, WINDOWS_CED_WORKER, WindowsPayloadRefusal,
-    verify_windows_payload,
+    WINDOWS_CED_LIBRARY, WINDOWS_CED_MODEL, WINDOWS_CED_WORKER, verify_windows_payload,
 };
 use solstone_core_installed_payload::{
     COMPILED_VERSION, InstalledPackage, InstalledPayloadRefusal, code, host_executable_platform,
