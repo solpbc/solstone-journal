@@ -62,7 +62,11 @@ chrono-tz = { version = "0.10", optional = true }
 solstone-core-facets = { path = "../../core/crates/solstone-core-facets", optional = true }
 solstone-core-speaker-resolve = { path = "../../core/crates/solstone-core-speaker-resolve", optional = true }
 solstone-core-speakers = { path = "../../core/crates/solstone-core-speakers", optional = true }
-ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24", "load-dynamic", "std"] }
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24", "std"] }
+
+# iOS links the pinned static runtime into its app executable.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic"] }
 
 [dev-dependencies]
 tempfile = "3"
