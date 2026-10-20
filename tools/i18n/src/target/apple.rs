@@ -249,7 +249,7 @@ fn generate_apple_swift(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
     s.push_str("// SPDX-License-Identifier: AGPL-3.0-only\n");
     s.push_str("// Copyright (c) 2026 sol pbc\n\n");
     s.push_str("import Foundation\n\n");
-    s.push_str("public enum CatalogSelect {\n");
+    s.push_str("nonisolated public enum CatalogSelect {\n");
     s.push_str(
         "    public static func resolveKey(messageId: String, enumArg: String?) -> String {\n",
     );
