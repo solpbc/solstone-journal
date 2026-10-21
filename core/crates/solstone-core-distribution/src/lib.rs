@@ -33,6 +33,7 @@ pub mod inventory;
 pub mod lanes;
 pub mod layout;
 pub mod llama_windows_arm64;
+pub mod llama_windows_arm64_generated;
 mod llama_windows_capture;
 mod llama_windows_config;
 pub mod llama_windows_source;
