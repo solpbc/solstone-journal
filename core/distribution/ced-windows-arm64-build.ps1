@@ -230,4 +230,3 @@ finally {
     foreach($name in $rules){if(@($remaining|Where-Object{$_.DisplayName -eq $name}).Count -ne 0){throw "CED firewall cleanup unconfirmed: $name"}}
 }
 $result|ConvertTo-Json -Depth 5 -Compress
-
