@@ -53,12 +53,10 @@ pub fn lateness_state(now: DateTime<Utc>, phase: &str) -> Value {
     json!({"late":late,"late_hours":if late { (i64::from(now.hour()) - 10).max(0) } else { 0 }})
 }
 
-pub fn summary(briefing: Option<&Value>, sections: &Value, needs_count: i64) -> String {
-    let meetings = briefing.map(meeting_count).unwrap_or(0);
-    if meetings > 0 || needs_count > 0 {
+pub fn summary(sections: &Value, needs_count: i64) -> String {
+    if needs_count > 0 {
         return format!(
-            "morning briefing: {meetings} {}, {needs_count} {} attention",
-            if meetings == 1 { "meeting" } else { "meetings" },
+            "morning briefing: {needs_count} {} attention",
             if needs_count == 1 {
                 "item needs"
             } else {
@@ -87,49 +85,21 @@ pub fn summary(briefing: Option<&Value>, sections: &Value, needs_count: i64) -> 
 
 pub fn render_sections(briefing: &Value) -> Value {
     let mut sections = serde_json::Map::new();
-    for key in ["yesterday", "forward_look"] {
-        let rows = briefing
-            .get(key)
-            .and_then(Value::as_array)
-            .map(|rows| {
-                rows.iter()
-                    .map(value_text)
-                    .map(|text| text.trim().to_owned())
-                    .filter(|text| !text.is_empty())
-                    .map(|text| format!("- {text}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .unwrap_or_default();
-        if !rows.is_empty() {
-            sections.insert(key.to_owned(), rows.into());
-        }
-    }
-    let your_day = briefing
-        .get("your_day")
+    let yesterday = briefing
+        .get("yesterday")
         .and_then(Value::as_array)
         .map(|rows| {
             rows.iter()
-                .filter_map(Value::as_object)
-                .filter_map(|row| {
-                    let text = row.get("text").and_then(Value::as_str).unwrap_or("").trim();
-                    let label = your_day_time_label(row);
-                    (!label.is_empty() || !text.is_empty()).then(|| {
-                        if !label.is_empty() && !text.is_empty() {
-                            format!("- **{label}**: {text}")
-                        } else if !label.is_empty() {
-                            format!("- **{label}**")
-                        } else {
-                            format!("- {text}")
-                        }
-                    })
-                })
+                .map(value_text)
+                .map(|text| text.trim().to_owned())
+                .filter(|text| !text.is_empty())
+                .map(|text| format!("- {text}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         })
         .unwrap_or_default();
-    if !your_day.is_empty() {
-        sections.insert("your_day".to_owned(), your_day.into());
+    if !yesterday.is_empty() {
+        sections.insert("yesterday".to_owned(), yesterday.into());
     }
     let needs = needs_items(briefing)
         .iter()
@@ -155,18 +125,6 @@ pub fn needs_items(briefing: &Value) -> Vec<Value> {
         .map(|rows| rows.iter().filter(|row| row.is_object()).cloned().collect())
         .unwrap_or_default()
 }
-pub fn meeting_count(briefing: &Value) -> i64 {
-    briefing
-        .get("your_day")
-        .and_then(Value::as_array)
-        .map(|rows| {
-            rows.iter()
-                .filter_map(Value::as_object)
-                .filter(|row| !your_day_time_label(row).is_empty())
-                .count() as i64
-        })
-        .unwrap_or(0)
-}
 
 fn value_text(value: &Value) -> String {
     value
@@ -175,62 +133,17 @@ fn value_text(value: &Value) -> String {
         .unwrap_or_else(|| value.to_string())
 }
 
-fn field_text<'a>(row: &'a serde_json::Map<String, Value>, key: &str) -> &'a str {
-    row.get(key).and_then(Value::as_str).unwrap_or("").trim()
-}
-
-/// A `your_day` item's clock label, mirroring `solstone-core-format`'s
-/// `content::morning_briefing::time_label` (duplicated rather than shared --
-/// the two crates render different surfaces and neither depends on the
-/// other). `start == end` (or either one blank) collapses to a single point;
-/// `end` alone with no `start` still reads as a point-in-time at `end`.
-fn your_day_time_label(row: &serde_json::Map<String, Value>) -> String {
-    let start = field_text(row, "start");
-    let end = field_text(row, "end");
-    match (start.is_empty(), end.is_empty()) {
-        (true, true) => String::new(),
-        (false, true) => start.to_owned(),
-        (true, false) => end.to_owned(),
-        (false, false) if start == end => start.to_owned(),
-        (false, false) => format!("{start}–{end}"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn your_day_renders_a_window_and_treats_end_only_as_a_point() {
-        let sections = render_sections(&json!({"your_day":[
-            {"start":"13:00","end":"13:30","text":"Team sync."},
-            {"start":"","end":"14:00","text":"Odd shape."},
-            {"start":"","end":"","text":"No fixed time."}
-        ]}));
-        assert_eq!(
-            sections["your_day"],
-            "- **13:00–13:30**: Team sync.\n- **14:00**: Odd shape.\n- No fixed time."
-        );
-    }
-
-    #[test]
-    fn meeting_count_counts_either_side_of_the_window_and_ignores_untimed_items() {
-        let briefing = json!({"your_day":[
-            {"start":"09:00","end":"09:00","text":"a"},
-            {"start":"","end":"10:00","text":"b"},
-            {"start":"","end":"","text":"c"}
-        ]});
-        assert_eq!(meeting_count(&briefing), 2);
-    }
-
-    #[test]
-    fn summary_reads_meeting_count_off_the_new_start_end_shape() {
-        let briefing = json!({"your_day":[{"start":"09:00","end":"09:30","text":"a"}]});
-        let sections = render_sections(&briefing);
-        assert_eq!(
-            summary(Some(&briefing), &sections, 0),
-            "morning briefing: 1 meeting, 0 items need attention"
-        );
+    fn summary_leads_with_the_attention_count_when_there_is_one() {
+        let sections = json!({"yesterday": "- shipped"});
+        let with_needs = summary(&sections, 3);
+        assert!(with_needs.contains('3'));
+        assert!(!with_needs.contains("shipped"));
+        assert!(summary(&sections, 0).contains("shipped"));
     }
 
     #[test]
@@ -239,7 +152,7 @@ mod tests {
         let raw_line = format!("{prefix}—xy");
         assert!(raw_line.len() > 58);
         let sections = json!({"yesterday": format!("- {raw_line}")});
-        let result = summary(None, &sections, 0);
+        let result = summary(&sections, 0);
         let prefix_part = result
             .strip_prefix("morning briefing: ")
             .and_then(|s| s.strip_suffix("..."))
@@ -250,13 +163,14 @@ mod tests {
     }
 
     #[test]
-    fn render_sections_omits_reading_even_when_present() {
+    fn render_sections_omits_retired_sections_even_when_present() {
         let briefing = json!({
             "yesterday": ["shipped"],
+            "your_day": [{"start": "09:00", "end": "09:30", "text": "standup"}],
+            "forward_look": ["plan the week"],
             "reading": [{"facet": "work", "summary": "important items"}]
         });
         let sections = render_sections(&briefing);
-        assert_eq!(sections.get("yesterday").unwrap(), "- shipped");
-        assert!(sections.get("reading").is_none());
+        assert_eq!(sections, json!({"yesterday": "- shipped"}));
     }
 }

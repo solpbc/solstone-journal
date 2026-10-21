@@ -6,11 +6,9 @@ use serde_json::Value;
 use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk};
 
 const BRIEFING_ABSENT_TEXT: &str = "Nothing to report.";
-const SECTION_KEYS: [(&str, &str); 4] = [
-    ("your_day", "Your Day"),
+const SECTION_KEYS: [(&str, &str); 2] = [
     ("yesterday", "Yesterday"),
     ("needs_attention", "Needs Attention"),
-    ("forward_look", "Forward Look"),
 ];
 
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
@@ -68,55 +66,9 @@ fn render_briefing(briefing: &JsonObject) -> String {
 
 fn section_body(briefing: &JsonObject, key: &str) -> String {
     match key {
-        "your_day" => your_day(briefing),
         "yesterday" => string_items(briefing.get("yesterday")),
         "needs_attention" => needs_attention(briefing),
-        "forward_look" => string_items(briefing.get("forward_look")),
         _ => String::new(),
-    }
-}
-
-fn your_day(briefing: &JsonObject) -> String {
-    let mut lines = Vec::new();
-    let Some(Value::Array(items)) = briefing.get("your_day") else {
-        return String::new();
-    };
-
-    for item in items {
-        let Value::Object(item) = item else {
-            continue;
-        };
-        let text = clean_value(item.get("text"));
-        if text.is_empty() {
-            continue;
-        }
-        let label = time_label(item);
-        if label.is_empty() {
-            lines.push(format!("- {text}"));
-        } else {
-            lines.push(format!("- **{label}** — {text}"));
-        }
-    }
-    lines.join("\n")
-}
-
-/// A `your_day` item's clock label. `start`/`end` replaced the single `time`
-/// field so an item with a real duration (an activity's source record
-/// already carries both) reads as a window rather than forcing the model to
-/// smuggle one into `text` as a range. `start == end` (or either one blank)
-/// collapses to a single point; `end` alone with no `start` is a shape no
-/// known producer emits, but it still reads as a point-in-time at `end`
-/// rather than being silently dropped -- the caller asked for exactly this
-/// reading regardless of which side is the one that's missing.
-fn time_label(item: &JsonObject) -> String {
-    let start = clean_value(item.get("start"));
-    let end = clean_value(item.get("end"));
-    match (start.is_empty(), end.is_empty()) {
-        (true, true) => String::new(),
-        (false, true) => start,
-        (true, false) => end,
-        (false, false) if start == end => start,
-        (false, false) => format!("{start}–{end}"),
     }
 }
 
@@ -161,67 +113,44 @@ mod tests {
     }
 
     #[test]
-    fn renders_all_four_sections_and_agent_override() {
+    fn renders_sections_in_order_and_agent_override() {
         let produced = render_one(
-            r#"{"metadata":{"coverage_preamble":"Built from test sources. No gaps."},"your_day":[{"start":"09:00","end":"09:00","text":"Meet Sarah."}],"yesterday":["Shipped the formatter."],"needs_attention":[{"text":"Review the report.","source_id":"sol://20260327/default/090000_300"}],"forward_look":["Prepare for Monday."],"reading":[{"facet":"work","summary":"Newsletter summary."}]}"#,
+            r#"{"metadata":{"coverage_preamble":"Built from test sources. No gaps."},"yesterday":["Shipped the formatter."],"needs_attention":[{"text":"Review the report.","source_id":"sol://20260327/default/090000_300"}]}"#,
         );
         assert_eq!(produced.agent_override.as_deref(), Some("morning_briefing"));
         assert_eq!(produced.chunks.len(), 1);
         let rendered = &produced.chunks[0].content;
-        let headings = ["Your Day", "Yesterday", "Needs Attention", "Forward Look"];
+        let headings = ["Yesterday", "Needs Attention"];
         let positions: Vec<_> = headings
             .iter()
             .map(|heading| rendered.find(&format!("## {heading}")).expect("heading"))
             .collect();
         assert!(positions.windows(2).all(|window| window[0] < window[1]));
         assert!(rendered.contains("> Built from test sources. No gaps."));
-        assert!(rendered.contains("- **09:00** — Meet Sarah."));
         assert!(rendered.contains("- Shipped the formatter."));
         assert!(rendered.contains("- Review the report."));
-        assert!(rendered.contains("- Prepare for Monday."));
-        assert!(!rendered.contains("## Reading"));
     }
 
     #[test]
-    fn your_day_renders_a_real_window_as_a_range() {
-        let produced =
-            render_one(r#"{"your_day":[{"start":"13:00","end":"13:30","text":"Team sync."}]}"#);
+    fn stored_forecast_sections_are_not_rendered() {
+        let produced = render_one(
+            r#"{"your_day":[{"start":"09:00","end":"09:30","text":"Meet Sarah."}],"yesterday":["Shipped the formatter."],"needs_attention":[],"forward_look":["Prepare for Monday."]}"#,
+        );
         let rendered = &produced.chunks[0].content;
-        assert!(rendered.contains("- **13:00–13:30** — Team sync."));
-    }
-
-    #[test]
-    fn your_day_end_only_reads_as_a_point_in_time_at_end() {
-        let produced =
-            render_one(r#"{"your_day":[{"start":"","end":"14:00","text":"Odd shape."}]}"#);
-        let rendered = &produced.chunks[0].content;
-        assert!(rendered.contains("- **14:00** — Odd shape."));
-    }
-
-    #[test]
-    fn your_day_start_only_reads_as_a_point_in_time_at_start() {
-        let produced =
-            render_one(r#"{"your_day":[{"start":"15:00","end":"","text":"Ordinary point."}]}"#);
-        let rendered = &produced.chunks[0].content;
-        assert!(rendered.contains("- **15:00** — Ordinary point."));
-    }
-
-    #[test]
-    fn your_day_no_time_renders_a_bare_line() {
-        let produced =
-            render_one(r#"{"your_day":[{"start":"","end":"","text":"No fixed time."}]}"#);
-        let rendered = &produced.chunks[0].content;
-        assert!(rendered.contains("- No fixed time."));
-        assert!(!rendered.contains("**"));
+        assert!(rendered.contains("- Shipped the formatter."));
+        assert_eq!(rendered.matches("## ").count(), 2);
+        for stored in ["Meet Sarah.", "09:00", "Prepare for Monday."] {
+            assert!(!rendered.contains(stored), "{stored} must not render");
+        }
     }
 
     #[test]
     fn quotes_preamble_blank_lines_with_bare_blockquote_marker() {
         let produced = render_one(
-            r#"{"metadata":{"coverage_preamble":"Line one.\n\nLine three."},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}"#,
+            r#"{"metadata":{"coverage_preamble":"Line one.\n\nLine three."},"yesterday":[],"needs_attention":[]}"#,
         );
         let rendered = &produced.chunks[0].content;
-        assert!(rendered.starts_with("> Line one.\n>\n> Line three.\n\n## Your Day"));
+        assert!(rendered.starts_with("> Line one.\n>\n> Line three.\n\n## Yesterday"));
     }
 
     #[test]
@@ -230,8 +159,8 @@ mod tests {
         assert_eq!(produced.agent_override.as_deref(), Some("morning_briefing"));
         assert_eq!(produced.chunks.len(), 1);
         let rendered = &produced.chunks[0].content;
-        assert_eq!(rendered.matches("## ").count(), 4);
-        assert_eq!(rendered.matches(BRIEFING_ABSENT_TEXT).count(), 4);
+        assert_eq!(rendered.matches("## ").count(), 2);
+        assert_eq!(rendered.matches(BRIEFING_ABSENT_TEXT).count(), 2);
     }
 
     #[test]

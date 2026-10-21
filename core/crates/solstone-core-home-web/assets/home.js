@@ -22,13 +22,11 @@
     'pulse-today': 'false',
     'pulse-needs': 'false'
   };
-  const briefingSectionOrder = ['your_day', 'yesterday', 'forward_look'];
-  const briefingRenderOrder = ['your_day', 'yesterday', 'needs_attention', 'forward_look'];
+  const briefingSectionOrder = ['yesterday'];
+  const briefingRenderOrder = ['yesterday', 'needs_attention'];
   const briefingSectionLabels = {
-    your_day: 'your day',
     yesterday: 'yesterday',
-    needs_attention: 'needs attention',
-    forward_look: 'forward look'
+    needs_attention: 'needs attention'
   };
 
   let homeInitialized = false;

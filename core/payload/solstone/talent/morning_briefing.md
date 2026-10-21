@@ -2,7 +2,7 @@
   "type": "generate",
 
   "title": "morning briefing",
-  "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+  "description": "synthesizes all daily agent outputs into a structured morning briefing",
   "color": "#1565c0",
   "schedule": "daily",
   "priority": 50,
@@ -23,20 +23,18 @@ Return only the JSON object. Do not wrap it in a markdown fence. Do not include 
 ```
 {
   "metadata": $briefing_metadata,
-  "your_day": [],
   "yesterday": [
     "what happened yesterday"
   ],
   "needs_attention": [
     {"text": "ranked action or pipeline gap", "source_id": "sol://... or empty string"}
-  ],
-  "forward_look": []
+  ]
 }
 ```
 
 Copy `metadata` exactly as injected above. Use the lowercase `$briefing_metadata` placeholder only in this prompt; never use the capitalized form because the runner's capitalization alias would corrupt the JSON string.
 
-Every root key shown above is required. Use empty arrays when a section has no content. `your_day` and `forward_look` are always empty arrays: the packet holds no calendar, and the briefing never predicts what is coming from the day's material.
+Every root key shown above is required. Use empty arrays when a section has no content.
 
 ## Source Packet
 

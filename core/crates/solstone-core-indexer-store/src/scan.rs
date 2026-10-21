@@ -6784,7 +6784,10 @@ mod tests {
         assert_eq!(morning_row.2, "morning_briefing");
         assert_eq!(morning_row.3, None);
         assert_eq!(morning_row.4, "");
-        assert!(morning_row.5.contains("## Your Day"));
+        assert!(morning_row.5.contains("- Shipped."));
+        // A stored briefing's retired forecast sections are not indexed.
+        assert!(!morning_row.5.contains("Meet Alice."));
+        assert!(!morning_row.5.contains("Prepare."));
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup talent json root");
     }

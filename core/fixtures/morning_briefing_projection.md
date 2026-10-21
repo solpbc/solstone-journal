@@ -2,11 +2,6 @@
 >
 > Coverage continues.
 
-## Your Day
-
-- **09:00** — Timed item.
-- Untimed item.
-
 ## Yesterday
 
 Nothing to report.
@@ -14,7 +9,3 @@ Nothing to report.
 ## Needs Attention
 
 - Review the report.
-
-## Forward Look
-
-- Plan next week.
