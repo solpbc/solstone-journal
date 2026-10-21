@@ -282,13 +282,23 @@ fn windows_arm64_tool_path(value: &str) -> Result<String, String> {
 pub fn windows_arm64_configure_args(tools: &WindowsArm64Tools<'_>) -> Result<Vec<String>, String> {
     let compiler = windows_arm64_tool_path(tools.compiler)?;
     let assembler = windows_arm64_tool_path(tools.assembler)?;
-    if !compiler.ends_with("/clang-cl.exe") || !assembler.ends_with("/clang.exe") {
+    if !compiler.ends_with("/clang-cl.exe") || !assembler.ends_with("/arm-as.exe") {
         return Err("unexpected:\n  FFmpeg Windows ARM clang tool roles".into());
     }
     let linker = windows_arm64_tool_path(tools.linker)?;
     let librarian = windows_arm64_tool_path(tools.librarian)?;
     let dumpbin = windows_arm64_tool_path(tools.dumpbin)?;
     let host_compiler = windows_arm64_tool_path(tools.host_compiler)?;
+    for (path, role) in [
+        (&linker, "/arm-link.exe"),
+        (&librarian, "/arm-lib.exe"),
+        (&dumpbin, "/arm-nm.exe"),
+        (&host_compiler, "/host-cc.exe"),
+    ] {
+        if !path.ends_with(role) {
+            return Err("unexpected:\n  FFmpeg Windows ARM environment proxy role".into());
+        }
+    }
     Ok(vec![
         "--enable-cross-compile".into(),
         "--arch=aarch64".into(),
@@ -1569,7 +1579,7 @@ sha256 = "digest"
     fn windows_arm64_policy_preserves_components_and_separates_legacy_admission() {
         let tool_args = windows_arm64_configure_args(&WindowsArm64Tools {
             compiler: "C:/tools/llvm/clang-cl.exe",
-            assembler: "C:/tools/llvm/clang.exe",
+            assembler: "C:/tools/proxies/arm-as.exe",
             linker: "C:/tools/proxies/arm-link.exe",
             librarian: "C:/tools/proxies/arm-lib.exe",
             dumpbin: "C:/tools/proxies/arm-nm.exe",
@@ -1628,6 +1638,22 @@ sha256 = "digest"
                 } else {
                     arg.replace("aarch64-pc-windows-msvc", "arm64ec-pc-windows-msvc")
                 };
+                assert!(
+                    validate_controlled_component_args_for_target(&changed, WINDOWS_ARM64_TARGET)
+                        .is_err()
+                );
+            }
+            for (from, to) in [
+                ("/arm-as.exe", "/clang.exe"),
+                ("/arm-link.exe", "/host-cc.exe"),
+                ("/arm-lib.exe", "/arm-link.exe"),
+                ("/arm-nm.exe", "/arm-lib.exe"),
+                ("/host-cc.exe", "/clang-cl.exe"),
+            ] {
+                let changed = args
+                    .iter()
+                    .map(|arg| arg.replace(from, to))
+                    .collect::<Vec<_>>();
                 assert!(
                     validate_controlled_component_args_for_target(&changed, WINDOWS_ARM64_TARGET)
                         .is_err()

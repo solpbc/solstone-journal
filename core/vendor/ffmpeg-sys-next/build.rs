@@ -454,7 +454,7 @@ fn configure_windows_arm64(configure: &mut Command) -> io::Result<()> {
     let mut values = Vec::new();
     for name in [
         "SOLSTONE_FFMPEG_WINDOWS_ARM64_CLANG_CL",
-        "SOLSTONE_FFMPEG_WINDOWS_ARM64_CLANG",
+        "SOLSTONE_FFMPEG_WINDOWS_ARM64_AS",
         "SOLSTONE_FFMPEG_WINDOWS_ARM64_LINK",
         "SOLSTONE_FFMPEG_WINDOWS_ARM64_LIB",
         "SOLSTONE_FFMPEG_WINDOWS_ARM64_DUMPBIN",
@@ -478,6 +478,11 @@ fn configure_windows_arm64(configure: &mut Command) -> io::Result<()> {
         })
         .map_err(io::Error::other)?,
     );
+    if env::var("MSYS2_ARG_CONV_EXCL").as_deref() != Ok("/O2;/MT") {
+        return Err(io::Error::other(
+            "controlled Windows ARM FFmpeg build requires MSYS2_ARG_CONV_EXCL=/O2;/MT",
+        ));
+    }
     Ok(())
 }
 
@@ -1140,10 +1145,16 @@ fn check_features(
     .expect("Write failed");
 
     let executable = out_dir.join(if cfg!(windows) { "check.exe" } else { "check" });
-    let mut compiler = cc::Build::new()
-        .target(&env::var("HOST").unwrap()) // don't cross-compile this
-        .get_compiler()
-        .to_command();
+    let mut host_compiler = cc::Build::new();
+    host_compiler.target(&env::var("HOST").unwrap()); // don't cross-compile this
+    if env::var("TARGET").as_deref() == Ok(WINDOWS_ARM64_TARGET) {
+        // Cargo's target SDK environment belongs to ARM64. This executable
+        // runs on the x64 builder and must restore its own SDK and libraries.
+        let name = "SOLSTONE_FFMPEG_WINDOWS_ARM64_HOST_CC";
+        println!("cargo:rerun-if-env-changed={name}");
+        host_compiler.compiler(env::var(name).expect("Windows ARM host compiler proxy"));
+    }
+    let mut compiler = host_compiler.get_compiler().to_command();
 
     for dir in include_paths {
         compiler.arg("-I");
