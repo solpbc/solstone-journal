@@ -88,7 +88,7 @@ pub struct ParakeetWord {
     pub word: String,
     pub start: f64,
     pub end: f64,
-    pub probability: f64,
+    pub probability: Option<f64>,
 }
 
 #[doc(hidden)]
@@ -194,7 +194,7 @@ pub struct CoremlWord {
     pub word: String,
     pub start: f64,
     pub end: f64,
-    pub probability: f64,
+    pub probability: Option<f64>,
 }
 
 #[doc(hidden)]

@@ -181,6 +181,8 @@ struct Statement {
     start_offset_us: i64,
     text: String,
     speaker: Option<Value>,
+    timing: Option<Value>,
+    words: Option<Value>,
     speaker_turn_evidence: Option<SpeakerTurnEvidence>,
     turn_boundary_suspect: bool,
 }
@@ -466,6 +468,22 @@ fn parse_statements(value: &Value) -> Result<Vec<Statement>, SpeakerTranscriptWr
                     }
                 })?),
             };
+            let timing = object
+                .get("timing")
+                .map(|value| {
+                    validate_timing(value, "timing")?;
+                    Ok::<_, SpeakerTranscriptWriteError>(value.clone())
+                })
+                .transpose()
+                .map_err(|error| invalid_statement(statement_index, error))?;
+            let words = object
+                .get("words")
+                .map(|value| {
+                    validate_words(value)?;
+                    Ok::<_, SpeakerTranscriptWriteError>(value.clone())
+                })
+                .transpose()
+                .map_err(|error| invalid_statement(statement_index, error))?;
             let turn_boundary_suspect = match object.get("turn_boundary_suspect") {
                 None => false,
                 Some(Value::Bool(true)) => true,
@@ -481,11 +499,34 @@ fn parse_statements(value: &Value) -> Result<Vec<Statement>, SpeakerTranscriptWr
                 start_offset_us,
                 text,
                 speaker,
+                timing,
+                words,
                 speaker_turn_evidence,
                 turn_boundary_suspect,
             })
         })
         .collect()
+}
+
+fn validate_timing(value: &Value, field: &str) -> Result<(), SpeakerTranscriptWriteError> {
+    let fields = object(value, field)?;
+    for key in ["start", "end"] {
+        number(required(fields, key)?, &format!("{field}.{key}"))?;
+    }
+    Ok(())
+}
+
+fn validate_words(value: &Value) -> Result<(), SpeakerTranscriptWriteError> {
+    for word in array(value, "words")? {
+        let fields = object(word, "word")?;
+        string(required(fields, "word")?, "word.word")?;
+        validate_timing(word, "word")?;
+        let probability = required(fields, "probability")?;
+        if !probability.is_null() {
+            number(probability, "word.probability")?;
+        }
+    }
+    Ok(())
 }
 
 fn parse_embedding_ids(
@@ -762,6 +803,12 @@ fn build_jsonl(
             "sentence_id".to_owned(),
             Value::from(i64::from(statement.id)),
         );
+        if let Some(timing) = &statement.timing {
+            entry.insert("timing".to_owned(), timing.clone());
+        }
+        if let Some(words) = &statement.words {
+            entry.insert("words".to_owned(), words.clone());
+        }
         if let Some(evidence) = &statement.speaker_turn_evidence {
             entry.insert("speaker_turn_evidence".to_owned(), evidence.to_value());
         }

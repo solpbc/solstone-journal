@@ -266,6 +266,53 @@
               },
               "text": {
                 "type": "string"
+              },
+              "timing": {
+                "description": "Precise statement bounds in seconds from the start of header.raw, restored to the original audio after any silence reduction. The separate start string is the displayed clock time.",
+                "properties": {
+                  "end": {
+                    "type": "number"
+                  },
+                  "start": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "type": "object"
+              },
+              "words": {
+                "description": "Normalized speech-model words in order. Start and end use the same original-audio-relative seconds as timing; they are not clock times.",
+                "items": {
+                  "properties": {
+                    "end": {
+                      "type": "number"
+                    },
+                    "probability": {
+                      "description": "Measured word confidence, or null when the speech engine supplied none.",
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "start": {
+                      "type": "number"
+                    },
+                    "word": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "word",
+                    "start",
+                    "end",
+                    "probability"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -290,6 +337,8 @@
           "key_fields": [
             "header.raw",
             "record.start",
+            "record.timing",
+            "record.words",
             "record.text",
             "record.sentence_id",
             "record.corrected",
