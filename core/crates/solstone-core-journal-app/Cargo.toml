@@ -10,7 +10,7 @@ license.workspace = true
 publish = false
 
 [features]
-full-tests = []
+full-tests = ["solstone-core-installed-payload/test-fixture-pin"]
 
 [[bin]]
 name = "journal-app"
@@ -35,7 +35,9 @@ unsafe_code = "allow"
 
 [dependencies]
 solstone-core-about.workspace = true
+solstone-core-installed-payload.workspace = true
 solstone-core-journal-io.workspace = true
+log.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = "2.5.8"
@@ -44,6 +46,7 @@ svgtypes = "=0.16.1"
 spl-core.workspace = true
 jsonschema.workspace = true
 getrandom.workspace = true
+zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3.24.0"
