@@ -174,6 +174,8 @@ impl OpenMpBuildEvidence {
             "sdk/mt.exe",
             "windows/cmd.exe",
             "windows/powershell.exe",
+            "windows/git.exe",
+            "windows/recorder.exe",
         ] {
             if !tools.contains(required) {
                 return Err(format!("OpenMP system-tool census is missing {required}"));
@@ -265,6 +267,8 @@ mod tests {
             "sdk/mt.exe",
             "windows/cmd.exe",
             "windows/powershell.exe",
+            "windows/git.exe",
+            "windows/recorder.exe",
         ]
         .into_iter()
         .map(|name| identity(name, 1, &"a".repeat(64)))

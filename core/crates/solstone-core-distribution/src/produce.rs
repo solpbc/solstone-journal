@@ -47,6 +47,7 @@ pub mod windows_archives;
 pub mod windows_build;
 pub mod windows_cli;
 pub mod windows_inputs;
+pub mod windows_openmp;
 pub mod windows_restic;
 pub mod windows_stage;
 
