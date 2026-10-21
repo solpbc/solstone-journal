@@ -470,6 +470,8 @@ pub fn expected_receipt(
     draft.validate().map_err(|e| e.to_string())
 }
 
+// Windows inventory counts flat leaves at depth one. The two allowed
+// files are libomp.dll and its pinned licence; read_outputs rejects extras.
 pub fn admit(paths: OpenMpInputPaths<'_>) -> Result<AdmittedOpenMp, String> {
     paths.archives.verify()?;
     let receipt_bytes = read_bounded(paths.receipt, 4 * 1024 * 1024)?;
@@ -491,8 +493,8 @@ pub fn admit(paths: OpenMpInputPaths<'_>) -> Result<AdmittedOpenMp, String> {
         paths.output_root,
         &receipt,
         crate::artifact_verify::ControlledBuildArtifactVerificationLimits::new(
+            2,
             1,
-            0,
             16 * 1024 * 1024,
         ),
     )
@@ -668,8 +670,8 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
         &output_root,
         &receipt,
         crate::artifact_verify::ControlledBuildArtifactVerificationLimits::new(
+            2,
             1,
-            0,
             16 * 1024 * 1024,
         ),
     )

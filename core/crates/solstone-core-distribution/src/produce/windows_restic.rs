@@ -100,6 +100,8 @@ fn read_output(root: &Path) -> Result<Vec<u8>, String> {
     read_bounded(&root.join(recipe::OUTPUT_LABEL), 64 * 1024 * 1024)
 }
 
+// Windows inventory counts the single flat output leaf at depth one.
+// read_output independently refuses every additional member.
 pub fn admit(paths: ResticInputPaths<'_>) -> Result<AdmittedControlledInput, String> {
     let receipt_bytes = read_bounded(paths.receipt, 4 * 1024 * 1024)?;
     let receipt = decode_controlled_build_receipt(&receipt_bytes).map_err(|e| e.to_string())?;
@@ -124,7 +126,7 @@ pub fn admit(paths: ResticInputPaths<'_>) -> Result<AdmittedControlledInput, Str
         &receipt,
         crate::artifact_verify::ControlledBuildArtifactVerificationLimits::new(
             1,
-            0,
+            1,
             64 * 1024 * 1024,
         ),
     )
@@ -287,7 +289,7 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
         &receipt,
         crate::artifact_verify::ControlledBuildArtifactVerificationLimits::new(
             1,
-            0,
+            1,
             64 * 1024 * 1024,
         ),
     )
