@@ -482,6 +482,8 @@ $result = [ordered]@{
     if ([string]::IsNullOrEmpty([string]$probe.vc_tools_version)) { throw 'VCToolsVersion is absent from the SDK environment' }
     $msbuildPath = [string]$probe.msbuild
     if ([string]::IsNullOrEmpty($msbuildPath)) { $msbuildPath = Join-Path $vs 'MSBuild\Current\Bin\amd64\MSBuild.exe' }
+    Require-File $msbuildPath
+    $msbuildPath = (Get-Item -LiteralPath $msbuildPath).FullName
 
     $cmakeRoot = Join-Path $WorkRoot 'tools-cmake'
     New-Item -ItemType Directory -Path $cmakeRoot -ErrorAction Stop | Out-Null
