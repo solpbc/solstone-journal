@@ -832,8 +832,14 @@ mod tests {
             } else if *comp == "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]" {
                 format!("2026{:04}", idx % 10000)
             } else {
-                comp.to_string()
+                // Any other wildcard stands for one generated name, so the
+                // fixture never writes a glob character as a file name.
+                comp.replace('*', &format!("mm{idx}"))
             };
+            assert!(
+                !match_comp.contains(['*', '?', '[', ']']),
+                "pattern component {comp} needs a generated name"
+            );
 
             let near_miss_comp = if is_last {
                 format!("near-miss-{idx}")
