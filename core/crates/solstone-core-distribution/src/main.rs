@@ -437,9 +437,16 @@ fn main() -> ExitCode {
         },
         Some("produce") => {
             let target = args.next();
-            if target.as_deref() == Some("windows-x86_64") {
+            if let Some(architecture) = target
+                .as_deref()
+                .and_then(solstone_core_installed_payload::WindowsArchitecture::from_target_id)
+            {
                 let start = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                return match produce::windows_cli::run_cli(&start, &args.collect::<Vec<_>>()) {
+                return match produce::windows_cli::run_cli(
+                    &start,
+                    &args.collect::<Vec<_>>(),
+                    architecture,
+                ) {
                     Ok(report) => {
                         println!("{report}");
                         ExitCode::SUCCESS

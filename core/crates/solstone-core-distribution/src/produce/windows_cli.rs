@@ -14,7 +14,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::windows_archives::{admit_msvc, admit_pdfium, admit_rclone, admit_restic};
-use super::windows_build::{build_windows_product, capture_source, read_bounded};
+use super::windows_build::{build_windows_product_for_architecture, capture_source, read_bounded};
 use super::windows_inputs::{
     ControlledInputPaths, LlamaInputPaths, NvattestInputPaths, OnnxInputPaths, RfdetrInputPaths,
     admit_ced, admit_ffmpeg_notices, admit_llama, admit_nvattest, admit_onnx, admit_parakeet,
@@ -22,7 +22,9 @@ use super::windows_inputs::{
 };
 use super::windows_stage::{AdmittedWindowsNativeInputs, stage_windows_payload};
 
-const USAGE: &str = "produce windows-x86_64 DEST --inputs LOCAL_JSON --logs FRESH_DIRECTORY (absolute paths required)";
+mod arm64;
+
+const USAGE: &str = "produce WINDOWS_TARGET DEST --inputs LOCAL_JSON --logs FRESH_DIRECTORY (absolute paths required)";
 
 #[derive(Debug, Deserialize)]
 struct LockPackage {
@@ -559,6 +561,35 @@ impl LocalInputs {
     }
 }
 
+enum LocalWindowsInputs {
+    X64(Box<LocalInputs>),
+    Arm64(Box<arm64::LocalInputs>),
+}
+
+impl LocalWindowsInputs {
+    fn decode(bytes: &[u8], expected: WindowsArchitecture) -> Result<Self, String> {
+        match expected {
+            WindowsArchitecture::X86_64 => serde_json::from_slice(bytes).map(Self::X64),
+            WindowsArchitecture::Aarch64 => serde_json::from_slice(bytes).map(Self::Arm64),
+        }
+        .map_err(|error| error.to_string())
+    }
+
+    fn admit(&self, repo: &Path) -> Result<AdmittedWindowsNativeInputs, String> {
+        match self {
+            Self::X64(inputs) => inputs.admit(repo, WindowsArchitecture::X86_64),
+            Self::Arm64(inputs) => inputs.admit(repo),
+        }
+    }
+
+    fn ffmpeg_archive(&self) -> &Path {
+        match self {
+            Self::X64(inputs) => &inputs.ffmpeg_archive.0,
+            Self::Arm64(inputs) => inputs.ffmpeg_archive(),
+        }
+    }
+}
+
 const VERIFY_USAGE: &str = "windows-native-inputs verify WINDOWS_TARGET --inputs ABSOLUTE_JSON";
 
 fn parse_verify_args(args: &[String]) -> Result<(WindowsArchitecture, PathBuf), String> {
@@ -596,8 +627,8 @@ pub fn run_verify_cli(start: &Path, args: &[String]) -> Result<String, String> {
         .ok_or("missing repository root")?;
     let before = capture_source(repo)?;
     let input_bytes = read_bounded(&input_path, 1024 * 1024)?;
-    let inputs: LocalInputs = serde_json::from_slice(&input_bytes).map_err(|e| e.to_string())?;
-    let _admitted = inputs.admit(repo, expected)?;
+    let inputs = LocalWindowsInputs::decode(&input_bytes, expected)?;
+    let _admitted = inputs.admit(repo)?;
     if capture_source(repo)? != before {
         return Err("product source changed during native input admission".into());
     }
@@ -652,7 +683,11 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
 /// The reviewed native wrapper owns the existing host fence, finite wait,
 /// isolated tool environment and cleanup evidence. Build tools remain Unowned.
 /// This command produces an unsigned local tree; it cannot sign or promote it.
-pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
+pub fn run_cli(
+    start: &Path,
+    args: &[String],
+    expected: WindowsArchitecture,
+) -> Result<String, String> {
     let args = parse_args(args)?;
     if !cfg!(windows) {
         return Err("Windows production requires its native MSVC host".into());
@@ -694,20 +729,29 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
         repo,
     )?;
     let input_bytes = read_bounded(&args.inputs, 1024 * 1024)?;
-    let inputs: LocalInputs = serde_json::from_slice(&input_bytes).map_err(|e| e.to_string())?;
+    let inputs = LocalWindowsInputs::decode(&input_bytes, expected)?;
     let target = inventory
         .target
         .iter()
-        .find(|target| target.id == crate::windows_payload::WINDOWS_PAYLOAD_TARGET)
+        .find(|target| target.id == expected.target_id())
         .ok_or("missing Windows producer target")?;
-    let native = inputs.admit(repo, target.windows_architecture()?)?;
+    if target.windows_architecture()? != expected {
+        return Err("Windows production target differs from the committed inventory".into());
+    }
+    let native = inputs.admit(repo)?;
     if capture_source(repo)? != before {
         return Err("product source changed during native input admission".into());
     }
     let candidate_version =
         super::workspace_version(&repo.join("core/Cargo.toml")).map_err(|e| e.to_string())?;
     super::windows_stage::refuse_unupdated_windows_predecessor(&candidate_version)?;
-    let product = build_windows_product(repo, &inventory, &args.logs, &inputs.ffmpeg_archive.0)?;
+    let product = build_windows_product_for_architecture(
+        repo,
+        &inventory,
+        &args.logs,
+        inputs.ffmpeg_archive(),
+        expected,
+    )?;
     // Retain the actual operator file, including original spelling, independently
     // of the inventory and original dependency receipts. No input file is a grant.
     let mut retained_inputs = OpenOptions::new()
@@ -724,7 +768,7 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
     // Informational command output. The existing unsigned manifest remains the
     // payload identity; this summary never admits a replacement tree or bytes.
     serde_json::to_string(&serde_json::json!({
-        "target": "windows-x86_64",
+        "target": expected.target_id(),
         "source": product.evidence().source,
         "destination": published.destination,
         "unsigned_manifest_sha256": staged.unsigned_manifest_sha256,
@@ -1297,11 +1341,13 @@ version = "1.2.0"
     #[test]
     fn non_native_run_refuses_before_input_read_or_output_creation() {
         let root = tempfile::tempdir().unwrap();
-        assert!(
-            run_cli(root.path(), &arguments(root.path()))
-                .unwrap_err()
-                .contains("native MSVC host")
-        );
+        for architecture in WindowsArchitecture::ALL {
+            assert!(
+                run_cli(root.path(), &arguments(root.path()), architecture)
+                    .unwrap_err()
+                    .contains("native MSVC host")
+            );
+        }
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
 }
