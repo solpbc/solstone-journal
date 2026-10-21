@@ -961,6 +961,10 @@ fn attach_source_notices(
     Ok(())
 }
 
+pub(crate) fn ced_source_notices(snapshot: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    source_notice_members(snapshot, CED_NOTICES)
+}
+
 fn source_notice_members(
     snapshot: &Path,
     notices: &[SourceNotice],

@@ -46,20 +46,28 @@ struct NativeCapture {
     development: Vec<InputIdentityEntry>,
 }
 
-fn source_inputs(
-    repo: &Path,
-    archive: &Path,
-    cmake: &Path,
-) -> Result<(CedWindowsSourceArchive, InputIdentityEntry), String> {
+struct SourceInputs {
+    source: CedWindowsSourceArchive,
+    cmake: InputIdentityEntry,
+    notices: BTreeMap<String, Vec<u8>>,
+}
+
+fn source_inputs(repo: &Path, archive: &Path, cmake: &Path) -> Result<SourceInputs, String> {
     with_snapshot(|root| {
         let source = snapshot_file(root, "source.tar.gz", archive, 512 * 1024 * 1024)?;
         preflight_source_archive(&source)?;
-        let source = ced_windows_source::inspect_ced_windows_source_archive(&source)
+        let inspected = ced_windows_source::inspect_ced_windows_source_archive(&source)
             .map_err(|e| e.to_string())?;
+        let notices = super::windows_inputs::ced_source_notices(&source)?;
+        let source = inspected;
         let cmake = snapshot_file(root, "cmake.zip", cmake, 128 * 1024 * 1024)?;
         let (_, cmake) = ced_windows_source::inspect_cmake_windows_archive(repo, &cmake)
             .map_err(|e| e.to_string())?;
-        Ok((source, cmake))
+        Ok(SourceInputs {
+            source,
+            cmake,
+            notices,
+        })
     })
 }
 
@@ -140,7 +148,11 @@ pub fn admit(
     paths: CedArm64InputPaths<'_>,
 ) -> Result<AdmittedControlledInput, String> {
     let openmp = windows_openmp::admit(paths.openmp.paths()?)?;
-    let (source, cmake) = source_inputs(repo, paths.source_archive, &paths.openmp.cmake_archive)?;
+    let SourceInputs {
+        source,
+        cmake,
+        mut notices,
+    } = source_inputs(repo, paths.source_archive, &paths.openmp.cmake_archive)?;
     let receipt_bytes = read_bounded(paths.receipt, DOCUMENT_LIMIT)?;
     let receipt = decode_controlled_build_receipt(&receipt_bytes).map_err(|e| e.to_string())?;
     let evidence_bytes = read_bounded(paths.evidence, DOCUMENT_LIMIT)?;
@@ -181,12 +193,18 @@ pub fn admit(
         );
     }
     verify_outputs(paths.output_root, &receipt)?;
+    if notices
+        .insert(ced_windows::CED_DLL_OUTPUT_LABEL.into(), output)
+        .is_some()
+    {
+        return Err("CED output collides with a pinned source notice".into());
+    }
     Ok(AdmittedControlledInput::new(
         receipt,
         receipt_bytes,
         evidence_bytes,
         validation_bytes,
-        BTreeMap::from([(ced_windows::CED_DLL_OUTPUT_LABEL.into(), output)]),
+        notices,
     ))
 }
 
@@ -267,12 +285,19 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
             },
         )?;
         return Ok(format!(
-            "CED_ARM64_WINDOWS_VERIFY_PASS output_sha256={}",
-            input.receipt().outputs[0].pre_signing_sha256
+            "CED_ARM64_WINDOWS_VERIFY_PASS output_sha256={} retained_members={}",
+            input.receipt().outputs[0].pre_signing_sha256,
+            input
+                .outputs()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(",")
         ));
     }
     let openmp = windows_openmp::admit(openmp_files.paths()?)?;
-    let (source, cmake) = source_inputs(repo, &source_path, &openmp_files.cmake_archive)?;
+    let SourceInputs { source, cmake, .. } =
+        source_inputs(repo, &source_path, &openmp_files.cmake_archive)?;
     if operation == "verify-inputs" {
         return serde_json::to_string(&serde_json::json!({"source": source.archive,
             "host_inputs": recipe::pinned_host_inputs(), "tools": crate::openmp_windows::pinned_tools(),
