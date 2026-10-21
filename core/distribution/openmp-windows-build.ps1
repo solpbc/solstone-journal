@@ -20,6 +20,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 $utf8=[Text.UTF8Encoding]::new($false)
+. (Join-Path $PSScriptRoot 'windows-git-programs.ps1')
 $rules=[Collections.Generic.List[string]]::new()
 $programs=[Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
 $systemIds=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
@@ -165,11 +166,11 @@ try {
     foreach ($file in Get-ChildItem -LiteralPath $sdk -Filter '*.exe' -File) { Add-System-Tool ('sdk/'+$file.Name.ToLowerInvariant()) $file.FullName }
     Add-System-Tool 'windows/cmd.exe' $cmd
     Add-System-Tool 'windows/powershell.exe' (Get-Process -Id $PID).Path
-    Add-System-Tool 'windows/git.exe' $git
+    foreach($tool in @(Get-ControlledGitPrograms $git)){Add-System-Tool ([string]$tool.label) ([string]$tool.file)}
     Add-System-Tool 'windows/recorder.exe' $recorder
     # SDK tool directories also contain unowned I386 executables. Observe and
     # fence those candidates; only the selected build programs require AMD64.
-    foreach ($label in @('msvc/link.exe','msvc/lib.exe','msvc/nmake.exe','sdk/rc.exe','sdk/mt.exe','windows/cmd.exe','windows/powershell.exe','windows/git.exe','windows/recorder.exe')) {
+    foreach ($label in @('msvc/link.exe','msvc/lib.exe','msvc/nmake.exe','sdk/rc.exe','sdk/mt.exe','windows/cmd.exe','windows/powershell.exe','windows/git.exe','windows/git-backend.exe','windows/git-core.exe','windows/git-http.exe','windows/recorder.exe')) {
         Native-Host-Program $programs[$label]
     }
     $labels=@($programs.Keys);[Array]::Sort($labels,[StringComparer]::Ordinal)
@@ -194,7 +195,7 @@ try {
     foreach ($property in $plan.configuration.PSObject.Properties) {
         if ($property.Name -ne 'CMAKE_GENERATOR') { $cmakeArgs+=('-D'+$property.Name+'='+[string]$property.Value) }
     }
-    $cmakeArgs+=@("-DCMAKE_C_COMPILER=$clang","-DCMAKE_CXX_COMPILER=$clang","-DCMAKE_ASM_COMPILER=$clang","-DPython3_EXECUTABLE=$python","-DCMAKE_MAKE_PROGRAM=$nmake","-DCMAKE_INSTALL_PREFIX=$prefix")
+    $cmakeArgs+=@("-DCMAKE_C_COMPILER=$clang","-DCMAKE_CXX_COMPILER=$clang","-DCMAKE_ASM_COMPILER=$clang","-DPython3_EXECUTABLE=$python","-DCMAKE_MAKE_PROGRAM=$nmake","-DGIT_EXECUTABLE=$($programs['windows/git-backend.exe'])","-DCMAKE_INSTALL_PREFIX=$prefix")
     $null=Run-Checked $cmake $cmakeArgs 'configure ARM64 OpenMP CPU runtime'
     $null=Run-Checked $cmake @('--build',$buildRoot,'--target','install') 'serial NMake OpenMP install'
     Copy-Item -LiteralPath (Join-Path $prefix 'bin\libomp.dll') -Destination (Join-Path $OutputRoot 'libomp.dll')

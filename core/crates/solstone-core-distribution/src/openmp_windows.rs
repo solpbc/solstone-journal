@@ -236,6 +236,9 @@ mod tests {
             "windows/cmd.exe",
             "windows/powershell.exe",
             "windows/git.exe",
+            "windows/git-backend.exe",
+            "windows/git-core.exe",
+            "windows/git-http.exe",
             "windows/recorder.exe",
         ]
         .into_iter()

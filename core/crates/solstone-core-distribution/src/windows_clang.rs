@@ -109,6 +109,9 @@ pub(crate) fn validate_tool_census(census: &ToolCensus<'_>) -> Result<(), String
         "windows/cmd.exe",
         "windows/powershell.exe",
         "windows/git.exe",
+        "windows/git-backend.exe",
+        "windows/git-core.exe",
+        "windows/git-http.exe",
         "windows/recorder.exe",
     ] {
         if !tools.contains(required) {
@@ -177,6 +180,38 @@ pub(crate) fn validate_host_capture(
     )? != windows_path(&validation.tool_paths["msvc/nmake.exe"])?
     {
         return Err("OpenMP cache uses a foreign make program".into());
+    }
+    let git = windows_path(&validation.tool_paths["windows/git.exe"])?;
+    let backend = windows_path(&validation.tool_paths["windows/git-backend.exe"])?;
+    let prefix = backend
+        .strip_suffix("/bin/git.exe")
+        .ok_or("Git backend does not use its installed bin directory")?;
+    let root = prefix
+        .rsplit_once('/')
+        .ok_or("Git installation root missing")?
+        .0;
+    if ![
+        format!("{root}/cmd/git.exe"),
+        backend.clone(),
+        format!("{prefix}/libexec/git-core/git.exe"),
+    ]
+    .contains(&git)
+        || windows_path(&validation.tool_paths["windows/git-core.exe"])?
+            != format!("{prefix}/libexec/git-core/git.exe")
+        || windows_path(&validation.tool_paths["windows/git-http.exe"])?
+            != format!("{prefix}/libexec/git-core/git-remote-https.exe")
+    {
+        return Err(
+            "Git implementation and transport paths differ from their installed layout".into(),
+        );
+    }
+    if windows_path(
+        cache
+            .get("GIT_EXECUTABLE")
+            .ok_or("Git backend cache path missing")?,
+    )? != windows_path(&validation.tool_paths["windows/git-backend.exe"])?
+    {
+        return Err("Windows clang cache does not select its censused Git backend".into());
     }
     let known_paths: BTreeSet<_> = validation
         .tool_paths

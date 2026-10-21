@@ -18,6 +18,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 $utf8=[Text.UTF8Encoding]::new($false)
+. (Join-Path $PSScriptRoot 'windows-git-programs.ps1')
 $rules=[Collections.Generic.List[string]]::new()
 $programs=[Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
 $systemIds=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
@@ -170,9 +171,9 @@ try {
     foreach($file in Get-ChildItem $sdk -Filter '*.exe' -File){Add-System-Tool ('sdk/'+$file.Name.ToLowerInvariant()) $file.FullName}
     Add-System-Tool 'windows/cmd.exe' $cmd
     Add-System-Tool 'windows/powershell.exe' (Get-Process -Id $PID).Path
-    Add-System-Tool 'windows/git.exe' $git
+    foreach($tool in @(Get-ControlledGitPrograms $git)){Add-System-Tool ([string]$tool.label) ([string]$tool.file)}
     Add-System-Tool 'windows/recorder.exe' $recorder
-    foreach($label in @('msvc/link.exe','msvc/lib.exe','msvc/nmake.exe','sdk/rc.exe','sdk/mt.exe','windows/cmd.exe','windows/powershell.exe','windows/git.exe','windows/recorder.exe')){Native-Host-Program $programs[$label]}
+    foreach($label in @('msvc/link.exe','msvc/lib.exe','msvc/nmake.exe','sdk/rc.exe','sdk/mt.exe','windows/cmd.exe','windows/powershell.exe','windows/git.exe','windows/git-backend.exe','windows/git-core.exe','windows/git-http.exe','windows/recorder.exe')){Native-Host-Program $programs[$label]}
     $labels=@($programs.Keys);[Array]::Sort($labels,[StringComparer]::Ordinal)
     if(@(Get-NetFirewallProfile|Where-Object{$_.Enabled -ne 'True'}).Count -ne 0){throw 'Windows Firewall profiles must be enabled'}
     $denies=[Collections.Generic.List[object]]::new()
@@ -188,7 +189,7 @@ try {
     $buildRoot=Join-Path $WorkRoot 'build';$prefix=Join-Path $WorkRoot 'install'
     $cmakeArgs=@('-S',$sourceRoot,'-B',$buildRoot,'-G','NMake Makefiles')
     foreach($property in $plan.configuration.PSObject.Properties){if($property.Name -ne 'CMAKE_GENERATOR'){$cmakeArgs+=('-D'+$property.Name+'='+[string]$property.Value)}}
-    $cmakeArgs+=@("-DCMAKE_C_COMPILER=$clang","-DCMAKE_CXX_COMPILER=$clang","-DCMAKE_ASM_COMPILER=$clang","-DPython3_EXECUTABLE=$python","-DCMAKE_MAKE_PROGRAM=$nmake","-DCMAKE_INSTALL_PREFIX=$prefix","-DOpenMP_libomp_LIBRARY=$openmpRoot\lib\libomp.lib","-DOpenMP_C_INCLUDE_DIR=$openmpRoot\include","-DOpenMP_CXX_INCLUDE_DIR=$openmpRoot\include")
+    $cmakeArgs+=@("-DCMAKE_C_COMPILER=$clang","-DCMAKE_CXX_COMPILER=$clang","-DCMAKE_ASM_COMPILER=$clang","-DPython3_EXECUTABLE=$python","-DCMAKE_MAKE_PROGRAM=$nmake","-DGIT_EXECUTABLE=$($programs['windows/git-backend.exe'])","-DCMAKE_INSTALL_PREFIX=$prefix","-DOpenMP_libomp_LIBRARY=$openmpRoot\lib\libomp.lib","-DOpenMP_C_INCLUDE_DIR=$openmpRoot\include","-DOpenMP_CXX_INCLUDE_DIR=$openmpRoot\include")
     $null=Run-Checked $cmake $cmakeArgs 'configure ARM64 Parakeet CPU library'
     $null=Run-Checked $cmake @('--build',$buildRoot,'--target','parakeet-server') 'serial NMake Parakeet build'
     if(@(Get-ChildItem -LiteralPath $buildRoot -Filter 'ggml*.dll' -Recurse -File).Count -ne 0){throw 'Parakeet ARM requires statically linked ggml'}

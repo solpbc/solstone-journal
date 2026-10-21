@@ -654,17 +654,34 @@ mod tests {
             "windows/cmd.exe",
             "windows/powershell.exe",
             "windows/git.exe",
+            "windows/git-backend.exe",
+            "windows/git-core.exe",
+            "windows/git-http.exe",
             "windows/recorder.exe",
         ]
         .into_iter()
         .map(|label| recipe::identity(label, 1, &"a".repeat(64)))
         .collect();
         let archive_tools = recipe::pinned_tools();
-        let tool_paths: BTreeMap<_, _> = archive_tools
+        let mut tool_paths: BTreeMap<_, _> = archive_tools
             .iter()
             .chain(&system_tools)
             .map(|tool| (tool.label.clone(), format!("{work}/{}", tool.label)))
             .collect();
+        for (label, path) in [
+            ("windows/git.exe", "c:/git/cmd/git.exe"),
+            ("windows/git-backend.exe", "c:/git/ucrt64/bin/git.exe"),
+            (
+                "windows/git-core.exe",
+                "c:/git/ucrt64/libexec/git-core/git.exe",
+            ),
+            (
+                "windows/git-http.exe",
+                "c:/git/ucrt64/libexec/git-core/git-remote-https.exe",
+            ),
+        ] {
+            tool_paths.insert(label.into(), path.into());
+        }
         let network_denied_tools: Vec<_> = tool_paths.keys().cloned().collect();
         let network_denies = tool_paths
             .iter()
@@ -703,6 +720,10 @@ mod tests {
             ),
             ("Python3_EXECUTABLE", format!("{work}/python/python.exe")),
             ("CMAKE_MAKE_PROGRAM", tool_paths["msvc/nmake.exe"].clone()),
+            (
+                "GIT_EXECUTABLE",
+                tool_paths["windows/git-backend.exe"].clone(),
+            ),
         ] {
             cache.push_str(&format!("{key}:FILEPATH={value}\n"));
         }
@@ -737,6 +758,51 @@ mod tests {
             install_manifest_sha256: sha256_hex(validation.install_manifest.as_bytes()),
         };
         (evidence, validation)
+    }
+
+    #[test]
+    fn launcher_only_git_census_cannot_claim_complete_denial() {
+        let (mut evidence, mut validation) = capture();
+        for label in [
+            "windows/git-backend.exe",
+            "windows/git-core.exe",
+            "windows/git-http.exe",
+        ] {
+            evidence.system_tools.retain(|tool| tool.label != label);
+            evidence.network_denied_tools.retain(|tool| tool != label);
+            validation.tool_paths.remove(label);
+            validation.network_denies.retain(|rule| rule.label != label);
+        }
+        assert!(
+            validate_capture(&evidence, &validation)
+                .unwrap_err()
+                .contains("windows/git-backend.exe")
+        );
+    }
+
+    #[test]
+    fn rebinding_git_backend_to_its_launcher_or_foreign_transport_refuses() {
+        for label in ["windows/git-backend.exe", "windows/git-http.exe"] {
+            let (mut evidence, mut validation) = capture();
+            let original = validation.tool_paths[label].clone();
+            let replacement = validation.tool_paths["windows/git.exe"].clone();
+            validation
+                .tool_paths
+                .insert(label.into(), replacement.clone());
+            validation
+                .network_denies
+                .iter_mut()
+                .find(|rule| rule.label == label)
+                .unwrap()
+                .program = replacement.clone();
+            validation.cache = validation.cache.replace(&original, &replacement);
+            evidence.cache_sha256 = sha256_hex(validation.cache.as_bytes());
+            let error = validate_capture(&evidence, &validation).unwrap_err();
+            assert!(
+                error.contains("Git"),
+                "{label} rebinding reached the wrong refusal: {error}"
+            );
+        }
     }
 
     #[test]
