@@ -1,12 +1,7 @@
 [advisories]
 # cargo-deny here is `make audit`, not `make ci` / `ci-full`. The weekly fleet
-# audit is the only place this section is evaluated. RUSTSEC-2026-0192 is the
-# decided case: ttf-parser is unmaintained, there is no
-# safe upgrade, and the only reach is pdf-extract as a facets-web
-# dev-dependency that extracts text from PDFs this crate generated. No
-# production path loads it.
+# audit is the only place this section is evaluated.
 ignore = [
-    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is reached only through pdf-extract, a facets-web dev-dependency that extracts text from PDFs this crate generated; no production reach and no safe upgrade" },
     # Product engineering compatibility exception, 2026-09-28: hickory-proto
     # 0.24.4 via hickory-resolver 0.24.4. RUSTSEC-2026-0119 affects versions
     # >=0.3.1 and <0.26.1: encoding a DNS message with many records can take
@@ -71,6 +66,9 @@ allow = [
 wildcards = "deny"
 allow-wildcard-paths = true
 deny = [
+    # The 0.26.11 compatibility shim re-exports its resolved 1.x roots. RustSec
+    # now classifies the shim as unaffected; constrain the actual trust store.
+    { crate = "webpki-roots:>=1.0.0,<1.0.10", reason = "prevent a regression to vulnerable 1.x roots behind the 0.26.11 compatibility shim" },
     { name = "pyo3" },
     { name = "pyo3-ffi" },
     { name = "cpython" },

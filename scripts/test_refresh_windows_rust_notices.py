@@ -4,9 +4,13 @@
 
 """Dependency-edge admission regressions for the mechanical notice refresh."""
 import copy
+import io
+import json
 import sys
+import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -885,6 +889,205 @@ class RegistryRemoval(unittest.TestCase):
                 refresh.load_prior_graph(archive, self.metadata(scratch, ["std"]))
             wrapped = self.prior(scratch, {"graph": bare})
             self.assertEqual(refresh.load_prior_graph(wrapped, None), bare)
+
+
+class RegistryUpgrade(unittest.TestCase):
+    def crate(self, version="1.0.1", expression="MIT", text=b"same licence\n", extra=None):
+        files = {"Cargo.toml": f'[package]\nname="digest"\nversion="{version}"\nlicense="{expression}"\n'.encode(),
+                 "LICENSE": text, "src/lib.rs": version.encode(), **(extra or {})}
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode="w:gz") as archive:
+            for name, data in files.items():
+                member = tarfile.TarInfo(f"digest-{version}/{name}")
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+        return stream.getvalue(), files
+
+    def row(self, version="1.0.0", checksum="a" * 64):
+        return {**package("digest", version, SOURCE), "checksum": checksum}
+
+    def test_pairs_only_unambiguous_checksummed_crates_io_upgrades(self):
+        old, new = self.row(), self.row("1.0.1")
+        self.assertEqual(refresh.split_registry_upgrades([old], [new]), [(old, new)])
+        for left, right in (
+            ([old], [{**new, "checksum": "invalid"}]),
+            ([old], [{**new, "source": "git+https://example.invalid/repo"}]),
+            ([old], [{**new, "source": "registry+https://example.invalid/index"}]),
+            ([old], [self.row("0.9.0")]),
+            ([old], [self.row("1.0.1-rc.1")]),
+            ([old], [new, {**new, "name": "added"}]),
+            ([old, self.row("0.5.0")], [new]),
+            ([old, old], [new]),
+        ):
+            with self.subTest(left=left, right=right), self.assertRaises(refresh.RefreshError):
+                refresh.split_registry_upgrades(left, right)
+
+    def test_upgraded_identity_cannot_promote_or_remove_a_closure_member(self):
+        old, new = "digest@1.0.0", "digest@1.0.1"
+        before = {"workspace:app": {"deps": [{"pkg": old, "dep_kinds": [{"kind": None}]}]}, old: {"deps": []}}
+        after = {"workspace:app": {"deps": [{"pkg": new, "dep_kinds": [{"kind": None}]}]}, new: {"deps": []}}
+        mapped = refresh.replace_graph_identities(after, {new: old})
+        self.assertEqual(refresh.require_explained_notice_closure(before, mapped, ["app"]), frozenset())
+        for left, right in ((before, {**mapped, "workspace:app": {"deps": []}}),
+                            ({**before, "workspace:app": {"deps": []}}, mapped)):
+            with self.assertRaises(refresh.RefreshError):
+                refresh.require_explained_notice_closure(left, right, ["app"])
+
+    def fixture(self, root, expression="MIT", new_expression=None, new_text=b"same licence\n", extra=None, git_move=False):
+        data, files = self.crate(expression=new_expression or expression, text=new_text, extra=extra)
+        old_data, old_files = self.crate("1.0.0", expression)
+        old, new = self.row(checksum=refresh.sha256_bytes(old_data)), self.row("1.0.1", refresh.sha256_bytes(data))
+        outside = {**package("outside", source=SOURCE), "checksum": "b" * 64}
+        git_old = package("transport", source="git+https://example.invalid/transport#" + "a" * 40)
+        git_new = {**git_old, "source": git_old["source"].replace("a" * 40, "b" * 40)}
+        def external(row):
+            return [row, outside] + ([git_old if row == old else git_new] if git_move else [])
+        def lock(row):
+            return ('version=4\n[[package]]\nname="app"\nversion="1.0.0"\ndependencies=["digest"]\n'
+                    + ''.join(f'[[package]]\nname="{p["name"]}"\nversion="{p["version"]}"\nsource="{p["source"]}"\nchecksum="{p["checksum"]}"\n' for p in external(row))).encode()
+        def metadata(row):
+            return {"packages": [{**package("app"), "id": "app", "source": None},
+                                 {**row, "id": "digest"}, {**outside, "id": "outside"}],
+                    "resolve": {"nodes": [
+                        {"id": "app", "features": [], "deps": [{"name": "digest", "pkg": "digest", "dep_kinds": [{"kind": None}]}]},
+                        {"id": "digest", "features": [], "deps": []},
+                        {"id": "outside", "features": [], "deps": []}]}}
+        old_meta, new_meta = metadata(old), metadata(new)
+        distribution = root / "core/distribution"
+        distribution.mkdir(parents=True)
+        (root / "core/Cargo.toml").write_text('[workspace]\nmembers=[]\n')
+        (distribution / "shipped-core-features.txt").write_text("")
+        (distribution / "inventory.toml").write_text('[[entry]]\nkind="bin"\npackage="app"\ntargets=["windows-x86_64"]\n')
+        (root / refresh.LOCK_RELATIVE_PATH).write_bytes(lock(new))
+        vendor = root / "vendor"
+        for row, source_files in [(old, old_files), (outside, {"Cargo.toml": b'[package]\nname="outside"\nversion="1.0.0"\n', "lib.rs": b"unchanged source"})]:
+            directory = vendor / f'{row["name"]}-{row["version"]}'
+            directory.mkdir(parents=True)
+            for name, content in source_files.items():
+                p = directory / name
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_bytes(content)
+            (directory / ".cargo-checksum.json").write_text(json.dumps({"package": row["checksum"], "files": {n: refresh.sha256_bytes(b) for n, b in source_files.items()}}))
+        rows, members, texts = refresh.added_package_rows([old], {(old["name"], old["version"]): {"license": expression}}, vendor, frozenset({("digest", "1.0.0")}))
+        notices, spans = refresh.render_notices(texts)
+        (root / refresh.NOTICES_RELATIVE_PATH).write_bytes(notices)
+        archive = root / "prior.tar.gz"
+        archive_members = {"Cargo.lock": lock(old), refresh.GRAPH_MEMBER_NAME: json.dumps({"graph": refresh.normalize_graph(old_meta)}).encode(), **members}
+        for p in (vendor / "outside-1.0.0").iterdir():
+            archive_members[f"vendor/outside-1.0.0/{p.name}"] = p.read_bytes()
+        with tarfile.open(archive, "w:gz") as tar:
+            for name, content in archive_members.items():
+                member = tarfile.TarInfo(name)
+                member.size = len(content)
+                tar.addfile(member, io.BytesIO(content))
+        index = {"packages": rows + [{**outside, "identity": f'outside@1.0.0 ({SOURCE})', "windows_notice_population": False}],
+                 "notices_sha256": refresh.sha256_bytes(notices), "notice_texts": spans,
+                 "cargo_lock_sha256": refresh.sha256_bytes(lock(old)),
+                 "population": {"source_sha256": refresh.external_population_sha256(external(old)), "source_package_count": len(external(old)), "windows_notice_package_count": 1},
+                 "dependency_source_companion": {"filename": archive.name, "bytes": archive.stat().st_size, "sha256": refresh.sha256_file(archive)}}
+        (root / refresh.INDEX_RELATIVE_PATH).write_text(json.dumps(index))
+        return archive, new_meta, data, archive_members
+
+    def run_refresh(self, root, archive, metadata, data, **kwargs):
+        original = refresh.upgraded_package_rows
+        fetches = []
+        def fetch(url):
+            fetches.append(url)
+            return 200, data
+        with patch.object(refresh, "query_cargo_metadata", return_value=metadata), \
+             patch.object(refresh, "run_cargo_vendor", side_effect=AssertionError("full vendor forbidden")), \
+             patch.object(refresh, "upgraded_package_rows", side_effect=lambda *args: original(*args, fetch=fetch)):
+            result = refresh.refresh(root, archive, None, root / "out", **kwargs)
+        self.assertEqual(len(fetches), 1)
+        return result
+
+    def test_incremental_refresh_keeps_surviving_members_and_notices_identical(self):
+        for expression in ("MIT", "CDLA-Permissive-2.0"):
+            with self.subTest(expression=expression), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, data, prior = self.fixture(root, expression)
+                before = (root / refresh.NOTICES_RELATIVE_PATH).read_bytes()
+                result = self.run_refresh(root, archive, metadata, data)
+                self.assertIsNone(result["new_notices"])
+                self.assertEqual(result["new_index"]["notices_sha256"], refresh.sha256_bytes(before))
+                self.assertEqual(result["new_index"]["packages"][0]["version"], "1.0.1")
+                with tarfile.open(root / "out" / result["report"]["new_archive"]["filename"]) as tar:
+                    observed = {m.name: tar.extractfile(m).read() for m in tar if m.isfile()}
+                survivors = {n: b for n, b in prior.items() if n.startswith("vendor/outside-")}
+                self.assertTrue(survivors)
+                self.assertEqual({n: observed[n] for n in survivors}, survivors)
+                self.assertFalse(any(n.startswith("vendor/digest-1.0.0/") for n in observed))
+                self.assertIn("vendor/digest-1.0.1/.cargo-checksum.json", observed)
+
+    def test_licence_and_acquisition_refusals_leave_published_inputs_untouched(self):
+        for changes in ({"new_expression": "ISC"}, {"new_text": b"changed\n"},
+                        {"expression": "GPL-3.0-only"}, {"expression": "unknown"},
+                        {"extra": {"native/NOTICE": b"new terms"}},
+                        {"extra": {"Cargo.toml": b'[package]\nname="digest"\nversion="1.0.1"\nlicense="MIT"\nlicense-file="missing"\n'}}):
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, data, _ = self.fixture(root, **changes)
+                paths = [root / refresh.INDEX_RELATIVE_PATH, root / refresh.NOTICES_RELATIVE_PATH]
+                before = [p.read_bytes() for p in paths]
+                with self.assertRaises(refresh.RefreshError):
+                    self.run_refresh(root, archive, metadata, data)
+                self.assertEqual([p.read_bytes() for p in paths], before)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, metadata, data, _ = self.fixture(root)
+            with self.assertRaisesRegex(refresh.RefreshError, "checksum"):
+                self.run_refresh(root, archive, metadata, data + b"corrupt")
+
+    def test_sequential_verifier_still_rejects_corrupt_surviving_sources(self):
+        for corruption in ("source", "missing-null-checksum"):
+            with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, data, members = self.fixture(root)
+                if corruption == "source":
+                    members["vendor/outside-1.0.0/lib.rs"] = b"corrupt source"
+                else:
+                    name = "vendor/outside-1.0.0/.cargo-checksum.json"
+                    checks = json.loads(members[name])
+                    checks["files"]["missing.rs"] = None
+                    members[name] = json.dumps(checks).encode()
+                with tarfile.open(archive, "w:gz") as tar:
+                    for name, content in members.items():
+                        member = tarfile.TarInfo(name)
+                        member.size = len(content)
+                        tar.addfile(member, io.BytesIO(content))
+                path = root / refresh.INDEX_RELATIVE_PATH
+                index = json.loads(path.read_text())
+                index["dependency_source_companion"].update(bytes=archive.stat().st_size, sha256=refresh.sha256_file(archive))
+                path.write_text(json.dumps(index))
+                with self.assertRaisesRegex(refresh.RefreshError, "failed its checksum"):
+                    self.run_refresh(root, archive, metadata, data)
+
+    def test_upgrades_cannot_mix_a_git_pin_move_or_closure_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, metadata, data, _ = self.fixture(root)
+            with self.assertRaisesRegex(refresh.RefreshError, "cannot mix"):
+                self.run_refresh(root, archive, metadata, data, promotions=frozenset({("outside", "1.0.0")}))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, metadata, data, _ = self.fixture(root, git_move=True)
+            with self.assertRaisesRegex(refresh.RefreshError, "cannot mix git moves"):
+                self.run_refresh(root, archive, metadata, data)
+
+    def test_archive_duplicate_paths_links_and_traversal_refuse(self):
+        for name, kind in (("digest-1.0.1/../escaped", tarfile.REGTYPE),
+                           ("digest-1.0.1/link", tarfile.SYMTYPE),
+                           ("digest-1.0.1/Cargo.toml", tarfile.REGTYPE)):
+            with self.subTest(name=name, kind=kind), tempfile.TemporaryDirectory() as tmp:
+                stream = io.BytesIO()
+                with tarfile.open(fileobj=stream, mode="w:gz") as tar:
+                    for entry in ["digest-1.0.1/Cargo.toml", name]:
+                        member = tarfile.TarInfo(entry)
+                        member.type = kind if entry == name else tarfile.REGTYPE
+                        tar.addfile(member, io.BytesIO(b""))
+                data = stream.getvalue()
+                with self.assertRaises(refresh.RefreshError):
+                    refresh.acquire_registry_upgrade(self.row("1.0.1", refresh.sha256_bytes(data)), Path(tmp), lambda _: (200, data))
 
 
 class NoticesRendering(unittest.TestCase):
