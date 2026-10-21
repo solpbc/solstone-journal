@@ -1190,6 +1190,14 @@ fn validate_census(
     census: &NvattestToolCensus,
     report: &NvattestBuildReport,
 ) -> Result<(), String> {
+    validate_census_tools(pins, census, &report.tools)
+}
+
+pub(crate) fn validate_census_tools(
+    pins: &Pins,
+    census: &NvattestToolCensus,
+    tools: &NvattestReportTools,
+) -> Result<(), String> {
     if census.schema != NVATTEST_TOOL_CENSUS_SCHEMA_V1 {
         return Err("census-version: tool census schema mismatch".into());
     }
@@ -1200,19 +1208,19 @@ fn validate_census(
             "rustc",
             &census.rustc,
             toolchain.rustc_exe_sha256,
-            &report.tools.rustc,
+            &tools.rustc,
         ),
         (
             "cargo",
             &census.cargo,
             toolchain.cargo_exe_sha256,
-            &report.tools.cargo,
+            &tools.cargo,
         ),
         (
             "cmake",
             &census.cmake,
             toolchain.cmake_exe_sha256,
-            &report.tools.cmake,
+            &tools.cmake,
         ),
     ] {
         let version = census_tool(name, tool)?;
@@ -1264,7 +1272,7 @@ fn validate_census(
             toolchain.msvc_toolset
         ));
     }
-    if msvc != report.tools.msvc {
+    if msvc != tools.msvc {
         return Err("tool-census: census msvc version differs from report".into());
     }
 
@@ -1287,7 +1295,7 @@ fn validate_census(
             toolchain.windows_sdk
         ));
     }
-    if sdk != report.tools.windows_sdk {
+    if sdk != tools.windows_sdk {
         return Err("tool-census: census windows_sdk version differs from report".into());
     }
     Ok(())
@@ -1339,7 +1347,15 @@ fn require_version_tokens(
 }
 
 fn validate_report_sources(pins: &Pins, report: &NvattestBuildReport) -> Result<(), String> {
-    compare_source_list("report-sources", "report", &report.sources, pins)?;
+    validate_report_source_lists(pins, &report.sources, &report.build_tools)
+}
+
+pub(crate) fn validate_report_source_lists(
+    pins: &Pins,
+    sources: &[NvattestReportSourceEntry],
+    build_tools: &[NvattestReportBuildToolEntry],
+) -> Result<(), String> {
+    compare_source_list("report-sources", "report", sources, pins)?;
     let expected: Vec<NvattestReportBuildToolEntry> = pins
         .build_tools
         .iter()
@@ -1349,7 +1365,7 @@ fn validate_report_sources(pins: &Pins, report: &NvattestBuildReport) -> Result<
             sha256: tool.sha256.into(),
         })
         .collect();
-    if report.build_tools != expected {
+    if build_tools != expected {
         return Err("report-tools: report build tools differ from the committed list".into());
     }
     Ok(())

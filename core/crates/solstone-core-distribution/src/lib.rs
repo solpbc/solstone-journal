@@ -42,6 +42,7 @@ pub mod macho;
 pub mod manifest_verify;
 pub mod mobile_inputs;
 pub mod nvattest_windows;
+pub mod nvattest_windows_arm64;
 pub mod nvattest_windows_source;
 pub mod onnx_runtime;
 pub mod onnx_windows;

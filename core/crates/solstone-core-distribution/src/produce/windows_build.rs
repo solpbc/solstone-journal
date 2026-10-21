@@ -655,7 +655,7 @@ fn retain_release_root(
     .map_err(|e| format!("retain fresh release output directory: {e}"))
 }
 
-pub(super) fn read_bounded(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
+pub(crate) fn read_bounded(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
     let parent = path.parent().ok_or("input has no parent")?;
     let leaf = path.file_name().ok_or("input has no filename")?;
     let root = solstone_core_journal_io::JournalRoot::open(parent).map_err(|e| e.to_string())?;
