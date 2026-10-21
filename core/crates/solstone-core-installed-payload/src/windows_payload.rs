@@ -304,6 +304,21 @@ pub fn render_windows_payload_manifest(
     source_commit: &str,
     cargo_lock_sha256: &str,
 ) -> Result<Vec<u8>, WindowsPayloadError> {
+    render_windows_payload_manifest_for_architecture(
+        root,
+        source_commit,
+        cargo_lock_sha256,
+        crate::compiled_windows_architecture(),
+    )
+}
+
+/// The producer supplies its target independently of the unsigned manifest.
+pub fn render_windows_payload_manifest_for_architecture(
+    root: &Path,
+    source_commit: &str,
+    cargo_lock_sha256: &str,
+    architecture: crate::WindowsArchitecture,
+) -> Result<Vec<u8>, WindowsPayloadError> {
     require_commit(source_commit)?;
     require_digest(WindowsPayloadRefusal::LockDigest, cargo_lock_sha256)?;
     let files = collect_payload_files(root)?
@@ -325,12 +340,12 @@ pub fn render_windows_payload_manifest(
     }
     let manifest = WindowsPayloadManifest {
         schema: WINDOWS_PAYLOAD_SCHEMA_V1.to_owned(),
-        target: WINDOWS_PAYLOAD_TARGET.to_owned(),
+        target: architecture.target_id().to_owned(),
         source_commit: source_commit.to_owned(),
         cargo_lock_sha256: cargo_lock_sha256.to_owned(),
         files,
     };
-    validate_manifest(&manifest)?;
+    validate_manifest(&manifest, architecture)?;
     serde_json::to_vec(&manifest).map_err(|error| {
         WindowsPayloadError::new(WindowsPayloadRefusal::Manifest, error.to_string())
     })
@@ -339,8 +354,8 @@ pub fn render_windows_payload_manifest(
 /// Results shared by every `verify_windows_payload` call made while a
 /// [`SharedVerification`] guard is alive. `None` means no scope is open and
 /// every call verifies the tree from scratch.
-static SHARED_VERIFICATION: Mutex<Option<BTreeMap<PathBuf, VerifiedWindowsPayload>>> =
-    Mutex::new(None);
+type VerificationCache = BTreeMap<(PathBuf, &'static str), VerifiedWindowsPayload>;
+static SHARED_VERIFICATION: Mutex<Option<VerificationCache>> = Mutex::new(None);
 
 /// Scope in which one bounded operation, such as a single diagnostics run,
 /// verifies each package tree once instead of once per check.
@@ -379,23 +394,31 @@ impl Drop for SharedVerification {
 
 fn verified_once(
     root: &Path,
+    architecture: crate::WindowsArchitecture,
     verify: impl FnOnce() -> Result<VerifiedWindowsPayload, WindowsPayloadError>,
 ) -> Result<VerifiedWindowsPayload, WindowsPayloadError> {
+    let key = (root.to_path_buf(), architecture.target_id());
     {
         let state = SHARED_VERIFICATION
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(shared) = state.as_ref().and_then(|scope| scope.get(root)) {
+        if let Some(shared) = state.as_ref().and_then(|scope| scope.get(&key)) {
             return Ok(shared.clone());
         }
     }
     let verified = verify()?;
+    if verified.manifest.target != architecture.target_id() {
+        return Err(WindowsPayloadError::new(
+            WindowsPayloadRefusal::Target,
+            &verified.manifest.target,
+        ));
+    }
     if let Some(scope) = SHARED_VERIFICATION
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .as_mut()
     {
-        scope.insert(root.to_path_buf(), verified.clone());
+        scope.insert(key, verified.clone());
     }
     Ok(verified)
 }
@@ -405,11 +428,23 @@ fn verified_once(
 /// Member digests other than DLLs are checked by
 /// [`VerifiedWindowsPayload::declared_path`] when a caller asks for them.
 pub fn verify_windows_payload(root: &Path) -> Result<VerifiedWindowsPayload, WindowsPayloadError> {
-    verified_once(root, || verify_windows_payload_uncached(root))
+    verify_windows_payload_for_architecture(root, crate::compiled_windows_architecture())
+}
+
+/// Cross-host admission requires a trusted expected architecture; a signed
+/// manifest cannot select the architecture against which it is checked.
+pub fn verify_windows_payload_for_architecture(
+    root: &Path,
+    architecture: crate::WindowsArchitecture,
+) -> Result<VerifiedWindowsPayload, WindowsPayloadError> {
+    verified_once(root, architecture, || {
+        verify_windows_payload_uncached(root, architecture)
+    })
 }
 
 fn verify_windows_payload_uncached(
     root: &Path,
+    architecture: crate::WindowsArchitecture,
 ) -> Result<VerifiedWindowsPayload, WindowsPayloadError> {
     let signature_path = root.join(WINDOWS_PAYLOAD_SIGNATURE);
     let manifest_bytes = read_regular_at(root, WINDOWS_PAYLOAD_MANIFEST)?;
@@ -421,7 +456,7 @@ fn verify_windows_payload_uncached(
         serde_json::from_slice::<WindowsPayloadManifest>(&manifest_bytes).map_err(|error| {
             WindowsPayloadError::new(WindowsPayloadRefusal::Manifest, error.to_string())
         })?;
-    validate_manifest(&manifest)?;
+    validate_manifest(&manifest, architecture)?;
     let actual = collect_payload_files(root)?;
     let declared = manifest
         .files
@@ -484,14 +519,17 @@ fn check_member_digest(root: &Path, file: &WindowsPayloadFile) -> Result<(), Win
     Ok(())
 }
 
-fn validate_manifest(manifest: &WindowsPayloadManifest) -> Result<(), WindowsPayloadError> {
+fn validate_manifest(
+    manifest: &WindowsPayloadManifest,
+    architecture: crate::WindowsArchitecture,
+) -> Result<(), WindowsPayloadError> {
     if manifest.schema != WINDOWS_PAYLOAD_SCHEMA_V1 {
         return Err(WindowsPayloadError::new(
             WindowsPayloadRefusal::Schema,
             &manifest.schema,
         ));
     }
-    if manifest.target != WINDOWS_PAYLOAD_TARGET {
+    if manifest.target != architecture.target_id() {
         return Err(WindowsPayloadError::new(
             WindowsPayloadRefusal::Target,
             &manifest.target,
@@ -864,22 +902,22 @@ mod shared_verification_tests {
             Ok(payload(path))
         };
 
-        verified_once(root, || count(root)).unwrap();
-        verified_once(root, || count(root)).unwrap();
+        verified_once(root, crate::WindowsArchitecture::X86_64, || count(root)).unwrap();
+        verified_once(root, crate::WindowsArchitecture::X86_64, || count(root)).unwrap();
         assert_eq!(runs.get(), 2, "no scope: every call verifies");
 
         {
             let _scope = share_verification();
-            verified_once(root, || count(root)).unwrap();
-            verified_once(root, || count(root)).unwrap();
+            verified_once(root, crate::WindowsArchitecture::X86_64, || count(root)).unwrap();
+            verified_once(root, crate::WindowsArchitecture::X86_64, || count(root)).unwrap();
             assert_eq!(runs.get(), 3, "scope: second call reuses the first");
             {
                 let _joined = share_verification();
-                verified_once(root, || count(root)).unwrap();
+                verified_once(root, crate::WindowsArchitecture::X86_64, || count(root)).unwrap();
             }
-            verified_once(root, || count(root)).unwrap();
+            verified_once(root, crate::WindowsArchitecture::X86_64, || count(root)).unwrap();
             assert_eq!(runs.get(), 3, "a nested guard does not end the scope");
-            verified_once(other, || count(other)).unwrap();
+            verified_once(other, crate::WindowsArchitecture::X86_64, || count(other)).unwrap();
             assert_eq!(runs.get(), 4, "a different tree is verified separately");
 
             let failing = Path::new("/package/bad");
@@ -887,12 +925,36 @@ mod shared_verification_tests {
                 runs.set(runs.get() + 1);
                 Err(WindowsPayloadError::new(WindowsPayloadRefusal::Digest, "x"))
             };
-            assert!(verified_once(failing, refuse).is_err());
-            assert!(verified_once(failing, refuse).is_err());
+            assert!(verified_once(failing, crate::WindowsArchitecture::X86_64, refuse).is_err());
+            assert!(verified_once(failing, crate::WindowsArchitecture::X86_64, refuse).is_err());
             assert_eq!(runs.get(), 6, "a refusal is never shared");
         }
 
-        verified_once(root, || count(root)).unwrap();
+        verified_once(root, crate::WindowsArchitecture::X86_64, || count(root)).unwrap();
         assert_eq!(runs.get(), 7, "the scope ended with its guard");
+
+        {
+            let _scope = share_verification();
+            let x64 = crate::WindowsArchitecture::X86_64;
+            let arm = crate::WindowsArchitecture::Aarch64;
+            verified_once(root, x64, || Ok(payload(root))).unwrap();
+            assert_eq!(
+                verified_once(root, arm, || Ok(payload(root)))
+                    .unwrap_err()
+                    .kind,
+                WindowsPayloadRefusal::Target,
+                "an x64 cached result cannot admit an ARM request"
+            );
+            let admitted_arm = verified_once(root, arm, || {
+                let mut result = payload(root);
+                result.manifest.target = arm.target_id().to_owned();
+                Ok(result)
+            })
+            .unwrap();
+            assert_eq!(admitted_arm.manifest.target, arm.target_id());
+            let admitted_x64 =
+                verified_once(root, x64, || panic!("x64 result must remain cached")).unwrap();
+            assert_eq!(admitted_x64.manifest.target, x64.target_id());
+        }
     }
 }

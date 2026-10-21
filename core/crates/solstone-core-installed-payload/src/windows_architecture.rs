@@ -9,6 +9,16 @@ pub enum WindowsArchitecture {
     Aarch64,
 }
 
+/// Runtime package admission follows the binary's compile target. Cross-host
+/// producers pass their selected architecture explicitly instead.
+pub const fn compiled_windows_architecture() -> WindowsArchitecture {
+    if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
+        WindowsArchitecture::Aarch64
+    } else {
+        WindowsArchitecture::X86_64
+    }
+}
+
 impl WindowsArchitecture {
     pub const ALL: [Self; 2] = [Self::X86_64, Self::Aarch64];
 

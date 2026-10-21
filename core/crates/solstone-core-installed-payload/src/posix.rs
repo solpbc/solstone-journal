@@ -63,6 +63,7 @@ pub fn canonical_target(id: &str) -> Option<&'static str> {
         TARGET_LINUX_AARCH64 => Some(TARGET_LINUX_AARCH64),
         TARGET_MACOS_ARM64 => Some(TARGET_MACOS_ARM64),
         crate::TARGET_WINDOWS_X86_64 => Some(crate::TARGET_WINDOWS_X86_64),
+        crate::TARGET_WINDOWS_AARCH64 => Some(crate::TARGET_WINDOWS_AARCH64),
         _ => None,
     }
 }
