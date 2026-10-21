@@ -302,11 +302,9 @@ fn resolve_screen_ocr_bundle(
     let (runtime_name, dependency_name) = screen_ocr_runtime_members(target, target_uses_gnu)?;
 
     Ok(CurrentScreenOcrBundle {
-        helper: resolve(if cfg!(target_os = "windows") {
-            "bin/solstone-screen-ocr-helper.exe"
-        } else {
-            "bin/solstone-screen-ocr-helper"
-        })?,
+        // Named for the admitted target, not the host this was built on; no
+        // admitted target uses an executable suffix.
+        helper: resolve("bin/solstone-screen-ocr-helper")?,
         recipe: resolve("lib/solstone-screen-ocr/recipe.toml")?,
         detector: resolve("lib/solstone-screen-ocr/models/detector.onnx")?,
         recognizer: resolve("lib/solstone-screen-ocr/models/recognizer.onnx")?,
