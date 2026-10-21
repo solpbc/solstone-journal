@@ -50,6 +50,7 @@ pub mod windows_cli;
 pub mod windows_inputs;
 pub mod windows_llama_arm64;
 pub mod windows_llama_arm64_controlled;
+pub mod windows_nvattest_arm64;
 pub mod windows_onnx_arm64;
 pub mod windows_openmp;
 pub mod windows_parakeet_arm64;

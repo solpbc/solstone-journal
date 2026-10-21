@@ -368,9 +368,18 @@ fn main() -> ExitCode {
             }
         }
         Some("nvattest-windows-arm64") => {
-            match solstone_core_distribution::nvattest_windows_arm64::run_cli(
-                &args.collect::<Vec<_>>(),
-            ) {
+            let args = args.collect::<Vec<_>>();
+            let result = if args.first().is_some_and(|arg| arg == "inspect-artifacts") {
+                solstone_core_distribution::nvattest_windows_arm64::run_cli(&args)
+            } else {
+                match env::current_dir() {
+                    Ok(start) => produce::windows_nvattest_arm64::run_cli(&start, &args),
+                    Err(error) => Err(format!(
+                        "ARM nvattest product directory unavailable: {error}"
+                    )),
+                }
+            };
+            match result {
                 Ok(line) => {
                     println!("{line}");
                     ExitCode::SUCCESS

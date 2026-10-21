@@ -824,7 +824,43 @@ fn require_file_pin(label: &str, bytes: &[u8], pin: &FilePin) -> Result<(), Stri
     Ok(())
 }
 
-fn validate_notices_index(pins: &Pins, index: &NoticesIndex) -> Result<(), String> {
+/// Shared source material checks; target-specific receipt/report admission is
+/// kept at each caller. All archive identities are checked before parsing.
+pub(crate) fn admitted_archive_material(
+    pins: &Pins,
+    source_bytes: &[u8],
+    bundle_bytes: &[u8],
+) -> Result<std::collections::BTreeMap<String, Vec<u8>>, String> {
+    require_archive("source-archive", source_bytes, &pins.source_archive)?;
+    require_archive("bundle-archive", bundle_bytes, &pins.bundle_archive)?;
+    let source = extract_source_tar_members(source_bytes, pins)?;
+    if source.pax_comment.as_deref() != Some(pins.sdk_revision) {
+        return Err("source-revision: source archive pax comment differs from pin".into());
+    }
+    require_file_pin("source-archive", &source.license, &pins.license)?;
+    require_file_pin(
+        "source-archive",
+        &source.regorus_lock,
+        &pins.regorus_cargo_lock,
+    )?;
+    let bundle = extract_bundle_tar_members(bundle_bytes, pins)?;
+    if sha256_hex(&bundle.manifest) != pins.manifest_sha256 {
+        return Err("bundle-archive: bundle offline-manifest.json differs from pin".into());
+    }
+    let manifest: BundleManifest =
+        serde_json::from_slice(&bundle.manifest).map_err(|e| e.to_string())?;
+    if manifest.schema != 1 {
+        return Err("bundle-archive: offline manifest schema differs".into());
+    }
+    validate_bundle_manifest(pins, &manifest)?;
+    require_file_pin("bundle-archive", &bundle.ca, &pins.ca_bundle)?;
+    Ok(std::collections::BTreeMap::from([
+        (NVATTEST_LICENSE_LABEL.into(), source.license),
+        (NVATTEST_CA_BUNDLE_LABEL.into(), bundle.ca),
+    ]))
+}
+
+pub(crate) fn validate_notices_index(pins: &Pins, index: &NoticesIndex) -> Result<(), String> {
     if index.schema != NVATTEST_NOTICES_INDEX_SCHEMA_V1 {
         return Err("notices-index: schema mismatch".into());
     }
@@ -945,7 +981,10 @@ fn validate_receipt(pins: &Pins, receipt: &ControlledBuildReceipt) -> Result<(),
     Ok(())
 }
 
-fn validate_invocation(pins: &Pins, invocation: &NvattestInvocation) -> Result<(), String> {
+pub(crate) fn validate_invocation(
+    pins: &Pins,
+    invocation: &NvattestInvocation,
+) -> Result<(), String> {
     if !invocation.offline {
         return Err("invocation: evidence invocation must declare offline=true".into());
     }
@@ -993,7 +1032,7 @@ fn validate_invocation(pins: &Pins, invocation: &NvattestInvocation) -> Result<(
     Ok(())
 }
 
-fn validate_refusals(refusals: &NvattestRefusals) -> Result<(), String> {
+pub(crate) fn validate_refusals(refusals: &NvattestRefusals) -> Result<(), String> {
     for (name, entry, boundary) in [
         (
             "manifest_digest",
@@ -1020,7 +1059,7 @@ fn validate_refusals(refusals: &NvattestRefusals) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_network(network: &NvattestNetworkEvidence) -> Result<(), String> {
+pub(crate) fn validate_network(network: &NvattestNetworkEvidence) -> Result<(), String> {
     for (family, probe) in [("ipv4", &network.ipv4), ("ipv6", &network.ipv6)] {
         let positive_admitted = probe.positive_control == NVATTEST_NETWORK_CONNECTED
             || (family == "ipv6" && probe.positive_control == NVATTEST_NETWORK_UNREACHABLE);
