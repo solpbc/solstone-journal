@@ -315,7 +315,16 @@ fn main() -> ExitCode {
             }
         }
         Some("llama-windows-arm64") => {
-            match produce::windows_llama_arm64::run_cli(&args.collect::<Vec<_>>()) {
+            let args = args.collect::<Vec<_>>();
+            let result = if args.first().is_some_and(|arg| arg == "inspect-artifacts") {
+                produce::windows_llama_arm64::run_cli(&args)
+            } else {
+                match env::current_dir() {
+                    Ok(start) => produce::windows_llama_arm64_controlled::run_cli(&start, &args),
+                    Err(error) => Err(format!("Llama product directory unavailable: {error}")),
+                }
+            };
+            match result {
                 Ok(line) => {
                     println!("{line}");
                     ExitCode::SUCCESS

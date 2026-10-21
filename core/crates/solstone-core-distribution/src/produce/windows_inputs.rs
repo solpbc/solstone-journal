@@ -608,53 +608,60 @@ pub fn admit_llama(
             validation_bytes: files["report/execution.json"].clone(),
             outputs,
         };
-        attach_source_notices(&mut admitted, &archive, LLAMA_NOTICES)?;
-        // These embedded license comments are copied verbatim from the exact
-        // pinned source files above, including upstream copyright attribution.
-        for (member, destination, first) in [
-            ("loader/loader/cJSON.h", "notices/cJSON-LICENSE.txt", true),
-            (
-                "loader/loader/dirent_on_windows.c",
-                "notices/dirent-LICENSE.txt",
-                false,
-            ),
-            (
-                "llama/vendor/stb/stb_image.h",
-                "notices/stb-LICENSE.txt",
-                false,
-            ),
-            (
-                "llama/vendor/miniaudio/miniaudio.h",
-                "notices/miniaudio-LICENSE.txt",
-                false,
-            ),
-        ] {
-            let bytes = admitted
-                .outputs
-                .remove(member)
-                .ok_or("missing embedded source notice")?;
-            let text = std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
-            let start = if first {
-                text.find("/*")
-            } else {
-                text.rfind("/*")
-            }
-            .ok_or("missing license comment")?;
-            let end = text[start..]
-                .find("*/")
-                .ok_or("unterminated license comment")?
-                + start
-                + 2;
-            if admitted
-                .outputs
-                .insert(destination.into(), text.as_bytes()[start..end].to_vec())
-                .is_some()
-            {
-                return Err("duplicate llama notice destination".into());
+        for (label, bytes) in llama_source_notices(&archive)? {
+            if admitted.outputs.insert(label, bytes).is_some() {
+                return Err("llama source notice collides with a native output".into());
             }
         }
         Ok(admitted)
     })
+}
+
+pub(crate) fn llama_source_notices(snapshot: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    let mut outputs = source_notice_members(snapshot, LLAMA_NOTICES)?;
+    // These embedded license comments are copied verbatim from the exact
+    // pinned source files above, including upstream copyright attribution.
+    for (member, destination, first) in [
+        ("loader/loader/cJSON.h", "notices/cJSON-LICENSE.txt", true),
+        (
+            "loader/loader/dirent_on_windows.c",
+            "notices/dirent-LICENSE.txt",
+            false,
+        ),
+        (
+            "llama/vendor/stb/stb_image.h",
+            "notices/stb-LICENSE.txt",
+            false,
+        ),
+        (
+            "llama/vendor/miniaudio/miniaudio.h",
+            "notices/miniaudio-LICENSE.txt",
+            false,
+        ),
+    ] {
+        let bytes = outputs
+            .remove(member)
+            .ok_or("missing embedded source notice")?;
+        let text = std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
+        let start = if first {
+            text.find("/*")
+        } else {
+            text.rfind("/*")
+        }
+        .ok_or("missing license comment")?;
+        let end = text[start..]
+            .find("*/")
+            .ok_or("unterminated license comment")?
+            + start
+            + 2;
+        if outputs
+            .insert(destination.into(), text.as_bytes()[start..end].to_vec())
+            .is_some()
+        {
+            return Err("duplicate llama notice destination".into());
+        }
+    }
+    Ok(outputs)
 }
 
 const LLAMA_NOTICES: &[SourceNotice] = &[

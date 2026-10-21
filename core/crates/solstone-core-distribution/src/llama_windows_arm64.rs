@@ -6,8 +6,37 @@
 
 use std::collections::BTreeMap;
 
+use crate::controlled_build::InputIdentityEntry;
 use crate::llama_windows_config::cache;
 use crate::windows_clang::windows_path;
+
+pub fn pinned_host_inputs() -> Vec<InputIdentityEntry> {
+    let mut inputs: Vec<_> = crate::openmp_windows::pinned_inputs()
+        .into_iter()
+        .skip(1)
+        .collect();
+    inputs.push(InputIdentityEntry {
+        label: "tools/vulkan-sdk-windows-x64.exe".into(),
+        size: crate::llama_windows_source::SDK_BYTES,
+        sha256: crate::llama_windows_source::SDK_SHA256.into(),
+    });
+    inputs
+}
+
+pub fn pinned_archive_tools() -> Vec<InputIdentityEntry> {
+    let mut tools = crate::openmp_windows::pinned_tools();
+    let sdk: Vec<InputIdentityEntry> =
+        serde_json::from_slice(include_bytes!("llama_windows_arm64_sdk_tools.json"))
+            .expect("source-derived and native-verified SDK executable census");
+    tools.extend(sdk);
+    tools.push(InputIdentityEntry {
+        label: "inputs/vulkan-sdk.exe".into(),
+        size: crate::llama_windows_source::SDK_BYTES,
+        sha256: crate::llama_windows_source::SDK_SHA256.into(),
+    });
+    tools.sort_by(|left, right| left.label.cmp(&right.label));
+    tools
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CacheRole {

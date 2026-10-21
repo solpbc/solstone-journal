@@ -80,7 +80,14 @@ pub(crate) fn pinned_tools() -> Vec<InputIdentityEntry> {
 }
 
 pub(crate) fn validate_tool_census(census: &ToolCensus<'_>) -> Result<(), String> {
-    if census.archive_tools != pinned_tools().as_slice() {
+    validate_tool_census_against(census, &pinned_tools())
+}
+
+pub(crate) fn validate_tool_census_against(
+    census: &ToolCensus<'_>,
+    expected_archive_tools: &[InputIdentityEntry],
+) -> Result<(), String> {
+    if census.archive_tools != expected_archive_tools {
         return Err("Windows clang archive-tool identities differ".into());
     }
     let mut tools = BTreeSet::new();
@@ -118,7 +125,11 @@ pub(crate) fn validate_tool_census(census: &ToolCensus<'_>) -> Result<(), String
             return Err(format!("OpenMP system-tool census is missing {required}"));
         }
     }
-    tools.extend(census.archive_tools.iter().map(|t| t.label.clone()));
+    for tool in census.archive_tools {
+        if !tools.insert(tool.label.clone()) {
+            return Err("Windows archive and system tool labels overlap".into());
+        }
+    }
     if census.network_denied_tools != tools.into_iter().collect::<Vec<_>>().as_slice() {
         return Err("OpenMP outbound denial does not cover its complete tool census".into());
     }
@@ -132,11 +143,91 @@ fn valid_digest(value: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+pub(crate) fn validate_tool_paths_and_denies(
+    census: &ToolCensus<'_>,
+    work_root: &str,
+    tool_paths: &BTreeMap<String, String>,
+    network_denies: &[NetworkDeny],
+    expected_archive_tools: &[InputIdentityEntry],
+) -> Result<(), String> {
+    validate_tool_census_against(census, expected_archive_tools)?;
+    let work = windows_path(work_root)?;
+    let labels: BTreeSet<_> = census
+        .archive_tools
+        .iter()
+        .chain(census.system_tools)
+        .map(|tool| tool.label.as_str())
+        .collect();
+    if tool_paths
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != labels
+        || network_denies.len() != labels.len()
+    {
+        return Err("OpenMP tool paths or firewall-rule population differ".into());
+    }
+    let git = windows_path(&tool_paths["windows/git.exe"])?;
+    let backend = windows_path(&tool_paths["windows/git-backend.exe"])?;
+    let prefix = backend
+        .strip_suffix("/bin/git.exe")
+        .ok_or("Git backend does not use its installed bin directory")?;
+    let root = prefix
+        .rsplit_once('/')
+        .ok_or("Git installation root missing")?
+        .0;
+    if ![
+        format!("{root}/cmd/git.exe"),
+        backend.clone(),
+        format!("{prefix}/libexec/git-core/git.exe"),
+    ]
+    .contains(&git)
+        || windows_path(&tool_paths["windows/git-core.exe"])?
+            != format!("{prefix}/libexec/git-core/git.exe")
+        || windows_path(&tool_paths["windows/git-http.exe"])?
+            != format!("{prefix}/libexec/git-core/git-remote-https.exe")
+    {
+        return Err(
+            "Git implementation and transport paths differ from their installed layout".into(),
+        );
+    }
+    for tool in census.archive_tools {
+        if windows_path(&tool_paths[&tool.label])?
+            != format!("{work}/{}", tool.label.to_ascii_lowercase())
+        {
+            return Err("OpenMP archive tool path differs from its extracted root".into());
+        }
+    }
+    for (rule, label) in network_denies.iter().zip(census.network_denied_tools) {
+        if rule.label != *label
+            || !rule.enabled
+            || rule.direction != "Outbound"
+            || rule.action != "Block"
+            || rule.profile != "Any"
+            || rule.protocol != "Any"
+            || rule.local_address != ["Any"]
+            || rule.remote_address != ["Any"]
+            || rule.local_port != ["Any"]
+            || rule.remote_port != ["Any"]
+            || windows_path(&rule.program)? != windows_path(&tool_paths[label])?
+        {
+            return Err("OpenMP firewall rule differs from the complete outbound deny".into());
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_host_capture(
     census: &ToolCensus<'_>,
     validation: &BuildValidation,
 ) -> Result<(), String> {
-    validate_tool_census(census)?;
+    validate_tool_paths_and_denies(
+        census,
+        &validation.work_root,
+        &validation.tool_paths,
+        &validation.network_denies,
+        &pinned_tools(),
+    )?;
     let work = windows_path(&validation.work_root)?;
     let cache = parse_cache(&validation.cache)?;
     for key in [
@@ -157,22 +248,6 @@ pub(crate) fn validate_host_capture(
     {
         return Err("OpenMP cache uses a foreign Python interpreter".into());
     }
-    let labels: BTreeSet<_> = census
-        .archive_tools
-        .iter()
-        .chain(census.system_tools)
-        .map(|tool| tool.label.as_str())
-        .collect();
-    if validation
-        .tool_paths
-        .keys()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>()
-        != labels
-        || validation.network_denies.len() != labels.len()
-    {
-        return Err("OpenMP tool paths or firewall-rule population differ".into());
-    }
     if windows_path(
         cache
             .get("CMAKE_MAKE_PROGRAM")
@@ -180,30 +255,6 @@ pub(crate) fn validate_host_capture(
     )? != windows_path(&validation.tool_paths["msvc/nmake.exe"])?
     {
         return Err("OpenMP cache uses a foreign make program".into());
-    }
-    let git = windows_path(&validation.tool_paths["windows/git.exe"])?;
-    let backend = windows_path(&validation.tool_paths["windows/git-backend.exe"])?;
-    let prefix = backend
-        .strip_suffix("/bin/git.exe")
-        .ok_or("Git backend does not use its installed bin directory")?;
-    let root = prefix
-        .rsplit_once('/')
-        .ok_or("Git installation root missing")?
-        .0;
-    if ![
-        format!("{root}/cmd/git.exe"),
-        backend.clone(),
-        format!("{prefix}/libexec/git-core/git.exe"),
-    ]
-    .contains(&git)
-        || windows_path(&validation.tool_paths["windows/git-core.exe"])?
-            != format!("{prefix}/libexec/git-core/git.exe")
-        || windows_path(&validation.tool_paths["windows/git-http.exe"])?
-            != format!("{prefix}/libexec/git-core/git-remote-https.exe")
-    {
-        return Err(
-            "Git implementation and transport paths differ from their installed layout".into(),
-        );
     }
     if windows_path(
         cache
@@ -235,33 +286,6 @@ pub(crate) fn validate_host_capture(
             && !known_paths.contains(&windows_path(path)?)
         {
             return Err(format!("OpenMP cache uses an uncensused tool at {key}"));
-        }
-    }
-    for tool in census.archive_tools {
-        if windows_path(&validation.tool_paths[&tool.label])?
-            != format!("{work}/{}", tool.label.to_ascii_lowercase())
-        {
-            return Err("OpenMP archive tool path differs from its extracted root".into());
-        }
-    }
-    for (rule, label) in validation
-        .network_denies
-        .iter()
-        .zip(census.network_denied_tools)
-    {
-        if rule.label != *label
-            || !rule.enabled
-            || rule.direction != "Outbound"
-            || rule.action != "Block"
-            || rule.profile != "Any"
-            || rule.protocol != "Any"
-            || rule.local_address != ["Any"]
-            || rule.remote_address != ["Any"]
-            || rule.local_port != ["Any"]
-            || rule.remote_port != ["Any"]
-            || windows_path(&rule.program)? != windows_path(&validation.tool_paths[label])?
-        {
-            return Err("OpenMP firewall rule differs from the complete outbound deny".into());
         }
     }
     Ok(())
