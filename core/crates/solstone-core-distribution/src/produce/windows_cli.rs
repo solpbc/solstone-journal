@@ -559,6 +559,56 @@ impl LocalInputs {
     }
 }
 
+const VERIFY_USAGE: &str = "windows-native-inputs verify WINDOWS_TARGET --inputs ABSOLUTE_JSON";
+
+fn parse_verify_args(args: &[String]) -> Result<(WindowsArchitecture, PathBuf), String> {
+    let [operation, target, flag, path] = args else {
+        return Err(VERIFY_USAGE.into());
+    };
+    if operation != "verify" || flag != "--inputs" {
+        return Err(VERIFY_USAGE.into());
+    }
+    let expected = WindowsArchitecture::from_target_id(target).ok_or(VERIFY_USAGE)?;
+    let path = PathBuf::from(path);
+    require_absolute(&path)?;
+    Ok((expected, path))
+}
+
+/// Reuse the producer's complete native-input admission without launching a
+/// builder, staging a package, or replacing any historical receipt.
+pub fn run_verify_cli(start: &Path, args: &[String]) -> Result<String, String> {
+    let (expected, input_path) = parse_verify_args(args)?;
+    let inventory_path = crate::inventory::repository_inventory_path(start)
+        .ok_or("could not locate canonical distribution inventory")?;
+    let inventory =
+        crate::validate_distribution_inventory(&inventory_path).map_err(|e| e.to_string())?;
+    let target = inventory
+        .target
+        .iter()
+        .find(|target| target.id == expected.target_id())
+        .ok_or("requested Windows target is not in the committed inventory")?;
+    if target.windows_architecture()? != expected {
+        return Err("Windows input target differs from the committed inventory".into());
+    }
+    let repo = inventory_path
+        .ancestors()
+        .nth(3)
+        .ok_or("missing repository root")?;
+    let before = capture_source(repo)?;
+    let input_bytes = read_bounded(&input_path, 1024 * 1024)?;
+    let inputs: LocalInputs = serde_json::from_slice(&input_bytes).map_err(|e| e.to_string())?;
+    let _admitted = inputs.admit(repo, expected)?;
+    if capture_source(repo)? != before {
+        return Err("product source changed during native input admission".into());
+    }
+    serde_json::to_string(&serde_json::json!({
+        "target": expected.target_id(), "source": before,
+        "input_paths_sha256": crate::digest::sha256_hex(&input_bytes),
+        "admitted": true, "produced": false, "signed": false,
+    }))
+    .map_err(|e| e.to_string())
+}
+
 #[derive(Debug)]
 struct Args {
     destination: PathBuf,
@@ -692,6 +742,45 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admission_only_cli_has_a_closed_target_and_path_contract() {
+        let path = std::env::current_dir().unwrap().join("inputs.json");
+        let valid = vec![
+            "verify".into(),
+            "windows-x86_64".into(),
+            "--inputs".into(),
+            path.to_string_lossy().into_owned(),
+        ];
+        let (arch, parsed) = parse_verify_args(&valid).unwrap();
+        assert_eq!(arch, WindowsArchitecture::X86_64);
+        assert_eq!(parsed, path);
+        for changed in [
+            vec!["verify", "windows-x86_64", "--inputs", "relative.json"],
+            vec![
+                "verify",
+                "windows-x86_64",
+                "--inputs",
+                "/tmp/../inputs.json",
+            ],
+            vec!["verify", "linux-x86_64", "--inputs", "/tmp/inputs.json"],
+            vec!["record", "windows-x86_64", "--inputs", "/tmp/inputs.json"],
+            vec!["verify", "windows-x86_64", "--trust", "/tmp/inputs.json"],
+            vec!["verify", "windows-x86_64", "--inputs"],
+            vec![
+                "verify",
+                "windows-x86_64",
+                "--inputs",
+                "/tmp/inputs.json",
+                "extra",
+            ],
+        ] {
+            assert!(
+                parse_verify_args(&changed.into_iter().map(str::to_owned).collect::<Vec<_>>())
+                    .is_err()
+            );
+        }
+    }
 
     // If this test is red, the external (non-workspace) Cargo.lock package
     // population moved and the Windows Rust notices no longer describe it.
