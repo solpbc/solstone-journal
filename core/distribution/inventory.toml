@@ -489,21 +489,15 @@ identities = [
 ]
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
+# Windows does not carry the screen OCR helper yet. Its private runtime would
+# put a second onnxruntime.dll in the payload, which the Windows loader policy
+# refuses, and the installed resolver already reports screen text unavailable on
+# Windows. Add the target back only with a Windows layout that passes that policy.
 [[entry]]
 kind = "screen-ocr"
 class = "component"
 dest_dir = "lib/solstone-screen-ocr"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
-
-[[entry]]
-kind = "bin"
-class = "first-party"
-package = "solstone-screen-ocr-helper"
-bin = "solstone-screen-ocr-helper"
-dest = "bin/solstone-screen-ocr-helper.exe"
-mode = 0o755
-lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"

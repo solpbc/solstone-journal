@@ -2865,7 +2865,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
-        assert_eq!(inv.entry.len(), 174);
+        assert_eq!(inv.entry.len(), 173);
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }
