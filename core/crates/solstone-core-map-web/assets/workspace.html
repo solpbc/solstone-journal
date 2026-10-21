@@ -414,6 +414,131 @@
   margin-top: var(--space-2);
   accent-color: var(--orange);
 }
+
+/* month view */
+.map-month {
+  --b1: color-mix(in srgb, var(--orange) 16%, var(--paper));
+  --b2: color-mix(in srgb, var(--orange) 34%, var(--paper));
+  --b3: color-mix(in srgb, var(--orange) 56%, var(--paper));
+  --b4: color-mix(in srgb, var(--orange) 82%, var(--paper));
+  --b5: var(--orange-ink);
+  --cell-edge: color-mix(in srgb, var(--orange-ink) 40%, var(--paper));
+  --hatch: repeating-linear-gradient(135deg, transparent 0 5px, rgba(91, 74, 54, .2) 5px 7px);
+}
+.map-month-head { margin-bottom: var(--space-4); }
+.map-month-kicker { margin-bottom: 2px; color: var(--ink-soft); font-size: 13.5px; }
+.map-month-title { margin: 0; font-family: var(--font-display); font-weight: var(--weight-display); font-size: clamp(26px, 3.4vw, 36px); line-height: 1.15; letter-spacing: -.015em; color: var(--ink); }
+.map-month-lede { margin-top: 6px; color: var(--ink-soft); max-width: 62ch; }
+.map-month-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.map-month-side { display: grid; gap: var(--space-4); min-width: 0; }
+@media (min-width: 960px) {
+  .map-month-layout { grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr); }
+  .map-month-panel-sticky { position: sticky; top: var(--space-4); }
+}
+.map-month-panel { background: var(--paper); border: 1px solid var(--hairline); border-radius: var(--radius); }
+.map-month-pad { padding: var(--space-4); }
+.map-month-controls { display: flex; flex-wrap: wrap; gap: 10px 18px; padding: 14px 16px 0; }
+.map-month-choice { border: 0; margin: 0; padding: 0; min-width: 0; }
+.map-month-choice legend { padding: 0; margin-bottom: 4px; font-size: 12.5px; font-weight: 650; color: var(--ink-soft-paper); }
+.map-month-seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.map-month-seg label { position: relative; }
+.map-month-seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.map-month-seg label > span { display: inline-flex; align-items: center; min-height: var(--touch-min); padding: 0 12px; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); background: var(--paper); font-size: 14px; font-weight: 600; white-space: nowrap; color: var(--ink); }
+.map-month-seg label > span small { margin-left: 6px; font-weight: 400; font-size: 12.5px; color: var(--ink-soft-paper); }
+.map-month-seg input:checked + span { background: var(--orange-wash); border-color: var(--orange-ink); }
+.map-month-seg input:focus-visible + span { outline: 3px solid color-mix(in srgb, var(--focus) 60%, transparent); outline-offset: 2px; }
+.map-month-seg label:hover > span { border-color: var(--orange-ink); }
+
+.map-month-wrap { position: relative; margin: 12px 16px 0; border: 1px solid var(--hairline); border-radius: 10px; background: var(--cream-bright); overflow: hidden; }
+.map-month-wrap svg { display: block; width: 100%; height: auto; touch-action: none; cursor: grab; user-select: none; }
+.map-month-wrap.dragging svg { cursor: grabbing; }
+.map-month-zoom { position: absolute; bottom: 8px; right: 8px; display: flex; gap: 6px; }
+.map-month-zoom button { width: var(--touch-min); height: var(--touch-min); border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); background: var(--paper); font-size: 20px; font-weight: 600; line-height: 1; box-shadow: 0 1px 4px rgba(55, 38, 18, .08); color: var(--ink); }
+.map-month-zoom button.fit { font-size: 13px; }
+.map-month-outside { position: absolute; top: 8px; left: 8px; min-height: 36px; padding: 0 10px; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); background: var(--paper); font-size: 13px; font-weight: 600; box-shadow: 0 1px 4px rgba(55, 38, 18, .08); color: var(--ink); }
+.map-month-outside:hover, .map-month-zoom button:hover { background: var(--orange-wash); }
+.map-month-cell { stroke: var(--cell-edge); stroke-width: .75; cursor: pointer; transition: opacity .12s; }
+.map-month-cell:hover { stroke: var(--ink); stroke-width: 1.5; }
+.map-month-cell.dim { opacity: .2; }
+.map-month-cell.ring { stroke: var(--ink); stroke-width: 2; }
+.map-month-cell.sel { stroke: var(--ink); stroke-width: 3; }
+.map-month-town circle { fill: var(--ink-soft); }
+.map-month-town text { font-size: 12px; fill: var(--ink-soft); paint-order: stroke; stroke: var(--cream-bright); stroke-width: 3px; stroke-linejoin: round; }
+.map-month-scale line { stroke: var(--ink-soft); stroke-width: 1.5; }
+.map-month-scale text { font-size: 11.5px; fill: var(--ink-soft); }
+
+.map-month-foot { padding: 10px 16px 16px; display: grid; gap: 10px; }
+.map-month-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 13px; color: var(--ink-soft-paper); }
+.map-month-ramp { display: inline-flex; align-items: flex-start; }
+.map-month-ramp > span { display: grid; justify-items: center; gap: 2px; min-width: 38px; font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.map-month-ramp i { display: block; width: 100%; height: 12px; border: 1px solid var(--cell-edge); border-left-width: 0; }
+.map-month-ramp > span:first-child i { border-left-width: 1px; border-radius: 3px 0 0 3px; }
+.map-month-ramp > span:last-child i { border-radius: 0 3px 3px 0; }
+.map-month-selcap { min-height: 22px; font-size: 14px; }
+.map-month-selcap strong { font-weight: 700; }
+.map-month-notdrawn { font-size: 13px; color: var(--ink-soft-paper); }
+.map-month-notdrawn ul { margin: 4px 0 0; padding-left: 18px; }
+
+.map-month-cal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.map-month-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-top: 8px; }
+.map-month-cal .wd { text-align: center; font-size: 11.5px; color: var(--ink-faint-paper); padding-bottom: 2px; }
+.map-month-day { position: relative; min-height: var(--touch-min); border: 1px solid var(--hairline-2); border-radius: 8px; background: var(--paper); font-weight: 650; font-size: 14px; display: grid; place-items: center; padding: 0; color: var(--ink); cursor: pointer; }
+.map-month-day:hover { border-color: var(--ink); }
+.map-month-day.future { border: 1px dashed var(--hairline-2); background: transparent; color: var(--ink-faint-paper); font-weight: 400; cursor: default; }
+.map-month-day[data-state="elsewhere"] { color: var(--ink-faint-paper); font-weight: 500; }
+.map-month-day[data-state="elsewhere"]::after { content: ""; position: absolute; bottom: 6px; width: 10px; height: 2px; border-radius: 1px; background: var(--ink-faint-paper); }
+.map-month-day[data-state="no-location"] { background: var(--hatch), var(--paper); color: var(--ink-faint-paper); font-weight: 500; }
+.map-month-day.in-area { background: var(--b2); border-color: var(--orange-ink); box-shadow: inset 0 -4px 0 var(--orange-ink); }
+.map-month-day.in-area[data-state="elsewhere"] { color: var(--ink); }
+.map-month-day[aria-pressed="true"] { outline: 2.5px solid var(--ink); outline-offset: 1px; }
+.map-month-cal-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: 12.5px; color: var(--ink-soft-paper); }
+.map-month-cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.map-month-sw { display: inline-block; width: 16px; height: 12px; border-radius: 3px; border: 1px solid var(--hairline-2); background: var(--paper); }
+.map-month-sw.elsewhere { position: relative; }
+.map-month-sw.elsewhere::after { content: ""; position: absolute; left: 4px; right: 4px; bottom: 2px; height: 2px; background: var(--ink-faint-paper); }
+.map-month-sw.none { background: var(--hatch), var(--paper); }
+.map-month-sw.in-area { background: var(--b2); border-color: var(--orange-ink); box-shadow: inset 0 -3px 0 var(--orange-ink); }
+
+.map-month-detail-head { display: flex; align-items: flex-start; gap: 10px; }
+.map-month-detail-head .titles { flex: 1; min-width: 0; }
+.map-month-detail-head h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.map-month-btn { min-height: var(--touch-min); padding: 0 12px; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); background: var(--paper); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; color: var(--ink); }
+.map-month-btn:hover { background: var(--orange-wash); }
+.map-month-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 14px 0 0; font-size: 14px; }
+.map-month-facts dt { color: var(--ink-soft-paper); }
+.map-month-facts dd { margin: 0; font-weight: 650; }
+.map-month-notes { margin-top: 10px; display: grid; gap: 6px; }
+.map-month-subhead { margin: 16px 0 6px; font-size: 13px; font-weight: 700; color: var(--ink-soft-paper); }
+.map-month-rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
+.map-month-rows li { border-bottom: 1px solid var(--hairline); }
+.map-month-row { display: grid; grid-template-columns: 8.4rem minmax(0, 1fr); gap: 2px 10px; width: 100%; padding: 9px 4px; border: 0; background: none; text-align: left; font-size: 14px; color: var(--ink); }
+button.map-month-row { cursor: pointer; }
+button.map-month-row:hover { background: var(--cream); }
+.map-month-row .when { color: var(--ink-soft-paper); font-variant-numeric: tabular-nums; }
+.map-month-row .what { font-weight: 650; overflow-wrap: anywhere; }
+.map-month-row .meta { grid-column: 2; color: var(--ink-soft-paper); font-size: 13px; }
+@media (max-width: 420px) { .map-month-row { grid-template-columns: 1fr; } .map-month-row .meta { grid-column: 1; } }
+
+.map-month-strip { position: relative; height: 22px; margin-top: 12px; border-radius: 6px; background: var(--cream-bright); border: 1px solid var(--hairline); overflow: hidden; }
+.map-month-strip span { position: absolute; top: 4px; bottom: 4px; min-width: 3px; border-radius: 3px; }
+.map-month-strip .visit { background: var(--orange); }
+.map-month-strip .stay { border: 2px solid var(--orange-ink); background: transparent; }
+.map-month-strip .open { background: linear-gradient(90deg, var(--orange), transparent); }
+.map-month-strip .open.stay { border: 0; background: linear-gradient(90deg, var(--orange-ink), transparent); }
+.map-month-strip .open.from-end { background: linear-gradient(270deg, var(--orange), transparent); }
+.map-month-strip .open.stay.from-end { background: linear-gradient(270deg, var(--orange-ink), transparent); }
+.map-month-strip-scale { display: flex; justify-content: space-between; margin-top: 3px; font-size: 11px; color: var(--ink-faint-paper); }
+.map-month-strip-key { margin-top: 4px; font-size: 12.5px; color: var(--ink-soft-paper); }
+
+.map-month-areas { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
+.map-month-areas li { border-bottom: 1px solid var(--hairline); }
+.map-month-area { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; min-height: 48px; padding: 7px 4px; border: 0; background: none; text-align: left; cursor: pointer; color: var(--ink); }
+.map-month-area:hover { background: var(--cream); }
+.map-month-area[aria-pressed="true"] { background: var(--orange-wash); }
+.map-month-area .map-month-sw { width: 18px; height: 18px; border-radius: 4px; border-color: var(--cell-edge); }
+.map-month-area .name { font-weight: 650; overflow-wrap: anywhere; }
+.map-month-area .town { display: block; font-weight: 400; font-size: 12.5px; color: var(--ink-soft-paper); }
+.map-month-area .n { font-size: 13.5px; color: var(--ink-soft-paper); white-space: nowrap; }
 </style>
 
 <div class="workspace-content map-shell" id="map-shell">
@@ -429,6 +554,7 @@
   "use strict";
 
   const DAY_RE = /^\d{8}$/;
+  const MONTH_RE = /^\d{6}$/;
   const escapeHtml = (value) => window.AppServices.escapeHtml(String(value ?? ""));
   const shell = document.getElementById("map-shell");
   const root = document.getElementById("map-view-root");
@@ -504,6 +630,11 @@
     if (parts[3] === "places") return { page: "places" };
     if (parts[3] === "place" && parts[4]) return { page: "place", id: decodeURIComponent(parts[4]) };
     if (parts[3] === "week" && DAY_RE.test(parts[4] || "")) return { page: "week", day: parts[4] };
+    if (parts[3] === "month" && MONTH_RE.test(parts[4] || "")) {
+      const m = parts[4];
+      const mo = Number(m.slice(4, 6));
+      if (mo >= 1 && mo <= 12) return { page: "month", month: m };
+    }
     return {};
   }
 
@@ -532,10 +663,10 @@
     root.hidden = false;
   }
 
-  function showError(err, retry) {
-    if (window.logError) window.logError(err, { context: "map:day" });
+  function showError(err, retry, heading) {
+    if (window.logError) window.logError(err, { context: heading?.includes("month") ? "map:month" : "map:day" });
     setGate(window.SurfaceState.error({
-      heading: "couldn't open this day's location.",
+      heading: heading || "couldn't open this day's location.",
       desc: window.CONVEY_COPY?.RELOAD_HINT,
       serverMessage: err?.serverMessage,
       detail: err,
@@ -875,7 +1006,7 @@
         </section>`
       : "";
     const accuracy = accuracyCard(data.accuracy) || "<div data-accuracy-card hidden></div>";
-    reveal(`<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/week/${escapeHtml(data.day)}">this week</a><a class="map-link" href="/app/map/places">places</a></nav>
+    reveal(`<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/week/${escapeHtml(data.day)}">this week</a><a class="map-link" href="/app/map/month/${escapeHtml(String(data.day || '').slice(0, 6))}">this month</a><a class="map-link" href="/app/map/places">places</a></nav>
       ${devices.map((device) => renderDevice(device, data.day)).join("")}
       <div class="map-columns">
         <section class="map-card" aria-label="the day, in order">
@@ -1011,10 +1142,12 @@
     }
   }
 
-  function pageShell(title, body) {
+  function pageShell(title, body, nav) {
     shell.setAttribute("data-map-page", "");
-    reveal(`<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/">the day</a><a class="map-link" href="/app/map/places">places</a></nav>
-      <h1 class="map-page-title">${escapeHtml(title)}</h1>${body}`);
+    const navMarkup = nav || '<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/">the day</a><a class="map-link" href="/app/map/places">places</a></nav>';
+    const titleMarkup = title ? `<h1 class="map-page-title">${escapeHtml(title)}</h1>` : "";
+    reveal(`${navMarkup}
+      ${titleMarkup}${body}`);
   }
 
   function recorded(place) {
@@ -1131,7 +1264,8 @@
     }).join("");
     pageShell(`the week of ${longDay(data.start)}`, `<nav class="map-page-nav" aria-label="other weeks">
         <a class="map-link" href="/app/map/week/${escapeHtml(data.previous)}">the week before</a>
-        <a class="map-link" href="/app/map/week/${escapeHtml(data.next)}">the week after</a></nav>
+        <a class="map-link" href="/app/map/week/${escapeHtml(data.next)}">the week after</a>
+        <a class="map-link" href="/app/map/month/${escapeHtml(String(data.start || '').slice(0, 6))}">this month</a></nav>
       <section class="map-card">${sections}</section>
       <section class="map-card"><p class="map-muted">filled bars are visits your phone reported; outlined bars are stays your journal worked out. every reading is on each day's page.</p></section>`);
   }
@@ -1141,10 +1275,1327 @@
     try {
       if (view.page === "places") renderPlaces(await window.apiJson("/app/map/api/places"));
       else if (view.page === "place") renderPlace(await window.apiJson(`/app/map/api/place/${encodeURIComponent(view.id)}`));
+      else if (view.page === "month") await renderMonth(await window.apiJson(`/app/map/api/month/${encodeURIComponent(view.month)}`));
       else renderWeek(await window.apiJson(`/app/map/api/week/${encodeURIComponent(view.day)}`));
     } catch (err) {
-      showError(err, () => loadPage(view));
+      showError(err, () => loadPage(view), view.page === "month" ? "couldn't open this month's location." : undefined);
     }
+  }
+
+  const SIZE = { w: 1000, label: "about 1 km" };
+  const WORDS = ["no", "once", "twice"];
+  const COMPASS = ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"];
+
+  function axial(x, y, w) {
+    const s = w / Math.sqrt(3);
+    let q = (Math.sqrt(3) / 3 * x - y / 3) / s, r = (2 / 3 * y) / s, z = -q - r;
+    let rq = Math.round(q), rr = Math.round(r), rz = Math.round(z);
+    const dq = Math.abs(rq - q), dr = Math.abs(rr - r), dz = Math.abs(rz - z);
+    if (dq > dr && dq > dz) rq = -rr - rz; else if (dr > dz) rr = -rq - rz;
+    return [rq, rr];
+  }
+
+  function hexCenter(q, r, w) {
+    const s = w / Math.sqrt(3);
+    return [s * Math.sqrt(3) * (q + r / 2), s * 1.5 * r];
+  }
+
+  function hexCorners(cx, cy, w) {
+    const s = w / Math.sqrt(3), pts = [];
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 180 * (60 * i - 30);
+      pts.push([cx + s * Math.cos(a), cy + s * Math.sin(a)]);
+    }
+    return pts;
+  }
+
+  function coreOf(list) {
+    if (!list.length) return [];
+    const a = list[0], total = list.reduce((s, c) => s + c.dayCount, 0);
+    const byDist = [...list].sort((p, q) => Math.hypot(p.cx - a.cx, p.cy - a.cy) - Math.hypot(q.cx - a.cx, q.cy - a.cy));
+    const out = []; let sum = 0;
+    for (const c of byDist) {
+      out.push(c);
+      sum += c.dayCount;
+      if (sum >= total * 0.5) break;
+    }
+    return out;
+  }
+
+  function unionMinutes(intervals, totalMin) {
+    const xs = intervals
+      .map(([a, b]) => [Math.max(a, 0), Math.min(b, totalMin)])
+      .filter(([a, b]) => b > a)
+      .sort((p, q) => p[0] - q[0]);
+    let total = 0, cur = null;
+    for (const [a, b] of xs) {
+      if (!cur || a > cur[1]) {
+        if (cur) total += cur[1] - cur[0];
+        cur = [a, b];
+      } else {
+        cur[1] = Math.max(cur[1], b);
+      }
+    }
+    if (cur) total += cur[1] - cur[0];
+    return total;
+  }
+
+  function unionWithin(intervals, lo, hi) {
+    const xs = intervals
+      .map(([a, b]) => [Math.max(a, lo), Math.min(b, hi)])
+      .filter(([a, b]) => b > a)
+      .sort((p, q) => p[0] - q[0]);
+    let total = 0, cur = null;
+    for (const [a, b] of xs) {
+      if (!cur || a > cur[1]) {
+        if (cur) total += cur[1] - cur[0];
+        cur = [a, b];
+      } else {
+        cur[1] = Math.max(cur[1], b);
+      }
+    }
+    return cur ? total + cur[1] - cur[0] : total;
+  }
+
+  function hoursText(min) {
+    return min < 90 ? `${Math.round(min)} min` : `${Math.round(min / 60)} h`;
+  }
+
+  function ptDist(p1, p2) {
+    if (!p1 || !p2) return Infinity;
+    const avgLat = (p1[0] + p2[0]) / 2 * Math.PI / 180;
+    const dy = (p2[0] - p1[0]) * 111195;
+    const dx = (p2[1] - p1[1]) * 111195 * Math.cos(avgLat);
+    return Math.hypot(dx, dy);
+  }
+
+  function cutComma(text) {
+    if (!text) return "";
+    const idx = text.lastIndexOf(", ");
+    return idx !== -1 ? text.slice(0, idx) : text;
+  }
+
+  function fromBusiest(c, list, isTrip) {
+    const a = list[0];
+    const tie = list.length > 1 && list[1].dayCount === a.dayCount;
+    if (c === a) return tie ? "tied for the most days" : isTrip ? "this trip's busiest area" : "the area with the most days";
+    const ref = tie ? "the first area listed" : isTrip ? "this trip's busiest area" : "the busiest area";
+    const dx = c.cx - a.cx, dy = c.cy - a.cy, km = Math.hypot(dx, dy) / 1000;
+    const dir = COMPASS[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
+    return `${km < 10 ? km.toFixed(1).replace(/\.0$/, "") : Math.round(km)} km ${dir} of ${ref}`;
+  }
+
+  function spanText(s, d) {
+    const a = s.start == null ? "…" : moment(s.item.arrival || s.item.first, d);
+    const b = s.end == null ? "…" : moment(s.item.departure || s.item.last, d);
+    return `${a}–\u200b${b}`;
+  }
+
+  function dayInArea(es, d) {
+    const dNum = parseInt(d.slice(6, 8), 10);
+    const lo = (dNum - 1) * 1440, hi = dNum * 1440;
+    const known = es
+      .filter((s) => s.start != null && s.end != null)
+      .map((s) => [Math.max(s.start, lo), Math.min(s.end, hi)])
+      .filter(([a, b]) => b > a)
+      .sort((p, q) => p[0] - q[0]);
+    const mergedIntervals = [];
+    for (const [a, b] of known) {
+      const prev = mergedIntervals[mergedIntervals.length - 1];
+      if (prev && a <= prev[1]) prev[1] = Math.max(prev[1], b);
+      else mergedIntervals.push([a, b]);
+    }
+    const clockStr = (m) => {
+      const min = ((m % 1440) + 1440) % 1440;
+      return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+    };
+    const parts = mergedIntervals.map(([a, b]) => {
+      if (a === lo && b === hi) return "all day";
+      if (a === lo) return `until ${clockStr(b)}`;
+      if (b === hi) return `from ${clockStr(a)}`;
+      return `${clockStr(a)}–${clockStr(b)}`;
+    });
+    for (const s of es) {
+      if (s.end == null && s.start != null) parts.push(`from ${clockStr(s.start)}, no departure reported`);
+      else if (s.start == null && s.end != null) parts.push(`until ${clockStr(s.end)}, arrival not known`);
+    }
+    return parts.join(" · ");
+  }
+
+  function stripMonthDay(d, es) {
+    const dNum = parseInt(d.slice(6, 8), 10);
+    const lo = (dNum - 1) * 1440, hi = dNum * 1440;
+    const bars = es.map((s) => {
+      const a = s.start == null ? null : Math.max(s.start, lo);
+      const b = s.end == null ? null : Math.min(s.end, hi);
+      const start = a ?? Math.max(lo, b - 45);
+      const end = b ?? Math.min(hi, a + 45);
+      const open = a == null ? " open from-end" : b == null ? " open" : "";
+      return `<span class="${escapeHtml(s.kind)}${open}" style="left:${((start - lo) / 14.4).toFixed(2)}%;width:${((end - start) / 14.4).toFixed(2)}%"></span>`;
+    }).join("");
+    return `<div class="map-month-strip" role="img" aria-label="the stops across the day, shown in the list below">${bars}</div>
+      <div class="map-month-strip-scale" aria-hidden="true"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+      <p class="map-month-strip-key">${es.some((s) => s.kind === "stay") ? "filled bars are visits your phone reported; outlined bars are stays your journal worked out." : "each bar is a visit your phone reported."}${es.some((s) => s.openEnded) ? " a fading bar is missing its arrival or departure." : ""}</p>`;
+  }
+
+  function monthModel(data, today) {
+    const month = String(data.month || "");
+    const year = parseInt(month.slice(0, 4), 10);
+    const monthNum = parseInt(month.slice(4, 6), 10);
+    const monthName = MONTHS[monthNum - 1] || "";
+    const prevDate = new Date(year, monthNum - 1, 0);
+    const previousMonthName = MONTHS[prevDate.getMonth()] || "";
+    const previousMonthLastDay = `${prevDate.getFullYear()}${String(prevDate.getMonth() + 1).padStart(2, "0")}${String(prevDate.getDate()).padStart(2, "0")}`;
+    const totalDaysInMonth = new Date(year, monthNum, 0).getDate();
+    const effToday = String(today || data.today || "");
+
+    const rawItems = [];
+    function pushDayItems(items, devices, dayStr) {
+      const devArr = asArray(devices);
+      for (const it of asArray(items)) {
+        const dev = devArr[it.device];
+        const deviceKey = dev?.key ?? (typeof it.device === "string" ? it.device : String(it.device ?? ""));
+        rawItems.push({ item: it, deviceKey, dayStr });
+      }
+    }
+
+    if (data.before) pushDayItems(data.before.items, data.before.devices, "before");
+    for (const d of asArray(data.days)) {
+      pushDayItems(d.items, d.devices, d.day);
+    }
+    if (data.after) pushDayItems(data.after.items, data.after.devices, "after");
+
+    // 1. Drop exact duplicates
+    const deduped = [];
+    for (const raw of rawItems) {
+      const it = raw.item;
+      const isDup = deduped.some((ex) => {
+        const exIt = ex.item;
+        if (ex.deviceKey !== raw.deviceKey) return false;
+        if (exIt.kind !== it.kind) return false;
+        const arrEx = (exIt.arrival ?? exIt.first)?.utc ?? null;
+        const arrIt = (it.arrival ?? it.first)?.utc ?? null;
+        const depEx = (exIt.departure ?? exIt.last)?.utc ?? null;
+        const depIt = (it.departure ?? it.last)?.utc ?? null;
+        return arrEx === arrIt && depEx === depIt;
+      });
+      if (!isDup) deduped.push(raw);
+    }
+
+    // 2. Drop arrival-only visit when complete report is later, within 3 min UTC, points <= 300m
+    const merged = [];
+    for (let i = 0; i < deduped.length; i++) {
+      const a = deduped[i];
+      const itA = a.item;
+      const isArrivalOnly = itA.kind === "visit" && itA.arrival && !itA.departure;
+      if (isArrivalOnly && itA.arrival.utc && itA.point) {
+        const tA = Date.parse(itA.arrival.utc);
+        const hasComplete = deduped.some((b, j) => {
+          if (i === j) return false;
+          const itB = b.item;
+          if (b.deviceKey !== a.deviceKey) return false;
+          if (itB.kind !== "visit" || !itB.arrival || !itB.departure || !itB.arrival.utc || !itB.point) return false;
+          const tB = Date.parse(itB.arrival.utc);
+          if (tB < tA) return false;
+          if (tB - tA > 3 * 60 * 1000) return false;
+          return ptDist(itA.point, itB.point) <= 300;
+        });
+        if (hasComplete) continue;
+      }
+      merged.push(a);
+    }
+
+    // 3. Local minutes from month start
+    function localMinute(timeObj) {
+      if (!timeObj || !timeObj.day || !timeObj.clock) return null;
+      const y = parseInt(timeObj.day.slice(0, 4), 10);
+      const mo = parseInt(timeObj.day.slice(4, 6), 10);
+      const da = parseInt(timeObj.day.slice(6, 8), 10);
+      const dt = new Date(y, mo - 1, da);
+      const m1 = new Date(year, monthNum - 1, 1);
+      const dayOffset = Math.round((dt - m1) / (86400 * 1000));
+      const [h, mi] = timeObj.clock.split(":").map(Number);
+      return dayOffset * 1440 + h * 60 + mi;
+    }
+
+    const monthMinutes = totalDaysInMonth * 1440;
+    const kept = [];
+
+    for (const raw of merged) {
+      const it = raw.item;
+      const startObj = it.kind === "stay" ? it.first : it.arrival;
+      const endObj = it.kind === "stay" ? it.last : it.departure;
+      const sMin = localMinute(startObj);
+      const eMin = localMinute(endObj);
+      const openEnded = sMin == null || eMin == null;
+      const clipped = sMin != null && eMin != null && (sMin < 0 || eMin > monthMinutes);
+
+      const touched = [];
+      if (sMin != null && eMin != null) {
+        const a = Math.max(sMin, 0);
+        const b = Math.min(eMin, monthMinutes) - 1;
+        if (b >= a) {
+          const d1 = Math.floor(a / 1440) + 1;
+          const d2 = Math.floor(b / 1440) + 1;
+          for (let d = d1; d <= d2; d++) {
+            if (d >= 1 && d <= totalDaysInMonth) {
+              touched.push(`${month}${String(d).padStart(2, "0")}`);
+            }
+          }
+        }
+      } else if (sMin != null) {
+        const d = Math.floor(sMin / 1440) + 1;
+        if (d >= 1 && d <= totalDaysInMonth) {
+          touched.push(`${month}${String(d).padStart(2, "0")}`);
+        }
+      } else if (eMin != null) {
+        const d = Math.floor((eMin - 1) / 1440) + 1;
+        if (d >= 1 && d <= totalDaysInMonth) {
+          touched.push(`${month}${String(d).padStart(2, "0")}`);
+        }
+      }
+
+      if (touched.length === 0) continue;
+
+      kept.push({
+        raw,
+        item: it,
+        deviceKey: raw.deviceKey,
+        startMin: sMin,
+        endMin: eMin,
+        openEnded,
+        clipped,
+        days: touched,
+      });
+    }
+
+    // Origin
+    const withPoints = kept.filter((s) => s.item.point && s.item.point[0] != null && s.item.point[1] != null);
+    let originLat = 0, originLon = 0;
+    if (withPoints.length > 0) {
+      const lats = withPoints.map((s) => s.item.point[0]).sort((a, b) => a - b);
+      const lons = withPoints.map((s) => s.item.point[1]).sort((a, b) => a - b);
+      const mid = Math.floor(lats.length / 2);
+      originLat = lats.length % 2 !== 0 ? lats[mid] : (lats[mid - 1] + lats[mid]) / 2;
+      originLon = lons.length % 2 !== 0 ? lons[mid] : (lons[mid - 1] + lons[mid]) / 2;
+    }
+    const cosLat = Math.cos(originLat * Math.PI / 180);
+    const project = (lat, lon) => [(lon - originLon) * 111195 * cosLat, (lat - originLat) * 111195];
+
+    function getPlace(places, id) {
+      if (!places || !id) return null;
+      if (places[id]) return places[id];
+      if (Array.isArray(places)) return places.find((p) => p.id === id);
+      return null;
+    }
+
+    const stops = kept.map((s) => {
+      const it = s.item;
+      const onMap = it.on_map !== false;
+      const margin = it.point?.[2] ?? null;
+      const drawable = onMap && margin != null && margin <= 500;
+      const placeId = it.place_ref?.id || null;
+      const place = getPlace(data.places, placeId);
+      const atPlace = drawable && place && margin <= 50;
+      const drawLat = atPlace ? place.lat : (it.point ? it.point[0] : originLat);
+      const drawLon = atPlace ? place.lon : (it.point ? it.point[1] : originLon);
+      const [drawnX, drawnY] = project(drawLat, drawLon);
+      const [x, y] = it.point ? project(it.point[0], it.point[1]) : [null, null];
+
+      const ownerNamed = !!it.place_ref?.owner_name;
+      let words = "a place in your journal";
+      if (ownerNamed) words = it.place_ref.owner_name;
+      else if (it.area?.label) words = it.area.label;
+      else if (it.area?.town) words = it.area.town;
+
+      return {
+        device: s.deviceKey,
+        kind: it.kind,
+        days: s.days,
+        openEnded: s.openEnded,
+        clipped: s.clipped,
+        margin,
+        onMap,
+        placeId,
+        words,
+        town: it.area?.town || null,
+        label: it.area?.label || null,
+        ownerNamed,
+        drawable,
+        x,
+        y,
+        start: s.startMin,
+        end: s.endMin,
+        // internal helpers
+        drawnX,
+        drawnY,
+        item: it,
+      };
+    });
+
+    function countNotDrawn(stopList) {
+      const hidden = stopList.filter((s) => !s.onMap);
+      const idStops = hidden.filter((s) => s.placeId);
+      const idSet = new Set(idStops.map((s) => s.placeId));
+      const noIdStops = hidden.filter((s) => !s.placeId);
+
+      const clusters = [];
+      const visited = new Set();
+      for (let i = 0; i < noIdStops.length; i++) {
+        if (visited.has(i)) continue;
+        visited.add(i);
+        const cluster = [noIdStops[i]];
+        const q = [noIdStops[i]];
+        while (q.length > 0) {
+          const cur = q.shift();
+          for (let j = 0; j < noIdStops.length; j++) {
+            if (!visited.has(j)) {
+              if (ptDist(cur.item.point, noIdStops[j].item.point) <= 100) {
+                visited.add(j);
+                cluster.push(noIdStops[j]);
+                q.push(noIdStops[j]);
+              }
+            }
+          }
+        }
+        clusters.push(cluster);
+      }
+
+      const hiddenPlacesFound = [];
+      for (const id of idSet) {
+        const p = getPlace(data.places, id);
+        if (p && p.lat != null && p.lon != null) {
+          hiddenPlacesFound.push(p);
+        }
+      }
+
+      let unfoldedClusters = 0;
+      for (const cluster of clusters) {
+        const folds = cluster.some((s) => {
+          if (!s.item.point) return false;
+          return hiddenPlacesFound.some((p) => ptDist(s.item.point, [p.lat, p.lon]) <= 50);
+        });
+        if (!folds) unfoldedClusters++;
+      }
+
+      const hiddenPlaces = idSet.size + unfoldedClusters;
+      const wideStops = [];
+      for (let i = 0; i < stops.length; i++) {
+        const s = stops[i];
+        if (stopList.includes(s) && s.onMap && (s.margin == null || s.margin > 500)) {
+          wideStops.push(i);
+        }
+      }
+      return { hiddenPlaces, wide: wideStops.length, wideStops };
+    }
+
+    const drawableStops = stops.filter((s) => s.drawable);
+    let anchorId = null;
+    const choices = [];
+
+    if (drawableStops.length > 0) {
+      const cellDaysMap = new Map();
+      const cellFirstIndex = new Map();
+      for (let i = 0; i < drawableStops.length; i++) {
+        const s = drawableStops[i];
+        const cid = axial(s.drawnX, s.drawnY, 1000).join(",");
+        s.cellId = cid;
+        if (!cellDaysMap.has(cid)) {
+          cellDaysMap.set(cid, new Set());
+          cellFirstIndex.set(cid, i);
+        }
+        for (const d of s.days) cellDaysMap.get(cid).add(d);
+      }
+      const sortedHexes = [...cellDaysMap.entries()].sort((a, b) => {
+        return b[1].size - a[1].size || cellFirstIndex.get(a[0]) - cellFirstIndex.get(b[0]);
+      });
+      anchorId = sortedHexes[0][0];
+      const [aq, ar] = anchorId.split(",").map(Number);
+      const [hx, hy] = hexCenter(aq, ar, 1000);
+
+      const far = (s) => Math.hypot(s.drawnX - hx, s.drawnY - hy) > 50000;
+      const farDays = new Set();
+      for (const s of drawableStops) {
+        if (far(s)) {
+          for (const d of s.days) farDays.add(d);
+        }
+      }
+
+      const runs = [];
+      let curRun = null;
+      for (let d = 1; d <= totalDaysInMonth; d++) {
+        const dStr = `${month}${String(d).padStart(2, "0")}`;
+        if (farDays.has(dStr)) {
+          if (curRun && curRun.lastD === d - 1) {
+            curRun.days.push(dStr);
+            curRun.lastD = d;
+          } else {
+            curRun = { days: [dStr], lastD: d };
+            runs.push(curRun);
+          }
+        }
+      }
+
+      function buildAreasForStops(drawStops) {
+        const cellMap = new Map();
+        const cellFirst = new Map();
+        for (let i = 0; i < drawStops.length; i++) {
+          const s = drawStops[i];
+          const cid = s.cellId || axial(s.drawnX, s.drawnY, 1000).join(",");
+          if (!cellMap.has(cid)) {
+            const [q, r] = cid.split(",").map(Number);
+            const [cx, cy] = hexCenter(q, r, 1000);
+            cellMap.set(cid, { id: cid, q, r, cx, cy, entries: [] });
+            cellFirst.set(cid, i);
+          }
+          cellMap.get(cid).entries.push(s);
+        }
+
+        const areasList = [];
+        for (const c of cellMap.values()) {
+          const daysSet = new Set(c.entries.flatMap((s) => s.days));
+          const knownEntries = c.entries.filter((s) => s.start != null && s.end != null);
+          const knownMinutes = unionMinutes(knownEntries.map((s) => [s.start, s.end]), monthMinutes);
+          const openEnded = c.entries.filter((s) => s.openEnded).length;
+
+          const nightDays = new Set();
+          for (let d = 1; d <= totalDaysInMonth; d++) {
+            const lo = (d - 1) * 1440 + 22 * 60;
+            const hi = Math.min((d - 1) * 1440 + 30 * 60, monthMinutes);
+            const hasNight = knownEntries.some((s) => {
+              const start = Math.max(s.start, lo);
+              const end = Math.min(s.end, hi);
+              return end - start >= 120;
+            });
+            if (hasNight) {
+              nightDays.add(`${month}${String(d).padStart(2, "0")}`);
+            }
+          }
+
+          const perWords = {};
+          const wordFirstStop = {};
+          for (const s of c.entries) {
+            (perWords[s.words] ||= new Set());
+            for (const d of s.days) perWords[s.words].add(d);
+            if (!wordFirstStop[s.words]) wordFirstStop[s.words] = s;
+          }
+          const names = Object.entries(perWords)
+            .map(([w, dSet]) => ({ words: w, days: dSet.size }))
+            .sort((a, b) => b.days - a.days || a.words.localeCompare(b.words));
+
+          const topName = names[0];
+          const topStop = wordFirstStop[topName.words] || c.entries[0];
+          const words = topName.words;
+          const ownerNamed = topStop.ownerNamed;
+          const label = topStop.label;
+
+          const overlap = knownEntries.reduce((sum, s) => sum + Math.min(s.end, monthMinutes) - Math.max(s.start, 0), 0) > knownMinutes + 1;
+          const clipped = c.entries.some((s) => s.clipped);
+
+          areasList.push({
+            id: c.id,
+            q: c.q,
+            r: c.r,
+            cx: c.cx,
+            cy: c.cy,
+            entries: c.entries,
+            days: [...daysSet].sort(),
+            dayCount: daysSet.size,
+            nights: nightDays.size,
+            nightDays: [...nightDays].sort(),
+            knownMinutes,
+            stopCount: c.entries.length,
+            openEnded,
+            words,
+            label,
+            listLabel: words,
+            ownerNamed,
+            names,
+            overlap,
+            clipped,
+            firstIndex: cellFirst.get(c.id),
+          });
+        }
+
+        areasList.sort((a, b) => b.dayCount - a.dayCount || b.nights - a.nights || b.knownMinutes - a.knownMinutes || a.firstIndex - b.firstIndex);
+        return areasList;
+      }
+
+      // Home choice
+      const homeNearStops = stops.filter((s) => !s.drawable || !far(s));
+      const homeDrawStops = drawableStops.filter((s) => !far(s));
+      const homeAreas = buildAreasForStops(homeDrawStops);
+      const homeDays = [...new Set(homeNearStops.flatMap((s) => s.days))].sort();
+
+      const homeCommaLabels = homeAreas.map((a) => a.label).filter((l) => l && l.includes(", "));
+      let homeSharedRegion = null;
+      if (homeCommaLabels.length > 0) {
+        const getTail = (l) => l.slice(l.lastIndexOf(", ") + 2);
+        const firstTail = getTail(homeCommaLabels[0]);
+        if (homeCommaLabels.every((l) => getTail(l) === firstTail)) {
+          homeSharedRegion = firstTail;
+        }
+      }
+      for (const a of homeAreas) {
+        if (a.ownerNamed || !homeSharedRegion || !a.words.endsWith(", " + homeSharedRegion)) {
+          a.listLabel = a.words;
+        } else {
+          a.listLabel = a.words.slice(0, a.words.lastIndexOf(", "));
+        }
+      }
+
+      const anchorStops = drawableStops.filter((s) => s.cellId === anchorId);
+      anchorStops.sort((a, b) => b.days.length - a.days.length || stops.indexOf(a) - stops.indexOf(b));
+      const topAnchorStop = anchorStops[0];
+      const homePlaceName = topAnchorStop?.town || cutComma(topAnchorStop?.label) || "a place in your journal";
+      const homeChoice = {
+        id: "home",
+        trip: false,
+        name: `around ${homePlaceName}`,
+        dateLabel: null,
+        days: homeDays,
+        areas: homeAreas,
+        sharedRegion: homeSharedRegion,
+        notDrawn: countNotDrawn(homeNearStops),
+        test: (s) => !s.drawable || !far(s),
+      };
+      choices.push(homeChoice);
+
+      // Trips
+      for (const r of runs) {
+        const rSet = new Set(r.days);
+        const tripTest = (s) => s.drawable && far(s) && s.days.some((d) => rSet.has(d));
+        const tripStops = stops.filter(tripTest);
+        const tripAreas = buildAreasForStops(tripStops);
+
+        const tripCommaLabels = tripAreas.map((a) => a.label).filter((l) => l && l.includes(", "));
+        let tripSharedRegion = null;
+        if (tripCommaLabels.length > 0) {
+          const getTail = (l) => l.slice(l.lastIndexOf(", ") + 2);
+          const firstTail = getTail(tripCommaLabels[0]);
+          if (tripCommaLabels.every((l) => getTail(l) === firstTail)) {
+            tripSharedRegion = firstTail;
+          }
+        }
+        for (const a of tripAreas) {
+          if (a.ownerNamed || !tripSharedRegion || !a.words.endsWith(", " + tripSharedRegion)) {
+            a.listLabel = a.words;
+          } else {
+            a.listLabel = a.words.slice(0, a.words.lastIndexOf(", "));
+          }
+        }
+
+        const topTripArea = tripAreas[0];
+        const topTripStop = topTripArea ? [...topTripArea.entries].sort((a, b) => b.days.length - a.days.length || stops.indexOf(a) - stops.indexOf(b))[0] : null;
+        const tripPlaceName = topTripStop?.town || cutComma(topTripStop?.label) || "a place in your journal";
+        const dateLabel = r.days.length === 1 ? shortDay(r.days[0]) : `${shortDay(r.days[0])}–${parseInt(r.days[r.days.length - 1].slice(6, 8), 10)}`;
+
+        choices.push({
+          id: `trip-${r.days[0]}`,
+          trip: true,
+          name: tripPlaceName,
+          dateLabel,
+          days: [...r.days].sort(),
+          areas: tripAreas,
+          sharedRegion: tripSharedRegion,
+          notDrawn: { hiddenPlaces: 0, wide: 0, wideStops: [] },
+          test: tripTest,
+        });
+      }
+    }
+
+    const topNotDrawn = choices.length > 0 ? choices[0].notDrawn : countNotDrawn(stops);
+
+    // Calendar days
+    const calendarDays = [];
+    for (let d = 1; d <= totalDaysInMonth; d++) {
+      const dStr = `${month}${String(d).padStart(2, "0")}`;
+      const backendDay = asArray(data.days).find((x) => x.day === dStr);
+      const hasLoc = !!backendDay?.has_location;
+      const readings = asArray(backendDay?.devices).reduce((sum, dev) => sum + (dev.readings || 0), 0);
+      const unreadable = asArray(backendDay?.devices).some((dev) => (dev.unreadable_lines || 0) > 0 || (dev.unreadable_files || 0) > 0);
+      const interrupted = asArray(backendDay?.devices).reduce((sum, dev) => sum + (dev.interrupted_segments || 0), 0);
+
+      let state = "no-location";
+      const dayStops = stops.filter((s) => s.days.includes(dStr));
+      if (dayStops.length > 0) {
+        state = "stops";
+      } else if (hasLoc) {
+        if (readings === 0 && unreadable) {
+          state = "unreadable";
+        } else if (readings > 0) {
+          state = "no-stops";
+        } else {
+          state = "kept";
+        }
+      } else if (dStr > effToday) {
+        state = "future";
+      }
+
+      const inChoices = choices.filter((c) => c.days.includes(dStr)).map((c) => c.id);
+      calendarDays.push({
+        day: dStr,
+        state,
+        inChoices,
+        readings,
+        unreadable,
+        interrupted,
+        backendDay,
+      });
+    }
+
+    const mCount = calendarDays.filter((d) => d.state !== "future").length;
+    const noLocCount = calendarDays.filter((d) => d.state === "no-location").length;
+
+    const projectedTowns = asArray(data.towns).map((t) => {
+      const [x, y] = project(t.lat, t.lon);
+      return { name: t.name, x, y, lat: t.lat, lon: t.lon, population: t.population };
+    });
+
+    return {
+      month,
+      previous: data.previous || null,
+      next: data.next || null,
+      monthName,
+      previousMonthName,
+      previousMonthLastDay,
+      year,
+      today: effToday,
+      m: mCount,
+      noLocation: noLocCount,
+      journalHasLocation: !!data.journal_has_location,
+      anchorId,
+      stops,
+      choices,
+      notDrawn: topNotDrawn,
+      days: calendarDays,
+      towns: projectedTowns,
+    };
+  }
+
+  async function renderMonth(data) {
+    const m = monthModel(data, data.today);
+    const monthNav = `<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/">the day</a><a class="map-link" href="/app/map/places">places</a><a class="map-link" href="/app/map/month/${escapeHtml(m.previous)}">previous month</a><a class="map-link" href="/app/map/month/${escapeHtml(m.next)}">next month</a></nav>`;
+
+    if (!m.journalHasLocation) {
+      renderJournalEmpty();
+      return;
+    }
+
+    if (!asArray(data.days).some((d) => d.has_location)) {
+      let nearestLink = "";
+      try {
+        const index = await window.apiJson("/app/map/api/index");
+        const mKeys = Object.keys(index?.months || {}).filter((k) => MONTH_RE.test(k) && k !== m.month);
+        if (mKeys.length > 0) {
+          const targetMIndex = m.year * 12 + parseInt(m.month.slice(4, 6), 10);
+          mKeys.sort((a, b) => {
+            const idxA = parseInt(a.slice(0, 4), 10) * 12 + parseInt(a.slice(4, 6), 10);
+            const idxB = parseInt(b.slice(0, 4), 10) * 12 + parseInt(b.slice(4, 6), 10);
+            const distA = Math.abs(idxA - targetMIndex);
+            const distB = Math.abs(idxB - targetMIndex);
+            return distA - distB || a.localeCompare(b);
+          });
+          const nearest = mKeys[0];
+          const nYear = parseInt(nearest.slice(0, 4), 10);
+          const nMo = parseInt(nearest.slice(4, 6), 10);
+          nearestLink = `<p class="map-empty-actions"><a href="/app/map/month/${escapeHtml(nearest)}">go to ${escapeHtml(MONTHS[nMo - 1])} ${nYear}</a></p>`;
+        }
+      } catch (_) {}
+      pageShell(`${m.monthName} ${m.year}`, `<div class="map-month">
+        <div class="map-month-panel map-month-pad">
+          <p>no location kept for this month.</p>
+          <p class="map-muted">your journal has no location from ${escapeHtml(m.monthName)} ${m.year}.</p>
+          ${nearestLink}
+        </div>
+      </div>`);
+      return;
+    }
+
+    let activeChoice = m.choices[0] || null;
+    let activeCell = null;
+    let activeDay = null;
+    let showAllAreas = false;
+    let showAllDaysInArea = false;
+    let calFocus = 1;
+    const view = { z: 1, dx: 0, dy: 0, all: false };
+    let lastK = 1;
+    let dragged = false, drag = null;
+
+    const bin = (n) => n >= 15 ? 5 : n >= 8 ? 4 : n >= 4 ? 3 : n >= 2 ? 2 : 1;
+
+    const prevLastDayNum = parseInt(m.previousMonthLastDay.slice(6, 8), 10);
+    const explainerMarkup = `<p>each area is about 1 km across and holds the stops in it: the visits your phone reported, and any stays your journal worked out.</p>
+      <p>the shade counts days, not hours. a day counts once in an area, however many reports it has, and a visit counts for its day even when its arrival or departure isn't known.</p>
+      <p>your phone often reports an arrival first and the whole visit later. the two reports are one visit.</p>
+      <p>"where" starts around the area with the most days: every stop within 50 km of it. any run of days with a stop farther away is a trip, named by its dates.</p>
+      <p>a night counts in an area when a visit there covers at least two hours between 22:00 and 06:00.</p>
+      <p>hours are shown for one area at a time, and only for time with both ends known. they aren't added up across areas, because two reports can place the same hour in two areas.</p>
+      <p>only time inside ${escapeHtml(m.monthName)} counts. a visit that began on ${escapeHtml(m.previousMonthName)} ${prevLastDayNum} counts from midnight.</p>
+      <p>a stop at one of your places is drawn where the place is, so a place is never split between two areas. a stop with no margin of error, or one over 500 m, isn't drawn, and neither is the time between stops.</p>
+      <p>a place you hid isn't drawn. its visits still show in each day's list.</p>
+      <p>there's no street map. the names are the ones that came with your journal or that you downloaded, and no map service is asked for anything.</p>`;
+
+    pageShell(`${m.monthName} ${m.year}`, `<div class="map-month">
+      <header class="map-month-head">
+        <p class="map-month-kicker">location · the month</p>
+        <p class="map-month-lede">the stops your journal holds for this month. each area is shaded by how many days have a stop in it.</p>
+      </header>
+      <div class="map-month-layout">
+        <section class="map-month-panel" aria-labelledby="map-month-h">
+          <h2 id="map-month-h" class="visually-hidden">the map</h2>
+          <div class="map-month-controls" data-map-month-where ${m.anchorId ? "" : "hidden"}>
+            <fieldset class="map-month-choice">
+              <legend>where</legend>
+              <div class="map-month-seg" data-map-month-choices></div>
+            </fieldset>
+          </div>
+          <div class="map-month-wrap" data-map-month-map>
+            <div data-map-month-svg></div>
+            <button type="button" class="map-month-outside" data-map-month-outside hidden></button>
+            <div class="map-month-zoom" role="group" aria-label="zoom">
+              <button type="button" data-map-month-zoom="in" aria-label="zoom in">+</button>
+              <button type="button" data-map-month-zoom="out" aria-label="zoom out">−</button>
+              <button type="button" data-map-month-zoom="fit" class="fit">fit</button>
+            </div>
+          </div>
+          <div class="map-month-foot">
+            <p class="map-month-selcap" data-map-month-selcap aria-hidden="true"></p>
+            <div class="map-month-legend">
+              <span>days with a stop</span>
+              <span class="map-month-ramp" aria-hidden="true"><span><i style="background:var(--b1)"></i>1</span><span><i style="background:var(--b2)"></i>2–3</span><span><i style="background:var(--b3)"></i>4–7</span><span><i style="background:var(--b4)"></i>8–14</span><span><i style="background:var(--b5)"></i>15+</span></span>
+              <span class="visually-hidden">shades run from 1 day, lightest, through 2 to 3, 4 to 7 and 8 to 14, to 15 or more days, darkest.</span>
+            </div>
+            <p class="map-muted">named features only; streets not shown.</p>
+            <div class="map-month-notdrawn" data-map-month-notdrawn></div>
+          </div>
+        </section>
+        <div class="map-month-side">
+          <section class="map-month-panel map-month-pad" aria-labelledby="map-month-cal-h">
+            <div class="map-month-cal-head"><h2 id="map-month-cal-h">day by day</h2><span class="map-muted" data-map-month-cal-sum></span></div>
+            <div class="map-month-cal" data-map-month-cal role="group" aria-label="days of ${escapeHtml(m.monthName)}. use the arrow keys to move between days."></div>
+            <div class="map-month-cal-legend" data-map-month-cal-legend></div>
+          </section>
+          <section class="map-month-panel map-month-pad" data-map-month-detail aria-labelledby="map-month-detail-h" tabindex="-1"></section>
+          <section class="map-month-panel map-month-pad" ${m.anchorId ? "" : "hidden"} aria-labelledby="map-month-areas-h">
+            <h2 id="map-month-areas-h">areas this month</h2>
+            <p class="map-muted" data-map-month-areas-sum style="margin:-4px 0 10px"></p>
+            <ul class="map-month-areas" data-map-month-areas></ul>
+            <button class="map-month-btn more" type="button" data-map-month-areas-more aria-expanded="false" hidden></button>
+          </section>
+          <section class="map-month-panel map-month-pad">
+            <details class="map-month-how">
+              <summary>how the month is drawn</summary>
+              ${explainerMarkup}
+            </details>
+          </section>
+        </div>
+      </div>
+      <p class="visually-hidden" aria-live="polite" data-map-month-live></p>
+    </div>`, monthNav);
+
+    function live(text) {
+      const el = root.querySelector("[data-map-month-live]");
+      el.textContent = "";
+      setTimeout(() => { el.textContent = text; }, 30);
+    }
+
+    function renderChoices() {
+      const segEl = root.querySelector("[data-map-month-choices]");
+      segEl.innerHTML = m.choices.map((c) => {
+        const checked = c === activeChoice ? "checked" : "";
+        const label = c.trip ? c.dateLabel : c.name;
+        const count = c.trip ? c.name : plural(c.days.length, "day", "days");
+        return `<label><input type="radio" name="map-month-choice" value="${c.id}" ${checked}><span>${escapeHtml(label)}<small><span class="visually-hidden">, </span>${escapeHtml(count)}</small></span></label>`;
+      }).join("");
+    }
+
+    function renderMapSvg() {
+      const wrap = root.querySelector("[data-map-month-svg]");
+      const outBtn = root.querySelector("[data-map-month-outside]");
+      const cap = root.querySelector("[data-map-month-selcap]");
+
+      if (!m.anchorId) {
+        const nd = m.notDrawn;
+        const items = [];
+        if (nd.hiddenPlaces > 0) {
+          items.push(nd.hiddenPlaces === 1 ? "a place you hid" : `${nd.hiddenPlaces} places you hid`);
+        }
+        if (nd.wide > 0) {
+          items.push("a margin of error over 500 m or not reported");
+        }
+        const notDrawnHtml = items.length
+          ? `<div class="map-month-notdrawn" style="padding:0 16px 16px"><span>not drawn here:</span><ul>${items.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul></div>`
+          : "";
+        wrap.innerHTML = `<p class="map-muted" style="padding: 16px;">no stops to draw this month.</p>${notDrawnHtml}`;
+        outBtn.hidden = true;
+        if (activeDay) {
+          cap.innerHTML = `<strong>${escapeHtml(longDay(activeDay))}</strong> · nothing drawn here`;
+        } else {
+          cap.textContent = "";
+        }
+        return;
+      }
+
+      const list = activeChoice ? activeChoice.areas : [];
+      const W = Math.max(280, root.querySelector("[data-map-month-map]").clientWidth || 600);
+      const narrow = W < 560;
+      const fit = view.all || (activeChoice && activeChoice.trip) ? list : coreOf(list);
+      const pts = fit.flatMap((c) => hexCorners(c.cx, c.cy, SIZE.w));
+      let x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0]));
+      let y0 = Math.min(...pts.map((p) => p[1])), y1 = Math.max(...pts.map((p) => p[1]));
+      if (pts.length === 0) {
+        x0 = -500; x1 = 500; y0 = -500; y1 = 500;
+      }
+      const aspect = (y1 - y0 + 800) / (x1 - x0 + 800);
+      const H = Math.round(W * Math.min(narrow ? 1.1 : 0.8, Math.max(narrow ? 1 : 0.62, aspect)));
+      const padM = Math.max(250, (x1 - x0) * 0.07, (y1 - y0) * 0.07);
+      x0 -= padM; x1 += padM; y0 -= padM; y1 += padM;
+      const k = Math.min((W - 24) / (x1 - x0), (H - 72) / (y1 - y0)) * view.z;
+      lastK = k;
+      const mx = (x0 + x1) / 2 + view.dx, my = (y0 + y1) / 2 + view.dy;
+      const px = (x) => W / 2 + (x - mx) * k;
+      const py = (y) => (H - 60) / 2 + 6 - (y - my) * k;
+      const inView = (x, y) => px(x) > 6 && px(x) < W - 6 && py(y) > 10 && py(y) < H - 6;
+
+      const polys = list.map((c) => {
+        const d = c.dayCount;
+        const cls = ["map-month-cell"];
+        if (activeDay) cls.push(c.days.includes(activeDay) ? "ring" : "dim");
+        if (activeCell === c.id) cls.push("sel");
+        const rpx = Math.max(SIZE.w / Math.sqrt(3) * k, 4.5);
+        const ptsArr = hexCorners(0, 0, rpx * Math.sqrt(3)).map(([x, y]) => `${(px(c.cx) + x).toFixed(1)},${(py(c.cy) - y).toFixed(1)}`).join(" ");
+        return `<polygon class="${cls.join(" ")}" data-cell="${c.id}" points="${ptsArr}" style="fill:var(--b${bin(d)})"><title>${escapeHtml(c.label)} · ${plural(d, "day", "days")}</title></polygon>`;
+      });
+
+      const towns = m.towns.filter((t) => inView(t.x, t.y)).map((t) => {
+        const x = px(t.x), y = py(t.y);
+        const anchor = x > W - 90 ? "end" : "start";
+        return `<g class="map-month-town" aria-hidden="true"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5"/><text x="${(x + (anchor === "end" ? -6 : 6)).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="${anchor}">${escapeHtml(t.name)}</text></g>`;
+      });
+
+      const target = 110 / k;
+      const nice = [100, 200, 500, 1000, 2000, 5000, 10000].find((n) => n >= target * 0.6) || 10000;
+      const bl = nice * k;
+      const scale = `<g class="map-month-scale" aria-hidden="true"><line x1="14" y1="${H - 16}" x2="${(14 + bl).toFixed(1)}" y2="${H - 16}"/><line x1="14" y1="${H - 21}" x2="14" y2="${H - 11}"/><line x1="${(14 + bl).toFixed(1)}" y1="${H - 21}" x2="${(14 + bl).toFixed(1)}" y2="${H - 11}"/><text x="14" y="${H - 25}">${nice >= 1000 ? `${nice / 1000} km` : `${nice} m`}</text></g>`;
+
+      const zoomed = view.z > 1 ? " zoomed in." : "";
+      const choiceLabel = activeChoice ? (activeChoice.trip ? activeChoice.name : activeChoice.name) : "";
+      const summary = `map of ${choiceLabel}: ${plural(list.length, "shaded area", "shaded areas")}, each ${SIZE.label} across${k * SIZE.w < 8 ? ", drawn larger so they can be seen" : ""}. the same areas are listed under areas this month.${zoomed}`;
+      const outside = list.filter((c) => !(px(c.cx) > 0 && px(c.cx) < W && py(c.cy) > 0 && py(c.cy) < H - 50)).length;
+      outBtn.hidden = !outside;
+      outBtn.textContent = outside ? `${plural(outside, "area", "areas")} outside the map · show all` : "";
+      wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${escapeHtml(summary)}">${polys.join("")}${towns.join("")}${scale}</svg>`;
+
+      const activeCellObj = activeChoice?.areas.find((c) => c.id === activeCell);
+      if (activeCell && activeCellObj) {
+        cap.innerHTML = `<strong>${escapeHtml(activeCellObj.label)}</strong> · ${plural(activeCellObj.dayCount, "day", "days")} this month`;
+      } else if (activeDay) {
+        const n = list.filter((c) => c.days.includes(activeDay)).length;
+        cap.innerHTML = `<strong>${escapeHtml(longDay(activeDay))}</strong> · ${n ? plural(n, "area", "areas") + " outlined" : "nothing drawn here"}`;
+      } else {
+        cap.textContent = "";
+      }
+    }
+
+    function renderNotDrawn() {
+      const ndEl = root.querySelector("[data-map-month-notdrawn]");
+      if (!m.anchorId) {
+        ndEl.innerHTML = "";
+        return;
+      }
+      const nd = activeChoice ? activeChoice.notDrawn : m.notDrawn;
+      const items = [];
+      if (nd.hiddenPlaces > 0) {
+        items.push(nd.hiddenPlaces === 1 ? "a place you hid" : `${nd.hiddenPlaces} places you hid`);
+      }
+      if (nd.wide > 0) {
+        items.push("a margin of error over 500 m or not reported");
+      }
+      ndEl.innerHTML = items.length ? `<span>not drawn here:</span><ul>${items.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : "";
+    }
+
+    function renderCalendar() {
+      const calEl = root.querySelector("[data-map-month-cal]");
+      const activeCellObj = activeChoice?.areas.find((c) => c.id === activeCell);
+      const m1Date = new Date(m.year, parseInt(m.month.slice(4, 6), 10) - 1, 1);
+      const lead = (m1Date.getDay() + 6) % 7;
+      const heads = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((w) => `<span class="wd" aria-hidden="true">${w}</span>`).join("");
+      const blanks = Array.from({ length: lead }, () => "<span></span>").join("");
+      const btns = [];
+
+      for (const dObj of m.days) {
+        const dNum = parseInt(dObj.day.slice(6, 8), 10);
+        if (dObj.state === "future") {
+          btns.push(`<span class="map-month-day future" data-day="${dObj.day}" aria-hidden="true">${dNum}</span>`);
+          continue;
+        }
+        let st = dObj.state;
+        if (st === "stops" && activeChoice && !dObj.inChoices.includes(activeChoice.id)) {
+          st = "elsewhere";
+        }
+        const inArea = activeCellObj && activeCellObj.days.includes(dObj.day);
+        const words = {
+          stops: "stops",
+          elsewhere: `stops elsewhere: ${m.choices.filter((c) => c.days.includes(dObj.day)).map((c) => c.name).join(", ")}`,
+          "no-stops": "no stops",
+          "no-location": "no location kept",
+          unreadable: "unreadable",
+          kept: "location kept",
+        }[st] || st;
+        const label = `${longDay(dObj.day)}, ${words}${inArea ? ", has a stop in the chosen area" : ""}`;
+        btns.push(`<button type="button" class="map-month-day${inArea ? " in-area" : ""}" data-day="${dObj.day}" data-state="${st}" aria-pressed="${activeDay === dObj.day}" aria-label="${escapeHtml(label)}" tabindex="${dNum === calFocus ? 0 : -1}"><span aria-hidden="true">${dNum}</span></button>`);
+      }
+      calEl.innerHTML = heads + blanks + btns.join("");
+
+      const stopsDaysCount = m.days.filter((d) => d.state === "stops").length;
+      root.querySelector("[data-map-month-cal-sum]").textContent = `${stopsDaysCount} of ${m.m} days have stops`;
+
+      const leg = [
+        ["", "stops here"],
+        ["elsewhere", "stops elsewhere"],
+        ["none", "no stops"],
+      ];
+      if (activeCellObj) leg.unshift(["in-area", "in the chosen area"]);
+      root.querySelector("[data-map-month-cal-legend]").innerHTML = leg.map(([c, t]) => `<span><i class="map-month-sw ${c}" aria-hidden="true"></i>${t}</span>`).join("");
+    }
+
+    function renderDetail() {
+      const detEl = root.querySelector("[data-map-month-detail]");
+      const activeCellObj = activeChoice?.areas.find((c) => c.id === activeCell);
+      if (activeCell && activeCellObj) {
+        const byDay = [...activeCellObj.days].sort();
+        const shownDays = showAllDaysInArea ? byDay : byDay.slice(0, 6);
+        const rows = [];
+        for (const d of shownDays) {
+          const es = activeCellObj.entries.filter((s) => s.days.includes(d));
+          rows.push(`<li><button class="map-month-row" type="button" data-day="${d}"><span class="when">${WEEKDAYS[dayDate(d).getDay()].slice(0, 3)}, ${escapeHtml(shortDay(d))}</span><span class="what tnum">${escapeHtml(dayInArea(es, d))}</span></button></li>`);
+        }
+        const notes = [];
+        if (activeCellObj.openEnded) {
+          notes.push(activeCellObj.openEnded === 1
+            ? "1 visit is missing its arrival or departure, so its time isn't in the hours or the nights. its day still counts."
+            : `${activeCellObj.openEnded} visits are missing an arrival or departure, so their time isn't in the hours or the nights. their days still count.`);
+        }
+        if (activeCellObj.overlap) notes.push("where two reports cover the same time, the hours count that time once.");
+        if (activeCellObj.clipped) notes.push(`only the part inside ${escapeHtml(m.monthName)} counts.`);
+        const others = activeCellObj.names.slice(1).map((p) => `<li>${escapeHtml(p.words)} · ${plural(p.days, "day", "days")}</li>`).join("");
+
+        detEl.innerHTML = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(activeCellObj.label)}</h2><p class="map-muted">an area ${escapeHtml(SIZE.label)} across · ${escapeHtml(fromBusiest(activeCellObj, activeChoice.areas, activeChoice.trip))}</p></div><button class="map-month-btn" type="button" data-map-month-clear>clear</button></div>
+          <dl class="map-month-facts"><dt>days with a stop</dt><dd>${activeCellObj.dayCount} of ${m.m}</dd>${activeCellObj.nights ? `<dt>nights</dt><dd>${activeCellObj.nights}</dd>` : ""}<dt>stops</dt><dd>${activeCellObj.stopCount}</dd><dt>hours with both ends known</dt><dd>${hoursText(activeCellObj.knownMinutes)}</dd></dl>
+          <div class="map-month-notes">${notes.map((n) => `<p class="map-muted">${n}</p>`).join("")}</div>
+          ${others ? `<p class="map-month-subhead">also in this area</p><ul class="map-muted" style="margin:0;padding-left:18px">${others}</ul>` : ""}
+          <p class="map-month-subhead">days here</p><ul class="map-month-rows">${rows.join("")}</ul>
+          ${byDay.length > 6 ? `<button class="map-month-btn more" type="button" data-map-month-alldays aria-expanded="${showAllDaysInArea}">${showAllDaysInArea ? "show fewer days" : `show all ${byDay.length} days`}</button>` : ""}`;
+      } else if (activeDay) {
+        const dayRecord = m.days.find((d) => d.day === activeDay);
+        const head = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(longDay(activeDay))}</h2><p class="map-muted"><a class="map-link" href="/app/map/${escapeHtml(activeDay)}">open the day</a></p></div><button class="map-month-btn" type="button" data-map-month-clear>clear</button></div>`;
+        const readingsCount = dayRecord.readings || 0;
+        const readingsLine = readingsCount > 0 ? `not drawn: ${plural(readingsCount, "reading", "readings")} between stops.` : "";
+
+        if (dayRecord.state === "no-location") {
+          detEl.innerHTML = `${head}<p style="margin-top:8px">no location kept for this day.</p><p class="map-muted" style="margin-top:6px">your journal has no location from ${escapeHtml(longDay(activeDay))}. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.</p>`;
+        } else if (dayRecord.state === "unreadable") {
+          detEl.innerHTML = `${head}<p style="margin-top:8px">part of this day couldn't be read.</p>`;
+        } else if (dayRecord.state === "no-stops" || dayRecord.state === "kept") {
+          detEl.innerHTML = `${head}<p style="margin-top:8px">location was kept this day, but no stops.</p>${readingsLine ? `<p class="map-muted" style="margin-top:6px">${escapeHtml(readingsLine)}</p>` : ""}`;
+        } else {
+          const es = m.stops.filter((s) => s.days.includes(activeDay));
+          const rows = es.map((s) => {
+            const choiceOfStop = m.choices.find((c) => c.test(s));
+            const cellOfStop = choiceOfStop?.areas.find((a) => a.id === s.cellId);
+            const bits = [
+              s.kind === "stay" ? `a stay your journal worked out from ${s.item.count} of your phone's readings` : "a visit your phone reported",
+              s.start == null ? "arrival not known" : s.end == null ? "no departure reported" : "",
+            ].filter(Boolean);
+            if (!s.onMap) bits.push("hidden from the map");
+            else if (!s.drawable) bits.push("margin of error over 500 m or not reported");
+            else if (choiceOfStop && choiceOfStop !== activeChoice) bits.push(choiceOfStop.trip ? `on the ${choiceOfStop.dateLabel} trip` : choiceOfStop.name);
+            const inner = `<span class="when">${escapeHtml(spanText(s, activeDay))}</span><span class="what">${escapeHtml(s.words)}</span><span class="meta">${escapeHtml(bits.join(" · "))}</span>`;
+            return cellOfStop ? `<li><button class="map-month-row" type="button" data-cell="${cellOfStop.id}" data-choice="${choiceOfStop.id}">${inner}</button></li>` : `<li><div class="map-month-row">${inner}</div></li>`;
+          });
+          const notes = [];
+          if (dayRecord.interrupted > 0) {
+            notes.push(`your phone said location was interrupted ${WORDS[dayRecord.interrupted] || `${dayRecord.interrupted} times`} this day.`);
+          }
+          if (dayRecord.unreadable) {
+            notes.push("part of this day couldn't be read.");
+          }
+          if (readingsLine) {
+            notes.push(readingsLine);
+          }
+          detEl.innerHTML = `${head}${stripMonthDay(activeDay, es)}<p class="map-month-subhead">stops, in order</p><ul class="map-month-rows">${rows.join("")}</ul><div class="map-month-notes">${notes.map((n) => `<p class="map-muted">${n}</p>`).join("")}</div>`;
+        }
+      } else {
+        const stopsDaysCount = m.days.filter((d) => d.state === "stops").length;
+        const gaps = m.noLocation ? ` no location was kept on ${plural(m.noLocation, "day", "days")}.` : "";
+        let glanceText = "";
+        if (m.anchorId) {
+          const trips = m.choices.filter((c) => c.trip).length;
+          const tripClause = trips ? `, and ${plural(trips, "trip", "trips")} more than 50 km away` : "";
+          glanceText = `${stopsDaysCount} of ${m.m} days have stops: ${m.choices[0].days.length} ${m.choices[0].name}${tripClause}.${gaps}`;
+        } else {
+          glanceText = `${stopsDaysCount} of ${m.m} days have stops.${gaps}`;
+        }
+        detEl.innerHTML = `<h2 id="map-month-detail-h">the month at a glance</h2>
+          <p style="margin-top:6px">${escapeHtml(glanceText)}</p>
+          <p class="map-muted" style="margin-top:8px">${m.anchorId ? "choose an area on the map or in the list, or a day in the calendar." : "choose a day in the calendar."}</p>`;
+      }
+    }
+
+    function renderAreas() {
+      const areasEl = root.querySelector("[data-map-month-areas]");
+      const moreBtn = root.querySelector("[data-map-month-areas-more]");
+      const sumEl = root.querySelector("[data-map-month-areas-sum]");
+      const list = activeChoice ? activeChoice.areas : [];
+      const shown = showAllAreas ? list : list.slice(0, 8);
+      const shared = activeChoice?.sharedRegion;
+      const choiceLabel = activeChoice ? (activeChoice.trip ? `on the ${activeChoice.dateLabel} trip` : activeChoice.name) : "";
+      sumEl.textContent = `${plural(list.length, "area", "areas")} ${choiceLabel}${shared ? `, all in ${shared}` : ""}, most days first.`;
+      areasEl.innerHTML = shown.map((c) => `<li><button class="map-month-area" type="button" data-cell="${c.id}" aria-pressed="${activeCell === c.id}">
+        <i class="map-month-sw" style="background:var(--b${bin(c.dayCount)})" aria-hidden="true"></i>
+        <span class="name">${escapeHtml(c.listLabel)}<span class="town">${escapeHtml(fromBusiest(c, list, activeChoice.trip))}${c.nights ? ` · ${plural(c.nights, "night", "nights")}` : ""}</span></span>
+        <span class="n">${plural(c.dayCount, "day", "days")}</span></button></li>`).join("");
+      moreBtn.hidden = list.length <= 8;
+      moreBtn.textContent = showAllAreas ? "show fewer" : `show all ${list.length} areas`;
+      moreBtn.setAttribute("aria-expanded", String(showAllAreas));
+    }
+
+    function renderAll() {
+      renderMapSvg();
+      renderNotDrawn();
+      renderCalendar();
+      renderDetail();
+      renderAreas();
+    }
+
+    root.querySelector("[data-map-month-where]").addEventListener("change", (ev) => {
+      const val = ev.target.value;
+      const ch = m.choices.find((c) => c.id === val);
+      if (ch && ch !== activeChoice) {
+        activeChoice = ch;
+        activeCell = null;
+        showAllAreas = false;
+        view.z = 1; view.dx = 0; view.dy = 0; view.all = false;
+        renderChoices();
+        renderAll();
+        live(`showing ${ch.name}`);
+      }
+    });
+
+    root.querySelector("[data-map-month-svg]").addEventListener("click", (ev) => {
+      if (dragged) { dragged = false; return; }
+      const btn = ev.target.closest("[data-cell]");
+      const cid = btn?.getAttribute("data-cell");
+      if (cid) {
+        activeCell = cid === activeCell ? null : cid;
+        activeDay = null;
+        renderAll();
+        const c = activeChoice?.areas.find((a) => a.id === activeCell);
+        live(c ? `${c.label}, ${plural(c.dayCount, "day", "days")} this month` : "nothing chosen");
+      }
+    });
+
+    root.querySelector("[data-map-month-svg]").addEventListener("pointerdown", (ev) => {
+      drag = { x: ev.clientX, y: ev.clientY, dx: view.dx, dy: view.dy, id: ev.pointerId };
+      dragged = false;
+    });
+    window.addEventListener("pointermove", (ev) => {
+      if (!drag || ev.pointerId !== drag.id) return;
+      const mx = ev.clientX - drag.x, my = ev.clientY - drag.y;
+      if (!dragged && Math.hypot(mx, my) < 5) return;
+      dragged = true;
+      root.querySelector("[data-map-month-map]").classList.add("dragging");
+      const svg = root.querySelector("[data-map-month-svg] svg");
+      const scale = svg ? (svg.viewBox?.baseVal?.width || 600) / (svg.getBoundingClientRect?.()?.width || 600) : 1;
+      view.dx = drag.dx - mx * scale / lastK;
+      view.dy = drag.dy + my * scale / lastK;
+      renderMapSvg();
+    });
+    window.addEventListener("pointerup", () => {
+      drag = null;
+      root.querySelector("[data-map-month-map]").classList.remove("dragging");
+      if (dragged) setTimeout(() => { dragged = false; }, 0);
+    });
+
+    root.querySelector("[data-map-month-outside]").addEventListener("click", () => {
+      view.z = 1; view.dx = 0; view.dy = 0; view.all = true;
+      renderMapSvg();
+      live("showing every area");
+    });
+
+    root.querySelector(".map-month-zoom").addEventListener("click", (ev) => {
+      const zBtn = ev.target.closest("[data-map-month-zoom]");
+      const z = zBtn?.getAttribute("data-map-month-zoom");
+      if (!z) return;
+      if (z === "fit") {
+        view.z = 1; view.dx = 0; view.dy = 0; view.all = false;
+        renderMapSvg();
+        live("map fitted");
+        return;
+      }
+      const f = z === "in" ? 1.6 : 1 / 1.6;
+      const nz = Math.min(12, Math.max(1, view.z * f));
+      const c = activeCell && activeChoice?.areas.find((a) => a.id === activeCell);
+      if (c && z === "in") {
+        view.all = true;
+        const list = activeChoice.areas;
+        const xs = list.flatMap((x) => hexCorners(x.cx, x.cy, SIZE.w));
+        const cx0 = (Math.min(...xs.map((p) => p[0])) + Math.max(...xs.map((p) => p[0]))) / 2;
+        const cy0 = (Math.min(...xs.map((p) => p[1])) + Math.max(...xs.map((p) => p[1]))) / 2;
+        view.dx = c.cx - cx0;
+        view.dy = c.cy - cy0;
+      }
+      if (nz === 1) { view.dx = 0; view.dy = 0; }
+      view.z = nz;
+      renderMapSvg();
+      live(nz === 1 ? "map fitted to these areas" : `zoomed ${z}`);
+    });
+
+    root.querySelector("[data-map-month-areas]").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-cell]");
+      const cid = btn?.getAttribute("data-cell");
+      if (cid) {
+        activeCell = cid === activeCell ? null : cid;
+        activeDay = null;
+        renderAll();
+        const c = activeChoice?.areas.find((a) => a.id === activeCell);
+        live(c ? `${c.label}, ${plural(c.dayCount, "day", "days")} this month` : "nothing chosen");
+      }
+    });
+
+    root.querySelector("[data-map-month-areas-more]").addEventListener("click", () => {
+      showAllAreas = !showAllAreas;
+      if (showAllAreas) {
+        view.all = true;
+      }
+      renderMapSvg();
+      renderAreas();
+    });
+
+    root.querySelector("[data-map-month-cal]").addEventListener("click", (ev) => {
+      const b = ev.target.closest("[data-day]");
+      if (!b || b.tagName.toLowerCase() !== "button") return;
+      const dStr = b.getAttribute("data-day");
+      calFocus = parseInt(dStr.slice(6, 8), 10);
+      if (activeDay === dStr) {
+        activeDay = null;
+      } else {
+        activeDay = dStr;
+        activeCell = null;
+        if (activeChoice && !activeChoice.days.includes(dStr)) {
+          const other = m.choices.find((c) => c.days.includes(dStr));
+          if (other) {
+            activeChoice = other;
+            showAllAreas = false;
+            view.z = 1; view.dx = 0; view.dy = 0; view.all = false;
+            renderChoices();
+          }
+        }
+      }
+      renderAll();
+      if (activeDay) live(longDay(activeDay));
+    });
+
+    root.querySelector("[data-map-month-cal]").addEventListener("keydown", (ev) => {
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[ev.key];
+      const selectable = m.days.filter((x) => x.state !== "future").map((x) => parseInt(x.day.slice(6, 8), 10));
+      if (selectable.length === 0) return;
+      let d = calFocus;
+      if (step) {
+        let cand = Math.min(m.days.length, Math.max(1, d + step));
+        if (cand > selectable[selectable.length - 1]) cand = selectable[selectable.length - 1];
+        if (cand < selectable[0]) cand = selectable[0];
+        while (cand <= selectable[selectable.length - 1] && cand >= selectable[0] && !selectable.includes(cand)) {
+          cand += step > 0 ? 1 : -1;
+        }
+        d = cand;
+      } else if (ev.key === "Home") {
+        d = selectable[0];
+      } else if (ev.key === "End") {
+        d = selectable[selectable.length - 1];
+      } else {
+        return;
+      }
+      ev.preventDefault();
+      calFocus = d;
+      root.querySelectorAll("[data-map-month-cal] button").forEach((b) => {
+        const bDay = parseInt(b.getAttribute("data-day").slice(6, 8), 10);
+        b.tabIndex = bDay === d ? 0 : -1;
+      });
+      const targetBtn = root.querySelector(`[data-map-month-cal] button[data-day="${m.month}${String(d).padStart(2, "0")}"]`);
+      targetBtn.focus();
+    });
+
+    root.querySelector("[data-map-month-detail]").addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-map-month-clear]")) {
+        activeCell = null;
+        activeDay = null;
+        renderAll();
+        live("nothing chosen");
+        return;
+      }
+      if (ev.target.closest("[data-map-month-alldays]")) {
+        showAllDaysInArea = !showAllDaysInArea;
+        renderDetail();
+        return;
+      }
+      const dayBtn = ev.target.closest("[data-day]");
+      if (dayBtn) {
+        const dStr = dayBtn.getAttribute("data-day");
+        activeDay = dStr;
+        activeCell = null;
+        calFocus = parseInt(dStr.slice(6, 8), 10);
+        renderAll();
+        live(longDay(activeDay));
+        root.querySelector("[data-map-month-detail]").focus();
+        return;
+      }
+      const cellBtn = ev.target.closest("[data-cell]");
+      if (cellBtn) {
+        const chId = cellBtn.getAttribute("data-choice");
+        const cid = cellBtn.getAttribute("data-cell");
+        if (chId) {
+          const ch = m.choices.find((c) => c.id === chId);
+          if (ch && ch !== activeChoice) {
+            activeChoice = ch;
+            showAllAreas = false;
+            view.z = 1; view.dx = 0; view.dy = 0; view.all = false;
+            renderChoices();
+          }
+        }
+        if (cid) {
+          activeCell = cid;
+          activeDay = null;
+          renderAll();
+          const c = activeChoice?.areas.find((a) => a.id === activeCell);
+          live(c ? `${c.label}, ${plural(c.dayCount, "day", "days")} this month` : "nothing chosen");
+          root.querySelector("[data-map-month-detail]").focus();
+        }
+      }
+    });
+
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && (activeCell || activeDay)) {
+        activeCell = null;
+        activeDay = null;
+        renderAll();
+        live("nothing chosen");
+      }
+    });
+
+    let rw = 0;
+    const svgWrap = root.querySelector("[data-map-month-svg]");
+    new ResizeObserver(() => {
+      const w = svgWrap.clientWidth;
+      if (Math.abs(w - rw) > 4) {
+        rw = w;
+        renderMapSvg();
+      }
+    }).observe(svgWrap);
+
+    renderChoices();
+    renderAll();
   }
 
   async function start() {
@@ -1172,7 +2623,7 @@
     }
   }
 
-  window.__mapWorkspace = { start, renderDay, renderWeek, renderPlaces, renderPlace, entryTitle, entryTime, entryMeta, entryWhere, entryWhy, accuracyCard, moment, thinned };
+  window.__mapWorkspace = { start, renderDay, renderWeek, renderPlaces, renderPlace, renderMonth, monthModel, entryTitle, entryTime, entryMeta, entryWhere, entryWhy, accuracyCard, moment, thinned };
   start();
 })();
 </script>

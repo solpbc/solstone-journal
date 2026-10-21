@@ -16,20 +16,332 @@ const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) 
 assert.strictEqual(scripts.length, 1, 'one inline workspace script');
 const source = scripts[0];
 
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+const BOOLEAN_ATTRS = new Set(['hidden', 'checked', 'selected', 'disabled', 'readonly', 'required', 'autofocus', 'multiple']);
+
+class DOMNode {
+  constructor(tagName = 'DIV', id = '') {
+    this.tagName = tagName.toUpperCase();
+    this.id = id;
+    this.attributes = {};
+    if (id) this.attributes.id = id;
+    this.children = [];
+    this.parentNode = null;
+    this._innerHTML = '';
+    this.listeners = {};
+    this.hidden = false;
+    this.isConnected = true;
+    this.clientWidth = 640;
+    this.classList = {
+      add: (cls) => {
+        const classes = (this.attributes['class'] || '').split(/\s+/).filter(Boolean);
+        if (!classes.includes(cls)) classes.push(cls);
+        this.attributes['class'] = classes.join(' ');
+      },
+      remove: (cls) => {
+        const classes = (this.attributes['class'] || '').split(/\s+/).filter(Boolean);
+        this.attributes['class'] = classes.filter((c) => c !== cls).join(' ');
+      },
+      contains: (cls) => {
+        const classes = (this.attributes['class'] || '').split(/\s+/).filter(Boolean);
+        return classes.includes(cls);
+      },
+    };
+  }
+
+  get dataset() {
+    const ds = {};
+    for (const [k, v] of Object.entries(this.attributes)) {
+      if (k.startsWith('data-')) {
+        const camel = k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        ds[camel] = v;
+      }
+    }
+    return ds;
+  }
+
+  get textContent() {
+    let text = '';
+    for (const child of this.children) {
+      if (child.nodeType === 3) text += child.text;
+      else text += child.textContent;
+    }
+    return text;
+  }
+
+  set textContent(val) {
+    this._innerHTML = escapeHtml(val);
+    this.children = [{ nodeType: 3, text: String(val ?? ''), parentNode: this }];
+  }
+
+  get firstElementChild() {
+    for (const c of this.children) {
+      if (c.nodeType !== 3) return c;
+    }
+    return null;
+  }
+
+  getBoundingClientRect() {
+    return { width: 640, height: 400, top: 0, left: 0, bottom: 400, right: 640 };
+  }
+
+  getAttribute(name) {
+    return this.attributes[name] ?? null;
+  }
+
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+    if (name === 'id') this.id = String(value);
+    if (name === 'hidden') this.hidden = true;
+  }
+
+  removeAttribute(name) {
+    delete this.attributes[name];
+    if (name === 'id') this.id = '';
+    if (name === 'hidden') this.hidden = false;
+  }
+
+  hasAttribute(name) {
+    return name in this.attributes;
+  }
+
+  appendChild(child) {
+    child.parentNode = this;
+    this.children.push(child);
+    return child;
+  }
+
+  get className() {
+    return this.getAttribute('class') || '';
+  }
+
+  set className(val) {
+    this.setAttribute('class', val);
+  }
+
+  get elements() {
+    const elMap = {};
+    for (const child of this.querySelectorAll('input, select, textarea, button')) {
+      const name = child.getAttribute('name');
+      if (name) elMap[name] = child;
+    }
+    return elMap;
+  }
+
+  get value() {
+    return this.attributes['value'] ?? '';
+  }
+
+  set value(val) {
+    this.attributes['value'] = String(val);
+  }
+
+  get checked() {
+    return 'checked' in this.attributes;
+  }
+
+  set checked(val) {
+    if (val) this.attributes['checked'] = '';
+    else delete this.attributes['checked'];
+  }
+
+  get tabIndex() {
+    return parseInt(this.attributes['tabindex'] ?? '-1', 10);
+  }
+
+  set tabIndex(val) {
+    this.attributes['tabindex'] = String(val);
+  }
+
+  focus() {}
+
+  addEventListener(type, handler) {
+    if (!this.listeners[type]) this.listeners[type] = [];
+    this.listeners[type].push(handler);
+  }
+
+  click() {
+    const event = {
+      type: 'click',
+      target: this,
+      clientX: 0,
+      clientY: 0,
+      defaultPrevented: false,
+      preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() { this._stopped = true; },
+    };
+    let cur = this;
+    while (cur) {
+      if (cur.listeners && cur.listeners['click']) {
+        for (const fn of [...cur.listeners['click']]) {
+          fn.call(cur, event);
+          if (event._stopped) return;
+        }
+      }
+      cur = cur.parentNode;
+    }
+  }
+
+  matches(selector) {
+    return matchSelector(this, selector);
+  }
+
+  closest(selector) {
+    let cur = this;
+    while (cur) {
+      if (cur.matches && cur.matches(selector)) return cur;
+      cur = cur.parentNode;
+    }
+    return null;
+  }
+
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null;
+  }
+
+  querySelectorAll(selector) {
+    const parts = selector.trim().split(/\s+/);
+    let current = [this];
+    for (const part of parts) {
+      const next = [];
+      for (const node of current) {
+        collectDescendants(node, part, next);
+      }
+      current = next;
+    }
+    return current;
+  }
+
+  get innerHTML() {
+    if (!this.children || this.children.length === 0) {
+      return this._innerHTML;
+    }
+    let html = '';
+    for (const child of this.children) {
+      if (child.nodeType === 3) {
+        html += child.text;
+      } else {
+        const tag = child.tagName.toLowerCase();
+        let attrs = '';
+        for (const [k, v] of Object.entries(child.attributes)) {
+          if (BOOLEAN_ATTRS.has(k)) attrs += ` ${k}`;
+          else attrs += ` ${k}="${escapeHtml(v)}"`;
+        }
+        if (VOID_TAGS.has(tag)) {
+          html += `<${tag}${attrs}>`;
+        } else {
+          html += `<${tag}${attrs}>${child.innerHTML}</${tag}>`;
+        }
+      }
+    }
+    return html;
+  }
+
+  set innerHTML(val) {
+    this._innerHTML = String(val ?? '');
+    try {
+      this.children = parseHTML(this._innerHTML, this);
+    } catch (e) {
+      this.children = [];
+    }
+  }
+}
+
+function matchSelector(node, sel) {
+  if (!node || node.nodeType === 3) return false;
+  const regex = /([a-zA-Z0-9\-]+)|\.([a-zA-Z0-9\-_]+)|#([a-zA-Z0-9\-_]+)|\[([a-zA-Z0-9\-_]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]+)))?\]/g;
+  let match;
+  let count = 0;
+  while ((match = regex.exec(sel)) !== null) {
+    count++;
+    const [_, tag, cls, id, attr, dq, sq, raw] = match;
+    if (tag) {
+      if (node.tagName.toLowerCase() !== tag.toLowerCase()) return false;
+    } else if (cls) {
+      if (!node.classList.contains(cls)) return false;
+    } else if (id) {
+      if (node.id !== id && node.attributes['id'] !== id) return false;
+    } else if (attr) {
+      const val = dq ?? sq ?? raw;
+      if (val === undefined) {
+        if (!(attr in node.attributes)) return false;
+      } else {
+        if (node.attributes[attr] !== val) return false;
+      }
+    }
+  }
+  return count > 0;
+}
+
+function collectDescendants(parent, selectorPart, results) {
+  for (const child of parent.children) {
+    if (child.nodeType !== 3) {
+      if (matchSelector(child, selectorPart)) {
+        results.push(child);
+      }
+      collectDescendants(child, selectorPart, results);
+    }
+  }
+}
+
+function parseHTML(str, parent) {
+  const rootNodes = [];
+  const stack = [parent];
+  const tagOrText = /<!--[\s\S]*?-->|<(?:\/([a-zA-Z0-9\-]+)|([a-zA-Z0-9\-]+)([^>]*?)(\/?)>)|([^<]+)/g;
+  let match;
+  while ((match = tagOrText.exec(str)) !== null) {
+    if (match[0].startsWith('<!--')) continue;
+    const [full, closeTag, openTag, attrStr, selfClose, text] = match;
+    const currentParent = stack[stack.length - 1];
+    if (text) {
+      const textNode = { nodeType: 3, text, parentNode: currentParent };
+      if (currentParent === parent) rootNodes.push(textNode);
+      else if (currentParent) currentParent.children.push(textNode);
+    } else if (closeTag) {
+      const tagLower = closeTag.toLowerCase();
+      for (let i = stack.length - 1; i >= 1; i--) {
+        if (stack[i].tagName.toLowerCase() === tagLower) {
+          stack.length = i;
+          break;
+        }
+      }
+    } else if (openTag) {
+      const node = new DOMNode(openTag);
+      node.parentNode = currentParent;
+      if (attrStr) {
+        const attrRegex = /([a-zA-Z0-9\-_]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+        let attrMatch;
+        while ((attrMatch = attrRegex.exec(attrStr)) !== null) {
+          const attrName = attrMatch[1];
+          const attrVal = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? '';
+          node.setAttribute(attrName, attrVal);
+        }
+      }
+      if (currentParent === parent) rootNodes.push(node);
+      else if (currentParent) currentParent.children.push(node);
+
+      const isVoid = VOID_TAGS.has(openTag.toLowerCase()) || selfClose === '/';
+      if (!isVoid) {
+        stack.push(node);
+      }
+    }
+  }
+  return rootNodes;
+}
+
 function element(id) {
-  return {
-    id,
-    hidden: false,
-    innerHTML: '',
-    isConnected: true,
-    attributes: {},
-    setAttribute(name, value) { this.attributes[name] = String(value); },
-    removeAttribute(name) { delete this.attributes[name]; },
-    querySelector() { return null; },
-    querySelectorAll() { return []; },
-    addEventListener() {},
-    get firstElementChild() { return null; },
-  };
+  return new DOMNode('div', id);
+}
+
+class ResizeObserver {
+  constructor(callback) {
+    this.callback = callback;
+  }
+  observe(target) {
+    if (this.callback) this.callback([{ target }]);
+  }
+  unobserve() {}
+  disconnect() {}
 }
 
 function escapeHtml(value) {
@@ -96,17 +408,50 @@ async function run({ pathname, responses, withLeaflet = false }) {
     location: { pathname, replace: (url) => replaced.push(url) },
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
     L: leaflet ? leaflet.L : undefined,
+    addEventListener: (type, handler) => {
+      if (!window._listeners[type]) window._listeners[type] = [];
+      window._listeners[type].push(handler);
+    },
+    _listeners: {},
   };
   const document = {
     getElementById: (id) => elements[id] || null,
     documentElement: {},
-    createElement: () => element('created'),
+    createElement: (tag = 'div') => new DOMNode(tag),
+    addEventListener: (type, handler) => {
+      if (!document._listeners[type]) document._listeners[type] = [];
+      document._listeners[type].push(handler);
+    },
+    _listeners: {},
+    querySelector: (sel) => document.querySelectorAll(sel)[0] || null,
+    querySelectorAll: (sel) => {
+      const results = [];
+      for (const el of Object.values(elements)) {
+        if (el.matches(sel)) results.push(el);
+        results.push(...el.querySelectorAll(sel));
+      }
+      return results;
+    },
   };
-  const context = vm.createContext({ window, document, console, encodeURIComponent, Number, String, Array, Date, Promise });
+  const context = vm.createContext({
+    window,
+    document,
+    console,
+    encodeURIComponent,
+    decodeURIComponent,
+    Number,
+    String,
+    Array,
+    Date,
+    Promise,
+    ResizeObserver,
+    setTimeout,
+    clearTimeout,
+  });
   vm.runInContext(source, context);
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
-  return { elements, replaced, fetched, calls: leaflet?.calls };
+  return { elements, replaced, fetched, calls: leaflet?.calls, workspace: window.__mapWorkspace };
 }
 
 const time = (clock, day = '20261002') => ({ utc: 'x', clock, day });
@@ -310,6 +655,577 @@ test('the week, places and a place page render from their own data', async () =>
   assert.ok(pageMarkup.includes('<option value="home" selected>home</option>'));
   assert.ok(pageMarkup.includes('hide from the map'));
   assert.ok(pageMarkup.includes('21:00–07:00 · a visit your phone reported'));
+});
+
+function makeMonth(itemsByDay = {}, opts = {}) {
+  const days = [];
+  for (let d = 1; d <= 31; d++) {
+    const dStr = `202610${String(d).padStart(2, '0')}`;
+    const dayData = itemsByDay[dStr];
+    if (dayData) {
+      days.push({
+        day: dStr,
+        has_location: dayData.has_location !== undefined ? dayData.has_location : true,
+        items: dayData.items || [],
+        devices: dayData.devices || [{ key: 'iphone', word: 'iphone', phrase: 'your iphone', platform: 'ios', readings: 1 }],
+      });
+    } else {
+      days.push({
+        day: dStr,
+        has_location: false,
+        items: [],
+        devices: [],
+      });
+    }
+  }
+  return {
+    month: '202610',
+    previous: '202609',
+    next: '202611',
+    journal_has_location: opts.journal_has_location !== undefined ? opts.journal_has_location : true,
+    today: opts.today || '20261031',
+    before: opts.before || null,
+    after: opts.after || null,
+    places: opts.places || {},
+    towns: opts.towns || [],
+    days,
+  };
+}
+
+test('arrival-only plus completed visit merge', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  // 1. Within 3 min, about 200m -> 1 stop
+  const p1 = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: null, point: [39.75, -105.0, 40] },
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:03:00Z', clock: '10:03', day: '20261001' }, departure: { utc: '2026-10-01T12:00:00Z', clock: '12:00', day: '20261001' }, point: [39.7518, -105.0, 40] },
+      ],
+    },
+  });
+  const m1 = workspace.monthModel(p1);
+  assert.strictEqual(m1.stops.length, 1);
+  assert.strictEqual(m1.stops[0].openEnded, false);
+
+  // 2. 4 minutes apart -> 2 stops, arrival-only is openEnded
+  const p2 = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: null, point: [39.75, -105.0, 40] },
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:04:00Z', clock: '10:04', day: '20261001' }, departure: { utc: '2026-10-01T12:00:00Z', clock: '12:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const m2 = workspace.monthModel(p2);
+  assert.strictEqual(m2.stops.length, 2);
+  assert.strictEqual(m2.stops[0].openEnded, true);
+
+  // 3. 400m apart within 3 minutes -> 2 stops, arrival-only is openEnded
+  const p3 = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: null, point: [39.75, -105.0, 40] },
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:02:00Z', clock: '10:02', day: '20261001' }, departure: { utc: '2026-10-01T12:00:00Z', clock: '12:00', day: '20261001' }, point: [39.754, -105.0, 40] },
+      ],
+    },
+  });
+  const m3 = workspace.monthModel(p3);
+  assert.strictEqual(m3.stops.length, 2);
+  assert.strictEqual(m3.stops[0].openEnded, true);
+});
+
+test('watch arrival-only and iPhone completed, 1 minute apart -> two stops', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261001': {
+      devices: [
+        { key: 'watch', word: 'watch', phrase: 'your watch', platform: 'watchos', readings: 1 },
+        { key: 'iphone', word: 'iphone', phrase: 'your iphone', platform: 'ios', readings: 1 },
+      ],
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: null, point: [39.75, -105.0, 40] },
+        { kind: 'visit', device: 1, arrival: { utc: '2026-10-01T10:01:00Z', clock: '10:01', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.stops.length, 2);
+});
+
+test('day N devices [watch, iphone], day N+1 devices [iphone, watch] overnight iPhone visit is one stop', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261001': {
+      devices: [{ key: 'watch' }, { key: 'iphone' }],
+      items: [
+        { kind: 'visit', device: 1, arrival: { utc: '2026-10-01T22:00:00Z', clock: '22:00', day: '20261001' }, departure: null, point: [39.75, -105.0, 40] },
+      ],
+    },
+    '20261002': {
+      devices: [{ key: 'iphone' }, { key: 'watch' }],
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T22:00:00Z', clock: '22:00', day: '20261001' }, departure: { utc: '2026-10-02T07:00:00Z', clock: '07:00', day: '20261002' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.stops.length, 1);
+  assert.strictEqual(m.stops[0].device, 'iphone');
+});
+
+test('two identical visits -> one stop', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.stops.length, 1);
+});
+
+test('arrival-only 19:00 on 20261031 plus after departing 07:00 on 20261101 -> one stop', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth(
+    {
+      '20261031': {
+        items: [
+          { kind: 'visit', device: 0, arrival: { utc: '2026-10-31T19:00:00Z', clock: '19:00', day: '20261031' }, departure: null, point: [39.75, -105.0, 40] },
+        ],
+      },
+    },
+    {
+      after: {
+        devices: [{ key: 'iphone' }],
+        items: [
+          { kind: 'visit', device: 0, arrival: { utc: '2026-10-31T19:00:00Z', clock: '19:00', day: '20261031' }, departure: { utc: '2026-11-01T07:00:00Z', clock: '07:00', day: '20261101' }, point: [39.75, -105.0, 40] },
+        ],
+      },
+    }
+  );
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.stops.length, 1);
+  assert.deepEqual(m.stops[0].days, ['20261031']);
+  assert.strictEqual(m.stops[0].openEnded, false);
+  assert.strictEqual(m.stops[0].clipped, true);
+  assert.ok(m.choices[0].areas[0].nightDays.includes('20261031'));
+});
+
+test('completed after report arriving 20261031 22:00 departing 20261101 without arrival-only partner -> one stop on 20261031', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth(
+    {},
+    {
+      after: {
+        devices: [{ key: 'iphone' }],
+        items: [
+          { kind: 'visit', device: 0, arrival: { utc: '2026-10-31T22:00:00Z', clock: '22:00', day: '20261031' }, departure: { utc: '2026-11-01T04:00:00Z', clock: '04:00', day: '20261101' }, point: [39.75, -105.0, 40] },
+        ],
+      },
+    }
+  );
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.stops.length, 1);
+  assert.deepEqual(m.stops[0].days, ['20261031']);
+});
+
+test('after item wholly on 20261101 is absent from stops', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth(
+    {},
+    {
+      after: {
+        devices: [{ key: 'iphone' }],
+        items: [
+          { kind: 'visit', device: 0, arrival: { utc: '2026-11-01T09:00:00Z', clock: '09:00', day: '20261101' }, departure: { utc: '2026-11-01T11:00:00Z', clock: '11:00', day: '20261101' }, point: [39.75, -105.0, 40] },
+        ],
+      },
+    }
+  );
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.stops.length, 0);
+});
+
+test('run of far drawable days is one trip; hidden far stop makes no trip', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p1 = makeMonth({
+    '20261001': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] }] },
+    '20261002': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-02T10:00:00Z', clock: '10:00', day: '20261002' }, departure: { utc: '2026-10-02T11:00:00Z', clock: '11:00', day: '20261002' }, point: [40.5, -105.0, 40] }] },
+    '20261003': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-03T10:00:00Z', clock: '10:00', day: '20261003' }, departure: { utc: '2026-10-03T11:00:00Z', clock: '11:00', day: '20261003' }, point: [40.5, -105.0, 40] }] },
+    '20261004': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-04T10:00:00Z', clock: '10:00', day: '20261004' }, departure: { utc: '2026-10-04T11:00:00Z', clock: '11:00', day: '20261004' }, point: [39.75, -105.0, 40] }] },
+    '20261005': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-05T10:00:00Z', clock: '10:00', day: '20261005' }, departure: { utc: '2026-10-05T11:00:00Z', clock: '11:00', day: '20261005' }, point: [39.75, -105.0, 40] }] },
+  });
+  const m1 = workspace.monthModel(p1);
+  assert.strictEqual(m1.choices.length, 2);
+  assert.strictEqual(m1.choices[1].trip, true);
+  assert.deepEqual(m1.choices[1].days, ['20261002', '20261003']);
+
+  const p2 = makeMonth({
+    '20261001': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] }] },
+    '20261002': { items: [{ kind: 'visit', device: 0, on_map: false, arrival: { utc: '2026-10-02T10:00:00Z', clock: '10:00', day: '20261002' }, departure: { utc: '2026-10-02T11:00:00Z', clock: '11:00', day: '20261002' }, point: [40.5, -105.0, 40] }] },
+    '20261004': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-04T10:00:00Z', clock: '10:00', day: '20261004' }, departure: { utc: '2026-10-04T11:00:00Z', clock: '11:00', day: '20261004' }, point: [39.75, -105.0, 40] }] },
+    '20261005': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-05T10:00:00Z', clock: '10:00', day: '20261005' }, departure: { utc: '2026-10-05T11:00:00Z', clock: '11:00', day: '20261005' }, point: [39.75, -105.0, 40] }] },
+  });
+  const m2 = workspace.monthModel(p2);
+  assert.strictEqual(m2.choices.length, 1);
+  assert.strictEqual(m2.choices[0].trip, false);
+});
+
+test('far day whose only stop has margin 2000 gives no trip, stop is in wideStops', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261001': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] }] },
+    '20261002': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-02T10:00:00Z', clock: '10:00', day: '20261002' }, departure: { utc: '2026-10-02T11:00:00Z', clock: '11:00', day: '20261002' }, point: [40.5, -105.0, 2000] }] },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.choices.length, 1);
+  assert.strictEqual(m.choices[0].trip, false);
+  assert.deepEqual(m.choices[0].notDrawn.wideStops, [1]);
+  assert.ok(m.choices[0].days.includes('20261002'));
+  assert.ok(m.days.find((d) => d.day === '20261002').inChoices.includes('home'));
+});
+
+test('every stop margin 2000 or null gives anchorId null, choices empty, notDrawn.wide === stops.length', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p1 = makeMonth({
+    '20261001': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 2000] }] },
+  });
+  const m1 = workspace.monthModel(p1);
+  assert.strictEqual(m1.anchorId, null);
+  assert.deepEqual(m1.choices, []);
+  assert.strictEqual(m1.notDrawn.wide, m1.stops.length);
+
+  const p2 = makeMonth({
+    '20261001': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, null] }] },
+  });
+  const m2 = workspace.monthModel(p2);
+  assert.strictEqual(m2.anchorId, null);
+  assert.deepEqual(m2.choices, []);
+  assert.strictEqual(m2.notDrawn.wide, m2.stops.length);
+});
+
+test('two visits at one place on different days -> one area, dayCount 2 with places as object or array', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const items = {
+    '20261001': { items: [{ kind: 'visit', device: 0, place_ref: { id: 'p1' }, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.7501, -105.0001, 30] }] },
+    '20261002': { items: [{ kind: 'visit', device: 0, place_ref: { id: 'p1' }, arrival: { utc: '2026-10-02T10:00:00Z', clock: '10:00', day: '20261002' }, departure: { utc: '2026-10-02T11:00:00Z', clock: '11:00', day: '20261002' }, point: [39.7502, -105.0002, 30] }] },
+  };
+  const pObj = makeMonth(items, { places: { p1: { id: 'p1', lat: 39.75, lon: -105.0 } } });
+  const mObj = workspace.monthModel(pObj);
+  assert.strictEqual(mObj.choices[0].areas.length, 1);
+  assert.strictEqual(mObj.choices[0].areas[0].dayCount, 2);
+
+  const pArr = makeMonth(items, { places: [{ id: 'p1', lat: 39.75, lon: -105.0 }] });
+  const mArr = workspace.monthModel(pArr);
+  assert.strictEqual(mArr.choices[0].areas.length, 1);
+  assert.strictEqual(mArr.choices[0].areas[0].dayCount, 2);
+  assert.strictEqual(mArr.choices[0].areas[0].id, mObj.choices[0].areas[0].id);
+});
+
+test('three on_map: false visits within 30 m, margin 80, no place_ref -> hiddenPlaces 1', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, on_map: false, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 80] },
+        { kind: 'visit', device: 0, on_map: false, arrival: { utc: '2026-10-01T12:00:00Z', clock: '12:00', day: '20261001' }, departure: { utc: '2026-10-01T13:00:00Z', clock: '13:00', day: '20261001' }, point: [39.7501, -105.0, 80] },
+        { kind: 'visit', device: 0, on_map: false, arrival: { utc: '2026-10-01T14:00:00Z', clock: '14:00', day: '20261001' }, departure: { utc: '2026-10-01T15:00:00Z', clock: '15:00', day: '20261001' }, point: [39.7502, -105.0, 80] },
+      ],
+    },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.notDrawn.hiddenPlaces, 1);
+});
+
+test('places contains p1, and the only stop is on_map: false, no place_ref, about 20 m from p1 -> hiddenPlaces is 1', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth(
+    {
+      '20261001': {
+        items: [
+          { kind: 'visit', device: 0, on_map: false, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75018, -105.0, 40] },
+        ],
+      },
+    },
+    { places: [{ id: 'p1', lat: 39.75, lon: -105.0 }] }
+  );
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.notDrawn.hiddenPlaces, 1);
+});
+
+test('one visit 23:00-07:00 -> nights 1; two separate one-hour visits -> nights 0', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p1 = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T23:00:00Z', clock: '23:00', day: '20261001' }, departure: { utc: '2026-10-02T07:00:00Z', clock: '07:00', day: '20261002' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const m1 = workspace.monthModel(p1);
+  assert.strictEqual(m1.choices[0].areas[0].nights, 1);
+
+  const p2 = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T23:00:00Z', clock: '23:00', day: '20261001' }, departure: { utc: '2026-10-02T00:00:00Z', clock: '00:00', day: '20261002' }, point: [39.75, -105.0, 40] },
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-02T00:00:00Z', clock: '00:00', day: '20261002' }, departure: { utc: '2026-10-02T01:00:00Z', clock: '01:00', day: '20261002' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const m2 = workspace.monthModel(p2);
+  assert.strictEqual(m2.choices[0].areas[0].nights, 0);
+});
+
+test('stop on 20261031 is in stops', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261031': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-31T10:00:00Z', clock: '10:00', day: '20261031' }, departure: { utc: '2026-10-31T11:00:00Z', clock: '11:00', day: '20261031' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.stops.length, 1);
+  assert.deepEqual(m.stops[0].days, ['20261031']);
+});
+
+test('today 20261015: days 16-31 are future, m is 15, noLocation does not include them', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth(
+    {
+      '20261001': { items: [] },
+      '20261020': { has_location: true, items: [], devices: [] },
+    },
+    { today: '20261015' }
+  );
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.days.find((d) => d.day === '20261020').state, 'kept');
+  assert.strictEqual(m.days.find((d) => d.day === '20261016').state, 'future');
+  assert.strictEqual(m.days.find((d) => d.day === '20261031').state, 'future');
+  assert.strictEqual(m.m, 16);
+
+  const p2 = makeMonth({}, { today: '20261015' });
+  const m2 = workspace.monthModel(p2);
+  for (let d = 16; d <= 31; d++) {
+    const dStr = `202610${d}`;
+    assert.strictEqual(m2.days.find((x) => x.day === dStr).state, 'future');
+  }
+  assert.strictEqual(m2.m, 15);
+  assert.strictEqual(m2.noLocation, 15);
+});
+
+test('unreadable-only has state unreadable, not no-stops', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261001': {
+      devices: [{ key: 'iphone', readings: 0, unreadable_lines: 5 }],
+      items: [],
+    },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.days.find((d) => d.day === '20261001').state, 'unreadable');
+});
+
+test('readings on every day, no items, today 20261031: anchorId null, choices empty, every day no-stops', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const itemsByDay = {};
+  for (let d = 1; d <= 31; d++) {
+    const dStr = `202610${String(d).padStart(2, '0')}`;
+    itemsByDay[dStr] = {
+      devices: [{ key: 'iphone', readings: 3 }],
+      items: [],
+    };
+  }
+  const p = makeMonth(itemsByDay, { today: '20261031' });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.anchorId, null);
+  assert.deepEqual(m.choices, []);
+  assert.ok(m.days.every((d) => d.state === 'no-stops'));
+});
+
+test('one drawable stop, area.town null, area.label Wyoming -> home name around Wyoming, trip Wyoming', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, area: { town: null, label: 'Wyoming' }, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+    '20261002': {
+      items: [
+        { kind: 'visit', device: 0, area: { town: null, label: 'Wyoming' }, arrival: { utc: '2026-10-02T10:00:00Z', clock: '10:00', day: '20261002' }, departure: { utc: '2026-10-02T11:00:00Z', clock: '11:00', day: '20261002' }, point: [40.5, -105.0, 40] },
+      ],
+    },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.choices[0].name, 'around Wyoming');
+  assert.strictEqual(m.choices[1].name, 'Wyoming');
+});
+
+test('owner name cabin, area.label with no ", " -> words cabin, listLabel cabin, sharedRegion null', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, place_ref: { id: 'p1', owner_name: 'cabin' }, area: { label: 'Woods' }, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.stops[0].words, 'cabin');
+  assert.strictEqual(m.choices[0].areas[0].listLabel, 'cabin');
+  assert.strictEqual(m.choices[0].sharedRegion, null);
+});
+
+test('sharedRegion with comma labels', async () => {
+  const { workspace } = await run({ pathname: '/app/map/month/202610', responses: {} });
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, area: { label: 'Library, Colorado' }, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+        { kind: 'visit', device: 0, area: { label: 'Park, Colorado' }, arrival: { utc: '2026-10-01T12:00:00Z', clock: '12:00', day: '20261001' }, departure: { utc: '2026-10-01T13:00:00Z', clock: '13:00', day: '20261001' }, point: [39.77, -105.0, 40] },
+        { kind: 'visit', device: 0, area: { label: 'Wyoming' }, arrival: { utc: '2026-10-01T14:00:00Z', clock: '14:00', day: '20261001' }, departure: { utc: '2026-10-01T15:00:00Z', clock: '15:00', day: '20261001' }, point: [39.79, -105.0, 40] },
+      ],
+    },
+  });
+  const m = workspace.monthModel(p);
+  assert.strictEqual(m.choices[0].sharedRegion, 'Colorado');
+  const lib = m.choices[0].areas.find((a) => a.words === 'Library, Colorado');
+  const park = m.choices[0].areas.find((a) => a.words === 'Park, Colorado');
+  const wy = m.choices[0].areas.find((a) => a.words === 'Wyoming');
+  assert.strictEqual(lib.listLabel, 'Library');
+  assert.strictEqual(park.listLabel, 'Park');
+  assert.strictEqual(wy.listLabel, 'Wyoming');
+});
+
+test('no-anchor month: every stop on_map: false shows "no stops to draw this month." and "a place you hid"', async () => {
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, on_map: false, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  assert.strictEqual(elements['map-view-root'].hidden, false);
+  assert.ok(!elements['map-state-gate'].innerHTML.includes('<error>'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('no stops to draw this month.'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('a place you hid'));
+  assert.strictEqual(elements['map-view-root'].querySelector('[data-map-month-notdrawn]').innerHTML, '');
+});
+
+test('no-anchor month: every margin 2000 shows "no stops to draw this month." and margin line', async () => {
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 2000] },
+      ],
+    },
+  });
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  assert.strictEqual(elements['map-view-root'].hidden, false);
+  assert.ok(!elements['map-state-gate'].innerHTML.includes('<error>'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('no stops to draw this month.'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('a margin of error over 500 m or not reported'));
+  assert.strictEqual(elements['map-view-root'].querySelector('[data-map-month-notdrawn]').innerHTML, '');
+});
+
+test('no-anchor month: every margin null shows "no stops to draw this month." and margin line', async () => {
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, null] },
+      ],
+    },
+  });
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  assert.strictEqual(elements['map-view-root'].hidden, false);
+  assert.ok(!elements['map-state-gate'].innerHTML.includes('<error>'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('no stops to draw this month.'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('a margin of error over 500 m or not reported'));
+  assert.strictEqual(elements['map-view-root'].querySelector('[data-map-month-notdrawn]').innerHTML, '');
+});
+
+test('more than eight areas: click [data-map-month-areas-more], then svg data-cell equals areas list data-cell', async () => {
+  const items = [];
+  for (let i = 0; i < 10; i++) {
+    const h = String(10 + i).padStart(2, '0');
+    items.push({
+      kind: 'visit',
+      device: 0,
+      area: { label: `Area ${i}` },
+      arrival: { utc: `2026-10-01T${h}:00:00Z`, clock: `${h}:00`, day: '20261001' },
+      departure: { utc: `2026-10-01T${h}:30:00Z`, clock: `${h}:30`, day: '20261001' },
+      point: [39.75 + i * 0.02, -105.0, 40],
+    });
+  }
+  const p = makeMonth({ '20261001': { items } });
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  const moreBtn = elements['map-view-root'].querySelector('[data-map-month-areas-more]');
+  assert.ok(moreBtn);
+  moreBtn.click();
+
+  const svgCells = elements['map-view-root'].querySelectorAll('[data-map-month-svg] [data-cell]').map((el) => el.getAttribute('data-cell')).sort();
+  const listCells = elements['map-view-root'].querySelectorAll('[data-map-month-areas] [data-cell]').map((el) => el.getAttribute('data-cell')).sort();
+  assert.strictEqual(svgCells.length, 10);
+  assert.strictEqual(listCells.length, 10);
+  assert.deepEqual(svgCells, listCells);
+});
+
+test('empty month with journal_has_location: true and apiJson throwing: root contains "no location kept for this month.", no nearest-month link', async () => {
+  const p = makeMonth({}, { journal_has_location: true });
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  assert.ok(!elements['map-state-gate'].innerHTML.includes('<error>'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('no location kept for this month.'));
+  const monthLinks = [...elements['map-view-root'].innerHTML.matchAll(/href="\/app\/map\/month\//g)];
+  assert.strictEqual(monthLinks.length, 0);
+});
+
+test('day page contains this month link, week page contains this month link, month page contains nav links', async () => {
+  const dayRes = await run({ pathname: '/app/map/20261002', responses: { '/app/map/api/day/20261002': day } });
+  assert.ok(dayRes.elements['map-view-root'].innerHTML.includes('href="/app/map/month/202610"'));
+  assert.ok(dayRes.elements['map-view-root'].innerHTML.includes('href="/app/map/week/20261002"'));
+
+  const week = { start: '20260928', previous: '20260921', next: '20261005', days: [
+    { day: '20260928', readings: 0, devices: [], items: [] },
+  ] };
+  const weekRes = await run({ pathname: '/app/map/week/20260928', responses: { '/app/map/api/week/20260928': week } });
+  assert.ok(weekRes.elements['map-view-root'].innerHTML.includes('href="/app/map/month/202609"'));
+
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const monthRes = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  const markup = monthRes.elements['map-view-root'].innerHTML;
+  assert.ok(markup.includes('href="/app/map/"'));
+  assert.ok(markup.includes('href="/app/map/places"'));
+  assert.ok(markup.includes('href="/app/map/month/202609"'));
+  assert.ok(markup.includes('href="/app/map/month/202611"'));
+});
+
+test('calendar keydown End on month with today 20261015 and no later location lands on 20261015', async () => {
+  const p = makeMonth(
+    {
+      '20261001': { items: [{ kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] }] },
+    },
+    { today: '20261015' }
+  );
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  const calEl = elements['map-view-root'].querySelector('[data-map-month-cal]');
+  assert.ok(calEl.listeners['keydown']?.length > 0);
+  calEl.listeners['keydown'][0]({ key: 'End', preventDefault() {} });
+  const zeroButtons = elements['map-view-root'].querySelectorAll('[data-map-month-cal] button[tabindex="0"]');
+  assert.strictEqual(zeroButtons.length, 1);
+  assert.strictEqual(zeroButtons[0].getAttribute('data-day'), '20261015');
 });
 
 (async () => {

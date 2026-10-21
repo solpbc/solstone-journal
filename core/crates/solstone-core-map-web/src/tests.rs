@@ -539,3 +539,141 @@ async fn a_week_runs_monday_to_sunday_with_its_visits() {
     let (status, _, _) = get(journal.path(), "/app/map/api/week/2026100").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+fn month_journal() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    write(
+        root.path(),
+        "20260930",
+        "phone_location",
+        "100000_300",
+        &format!(
+            "{IPHONE_HEADER}\n{}\n",
+            r#"{"arrival":"2026-09-30T10:00:00Z","departure":"2026-09-30T11:00:00Z","h_acc":20,"lat":39.7527,"lon":-105.0001,"schema":"solstone.location.visit/1"}"#
+        ),
+    );
+    write(
+        root.path(),
+        "20261001",
+        "phone_location",
+        "120000_300",
+        &format!(
+            "{IPHONE_HEADER}\n{}\n",
+            r#"{"arrival":"2026-10-01T12:00:00Z","departure":"2026-10-01T13:00:00Z","h_acc":20,"lat":39.7527,"lon":-105.0001,"schema":"solstone.location.visit/1"}"#
+        ),
+    );
+    write(
+        root.path(),
+        "20261015",
+        "phone_location",
+        "140000_300",
+        &format!(
+            "{IPHONE_HEADER}\n{}\n",
+            r#"{"arrival":"2026-10-15T14:00:00Z","departure":"2026-10-15T15:00:00Z","h_acc":20,"lat":41.878,"lon":-87.630,"schema":"solstone.location.visit/1"}"#
+        ),
+    );
+    write(
+        root.path(),
+        "20261101",
+        "phone_location",
+        "160000_300",
+        &format!(
+            "{IPHONE_HEADER}\n{}\n",
+            r#"{"arrival":"2026-11-01T16:00:00Z","departure":"2026-11-01T17:00:00Z","h_acc":20,"lat":39.7527,"lon":-105.0001,"schema":"solstone.location.visit/1"}"#
+        ),
+    );
+    let mut reconciler = Reconciler::default();
+    solstone_core_location::reconcile_journal(root.path(), &mut reconciler).unwrap();
+    root
+}
+
+#[tokio::test]
+async fn a_month_runs_first_to_last_calendar_day_with_before_and_after() {
+    let journal = month_journal();
+    let (status, _, month) = get(journal.path(), "/app/map/api/month/202610").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(month["month"], "202610");
+    assert_eq!(month["previous"], "202609");
+    assert_eq!(month["next"], "202611");
+
+    let days = month["days"].as_array().unwrap();
+    assert_eq!(days.len(), 31);
+    assert_eq!(days[0]["day"], "20261001");
+    assert_eq!(days[30]["day"], "20261031");
+
+    for d in days {
+        let day_str = d["day"].as_str().unwrap();
+        assert_ne!(day_str, "20260930");
+        assert_ne!(day_str, "20261101");
+    }
+
+    assert_eq!(month["before"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(month["after"]["items"].as_array().unwrap().len(), 1);
+
+    use sha2::{Digest, Sha256};
+    let expected_key =
+        format!("{:064x}", Sha256::digest(b"stream:phone_location"))[..8].to_string();
+    let key1 = days[0]["devices"][0]["key"].as_str().unwrap();
+    let key15 = days[14]["devices"][0]["key"].as_str().unwrap();
+    assert_eq!(key1, expected_key);
+    assert_eq!(key15, expected_key);
+
+    let body_str = serde_json::to_string(&month).unwrap();
+    assert!(!body_str.contains("stream:phone_location"));
+
+    let towns = month["towns"].as_array().unwrap();
+    assert!(towns.len() >= 2);
+    let has_denver = towns.iter().any(|t| {
+        (t["lat"].as_f64().unwrap() - 39.7527).abs() <= 0.5
+            && (t["lon"].as_f64().unwrap() - (-105.0001)).abs() <= 0.5
+    });
+    let has_far = towns.iter().any(|t| {
+        (t["lat"].as_f64().unwrap() - 41.878).abs() <= 0.5
+            && (t["lon"].as_f64().unwrap() - (-87.630)).abs() <= 0.5
+    });
+    assert!(has_denver, "must have a town near Denver");
+    assert!(has_far, "must have a town near far point");
+}
+
+#[tokio::test]
+async fn a_month_handles_hidden_places() {
+    let journal = journal_with_a_place();
+    let (status, _, list) = get(journal.path(), "/app/map/api/places").await;
+    assert_eq!(status, StatusCode::OK);
+    let id = list["places"][0]["id"].as_str().unwrap().to_owned();
+    let uri = format!("/app/map/api/place/{id}");
+    let (status, _) = post(journal.path(), &uri, r#"{"hidden":true}"#).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _, month) = get(journal.path(), "/app/map/api/month/202610").await;
+    assert_eq!(status, StatusCode::OK);
+    let oct1 = &month["days"][0];
+    assert_eq!(oct1["items"][0]["on_map"], false);
+    assert!(month["places"].as_object().unwrap().contains_key(&id));
+}
+
+#[tokio::test]
+async fn bad_months_are_refused() {
+    let root = tempfile::tempdir().unwrap();
+    for uri in ["/app/map/api/month/2026-9", "/app/map/api/month/202613"] {
+        let (status, _, body) = get(root.path(), uri).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}");
+        assert_eq!(body["reason_code"], "invalid_month");
+    }
+    let (status, _, body) = get(root.path(), "/app/map/month/202613").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["reason_code"], "invalid_month");
+
+    let (status, _, body) = get(root.path(), "/app/map/api/stats/202613").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["reason_code"], "invalid_month");
+}
+
+#[tokio::test]
+async fn an_empty_journal_returns_an_empty_month_successfully() {
+    let root = tempfile::tempdir().unwrap();
+    let (status, _, month) = get(root.path(), "/app/map/api/month/202610").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(month["days"].as_array().unwrap().len(), 31);
+    assert_eq!(month["journal_has_location"], false);
+}
