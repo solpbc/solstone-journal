@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use nix::sys::statvfs::statvfs;
 use solstone_core_assets::resolve;
+use solstone_core_installed_payload::WindowsArchitecture;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 
@@ -221,13 +222,16 @@ pub fn build_local_fit_report(
 ) -> FitReport {
     let artifact_key = local_artifact_key(os_name, arch);
     let platform = if os_name == "windows" {
-        if arch == "x86_64" {
-            match super::windows_engine::verified_windows_llama_package() {
+        if let Some(windows_arch) = WindowsArchitecture::from_architecture(arch) {
+            match super::windows_engine::verified_windows_llama_package()
+                .and_then(|pkg| pkg.require_runtime_key(windows_arch.runtime_key()))
+            {
                 Ok(_) => FitCheck {
                     name: "platform",
                     severity: FitSeverity::Ok,
-                    detail: "signed llama-server package payload is supported for windows/x86_64"
-                        .to_string(),
+                    detail: format!(
+                        "signed llama-server package payload is supported for windows/{arch}"
+                    ),
                 },
                 Err(super::windows_engine::WindowsLlamaPackageError::Missing(detail)) => FitCheck {
                     name: "platform",
@@ -244,7 +248,9 @@ pub fn build_local_fit_report(
             FitCheck {
                 name: "platform",
                 severity: FitSeverity::Blocked,
-                detail: format!("llama-server requires windows/x86_64; got {os_name}/{arch}"),
+                detail: format!(
+                    "llama-server requires a supported windows architecture; got {os_name}/{arch}"
+                ),
             }
         }
     } else {

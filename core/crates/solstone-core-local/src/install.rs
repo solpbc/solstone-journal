@@ -245,6 +245,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use solstone_core_assets::{Artifact, Backend as AssetBackend, Platform as AssetPlatform, resolve};
+use solstone_core_installed_payload::WindowsArchitecture;
 use solstone_core_installed_payload::windows_payload::{
     WINDOWS_LLAMA_SERVER, WINDOWS_VULKAN_LOADER,
 };
@@ -828,7 +829,7 @@ fn observe_local_hardware_admission() -> LocalHardwareAdmission {
     }
 
     let key = pins::platform_key();
-    if key == "x86_64-windows" {
+    if WindowsArchitecture::from_runtime_key(&key).is_some() {
         LocalHardwareAdmission::WindowsUnobserved
     } else if key == "aarch64-apple-darwin" {
         LocalHardwareAdmission::AppleSilicon {
@@ -1058,7 +1059,7 @@ pub(crate) fn local_target_for_windows_package(
         .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
     let runtime_pin = json!({
         "unit": "llama-server-vulkan",
-        "artifact_key": "x86_64-windows",
+        "artifact_key": package.architecture.runtime_key(),
         "source": "signed-package",
         "members": [
             {
@@ -1110,15 +1111,17 @@ fn local_target_for_key_with_probe(
         ));
     }
 
-    if key == "x86_64-windows" {
-        let pkg = windows_engine::verified_windows_llama_package().map_err(|err| match err {
-            windows_engine::WindowsLlamaPackageError::Missing(msg) => {
-                failure("package", "package_unavailable", msg, 65)
-            }
-            windows_engine::WindowsLlamaPackageError::Invalid(msg) => {
-                failure("package", "package_invalid", msg, 65)
-            }
-        })?;
+    if WindowsArchitecture::from_runtime_key(key).is_some() {
+        let pkg = windows_engine::verified_windows_llama_package()
+            .and_then(|pkg| pkg.require_runtime_key(key))
+            .map_err(|err| match err {
+                windows_engine::WindowsLlamaPackageError::Missing(msg) => {
+                    failure("package", "package_unavailable", msg, 65)
+                }
+                windows_engine::WindowsLlamaPackageError::Invalid(msg) => {
+                    failure("package", "package_invalid", msg, 65)
+                }
+            })?;
         return local_target_for_windows_package(&pkg, model_id);
     }
     let (runtime_pin, backend_name, backend_reason) = match backend {
@@ -1388,7 +1391,7 @@ pub fn local_thinking_catalog_plan(
     nvidia_probe: Option<crate::NvidiaProbe>,
 ) -> Option<Vec<pins::ThinkingDownloadRow>> {
     let key = pins::platform_key();
-    if key == "x86_64-windows" {
+    if WindowsArchitecture::from_runtime_key(&key).is_some() {
         return pins::thinking_download_rows(crate::Backend::Vulkan, &key);
     }
     match local_backend_choice_present(journal, nvidia_probe) {
@@ -1490,7 +1493,7 @@ fn local_backend_choice_with(
     inspect_cuda_binary: bool,
 ) -> crate::nvidia::BackendSelection {
     let key = pins::platform_key();
-    if key == "x86_64-windows" {
+    if WindowsArchitecture::from_runtime_key(&key).is_some() {
         return crate::nvidia::BackendSelection::Selected(crate::BackendChoice {
             backend: crate::Backend::Vulkan,
             reason: "Windows packaged Vulkan runtime".to_owned(),
@@ -1763,15 +1766,17 @@ fn run_local_install(
         .to_owned();
     let model_bytes = local_model_download_bytes(&model_id)?;
     let root = pins::cache_root(&journal);
-    if key == "x86_64-windows" {
-        let pkg = windows_engine::verified_windows_llama_package().map_err(|err| match err {
-            windows_engine::WindowsLlamaPackageError::Missing(msg) => {
-                failure("package", "package_unavailable", msg, 65)
-            }
-            windows_engine::WindowsLlamaPackageError::Invalid(msg) => {
-                failure("package", "package_invalid", msg, 65)
-            }
-        })?;
+    if WindowsArchitecture::from_runtime_key(&key).is_some() {
+        let pkg = windows_engine::verified_windows_llama_package()
+            .and_then(|pkg| pkg.require_runtime_key(&key))
+            .map_err(|err| match err {
+                windows_engine::WindowsLlamaPackageError::Missing(msg) => {
+                    failure("package", "package_unavailable", msg, 65)
+                }
+                windows_engine::WindowsLlamaPackageError::Invalid(msg) => {
+                    failure("package", "package_invalid", msg, 65)
+                }
+            })?;
         let model_identity = pins::model_identity(&model_id)
             .ok_or_else(|| failure("model", "unsupported_model", &model_id, 65))?;
         let model_file = model_identity
