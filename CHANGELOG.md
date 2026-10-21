@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.0.54] - 2026-10-21
 
-on linux and mac, this version has no changes you'll notice, and everything below came in 2.0.52 and 2.0.53. on windows, this is your journal's first update since 2.0.51, so it brings the changes from 2.0.52 and 2.0.53, listed below. recognizing text from your screens, new in 2.0.53, isn't part of your journal on windows.
+on linux and mac, this version fixes two problems that came with 2.0.53, listed under fixed right after the security fix, and everything else below came in 2.0.52 and 2.0.53. on windows, this is your journal's first update since 2.0.51, so it brings the changes from 2.0.52 and 2.0.53, listed below. recognizing text from your screens, new in 2.0.53, isn't part of your journal on windows.
 
 ### Added
 
@@ -35,6 +35,8 @@ on linux and mac, this version has no changes you'll notice, and everything belo
 ### Fixed
 
 - security fix: your journal no longer accepts certificates issued through emSign certificate authorities whose private keys are now public. this includes its connections to the relay, to solstone.me, to the services portal and to a thinking provider you connect with your own key or sign-in, and its update checks and downloads. before, someone between your computer and one of these services could have used one of the exposed keys to pose as that service. posing as that thinking provider, they could have read what your journal sent it, and the key or sign-in your journal uses there. what your journal sends to confidential processing or local thinking wasn't exposed this way.
+- on linux and mac, your journal now brings search up to date before its daily thinking starts, and its daily thinking no longer shows as failed. on 2.0.53 it showed as failed even when its thinking was done.
+- on linux and mac, when you reach your journal's folder through a symbolic link, what you save reaches search soon after you save it, instead of up to a day later.
 - when your morning briefing leaves something out to keep within its size limit, its note now says how many activities, stories or location entries it left out, instead of listing internal names.
 - health shows processing progress sooner when you open it.
 - on windows, home in the journal window shows download progress in sizes like 1.2 GB of 4.8 GB, instead of two bare numbers.
@@ -56,10 +58,6 @@ on linux and mac, this version has no changes you'll notice, and everything belo
 - an import started more than an hour after it was saved no longer shows "import never completed" while it runs.
 - when an import can't start, on the import page and on your iphone, its message now says what happened in plain words, without the importer's internal output.
 - if the connection drops while the local thinking model downloads, your journal tries again twice before saying the download didn't finish.
-
-### Fixed
-
-- your journal now brings search up to date before its daily thinking starts, and its daily thinking no longer shows as failed.
 
 ## [2.0.53] - 2026-10-21
 
