@@ -5,6 +5,7 @@
 //! these values retain bytes under the original controlled-build output labels.
 //! Historical product identities and original receipt/log bytes are preserved.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read};
@@ -179,7 +180,7 @@ impl CapturedBuild {
             &super::windows_stage::join_components(output_root, expected_label),
             output,
         )?;
-        let pe = crate::pe_dependencies::inspect_dependencies(&bytes)?;
+        let pe = crate::pe_dependencies::inspect_dependencies(&bytes, WindowsArchitecture::X86_64)?;
         if pe.is_dll != expected_label.ends_with(".dll") {
             return Err(
                 "native output PE kind differs from its declared library/command role".into(),
@@ -885,6 +886,7 @@ pub fn admit_ffmpeg_notices(
             "source_commit": pin.commit, "url": pin.url, "bytes": pin.size, "sha256": pin.sha256,
         })).map_err(|e| e.to_string())?);
         Ok(super::windows_archives::AdmittedArchiveInput {
+            architecture: None,
             component: crate::inventory::WindowsNativeComponent::Ffmpeg,
             members,
         })
@@ -1460,8 +1462,11 @@ mod llama_capture_tests {
                     .contains("Copyright")
             );
         }
-        super::super::windows_stage::AdmittedWindowsNativeInputs::from_controlled(vec![input])
-            .unwrap();
+        super::super::windows_stage::AdmittedWindowsNativeInputs::from_controlled(
+            vec![input],
+            WindowsArchitecture::X86_64,
+        )
+        .unwrap();
         let scratch = tempfile::tempdir().unwrap();
         let evidence = scratch.path().join("evidence.json");
         fs::write(&evidence, b"{}").unwrap();
@@ -1691,7 +1696,8 @@ mod nvattest_retained_tests {
             "220849fea69d60563fc6ef0ea7c020450d842565d08e7cbd2eecfecbd41ecdc8"
         );
         // Imports parsed from the real executable bytes match the real report.
-        let pe = crate::pe_dependencies::inspect_dependencies(exe).unwrap();
+        let pe =
+            crate::pe_dependencies::inspect_dependencies(exe, WindowsArchitecture::X86_64).unwrap();
         let report = decode_build_report(&report_raw).unwrap();
         let reported: std::collections::BTreeSet<String> = report
             .imports
@@ -1715,8 +1721,11 @@ mod nvattest_retained_tests {
             sha256_hex(&input.outputs()[NVATTEST_LICENSE_LABEL]),
             "82d36972a71088e8d4a4793313e64e18340c60de08e3175a58360a277c962a33"
         );
-        crate::produce::windows_stage::AdmittedWindowsNativeInputs::from_controlled(vec![input])
-            .unwrap();
+        crate::produce::windows_stage::AdmittedWindowsNativeInputs::from_controlled(
+            vec![input],
+            WindowsArchitecture::X86_64,
+        )
+        .unwrap();
 
         type Forgery = (
             &'static str,

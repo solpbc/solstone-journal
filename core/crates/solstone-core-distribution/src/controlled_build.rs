@@ -4,6 +4,7 @@
 //! In-memory controlled-build receipt: identity categories plus a PE census
 //! of pre-signing output bytes.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -139,6 +140,27 @@ pub struct ControlledBuildReceipt {
     pub outputs: Vec<OutputIdentityEntry>,
     pub supporting: Vec<SupportingArtifactRef>,
     pub validation: ValidationReference,
+}
+
+pub fn validate_windows_receipt_architecture(
+    receipt: &ControlledBuildReceipt,
+    expected: WindowsArchitecture,
+) -> Result<(), String> {
+    if receipt.configuration.target_triple != expected.rust_triple() {
+        return Err(format!(
+            "controlled receipt target differs from expected {}",
+            expected.rust_triple()
+        ));
+    }
+    for output in &receipt.outputs {
+        if output.census.machine != expected.pe_machine() {
+            return Err(format!(
+                "controlled output {} has a foreign PE machine",
+                output.label
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -622,6 +644,45 @@ mod tests {
 
     fn receipt_document(receipt: &ControlledBuildReceipt) -> Value {
         serde_json::to_value(receipt).expect("receipt document")
+    }
+
+    #[test]
+    fn expected_windows_receipt_checks_triple_and_every_output() {
+        for (expected, triple, machine) in [
+            (
+                WindowsArchitecture::X86_64,
+                "x86_64-pc-windows-msvc",
+                0x8664,
+            ),
+            (
+                WindowsArchitecture::Aarch64,
+                "aarch64-pc-windows-msvc",
+                0xaa64,
+            ),
+        ] {
+            let mut receipt = receipt_with_real_pe_census();
+            receipt.configuration.target_triple = triple.into();
+            receipt.outputs[0].census.machine = machine;
+            let original = receipt.clone();
+            assert!(validate_windows_receipt_architecture(&receipt, expected).is_ok());
+            assert_eq!(receipt, original);
+            let foreign = if expected == WindowsArchitecture::X86_64 {
+                WindowsArchitecture::Aarch64
+            } else {
+                WindowsArchitecture::X86_64
+            };
+            receipt.configuration.target_triple = foreign.rust_triple().into();
+            assert!(validate_windows_receipt_architecture(&receipt, expected).is_err());
+            receipt = original.clone();
+            receipt.outputs[0].census.machine = foreign.pe_machine();
+            assert!(validate_windows_receipt_architecture(&receipt, expected).is_err());
+            receipt = original;
+            let mut extra = receipt.outputs[0].clone();
+            extra.label = "other.dll".into();
+            extra.census.machine = foreign.pe_machine();
+            receipt.outputs.push(extra);
+            assert!(validate_windows_receipt_architecture(&receipt, expected).is_err());
+        }
     }
 
     fn assert_decode_rejects_unknown_property(

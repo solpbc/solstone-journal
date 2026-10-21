@@ -9,6 +9,7 @@
 //! bound to committed pins and inventory configuration. The pins value is
 //! crate-private: production builds it only from the constants below.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read};
 
@@ -683,7 +684,7 @@ pub(crate) fn admit(
     require_archive("bundle-archive", input.bundle_archive, &pins.bundle_archive)?;
 
     // 3. The executable's own dependencies, from the admitted bytes.
-    let pe = inspect_dependencies(input.output_exe)?;
+    let pe = inspect_dependencies(input.output_exe, WindowsArchitecture::X86_64)?;
     if pe.is_dll {
         return Err("pe-kind: nvattest.exe must be an executable, not a DLL".into());
     }

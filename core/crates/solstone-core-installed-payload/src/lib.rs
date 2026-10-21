@@ -9,7 +9,10 @@
 
 pub mod pin;
 pub mod posix;
+pub mod windows_architecture;
 pub mod windows_payload;
+
+pub use windows_architecture::WindowsArchitecture;
 
 #[cfg(any(windows, test))]
 pub mod windows_adapter;

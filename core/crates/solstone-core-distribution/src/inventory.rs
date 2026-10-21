@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
@@ -272,6 +273,15 @@ pub struct Target {
     /// Windows-only field.
     #[serde(default)]
     pub triple_windows: String,
+}
+
+impl Target {
+    pub fn windows_architecture(&self) -> Result<WindowsArchitecture, String> {
+        if self.os != OS_WINDOWS {
+            return Err(format!("target {} is not Windows", self.id));
+        }
+        WindowsArchitecture::from_target_tuple(&self.id, &self.arch, &self.triple_windows)
+    }
 }
 
 impl Target {
@@ -1788,6 +1798,9 @@ fn validate_targets(targets: &[Target]) -> Result<(), InventoryError> {
             }
             OS_WINDOWS => {
                 require_fields(&target.id, &windows_only, &mut missing);
+                if let Err(error) = target.windows_architecture() {
+                    unexpected.insert(error);
+                }
                 forbid_fields(&target.id, &linux_only, &mut unexpected);
                 forbid_fields(&target.id, &macos_only, &mut unexpected);
                 if lane.is_empty() {
@@ -3224,5 +3237,44 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             err.contains("duplicate Windows native input member"),
             "{err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod windows_architecture_tests {
+    use super::*;
+
+    #[test]
+    fn native_windows_target_coordinates_must_agree() {
+        for arch in WindowsArchitecture::ALL {
+            let input = format!(
+                r#"id = "{}"
+os = "windows"
+arch = "{}"
+lane = "msvc-native"
+triple_windows = "{}"
+"#,
+                arch.target_id(),
+                arch.architecture(),
+                arch.rust_triple()
+            );
+            let target: Target = toml_edit::de::from_str(&input).unwrap();
+            assert!(validate_targets(std::slice::from_ref(&target)).is_ok());
+            assert_eq!(target.windows_architecture().unwrap(), arch);
+            let foreign = if arch == WindowsArchitecture::X86_64 {
+                WindowsArchitecture::Aarch64
+            } else {
+                WindowsArchitecture::X86_64
+            };
+            for coordinate in [0, 1, 2] {
+                let mut changed = target.clone();
+                match coordinate {
+                    0 => changed.id = foreign.target_id().into(),
+                    1 => changed.arch = foreign.architecture().into(),
+                    _ => changed.triple_windows = foreign.rust_triple().into(),
+                }
+                assert!(validate_targets(&[changed]).is_err());
+            }
+        }
     }
 }

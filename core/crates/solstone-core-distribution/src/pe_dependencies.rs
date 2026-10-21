@@ -2,11 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 //! Dependency census for the Windows producer, separate from the signed PeInfo schema.
-//! Only file-backed PE32+ AMD64 images are admitted. Every import descriptor and
+//! Only file-backed PE32+ images of the expected native architecture are admitted. Every import descriptor and
 //! export forwarder is bounded by its directory and the original section bytes.
 //! Reference: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
 //! Delay descriptor RVA semantics: https://learn.microsoft.com/en-us/cpp/build/reference/understanding-the-helper-function
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +50,7 @@ fn dword(bytes: &[u8], offset: usize) -> Result<u32, String> {
 }
 
 impl<'a> Image<'a> {
-    fn parse(bytes: &'a [u8]) -> Result<Self, String> {
+    fn parse(bytes: &'a [u8], expected: WindowsArchitecture) -> Result<Self, String> {
         if bytes.get(..2) != Some(b"MZ") {
             return Err("dependency census requires a PE image".into());
         }
@@ -59,8 +60,11 @@ impl<'a> Image<'a> {
             return Err("invalid PE signature".into());
         }
         range(coff, 20, bytes.len())?;
-        if word(bytes, coff)? != crate::pe::IMAGE_FILE_MACHINE_AMD64 {
-            return Err("Windows payload requires AMD64 PE images".into());
+        if word(bytes, coff)? != expected.pe_machine() {
+            return Err(format!(
+                "Windows payload requires {} PE images",
+                expected.pe_name()
+            ));
         }
         let optional = coff + 20;
         let size = word(bytes, coff + 16)? as usize;
@@ -304,8 +308,11 @@ pub(crate) fn dll_name(name: &str) -> Result<String, String> {
     Ok(name.to_ascii_lowercase())
 }
 
-pub fn inspect_dependencies(bytes: &[u8]) -> Result<PeDependencies, String> {
-    let image = Image::parse(bytes)?;
+pub fn inspect_dependencies(
+    bytes: &[u8],
+    expected: WindowsArchitecture,
+) -> Result<PeDependencies, String> {
+    let image = Image::parse(bytes, expected)?;
     Ok(PeDependencies {
         is_dll: image.is_dll,
         imports: image.imports(false)?,
@@ -383,9 +390,49 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn expected_architecture_is_independent_of_fixture_and_import_kind() {
+        for (expected, machine, foreign) in [
+            (
+                WindowsArchitecture::X86_64,
+                0x8664u16,
+                WindowsArchitecture::Aarch64,
+            ),
+            (
+                WindowsArchitecture::Aarch64,
+                0xaa64u16,
+                WindowsArchitecture::X86_64,
+            ),
+        ] {
+            for mut bytes in [
+                with_import(false),
+                with_import(true),
+                with_forwarder(b"NTDLL.RtlAllocateHeap\0"),
+            ] {
+                bytes[PE + 4..PE + 6].copy_from_slice(&machine.to_le_bytes());
+                let result = inspect_dependencies(&bytes, expected).unwrap();
+                assert!(result.is_dll);
+                assert!(
+                    !result.imports.is_empty()
+                        || !result.delay_imports.is_empty()
+                        || !result.forwarders.is_empty()
+                );
+                assert!(inspect_dependencies(&bytes, foreign).is_err());
+            }
+        }
+        for machine in [0x14cu16, 0xa641, 0xa64e] {
+            let mut bytes = image();
+            bytes[PE + 4..PE + 6].copy_from_slice(&machine.to_le_bytes());
+            for expected in WindowsArchitecture::ALL {
+                assert!(inspect_dependencies(&bytes, expected).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn ordinary_delay_and_forwarder_dependencies_are_all_reported() {
         for delayed in [false, true] {
-            let result = inspect_dependencies(&with_import(delayed)).unwrap();
+            let result =
+                inspect_dependencies(&with_import(delayed), WindowsArchitecture::X86_64).unwrap();
             assert!(result.is_dll);
             assert_eq!(
                 if delayed {
@@ -398,7 +445,7 @@ pub(crate) mod tests {
         }
         for text in [b"NTDLL.RtlAllocateHeap\0".as_slice(), b"NTDLL.dll.#42\0"] {
             assert_eq!(
-                inspect_dependencies(&with_forwarder(text))
+                inspect_dependencies(&with_forwarder(text), WindowsArchitecture::X86_64)
                     .unwrap()
                     .forwarders,
                 ["ntdll.dll"]
@@ -418,7 +465,7 @@ pub(crate) mod tests {
                 if delayed { 32 } else { 20 },
             );
             assert!(
-                inspect_dependencies(&bytes)
+                inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
                     .unwrap_err()
                     .contains("terminator")
             );
@@ -426,18 +473,18 @@ pub(crate) mod tests {
             put(&mut bytes, RAW + if delayed { 4 } else { 12 }, RVA + 0x500);
             put(&mut bytes, SECTION + 8, 0x800);
             assert!(
-                inspect_dependencies(&bytes)
+                inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
                     .unwrap_err()
                     .contains("virtual padding")
             );
             let mut bytes = original.clone();
             // Valid referenced data can follow the descriptor terminator.
             put(&mut bytes, OPT + 116 + index * 8, 0x100);
-            assert!(inspect_dependencies(&bytes).is_ok());
+            assert!(inspect_dependencies(&bytes, WindowsArchitecture::X86_64).is_ok());
             let mut bytes = original.clone();
             put(&mut bytes, OPT + 116 + index * 8, 0);
             assert!(
-                inspect_dependencies(&bytes)
+                inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
                     .unwrap_err()
                     .contains("incomplete")
             );
@@ -446,7 +493,7 @@ pub(crate) mod tests {
             bytes[RAW + 0x3ff] = b'A';
             bytes.extend_from_slice(b".dll\0");
             assert!(
-                inspect_dependencies(&bytes)
+                inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
                     .unwrap_err()
                     .contains("terminator")
             );
@@ -459,7 +506,7 @@ pub(crate) mod tests {
         for attr in [0, 2, 3, u32::MAX] {
             put(&mut bytes, RAW, attr);
             assert!(
-                inspect_dependencies(&bytes)
+                inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
                     .unwrap_err()
                     .contains("attributes")
             );
@@ -467,19 +514,19 @@ pub(crate) mod tests {
         let mut bytes = image();
         put(&mut bytes, OPT + 108, 17);
         assert!(
-            inspect_dependencies(&bytes)
+            inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
                 .unwrap_err()
                 .contains("directory table")
         );
         let mut bytes = image();
         put(&mut bytes, SECTION + 16, 0x800);
-        assert!(inspect_dependencies(&bytes).is_err());
+        assert!(inspect_dependencies(&bytes, WindowsArchitecture::X86_64).is_err());
         let mut bytes = image();
         bytes[PE + 6..PE + 8].copy_from_slice(&2u16.to_le_bytes());
         let first = bytes[SECTION..SECTION + 40].to_vec();
         bytes[SECTION + 40..SECTION + 80].copy_from_slice(&first);
         assert!(
-            inspect_dependencies(&bytes)
+            inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
                 .unwrap_err()
                 .contains("overlapping")
         );
@@ -495,14 +542,14 @@ pub(crate) mod tests {
             b"NTDLL.#x\0",
         ] {
             assert!(
-                inspect_dependencies(&with_forwarder(text)).is_err(),
+                inspect_dependencies(&with_forwarder(text), WindowsArchitecture::X86_64).is_err(),
                 "{text:?}"
             );
         }
         let mut bytes = with_forwarder(b"NTDLL.Function\0");
         put(&mut bytes, OPT + 116, 0x80 + 14); // Excludes the NUL itself.
         assert!(
-            inspect_dependencies(&bytes)
+            inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
                 .unwrap_err()
                 .contains("terminator")
         );
@@ -513,16 +560,20 @@ pub(crate) mod tests {
         let mut bytes = with_import(false);
         bytes[RAW + 0xc0..RAW + 0xc8].copy_from_slice(&0x8000_0001_0000_0001u64.to_le_bytes());
         assert!(
-            inspect_dependencies(&bytes)
+            inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
                 .unwrap_err()
                 .contains("ordinal")
         );
         let mut bytes = with_import(false);
         put(&mut bytes, RAW, RVA + 0x3f8);
         bytes[RAW + 0x3f8..RAW + 0x400].copy_from_slice(&0x8000_0000_0000_0001u64.to_le_bytes());
-        assert!(inspect_dependencies(&bytes).unwrap_err().contains("lookup"));
+        assert!(
+            inspect_dependencies(&bytes, WindowsArchitecture::X86_64)
+                .unwrap_err()
+                .contains("lookup")
+        );
         let mut bytes = with_import(false);
         bytes[RAW + 0xc0..RAW + 0xc8].copy_from_slice(&(u64::from(RVA) + 0x3ff).to_le_bytes());
-        assert!(inspect_dependencies(&bytes).is_err());
+        assert!(inspect_dependencies(&bytes, WindowsArchitecture::X86_64).is_err());
     }
 }

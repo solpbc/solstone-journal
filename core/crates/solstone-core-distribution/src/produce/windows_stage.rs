@@ -4,6 +4,7 @@
 //! Inventory-driven Windows staging from retained admitted input bytes.
 //! Publication uses the existing Windows producer leaf; signing remains later.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -29,8 +30,8 @@ use crate::windows_publish::{
 
 /// A retained input set, keyed by component/output label, never destination.
 /// Only dependency admission can supply its members; inventory maps them to paths.
-#[derive(Default)]
 pub struct AdmittedWindowsNativeInputs {
+    architecture: WindowsArchitecture,
     members: BTreeMap<(WindowsNativeComponent, String), Vec<u8>>,
 }
 
@@ -40,6 +41,11 @@ impl AdmittedWindowsNativeInputs {
         inputs: Vec<super::windows_archives::AdmittedArchiveInput>,
     ) -> Result<Self, String> {
         for input in inputs {
+            match input.architecture {
+                Some(architecture) if architecture == self.architecture => {}
+                None if input.component == WindowsNativeComponent::Ffmpeg => {}
+                _ => return Err("archive architecture differs from the native input set".into()),
+            }
             for (label, bytes) in input.members {
                 self.insert(input.component, &label, bytes)?;
             }
@@ -47,9 +53,19 @@ impl AdmittedWindowsNativeInputs {
         Ok(self)
     }
 
-    pub fn from_controlled(inputs: Vec<AdmittedControlledInput>) -> Result<Self, String> {
-        let mut result = Self::default();
+    pub fn from_controlled(
+        inputs: Vec<AdmittedControlledInput>,
+        architecture: WindowsArchitecture,
+    ) -> Result<Self, String> {
+        let mut result = Self {
+            architecture,
+            members: BTreeMap::new(),
+        };
         for input in inputs {
+            crate::controlled_build::validate_windows_receipt_architecture(
+                input.receipt(),
+                architecture,
+            )?;
             // These labels are disjoint and the input's constructors have already
             // verified the exact dependency-specific source/configuration/outputs.
             let component = match input.receipt().outputs.as_slice() {
@@ -149,6 +165,11 @@ pub fn stage_windows_payload(
         detail: e,
     })?;
     assemble_windows_payload(destination, |stage| {
+        if native.architecture != WindowsArchitecture::X86_64 {
+            return Err(
+                "native input architecture differs from the Windows producer target".into(),
+            );
+        }
         let source = &product.evidence().source;
         if &capture_source(checkout)? != source {
             return Err("staging checkout differs from fresh Cargo source".into());
@@ -187,11 +208,14 @@ pub fn stage_windows_payload(
 }
 
 fn inspect_plan_runtime_closure(plan: &Plan<'_>) -> Result<Vec<RuntimeEdge>, String> {
-    inspect_runtime_closure(plan.iter().filter_map(|(path, file)| {
-        let folded = path.to_ascii_lowercase();
-        (folded.ends_with(".exe") || folded.ends_with(".dll"))
-            .then_some((path.as_str(), file.bytes.as_ref()))
-    }))
+    inspect_runtime_closure(
+        plan.iter().filter_map(|(path, file)| {
+            let folded = path.to_ascii_lowercase();
+            (folded.ends_with(".exe") || folded.ends_with(".dll"))
+                .then_some((path.as_str(), file.bytes.as_ref()))
+        }),
+        WindowsArchitecture::X86_64,
+    )
 }
 
 fn render_checked_manifest(
@@ -594,7 +618,9 @@ mod tests {
         fs::write(root.path().join("empty.list"), b"").unwrap();
         let inventory_path = root.path().join("inventory.toml");
         let products = BTreeMap::new();
-        let native = AdmittedWindowsNativeInputs::default();
+        let native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         let bytes = b"retained fixture bytes\r\n";
         let plan =
             collect_plan(repo, &inventory_path, &inventory, &products, &native, bytes).unwrap();
@@ -631,7 +657,9 @@ mod tests {
         fs::write(root.path().join("empty.list"), b"").unwrap();
         let fixture_inventory = root.path().join("inventory.toml");
         let products = BTreeMap::new();
-        let native = AdmittedWindowsNativeInputs::default();
+        let native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         let bundle = crate::screen_ocr::StagedBundle {
             target: WINDOWS_PAYLOAD_TARGET.into(),
             files: vec![crate::screen_ocr::StagedFile {
@@ -774,7 +802,9 @@ mod tests {
         fs::write(root_path.join("empty.list"), b"").unwrap();
         let inventory_path = root_path.join("inventory.toml");
         let products = BTreeMap::new();
-        let native = AdmittedWindowsNativeInputs::default();
+        let native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
 
         let plan = collect_plan(
             root_path,
@@ -849,7 +879,9 @@ mod tests {
         fs::write(root.path().join("empty.list"), b"").unwrap();
         let inventory_path = root.path().join("inventory.toml");
         let products = BTreeMap::new();
-        let mut native = AdmittedWindowsNativeInputs::default();
+        let mut native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         assert!(
             collect_plan(repo, &inventory_path, &inventory, &products, &native, &[])
                 .err()
@@ -1036,7 +1068,9 @@ mod tests {
         let error = admit_nvattest(repo, paths(), fixture.msvc()).unwrap_err();
         assert!(error.starts_with("source-archive"), "{error}");
         let input = admit_nvattest_with_pins(repo, paths(), &fixture.pins, fixture.msvc()).unwrap();
-        let native = AdmittedWindowsNativeInputs::from_controlled(vec![input]).unwrap();
+        let native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![input], WindowsArchitecture::X86_64)
+                .unwrap();
         (fixture, written, native)
     }
 
@@ -1238,7 +1272,9 @@ mod tests {
         });
         assert_eq!(inventory.entry.len(), 6);
         let products = BTreeMap::new();
-        let mut native = AdmittedWindowsNativeInputs::default();
+        let mut native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         native
             .insert(
                 WindowsNativeComponent::Msvc,
@@ -1295,7 +1331,9 @@ mod tests {
         );
 
         // 2. a missing admitted input refuses
-        let mut missing_native = AdmittedWindowsNativeInputs::default();
+        let mut missing_native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         missing_native
             .insert(
                 WindowsNativeComponent::Msvc,
@@ -1323,7 +1361,9 @@ mod tests {
         assert!(err.contains("missing admitted native input"), "{err}");
 
         // 3. an admitted member with no inventory row fails the coverage check
-        let mut extra_native = AdmittedWindowsNativeInputs::default();
+        let mut extra_native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         extra_native
             .insert(
                 WindowsNativeComponent::Msvc,
@@ -1384,7 +1424,9 @@ mod tests {
                 targets: vec!["windows-x86_64".into()],
             },
         ];
-        let mut ced_native = AdmittedWindowsNativeInputs::default();
+        let mut ced_native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         ced_native
             .insert(WindowsNativeComponent::Ced, "bin/ced.dll", b"ced".to_vec())
             .unwrap();
@@ -1429,5 +1471,39 @@ mod tests {
         assert!(refuse_unupdated_windows_predecessor(&record.candidate_release).is_ok());
         assert!(refuse_unupdated_windows_predecessor(&record.predecessor.windows_release).is_err());
         assert!(refuse_unupdated_windows_predecessor("999.0.0").is_err());
+    }
+}
+
+#[cfg(test)]
+mod architecture_tests {
+    use super::*;
+    use crate::produce::windows_archives::AdmittedArchiveInput;
+
+    #[test]
+    fn retained_binary_inputs_cannot_cross_native_set_architecture() {
+        for expected in WindowsArchitecture::ALL {
+            let foreign = if expected == WindowsArchitecture::X86_64 {
+                WindowsArchitecture::Aarch64
+            } else {
+                WindowsArchitecture::X86_64
+            };
+            let input = |architecture| AdmittedArchiveInput {
+                architecture: Some(architecture),
+                component: WindowsNativeComponent::Msvc,
+                members: BTreeMap::from([("fixture.dll".into(), vec![1])]),
+            };
+            assert!(
+                AdmittedWindowsNativeInputs::from_controlled(vec![], expected)
+                    .unwrap()
+                    .with_archives(vec![input(expected)])
+                    .is_ok()
+            );
+            assert!(
+                AdmittedWindowsNativeInputs::from_controlled(vec![], expected)
+                    .unwrap()
+                    .with_archives(vec![input(foreign)])
+                    .is_err()
+            );
+        }
     }
 }

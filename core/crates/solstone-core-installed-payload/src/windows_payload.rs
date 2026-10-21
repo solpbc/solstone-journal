@@ -27,7 +27,7 @@ mod native_hash;
 use crate::pin::verify_pinned_signature;
 
 pub const WINDOWS_PAYLOAD_SCHEMA_V1: &str = "solstone.windows-installed-payload.v1";
-pub const WINDOWS_PAYLOAD_TARGET: &str = "windows-x86_64";
+pub const WINDOWS_PAYLOAD_TARGET: &str = crate::WindowsArchitecture::X86_64.target_id();
 pub const WINDOWS_PAYLOAD_MANIFEST: &str = "share/provenance/windows-payload.json";
 pub const WINDOWS_PAYLOAD_SIGNATURE: &str = "share/provenance/windows-payload.json.minisig";
 /// The CED worker is a signed package executable, never an ambient sibling.

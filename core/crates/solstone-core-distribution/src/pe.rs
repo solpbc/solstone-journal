@@ -7,10 +7,11 @@
 //! machine, imports, exports, and the first debug-directory entry; it does not
 //! inspect Authenticode signatures.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::BTreeMap;
 
-pub const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
-pub const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
+pub const IMAGE_FILE_MACHINE_AMD64: u16 = WindowsArchitecture::X86_64.pe_machine();
+pub const IMAGE_FILE_MACHINE_ARM64: u16 = WindowsArchitecture::Aarch64.pe_machine();
 
 const IMAGE_FILE_EXECUTABLE_IMAGE: u16 = 0x0002;
 const IMAGE_FILE_DLL: u16 = 0x2000;

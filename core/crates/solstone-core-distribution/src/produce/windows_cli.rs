@@ -4,6 +4,7 @@
 //! Local Windows production from fixed, typed input paths. Input files provide
 //! no digests, output destinations, trust overrides or new admission authority.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -483,8 +484,12 @@ struct LocalInputs {
 }
 
 impl LocalInputs {
-    fn admit(&self, repo: &Path) -> Result<AdmittedWindowsNativeInputs, String> {
-        let msvc_input = admit_msvc(&self.msvc.archive.0, &self.msvc.runtime_license.0)?;
+    fn admit(
+        &self,
+        repo: &Path,
+        expected: WindowsArchitecture,
+    ) -> Result<AdmittedWindowsNativeInputs, String> {
+        let msvc_input = admit_msvc(&self.msvc.archive.0, &self.msvc.runtime_license.0, expected)?;
         let msvcp140 = msvc_input
             .outputs()
             .get("msvcp140.dll")
@@ -544,11 +549,11 @@ impl LocalInputs {
                 },
             )?,
         ];
-        AdmittedWindowsNativeInputs::from_controlled(controlled)?.with_archives(vec![
-            admit_restic(&self.restic.archive.0, &self.restic.license.0)?,
-            admit_rclone(&self.rclone.archive.0, &self.rclone.license.0)?,
+        AdmittedWindowsNativeInputs::from_controlled(controlled, expected)?.with_archives(vec![
+            admit_restic(&self.restic.archive.0, &self.restic.license.0, expected)?,
+            admit_rclone(&self.rclone.archive.0, &self.rclone.license.0, expected)?,
             msvc_input,
-            admit_pdfium(&self.pdfium_archive.0)?,
+            admit_pdfium(&self.pdfium_archive.0, expected)?,
             admit_ffmpeg_notices(repo, &self.ffmpeg_archive.0)?,
         ])
     }
@@ -640,7 +645,12 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
     )?;
     let input_bytes = read_bounded(&args.inputs, 1024 * 1024)?;
     let inputs: LocalInputs = serde_json::from_slice(&input_bytes).map_err(|e| e.to_string())?;
-    let native = inputs.admit(repo)?;
+    let target = inventory
+        .target
+        .iter()
+        .find(|target| target.id == crate::windows_payload::WINDOWS_PAYLOAD_TARGET)
+        .ok_or("missing Windows producer target")?;
+    let native = inputs.admit(repo, target.windows_architecture()?)?;
     if capture_source(repo)? != before {
         return Err("product source changed during native input admission".into());
     }

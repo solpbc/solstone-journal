@@ -3,6 +3,7 @@
 
 //! Live Windows Cargo production. No caller-supplied build log is an admission API.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
@@ -14,7 +15,7 @@ use crate::inventory::{Entry, Inventory};
 use crate::provenance::Provenance;
 use crate::select::ArtifactId;
 
-const TRIPLE: &str = "x86_64-pc-windows-msvc";
+const TRIPLE: &str = WindowsArchitecture::X86_64.rust_triple();
 const LOG_LIMIT: u64 = 128 * 1024 * 1024;
 const PE_LIMIT: u64 = 512 * 1024 * 1024;
 
@@ -225,7 +226,7 @@ pub fn build_windows_product(
         {
             return Err("independent screen OCR helper changed after its build receipt".into());
         }
-        let info = crate::pe_dependencies::inspect_dependencies(&data)
+        let info = crate::pe_dependencies::inspect_dependencies(&data, WindowsArchitecture::X86_64)
             .map_err(|e| format!("{}: {e}", path.display()))?;
         if info.is_dll {
             return Err(format!("Cargo command is a DLL: {}", bin.bin));
