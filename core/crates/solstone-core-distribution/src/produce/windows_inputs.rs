@@ -961,6 +961,10 @@ fn attach_source_notices(
     Ok(())
 }
 
+pub(crate) fn onnx_source_notices(snapshot: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    source_notice_members(snapshot, ONNX_NOTICES)
+}
+
 pub(crate) fn ced_source_notices(snapshot: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
     source_notice_members(snapshot, CED_NOTICES)
 }
