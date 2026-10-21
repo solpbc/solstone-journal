@@ -62,8 +62,7 @@ pub fn pinned_inputs() -> Vec<InputIdentityEntry> {
 }
 
 pub fn pinned_tools() -> Vec<InputIdentityEntry> {
-    serde_json::from_slice(include_bytes!("openmp_windows_tools.json"))
-        .expect("committed OpenMP host-tool census")
+    crate::windows_clang::pinned_tools()
 }
 
 pub fn cache_configuration() -> BTreeMap<String, String> {
@@ -149,42 +148,11 @@ impl OpenMpBuildEvidence {
         {
             return Err("OpenMP source, host tools or ARM configuration differ".into());
         }
-        let mut tools = BTreeSet::new();
-        for tool in &self.system_tools {
-            let Some((prefix, name)) = tool.label.split_once('/') else {
-                return Err("invalid OpenMP system-tool label".into());
-            };
-            if !matches!(prefix, "msvc" | "sdk" | "windows")
-                || !name.ends_with(".exe")
-                || !name
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-                || tool.size == 0
-                || !valid_digest(&tool.sha256)
-                || !tools.insert(tool.label.clone())
-            {
-                return Err("invalid or duplicate OpenMP system tool".into());
-            }
-        }
-        for required in [
-            "msvc/link.exe",
-            "msvc/lib.exe",
-            "msvc/nmake.exe",
-            "sdk/rc.exe",
-            "sdk/mt.exe",
-            "windows/cmd.exe",
-            "windows/powershell.exe",
-            "windows/git.exe",
-            "windows/recorder.exe",
-        ] {
-            if !tools.contains(required) {
-                return Err(format!("OpenMP system-tool census is missing {required}"));
-            }
-        }
-        tools.extend(self.archive_tools.iter().map(|t| t.label.clone()));
-        if self.network_denied_tools != tools.into_iter().collect::<Vec<_>>() {
-            return Err("OpenMP outbound denial does not cover its complete tool census".into());
-        }
+        crate::windows_clang::validate_tool_census(&crate::windows_clang::ToolCensus {
+            archive_tools: &self.archive_tools,
+            system_tools: &self.system_tools,
+            network_denied_tools: &self.network_denied_tools,
+        })?;
         if self.development.len() != DEVELOPMENT_LABELS.len()
             || self
                 .development

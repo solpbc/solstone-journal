@@ -75,6 +75,7 @@ pub use nvattest_windows::{
     NVATTEST_SDK_REVISION, pinned_ca_bundle_sha256, pinned_regorus_revision,
 };
 pub use solstone_core_installed_payload::windows_payload;
+mod windows_clang;
 pub mod windows_pe_closure;
 pub mod windows_publish;
 pub mod zip;

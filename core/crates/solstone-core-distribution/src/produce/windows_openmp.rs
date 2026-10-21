@@ -93,49 +93,10 @@ impl AdmittedOpenMp {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OpenMpNetworkDeny {
-    pub label: String,
-    pub program: String,
-    pub enabled: bool,
-    pub direction: String,
-    pub action: String,
-    pub profile: String,
-    pub protocol: String,
-    pub local_address: Vec<String>,
-    pub remote_address: Vec<String>,
-    pub local_port: Vec<String>,
-    pub remote_port: Vec<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OpenMpValidation {
-    pub schema: String,
-    pub work_root: String,
-    pub tool_paths: BTreeMap<String, String>,
-    pub network_denies: Vec<OpenMpNetworkDeny>,
-    pub cache: String,
-    pub build_log: String,
-    pub install_manifest: String,
-    pub python_path_configuration: String,
-}
-
-fn windows_path(value: &str) -> Result<String, String> {
-    let folded = value.replace('\\', "/").to_ascii_lowercase();
-    let b = folded.as_bytes();
-    if b.len() < 4
-        || !b[0].is_ascii_alphabetic()
-        || b[1..3] != *b":/"
-        || folded[3..]
-            .split('/')
-            .any(|p| p.is_empty() || matches!(p, "." | "..") || p.contains([':', '\0']))
-    {
-        return Err("OpenMP capture requires ordinary absolute Windows paths".into());
-    }
-    Ok(folded)
-}
+pub use crate::windows_clang::{
+    BuildValidation as OpenMpValidation, NetworkDeny as OpenMpNetworkDeny,
+};
+use crate::windows_clang::{parse_cache, windows_path};
 
 pub fn validate_capture(
     evidence: &OpenMpBuildEvidence,
@@ -154,20 +115,7 @@ pub fn validate_capture(
         return Err("OpenMP validation does not bind the successful original build".into());
     }
     let work = windows_path(&validation.work_root)?;
-    let mut cache = BTreeMap::new();
-    for line in validation
-        .cache
-        .lines()
-        .filter(|l| !l.starts_with(['#', '/']) && !l.is_empty())
-    {
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let key = key.split_once(':').map_or(key, |(key, _)| key);
-        if cache.insert(key, value).is_some() {
-            return Err("duplicate OpenMP cache key".into());
-        }
-    }
+    let cache = parse_cache(&validation.cache)?;
     for (key, value) in recipe::cache_configuration() {
         if cache.get(key.as_str()).copied() != Some(value.as_str()) {
             return Err(format!("OpenMP cache differs at {key}"));
@@ -218,100 +166,14 @@ pub fn validate_capture(
             "OpenMP install manifest is outside its prefix or lacks a required member".into(),
         );
     }
-    for key in [
-        "CMAKE_C_COMPILER",
-        "CMAKE_CXX_COMPILER",
-        "CMAKE_ASM_COMPILER",
-    ] {
-        let actual = windows_path(cache.get(key).ok_or("OpenMP cache compiler is missing")?)?;
-        if actual != format!("{work}/llvm/bin/clang-cl.exe") {
-            return Err("OpenMP cache uses a foreign compiler".into());
-        }
-    }
-    if windows_path(
-        cache
-            .get("Python3_EXECUTABLE")
-            .ok_or("OpenMP Python path missing")?,
-    )? != format!("{work}/python/python.exe")
-    {
-        return Err("OpenMP cache uses a foreign Python interpreter".into());
-    }
-    let labels: BTreeSet<_> = evidence
-        .archive_tools
-        .iter()
-        .chain(&evidence.system_tools)
-        .map(|tool| tool.label.as_str())
-        .collect();
-    if validation
-        .tool_paths
-        .keys()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>()
-        != labels
-        || validation.network_denies.len() != labels.len()
-    {
-        return Err("OpenMP tool paths or firewall-rule population differ".into());
-    }
-    if windows_path(
-        cache
-            .get("CMAKE_MAKE_PROGRAM")
-            .ok_or("OpenMP NMake path missing")?,
-    )? != windows_path(&validation.tool_paths["msvc/nmake.exe"])?
-    {
-        return Err("OpenMP cache uses a foreign make program".into());
-    }
-    let known_paths: BTreeSet<_> = validation
-        .tool_paths
-        .values()
-        .map(|p| windows_path(p))
-        .collect::<Result<_, _>>()?;
-    for key in [
-        "CMAKE_LINKER",
-        "CMAKE_AR",
-        "CMAKE_MT",
-        "CMAKE_RC_COMPILER",
-        "CMAKE_C_COMPILER_AR",
-        "CMAKE_CXX_COMPILER_AR",
-        "CMAKE_NM",
-        "CMAKE_OBJCOPY",
-        "CMAKE_DLLTOOL",
-    ] {
-        if let Some(path) = cache.get(key)
-            && !path.is_empty()
-            && !path.ends_with("-NOTFOUND")
-            && !known_paths.contains(&windows_path(path)?)
-        {
-            return Err(format!("OpenMP cache uses an uncensused tool at {key}"));
-        }
-    }
-    for tool in &evidence.archive_tools {
-        if windows_path(&validation.tool_paths[&tool.label])?
-            != format!("{work}/{}", tool.label.to_ascii_lowercase())
-        {
-            return Err("OpenMP archive tool path differs from its extracted root".into());
-        }
-    }
-    for (rule, label) in validation
-        .network_denies
-        .iter()
-        .zip(&evidence.network_denied_tools)
-    {
-        if rule.label != *label
-            || !rule.enabled
-            || rule.direction != "Outbound"
-            || rule.action != "Block"
-            || rule.profile != "Any"
-            || rule.protocol != "Any"
-            || rule.local_address != ["Any"]
-            || rule.remote_address != ["Any"]
-            || rule.local_port != ["Any"]
-            || rule.remote_port != ["Any"]
-            || windows_path(&rule.program)? != windows_path(&validation.tool_paths[label])?
-        {
-            return Err("OpenMP firewall rule differs from the complete outbound deny".into());
-        }
-    }
-    Ok(())
+    crate::windows_clang::validate_host_capture(
+        &crate::windows_clang::ToolCensus {
+            archive_tools: &evidence.archive_tools,
+            system_tools: &evidence.system_tools,
+            network_denied_tools: &evidence.network_denied_tools,
+        },
+        validation,
+    )
 }
 
 fn flat_files(root: &Path, names: &[&str]) -> Result<(), String> {
