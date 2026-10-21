@@ -82,6 +82,24 @@ pub fn expected_receipt(
     draft.validate().map_err(|e| e.to_string())
 }
 
+// This factory has one flat output. The shared artifact verifier checks named
+// files; this recipe also refuses any undeclared file or directory.
+fn read_output(root: &Path) -> Result<Vec<u8>, String> {
+    let mut entries = std::fs::read_dir(root).map_err(|e| e.to_string())?;
+    let entry = entries
+        .next()
+        .transpose()
+        .map_err(|e| e.to_string())?
+        .ok_or("restic output is missing")?;
+    if entry.file_name() != std::ffi::OsStr::new(recipe::OUTPUT_LABEL)
+        || entries.next().is_some()
+        || !entry.file_type().map_err(|e| e.to_string())?.is_file()
+    {
+        return Err("restic output root must contain exactly restic.exe".into());
+    }
+    read_bounded(&root.join(recipe::OUTPUT_LABEL), 64 * 1024 * 1024)
+}
+
 pub fn admit(paths: ResticInputPaths<'_>) -> Result<AdmittedControlledInput, String> {
     let receipt_bytes = read_bounded(paths.receipt, 4 * 1024 * 1024)?;
     let receipt = decode_controlled_build_receipt(&receipt_bytes).map_err(|e| e.to_string())?;
@@ -105,16 +123,13 @@ pub fn admit(paths: ResticInputPaths<'_>) -> Result<AdmittedControlledInput, Str
         paths.output_root,
         &receipt,
         crate::artifact_verify::ControlledBuildArtifactVerificationLimits::new(
-            2,
-            2,
+            1,
+            0,
             64 * 1024 * 1024,
         ),
     )
     .map_err(|e| e.to_string())?;
-    let output = read_bounded(
-        &paths.output_root.join(recipe::OUTPUT_LABEL),
-        64 * 1024 * 1024,
-    )?;
+    let output = read_output(paths.output_root)?;
     if expected_receipt(&receipt, &evidence, &tools, &validation_bytes, &output)? != receipt {
         return Err(
             "restic original receipt differs from admitted source/configuration/evidence/output"
@@ -250,7 +265,7 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
         serde_json::from_slice(&validation_bytes).map_err(|e| e.to_string())?;
     let tools = validate_capture(&source, &go, &modules, &evidence, &validation)?;
     let output_root = absolute(&values, "--output-root")?;
-    let output = read_bounded(&output_root.join(recipe::OUTPUT_LABEL), 64 * 1024 * 1024)?;
+    let output = read_output(&output_root)?;
     let mut draft = recipe::assemble_receipt_draft(
         recipe::source_identity(before.clone()),
         &evidence,
@@ -271,8 +286,8 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
         &output_root,
         &receipt,
         crate::artifact_verify::ControlledBuildArtifactVerificationLimits::new(
-            2,
-            2,
+            1,
+            0,
             64 * 1024 * 1024,
         ),
     )

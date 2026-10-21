@@ -23,7 +23,7 @@ use crate::windows_payload::{
     WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE, WINDOWS_PAYLOAD_TARGET,
     render_windows_payload_manifest,
 };
-use crate::windows_pe_closure::{RuntimeEdge, inspect_runtime_closure};
+use crate::windows_pe_closure::{RuntimeEdge, inspect_runtime_closure_for_arch};
 use crate::windows_publish::{
     PublishedWindowsPayload, WindowsPublishFailure, assemble_windows_payload,
 };
@@ -208,7 +208,7 @@ pub fn stage_windows_payload(
 }
 
 fn inspect_plan_runtime_closure(plan: &Plan<'_>) -> Result<Vec<RuntimeEdge>, String> {
-    inspect_runtime_closure(
+    inspect_runtime_closure_for_arch(
         plan.iter().filter_map(|(path, file)| {
             let folded = path.to_ascii_lowercase();
             (folded.ends_with(".exe") || folded.ends_with(".dll"))

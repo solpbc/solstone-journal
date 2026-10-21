@@ -91,10 +91,18 @@ pub struct RuntimeEdge {
     pub member: Option<String>,
 }
 
+/// Preserve the existing x64 operator-helper API. New target-aware builders
+/// must supply the trusted architecture to [`inspect_runtime_closure_for_arch`].
+pub fn inspect_runtime_closure<'a>(
+    members: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+) -> Result<Vec<RuntimeEdge>, String> {
+    inspect_runtime_closure_for_arch(members, WindowsArchitecture::X86_64)
+}
+
 /// Inspect every declared PE, including DLLs that no other member imports.
 /// The caller supplies the same retained bytes used to write the staging tree.
 /// Inventory membership, source admission, and non-PE files remain its concern.
-pub fn inspect_runtime_closure<'a>(
+pub fn inspect_runtime_closure_for_arch<'a>(
     members: impl IntoIterator<Item = (&'a str, &'a [u8])>,
     expected: WindowsArchitecture,
 ) -> Result<Vec<RuntimeEdge>, String> {
@@ -259,6 +267,29 @@ mod tests {
     }
 
     #[test]
+    fn legacy_operator_api_preserves_the_x64_architecture_boundary() {
+        let mut bytes = crate::pe_dependencies::tests::image();
+        let legacy = inspect_runtime_closure([("bin/library.dll", bytes.as_slice())]).unwrap();
+        assert_eq!(
+            legacy,
+            inspect_runtime_closure_for_arch(
+                [("bin/library.dll", bytes.as_slice())],
+                WindowsArchitecture::X86_64,
+            )
+            .unwrap()
+        );
+        bytes[0x84..0x86].copy_from_slice(&0xaa64u16.to_le_bytes());
+        assert!(inspect_runtime_closure([("bin/library.dll", bytes.as_slice())]).is_err());
+        assert!(
+            inspect_runtime_closure_for_arch(
+                [("bin/library.dll", bytes.as_slice())],
+                WindowsArchitecture::Aarch64,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn native_closure_checks_unreferenced_members_for_both_architectures() {
         for (expected, machine, foreign) in [
             (WindowsArchitecture::X86_64, 0x8664u16, 0xaa64u16),
@@ -271,7 +302,7 @@ mod tests {
             for bytes in [&mut root, &mut worker, &mut unused] {
                 bytes[0x84..0x86].copy_from_slice(&machine.to_le_bytes());
             }
-            let edges = inspect_runtime_closure(
+            let edges = inspect_runtime_closure_for_arch(
                 [
                     ("bin/app.exe", root.as_slice()),
                     ("bin/worker.dll", worker.as_slice()),
@@ -284,7 +315,7 @@ mod tests {
                 && edge.member.as_deref() == Some("bin/worker.dll")));
             unused[0x84..0x86].copy_from_slice(&foreign.to_le_bytes());
             assert!(
-                inspect_runtime_closure(
+                inspect_runtime_closure_for_arch(
                     [
                         ("bin/app.exe", root.as_slice()),
                         ("bin/worker.dll", worker.as_slice()),
@@ -303,7 +334,7 @@ mod tests {
         let root = pe_import("bridge.dll", false);
         let bridge = pe_import("onnxruntime.dll", true);
         let target = crate::pe_dependencies::tests::image();
-        let err = inspect_runtime_closure(
+        let err = inspect_runtime_closure_for_arch(
             [
                 (WINDOWS_CED_LIBRARY, root.as_slice()),
                 ("lib/solstone-native/bridge.dll", bridge.as_slice()),
@@ -384,7 +415,7 @@ mod tests {
             ("lib/solstone-native/bridge.dll", bridge.as_slice()),
             ("lib/solstone-native/sibling.dll", sibling.as_slice()),
         ];
-        let edges = inspect_runtime_closure(members, WindowsArchitecture::X86_64).unwrap();
+        let edges = inspect_runtime_closure_for_arch(members, WindowsArchitecture::X86_64).unwrap();
         assert!(
             edges
                 .iter()
@@ -399,7 +430,7 @@ mod tests {
         let mut shared = members;
         shared[0].1 = root.as_slice();
         assert!(
-            inspect_runtime_closure(shared, WindowsArchitecture::X86_64)
+            inspect_runtime_closure_for_arch(shared, WindowsArchitecture::X86_64)
                 .unwrap_err()
                 .contains("unsupported delay-import")
         );
@@ -597,14 +628,14 @@ mod tests {
     #[test]
     fn malformed_image_os_shadow_and_duplicate_basename_refuse() {
         assert!(
-            inspect_runtime_closure(
+            inspect_runtime_closure_for_arch(
                 [("bin/app.exe", b"MZ".as_slice())],
                 WindowsArchitecture::X86_64
             )
             .is_err()
         );
         assert!(
-            inspect_runtime_closure(
+            inspect_runtime_closure_for_arch(
                 [("bin/kernel32.dll", b"MZ".as_slice())],
                 WindowsArchitecture::X86_64
             )
@@ -613,7 +644,7 @@ mod tests {
         );
         let bytes = crate::pe_dependencies::tests::image();
         assert!(
-            inspect_runtime_closure(
+            inspect_runtime_closure_for_arch(
                 [
                     ("bin/worker.dll", bytes.as_slice()),
                     ("lib/elsewhere/WORKER.DLL", bytes.as_slice())
@@ -624,14 +655,14 @@ mod tests {
             .contains("case-colliding")
         );
         assert!(
-            inspect_runtime_closure(
+            inspect_runtime_closure_for_arch(
                 [("bin/worker.dll", bytes.as_slice())],
                 WindowsArchitecture::X86_64
             )
             .is_ok()
         );
         assert!(
-            inspect_runtime_closure(
+            inspect_runtime_closure_for_arch(
                 [("bin/worker.exe", bytes.as_slice())],
                 WindowsArchitecture::X86_64
             )
@@ -653,7 +684,7 @@ mod tests {
     #[test]
     fn identical_byte_crt_pair_and_edge_resolution() {
         let bytes = crate::pe_dependencies::tests::image();
-        let closure = inspect_runtime_closure(
+        let closure = inspect_runtime_closure_for_arch(
             [
                 ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
                 ("lib/solstone-nvattest/vcruntime140.dll", bytes.as_slice()),
@@ -689,7 +720,7 @@ mod tests {
         let bytes = crate::pe_dependencies::tests::image();
         let mut diff_bytes = bytes.clone();
         diff_bytes.push(0);
-        let err = inspect_runtime_closure(
+        let err = inspect_runtime_closure_for_arch(
             [
                 ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
                 (
@@ -709,7 +740,7 @@ mod tests {
     #[test]
     fn duplicate_basename_in_other_private_directory_refuses() {
         let bytes = crate::pe_dependencies::tests::image();
-        let err = inspect_runtime_closure(
+        let err = inspect_runtime_closure_for_arch(
             [
                 ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
                 ("lib/solstone-other/vcruntime140.dll", bytes.as_slice()),
@@ -726,7 +757,7 @@ mod tests {
     #[test]
     fn third_path_crt_collision_refuses() {
         let bytes = crate::pe_dependencies::tests::image();
-        let err = inspect_runtime_closure(
+        let err = inspect_runtime_closure_for_arch(
             [
                 ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
                 ("lib/solstone-nvattest/vcruntime140.dll", bytes.as_slice()),
