@@ -1135,6 +1135,7 @@ mod tests {
 
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+        all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
         all(target_os = "macos", target_arch = "aarch64")
     ))]
     #[test]
@@ -1174,6 +1175,15 @@ mod tests {
         assert_eq!(
             bundle.runtime_library.relative_path(),
             "lib/solstone-screen-ocr/runtime/libonnxruntime.so.1.31.0"
+        );
+        #[cfg(target_os = "linux")]
+        assert_eq!(
+            bundle
+                .runtime_dependency
+                .as_ref()
+                .expect("linux runtime dependency")
+                .relative_path(),
+            "lib/solstone-screen-ocr/runtime/libonnxruntime_providers_shared.so"
         );
         #[cfg(target_os = "macos")]
         assert_eq!(
@@ -1254,6 +1264,7 @@ mod tests {
         unix,
         not(any(
             all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+            all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
             all(target_os = "macos", target_arch = "aarch64")
         ))
     ))]
@@ -1273,7 +1284,10 @@ mod tests {
         assert_eq!(error.code, code::SCREEN_OCR_UNQUALIFIED);
     }
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+    #[cfg(any(
+        all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+        all(target_os = "linux", target_arch = "aarch64", target_env = "gnu")
+    ))]
     #[test]
     fn current_screen_ocr_resolver_rejects_missing_private_runtime_dependency() {
         let missing_dir = scratch();
@@ -1294,6 +1308,7 @@ mod tests {
 
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+        all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
         all(target_os = "macos", target_arch = "aarch64")
     ))]
     #[test]
@@ -1321,6 +1336,7 @@ mod tests {
 
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+        all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
         all(target_os = "macos", target_arch = "aarch64")
     ))]
     #[test]
