@@ -381,6 +381,7 @@ pub fn validate_controlled_component_args_for_target(
                 "--toolchain=msvc"
                     | "--extra-cflags=/MT"
                     | "--extra-cflags=/O2"
+                    | "--extra-cflags=-w"
                     | "--enable-debug"
                     | "--disable-debug"
                     | "--enable-stripping"

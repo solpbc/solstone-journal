@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use solstone_core_ffmpeg_build_support::{
     BUILD_RUN_ID_ENV, EVIDENCE_DIR, MsvcCrtChoice, msvc_crt_choices, parse_ffmpeg_pin,
-    read_configure_receipt, read_current_run_record, validate_controlled_component_args,
+    read_configure_receipt, read_current_run_record, validate_controlled_component_args_for_target,
     validate_controlled_component_inventory, verify_sha256,
 };
 
@@ -1653,7 +1653,8 @@ fn validate_release_configure_args(
 ) -> Result<(), ProduceError> {
     // Every release lane builds the controlled component allowlist, so every receipt
     // must carry exactly the controlled arguments and effective inventory.
-    validate_controlled_component_args(args).map_err(incomplete_ffmpeg_evidence)?;
+    validate_controlled_component_args_for_target(args, target)
+        .map_err(incomplete_ffmpeg_evidence)?;
     validate_controlled_component_inventory(components).map_err(incomplete_ffmpeg_evidence)?;
     // Excludes only `--prefix=`: its value is the build script's own OUT_DIR,
     // a per-build cargo hash that can coincidentally contain "03" (e.g. a
@@ -2900,6 +2901,59 @@ mod tests {
             error.to_string().contains("invalid optimization flag"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn windows_arm_release_admits_the_native_audio_capture_and_refuses_substitution() {
+        let original = include_str!("../tests/fixtures/ffmpeg-windows-arm64-audio-configure.v2");
+        let args = original
+            .lines()
+            .filter_map(|line| line.strip_prefix("arg=").map(str::to_owned))
+            .collect::<Vec<_>>();
+        let components = original
+            .lines()
+            .filter_map(|line| line.strip_prefix("component=").map(str::to_owned))
+            .collect::<Vec<_>>();
+        let target = "aarch64-pc-windows-msvc";
+        validate_release_configure_args(&args, &components, target).unwrap();
+        assert!(
+            validate_release_configure_args(&args, &components, "x86_64-pc-windows-msvc").is_err()
+        );
+        for (key, replacement) in [
+            ("--arch=", "--arch=x86_64"),
+            (
+                "--as=",
+                "--as=C:/tools/clang-cl.exe --target=aarch64-pc-windows-msvc",
+            ),
+            ("--host-cc=", "--host-cc=C:/tools/arm-cc.exe"),
+            ("--extra-cflags=/MT", "--extra-cflags=/MD"),
+            ("--extra-cflags=/O2", "--extra-cflags=/Od"),
+        ] {
+            let mut altered = args.clone();
+            let value = altered.iter_mut().find(|arg| arg.starts_with(key)).unwrap();
+            *value = replacement.into();
+            assert!(
+                validate_release_configure_args(&altered, &components, target).is_err(),
+                "accepted {replacement}"
+            );
+        }
+        for extra in [
+            "--disable-asm",
+            "--disable-neon",
+            "--extra-cflags=/MD",
+            "--extra-cflags=/O2 /fp:fast",
+            "--extra-cflags=@override.rsp",
+        ] {
+            let mut altered = args.clone();
+            altered.push(extra.into());
+            assert!(
+                validate_release_configure_args(&altered, &components, target).is_err(),
+                "accepted {extra}"
+            );
+        }
+        let mut foreign = components;
+        foreign.push("CONFIG_NETWORK".into());
+        assert!(validate_release_configure_args(&args, &foreign, target).is_err());
     }
 
     #[test]

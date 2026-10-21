@@ -15,7 +15,6 @@ use crate::inventory::{Entry, Inventory};
 use crate::provenance::Provenance;
 use crate::select::ArtifactId;
 
-const TRIPLE: &str = WindowsArchitecture::X86_64.rust_triple();
 const LOG_LIMIT: u64 = 128 * 1024 * 1024;
 const PE_LIMIT: u64 = 512 * 1024 * 1024;
 
@@ -91,6 +90,23 @@ pub fn build_windows_product(
     log_directory: &Path,
     ffmpeg_archive: &Path,
 ) -> Result<BuiltWindowsProduct, String> {
+    build_windows_product_for_architecture(
+        checkout,
+        inventory,
+        log_directory,
+        ffmpeg_archive,
+        WindowsArchitecture::X86_64,
+    )
+}
+
+pub fn build_windows_product_for_architecture(
+    checkout: &Path,
+    inventory: &Inventory,
+    log_directory: &Path,
+    ffmpeg_archive: &Path,
+    architecture: WindowsArchitecture,
+) -> Result<BuiltWindowsProduct, String> {
+    let triple = architecture.rust_triple();
     if !cfg!(windows) {
         return Err("Windows product compilation requires its native MSVC host".into());
     }
@@ -109,7 +125,7 @@ pub fn build_windows_product(
         .map_err(|e| e.to_string())?;
     let ffmpeg_source_sha256 = sha256_hex(&read_bounded(ffmpeg_archive, 256 * 1024 * 1024)?);
     let ffmpeg_run_id = super::ffmpeg_build_run_id();
-    let argv = cargo_argv(inventory)?;
+    let argv = cargo_argv(inventory, architecture)?;
     let stdout_path = log_directory.join("cargo.stdout");
     let stderr_path = log_directory.join("cargo.stderr");
     let mut command = Command::new("cargo");
@@ -158,12 +174,13 @@ pub fn build_windows_product(
     let stderr = read_bounded(&stderr_path, LOG_LIMIT)?;
     let text = std::str::from_utf8(&stdout).map_err(|e| format!("Cargo JSON is not UTF-8: {e}"))?;
     require_finished_cargo(text)?;
-    let mut artifacts = super::bind_cargo_json(text, TRIPLE).map_err(|e| e.to_string())?;
-    let screen_ocr = build_screen_ocr_helper(checkout, &target_dir, log_directory, &epoch)?;
+    let mut artifacts = super::bind_cargo_json(text, triple).map_err(|e| e.to_string())?;
+    let screen_ocr =
+        build_screen_ocr_helper(checkout, &target_dir, log_directory, &epoch, architecture)?;
     let screen_ocr_id = ArtifactId {
         package: crate::screen_ocr::HELPER_PACKAGE.into(),
         bin: crate::screen_ocr::HELPER_BIN.into(),
-        triple: TRIPLE.into(),
+        triple: triple.into(),
     };
     artifacts.insert(screen_ocr_id.clone(), screen_ocr.path.clone());
     if capture_source(checkout)? != source {
@@ -171,25 +188,14 @@ pub fn build_windows_product(
             "product source or Cargo.lock changed during independent helper compilation".into(),
         );
     }
-    crate::select::refuse_wrong_triple(
-        inventory,
-        crate::windows_payload::WINDOWS_PAYLOAD_TARGET,
-        &artifacts,
-    )
-    .map_err(|e| e.to_string())?;
-    crate::select::refuse_extra(
-        inventory,
-        crate::windows_payload::WINDOWS_PAYLOAD_TARGET,
-        &artifacts,
-    )
-    .map_err(|e| e.to_string())?;
-    let selection = crate::select::select_artifacts(
-        inventory,
-        crate::windows_payload::WINDOWS_PAYLOAD_TARGET,
-        &artifacts,
-    )
-    .map_err(|e| e.to_string())?;
-    let release_root = retain_release_root(&target_root)?;
+    crate::select::refuse_wrong_triple(inventory, architecture.target_id(), &artifacts)
+        .map_err(|e| e.to_string())?;
+    crate::select::refuse_extra(inventory, architecture.target_id(), &artifacts)
+        .map_err(|e| e.to_string())?;
+    let selection =
+        crate::select::select_artifacts(inventory, architecture.target_id(), &artifacts)
+            .map_err(|e| e.to_string())?;
+    let release_root = retain_release_root(&target_root, architecture)?;
     let expected_parent = release_root
         .canonical_path()
         .canonicalize()
@@ -204,7 +210,7 @@ pub fn build_windows_product(
         let expected_bin_parent = if bin.package == crate::screen_ocr::HELPER_PACKAGE {
             target_dir
                 .join("screen-ocr-helper")
-                .join(TRIPLE)
+                .join(triple)
                 .join("release")
                 .canonicalize()
                 .map_err(|e| format!("resolve independent screen OCR output directory: {e}"))?
@@ -226,7 +232,7 @@ pub fn build_windows_product(
         {
             return Err("independent screen OCR helper changed after its build receipt".into());
         }
-        let info = crate::pe_dependencies::inspect_dependencies(&data, WindowsArchitecture::X86_64)
+        let info = crate::pe_dependencies::inspect_dependencies(&data, architecture)
             .map_err(|e| format!("{}: {e}", path.display()))?;
         if info.is_dll {
             return Err(format!("Cargo command is a DLL: {}", bin.bin));
@@ -248,7 +254,7 @@ pub fn build_windows_product(
     }
     let ffmpeg_out = super::require_single_ffmpeg_out_dir(
         super::bind_ffmpeg_build_script_out_dirs(text),
-        TRIPLE,
+        triple,
     )
     .map_err(|e| e.to_string())?;
     let canonical_ffmpeg = ffmpeg_out
@@ -260,7 +266,7 @@ pub fn build_windows_product(
     super::validate_ffmpeg_evidence(
         &canonical_ffmpeg.join(super::EVIDENCE_DIR),
         &ffmpeg_run_id,
-        TRIPLE,
+        triple,
         "release",
     )
     .map_err(|e| e.to_string())?;
@@ -278,7 +284,7 @@ pub fn build_windows_product(
         .map_err(|e| format!("release output binding changed: {e}"))?;
     let evidence = WindowsCargoEvidence {
         source,
-        target: TRIPLE.into(),
+        target: triple.into(),
         argv,
         actual_exit_code: status
             .code()
@@ -307,7 +313,9 @@ fn build_screen_ocr_helper(
     target_dir: &Path,
     log_directory: &Path,
     epoch: &str,
+    architecture: WindowsArchitecture,
 ) -> Result<BuiltScreenOcrHelper, String> {
+    let triple = architecture.rust_triple();
     let manifest_path = checkout.join(crate::screen_ocr::HELPER_MANIFEST);
     let lock_path = checkout.join(crate::screen_ocr::HELPER_LOCK);
     let recipe_path = checkout.join(crate::screen_ocr::RECIPE);
@@ -321,7 +329,7 @@ fn build_screen_ocr_helper(
     let helper_target = target_dir.join("screen-ocr-helper");
     fs::create_dir(&helper_target)
         .map_err(|error| format!("fresh independent screen OCR target required: {error}"))?;
-    let argv = screen_ocr_cargo_argv();
+    let argv = screen_ocr_cargo_argv(architecture);
     let stdout_path = log_directory.join("screen-ocr-cargo.stdout");
     let stderr_path = log_directory.join("screen-ocr-cargo.stderr");
     let mut command = Command::new("cargo");
@@ -357,11 +365,11 @@ fn build_screen_ocr_helper(
     let text = std::str::from_utf8(&stdout)
         .map_err(|error| format!("screen OCR Cargo JSON is not UTF-8: {error}"))?;
     require_finished_cargo(text)?;
-    let artifacts = super::bind_cargo_json(text, TRIPLE).map_err(|error| error.to_string())?;
+    let artifacts = super::bind_cargo_json(text, triple).map_err(|error| error.to_string())?;
     let expected_id = ArtifactId {
         package: crate::screen_ocr::HELPER_PACKAGE.into(),
         bin: crate::screen_ocr::HELPER_BIN.into(),
-        triple: TRIPLE.into(),
+        triple: triple.into(),
     };
     if artifacts.len() != 1 {
         return Err("independent screen OCR build emitted an unexpected artifact set".into());
@@ -372,7 +380,7 @@ fn build_screen_ocr_helper(
         .canonicalize()
         .map_err(|error| format!("resolve independent screen OCR helper: {error}"))?;
     let expected_parent = helper_target
-        .join(TRIPLE)
+        .join(triple)
         .join("release")
         .canonicalize()
         .map_err(|error| format!("resolve independent screen OCR output directory: {error}"))?;
@@ -391,7 +399,7 @@ fn build_screen_ocr_helper(
     Ok(BuiltScreenOcrHelper {
         path,
         evidence: ScreenOcrCargoEvidence {
-            target: TRIPLE.into(),
+            target: triple.into(),
             manifest_sha256: sha256_hex(&manifest),
             lock_sha256,
             recipe_sha256: sha256_hex(&recipe_bytes),
@@ -413,7 +421,7 @@ struct BuiltScreenOcrHelper {
     evidence: ScreenOcrCargoEvidence,
 }
 
-fn screen_ocr_cargo_argv() -> Vec<String> {
+fn screen_ocr_cargo_argv(architecture: WindowsArchitecture) -> Vec<String> {
     [
         "build",
         "--manifest-path",
@@ -422,7 +430,7 @@ fn screen_ocr_cargo_argv() -> Vec<String> {
         "--offline",
         "--release",
         "--target",
-        TRIPLE,
+        architecture.rust_triple(),
         "--message-format=json",
         "--jobs",
         "2",
@@ -431,7 +439,10 @@ fn screen_ocr_cargo_argv() -> Vec<String> {
     .to_vec()
 }
 
-fn cargo_argv(inventory: &Inventory) -> Result<Vec<String>, String> {
+fn cargo_argv(
+    inventory: &Inventory,
+    architecture: WindowsArchitecture,
+) -> Result<Vec<String>, String> {
     let mut args = [
         "build",
         "--manifest-path",
@@ -440,7 +451,7 @@ fn cargo_argv(inventory: &Inventory) -> Result<Vec<String>, String> {
         "--offline",
         "--release",
         "--target",
-        TRIPLE,
+        architecture.rust_triple(),
         "--message-format=json",
         "--jobs",
         "2",
@@ -456,9 +467,7 @@ fn cargo_argv(inventory: &Inventory) -> Result<Vec<String>, String> {
             targets,
             ..
         } = entry
-            && targets
-                .iter()
-                .any(|t| t == crate::windows_payload::WINDOWS_PAYLOAD_TARGET)
+            && targets.iter().any(|t| t == architecture.target_id())
             && package != crate::screen_ocr::HELPER_PACKAGE
         {
             args.extend(["-p".into(), package.clone(), "--bin".into(), bin.clone()]);
@@ -632,12 +641,16 @@ fn drain_build_stream<R: Read>(
 
 fn retain_release_root(
     target: &solstone_core_journal_io::JournalRoot,
+    architecture: WindowsArchitecture,
 ) -> Result<solstone_core_journal_io::JournalRoot, String> {
     target
         .revalidate_canonical_binding()
         .map_err(|e| format!("fresh target binding changed: {e}"))?;
     solstone_core_journal_io::JournalRoot::open(
-        &target.canonical_path().join(TRIPLE).join("release"),
+        &target
+            .canonical_path()
+            .join(architecture.rust_triple())
+            .join("release"),
     )
     .map_err(|e| format!("retain fresh release output directory: {e}"))
 }
@@ -752,18 +765,20 @@ mod tests {
         fs::create_dir_all(binary.parent().unwrap()).unwrap();
         fs::write(&binary, b"controlled bytes").unwrap();
         assert_eq!(read_bounded(&binary, 16).unwrap(), b"controlled bytes");
-        let target = solstone_core_journal_io::JournalRoot::open(&root).unwrap();
-        let release = root.join(TRIPLE).join("release");
-        fs::create_dir_all(&release).unwrap();
-        let retained = retain_release_root(&target).unwrap();
-        let command = retained.canonical_path().join("worker.exe");
-        fs::write(&command, b"current output").unwrap();
-        assert_eq!(
-            command.canonicalize().unwrap().parent(),
-            Some(retained.canonical_path().canonicalize().unwrap().as_path()),
-        );
-        assert_eq!(read_bounded(&command, 14).unwrap(), b"current output");
-        retained.revalidate_canonical_binding().unwrap();
+        for architecture in WindowsArchitecture::ALL {
+            let target = solstone_core_journal_io::JournalRoot::open(&root).unwrap();
+            let release = root.join(architecture.rust_triple()).join("release");
+            fs::create_dir_all(&release).unwrap();
+            let retained = retain_release_root(&target, architecture).unwrap();
+            let command = retained.canonical_path().join("worker.exe");
+            fs::write(&command, b"current output").unwrap();
+            assert_eq!(
+                command.canonicalize().unwrap().parent(),
+                Some(retained.canonical_path().canonicalize().unwrap().as_path()),
+            );
+            assert_eq!(read_bounded(&command, 14).unwrap(), b"current output");
+            retained.revalidate_canonical_binding().unwrap();
+        }
     }
 
     #[test]
@@ -789,37 +804,62 @@ mod tests {
             .join("../../distribution/inventory.toml")
             .canonicalize()
             .unwrap();
-        let inventory = crate::inventory::load_inventory(&inventory_path).unwrap();
-        let argv = cargo_argv(&inventory).unwrap();
-        for command in [
-            "solstone-core-journal",
-            "solstone-core-sol",
-            "solstone-core-ced-analyze",
-        ] {
-            assert!(argv.windows(2).any(|pair| pair == ["--bin", command]));
+        for architecture in WindowsArchitecture::ALL {
+            let mut inventory = crate::inventory::load_inventory(&inventory_path).unwrap();
+            if architecture == WindowsArchitecture::Aarch64
+                && !inventory.entry.iter().any(|entry| matches!(entry, Entry::Bin { targets, .. } if targets.iter().any(|target| target == architecture.target_id())))
+            {
+                assert!(cargo_argv(&inventory, architecture).is_err());
+                // The production ARM inventory is admitted with its native closure.
+                // Exercise this build API using explicitly declared ARM commands.
+                for entry in &mut inventory.entry {
+                    if let Entry::Bin { targets, .. } = entry
+                        && targets
+                            .iter()
+                            .any(|target| target == WindowsArchitecture::X86_64.target_id())
+                    {
+                        targets.push(architecture.target_id().into());
+                    }
+                }
+            }
+            let argv = cargo_argv(&inventory, architecture).unwrap();
+            for command in [
+                "solstone-core-journal",
+                "solstone-core-sol",
+                "solstone-core-ced-analyze",
+            ] {
+                assert!(argv.windows(2).any(|pair| pair == ["--bin", command]));
+            }
+            assert!(!argv.iter().any(|s| s == "solstone-core-llama"));
+            assert!(
+                argv.windows(2)
+                    .any(|pair| pair == ["--target", architecture.rust_triple()])
+            );
+            assert_eq!(
+                argv.windows(2)
+                    .filter(|pair| *pair == ["--features", "solstone-core/journal-mcp-endpoint"])
+                    .count(),
+                1,
+                "the agent connector is compiled into the Windows journal exactly once"
+            );
+            assert!(
+                !argv
+                    .iter()
+                    .any(|argument| argument == crate::screen_ocr::HELPER_PACKAGE)
+            );
+            let helper = screen_ocr_cargo_argv(architecture);
+            assert!(
+                helper.windows(2).any(|pair| {
+                    pair == ["--manifest-path", crate::screen_ocr::HELPER_MANIFEST]
+                })
+            );
+            assert!(helper.iter().any(|argument| argument == "--locked"));
+            assert!(
+                helper
+                    .windows(2)
+                    .any(|pair| pair == ["--target", architecture.rust_triple()])
+            );
+            assert!(!helper.iter().any(|argument| argument == "core/Cargo.toml"));
         }
-        assert!(!argv.iter().any(|s| s == "solstone-core-llama"));
-        assert!(argv.windows(2).any(|pair| pair == ["--target", TRIPLE]));
-        assert_eq!(
-            argv.windows(2)
-                .filter(|pair| *pair == ["--features", "solstone-core/journal-mcp-endpoint"])
-                .count(),
-            1,
-            "the agent connector is compiled into the Windows journal exactly once"
-        );
-        assert!(
-            !argv
-                .iter()
-                .any(|argument| argument == crate::screen_ocr::HELPER_PACKAGE)
-        );
-        let helper = screen_ocr_cargo_argv();
-        assert!(
-            helper
-                .windows(2)
-                .any(|pair| { pair == ["--manifest-path", crate::screen_ocr::HELPER_MANIFEST] })
-        );
-        assert!(helper.iter().any(|argument| argument == "--locked"));
-        assert!(helper.windows(2).any(|pair| pair == ["--target", TRIPLE]));
-        assert!(!helper.iter().any(|argument| argument == "core/Cargo.toml"));
     }
 }
