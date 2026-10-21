@@ -220,9 +220,16 @@ try {
         $projects[$name]=[IO.File]::ReadAllText($files[0].FullName)
     }
     $systemLabels=@($systemIds.Keys);[Array]::Sort($systemLabels,[StringComparer]::Ordinal)
+    $compilerConfigurations=[ordered]@{}
+    foreach($language in @('C','CXX')){
+        $file=Join-Path $buildRoot ('CMakeFiles\3.31.12\CMake'+$language+'Compiler.cmake')
+        $id=File-Identity $file ('compiler/'+$language)
+        if($id.size -gt 65536){throw 'Bounded generated compiler configuration required'}
+        $compilerConfigurations[$language]=[IO.File]::ReadAllText($file)
+    }
     $systemRows=@($systemLabels|ForEach-Object{$systemIds[$_]})
     $capture=[ordered]@{schema=$plan.capture_schema;archive_tools=@($archiveIds.ToArray());system_tools=$systemRows;supporting_inputs=@($support.ToArray());network_denied_tools=$labels}
-    $validation=[ordered]@{schema=$plan.validation_schema;work_root=$WorkRoot;tool_paths=$programs;network_denies=@($denies.ToArray());cache=[IO.File]::ReadAllText((Join-Path $buildRoot 'CMakeCache.txt'));build_log=[IO.File]::ReadAllText((Join-Path $ReportRoot 'build.log'));python_path_configuration=$pythonConfig;projects=$projects;build_arguments=$buildArguments;provider_sources_cmake=[IO.File]::ReadAllText($providerCmake)}
+    $validation=[ordered]@{schema=$plan.validation_schema;work_root=$WorkRoot;tool_paths=$programs;network_denies=@($denies.ToArray());cache=[IO.File]::ReadAllText((Join-Path $buildRoot 'CMakeCache.txt'));build_log=[IO.File]::ReadAllText((Join-Path $ReportRoot 'build.log'));python_path_configuration=$pythonConfig;projects=$projects;build_arguments=$buildArguments;provider_sources_cmake=[IO.File]::ReadAllText($providerCmake);compiler_configurations=$compilerConfigurations}
     $captureFile=Join-Path $ReportRoot 'capture.json';$validationFile=Join-Path $ReportRoot 'validation.log'
     Json-File $captureFile $capture;Json-File $validationFile $validation
     if((Sha $Inputs) -ne $inputMapSha){throw 'ONNX input-map snapshot changed'}

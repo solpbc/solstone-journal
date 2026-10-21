@@ -88,6 +88,7 @@ struct Validation {
     projects: BTreeMap<String, String>,
     build_arguments: Vec<String>,
     provider_sources_cmake: String,
+    compiler_configurations: BTreeMap<String, String>,
 }
 
 pub fn pinned_tools() -> Vec<InputIdentityEntry> {
@@ -282,7 +283,7 @@ fn validate_capture(capture: &Capture, validation: &Validation) -> Result<(), St
         }
     }
     if normalize_arguments(&validation.build_arguments)
-        != build_arguments(&work, &validation.tool_paths)?
+        != normalize_arguments(&build_arguments(&work, &validation.tool_paths)?)
     {
         return Err("ONNX ARM build arguments differ".into());
     }
@@ -432,8 +433,8 @@ fn validate_capture(capture: &Capture, validation: &Validation) -> Result<(), St
         }
     }
     for (key, label) in [
-        ("CMAKE_C_COMPILER", "msvc/cl.exe"),
-        ("CMAKE_CXX_COMPILER", "msvc/cl.exe"),
+        ("CMAKE_ASM_COMPILER", "msvc/cl.exe"),
+        ("CMAKE_ASM_MARMASM_COMPILER", "msvc/armasm64.exe"),
         ("CMAKE_LINKER", "msvc/link.exe"),
         ("CMAKE_AR", "msvc/lib.exe"),
         ("CMAKE_MAKE_PROGRAM", "msbuild/MSBuild.exe"),
@@ -448,6 +449,18 @@ fn validate_capture(capture: &Capture, validation: &Validation) -> Result<(), St
         {
             return Err(format!("ONNX ARM foreign selected tool: {key}"));
         }
+    }
+    if validation
+        .compiler_configurations
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        != ["C", "CXX"]
+    {
+        return Err("ONNX ARM compiler configuration population differs".into());
+    }
+    for (language, text) in &validation.compiler_configurations {
+        validate_compiler_configuration(text, language, &validation.tool_paths)?;
     }
     if validation
         .projects
@@ -473,6 +486,110 @@ fn validate_capture(capture: &Capture, validation: &Validation) -> Result<(), St
         &validation.projects["onnxruntime_providers"],
         &validation.work_root,
     )?;
+    Ok(())
+}
+
+fn validate_compiler_configuration(
+    text: &str,
+    language: &str,
+    paths: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let refuse = || "ONNX ARM generated compiler configuration differs".to_owned();
+    if text.len() > 65536 || !matches!(language, "C" | "CXX") {
+        return Err(refuse());
+    }
+    // CMake 3.31.12's fixed C++ template removes the other languages' file
+    // extensions. Admit that exact non-compiler block, not general CMake code.
+    const CXX_EXTENSION_FILTER: &str = "foreach (lang IN ITEMS C OBJC OBJCXX)\n  if (CMAKE_${lang}_COMPILER_ID_RUN)\n    foreach(extension IN LISTS CMAKE_${lang}_SOURCE_FILE_EXTENSIONS)\n      list(REMOVE_ITEM CMAKE_CXX_SOURCE_FILE_EXTENSIONS ${extension})\n    endforeach()\n  endif()\nendforeach()";
+    let text = text.replace("\r\n", "\n");
+    let text = if language == "CXX" {
+        if text.matches(CXX_EXTENSION_FILTER).count() != 1 {
+            return Err(refuse());
+        }
+        text.replace(CXX_EXTENSION_FILTER, "")
+    } else {
+        text
+    };
+    let mut settings = BTreeMap::new();
+    let mut depth = 0usize;
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with("if(") && line.ends_with(')') {
+            depth += 1;
+            if depth > 8 {
+                return Err(refuse());
+            }
+            continue;
+        }
+        if line == "endif()" {
+            depth = depth.checked_sub(1).ok_or_else(refuse)?;
+            continue;
+        }
+        let entry = line
+            .strip_prefix("set(")
+            .and_then(|s| s.strip_suffix(')'))
+            .ok_or_else(refuse)?;
+        let (key, value) = entry.split_once(' ').ok_or_else(refuse)?;
+        if key.is_empty() || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            return Err(refuse());
+        }
+        let value = value.trim();
+        let quoted = value.starts_with('"');
+        let value = if quoted {
+            value
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .ok_or_else(refuse)?
+        } else {
+            value
+        };
+        if value.contains('"') || (!quoted && value.contains(['(', ')'])) {
+            return Err(refuse());
+        }
+        if settings.insert(key, (value, depth)).is_some() {
+            return Err(refuse());
+        }
+    }
+    if depth != 0 {
+        return Err(refuse());
+    }
+    let setting = |key: &str| -> Result<&str, String> {
+        match settings.get(key) {
+            Some((value, 0)) => Ok(*value),
+            _ => Err(refuse()),
+        }
+    };
+    for (key, expected) in [
+        (format!("CMAKE_{language}_COMPILER_ID"), "MSVC"),
+        (
+            format!("CMAKE_{language}_COMPILER_FRONTEND_VARIANT"),
+            "MSVC",
+        ),
+        (
+            format!("CMAKE_{language}_COMPILER_ARCHITECTURE_ID"),
+            "ARM64",
+        ),
+        (format!("MSVC_{language}_ARCHITECTURE_ID"), "ARM64"),
+        (format!("CMAKE_{language}_COMPILER_ARG1"), ""),
+        (format!("CMAKE_{language}_COMPILER_WRAPPER"), ""),
+        (format!("CMAKE_{language}_COMPILER_WORKS"), "TRUE"),
+    ] {
+        if setting(&key)? != expected {
+            return Err(refuse());
+        }
+    }
+    for (key, label) in [
+        (format!("CMAKE_{language}_COMPILER"), "msvc/cl.exe"),
+        ("CMAKE_AR".into(), "msvc/lib.exe"),
+        ("CMAKE_LINKER".into(), "msvc/link.exe"),
+        ("CMAKE_MT".into(), "sdk/mt.exe"),
+    ] {
+        if windows_path(setting(&key)?)? != windows_path(paths.get(label).ok_or_else(refuse)?)? {
+            return Err(refuse());
+        }
+    }
     Ok(())
 }
 
@@ -1088,6 +1205,61 @@ mod tests {
 #[cfg(all(test, feature = "full-tests"))]
 mod source_tests {
     use super::*;
+    #[test]
+    #[ignore = "requires an original retained native capture, without publishing a receipt"]
+    fn original_native_capture_preserves_windows_path_case_and_refuses_changed_arguments() {
+        let root = PathBuf::from(
+            std::env::var_os("SOLSTONE_ONNX_ARM_FAILED_PACKET").expect("retained native packet"),
+        );
+        let capture: Capture = serde_json::from_slice(
+            &read_bounded(&root.join("report/capture.json"), DOCUMENT_LIMIT).unwrap(),
+        )
+        .unwrap();
+        let original = read_bounded(&root.join("report/validation.log"), VALIDATION_LIMIT).unwrap();
+        assert!(serde_json::from_slice::<Validation>(&original).is_err());
+        let mut original: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        let mut compilers = BTreeMap::new();
+        for language in ["C", "CXX"] {
+            let bytes = read_bounded(
+                &root.join(format!("diagnostics/CMake{language}Compiler.cmake")),
+                65536,
+            )
+            .unwrap();
+            compilers.insert(language, String::from_utf8(bytes).unwrap());
+        }
+        original["compiler_configurations"] = serde_json::to_value(&compilers).unwrap();
+        let validation: Validation = serde_json::from_value(original).unwrap();
+        validate_capture(&capture, &validation).unwrap();
+        for transform in ["comment", "conditional", "foreign", "duplicate", "include"] {
+            let mut changed = validation.clone();
+            let text = changed.compiler_configurations.get_mut("C").unwrap();
+            let first = text.lines().next().unwrap().to_owned();
+            let replacement = match transform {
+                "comment" => format!("# {first}"),
+                "conditional" => format!("if(FALSE)\n{first}\nendif()"),
+                "foreign" => first.replace("/arm64/", "/x64/"),
+                "include" => format!("{first}\ninclude(foreign.cmake)"),
+                _ => format!("{first}\n{first}"),
+            };
+            *text = text.replacen(&first, &replacement, 1);
+            assert!(validate_capture(&capture, &changed).is_err(), "{transform}");
+        }
+        for argument in ["--arm64", "--disable_contrib_ops", "--disable_ml_ops"] {
+            let mut changed = validation.clone();
+            let before = changed.build_arguments.len();
+            changed.build_arguments.retain(|item| item != argument);
+            assert_eq!(changed.build_arguments.len() + 1, before);
+            assert!(
+                validate_capture(&capture, &changed)
+                    .unwrap_err()
+                    .contains("build arguments differ")
+            );
+        }
+        let mut changed = validation.clone();
+        changed.build_arguments[2].push_str("-foreign");
+        assert!(validate_capture(&capture, &changed).is_err());
+    }
+
     #[test]
     #[ignore = "requires retained source, mirrors, and host archives"]
     fn real_onnx_inputs_preserve_models_operators_and_three_notices() {
