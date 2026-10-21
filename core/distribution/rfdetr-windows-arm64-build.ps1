@@ -236,7 +236,7 @@ try {
     $capture=[ordered]@{schema=$plan.capture_schema;archive_tools=@($archiveIds.ToArray());system_tools=$systemRows;network_denied_tools=$labels;configuration=$configuration;development=$development}
     $hostValidation=[ordered]@{schema=$plan.validation_schema;work_root=$WorkRoot;tool_paths=$toolPaths;network_denies=@($denies.ToArray());cache=$cacheText;build_log=[IO.File]::ReadAllText((Join-Path $ReportRoot 'build.log'));install_manifest='';python_path_configuration=$pythonConfig}
     $compileOptions=[ordered]@{}
-    foreach($entry in @(@('rfdetr-cli','examples\cli\CMakeFiles\rfdetr-cli.dir\flags.make'),@('rfdetr','CMakeFiles\rfdetr.dir\flags.make'),@('ggml-cpu','third_party\ggml\src\ggml-cpu\CMakeFiles\ggml-cpu.dir\flags.make'))){
+    foreach($entry in @(@('rfdetr-cli','examples\cli\CMakeFiles\rfdetr-cli.dir\flags.make'),@('rfdetr','CMakeFiles\rfdetr.dir\flags.make'),@('ggml-cpu','third_party\ggml\src\CMakeFiles\ggml-cpu.dir\flags.make'))){
         $file=Join-Path $buildRoot $entry[1]
         $item=Get-Item -LiteralPath $file
         if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -gt 262144){throw 'Bounded regular RFDETR compiler options required'}
