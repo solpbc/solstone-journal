@@ -740,7 +740,10 @@ fn three_killed_claims_with_resaves_leave_same_second_content_for_the_catch_all(
     scan_journal(journal.path(), false).unwrap();
     let modified = fs::metadata(&source).unwrap().modified().unwrap();
     fs::write(&source, "latest kestrel").unwrap();
-    fs::File::open(&source)
+    // Setting a time needs a writable handle on Windows.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&source)
         .unwrap()
         .set_modified(modified)
         .unwrap();

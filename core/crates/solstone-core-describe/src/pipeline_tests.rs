@@ -1516,7 +1516,12 @@ fn ocr_saved_record_and_faults_preserve_actual_pipeline_requests_and_verdicts() 
             (true, Some(OcrFailure::Timeout)),
         ] {
             let mut test = TestRun::new("ocr-paired");
-            let segment = test.journal.join("chronicle/20261020/desktop/090000_300");
+            let segment = test
+                .journal
+                .join("chronicle")
+                .join("20261020")
+                .join("desktop")
+                .join("090000_300");
             fs::create_dir_all(&segment).unwrap();
             test.video = segment.join("a_screen.webm");
             fs::write(&test.video, "authored raw input").unwrap();
