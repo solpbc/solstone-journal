@@ -7,6 +7,7 @@ char *journal_runtime(const char *input);
 void journal_runtime_free(char *result);
 uint64_t journal_ios_processing_generation(void);
 void journal_ios_processing_request_stop(void);
+bool journal_ios_processing_request_owner_stop(void);
 char *runtime_resources(void);
 void runtime_resources_free(char *result);
 

@@ -60,6 +60,14 @@ from an owner change, recovery reports a conflict and preserves the current file
 Missing or changed required output files make coverage outstanding without replaying
 already committed domain actions.
 
+On ios, a day rebuild can continue after process loss once its segment and
+activity work has completed and its input and receipts are verified. The request
+retains its applicable daily units and their reset identities. Continuation keeps
+accepted results, resumes retained publication work, and starts untouched units
+even if they were current before the rebuild. Work lost before that boundary,
+uncertain model outcomes and older claims without this provenance remain held
+for owner review. Explicit Stop persists a hold before acknowledgement.
+
 Publication also checks the admitted facet identity and entity attachment. Daily
 write admission assigns missing facet IDs through the facet owner before capturing
 evidence; read-only coverage checks do not migrate declarations.

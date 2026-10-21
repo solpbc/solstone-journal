@@ -738,7 +738,9 @@ final class PendingReply: @unchecked Sendable {
     admitted.admissionGeneration = request.admissionGeneration ?? journal_ios_processing_generation()
     let queuedRequest = admitted
     if request.op == "serve-stop" {
-      journal_ios_processing_request_stop()
+      guard journal_ios_processing_request_owner_stop() else {
+        throw NSError(domain: "owner Stop could not be saved; journal retained", code: 1)
+      }
       await cancelAndDrain()
     }
     let start = ProcessInfo.processInfo.systemUptime
@@ -775,7 +777,7 @@ final class PendingReply: @unchecked Sendable {
   }
   func stopServing() {
     // This signal bypasses the queue a provider call may currently occupy.
-    journal_ios_processing_request_stop()
+    _ = journal_ios_processing_request_owner_stop()
     log("serve.stop-requested", ["generation": journal_ios_processing_generation()])
     Task {
       do {

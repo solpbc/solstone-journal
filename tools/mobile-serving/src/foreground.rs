@@ -28,6 +28,7 @@ use solstone_core_system::queue::{
     CallableQueueWorker, CallableTaskContext, ProcessState, ProcessStateProbe, TaskQueue,
     TaskQueueEvent, TaskQueueEventSink, TaskQueueOptions,
 };
+
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, ScheduledRequest, TaskArgv};
 use solstone_core_system::schedule::{
     CheckReport, ScheduleEngine, ScheduleError, ScheduleNow, ScheduleSubmissionSink,
@@ -37,6 +38,16 @@ use solstone_core_think_cli::planner::{
     day_still_closing,
 };
 use solstone_core_think_cli::{CortexBoundary, DispatchFailure, IndexBoundary, ThinkContext};
+
+/// Persist the explicit owner hold through the bound journal even before the
+/// foreground host starts. Generic lifecycle cancellation never calls this.
+pub fn persist_owner_stop(root: &JournalRoot) -> Result<(), String> {
+    root.revalidate_canonical_binding()
+        .map_err(|e| e.to_string())?;
+    solstone_core_system::work_intent::stop_rebuilds(root.canonical_path())?;
+    root.revalidate_canonical_binding()
+        .map_err(|e| e.to_string())
+}
 
 static HOST_ACTIVE: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
@@ -596,6 +607,7 @@ impl SenseExecutor for HostSenseExecutor {
 }
 
 struct HostedCommand {
+    rebuild_recovery: bool,
     journal: PathBuf,
     root: Arc<JournalRoot>,
     talent_root: PathBuf,
@@ -671,6 +683,7 @@ impl ForegroundProcessingHost {
             Arc::new(|| false),
             Arc::new(AtomicBool::new(false)),
             backup,
+            false,
         )
     }
     pub fn open_with_cancellation(
@@ -684,8 +697,22 @@ impl ForegroundProcessingHost {
             Utc::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
-        Self::open_bound(root, payload, now, None, external, stop, backup)
+        Self::open_bound(root, payload, now, None, external, stop, backup, false)
     }
+    pub fn open_with_rebuild_recovery(
+        root: Arc<JournalRoot>,
+        payload: &Path,
+        external: Checkpoint,
+        stop: Arc<AtomicBool>,
+        backup: BackupWebDeps,
+    ) -> Result<Self, String> {
+        let now = ScheduleNow::in_zone(
+            Utc::now(),
+            solstone_core_journal_config::owner_zone(root.canonical_path()),
+        );
+        Self::open_bound(root, payload, now, None, external, stop, backup, true)
+    }
+    #[allow(clippy::too_many_arguments)]
     fn open_bound(
         root: Arc<JournalRoot>,
         payload: &Path,
@@ -694,6 +721,7 @@ impl ForegroundProcessingHost {
         external: Checkpoint,
         stop: Arc<AtomicBool>,
         backup: BackupWebDeps,
+        rebuild_recovery: bool,
     ) -> Result<Self, String> {
         if HOST_ACTIVE
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -763,6 +791,7 @@ impl ForegroundProcessingHost {
             #[cfg(feature = "audio")]
             let audio_state = Arc::new(Mutex::new(None));
             let hosted = Arc::new(HostedCommand {
+                rebuild_recovery,
                 journal: journal.clone(),
                 root: Arc::clone(&root),
                 talent_root: payload.join("solstone/talent"),
@@ -823,6 +852,7 @@ impl ForegroundProcessingHost {
                 queue.as_ref().clone(),
                 true,
                 solstone_core_think_cli::planner::DiscoveryTalentRoots {
+                    rebuild_recovery,
                     talent: payload.join("solstone/talent"),
                     apps: payload.join("solstone/apps"),
                 },
@@ -936,7 +966,8 @@ impl ForegroundProcessingHost {
             None,
             cancelled,
         )
-        .with_sense_executor(executor);
+        .with_sense_executor(executor)
+        .with_rebuild_recovery(hosted.rebuild_recovery);
         let result = solstone_core_think_cli::run_hosted_command(
             &context,
             &args,
@@ -3451,6 +3482,37 @@ mod processing_proofs {
     }
 
     #[test]
+    fn bound_cold_or_reconnected_journal_persists_stop_without_a_running_host() {
+        let (temp, _) = journal_fixture();
+        let first =
+            solstone_core_system::work_intent::register(temp.path(), "20260101", true).unwrap();
+        let root = JournalRoot::open(temp.path()).unwrap();
+        persist_owner_stop(&root).unwrap();
+        assert!(
+            solstone_core_system::work_intent::read(temp.path()).unwrap()["20260101"].owner_stopped
+        );
+        assert!(
+            solstone_core_system::work_intent::begin_rebuild(
+                temp.path(),
+                "20260101",
+                &first.id,
+                &root.identity().observation_id()
+            )
+            .is_err()
+        );
+        let second =
+            solstone_core_system::work_intent::register(temp.path(), "20260101", true).unwrap();
+        drop(root);
+        let rebound = JournalRoot::open(temp.path()).unwrap();
+        persist_owner_stop(&rebound).unwrap();
+        let stored = solstone_core_system::work_intent::read(temp.path()).unwrap();
+        assert_eq!(stored["20260101"].id, second.id);
+        assert!(stored["20260101"].owner_stopped);
+        fs::write(temp.path().join("health/work-intent.json"), "{").unwrap();
+        assert!(persist_owner_stop(&rebound).is_err());
+    }
+
+    #[test]
     fn queued_from_scratch_is_claimed_and_finished() {
         let _lock = TEST_LOCK
             .lock()
@@ -3484,6 +3546,137 @@ mod processing_proofs {
             "owner finish removes a successful from-scratch intent: {stored:?}"
         );
         drop(host);
+    }
+
+    #[test]
+    fn cancelled_rebuild_retains_execution_until_generate_and_publication_drain() {
+        use solstone_core_generate::{ClientError, GenerateRequest};
+        use solstone_core_system::work_intent;
+        use std::sync::mpsc;
+
+        let _lock = TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let (temp, payload) = journal_fixture();
+        let journal = temp.path();
+        let day = "20260104";
+        fs::create_dir_all(journal.join("chronicle").join(day)).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            json!({
+                "identity": {"timezone": "UTC"},
+                "processing": {"history_confirmed": true},
+                "providers": {"active": {"provider": "local"}}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        write_schedules(journal, quiet_entries());
+        fs::write(
+            payload.join("solstone/talent/morning_briefing.md"),
+            concat!(
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,",
+                "\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\",",
+                "\"hook\":{\"pre\":\"morning_briefing\"},",
+                "\"load\":{\"transcripts\":false}\n}\nWrite the morning briefing."
+            ),
+        )
+        .unwrap();
+        let intent = work_intent::register(journal, day, true).unwrap();
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let executor = move |_request: &GenerateRequest| {
+            let _ = entered_tx.send(());
+            // A bounded fake transport still returns a successful response after
+            // cancellation, exercising the real callable publication boundary.
+            let _ = release_rx
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(30));
+            Ok::<_, ClientError>(selected_reflection(r#"{"summary":"Late result"}"#))
+        };
+        let root = Arc::new(JournalRoot::open(journal).unwrap());
+        let binding = root.identity().observation_id();
+        let now = Utc.with_ymd_and_hms(2026, 10, 18, 12, 0, 0).unwrap();
+        let host = Arc::new(
+            ForegroundProcessingHost::open_bound(
+                root,
+                &payload,
+                ScheduleNow::in_zone(now, chrono_tz::UTC),
+                Some(Arc::new(executor)),
+                Arc::new(|| false),
+                Arc::new(AtomicBool::new(false)),
+                BackupWebDeps::new(journal.to_path_buf()),
+                true,
+            )
+            .unwrap(),
+        );
+        host.queue().submit(ExecutionRequest::Bus(BusTaskRequest {
+            cmd: TaskArgv::from_wire(canonical_journal_command([
+                "think",
+                "--day",
+                day,
+                "--from-scratch",
+                "--work-intent",
+                &intent.id,
+            ]))
+            .unwrap(),
+            reference: "blocked-rebuild".into(),
+            day: Some(day.into()),
+            scheduler_name: None,
+            queue_if_active_cmd_differs: false,
+            priority: None,
+            daily_catchup_provenance: None,
+        }));
+        let entered = entered_rx.recv_timeout(Duration::from_secs(10)).is_ok();
+        host.request_stop();
+        let stored = work_intent::read(journal).unwrap();
+        let cannot_resume = !work_intent::can_resume(journal, day, &stored[day]).unwrap();
+        let cannot_claim = work_intent::begin_rebuild(journal, day, &intent.id, &binding).is_err();
+        let cannot_replace = work_intent::register(journal, day, true).is_err();
+        let (drained_tx, drained_rx) = mpsc::channel();
+        let draining_host = Arc::clone(&host);
+        let drain = std::thread::spawn(move || {
+            let result = draining_host.shutdown();
+            let _ = drained_tx.send(result);
+        });
+        let drain_waited = drained_rx.recv_timeout(Duration::from_millis(100)).is_err();
+        let reopen_refused = ForegroundProcessingHost::open_at(
+            journal,
+            &payload,
+            ScheduleNow::in_zone(now, chrono_tz::UTC),
+            BackupWebDeps::new(journal.to_path_buf()),
+        )
+        .is_err();
+        let _ = release_tx.send(());
+        let drained = drained_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        drain.join().unwrap();
+        assert!(entered, "the real rebuild must reach Generate");
+        assert!(cannot_resume && cannot_claim && cannot_replace);
+        assert!(drain_waited && reopen_refused);
+        drained.unwrap();
+        let identity =
+            solstone_core_journal_io::DailyUnitIdentity::new(day, "morning_briefing", None);
+        let record = solstone_core_journal_io::load_daily_unit_record(journal, &identity)
+            .unwrap()
+            .unwrap();
+        assert!(!record.status.is_terminal_success());
+        assert!(
+            !journal
+                .join(format!("chronicle/{day}/talents/morning_briefing.json"))
+                .exists()
+        );
+        let stored = work_intent::read(journal).unwrap();
+        assert_eq!(stored[day].id, intent.id);
+        assert!(
+            !stored[day].owner_stopped,
+            "generic cancellation is not owner Stop"
+        );
+        let replacement = work_intent::register(journal, day, true).unwrap();
+        assert_ne!(replacement.id, intent.id);
+        drop(host);
+        drop(open_host(journal, &payload, now));
     }
 
     #[test]

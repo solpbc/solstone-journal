@@ -156,6 +156,8 @@ fn rest(
 /// Packaged talent resources admitted by an embedded host independently of its executable.
 #[derive(Clone)]
 pub struct DiscoveryTalentRoots {
+    /// The host joins in-process execution and persists explicit owner Stop.
+    pub rebuild_recovery: bool,
     pub talent: PathBuf,
     pub apps: PathBuf,
 }
@@ -1020,9 +1022,16 @@ fn inspect_day(
         daily_current: false,
         history: HistoryDay::default(),
     };
+    if intent.is_some_and(|intent| intent.owner_stopped) {
+        work.history.owed = 1;
+        held(report, day, None, WorkBand::Waiting, "owner_stopped");
+        return Ok(work);
+    }
     if let Some(intent) = intent.filter(|intent| intent.from_scratch) {
         work.history.owed = 1;
-        if intent.state == IntentState::Queued {
+        let resumable = sources.roots.is_some_and(|r| r.rebuild_recovery)
+            && work_intent::can_resume(journal, day, intent)?;
+        if !intent.owner_stopped && (intent.state == IntentState::Queued || resumable) {
             let p = priority(day, None, today, Some(WorkBand::Waiting));
             report.band(p.band).owner_requests += 1;
             if policy.permits(p.band) {
@@ -1038,7 +1047,9 @@ fn inspect_day(
                 day,
                 None,
                 WorkBand::Waiting,
-                if intent.state == IntentState::Claimed {
+                if intent.owner_stopped {
+                    "owner_stopped"
+                } else if intent.state == IntentState::Claimed {
                     "interrupted_from_scratch"
                 } else {
                     "failed_from_scratch"
@@ -1445,9 +1456,16 @@ fn still_owed(
         );
     }
     if let Some(id) = argument("--work-intent") {
-        return Ok(work_intent::read(journal)?.get(day).is_some_and(|intent| {
-            intent.id == id && intent.from_scratch && intent.state == IntentState::Queued
-        }));
+        let intents = work_intent::read(journal)?;
+        let Some(intent) = intents
+            .get(day)
+            .filter(|i| i.id == id && i.from_scratch && !i.owner_stopped)
+        else {
+            return Ok(false);
+        };
+        return Ok(intent.state == IntentState::Queued
+            || (roots.is_some_and(|r| r.rebuild_recovery)
+                && work_intent::can_resume(journal, day, intent)?));
     }
     if let Some(segment) = argument("--segment") {
         let stream = argument("--stream").ok_or("work has no stream")?;
@@ -2533,6 +2551,7 @@ mod tests {
             // reproduces an app process even though the host supplied its assets.
             assert!(daily_coverage::package_roots().is_err());
             let resources = DiscoveryTalentRoots {
+                rebuild_recovery: false,
                 talent: PathBuf::from(&payload).join("solstone/talent"),
                 apps: PathBuf::from(&payload).join("solstone/apps"),
             };
@@ -2661,6 +2680,7 @@ mod tests {
             assert!(!backlog.top_up(root.path(), &queue, &stopped, &|| Ok(())));
             assert!(!queue.contains_reference(&retry.request.reference));
             let missing = DiscoveryTalentRoots {
+                rebuild_recovery: false,
                 talent: root.path().join("missing-payload"),
                 apps: resources.apps.clone(),
             };
