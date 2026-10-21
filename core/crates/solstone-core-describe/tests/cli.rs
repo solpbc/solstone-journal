@@ -11,7 +11,7 @@ use std::fs;
 use std::io::Read;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -549,6 +549,8 @@ fn tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward() 
         .env("SOLSTONE_DESCRIBE_SESSION_STUB_RELEASE_PATH", &release)
         .env("SOLSTONE_DESCRIBE_SESSION_STUB_PAUSE_AFTER", "5")
         .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn describe binary");
     let deadline = Instant::now() + Duration::from_secs(120);
@@ -584,7 +586,12 @@ fn tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward() 
     assert!(!video.with_extension("jsonl").exists());
     assert_eq!(read_jsonl(&request_log).len(), 5);
     fs::write(&release, b"release").expect("release stub");
-    assert!(child.wait().expect("wait child").success());
+    let output = child.wait_with_output().expect("wait child");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(no_temp_files(&root));
     assert!(video.with_extension("jsonl").exists());
     assert_eq!(read_jsonl(&video.with_extension("jsonl")).len(), 4);
