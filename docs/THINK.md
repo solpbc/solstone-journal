@@ -183,15 +183,18 @@ Imported lines are listed only: the import's transcript stays the record of the
 day each event was stored, so they add no stored-day hit, and like phone notes
 they carry no facet. An imported calendar file that fails the note contract or
 its segment's span is skipped and reported once.
-Among imported lines, the most recent import of an event by `imported_at`, with
-the import id breaking ties, defines it across the dates it covers: from its
-earliest written occurrence to its latest, or, when it expanded the event's
-rule, to a year past that import. Older imports' lines for the event inside that span are
-ignored, so dates a newer export dropped leave the listing; outside it they
-still count. Phone notes are never set aside by this rule, and between them and
-the chosen imported lines the latest `changed_at` still wins. Re-saving an import
-replaces only that import's calendar files in its segments. Removing every
-segment of the newest import that holds an event lets the next most recent count
+Among imported lines, each import of an event defines it across the dates it
+covers, for every older import: from its earliest written occurrence to its
+latest, or, when it expanded the event's rule, to a year past that import.
+Imports are ordered by `imported_at`, with the import id breaking ties, and an
+import's line counts only where no newer import covers its date. So dates a
+newer export dropped stay out of the listing even after a still newer import
+that holds a single changed date, and an older import's dates outside every
+newer span still count. Phone notes are never set aside by this rule, and
+between them and the imported lines that count the latest `changed_at` still
+wins. Re-saving an import replaces only that import's calendar files in its
+segments. Spans are read from surviving lines, so removing every segment of an
+import that holds an event lets the older imports' dates it covered count
 again. A repeating event that a later export holds as a single event keeps the
 older imports' dates outside that one date, since the newer import covers only
 the date it holds. Calendars imported before this change wrote no calendar note

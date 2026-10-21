@@ -1146,6 +1146,79 @@ fn a_newer_import_holding_only_one_changed_date_leaves_the_rest_listed() {
 }
 
 #[test]
+fn every_newer_import_sets_aside_older_dates_it_covers_in_every_order() {
+    let tuesdays = [
+        "2026-10-27",
+        "2026-11-03",
+        "2026-11-10",
+        "2026-11-17",
+        "2026-11-24",
+        "2026-12-01",
+    ];
+    let orders = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    for order in orders {
+        let journal = Journal::new(Some("America/Denver"));
+        let first = Imported {
+            import: "20261020_120000",
+            imported_at: "2026-10-20T12:00:00-06:00",
+            changed_at: "2026-10-19T09:42:00-06:00",
+        };
+        // The series shortened to end on 11-17.
+        let shortened = Imported {
+            import: "20261022_120000",
+            imported_at: "2026-10-22T12:00:00-06:00",
+            changed_at: "2026-10-21T10:00:00-06:00",
+        };
+        // Then one date moved, sent on its own.
+        let moved = Imported {
+            import: "20261024_120000",
+            imported_at: "2026-10-24T12:00:00-06:00",
+            changed_at: "2026-10-23T11:00:00-06:00",
+        };
+        let files = [
+            journal.save_import("20261019", "094200_600", &first.dates(&tuesdays)),
+            journal.save_import("20261021", "100000_600", &shortened.dates(&tuesdays[..4])),
+            journal.save_import("20261023", "110000_600", &[moved.date("2026-11-10", 14)]),
+        ];
+        for index in order {
+            journal.index(&files[index]);
+        }
+        assert_eq!(
+            journal.listed_from(WEEKLY),
+            [
+                ("20261027".to_owned(), files[1].clone()),
+                ("20261103".to_owned(), files[1].clone()),
+                ("20261110".to_owned(), files[2].clone()),
+                ("20261117".to_owned(), files[1].clone()),
+            ],
+            "order {order:?}"
+        );
+        // With the shortened import's segment deleted, the first import's
+        // later dates count again; the moved date still stands.
+        journal.delete_segment_of(&files[1]);
+        assert_eq!(
+            journal.listed_from(WEEKLY),
+            [
+                ("20261027".to_owned(), files[0].clone()),
+                ("20261103".to_owned(), files[0].clone()),
+                ("20261110".to_owned(), files[2].clone()),
+                ("20261117".to_owned(), files[0].clone()),
+                ("20261124".to_owned(), files[0].clone()),
+                ("20261201".to_owned(), files[0].clone()),
+            ],
+            "order {order:?}"
+        );
+    }
+}
+
+#[test]
 fn a_narrower_newer_export_leaves_older_dates_outside_it_listed() {
     let journal = Journal::new(Some("America/Denver"));
     let older = Imported {

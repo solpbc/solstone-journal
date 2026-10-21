@@ -302,6 +302,39 @@ fn a_newer_export_of_one_changed_date_leaves_the_rest_of_the_series_listed() {
 }
 
 #[test]
+fn a_single_changed_date_after_a_shortened_export_keeps_the_dropped_dates_out() {
+    let journal = Journal::new();
+    journal.import(
+        "20261005_180000",
+        "2026-10-05T18:00:00Z",
+        &calendar(&[&weekly(
+            "20261006T090000",
+            "FREQ=WEEKLY;UNTIL=20261201T235959Z",
+            "20261001T150000Z",
+        )]),
+    );
+    let shortened = journal.import(
+        "20261012_180000",
+        "2026-10-12T18:00:00Z",
+        &calendar(&[&weekly(
+            "20261006T090000",
+            "FREQ=WEEKLY;UNTIL=20261117T235959Z",
+            "20261010T150000Z",
+        )]),
+    );
+    let moved = "UID:weekly-sync\nSUMMARY:weekly sync\nRECURRENCE-ID;TZID=America/Denver:20261110T090000\nDTSTART;TZID=America/Denver:20261110T130000\nLAST-MODIFIED:20261015T150000Z";
+    journal.import(
+        "20261016_180000",
+        "2026-10-16T18:00:00Z",
+        &calendar(&[moved]),
+    );
+    assert_eq!(journal.days("weekly-sync"), TUESDAYS[..7]);
+    // Deleting the shortened export's window brings the later dates back.
+    journal.delete_segment_of(&shortened.calendar_files[0]);
+    assert_eq!(journal.days("weekly-sync"), TUESDAYS[..9]);
+}
+
+#[test]
 fn a_series_moved_from_tuesday_to_wednesday_leaves_its_old_tuesdays() {
     let journal = Journal::new();
     journal.import(
