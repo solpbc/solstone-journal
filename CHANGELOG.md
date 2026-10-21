@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- a month view in the map app shows visits and stays as areas shaded by how many days had one there, with a calendar and each trip away listed on its own. open it from "this month" on a day or week.
 - events in calendar files you import from now on can also be found by the day each one happens, not only the day it was added or last changed. repeating events are listed up to a year after you import them. calendars you imported before aren't listed this way.
 
 ### Fixed

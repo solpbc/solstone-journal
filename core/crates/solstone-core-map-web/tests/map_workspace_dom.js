@@ -1103,7 +1103,7 @@ test('sharedRegion with comma labels', async () => {
   assert.strictEqual(wy.listLabel, 'Wyoming');
 });
 
-test('no-anchor month: every stop on_map: false shows "no stops to draw this month." and "a place you hid"', async () => {
+test('no-anchor month: every stop on_map: false shows the nothing-to-draw state and a hidden reason', async () => {
   const p = makeMonth({
     '20261001': {
       items: [
@@ -1114,12 +1114,12 @@ test('no-anchor month: every stop on_map: false shows "no stops to draw this mon
   const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
   assert.strictEqual(elements['map-view-root'].hidden, false);
   assert.ok(!elements['map-state-gate'].innerHTML.includes('<error>'));
-  assert.ok(elements['map-view-root'].innerHTML.includes('no stops to draw this month.'));
-  assert.ok(elements['map-view-root'].innerHTML.includes('a place you hid'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('data-map-month-nothing'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('data-reason="hidden"'));
   assert.strictEqual(elements['map-view-root'].querySelector('[data-map-month-notdrawn]').innerHTML, '');
 });
 
-test('no-anchor month: every margin 2000 shows "no stops to draw this month." and margin line', async () => {
+test('no-anchor month: every margin 2000 shows the nothing-to-draw state and a wide reason', async () => {
   const p = makeMonth({
     '20261001': {
       items: [
@@ -1130,12 +1130,12 @@ test('no-anchor month: every margin 2000 shows "no stops to draw this month." an
   const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
   assert.strictEqual(elements['map-view-root'].hidden, false);
   assert.ok(!elements['map-state-gate'].innerHTML.includes('<error>'));
-  assert.ok(elements['map-view-root'].innerHTML.includes('no stops to draw this month.'));
-  assert.ok(elements['map-view-root'].innerHTML.includes('a margin of error over 500 m or not reported'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('data-map-month-nothing'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('data-reason="wide"'));
   assert.strictEqual(elements['map-view-root'].querySelector('[data-map-month-notdrawn]').innerHTML, '');
 });
 
-test('no-anchor month: every margin null shows "no stops to draw this month." and margin line', async () => {
+test('no-anchor month: every margin null shows the nothing-to-draw state and a wide reason', async () => {
   const p = makeMonth({
     '20261001': {
       items: [
@@ -1146,8 +1146,8 @@ test('no-anchor month: every margin null shows "no stops to draw this month." an
   const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
   assert.strictEqual(elements['map-view-root'].hidden, false);
   assert.ok(!elements['map-state-gate'].innerHTML.includes('<error>'));
-  assert.ok(elements['map-view-root'].innerHTML.includes('no stops to draw this month.'));
-  assert.ok(elements['map-view-root'].innerHTML.includes('a margin of error over 500 m or not reported'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('data-map-month-nothing'));
+  assert.ok(elements['map-view-root'].innerHTML.includes('data-reason="wide"'));
   assert.strictEqual(elements['map-view-root'].querySelector('[data-map-month-notdrawn]').innerHTML, '');
 });
 
@@ -1177,13 +1177,12 @@ test('more than eight areas: click [data-map-month-areas-more], then svg data-ce
   assert.deepEqual(svgCells, listCells);
 });
 
-test('empty month with journal_has_location: true and apiJson throwing: root contains "no location kept for this month.", no nearest-month link', async () => {
+test('empty month with journal_has_location: true and apiJson throwing: empty state, no nearest-month link', async () => {
   const p = makeMonth({}, { journal_has_location: true });
   const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
   assert.ok(!elements['map-state-gate'].innerHTML.includes('<error>'));
-  assert.ok(elements['map-view-root'].innerHTML.includes('no location kept for this month.'));
-  const monthLinks = [...elements['map-view-root'].innerHTML.matchAll(/href="\/app\/map\/month\//g)];
-  assert.strictEqual(monthLinks.length, 0);
+  assert.ok(elements['map-view-root'].innerHTML.includes('data-map-month-empty'));
+  assert.ok(!elements['map-view-root'].innerHTML.includes('data-map-month-nearest'));
 });
 
 test('day page contains this month link, week page contains this month link, month page contains nav links', async () => {
@@ -1209,7 +1208,13 @@ test('day page contains this month link, week page contains this month link, mon
   assert.ok(markup.includes('href="/app/map/"'));
   assert.ok(markup.includes('href="/app/map/places"'));
   assert.ok(markup.includes('href="/app/map/month/202609"'));
-  assert.ok(markup.includes('href="/app/map/month/202611"'));
+  // a month still ahead of today gets no "next" link; a past one does
+  const ahead = { ...p, today: '20261015' };
+  const aheadRes = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': ahead } });
+  assert.ok(!aheadRes.elements['map-view-root'].innerHTML.includes('href="/app/map/month/202611"'));
+  const past = { ...p, today: '20261205' };
+  const pastRes = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': past } });
+  assert.ok(pastRes.elements['map-view-root'].innerHTML.includes('href="/app/map/month/202611"'));
 });
 
 test('calendar keydown End on month with today 20261015 and no later location lands on 20261015', async () => {

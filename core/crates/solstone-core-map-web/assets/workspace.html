@@ -497,6 +497,13 @@
 .map-month-sw.elsewhere { position: relative; }
 .map-month-sw.elsewhere::after { content: ""; position: absolute; left: 4px; right: 4px; bottom: 2px; height: 2px; background: var(--ink-faint-paper); }
 .map-month-sw.none { background: var(--hatch), var(--paper); }
+.map-month-sw.no-stops { border-style: dashed; border-color: var(--ink-faint-paper); }
+.map-month-day[data-state="unreadable"] { border-style: dotted; border-width: 2px; border-color: var(--ink-faint-paper); color: var(--ink-soft-paper); font-weight: 500; }
+.map-month-sw.unreadable { border-style: dotted; border-width: 2px; border-color: var(--ink-faint-paper); }
+.map-month-day[data-state="no-stops"], .map-month-day[data-state="kept"] { border-style: dashed; border-color: var(--ink-faint-paper); color: var(--ink-soft-paper); font-weight: 500; }
+.map-month-day[data-state="future"] { background: transparent; border-color: transparent; color: var(--ink-faint-paper); font-weight: 400; cursor: default; }
+.map-month-panel h2 { font-family: var(--font-body); font-size: 16px; font-weight: 700; letter-spacing: 0; }
+.map-month-detail-head h2 { font-size: 18px; }
 .map-month-sw.in-area { background: var(--b2); border-color: var(--orange-ink); box-shadow: inset 0 -3px 0 var(--orange-ink); }
 
 .map-month-detail-head { display: flex; align-items: flex-start; gap: 10px; }
@@ -1262,7 +1269,7 @@ button.map-month-row:hover { background: var(--cream); }
         ${items.length ? `<div class="map-strip" role="img" aria-label="visits and stays across the day">${blocks}</div><ul class="map-week-items">${rows}</ul>` : `<p class="map-muted">${escapeHtml(quiet)}</p>`}
       </section>`;
     }).join("");
-    pageShell(`the week of ${longDay(data.start)}`, `<nav class="map-page-nav" aria-label="other weeks">
+    pageShell(`the week of ${longDay(data.start)}`, `<nav class="map-page-nav" aria-label="other weeks and this month">
         <a class="map-link" href="/app/map/week/${escapeHtml(data.previous)}">the week before</a>
         <a class="map-link" href="/app/map/week/${escapeHtml(data.next)}">the week after</a>
         <a class="map-link" href="/app/map/month/${escapeHtml(String(data.start || '').slice(0, 6))}">this month</a></nav>
@@ -1940,6 +1947,7 @@ button.map-month-row:hover { background: var(--cream); }
         readings,
         unreadable,
         interrupted,
+        interruptions: asArray(backendDay?.devices).filter((dev) => (dev.interrupted_segments || 0) > 0).map((dev) => ({ word: dev.word || "phone", count: dev.interrupted_segments })),
         backendDay,
       });
     }
@@ -1975,7 +1983,7 @@ button.map-month-row:hover { background: var(--cream); }
 
   async function renderMonth(data) {
     const m = monthModel(data, data.today);
-    const monthNav = `<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/">the day</a><a class="map-link" href="/app/map/places">places</a><a class="map-link" href="/app/map/month/${escapeHtml(m.previous)}">previous month</a><a class="map-link" href="/app/map/month/${escapeHtml(m.next)}">next month</a></nav>`;
+    const monthNav = `<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/">the day</a><a class="map-link" href="/app/map/places">places</a>${m.previous ? `<a class="map-link" href="/app/map/month/${escapeHtml(m.previous)}">previous month</a>` : ""}${m.next && String(m.next) <= String(m.today || "").slice(0, 6) ? `<a class="map-link" href="/app/map/month/${escapeHtml(m.next)}">next month</a>` : ""}</nav>`;
 
     if (!m.journalHasLocation) {
       renderJournalEmpty();
@@ -1999,16 +2007,16 @@ button.map-month-row:hover { background: var(--cream); }
           const nearest = mKeys[0];
           const nYear = parseInt(nearest.slice(0, 4), 10);
           const nMo = parseInt(nearest.slice(4, 6), 10);
-          nearestLink = `<p class="map-empty-actions"><a href="/app/map/month/${escapeHtml(nearest)}">go to ${escapeHtml(MONTHS[nMo - 1])} ${nYear}</a></p>`;
+          nearestLink = `<p class="map-empty-actions" data-map-month-nearest><a href="/app/map/month/${escapeHtml(nearest)}">go to ${escapeHtml(MONTHS[nMo - 1])} ${nYear}</a></p>`;
         }
       } catch (_) {}
       pageShell(`${m.monthName} ${m.year}`, `<div class="map-month">
-        <div class="map-month-panel map-month-pad">
+        <div class="map-month-panel map-month-pad" data-map-month-empty>
           <p>no location kept for this month.</p>
-          <p class="map-muted">your journal has no location from ${escapeHtml(m.monthName)} ${m.year}.</p>
+          <p class="map-muted">location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.</p>
           ${nearestLink}
         </div>
-      </div>`);
+      </div>`, monthNav);
       return;
     }
 
@@ -2032,13 +2040,12 @@ button.map-month-row:hover { background: var(--cream); }
       <p>a night counts in an area when a visit there covers at least two hours between 22:00 and 06:00.</p>
       <p>hours are shown for one area at a time, and only for time with both ends known. they aren't added up across areas, because two reports can place the same hour in two areas.</p>
       <p>only time inside ${escapeHtml(m.monthName)} counts. a visit that began on ${escapeHtml(m.previousMonthName)} ${prevLastDayNum} counts from midnight.</p>
-      <p>a stop at one of your places is drawn where the place is, so a place is never split between two areas. a stop with no margin of error, or one over 500 m, isn't drawn, and neither is the time between stops.</p>
+      <p>a stop at one of your places is drawn where the place is, so a place is never split between two areas. a stop whose margin of error wasn't reported, or is over 500 m, isn't drawn, and neither is the time between stops.</p>
       <p>a place you hid isn't drawn. its visits still show in each day's list.</p>
       <p>there's no street map. the names are the ones that came with your journal or that you downloaded, and no map service is asked for anything.</p>`;
 
     pageShell(`${m.monthName} ${m.year}`, `<div class="map-month">
       <header class="map-month-head">
-        <p class="map-month-kicker">location · the month</p>
         <p class="map-month-lede">the stops your journal holds for this month. each area is shaded by how many days have a stop in it.</p>
       </header>
       <div class="map-month-layout">
@@ -2119,15 +2126,15 @@ button.map-month-row:hover { background: var(--cream); }
         const nd = m.notDrawn;
         const items = [];
         if (nd.hiddenPlaces > 0) {
-          items.push(nd.hiddenPlaces === 1 ? "a place you hid" : `${nd.hiddenPlaces} places you hid`);
+          items.push(["hidden", nd.hiddenPlaces === 1 ? "a place you hid" : `${nd.hiddenPlaces} places you hid`]);
         }
         if (nd.wide > 0) {
-          items.push("a margin of error over 500 m or not reported");
+          items.push(["wide", `${plural(nd.wide, "stop", "stops")} with a margin of error over 500 m or none reported`]);
         }
         const notDrawnHtml = items.length
-          ? `<div class="map-month-notdrawn" style="padding:0 16px 16px"><span>not drawn here:</span><ul>${items.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul></div>`
+          ? `<div class="map-month-notdrawn" style="padding:0 16px 16px"><span>not drawn here:</span><ul>${items.map(([r, t]) => `<li data-reason="${r}">${escapeHtml(t)}</li>`).join("")}</ul></div>`
           : "";
-        wrap.innerHTML = `<p class="map-muted" style="padding: 16px;">no stops to draw this month.</p>${notDrawnHtml}`;
+        wrap.innerHTML = `<p class="map-muted" style="padding: 16px;" data-map-month-nothing>no stops to draw this month.</p>${notDrawnHtml}`;
         outBtn.hidden = true;
         if (activeDay) {
           cap.innerHTML = `<strong>${escapeHtml(longDay(activeDay))}</strong> · nothing drawn here`;
@@ -2207,12 +2214,12 @@ button.map-month-row:hover { background: var(--cream); }
       const nd = activeChoice ? activeChoice.notDrawn : m.notDrawn;
       const items = [];
       if (nd.hiddenPlaces > 0) {
-        items.push(nd.hiddenPlaces === 1 ? "a place you hid" : `${nd.hiddenPlaces} places you hid`);
+        items.push(["hidden", nd.hiddenPlaces === 1 ? "a place you hid" : `${nd.hiddenPlaces} places you hid`]);
       }
       if (nd.wide > 0) {
-        items.push("a margin of error over 500 m or not reported");
+        items.push(["wide", `${plural(nd.wide, "stop", "stops")} with a margin of error over 500 m or none reported`]);
       }
-      ndEl.innerHTML = items.length ? `<span>not drawn here:</span><ul>${items.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : "";
+      ndEl.innerHTML = items.length ? `<span>not drawn here:</span><ul>${items.map(([r, t]) => `<li data-reason="${r}">${escapeHtml(t)}</li>`).join("")}</ul>` : "";
     }
 
     function renderCalendar() {
@@ -2240,7 +2247,7 @@ button.map-month-row:hover { background: var(--cream); }
           elsewhere: `stops elsewhere: ${m.choices.filter((c) => c.days.includes(dObj.day)).map((c) => c.name).join(", ")}`,
           "no-stops": "no stops",
           "no-location": "no location kept",
-          unreadable: "unreadable",
+          unreadable: "location couldn't be read",
           kept: "location kept",
         }[st] || st;
         const label = `${longDay(dObj.day)}, ${words}${inArea ? ", has a stop in the chosen area" : ""}`;
@@ -2251,10 +2258,13 @@ button.map-month-row:hover { background: var(--cream); }
       const stopsDaysCount = m.days.filter((d) => d.state === "stops").length;
       root.querySelector("[data-map-month-cal-sum]").textContent = `${stopsDaysCount} of ${m.m} days have stops`;
 
+      const present = new Set(m.days.map((d) => d.state === "stops" && !(activeChoice ? activeChoice.days.includes(d.day) : true) ? "elsewhere" : d.state));
       const leg = [
         ["", "stops here"],
-        ["elsewhere", "stops elsewhere"],
-        ["none", "no stops"],
+        ...(m.choices.length > 1 ? [["elsewhere", "stops elsewhere"]] : []),
+        ...(present.has("no-stops") || present.has("kept") ? [["no-stops", "no stops"]] : []),
+        ...(present.has("unreadable") ? [["unreadable", "location couldn't be read"]] : []),
+        ...(present.has("no-location") ? [["none", "no location kept"]] : []),
       ];
       if (activeCellObj) leg.unshift(["in-area", "in the chosen area"]);
       root.querySelector("[data-map-month-cal-legend]").innerHTML = leg.map(([c, t]) => `<span><i class="map-month-sw ${c}" aria-hidden="true"></i>${t}</span>`).join("");
@@ -2291,14 +2301,20 @@ button.map-month-row:hover { background: var(--cream); }
         const dayRecord = m.days.find((d) => d.day === activeDay);
         const head = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(longDay(activeDay))}</h2><p class="map-muted"><a class="map-link" href="/app/map/${escapeHtml(activeDay)}">open the day</a></p></div><button class="map-month-btn" type="button" data-map-month-clear>clear</button></div>`;
         const readingsCount = dayRecord.readings || 0;
-        const readingsLine = readingsCount > 0 ? `not drawn: ${plural(readingsCount, "reading", "readings")} between stops.` : "";
+        const readingsLine = readingsCount > 0 ? `not drawn: ${plural(readingsCount, "reading", "readings")}.` : "";
 
         if (dayRecord.state === "no-location") {
           detEl.innerHTML = `${head}<p style="margin-top:8px">no location kept for this day.</p><p class="map-muted" style="margin-top:6px">your journal has no location from ${escapeHtml(longDay(activeDay))}. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.</p>`;
         } else if (dayRecord.state === "unreadable") {
-          detEl.innerHTML = `${head}<p style="margin-top:8px">part of this day couldn't be read.</p>`;
+          detEl.innerHTML = `${head}<p style="margin-top:8px">your journal couldn't read the location kept for this day.</p>`;
         } else if (dayRecord.state === "no-stops" || dayRecord.state === "kept") {
-          detEl.innerHTML = `${head}<p style="margin-top:8px">location was kept this day, but no stops.</p>${readingsLine ? `<p class="map-muted" style="margin-top:6px">${escapeHtml(readingsLine)}</p>` : ""}`;
+          const quiet = [];
+          for (const dev of dayRecord.interruptions || []) {
+            quiet.push(`your ${escapeHtml(dev.word)} said location was interrupted ${dev.count === 1 ? "once" : dev.count === 2 ? "twice" : `${dev.count} times`} this day.`);
+          }
+          if (dayRecord.unreadable) quiet.push("your journal couldn't read part of this day's location.");
+          if (readingsLine) quiet.push(escapeHtml(readingsLine));
+          detEl.innerHTML = `${head}<p style="margin-top:8px">location was kept this day, but no stops.</p>${quiet.map((n) => `<p class="map-muted" style="margin-top:6px">${n}</p>`).join("")}`;
         } else {
           const es = m.stops.filter((s) => s.days.includes(activeDay));
           const rows = es.map((s) => {
@@ -2315,11 +2331,11 @@ button.map-month-row:hover { background: var(--cream); }
             return cellOfStop ? `<li><button class="map-month-row" type="button" data-cell="${cellOfStop.id}" data-choice="${choiceOfStop.id}">${inner}</button></li>` : `<li><div class="map-month-row">${inner}</div></li>`;
           });
           const notes = [];
-          if (dayRecord.interrupted > 0) {
-            notes.push(`your phone said location was interrupted ${WORDS[dayRecord.interrupted] || `${dayRecord.interrupted} times`} this day.`);
+          for (const dev of dayRecord.interruptions || []) {
+            notes.push(`your ${escapeHtml(dev.word)} said location was interrupted ${dev.count === 1 ? "once" : dev.count === 2 ? "twice" : `${dev.count} times`} this day.`);
           }
           if (dayRecord.unreadable) {
-            notes.push("part of this day couldn't be read.");
+            notes.push("your journal couldn't read part of this day's location.");
           }
           if (readingsLine) {
             notes.push(readingsLine);
