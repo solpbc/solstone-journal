@@ -57,6 +57,10 @@ on linux and mac, this version has no changes you'll notice, and everything belo
 - when an import can't start, on the import page and on your iphone, its message now says what happened in plain words, without the importer's internal output.
 - if the connection drops while the local thinking model downloads, your journal tries again twice before saying the download didn't finish.
 
+### Fixed
+
+- your journal now brings search up to date before its daily thinking starts, and its daily thinking no longer shows as failed.
+
 ## [2.0.53] - 2026-10-21
 
 2.0.53 isn't available on windows. on windows, your journal stays on 2.0.51 and gets these changes, including the windows ones below, in 2.0.54, except recognizing text from your screens.

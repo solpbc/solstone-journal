@@ -31,7 +31,7 @@ use solstone_core_cli::{
     FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
     GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
-    IndexerClassificationsOptions, IndexerCommand, IndexerCountsOptions,
+    IndexerClassificationsOptions, IndexerCommand, IndexerCountsOptions, IndexerDrainOptions,
     IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPathLookupOptions,
     IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
     IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
@@ -6310,6 +6310,41 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::RebuildEdgesFingerprint(options) => {
             run_indexer_rebuild_edges_fingerprint(options)
         }
+        IndexerCommand::Drain(options) => run_indexer_drain(options),
+    }
+}
+
+fn run_indexer_drain(options: IndexerDrainOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let mut drain = solstone_core_indexer_store::todo::DrainOptions {
+        force: options.force,
+        ..Default::default()
+    };
+    if let Some(seconds) = options.budget_seconds {
+        drain.budget = Duration::from_secs(seconds);
+    }
+    match solstone_core_indexer_store::todo::drain(&journal, drain) {
+        Ok(report) => {
+            if options.json {
+                print_json(&json!(report));
+            } else {
+                println!(
+                    "applied {} search updates; {} failed; {} remain queued.",
+                    report.processed,
+                    report.failed,
+                    report.remaining.keys.len()
+                );
+            }
+            if report.timed_out || report.failed > 0 {
+                ExitCode::from(EXIT_TEMPFAIL)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(error) => print_indexer_mutation_error("drain", error),
     }
 }
 
