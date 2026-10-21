@@ -125,15 +125,6 @@ echo === cargo test --locked (the Windows journal app) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-app || exit /b 1
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "setup_receiver::native_tests::prepared_receiver_reads_real_resources_and_guards_launch" "full-tests" || exit /b 1
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "setup_receiver::native_tests::prepared_receiver_refuses_real_directory_junctions" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::a_sibling_package_streams_to_disk_and_reports_progress" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::redirect_is_refused_before_contacting_its_destination" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::rejections_for_unsigned_wrong_key_tampered_and_mismatch" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::bad_zip_shapes_signed_refuse_through_download" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::directory_feed_signed_admits_unsigned_refuses" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::cached_bad_final_preflight_and_preservation_of_other" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::apply_failure_and_spawn_verified_helper_argv_inspection" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::delta_rejections_and_plan_clearing" "full-tests" || exit /b 1
-call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::non_plain_filename_does_not_delete_outside_packages_dir" "full-tests" || exit /b 1
 echo === cargo test --locked (Windows local thinking runtime) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1

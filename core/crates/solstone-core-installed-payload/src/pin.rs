@@ -109,68 +109,6 @@ pub fn verify_pinned_signature(
     })
 }
 
-fn parse_and_validate_prehashed_box(
-    signature_path: &Path,
-    signature_bytes: &[u8],
-) -> Result<SignatureBox, PinnedSignatureError> {
-    let signature_text = std::str::from_utf8(signature_bytes).map_err(|error| {
-        PinnedSignatureError::new(
-            PinnedSignatureRefusal::UnparseableSignature,
-            format!("{}: {error}", signature_path.display()),
-        )
-    })?;
-    let signature_box = SignatureBox::from_string(signature_text).map_err(|error| {
-        PinnedSignatureError::new(
-            PinnedSignatureRefusal::UnparseableSignature,
-            format!("{}: {error}", signature_path.display()),
-        )
-    })?;
-    if !signature_box.is_prehashed() {
-        return Err(PinnedSignatureError::new(
-            PinnedSignatureRefusal::SignaturePinMismatch,
-            format!(
-                "{}: legacy non-prehashed signature is refused",
-                signature_path.display()
-            ),
-        ));
-    }
-    if signature_box.trusted_comment().is_err() {
-        return Err(PinnedSignatureError::new(
-            PinnedSignatureRefusal::SignaturePinMismatch,
-            format!(
-                "{}: missing or invalid trusted comment",
-                signature_path.display()
-            ),
-        ));
-    }
-    Ok(signature_box)
-}
-
-/// Validate that signature bytes form a valid prehashed minisign signature box
-/// with a valid trusted comment, without reading any payload or resolving the pin.
-pub fn admit_prehashed_signature(
-    signature_path: &Path,
-    signature_bytes: &[u8],
-) -> Result<(), PinnedSignatureError> {
-    parse_and_validate_prehashed_box(signature_path, signature_bytes).map(|_| ())
-}
-
-/// Verify a stream against the pinned Journal release key.
-pub fn verify_pinned_signature_reader<R: std::io::Read + std::io::Seek>(
-    reader: R,
-    signature_path: &Path,
-    signature_bytes: &[u8],
-) -> Result<(), PinnedSignatureError> {
-    let signature_box = parse_and_validate_prehashed_box(signature_path, signature_bytes)?;
-    let pin = resolve_pin()?;
-    minisign::verify(&pin, &signature_box, reader, true, false, false).map_err(|error| {
-        PinnedSignatureError::new(
-            PinnedSignatureRefusal::SignaturePinMismatch,
-            format!("{}: {error}", signature_path.display()),
-        )
-    })
-}
-
 fn parse_pin(text: &str) -> Result<PublicKey, PinnedSignatureError> {
     let boxed = PublicKeyBox::from_string(text).map_err(|error| {
         PinnedSignatureError::new(
