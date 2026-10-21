@@ -889,16 +889,16 @@ mod tests {
             .canonicalize()
             .unwrap();
         let mut inventory = crate::inventory::load_inventory(&inventory_path).unwrap();
-        assert!(!screen_ocr_helper_selected(&inventory));
+        assert!(screen_ocr_helper_selected(&inventory));
         for entry in &mut inventory.entry {
             if let Entry::Bin {
                 package, targets, ..
             } = entry
                 && package == crate::screen_ocr::HELPER_PACKAGE
             {
-                targets.push(crate::windows_payload::WINDOWS_PAYLOAD_TARGET.into());
+                targets.retain(|t| t != crate::windows_payload::WINDOWS_PAYLOAD_TARGET);
             }
         }
-        assert!(screen_ocr_helper_selected(&inventory));
+        assert!(!screen_ocr_helper_selected(&inventory));
     }
 }

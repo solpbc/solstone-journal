@@ -384,12 +384,19 @@ fn screen_ocr_identity(target: &str) -> Result<(String, String, Vec<InputRef>), 
 /// licences and provenance as themselves, never as another member's input.
 fn screen_ocr_member_input(path: &str, final_sha256: &str, inputs: &[InputRef]) -> InputRef {
     let path = path.replace('\\', "/");
+    let is_windows_ocr_runtime = solstone_core_installed_payload::screen_ocr_layout(
+        solstone_core_installed_payload::TARGET_WINDOWS_X86_64,
+    )
+    .map(|layout| {
+        path == layout.runtime_library || layout.runtime_dependency.is_some_and(|dep| path == dep)
+    })
+    .unwrap_or(false);
     let rel = path
         .split_once(&format!("{}/", crate::screen_ocr::BUNDLE_DEST))
         .map(|(_, rel)| rel)
         .unwrap_or(path.as_str());
     let named = |name: &str| inputs.iter().find(|input| input.name == name).cloned();
-    let found = if rel.starts_with("runtime/") {
+    let found = if rel.starts_with("runtime/") || is_windows_ocr_runtime {
         inputs.first().cloned()
     } else if rel == "models/dictionary.txt" {
         named("inference.yml")
@@ -2136,7 +2143,17 @@ fn entry_dest_matches(entry: &crate::inventory::Entry, path: &str) -> bool {
                 || id.aliases.iter().any(|a| format!("{dest_dir}/{a}") == path)
         }),
         crate::inventory::Entry::Pdfium { dest_dir, .. } => path.starts_with(dest_dir),
-        crate::inventory::Entry::ScreenOcr { dest_dir, .. } => path.starts_with(dest_dir),
+        crate::inventory::Entry::ScreenOcr { dest_dir, .. } => {
+            path.starts_with(dest_dir)
+                || solstone_core_installed_payload::screen_ocr_layout(
+                    solstone_core_installed_payload::TARGET_WINDOWS_X86_64,
+                )
+                .map(|layout| {
+                    path == layout.runtime_library
+                        || layout.runtime_dependency.is_some_and(|dep| path == dep)
+                })
+                .unwrap_or(false)
+        }
         crate::inventory::Entry::WindowsNative { dest, .. } => dest == path,
         crate::inventory::Entry::Bin { dest, .. } => dest == path,
         crate::inventory::Entry::Launcher { dest, .. } => dest == path,
@@ -2406,6 +2423,14 @@ mod tests {
                     input.name,
                     Path::new(member).file_name().unwrap().to_str().unwrap()
                 );
+            }
+            for dest in [
+                "lib/solstone-native/solstone-screen-ocr-onnxruntime.dll",
+                "lib/solstone-native/onnxruntime_providers_shared.dll",
+            ] {
+                let input = screen_ocr_member_input(dest, &"0".repeat(64), &inputs);
+                assert_eq!(input.name, runtime.filename.as_str(), "{target} {dest}");
+                assert_ne!(input.sha256, "0".repeat(64), "{target} {dest}");
             }
         }
         let err = bundled_identity(Path::new("."), "plan9-mips", "screen-ocr").unwrap_err();

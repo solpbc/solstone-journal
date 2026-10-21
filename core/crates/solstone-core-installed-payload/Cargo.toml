@@ -15,6 +15,7 @@ publish = false
 unsafe_code = "deny"
 
 [features]
+full-tests = []
 test-fixture-pin = []
 
 [dependencies]

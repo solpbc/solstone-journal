@@ -38,14 +38,14 @@ mod tests {
         fs::write(root.path().join("bin/ced.dll"), b"ced dll").expect("dll");
         fs::write(root.path().join("bin/tool.exe"), b"tool").expect("tool");
         let manifest = render_windows_payload_manifest(root.path(), COMMIT, LOCK).expect("render");
-        let KeyPair { pk, sk } = KeyPair::generate_unencrypted_keypair().expect("keypair");
+        let KeyPair { pk, sk } = crate::pin::test_fixture_keypair();
         let pin_dir = tempfile::tempdir().expect("pin dir");
         let pin = pin_dir.path().join("pin.pub");
         fs::write(&pin, pk.to_box().expect("public box").to_bytes()).expect("pin");
         install_test_fixture_pin(&pin).expect("install pin");
         let signature = minisign::sign(
-            Some(&pk),
-            &sk,
+            Some(pk),
+            sk,
             Cursor::new(manifest.as_slice()),
             None,
             Some("fixture payload manifest"),

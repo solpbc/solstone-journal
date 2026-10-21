@@ -484,8 +484,13 @@ fn setup_evidence_tree(root: &std::path::Path) {
     fs::create_dir_all(root.join("share/ca")).unwrap();
     fs::write(root.join("share/ca/ca-bundle.pem"), b"ca bundle").unwrap();
 
-    // The seven MSVC destinations: 4 under lib/solstone-native/, 3 under lib/solstone-nvattest/
+    // The eight MSVC destinations: 5 under lib/solstone-native/, 3 under lib/solstone-nvattest/
     fs::write(root.join("lib/solstone-native/msvcp140.dll"), b"msvcp140").unwrap();
+    fs::write(
+        root.join("lib/solstone-native/msvcp140_1.dll"),
+        b"msvcp140_1",
+    )
+    .unwrap();
     fs::write(
         root.join("lib/solstone-native/vcruntime140.dll"),
         b"vcruntime140",
@@ -575,9 +580,10 @@ fn windows_component_evidence_happy_path() {
         Some(parakeet_rec.final_sha256.as_str())
     );
 
-    // 7 MSVC provenance records assertion
+    // 8 MSVC provenance records assertion
     for (dest, label) in [
         ("lib/solstone-native/msvcp140.dll", "msvcp140.dll"),
+        ("lib/solstone-native/msvcp140_1.dll", "msvcp140_1.dll"),
         ("lib/solstone-native/vcruntime140.dll", "vcruntime140.dll"),
         (
             "lib/solstone-native/vcruntime140_1.dll",

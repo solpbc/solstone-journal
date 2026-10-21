@@ -239,6 +239,13 @@ pub const MSVC: ArchivePin = ArchivePin {
             dll: true,
         },
         MemberPin {
+            label: "msvcp140_1.dll",
+            path: "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_1.dll",
+            bytes: 35952,
+            sha256: "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d",
+            dll: true,
+        },
+        MemberPin {
             label: "vcruntime140.dll",
             path: "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140.dll",
             bytes: 124544,
