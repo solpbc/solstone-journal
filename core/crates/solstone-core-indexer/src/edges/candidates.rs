@@ -8,12 +8,7 @@ use std::path::{Path, PathBuf};
 
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
-use solstone_core_entity_matching::{
-    EntityNameCandidate, EntityNameMatchOutcome, find_matching_entity,
-    find_matching_entity_detailed,
-};
-
-pub use solstone_core_entity_matching::EntityNameCandidate as KnownPerson;
+use solstone_core_entity_matching::{ConfidentMatcher, EntityNameCandidate, find_matching_entity};
 
 use crate::edges::speaker::SpeakerEntityIndex;
 use crate::edges::{EdgeContext, EdgeError};
@@ -42,6 +37,7 @@ impl EdgeDropCounter {
 pub struct EdgeResolver {
     journal: PathBuf,
     cache: BTreeMap<String, Vec<EntityNameCandidate>>,
+    confident: BTreeMap<String, ConfidentMatcher>,
     drops: EdgeDropCounter,
     owner_timezone: Option<Result<Tz, EdgeError>>,
     speaker_entities: Option<SpeakerEntityIndex>,
@@ -52,6 +48,7 @@ impl EdgeResolver {
         Self {
             journal: journal.to_path_buf(),
             cache: BTreeMap::new(),
+            confident: BTreeMap::new(),
             drops: EdgeDropCounter::default(),
             owner_timezone: None,
             speaker_entities: None,
@@ -112,7 +109,14 @@ impl EdgeResolver {
             EdgeError::Io(format!("candidate cache missing for {:?}", context.facet))
         })?;
         let candidate = if confident {
-            confident_match(name, candidates)
+            let matcher = self
+                .confident
+                .entry(context.facet.clone())
+                .or_insert_with(|| ConfidentMatcher::new(candidates));
+            matcher
+                .find(name)
+                .and_then(|index| candidates.get(index))
+                .filter(|candidate| candidate.id.as_deref().is_some_and(|id| !id.is_empty()))
         } else {
             find_matching_entity(name, candidates, 90.0)
                 .and_then(|result| candidates.get(result.candidate_index))
@@ -156,45 +160,46 @@ impl EdgeResolver {
     }
 }
 
-/// Every unblocked journal entity, as a candidate for a name to match.
-pub fn journal_candidates(journal: &Path) -> io::Result<Vec<EntityNameCandidate>> {
-    load_journal_candidates(journal)
+/// The journal's unblocked entities, ready to match the people on an invite.
+pub struct KnownPeople {
+    candidates: Vec<EntityNameCandidate>,
+    matcher: ConfidentMatcher,
 }
 
-/// The one candidate a name or email names with high confidence: as written,
-/// ignoring case, by email, or by the entity's id. A looser or tied match is
-/// no match.
-pub fn confident_match<'a>(
-    name: &str,
-    candidates: &'a [EntityNameCandidate],
-) -> Option<&'a EntityNameCandidate> {
-    match find_matching_entity_detailed(name, candidates, 90.0) {
-        EntityNameMatchOutcome::Matched {
-            candidate_index,
-            tier,
-        } if tier.is_high_confidence() => candidates
-            .get(candidate_index)
-            .filter(|candidate| candidate.id.as_deref().is_some_and(|id| !id.is_empty())),
-        _ => None,
+impl KnownPeople {
+    pub fn load(journal: &Path) -> io::Result<Self> {
+        Ok(Self::new(load_journal_candidates(journal)?))
     }
-}
 
-/// The known person an invitee is: by their email first, then by the name on
-/// the invite, each only with high confidence.
-pub fn invitee_match<'a>(
-    name: Option<&str>,
-    email: Option<&str>,
-    candidates: &'a [EntityNameCandidate],
-) -> Option<&'a EntityNameCandidate> {
-    email
-        .map(str::trim)
-        .filter(|email| email.contains('@'))
-        .and_then(|email| confident_match(email, candidates))
-        .or_else(|| {
-            name.map(str::trim)
-                .filter(|name| !name.is_empty())
-                .and_then(|name| confident_match(name, candidates))
-        })
+    pub fn new(candidates: Vec<EntityNameCandidate>) -> Self {
+        let matcher = ConfidentMatcher::new(&candidates);
+        Self {
+            candidates,
+            matcher,
+        }
+    }
+
+    /// The known person an invitee is: by their email first, then by the name
+    /// on the invite, each only with high confidence (as written, ignoring
+    /// case, by email, or by the entity's id). A first name alone, or a name
+    /// two people share, is no one.
+    pub fn invitee(&self, name: Option<&str>, email: Option<&str>) -> Option<&EntityNameCandidate> {
+        let find = |text: &str| {
+            self.matcher
+                .find(text)
+                .and_then(|index| self.candidates.get(index))
+                .filter(|candidate| candidate.id.as_deref().is_some_and(|id| !id.is_empty()))
+        };
+        email
+            .map(str::trim)
+            .filter(|email| email.contains('@'))
+            .and_then(find)
+            .or_else(|| {
+                name.map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .and_then(find)
+            })
+    }
 }
 
 fn load_candidates(journal: &Path, facet: &str) -> io::Result<Vec<EntityNameCandidate>> {

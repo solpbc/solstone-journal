@@ -1402,13 +1402,22 @@ fn reconcile_edges(
     report.removed = removed.len();
     if !calendar_people_linked(conn)? {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        crate::calendar_schedule::relink_all_people(&tx, journal)?;
-        tx.execute(
-            "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
-            [CALENDAR_PEOPLE_EDGES_PATH],
-        )?;
-        crate::db::admit_scan_journal(checkpoint)?;
-        tx.commit()?;
+        match crate::calendar_schedule::relink_all_people(&tx, journal) {
+            Ok(()) => {
+                tx.execute(
+                    "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
+                    [CALENDAR_PEOPLE_EDGES_PATH],
+                )?;
+                crate::db::admit_scan_journal(checkpoint)?;
+                tx.commit()?;
+            }
+            Err(error) => {
+                tx.rollback()?;
+                report
+                    .warnings
+                    .push(format!("calendar invites not linked yet: {error}"));
+            }
+        }
     }
     if !plans_rechecked && report.failures.is_empty() {
         conn.execute(

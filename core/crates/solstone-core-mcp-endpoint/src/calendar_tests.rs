@@ -358,11 +358,24 @@ fn an_activity_lists_the_meeting_it_ran_during_only_to_a_connection_that_reads_t
     .unwrap();
     index(root);
 
-    grant_categories(root, &["facets", "transcripts"], ReadScope::WholeJournal);
+    grant_categories(
+        root,
+        &["facets", "transcripts", "entities"],
+        ReadScope::WholeJournal,
+    );
     assert_eq!(
         scheduled_beside_activities(root),
         [
             json!([{"title": "design review", "start": "10:00", "end": "11:00", "people": ["Alex Rivera"]}]),
+            Value::Null,
+        ]
+    );
+    // Without the people grant, the meeting comes without names.
+    grant_categories(root, &["facets", "transcripts"], ReadScope::WholeJournal);
+    assert_eq!(
+        scheduled_beside_activities(root),
+        [
+            json!([{"title": "design review", "start": "10:00", "end": "11:00"}]),
             Value::Null,
         ]
     );

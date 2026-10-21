@@ -651,7 +651,15 @@ pub(crate) fn execute_list(
             let calendar = calendars
                 .entry(item.day.clone())
                 .or_insert_with(|| solstone_core_facets::calendar_on_day(journal_root, &item.day));
-            let scheduled = solstone_core_facets::calendar_beside(calendar, &item.day, span);
+            let mut scheduled = solstone_core_facets::calendar_beside(calendar, &item.day, span);
+            // Naming the people on an invite takes the people grant too.
+            if !snapshot.categories.contains(&AdmittedCategory::Entities) {
+                for event in &mut scheduled {
+                    if let Some(event) = event.as_object_mut() {
+                        event.remove("people");
+                    }
+                }
+            }
             if !scheduled.is_empty() {
                 activity["scheduled"] = Value::Array(scheduled);
             }

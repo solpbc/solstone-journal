@@ -335,11 +335,56 @@ fn a_declined_or_cancelled_meeting_links_no_one() {
 }
 
 #[test]
-fn a_journal_without_its_owner_known_links_no_one() {
+fn a_journal_without_its_owner_known_links_no_one_but_still_names_the_invite() {
     let journal = Journal::new();
     journal.person("alex_rivera", "Alex Rivera", &["alex@example.com"], false);
     journal.save("20261019", "094200_300", &meeting(json!({})));
     assert!(journal.links().is_empty());
+    let named = scheduled_on_day(journal.path(), "20261027").unwrap()[0]
+        .people
+        .clone();
+    assert_eq!(
+        named,
+        [InvitedPerson {
+            entity_id: "alex_rivera".to_owned(),
+            name: "Alex Rivera".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn a_person_blocked_after_the_invite_came_in_is_no_longer_named() {
+    let journal = Journal::new();
+    journal.people();
+    journal.save("20261019", "094200_300", &meeting(json!({})));
+    let identity = journal.path().join("entities/alex_rivera/entity.json");
+    let mut value: Value = serde_json::from_str(&fs::read_to_string(&identity).unwrap()).unwrap();
+    value["blocked"] = json!(true);
+    fs::write(&identity, value.to_string()).unwrap();
+    assert!(
+        scheduled_on_day(journal.path(), "20261027").unwrap()[0]
+            .people
+            .is_empty()
+    );
+}
+
+#[test]
+fn unreadable_people_link_no_one_and_never_fail_the_index_write() {
+    let journal = Journal::new();
+    // A file where the people folder should be.
+    fs::write(journal.path().join("entities"), "not a folder").unwrap();
+    let rel = journal.save("20261019", "094200_300", &meeting(json!({})));
+    assert!(journal.links().is_empty());
+    assert_eq!(
+        scheduled_on_day(journal.path(), "20261027").unwrap().len(),
+        1
+    );
+    journal.delete_segment_of(&rel);
+    assert!(
+        scheduled_on_day(journal.path(), "20261027")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

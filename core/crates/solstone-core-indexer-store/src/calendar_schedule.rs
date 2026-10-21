@@ -23,9 +23,7 @@ use chrono_tz::Tz;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value};
 use solstone_core_format::calendar::{When, parse_calendar_note};
-use solstone_core_indexer::edges::candidates::{
-    KnownPerson as EntityNameCandidate, invitee_match, journal_candidates,
-};
+use solstone_core_indexer::edges::candidates::KnownPeople;
 
 use crate::StoreError;
 use crate::calendar::{Identity, LISTING_IDX_BASE, LISTING_IDX_STRIDE, listing_zone};
@@ -97,6 +95,18 @@ impl ScheduledEvent {
     }
 }
 
+/// Who is on each listed event's invite, among the people the journal
+/// already knows: written with the event's people links, from its latest
+/// note, so reading a day never matches names again.
+pub(crate) const CREATE_CALENDAR_PEOPLE: &str = "\
+CREATE TABLE IF NOT EXISTS calendar_people(
+event TEXT NOT NULL,
+occurrence TEXT NOT NULL,
+position INTEGER NOT NULL,
+entity_id TEXT NOT NULL,
+PRIMARY KEY(event, occurrence, position)
+)";
+
 /// Every event the owner's calendar has on `day` (`YYYYMMDD`), timed events
 /// by start. A journal with no search index has none.
 pub fn scheduled_on_day(journal: &Path, day: &str) -> Result<Vec<ScheduledEvent>, StoreError> {
@@ -121,29 +131,20 @@ pub fn scheduled_on_day(journal: &Path, day: &str) -> Result<Vec<ScheduledEvent>
         return Ok(Vec::new());
     }
     let zone = listing_zone(journal)?;
-    let mut linked =
-        conn.prepare("SELECT dst FROM edges WHERE source=? AND anchor=? ORDER BY rowid")?;
+    let mut invited = conn.prepare(
+        "SELECT entity_id FROM calendar_people WHERE event=? AND occurrence=? ORDER BY position",
+    )?;
     let mut events = Vec::new();
-    for (identity, record) in notes {
+    for ((event_id, occurrence), record) in notes {
         let Some(mut event) = scheduled_event(&record, &zone) else {
             continue;
         };
-        // The people the index linked from this version, as they are named now.
-        let linked_ids = linked
-            .query_map(
-                params![CALENDAR_NOTE_EDGE_SOURCE, edge_anchor(&identity)],
-                |row| row.get::<_, String>(0),
-            )?
+        let entity_ids = invited
+            .query_map(params![event_id, occurrence], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
-        event.people = linked_ids
+        event.people = entity_ids
             .into_iter()
-            .filter_map(|entity_id| {
-                let identity = solstone_core_entity::read_entity_identity(journal, &entity_id)
-                    .ok()
-                    .flatten()?;
-                let name = identity.value().get("name")?.as_str()?.trim().to_owned();
-                (!name.is_empty()).then_some(InvitedPerson { entity_id, name })
-            })
+            .filter_map(|entity_id| named_now(journal, entity_id))
             .collect();
         events.push(event);
     }
@@ -155,6 +156,23 @@ pub fn scheduled_on_day(journal: &Path, day: &str) -> Result<Vec<ScheduledEvent>
             .then_with(|| left.title.cmp(&right.title))
     });
     Ok(events)
+}
+
+/// A person as the journal names them now. One since blocked, merged away or
+/// removed is no longer named.
+fn named_now(journal: &Path, entity_id: String) -> Option<InvitedPerson> {
+    let identity = solstone_core_entity::read_entity_identity(journal, &entity_id)
+        .ok()
+        .flatten()?;
+    let value = identity.value();
+    if value.get("blocked").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
+    let name = value.get("name")?.as_str()?.trim();
+    (!name.is_empty()).then(|| InvitedPerson {
+        entity_id,
+        name: name.to_owned(),
+    })
 }
 
 /// An event as its latest note has it, with no one on it yet.
@@ -206,13 +224,15 @@ fn owner_declined(record: &Map<String, Value>) -> bool {
         })
 }
 
-/// The journal's known people, loaded once and only when an invite needs them.
-struct KnownPeople<'a> {
+/// The journal's people and its principal, loaded once per pass and only
+/// when an invite needs them. A journal whose people can't be read links no
+/// one, rather than failing the index write that asked.
+struct People<'a> {
     journal: &'a Path,
-    loaded: Option<(Vec<EntityNameCandidate>, Option<String>)>,
+    loaded: Option<(KnownPeople, Option<String>)>,
 }
 
-impl<'a> KnownPeople<'a> {
+impl<'a> People<'a> {
     fn new(journal: &'a Path) -> Self {
         Self {
             journal,
@@ -220,24 +240,25 @@ impl<'a> KnownPeople<'a> {
         }
     }
 
-    fn load(&mut self) -> Result<&(Vec<EntityNameCandidate>, Option<String>), StoreError> {
-        if self.loaded.is_none() {
-            let candidates = journal_candidates(self.journal)?;
+    fn load(&mut self) -> &(KnownPeople, Option<String>) {
+        self.loaded.get_or_insert_with(|| {
+            let known = KnownPeople::load(self.journal).unwrap_or_else(|error| {
+                log::warn!(target: "solstone::indexer", "calendar invites matched to no one: {error}");
+                KnownPeople::new(Vec::new())
+            });
             let principal = solstone_core_entity::journal_principal_entry(self.journal)
-                .map_err(|error| StoreError::Io(std::io::Error::other(error.to_string())))?
+                .unwrap_or_else(|error| {
+                    log::warn!(target: "solstone::indexer", "calendar invites linked to no owner: {error}");
+                    None
+                })
                 .map(|(folder, _)| folder);
-            self.loaded = Some((candidates, principal));
-        }
-        Ok(self.loaded.as_ref().expect("loaded above"))
-    }
-
-    fn principal(&mut self) -> Result<Option<String>, StoreError> {
-        Ok(self.load()?.1.clone())
+            (known, principal)
+        })
     }
 
     /// The known people on an invite, its organizer included, the owner and
-    /// anyone answering as the owner left out, each once.
-    fn on_invite(&mut self, record: &Map<String, Value>) -> Result<Vec<InvitedPerson>, StoreError> {
+    /// anyone answering as the owner left out, each once, in invite order.
+    fn on_invite(&mut self, record: &Map<String, Value>) -> Vec<String> {
         let owner_emails = invitees(record)
             .filter(|attendee| is_owner(attendee))
             .filter_map(|attendee| text(attendee, "email"))
@@ -253,30 +274,25 @@ impl<'a> KnownPeople<'a> {
             })
             .collect::<Vec<_>>();
         if invited.is_empty() {
-            return Ok(Vec::new());
+            return Vec::new();
         }
-        let (candidates, principal) = self.load()?;
+        let (known, principal) = self.load();
         let mut seen = BTreeSet::new();
         let mut people = Vec::new();
         for person in invited {
             let name = text(person, "name");
             let email = text(person, "email");
-            let Some(candidate) = invitee_match(name.as_deref(), email.as_deref(), candidates)
+            let Some(entity_id) = known
+                .invitee(name.as_deref(), email.as_deref())
+                .and_then(|candidate| candidate.id.clone())
             else {
                 continue;
             };
-            let Some(entity_id) = candidate.id.clone() else {
-                continue;
-            };
-            if principal.as_deref() == Some(entity_id.as_str()) || !seen.insert(entity_id.clone()) {
-                continue;
+            if principal.as_deref() != Some(entity_id.as_str()) && seen.insert(entity_id.clone()) {
+                people.push(entity_id);
             }
-            people.push(InvitedPerson {
-                entity_id,
-                name: candidate.name.clone(),
-            });
         }
-        Ok(people)
+        people
     }
 }
 
@@ -284,8 +300,8 @@ fn edge_anchor((event, occurrence): &Identity) -> String {
     format!("calendar:{event}|{occurrence}")
 }
 
-/// Replace the people links of each identity with those of its latest note,
-/// inside the caller's index transaction.
+/// Replace who is on each identity's invite, and its people links, with
+/// those of its latest note, inside the caller's index transaction.
 ///
 /// Each known person on the invite is linked to the owner as scheduled with
 /// them, on the event's first listed day, filed under the file holding that
@@ -297,20 +313,13 @@ pub(crate) fn relink_people(
     journal: &Path,
     identities: &BTreeSet<Identity>,
 ) -> Result<(), StoreError> {
-    if identities.is_empty() {
-        return Ok(());
-    }
-    // The listing itself waits for a readable settings file; so do its links.
-    let Ok(zone) = listing_zone(journal) else {
-        return Ok(());
-    };
-    let mut people = KnownPeople::new(journal);
+    let mut people = People::new(journal);
     for identity in identities {
         let anchor = edge_anchor(identity);
-        conn.execute(
-            "DELETE FROM edges WHERE source=? AND anchor=?",
-            params![CALENDAR_NOTE_EDGE_SOURCE, anchor],
-        )?;
+        conn.prepare_cached("DELETE FROM edges WHERE source=? AND anchor=?")?
+            .execute(params![CALENDAR_NOTE_EDGE_SOURCE, anchor])?;
+        conn.prepare_cached("DELETE FROM calendar_people WHERE event=? AND occurrence=?")?
+            .execute(params![identity.0, identity.1])?;
         let latest: Option<(String, i64, String)> = conn
             .prepare_cached(
                 "SELECT h.path, h.idx, c.day FROM calendar_hits h \
@@ -335,30 +344,34 @@ pub(crate) fn relink_people(
         let Some(record) = record else {
             continue;
         };
-        let Some(event) = scheduled_event(&record, &zone) else {
+        // Only the title and the owner's answer matter here, not the clock.
+        let Some(event) = scheduled_event(&record, &chrono_tz::UTC) else {
             continue;
         };
-        if event.declined {
-            continue;
-        }
         let Ok(note) = serde_json::from_str::<Map<String, Value>>(&record) else {
             continue;
         };
-        let invited = people.on_invite(&note)?;
-        if invited.is_empty() {
+        let invited = people.on_invite(&note);
+        let mut remember = conn.prepare_cached(
+            "INSERT INTO calendar_people(event, occurrence, position, entity_id) VALUES (?, ?, ?, ?)",
+        )?;
+        for (position, entity_id) in invited.iter().enumerate() {
+            remember.execute(params![identity.0, identity.1, position as i64, entity_id])?;
+        }
+        if event.declined || invited.is_empty() {
             continue;
         }
-        let Some(principal) = people.principal()? else {
+        let Some(principal) = people.load().1.clone() else {
             continue;
         };
-        let mut insert = conn.prepare_cached(
+        let mut link = conn.prepare_cached(
             "INSERT INTO edges(src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight) \
              VALUES (?, ?, 'scheduled-with', 0, NULL, NULL, ?, '', ?, ?, ?, ?, NULL, 1)",
         )?;
-        for person in &invited {
-            insert.execute(params![
+        for entity_id in &invited {
+            link.execute(params![
                 principal,
-                person.entity_id,
+                entity_id,
                 day,
                 CALENDAR_NOTE_EDGE_SOURCE,
                 path,

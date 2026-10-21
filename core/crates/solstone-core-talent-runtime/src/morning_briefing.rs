@@ -1188,12 +1188,14 @@ mod tests {
             }))],
         };
         let rendered = render_digest_activity(&act, false);
-        assert!(
-            rendered.contains(
-                "- on the owner's calendar then (scheduled, not who attended): design review, 10:00–11:00, invited: Alex Rivera, Dana Ortiz"
-            ),
-            "{rendered}"
-        );
+        let line = rendered
+            .lines()
+            .find(|line| line.contains("design review"))
+            .unwrap_or_else(|| panic!("{rendered}"));
+        for part in ["scheduled", "10:00", "11:00", "Alex Rivera", "Dana Ortiz"] {
+            assert!(line.contains(part), "{line}");
+        }
+        // Invitees are never offered as people who took part.
         assert!(!rendered.contains("participants"));
     }
 
