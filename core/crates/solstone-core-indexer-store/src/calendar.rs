@@ -102,7 +102,7 @@ pub(crate) const CREATE_CALENDAR_HITS_IDENTITY: &str =
 /// so each hit has its own position for search paging. A note's listing day
 /// `n` sits at `LISTING_IDX_BASE + line * LISTING_IDX_STRIDE + n`.
 pub const LISTING_IDX_BASE: i64 = 1_000_000_000;
-const LISTING_IDX_STRIDE: i64 = 1_000;
+pub(crate) const LISTING_IDX_STRIDE: i64 = 1_000;
 
 /// The agent every calendar chunk is indexed under.
 pub const CALENDAR_AGENT: &str = "calendar";
@@ -668,6 +668,7 @@ pub(crate) fn relist(
             record_hit(conn, rowid, &path, idx, "latest", &note, continues)?;
         }
     }
+    crate::calendar_schedule::relink_people(conn, journal, identities)?;
     Ok(relisted)
 }
 

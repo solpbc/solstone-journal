@@ -250,7 +250,9 @@ fn calendar_rows(
         };
         let mut resolved = BTreeSet::new();
         for guest in guests {
-            if let Some(entity_id) = resolver.resolve(context, &string_field(Some(guest)))? {
+            if let Some(entity_id) =
+                resolver.resolve_confident(context, &string_field(Some(guest)))?
+            {
                 resolved.insert(entity_id);
             }
         }

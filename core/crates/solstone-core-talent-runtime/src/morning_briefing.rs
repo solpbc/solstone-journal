@@ -33,6 +33,9 @@ pub struct DigestActivity {
     pub entities: Vec<String>,
     pub source_limitation: bool,
     pub story_body: Option<String>,
+    /// What the owner's calendar had scheduled while the activity ran.
+    #[serde(default)]
+    pub scheduled: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -331,6 +334,7 @@ fn load_digest_activities(
     gaps: &mut Vec<String>,
 ) -> Vec<DigestActivity> {
     let mut activities = Vec::new();
+    let calendar = solstone_core_facets::calendar_on_day(&context.journal, day);
     for (facet_idx, (facet, title)) in facets.iter().enumerate() {
         match load_activity_records(&context.journal, facet, day, false) {
             Ok(records) => {
@@ -442,6 +446,15 @@ fn load_digest_activities(
                                     .is_some()
                         });
 
+                    let scheduled = solstone_core_facets::activity_span(&record)
+                        .map(|span| {
+                            solstone_core_facets::calendar_beside(&calendar, day, span)
+                                .iter()
+                                .map(describe_scheduled)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
                     activities.push((
                         facet_idx,
                         DigestActivity {
@@ -459,6 +472,7 @@ fn load_digest_activities(
                             entities,
                             source_limitation,
                             story_body,
+                            scheduled,
                         },
                     ));
                 }
@@ -486,6 +500,29 @@ fn load_digest_activities(
             .then_with(|| act_a.id.cmp(&act_b.id))
     });
     activities.into_iter().map(|(_, act)| act).collect()
+}
+
+/// One scheduled event as a digest line: its title, its time and the known
+/// people invited.
+fn describe_scheduled(event: &Value) -> String {
+    let mut text = string_or(event.get("title"), "untitled event");
+    if let (Some(start), Some(end)) = (
+        event.get("start").and_then(Value::as_str),
+        event.get("end").and_then(Value::as_str),
+    ) {
+        text.push_str(&format!(", {start}–{end}"));
+    }
+    let people = event
+        .get("people")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    if !people.is_empty() {
+        text.push_str(&format!(", invited: {}", people.join(", ")));
+    }
+    text
 }
 
 fn render_digest_activity(act: &DigestActivity, include_story: bool) -> String {
@@ -521,6 +558,11 @@ fn render_digest_activity(act: &DigestActivity, include_story: bool) -> String {
     }
     if !act.participants.is_empty() {
         lines.push(format!("- participants: {}", act.participants.join(", ")));
+    }
+    for scheduled in &act.scheduled {
+        lines.push(format!(
+            "- on the owner's calendar then (scheduled, not who attended): {scheduled}"
+        ));
     }
     if !act.entities.is_empty() {
         lines.push(format!("- entities: {}", act.entities.join(", ")));
@@ -1124,6 +1166,38 @@ mod tests {
     }
 
     #[test]
+    fn an_activity_carries_the_meeting_it_ran_during_as_scheduled_not_attended() {
+        let act = DigestActivity {
+            facet: "work".into(),
+            day: "20261019".into(),
+            id: "act".into(),
+            start: None,
+            end: None,
+            target_date: None,
+            duration: None,
+            title: Some("Talked through the mocks".into()),
+            description: None,
+            details: None,
+            participants: vec![],
+            entities: vec![],
+            source_limitation: false,
+            story_body: None,
+            scheduled: vec![describe_scheduled(&json!({
+                "title": "design review", "start": "10:00", "end": "11:00",
+                "people": ["Alex Rivera", "Dana Ortiz"],
+            }))],
+        };
+        let rendered = render_digest_activity(&act, false);
+        assert!(
+            rendered.contains(
+                "- on the owner's calendar then (scheduled, not who attended): design review, 10:00–11:00, invited: Alex Rivera, Dana Ortiz"
+            ),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("participants"));
+    }
+
+    #[test]
     fn test_source_gaps_not_substring_deleted() {
         let huge_story = "A".repeat(50000);
         let act = DigestActivity {
@@ -1141,6 +1215,7 @@ mod tests {
             entities: vec![],
             source_limitation: false,
             story_body: Some(huge_story),
+            scheduled: vec![],
         };
         let initial_gap = "activities from Work, which couldn't be read".to_string();
         let values = Map::from_iter([

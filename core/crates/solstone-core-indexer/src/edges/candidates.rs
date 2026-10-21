@@ -8,7 +8,12 @@ use std::path::{Path, PathBuf};
 
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
-use solstone_core_entity_matching::{EntityNameCandidate, find_matching_entity};
+use solstone_core_entity_matching::{
+    EntityNameCandidate, EntityNameMatchOutcome, find_matching_entity,
+    find_matching_entity_detailed,
+};
+
+pub use solstone_core_entity_matching::EntityNameCandidate as KnownPerson;
 
 use crate::edges::speaker::SpeakerEntityIndex;
 use crate::edges::{EdgeContext, EdgeError};
@@ -70,6 +75,26 @@ impl EdgeResolver {
         context: &EdgeContext,
         name: &str,
     ) -> Result<Option<String>, EdgeError> {
+        self.resolve_with(context, name, false)
+    }
+
+    /// Resolve a name only to an entity it names with high confidence: as
+    /// written, ignoring case, by email or by the entity's id. A looser match,
+    /// such as a first name alone, resolves to no one.
+    pub fn resolve_confident(
+        &mut self,
+        context: &EdgeContext,
+        name: &str,
+    ) -> Result<Option<String>, EdgeError> {
+        self.resolve_with(context, name, true)
+    }
+
+    fn resolve_with(
+        &mut self,
+        context: &EdgeContext,
+        name: &str,
+        confident: bool,
+    ) -> Result<Option<String>, EdgeError> {
         if name.trim().is_empty() {
             self.record_drop();
             return Ok(None);
@@ -86,8 +111,12 @@ impl EdgeResolver {
         let candidates = self.cache.get(&context.facet).ok_or_else(|| {
             EdgeError::Io(format!("candidate cache missing for {:?}", context.facet))
         })?;
-        let matched = find_matching_entity(name, candidates, 90.0);
-        let candidate = matched.and_then(|result| candidates.get(result.candidate_index));
+        let candidate = if confident {
+            confident_match(name, candidates)
+        } else {
+            find_matching_entity(name, candidates, 90.0)
+                .and_then(|result| candidates.get(result.candidate_index))
+        };
         let entity_id = candidate.and_then(|candidate| candidate.id.as_deref());
         Ok(match entity_id {
             Some(entity_id) if !entity_id.is_empty() => Some(entity_id.to_string()),
@@ -125,6 +154,47 @@ impl EdgeResolver {
             None => Err(EdgeError::Io("speaker entity cache missing".to_string())),
         }
     }
+}
+
+/// Every unblocked journal entity, as a candidate for a name to match.
+pub fn journal_candidates(journal: &Path) -> io::Result<Vec<EntityNameCandidate>> {
+    load_journal_candidates(journal)
+}
+
+/// The one candidate a name or email names with high confidence: as written,
+/// ignoring case, by email, or by the entity's id. A looser or tied match is
+/// no match.
+pub fn confident_match<'a>(
+    name: &str,
+    candidates: &'a [EntityNameCandidate],
+) -> Option<&'a EntityNameCandidate> {
+    match find_matching_entity_detailed(name, candidates, 90.0) {
+        EntityNameMatchOutcome::Matched {
+            candidate_index,
+            tier,
+        } if tier.is_high_confidence() => candidates
+            .get(candidate_index)
+            .filter(|candidate| candidate.id.as_deref().is_some_and(|id| !id.is_empty())),
+        _ => None,
+    }
+}
+
+/// The known person an invitee is: by their email first, then by the name on
+/// the invite, each only with high confidence.
+pub fn invitee_match<'a>(
+    name: Option<&str>,
+    email: Option<&str>,
+    candidates: &'a [EntityNameCandidate],
+) -> Option<&'a EntityNameCandidate> {
+    email
+        .map(str::trim)
+        .filter(|email| email.contains('@'))
+        .and_then(|email| confident_match(email, candidates))
+        .or_else(|| {
+            name.map(str::trim)
+                .filter(|name| !name.is_empty())
+                .and_then(|name| confident_match(name, candidates))
+        })
 }
 
 fn load_candidates(journal: &Path, facet: &str) -> io::Result<Vec<EntityNameCandidate>> {

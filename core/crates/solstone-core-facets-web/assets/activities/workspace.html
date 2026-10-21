@@ -538,7 +538,8 @@
   color: var(--ink);
 }
 
-.act-panel-people {
+.act-panel-people,
+.act-panel-calendar {
   font-size: 0.85rem;
   color: var(--ink-soft);
 }
@@ -812,6 +813,8 @@
     'segments-one': '1 segment from {source}, {range}',
     'segments-many': '{n} segments from {source}, {range}',
     'segment-minutes': '{n} min',
+    'calendar-then': 'on your calendar then: {title}',
+    'calendar-then-untitled': 'on your calendar then',
     'people-one': 'with {a}',
     'people-two': 'with {a} and {b}',
     'people-many-one': 'with {a}, {b} and 1 other',
@@ -1450,6 +1453,14 @@
       }
       const reasonKey = `reason-${item.hidden_reason || 'other'}`;
       phtml += `<div class="act-panel-hidden-reason" data-copy-key="${reasonKey}">${STRINGS[reasonKey] || STRINGS['reason-other']}</div>`;
+    }
+
+    // What the calendar had scheduled then, beside the activity
+    for (const meeting of item.calendar || []) {
+      const parts = [meeting.title ? fmt('calendar-then', { title: meeting.title }) : STRINGS['calendar-then-untitled']];
+      if (meeting.start && meeting.end) parts.push(`${meeting.start}–${meeting.end}`);
+      if (meeting.people?.length) parts.push(formatPeople(meeting.people));
+      phtml += `<div class="act-panel-calendar" data-copy-key="calendar-then">${esc(parts.join(' · '))}</div>`;
     }
 
     // Summary & People

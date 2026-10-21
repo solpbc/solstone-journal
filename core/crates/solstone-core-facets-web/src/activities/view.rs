@@ -6,9 +6,9 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{
-    ActivityRecord, PlacedRecord, activity_value_truthy, list_activity_day_stems,
-    list_declared_facet_names, load_activity_records, observe_facet_declaration,
-    place_activity_records, read_activity_definitions,
+    ActivityRecord, PlacedRecord, ScheduledEvent, activity_value_truthy, calendar_beside,
+    calendar_on_day, list_activity_day_stems, list_declared_facet_names, load_activity_records,
+    observe_facet_declaration, place_activity_records, read_activity_definitions,
 };
 
 pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, usize> {
@@ -161,6 +161,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
         }
     }
 
+    let calendar = calendar_on_day(root, day);
     let mut items = Vec::new();
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
@@ -168,7 +169,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
             continue;
         }
 
-        let item = project_item(facet, row, &course, &definitions_by_facet);
+        let item = project_item(facet, row, &course, &definitions_by_facet, (day, &calendar));
         items.push(item);
     }
 
@@ -184,6 +185,7 @@ fn project_item(
     record: &Map<String, Value>,
     course: &solstone_core_facets::ActivityCourse,
     definitions_by_facet: &BTreeMap<String, BTreeMap<String, String>>,
+    (day, calendar): (&str, &[ScheduledEvent]),
 ) -> Value {
     let mut item = Map::new();
 
@@ -390,6 +392,11 @@ fn project_item(
         })
         .unwrap_or_default();
     item.insert("people".to_owned(), Value::Array(people));
+    let beside = course
+        .span
+        .map(|span| calendar_beside(calendar, day, span))
+        .unwrap_or_default();
+    item.insert("calendar".to_owned(), Value::Array(beside));
 
     let edits = record
         .get("edits")

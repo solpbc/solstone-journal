@@ -194,7 +194,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListActivities,
         wire_name: "list_activities",
         title: "list activities",
-        description: "List journal activities for one day or an inclusive range across granted facets. When more remain, pass next_cursor as cursor to continue. Call get_activity_sources to read the verbatim transcript segments an activity spans. An activity appears once it has ended; when a device stops sending, its last activity appears about an hour later.",
+        description: "List journal activities for one day or an inclusive range across granted facets. When more remain, pass next_cursor as cursor to continue. Call get_activity_sources to read the verbatim transcript segments an activity spans. An activity appears once it has ended; when a device stops sending, its last activity appears about an hour later. With access to the whole journal's transcripts, an activity also lists what the owner's calendar had scheduled while it ran, under scheduled, with the known people invited. That is what was planned, not who was there.",
         input_schema: list_activities_input_schema,
         requires: FACETS,
         audit_name: solstone_core_mcp_audit::ToolName::ListActivities,
