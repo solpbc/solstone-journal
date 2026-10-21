@@ -23,6 +23,8 @@ use crate::rfdetr_windows_arm64::{
 use crate::rfdetr_windows_source;
 
 const DOCUMENT_LIMIT: u64 = 4 * 1024 * 1024;
+// RF/ggml clang diagnostics are retained in the validation document.
+const VALIDATION_LIMIT: u64 = 16 * 1024 * 1024;
 const CAPTURE_SCHEMA: &str = "solstone.rfdetr-windows-arm64-build-capture.v1";
 
 pub struct RfdetrArm64InputPaths<'a> {
@@ -245,7 +247,7 @@ pub fn admit(
     let evidence_bytes = read_bounded(paths.evidence, DOCUMENT_LIMIT)?;
     let evidence: RfdetrWindowsArm64Evidence =
         serde_json::from_slice(&evidence_bytes).map_err(|e| e.to_string())?;
-    let validation_bytes = read_bounded(paths.validation, DOCUMENT_LIMIT)?;
+    let validation_bytes = read_validation(paths.validation)?;
     let validation: RfdetrWindowsArm64Validation =
         serde_json::from_slice(&validation_bytes).map_err(|e| e.to_string())?;
     verify_receipt_document_binding(
@@ -294,6 +296,11 @@ pub fn admit(
         validation_bytes,
         notices,
     ))
+}
+
+fn read_validation(path: &Path) -> Result<Vec<u8>, String> {
+    read_bounded(path, VALIDATION_LIMIT)
+        .map_err(|error| format!("RF-DETR validation document: {error}"))
 }
 
 const USAGE: &str = "rfdetr-windows-arm64 verify-inputs|record|verify --rf-bundle ABS --ggml-bundle ABS --openmp-inputs ABS_JSON [FLAG VALUE]";
@@ -416,7 +423,7 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
             "RFDETR ARM copied OpenMP development bytes differ from the original cohort".into(),
         );
     }
-    let validation_bytes = read_bounded(&absolute(&values, "--validation")?, DOCUMENT_LIMIT)?;
+    let validation_bytes = read_validation(&absolute(&values, "--validation")?)?;
     let validation: RfdetrWindowsArm64Validation =
         serde_json::from_slice(&validation_bytes).map_err(|e| e.to_string())?;
     let evidence = RfdetrWindowsArm64Evidence {
@@ -482,6 +489,33 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
 #[cfg(all(test, feature = "full-tests"))]
 mod source_tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires the retained native RF-DETR validation document"]
+    fn real_native_validation_retains_full_compiler_diagnostics() {
+        let file = PathBuf::from(
+            std::env::var_os("SOLSTONE_RFDETR_ARM_VALIDATION").expect("native validation file"),
+        );
+        let bytes = read_validation(&file).unwrap();
+        assert!(bytes.len() as u64 > DOCUMENT_LIMIT);
+        let validation: RfdetrWindowsArm64Validation = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(validation.host.schema, recipe::VALIDATION_SCHEMA);
+        assert!(
+            validation
+                .host
+                .build_log
+                .lines()
+                .any(|line| line == "RFDETR_ARM64_WINDOWS_BUILD_EXIT=0")
+        );
+        assert_eq!(
+            validation
+                .compile_options
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["ggml-cpu", "rfdetr", "rfdetr-cli"]
+        );
+    }
 
     #[test]
     #[ignore = "requires the retained pinned RF/ggml bundles and CMake archive"]
