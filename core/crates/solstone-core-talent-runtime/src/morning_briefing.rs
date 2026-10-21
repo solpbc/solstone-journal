@@ -120,14 +120,14 @@ pub fn apply_prompt_override(
     let n = briefing_state.activities.len();
     let mut include_stories = vec![true; n];
     let mut include_activities = vec![true; n];
-    let mut omissions: Vec<String> = Vec::new();
 
-    let measure = |inc_acts: &[bool],
-                   inc_stories: &[bool],
-                   omissions: &[String]|
-     -> (Map<String, Value>, u32) {
+    let measure = |inc_acts: &[bool], inc_stories: &[bool]| -> (Map<String, Value>, u32) {
         let mut current_gaps = briefing_state.initial_gaps.clone();
-        current_gaps.extend(omissions.iter().cloned());
+        current_gaps.extend(omission_gaps(
+            &briefing_state.activities,
+            inc_acts,
+            inc_stories,
+        ));
 
         let mut values = briefing_state.values.clone();
         let digest_text =
@@ -157,15 +157,13 @@ pub fn apply_prompt_override(
         (values, total_tokens)
     };
 
-    let (mut current_values, mut current_tokens) =
-        measure(&include_activities, &include_stories, &omissions);
+    let (mut current_values, mut current_tokens) = measure(&include_activities, &include_stories);
 
     if current_tokens > floor_budget {
         for i in (0..n).rev() {
             if briefing_state.activities[i].story_body.is_some() {
                 include_stories[i] = false;
-                omissions.push(format!("story for {}", briefing_state.activities[i].id));
-                let (vals, tokens) = measure(&include_activities, &include_stories, &omissions);
+                let (vals, tokens) = measure(&include_activities, &include_stories);
                 current_values = vals;
                 current_tokens = tokens;
                 if current_tokens <= floor_budget {
@@ -178,11 +176,7 @@ pub fn apply_prompt_override(
     if current_tokens > floor_budget {
         for i in (0..n).rev() {
             include_activities[i] = false;
-            let id = &briefing_state.activities[i].id;
-            let story_omission = format!("story for {id}");
-            omissions.retain(|g| g != &story_omission);
-            omissions.push(format!("activity {id}"));
-            let (vals, tokens) = measure(&include_activities, &include_stories, &omissions);
+            let (vals, tokens) = measure(&include_activities, &include_stories);
             current_values = vals;
             current_tokens = tokens;
             if current_tokens <= floor_budget {
@@ -617,13 +611,61 @@ fn render_facets(facets: &[(String, String)]) -> String {
 }
 
 /// The owner's note on what this briefing could not draw on.
+const ACTIVITIES_OMITTED: &str = "activities omitted: ";
+const STORIES_OMITTED: &str = "activity stories omitted: ";
+
+/// Counts, not record ids: one gap per omitted record grows with the day, and a
+/// day with hundreds of activities could never fit the floor even with all of
+/// them left out. Which records were left out is in `_briefing_inclusion`.
+pub(crate) fn omission_gaps(
+    activities: &[DigestActivity],
+    include_activities: &[bool],
+    include_stories: &[bool],
+) -> Vec<String> {
+    let omitted = include_activities.iter().filter(|kept| !**kept).count();
+    let stories = activities
+        .iter()
+        .enumerate()
+        .filter(|(i, act)| {
+            include_activities[*i] && !include_stories[*i] && act.story_body.is_some()
+        })
+        .count();
+    let mut gaps = Vec::new();
+    if omitted > 0 {
+        gaps.push(format!("{ACTIVITIES_OMITTED}{omitted}."));
+    }
+    if stories > 0 {
+        gaps.push(format!("{STORIES_OMITTED}{stories}."));
+    }
+    gaps
+}
+
+/// Whether `gap` is an omission gap, in the count form or the per-record form
+/// earlier packets stored.
+pub(crate) fn is_omission_gap(gap: &str, activities: &[DigestActivity]) -> bool {
+    gap.starts_with(ACTIVITIES_OMITTED)
+        || gap.starts_with(STORIES_OMITTED)
+        || activities.iter().any(|act| {
+            gap.strip_prefix("activity ")
+                .or_else(|| gap.strip_prefix("story for "))
+                == Some(act.id.as_str())
+        })
+}
+
 pub(crate) fn coverage_preamble(gaps: &[String]) -> String {
-    // `gaps` keeps record ids for the model and the stored metadata; the owner
-    // reads counts instead.
     let mut parts = Vec::new();
     let (mut activities, mut stories) = (0, 0);
+    let count = |gap: &str, prefix: &str| {
+        gap.strip_prefix(prefix)
+            .and_then(|rest| rest.strip_suffix('.'))
+            .and_then(|count| count.parse::<usize>().ok())
+    };
     for gap in gaps {
-        if gap.starts_with("story for ") {
+        if let Some(omitted) = count(gap, ACTIVITIES_OMITTED) {
+            activities += omitted;
+        } else if let Some(omitted) = count(gap, STORIES_OMITTED) {
+            stories += omitted;
+        } else if gap.starts_with("story for ") {
             stories += 1;
         } else if gap.starts_with("activity ") {
             activities += 1;
@@ -936,6 +978,59 @@ mod tests {
     // A gap names an omitted id.
     // Story bodies are absent once dropped; no mid-string remnant of a dropped story.
     #[test]
+    fn a_day_with_hundreds_of_activities_fits_the_floor() {
+        let root = tempfile::tempdir().unwrap();
+        let facet = root.path().join("facets/work");
+        fs::create_dir_all(facet.join("activities")).unwrap();
+        fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        let records = (0..1200)
+            .map(|i| {
+                json!({
+                    "id": format!("20261019_activity_{i:04}"),
+                    "title": format!("Activity {i}"),
+                    "start": "09:00",
+                    "story": {"body": "a short story about what happened in this activity"},
+                })
+                .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(facet.join("activities/20261019.jsonl"), records).unwrap();
+
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let mut prepared = PreparedTalent {
+            name: "morning_briefing".into(),
+            config: Map::from_iter([
+                ("day".into(), json!("20261019")),
+                ("max_output_tokens".into(), json!(2560)),
+                ("json_schema".into(), json!({"type": "object"})),
+                (
+                    "prompt".into(),
+                    json!("Prompt with $activity_digest and $briefing_metadata"),
+                ),
+            ]),
+        };
+        let state = build(&mut prepared, &context).unwrap();
+        apply_prompt_override(&mut prepared, &state).unwrap();
+
+        let metadata: Value =
+            serde_json::from_str(prepared.config["briefing_metadata"].as_str().unwrap()).unwrap();
+        let gaps = metadata["gaps"].as_array().unwrap();
+        assert!(
+            gaps.iter().any(|gap| gap
+                .as_str()
+                .is_some_and(|gap| gap.starts_with(ACTIVITIES_OMITTED))),
+            "{gaps:?}"
+        );
+        assert!(
+            gaps.len() < 10,
+            "omissions are counted, not listed: {gaps:?}"
+        );
+    }
+
+    #[test]
     fn test_oversize_story_clipping() {
         let root = tempfile::tempdir().unwrap();
         let facet = root.path().join("facets/work");
@@ -995,7 +1090,7 @@ mod tests {
             total_tokens <= budget,
             "tokens {total_tokens} must fit budget {budget}"
         );
-        assert!(prompt.contains("story for act_huge") || prompt.contains("activity act_huge"));
+        assert!(prompt.contains(STORIES_OMITTED) || prompt.contains(ACTIVITIES_OMITTED));
         assert!(!prompt.contains(&huge_story));
         assert!(!prompt.contains(&huge_story[..100]));
     }
