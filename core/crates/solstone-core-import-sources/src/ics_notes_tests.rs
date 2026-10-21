@@ -1223,3 +1223,22 @@ fn a_series_in_two_export_members_is_counted_once() {
         }
     );
 }
+
+#[test]
+fn one_event_and_one_day_take_the_singular() {
+    for (count, expected) in [(0, "days"), (1, "day"), (2, "days"), (11, "days")] {
+        assert_eq!(crate::save::noun(count, "day", "days"), expected, "{count}");
+    }
+    // The summary pairs each count with its own noun.
+    let one = crate::save::ics_summary(1, 1, &CalendarNoteCounts::default());
+    assert!(
+        one.contains("1 calendar event ") && one.ends_with(" 1 day"),
+        "{one}"
+    );
+    let many = crate::save::ics_summary(3, 2, &CalendarNoteCounts::default());
+    assert!(
+        many.contains("3 calendar events ") && many.ends_with(" 2 days"),
+        "{many}"
+    );
+}
+

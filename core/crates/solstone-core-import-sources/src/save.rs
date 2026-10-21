@@ -29,7 +29,11 @@ pub(crate) fn ics_summary(
     days: usize,
     counts: &crate::ics_notes::CalendarNoteCounts,
 ) -> String {
-    let mut summary = format!("imported {entry_count} calendar events across {days} days");
+    let mut summary = format!(
+        "imported {entry_count} calendar {} across {days} {}",
+        noun(entry_count, "event", "events"),
+        noun(days as u64, "day", "days")
+    );
     let skipped = counts.skipped();
     if skipped > 0 {
         let reasons: Vec<String> = [
@@ -67,6 +71,11 @@ pub(crate) fn ics_summary(
         ));
     }
     summary
+}
+
+/// The noun for a count: the singular for exactly one.
+pub(crate) fn noun(count: u64, one: &'static str, many: &'static str) -> &'static str {
+    if count == 1 { one } else { many }
 }
 
 /// A count with thousands separators, as an owner reads it: `200,000`.
@@ -631,7 +640,7 @@ mod tests {
         assert_eq!(outcome.created.len(), 1);
         assert_eq!(outcome.created[0].segment, "seg_c");
         assert_eq!(outcome.entries, 3);
-        assert_eq!(outcome.summary, "imported 3 calendar events across 1 days");
+        assert_eq!(outcome.summary, "imported 3 calendar events across 1 day");
 
         // Content manifest should contain only item-c; item-no-segments is dropped when anything was skipped
         let manifest_path = root.join("imports/imp-1/content_manifest.jsonl");
