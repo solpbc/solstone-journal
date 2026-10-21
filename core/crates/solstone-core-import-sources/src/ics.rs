@@ -629,8 +629,20 @@ fn date_perhaps_time_utc(value: &DatePerhapsTime, zone: &impl TimeZone) -> Optio
         DatePerhapsTime::DateTime(CalendarDateTime::Floating(date_time)) => {
             in_zone(*date_time, zone)
         }
-        DatePerhapsTime::DateTime(date_time) => date_time.try_into_utc(),
+        DatePerhapsTime::DateTime(date_time) => date_time
+            .try_into_utc()
+            .or_else(|| mapped_zone_time(date_time).map(|time| time.with_timezone(&Utc))),
     }
+}
+
+/// A time whose `TZID` the parser cannot read, such as a Windows zone name as
+/// Outlook writes it, read through the same zone table the calendar notes use.
+fn mapped_zone_time(value: &CalendarDateTime) -> Option<DateTime<chrono_tz::Tz>> {
+    let CalendarDateTime::WithTimezone { date_time, tzid } = value else {
+        return None;
+    };
+    let zone = crate::ics_notes::resolve_zone(tzid)?;
+    zone.from_local_datetime(date_time).earliest()
 }
 
 /// A wall time in `zone`; one the clocks skip reads an hour on, as it would on
@@ -655,7 +667,9 @@ fn date_perhaps_time_iso(value: &DatePerhapsTime) -> Option<String> {
         }
         DatePerhapsTime::DateTime(CalendarDateTime::Utc(date_time)) => Some(date_time.to_rfc3339()),
         DatePerhapsTime::DateTime(date_time @ CalendarDateTime::WithTimezone { .. }) => {
-            date_time.try_into_utc()?;
+            if date_time.try_into_utc().is_none() {
+                return mapped_zone_time(date_time).map(|date_time| date_time.to_rfc3339());
+            }
             date_time
                 .clone()
                 .as_dt_with_tz()

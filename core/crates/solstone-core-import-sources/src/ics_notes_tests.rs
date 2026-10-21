@@ -1242,3 +1242,42 @@ fn one_event_and_one_day_take_the_singular() {
     );
 }
 
+#[test]
+fn a_windows_zone_gives_the_transcript_its_time_too() {
+    let pacific = "
+        UID:pacific
+        SUMMARY:pacific call
+        DTSTART;TZID=Pacific Standard Time:20261022T090000
+        DTEND;TZID=Pacific Standard Time:20261022T100000
+        LAST-MODIFIED:20261019T154200Z
+    ";
+    let tokyo = "
+        UID:tokyo
+        SUMMARY:tokyo call
+        DTSTART;TZID=Tokyo Standard Time:20261023T090000
+        DTEND;TZID=Tokyo Standard Time:20261023T093000
+        LAST-MODIFIED:20261019T160000Z
+    ";
+    let rendered = render(&calendar(None, &[pacific, tokyo]), DENVER, &october());
+    let transcript = |title: &str| {
+        rendered
+            .files
+            .iter()
+            .find(|file| !file.calendar && file.contents.contains(title))
+            .unwrap()
+            .contents
+            .clone()
+    };
+    // 09:00 in Los Angeles is 10:00 in Denver; 09:00 in Tokyo is 18:00 the
+    // day before.
+    let pacific = transcript("pacific call");
+    assert!(
+        pacific.contains("2026-10-22 10:00 AM") && pacific.contains("(60 min)"),
+        "{pacific}"
+    );
+    let tokyo = transcript("tokyo call");
+    assert!(
+        tokyo.contains("2026-10-22 06:00 PM") && tokyo.contains("(30 min)"),
+        "{tokyo}"
+    );
+}
