@@ -139,7 +139,10 @@ fn source_inputs(repo: &Path, files: &OnnxArm64Files) -> Result<InspectedInputs,
         let mirror = source::inspect_onnx_windows_mirror_archive(repo, &mirror)
             .map_err(|e| e.to_string())?;
         let mut notices = super::windows_inputs::onnx_source_notices(&src)?;
-        let patch = read_bounded(&repo.join(SOURCE_PATCH), 16 * 1024)?;
+        let patch = read_bounded(
+            &repo.join(SOURCE_PATCH.replace('/', std::path::MAIN_SEPARATOR_STR)),
+            16 * 1024,
+        )?;
         let patch = exact(
             &patch,
             "patches/onnxruntime-arm64-fp16-activation.patch",
