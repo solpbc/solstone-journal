@@ -51,12 +51,14 @@ pub fn router(journal_root: PathBuf, shared_shell: fn() -> Response) -> Router {
         .route("/app/map/places", get(day_shell_static))
         .route("/app/map/place/{id}", get(place_shell))
         .route("/app/map/week/{day}", get(week_shell))
+        .route("/app/map/month/{month}", get(month_shell))
         .route("/app/map/api/places", get(places::list))
         .route(
             "/app/map/api/place/{id}",
             get(places::show).post(places::edit),
         )
         .route("/app/map/api/week/{day}", get(places::week))
+        .route("/app/map/api/month/{month}", get(places::month))
         .route("/app/map/api/accuracy", get(accuracy::get))
         .route("/app/map/api/accuracy/download", post(accuracy::download))
         .route("/app/map/api/accuracy/remove", post(accuracy::remove))
@@ -104,6 +106,22 @@ pub(crate) fn invalid_day() -> Response {
         "that day couldn't be used.",
         "Day not found",
         StatusCode::NOT_FOUND,
+    )
+    .into_response()
+}
+
+pub(crate) fn valid_month(month: &str) -> bool {
+    month.len() == 6
+        && month.bytes().all(|byte| byte.is_ascii_digit())
+        && chrono::NaiveDate::parse_from_str(&format!("{month}01"), "%Y%m%d").is_ok()
+}
+
+pub(crate) fn invalid_month(status: StatusCode) -> Response {
+    error_envelope(
+        "invalid_month",
+        "that month couldn't be used.",
+        "Month must be YYYYMM",
+        status,
     )
     .into_response()
 }
@@ -168,6 +186,16 @@ async fn week_shell(
     shell(&state)
 }
 
+async fn month_shell(
+    State(state): State<Arc<AppState>>,
+    RoutePath(month): RoutePath<String>,
+) -> Response {
+    if !valid_month(&month) {
+        return invalid_month(StatusCode::NOT_FOUND);
+    }
+    shell(&state)
+}
+
 async fn day_shell(
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
@@ -206,17 +234,8 @@ async fn month_stats(
     State(state): State<Arc<AppState>>,
     RoutePath(month): RoutePath<String>,
 ) -> Response {
-    if month.len() != 6
-        || !month.bytes().all(|byte| byte.is_ascii_digit())
-        || chrono::NaiveDate::parse_from_str(&format!("{month}01"), "%Y%m%d").is_err()
-    {
-        return error_envelope(
-            "invalid_month",
-            "that month couldn't be used.",
-            "Month must be YYYYMM",
-            StatusCode::BAD_REQUEST,
-        )
-        .into_response();
+    if !valid_month(&month) {
+        return invalid_month(StatusCode::BAD_REQUEST);
     }
     let journal_root = state.journal_root.clone();
     spawn_blocking_response(OwnerReadRole::MapMonthStats, move || {
@@ -538,7 +557,7 @@ fn boundary_json(boundary: &Boundary) -> Value {
     })
 }
 
-fn town_json(town: &TownPoint) -> Value {
+pub(crate) fn town_json(town: &TownPoint) -> Value {
     json!({"name": town.name, "lat": round(town.latitude), "lon": round(town.longitude), "population": town.population})
 }
 
