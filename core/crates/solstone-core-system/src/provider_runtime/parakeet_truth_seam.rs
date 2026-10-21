@@ -668,7 +668,9 @@ mod windows_stt_selection_tests {
             ("linux", "amd64", Some(4 * GIB)),
             ("linux", "arm64", Some(4 * GIB)),
             ("windows", "x86_64", Some(4 * GIB)),
-            ("windows", "aarch64", None),
+            ("windows", "aarch64", Some(4 * GIB)),
+            ("windows", "armv7l", None),
+            ("windows", "arm64ec", None),
             ("darwin", "x86_64", None),
             ("linux", "armv7l", None),
             ("unknown", "x86_64", None),
@@ -677,45 +679,48 @@ mod windows_stt_selection_tests {
             assert_eq!(local_stt_backend(os, arch), floor.map(|_| "parakeet"));
             if floor == Some(0) || floor.is_none() {
                 assert!(!parakeet_platform_can_host(os, arch), "{os}/{arch}");
+            } else {
+                assert!(parakeet_platform_can_host(os, arch), "{os}/{arch}");
             }
         }
     }
 
     #[test]
     fn windows_default_latch_uses_cpu_floor_and_preserves_memory_refusal() {
-        let input = ParakeetAdmissionInput {
-            platform: "windows".to_owned(),
-            machine: "x86_64".to_owned(),
-            backend: None,
-            local_backend: local_stt_backend("windows", "x86_64").map(ToOwned::to_owned),
-            floor_bytes: platform_floor_bytes("windows", "x86_64"),
-            confidential_lane_active: false,
-            confidential_audio_enabled: false,
-        };
-        assert_eq!(input.local_backend.as_deref(), Some("parakeet"));
-        assert_eq!(input.floor_bytes, Some(4 * GIB));
-        assert_eq!(local_stt_backend("windows", "aarch64"), None);
-        for (available, desired, blocked) in [
-            (Some(4 * GIB), true, false),
-            (Some(4 * GIB - 1), false, true),
-            (Some(0), false, true),
-            (None, false, true),
-        ] {
-            let journal = tempfile::tempdir().unwrap();
-            let latch =
-                parakeet_stt_admission_latch(journal.path(), &input, &|| available).unwrap();
-            assert_eq!((latch.desired, latch.blocked), (desired, blocked));
-        }
-        for backend in ["parakeet", "parakeet-cpp"] {
-            let journal = tempfile::tempdir().unwrap();
-            let mut explicit = input.clone();
-            explicit.backend = Some(backend.to_owned());
-            let latch = parakeet_stt_admission_latch(journal.path(), &explicit, &|| {
-                panic!("explicit backend must preserve the existing memory-read bypass")
-            })
-            .unwrap();
-            assert!(latch.desired);
-            assert!(!latch.blocked);
+        for arch in ["x86_64", "aarch64"] {
+            let input = ParakeetAdmissionInput {
+                platform: "windows".to_owned(),
+                machine: arch.to_owned(),
+                backend: None,
+                local_backend: local_stt_backend("windows", arch).map(ToOwned::to_owned),
+                floor_bytes: platform_floor_bytes("windows", arch),
+                confidential_lane_active: false,
+                confidential_audio_enabled: false,
+            };
+            assert_eq!(input.local_backend.as_deref(), Some("parakeet"));
+            assert_eq!(input.floor_bytes, Some(4 * GIB));
+            for (available, desired, blocked) in [
+                (Some(4 * GIB), true, false),
+                (Some(4 * GIB - 1), false, true),
+                (Some(0), false, true),
+                (None, false, true),
+            ] {
+                let journal = tempfile::tempdir().unwrap();
+                let latch =
+                    parakeet_stt_admission_latch(journal.path(), &input, &|| available).unwrap();
+                assert_eq!((latch.desired, latch.blocked), (desired, blocked));
+            }
+            for backend in ["parakeet", "parakeet-cpp"] {
+                let journal = tempfile::tempdir().unwrap();
+                let mut explicit = input.clone();
+                explicit.backend = Some(backend.to_owned());
+                let latch = parakeet_stt_admission_latch(journal.path(), &explicit, &|| {
+                    panic!("explicit backend must preserve the existing memory-read bypass")
+                })
+                .unwrap();
+                assert!(latch.desired);
+                assert!(!latch.blocked);
+            }
         }
     }
 }
