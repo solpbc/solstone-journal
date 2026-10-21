@@ -640,6 +640,40 @@ mod tests {
                 bytes: b"fixture runtime".to_vec(),
             }],
         };
+
+        // The committed inventory does not ship the bundle on Windows, so a
+        // prepared bundle is an undeclared input and its absence is complete.
+        assert!(
+            collect_plan_with_screen_ocr(
+                repo,
+                &fixture_inventory,
+                &inventory,
+                &products,
+                &native,
+                &[],
+                Some(&bundle),
+            )
+            .is_err()
+        );
+        assert!(
+            collect_plan_with_screen_ocr(
+                repo,
+                &fixture_inventory,
+                &inventory,
+                &products,
+                &native,
+                &[],
+                None,
+            )
+            .unwrap()
+            .is_empty()
+        );
+
+        for entry in &mut inventory.entry {
+            if let Entry::ScreenOcr { targets, .. } = entry {
+                targets.push(WINDOWS_PAYLOAD_TARGET.into());
+            }
+        }
         let plan = collect_plan_with_screen_ocr(
             repo,
             &fixture_inventory,

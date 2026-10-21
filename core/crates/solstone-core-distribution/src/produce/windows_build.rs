@@ -29,7 +29,8 @@ pub struct WindowsCargoEvidence {
     pub ffmpeg_run_id: String,
     pub ffmpeg_source_sha256: String,
     pub files: Vec<WindowsCargoOutput>,
-    pub screen_ocr_helper: ScreenOcrCargoEvidence,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen_ocr_helper: Option<ScreenOcrCargoEvidence>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -158,18 +159,25 @@ pub fn build_windows_product(
     let text = std::str::from_utf8(&stdout).map_err(|e| format!("Cargo JSON is not UTF-8: {e}"))?;
     require_finished_cargo(text)?;
     let mut artifacts = super::bind_cargo_json(text, TRIPLE).map_err(|e| e.to_string())?;
-    let screen_ocr = build_screen_ocr_helper(checkout, &target_dir, log_directory, &epoch)?;
-    let screen_ocr_id = ArtifactId {
-        package: crate::screen_ocr::HELPER_PACKAGE.into(),
-        bin: crate::screen_ocr::HELPER_BIN.into(),
-        triple: TRIPLE.into(),
-    };
-    artifacts.insert(screen_ocr_id.clone(), screen_ocr.path.clone());
-    if capture_source(checkout)? != source {
-        return Err(
-            "product source or Cargo.lock changed during independent helper compilation".into(),
+    let screen_ocr = if screen_ocr_helper_selected(inventory) {
+        let helper = build_screen_ocr_helper(checkout, &target_dir, log_directory, &epoch)?;
+        artifacts.insert(
+            ArtifactId {
+                package: crate::screen_ocr::HELPER_PACKAGE.into(),
+                bin: crate::screen_ocr::HELPER_BIN.into(),
+                triple: TRIPLE.into(),
+            },
+            helper.path.clone(),
         );
-    }
+        if capture_source(checkout)? != source {
+            return Err(
+                "product source or Cargo.lock changed during independent helper compilation".into(),
+            );
+        }
+        Some(helper)
+    } else {
+        None
+    };
     crate::select::refuse_wrong_triple(
         inventory,
         crate::windows_payload::WINDOWS_PAYLOAD_TARGET,
@@ -221,7 +229,10 @@ pub fn build_windows_product(
         }
         let data = read_bounded(&path, PE_LIMIT)?;
         if bin.package == crate::screen_ocr::HELPER_PACKAGE
-            && sha256_hex(&data) != screen_ocr.evidence.artifact_sha256
+            && screen_ocr
+                .as_ref()
+                .map(|helper| &helper.evidence.artifact_sha256)
+                != Some(&sha256_hex(&data))
         {
             return Err("independent screen OCR helper changed after its build receipt".into());
         }
@@ -287,7 +298,7 @@ pub fn build_windows_product(
         ffmpeg_run_id,
         ffmpeg_source_sha256,
         files,
-        screen_ocr_helper: screen_ocr.evidence,
+        screen_ocr_helper: screen_ocr.map(|helper| helper.evidence),
     };
     let evidence_bytes = serde_json::to_vec_pretty(&evidence).map_err(|e| e.to_string())?;
     create_log(&log_directory.join("cargo-evidence.json"))?
@@ -298,6 +309,21 @@ pub fn build_windows_product(
         evidence_bytes,
         artifacts,
         bytes,
+    })
+}
+
+/// Whether the inventory ships the independent screen OCR helper on Windows.
+/// The helper has its own Cargo lock, so it is compiled only when selected.
+fn screen_ocr_helper_selected(inventory: &Inventory) -> bool {
+    inventory.entry.iter().any(|entry| {
+        matches!(
+            entry,
+            Entry::Bin { package, targets, .. }
+                if package == crate::screen_ocr::HELPER_PACKAGE
+                    && targets
+                        .iter()
+                        .any(|t| t == crate::windows_payload::WINDOWS_PAYLOAD_TARGET)
+        )
     })
 }
 
@@ -854,5 +880,25 @@ mod tests {
         assert!(helper.iter().any(|argument| argument == "--locked"));
         assert!(helper.windows(2).any(|pair| pair == ["--target", TRIPLE]));
         assert!(!helper.iter().any(|argument| argument == "core/Cargo.toml"));
+    }
+
+    #[test]
+    fn windows_builds_the_screen_ocr_helper_only_when_the_inventory_ships_it() {
+        let inventory_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../distribution/inventory.toml")
+            .canonicalize()
+            .unwrap();
+        let mut inventory = crate::inventory::load_inventory(&inventory_path).unwrap();
+        assert!(!screen_ocr_helper_selected(&inventory));
+        for entry in &mut inventory.entry {
+            if let Entry::Bin {
+                package, targets, ..
+            } = entry
+                && package == crate::screen_ocr::HELPER_PACKAGE
+            {
+                targets.push(crate::windows_payload::WINDOWS_PAYLOAD_TARGET.into());
+            }
+        }
+        assert!(screen_ocr_helper_selected(&inventory));
     }
 }
