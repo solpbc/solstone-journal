@@ -61,6 +61,7 @@ mod restic_rclone_stage;
 pub mod restic_windows;
 pub mod restic_windows_inputs;
 pub mod rfdetr_windows;
+pub mod rfdetr_windows_arm64;
 pub mod rfdetr_windows_source;
 pub mod rpm;
 pub mod screen_ocr;

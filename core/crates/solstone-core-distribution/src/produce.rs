@@ -51,6 +51,7 @@ pub mod windows_inputs;
 pub mod windows_openmp;
 pub mod windows_parakeet_arm64;
 pub mod windows_restic;
+pub mod windows_rfdetr_arm64;
 pub mod windows_stage;
 
 pub const ZIG_OVERRIDE: &str = "SOLSTONE_ZIG";
