@@ -49,6 +49,7 @@ getrandom.workspace = true
 zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+minisign.workspace = true
 tempfile = "3.24.0"
 ureq = { workspace = true }
 velopack = { workspace = true, features = ["public-utils"] }

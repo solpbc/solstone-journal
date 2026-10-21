@@ -109,6 +109,15 @@ struct SignedFeed {
 }
 
 impl UpdateSource for SignedFeed {
+    fn open_admitted_release_entry(
+        &self,
+        asset: &VelopackAsset,
+        local_file: &Path,
+    ) -> Result<Option<std::fs::File>, Error> {
+        let sidecar = local_file.with_file_name(format!("{}.minisig", asset.FileName));
+        package_admission::admit_existing_package(local_file, &sidecar, asset).map(Some)
+    }
+
     fn get_release_feed(
         &self,
         channel: &str,
@@ -201,6 +210,7 @@ fn build_manager(feed: Option<&str>) -> (Option<UpdateManager>, Option<PathBuf>)
     keep_staging_id_empty();
     let options = UpdateOptions {
         ExplicitChannel: Some(CHANNEL.to_owned()),
+        MaximumDeltasBeforeFallback: -1,
         ..Default::default()
     };
     let packages_dir = match velopack::locator::auto_locate_app_manifest(
@@ -267,6 +277,7 @@ impl Updater {
         let packages_dir = locator.PackagesDir.clone();
         let options = UpdateOptions {
             ExplicitChannel: Some(CHANNEL.to_owned()),
+            MaximumDeltasBeforeFallback: -1,
             ..Default::default()
         };
         let source = match feed {
@@ -765,81 +776,40 @@ mod tests {
         };
 
         struct TestKeys {
-            primary_pub: PathBuf,
-            primary_sec: PathBuf,
-            wrong_sec: PathBuf,
+            _pin_dir: tempfile::TempDir,
+            primary_sec: minisign::SecretKey,
+            wrong_sec: minisign::SecretKey,
         }
 
         static TEST_KEYS: OnceLock<TestKeys> = OnceLock::new();
 
         fn get_test_keys() -> &'static TestKeys {
             TEST_KEYS.get_or_init(|| {
-                let temp = tempfile::Builder::new()
-                    .prefix("keys")
-                    .tempdir()
-                    .unwrap()
-                    .keep();
-                let primary_pub = temp.join("primary.pub");
-                let primary_sec = temp.join("primary.key");
-                let status = std::process::Command::new("minisign")
-                    .args([
-                        "-G",
-                        "-W",
-                        "-p",
-                        primary_pub.to_str().unwrap(),
-                        "-s",
-                        primary_sec.to_str().unwrap(),
-                    ])
-                    .status()
-                    .expect("minisign generate primary key");
-                assert!(status.success());
-
-                solstone_core_installed_payload::install_test_fixture_pin(&primary_pub)
-                    .expect("install test fixture pin");
-
-                let wrong_pub = temp.join("wrong.pub");
-                let wrong_sec = temp.join("wrong.key");
-                let status2 = std::process::Command::new("minisign")
-                    .args([
-                        "-G",
-                        "-W",
-                        "-p",
-                        wrong_pub.to_str().unwrap(),
-                        "-s",
-                        wrong_sec.to_str().unwrap(),
-                    ])
-                    .status()
-                    .expect("minisign generate wrong key");
-                assert!(status2.success());
-
+                let pin_dir = tempfile::tempdir().unwrap();
+                let primary = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+                let public_file = pin_dir.path().join("fixture.pub");
+                std::fs::write(&public_file, primary.pk.to_box().unwrap().to_string()).unwrap();
+                solstone_core_installed_payload::install_test_fixture_pin(&public_file).unwrap();
+                let wrong = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
                 TestKeys {
-                    primary_pub,
-                    primary_sec,
-                    wrong_sec,
+                    _pin_dir: pin_dir,
+                    primary_sec: primary.sk,
+                    wrong_sec: wrong.sk,
                 }
             })
         }
 
-        fn sign_with_key(key_path: &Path, data: &[u8]) -> Vec<u8> {
-            let temp = tempfile::Builder::new().prefix("msign").tempdir().unwrap();
-            let data_file = temp.path().join("data.bin");
-            let sig_file = temp.path().join("data.bin.minisig");
-            std::fs::write(&data_file, data).unwrap();
-            let status = std::process::Command::new("minisign")
-                .args([
-                    "-S",
-                    "-W",
-                    "-s",
-                    key_path.to_str().unwrap(),
-                    "-m",
-                    data_file.to_str().unwrap(),
-                    "-x",
-                    sig_file.to_str().unwrap(),
-                ])
-                .status()
-                .expect("minisign sign");
-            assert!(status.success());
-            std::fs::read(sig_file).unwrap()
+        fn sign_with_key(key: &minisign::SecretKey, data: &[u8]) -> Vec<u8> {
+            minisign::sign(
+                None,
+                key,
+                Cursor::new(data),
+                Some("synthetic update fixture"),
+                None,
+            )
+            .unwrap()
+            .to_string()
+            .into_bytes()
         }
 
         fn make_valid_nupkg(id: &str, version: &str, main_exe: &str) -> Vec<u8> {
@@ -924,7 +894,7 @@ fn main() {
 <metadata>
   <id>SolstoneJournal</id>
   <version>1.0.0</version>
-  <mainExe>journal-app.exe</mainExe>
+  <mainExe>bin/journal-app.exe</mainExe>
 </metadata>
 </package>"#,
             )
@@ -959,7 +929,7 @@ fn main() {
         #[test]
         fn a_sibling_package_streams_to_disk_and_reports_progress() {
             let keys = get_test_keys();
-            let pkg_bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "journal-app.exe");
+            let pkg_bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
             let sig_bytes = sign_with_key(&keys.primary_sec, &pkg_bytes);
 
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1037,7 +1007,7 @@ fn main() {
         #[test]
         fn rejections_for_unsigned_wrong_key_tampered_and_mismatch() {
             let keys = get_test_keys();
-            let pkg_bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "journal-app.exe");
+            let pkg_bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
             let valid_sig = sign_with_key(&keys.primary_sec, &pkg_bytes);
             let wrong_sig = sign_with_key(&keys.wrong_sec, &pkg_bytes);
 
@@ -1080,7 +1050,7 @@ fn main() {
             assert!(feed.download_release_entry(&asset, &dest, None).is_err());
 
             // 5. Signed id mismatch (id "Other" signed with primary key)
-            let other_id_pkg = make_valid_nupkg("Other", "2.0.28", "journal-app.exe");
+            let other_id_pkg = make_valid_nupkg("Other", "2.0.28", "bin/journal-app.exe");
             let other_id_sig = sign_with_key(&keys.primary_sec, &other_id_pkg);
             let other_asset = VelopackAsset {
                 PackageId: "SolstoneJournal".into(),
@@ -1099,7 +1069,8 @@ fn main() {
             );
 
             // 6. Signed version mismatch (version "2.0.29" vs asset "2.0.28")
-            let other_ver_pkg = make_valid_nupkg("SolstoneJournal", "2.0.29", "journal-app.exe");
+            let other_ver_pkg =
+                make_valid_nupkg("SolstoneJournal", "2.0.29", "bin/journal-app.exe");
             let other_ver_sig = sign_with_key(&keys.primary_sec, &other_ver_pkg);
             std::fs::write(dir.join("pkg.nupkg"), &other_ver_pkg).unwrap();
             std::fs::write(dir.join("pkg.nupkg.minisig"), &other_ver_sig).unwrap();
@@ -1118,7 +1089,7 @@ fn main() {
             let dest = temp.path().join("dest.partial");
 
             // Two nuspec entries
-            let nuspec1 = r#"<?xml version="1.0"?><package><metadata><id>SolstoneJournal</id><version>2.0.28</version><channel>win</channel><os>win</os><rid>win-x64</rid><machineArchitecture>x64</machineArchitecture><mainExe>journal-app.exe</mainExe></metadata></package>"#;
+            let nuspec1 = r#"<?xml version="1.0"?><package><metadata><id>SolstoneJournal</id><version>2.0.28</version><channel>win</channel><os>win</os><rid>win-x64</rid><machineArchitecture>x64</machineArchitecture><mainExe>bin/journal-app.exe</mainExe></metadata></package>"#;
             let mut buf = Vec::new();
             let mut zip = ZipWriter::new(Cursor::new(&mut buf));
             zip.start_file("A.nuspec", SimpleFileOptions::default())
@@ -1144,10 +1115,224 @@ fn main() {
             assert!(feed.download_release_entry(&asset, &dest, None).is_err());
         }
 
+        struct AfterDownload {
+            source: SignedFeed,
+            corrupt: bool,
+        }
+
+        impl UpdateSource for AfterDownload {
+            fn get_release_feed(
+                &self,
+                channel: &str,
+                app: &velopack::bundle::Manifest,
+                staged: &str,
+            ) -> Result<velopack::VelopackAssetFeed, velopack::Error> {
+                self.source.get_release_feed(channel, app, staged)
+            }
+            fn download_release_entry(
+                &self,
+                asset: &VelopackAsset,
+                path: &Path,
+                progress: Option<std::sync::mpsc::Sender<i16>>,
+            ) -> Result<(), velopack::Error> {
+                self.source.download_release_entry(asset, path, progress)?;
+                if self.corrupt {
+                    let mut bytes = std::fs::read(path)?;
+                    bytes[10] ^= 1;
+                    std::fs::write(path, bytes)?;
+                }
+                Ok(())
+            }
+            fn open_admitted_release_entry(
+                &self,
+                asset: &VelopackAsset,
+                path: &Path,
+            ) -> Result<Option<std::fs::File>, velopack::Error> {
+                let guard = self.source.open_admitted_release_entry(asset, path)?;
+                #[cfg(windows)]
+                assert!(
+                    std::fs::OpenOptions::new().write(true).open(path).is_err(),
+                    "admitted file must deny writes through extraction"
+                );
+                Ok(guard)
+            }
+        }
+
+        #[test]
+        fn manager_reauthenticates_before_helper_extraction() {
+            let keys = get_test_keys();
+            for corrupt in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let locator = create_test_locator(temp.path());
+                let helper = std::fs::read(&locator.UpdateExePath).unwrap();
+                let dir = temp.path().join("feed");
+                std::fs::create_dir(&dir).unwrap();
+                let bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
+                let name = "SolstoneJournal-2.0.28-full.nupkg";
+                std::fs::write(dir.join(name), &bytes).unwrap();
+                std::fs::write(
+                    dir.join(format!("{name}.minisig")),
+                    sign_with_key(&keys.primary_sec, &bytes),
+                )
+                .unwrap();
+                let mut final_bytes = bytes.clone();
+                if corrupt {
+                    final_bytes[10] ^= 1;
+                }
+                let asset = VelopackAsset {
+                    PackageId: "SolstoneJournal".into(),
+                    Version: "2.0.28".into(),
+                    Type: "Full".into(),
+                    FileName: name.into(),
+                    Size: bytes.len() as u64,
+                    SHA256: sha256_hex(&final_bytes),
+                    ..Default::default()
+                };
+                let source = AfterDownload {
+                    source: SignedFeed {
+                        store: FeedStore::Dir(dir),
+                    },
+                    corrupt,
+                };
+                let manager =
+                    velopack::UpdateManager::new(source, None, Some(locator.clone())).unwrap();
+                let info = velopack::UpdateInfo {
+                    TargetFullRelease: asset,
+                    BaseRelease: None,
+                    DeltasToTarget: vec![],
+                    IsDowngrade: false,
+                };
+                assert_eq!(manager.download_updates(&info, None).is_err(), corrupt);
+                assert_eq!(std::fs::read(&locator.UpdateExePath).unwrap(), helper);
+            }
+        }
+
+        #[test]
+        fn partial_links_and_sidecar_failure_preserve_prior_pending() {
+            let keys = get_test_keys();
+            let temp = tempfile::tempdir().unwrap();
+            let locator = create_test_locator(temp.path());
+            let dir = temp.path().join("feed");
+            std::fs::create_dir(&dir).unwrap();
+            let bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
+            let sig = sign_with_key(&keys.primary_sec, &bytes);
+            let name = "SolstoneJournal-2.0.28-full.nupkg";
+            std::fs::write(dir.join(name), &bytes).unwrap();
+            std::fs::write(dir.join(format!("{name}.minisig")), &sig).unwrap();
+            let asset = VelopackAsset {
+                PackageId: "SolstoneJournal".into(),
+                Version: "2.0.28".into(),
+                Type: "Full".into(),
+                FileName: name.into(),
+                Size: bytes.len() as u64,
+                SHA256: sha256_hex(&bytes),
+                ..Default::default()
+            };
+            let prior = locator.PackagesDir.join("SolstoneJournal-prior-full.nupkg");
+            let prior_sig = prior.with_file_name("SolstoneJournal-prior-full.nupkg.minisig");
+            std::fs::write(&prior, &bytes).unwrap();
+            std::fs::write(&prior_sig, &sig).unwrap();
+            let helper = std::fs::read(&locator.UpdateExePath).unwrap();
+            let partial = locator.PackagesDir.join(format!("{name}.partial"));
+            let sidecar_partial = locator.PackagesDir.join(format!("{name}.minisig.partial"));
+            let feed = SignedFeed {
+                store: FeedStore::Dir(dir.clone()),
+            };
+            for path in [&partial, &sidecar_partial] {
+                std::fs::hard_link(&locator.UpdateExePath, path).unwrap();
+                assert!(feed.download_release_entry(&asset, &partial, None).is_err());
+                assert_eq!(std::fs::read(&locator.UpdateExePath).unwrap(), helper);
+                assert!(!path.exists());
+            }
+            #[cfg(unix)]
+            {
+                std::os::unix::fs::symlink(&locator.UpdateExePath, &partial).unwrap();
+                assert!(feed.download_release_entry(&asset, &partial, None).is_err());
+                assert_eq!(std::fs::read(&locator.UpdateExePath).unwrap(), helper);
+            }
+            let blocked = locator.PackagesDir.join(format!("{name}.minisig"));
+            std::fs::create_dir(&blocked).unwrap();
+            let manager = velopack::UpdateManager::new(feed, None, Some(locator.clone())).unwrap();
+            let info = velopack::UpdateInfo {
+                TargetFullRelease: asset.clone(),
+                BaseRelease: None,
+                DeltasToTarget: vec![],
+                IsDowngrade: false,
+            };
+            assert!(manager.download_updates(&info, None).is_err());
+            assert!(
+                super::super::package_admission::admit_existing_package(&prior, &prior_sig, &asset)
+                    .is_ok()
+            );
+            assert_eq!(std::fs::read(&locator.UpdateExePath).unwrap(), helper);
+            std::fs::remove_dir(blocked).unwrap();
+            assert!(manager.download_updates(&info, None).is_ok());
+            assert!(
+                super::super::package_admission::admit_existing_package(
+                    &locator.PackagesDir.join(name),
+                    &locator.PackagesDir.join(format!("{name}.minisig")),
+                    &asset
+                )
+                .is_ok()
+            );
+        }
+
+        #[test]
+        fn manager_check_skips_unsigned_cached_delta_base() {
+            let temp = tempfile::tempdir().unwrap();
+            let locator = create_test_locator(temp.path());
+            let dir = temp.path().join("feed");
+            std::fs::create_dir(&dir).unwrap();
+            let cache = make_valid_nupkg("SolstoneJournal", "2.0.27", "bin/journal-app.exe");
+            std::fs::write(
+                locator
+                    .PackagesDir
+                    .join("SolstoneJournal-2.0.27-full.nupkg"),
+                cache,
+            )
+            .unwrap();
+            let full = VelopackAsset {
+                PackageId: "SolstoneJournal".into(),
+                Version: "2.0.28".into(),
+                Type: "Full".into(),
+                FileName: "SolstoneJournal-2.0.28-full.nupkg".into(),
+                ..Default::default()
+            };
+            let delta = VelopackAsset {
+                Type: "Delta".into(),
+                FileName: "SolstoneJournal-2.0.28-delta.nupkg".into(),
+                ..full.clone()
+            };
+            std::fs::write(
+                dir.join("releases.win.json"),
+                serde_json::to_vec(&serde_json::json!({"Assets": [full, delta]})).unwrap(),
+            )
+            .unwrap();
+            let source = SignedFeed {
+                store: FeedStore::Dir(dir),
+            };
+            let manager = velopack::UpdateManager::new(
+                source,
+                Some(velopack::UpdateOptions {
+                    ExplicitChannel: Some("win".into()),
+                    MaximumDeltasBeforeFallback: -1,
+                    ..Default::default()
+                }),
+                Some(locator),
+            )
+            .unwrap();
+            let velopack::UpdateCheck::UpdateAvailable(info) = manager.check_for_updates().unwrap()
+            else {
+                panic!("new release expected")
+            };
+            assert!(info.BaseRelease.is_none());
+            assert!(info.DeltasToTarget.is_empty());
+        }
+
         #[test]
         fn directory_feed_signed_admits_unsigned_refuses() {
             let keys = get_test_keys();
-            let pkg_bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "journal-app.exe");
+            let pkg_bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
             let sig_bytes = sign_with_key(&keys.primary_sec, &pkg_bytes);
 
             let temp = tempfile::Builder::new()
@@ -1198,7 +1383,7 @@ fn main() {
         #[test]
         fn cached_bad_final_preflight_and_preservation_of_other() {
             let _keys = get_test_keys();
-            let good_pkg = make_valid_nupkg("SolstoneJournal", "2.0.28", "journal-app.exe");
+            let good_pkg = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
 
             let temp = tempfile::Builder::new().prefix("cached").tempdir().unwrap();
             let locator = create_test_locator(temp.path());
@@ -1294,7 +1479,7 @@ fn main() {
         #[test]
         fn apply_failure_and_spawn_verified_helper_argv_inspection() {
             let keys = get_test_keys();
-            let good_pkg = make_valid_nupkg("SolstoneJournal", "2.0.28", "journal-app.exe");
+            let good_pkg = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
             let good_sig = sign_with_key(&keys.primary_sec, &good_pkg);
 
             let temp = tempfile::Builder::new().prefix("apply").tempdir().unwrap();
@@ -1415,7 +1600,7 @@ fn main() {
         #[test]
         fn delta_rejections_and_plan_clearing() {
             let keys = get_test_keys();
-            let pkg_bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "journal-app.exe");
+            let pkg_bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
             let sig_bytes = sign_with_key(&keys.primary_sec, &pkg_bytes);
 
             let temp = tempfile::Builder::new().prefix("delta").tempdir().unwrap();

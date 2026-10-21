@@ -1,9 +1,9 @@
 {
-  "cargo_lock_sha256": "6f92c8f3a6e6dcc5b9530e1610169036f2d2d2843c95daf41aedd777b8866332",
+  "cargo_lock_sha256": "0d8ddb2daa2632891c293d80d8d329a98084e54a5f4a09dad17ab6b336ae8919",
   "dependency_source_companion": {
-    "bytes": 105290174,
-    "filename": "windows-rust-dependencies-6f92c8f3a6e6dcc5.tar.gz",
-    "sha256": "4ffc08bc15d91399b200756d5bf736eb965aa24215940e791c38af7617f241b0"
+    "bytes": 103066363,
+    "filename": "windows-rust-dependencies-0d8ddb2daa263289-aa03c842b394.tar.gz",
+    "sha256": "532136db9032225e3fc53aead755198309946fe8378d005ecc17bd2dbd52c2db"
   },
   "notice_texts": [
     {
@@ -29713,7 +29713,7 @@
           }
         }
       ],
-      "patched_tree_sha256": "22a25c02972a6c237b0f2673556f7fe7764d6ab15eee4e59b496e90c28128e78",
+      "patched_tree_sha256": "aa03c842b3945b7c7752b7b60a55c89937b467a212b32c5410f783c9271bc881",
       "source": "path+core/vendor/velopack",
       "source_tree_member": "path-dependencies/velopack/",
       "version": "1.2.0",
@@ -29721,13 +29721,13 @@
     }
   ],
   "path_dependency_trees": {
-    "velopack@1.2.0 (path+core/vendor/velopack)": "22a25c02972a6c237b0f2673556f7fe7764d6ab15eee4e59b496e90c28128e78"
+    "velopack@1.2.0 (path+core/vendor/velopack)": "aa03c842b3945b7c7752b7b60a55c89937b467a212b32c5410f783c9271bc881"
   },
   "population": {
     "metadata_feature_scope": "workspace unified; conservative inclusion, not exact PE link graph",
     "notices": "non-dev dependency closure from Windows inventory binary roots in Windows-filtered Cargo metadata",
     "query": "cargo metadata --manifest-path core/Cargo.toml --locked --offline --format-version 1 --filter-platform x86_64-pc-windows-msvc --features solstone-core/journal-mcp-endpoint; inventory roots; follow non-dev dependency edges",
-    "query_utc": "2026-10-21T06:50:09.108021+00:00",
+    "query_utc": "2026-10-21T16:47:44.340203+00:00",
     "shipped_feature_arguments": [
       "--features",
       "solstone-core/journal-mcp-endpoint"

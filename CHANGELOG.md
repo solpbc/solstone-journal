@@ -10,6 +10,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - events in calendar files you import from now on can also be found by the day each one happens, not only the day it was added or last changed. repeating events are listed up to a year after you import them. calendars you imported before aren't listed this way.
 
+### Fixed
+
+- security fix on windows: someone impersonating the update server could supply altered journal software as an update; updates now require a valid sol pbc signature on the complete package.
+
 ## [2.0.53] - 2026-10-21
 
 2.0.53 isn't available on windows. on windows, your journal stays on 2.0.51 and gets these changes, including the windows ones below, in 2.0.54, except recognizing text from your screens.

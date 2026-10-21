@@ -74,6 +74,25 @@ impl fmt::Display for PinnedSignatureError {
 
 impl std::error::Error for PinnedSignatureError {}
 
+// minisign 0.9.1 does not check the decoded comment-signature length before
+// slicing it. Valid base64 with 88 bytes and two padding bytes decodes to 64.
+fn parse_signature_box(text: &str) -> Result<SignatureBox, PinnedSignatureError> {
+    let mut lines = text.lines();
+    let global = lines.nth(3).unwrap_or("").trim();
+    if global.len() != 88 || !global.ends_with("==") || lines.next().is_some() {
+        return Err(PinnedSignatureError::new(
+            PinnedSignatureRefusal::UnparseableSignature,
+            "comment signature must contain exactly 64 bytes",
+        ));
+    }
+    SignatureBox::from_string(text).map_err(|error| {
+        PinnedSignatureError::new(
+            PinnedSignatureRefusal::UnparseableSignature,
+            error.to_string(),
+        )
+    })
+}
+
 /// Verify arbitrary bytes against the pinned Journal release key.
 pub fn verify_pinned_signature(
     signed_bytes: &[u8],
@@ -86,7 +105,7 @@ pub fn verify_pinned_signature(
             format!("{}: {error}", signature_path.display()),
         )
     })?;
-    let signature_box = SignatureBox::from_string(signature_text).map_err(|error| {
+    let signature_box = parse_signature_box(signature_text).map_err(|error| {
         PinnedSignatureError::new(
             PinnedSignatureRefusal::UnparseableSignature,
             format!("{}: {error}", signature_path.display()),
@@ -119,7 +138,7 @@ fn parse_and_validate_prehashed_box(
             format!("{}: {error}", signature_path.display()),
         )
     })?;
-    let signature_box = SignatureBox::from_string(signature_text).map_err(|error| {
+    let signature_box = parse_signature_box(signature_text).map_err(|error| {
         PinnedSignatureError::new(
             PinnedSignatureRefusal::UnparseableSignature,
             format!("{}: {error}", signature_path.display()),
@@ -301,5 +320,37 @@ mod fixture_pin_environment_tests {
     fn an_unset_or_empty_override_adds_nothing() {
         assert!(pin_environment_from(None).is_empty());
         assert!(pin_environment_from(Some(OsString::new())).is_empty());
+    }
+}
+
+#[cfg(all(test, feature = "test-fixture-pin"))]
+mod stock_fixture_tests {
+    use super::*;
+    const PACKAGE: &[u8] = include_bytes!("../tests/fixtures/windows-update/journal-stock.nupkg");
+    const SIGNATURE: &str =
+        include_str!("../tests/fixtures/windows-update/journal-stock.nupkg.minisig");
+
+    #[test]
+    fn stock_minisign_package_and_malformed_comment_signatures() {
+        // The fixture key was generated solely for this synthetic archive and destroyed.
+        // Do not replace the process-wide fixture pin used by payload-adapter tests.
+        let pin = parse_pin(include_str!("../tests/fixtures/windows-update/fixture.pub")).unwrap();
+        let signature =
+            parse_and_validate_prehashed_box(Path::new("fixture.minisig"), SIGNATURE.as_bytes())
+                .unwrap();
+        minisign::verify(&pin, &signature, Cursor::new(PACKAGE), true, false, false).unwrap();
+        for malformed in ["", "AA==", &"A".repeat(92)] {
+            let mut lines: Vec<_> = SIGNATURE.lines().collect();
+            lines[3] = malformed;
+            let text = lines.join("\n") + "\n";
+            let result = std::panic::catch_unwind(|| {
+                parse_and_validate_prehashed_box(Path::new("fixture.minisig"), text.as_bytes())
+            });
+            assert!(
+                result
+                    .expect("malformed signature must refuse without panic")
+                    .is_err()
+            );
+        }
     }
 }

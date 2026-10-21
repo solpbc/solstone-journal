@@ -43,6 +43,7 @@ pub fn path_file_identity(path: &Path) -> Result<FileIdentity, velopack::Error> 
     let file = std::fs::OpenOptions::new()
         .read(true)
         .share_mode(FILE_SHARE_READ)
+        .custom_flags(0x0020_0000) // FILE_FLAG_OPEN_REPARSE_POINT
         .open(path)
         .map_err(|e| {
             velopack::Error::Other(format!(
@@ -91,8 +92,14 @@ pub fn open_regular_file(path: &Path) -> Result<std::fs::File, velopack::Error> 
     let file = std::fs::OpenOptions::new()
         .read(true)
         .share_mode(FILE_SHARE_READ)
+        .custom_flags(0x0020_0000) // FILE_FLAG_OPEN_REPARSE_POINT
         .open(path)
         .map_err(|e| velopack::Error::Other(format!("could not open {}: {e}", path.display())))?;
+    if !file.metadata()?.file_type().is_file() {
+        return Err(velopack::Error::Other(
+            "opened package is not a regular file".into(),
+        ));
+    }
     let handle_id = file_handle_identity(&file)?;
     let path_id = path_file_identity(path)?;
     if handle_id != path_id {
@@ -214,45 +221,83 @@ pub fn parse_and_validate_nuspec<R: Read + Seek>(
     let mut xml_reader = quick_xml::Reader::from_str(&text);
     let mut counts = NuspecCounts::default();
 
+    let mut path = Vec::<String>::new();
     let mut current_tag: Option<String> = None;
+    let mut value = String::new();
+    let identity_tag = |tag: &str| {
+        matches!(
+            tag,
+            "id" | "version" | "channel" | "os" | "rid" | "machineArchitecture" | "mainExe"
+        )
+    };
     loop {
         match xml_reader.read_event() {
             Ok(Event::Start(e)) => {
-                let qname = e.name();
+                if current_tag.is_some() {
+                    return Err(velopack::Error::Other("nested identity element".into()));
+                }
                 let name = xml_reader
                     .decoder()
-                    .decode(qname.as_ref())
-                    .map_err(|e| velopack::Error::Other(format!("xml decode error: {e}")))?;
-                current_tag = Some(name.into_owned());
+                    .decode(e.local_name().as_ref())
+                    .map_err(|e| velopack::Error::Other(format!("xml decode error: {e}")))?
+                    .into_owned();
+                path.push(name.clone());
+                if identity_tag(&name) {
+                    if path.len() != 3 || path[0] != "package" || path[1] != "metadata" {
+                        return Err(velopack::Error::Other(
+                            "identity element outside package metadata".into(),
+                        ));
+                    }
+                    current_tag = Some(name);
+                    value.clear();
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let name = xml_reader
+                    .decoder()
+                    .decode(e.local_name().as_ref())
+                    .map_err(|e| velopack::Error::Other(format!("xml decode error: {e}")))?
+                    .into_owned();
+                if identity_tag(&name) {
+                    return Err(velopack::Error::Other("empty identity element".into()));
+                }
             }
             Ok(Event::End(_)) => {
-                current_tag = None;
+                if let Some(tag) = current_tag.take() {
+                    process_nuspec_tag(&tag, value.trim(), expected_version, &mut counts)?;
+                }
+                path.pop();
             }
-            Ok(Event::Text(e)) => {
-                if let Some(tag) = &current_tag {
-                    let decoded = xml_reader
+            Ok(Event::Text(e)) if current_tag.is_some() => {
+                let decoded = xml_reader
+                    .decoder()
+                    .decode(e.as_ref())
+                    .map_err(|e| velopack::Error::Other(format!("xml decode error: {e}")))?;
+                value.push_str(
+                    &quick_xml::escape::unescape(&decoded)
+                        .map_err(|e| velopack::Error::Other(format!("xml unescape error: {e}")))?,
+                );
+            }
+            Ok(Event::CData(e)) if current_tag.is_some() => {
+                value.push_str(
+                    &xml_reader
                         .decoder()
                         .decode(e.as_ref())
-                        .map_err(|e| velopack::Error::Other(format!("xml decode error: {e}")))?;
-                    let val = quick_xml::escape::unescape(&decoded)
-                        .map_err(|e| velopack::Error::Other(format!("xml unescape error: {e}")))?;
-                    process_nuspec_tag(tag, val.trim(), expected_version, &mut counts)?;
+                        .map_err(|e| velopack::Error::Other(format!("xml decode error: {e}")))?,
+                );
+            }
+            Ok(Event::DocType(_)) => {
+                return Err(velopack::Error::Other(
+                    "DTD is not valid package metadata".into(),
+                ));
+            }
+            Ok(Event::Eof) => {
+                if !path.is_empty() {
+                    return Err(velopack::Error::Other("incomplete package metadata".into()));
                 }
+                break;
             }
-            Ok(Event::CData(e)) => {
-                if let Some(tag) = &current_tag {
-                    let val = xml_reader
-                        .decoder()
-                        .decode(e.as_ref())
-                        .map_err(|e| velopack::Error::Other(format!("xml decode error: {e}")))?;
-                    process_nuspec_tag(tag, val.trim(), expected_version, &mut counts)?;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                log::warn!("xml parsing error: {e}");
-                return Err(velopack::Error::Other(format!("xml parsing error: {e}")));
-            }
+            Err(e) => return Err(velopack::Error::Other(format!("xml parsing error: {e}"))),
             _ => {}
         }
     }
@@ -344,7 +389,7 @@ fn process_nuspec_tag(
         }
         "mainExe" => {
             counts.main_exe += 1;
-            if counts.main_exe > 1 || val_trimmed != "journal-app.exe" {
+            if counts.main_exe > 1 || val_trimmed != "bin/journal-app.exe" {
                 log::warn!("invalid or duplicate mainExe: {val_trimmed}");
                 return Err(velopack::Error::Other(
                     "invalid or duplicate mainExe".into(),
@@ -483,7 +528,10 @@ pub fn download_http_package(
     let sidecar_final = parent.join(&sidecar_name);
 
     let stream_result = (|| -> Result<(), velopack::Error> {
-        let mut file = std::fs::File::create(local_file)?;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(local_file)?;
         let mut buffer = [0_u8; 64 * 1024];
         loop {
             use std::io::Write;
@@ -510,6 +558,10 @@ pub fn download_http_package(
             let _ = sender.send(100);
         }
 
+        // Windows admission opens with FILE_SHARE_READ, so close the writer first.
+        file.sync_all()?;
+        drop(file);
+
         let mut regular_file = open_regular_file(local_file)?;
         solstone_core_installed_payload::verify_pinned_signature_reader(
             &mut regular_file,
@@ -527,7 +579,15 @@ pub fn download_http_package(
 
         parse_and_validate_nuspec(&mut regular_file, &asset.Version)?;
 
-        std::fs::write(&sidecar_partial, &sidecar_bytes)?;
+        {
+            use std::io::Write;
+            let mut sidecar = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&sidecar_partial)?;
+            sidecar.write_all(&sidecar_bytes)?;
+            sidecar.sync_all()?;
+        }
         std::fs::rename(&sidecar_partial, &sidecar_final)?;
         Ok(())
     })();
@@ -605,7 +665,10 @@ pub fn download_dir_package(
     let sidecar_final = parent.join(&sidecar_name);
 
     let copy_result = (|| -> Result<(), velopack::Error> {
-        let mut dest_file = std::fs::File::create(local_file)?;
+        let mut dest_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(local_file)?;
         let mut buffer = [0_u8; 64 * 1024];
         loop {
             use std::io::Write;
@@ -632,6 +695,10 @@ pub fn download_dir_package(
             let _ = sender.send(100);
         }
 
+        // Windows admission opens with FILE_SHARE_READ, so close the writer first.
+        dest_file.sync_all()?;
+        drop(dest_file);
+
         let mut regular_dest = open_regular_file(local_file)?;
         solstone_core_installed_payload::verify_pinned_signature_reader(
             &mut regular_dest,
@@ -649,7 +716,15 @@ pub fn download_dir_package(
 
         parse_and_validate_nuspec(&mut regular_dest, &asset.Version)?;
 
-        std::fs::write(&sidecar_partial, &sidecar_bytes)?;
+        {
+            use std::io::Write;
+            let mut sidecar = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&sidecar_partial)?;
+            sidecar.write_all(&sidecar_bytes)?;
+            sidecar.sync_all()?;
+        }
         std::fs::rename(&sidecar_partial, &sidecar_final)?;
         Ok(())
     })();
@@ -671,6 +746,30 @@ mod tests {
 
     use super::{asset_name_is_plain, check_sidecar_format, parse_and_validate_nuspec};
 
+    #[test]
+    fn production_metadata_and_namespace_duplicates() {
+        let stock = include_bytes!(
+            "../../solstone-core-installed-payload/tests/fixtures/windows-update/journal-stock.nupkg"
+        );
+        parse_and_validate_nuspec(Cursor::new(stock), "2.0.49").unwrap();
+        let mut archive = zip::ZipArchive::new(Cursor::new(stock)).unwrap();
+        let mut metadata = String::new();
+        std::io::Read::read_to_string(
+            &mut archive.by_name("SolstoneJournal.nuspec").unwrap(),
+            &mut metadata,
+        )
+        .unwrap();
+        for extra in [
+            "<foo:mainExe xmlns:foo=\"urn:test\">other.exe</foo:mainExe>",
+            "<mainExe/>",
+            "<foo:version xmlns:foo=\"urn:test\">2.0.50</foo:version>",
+        ] {
+            let changed = metadata.replace("</metadata>", &format!("{extra}</metadata>"));
+            let bytes = make_test_zip(&[("SolstoneJournal.nuspec", &changed)]);
+            assert!(parse_and_validate_nuspec(Cursor::new(bytes), "2.0.49").is_err());
+        }
+    }
+
     fn make_test_zip(files: &[(&str, &str)]) -> Vec<u8> {
         let mut buf = Vec::new();
         let mut zip = ZipWriter::new(Cursor::new(&mut buf));
@@ -691,7 +790,7 @@ mod tests {
   <os>win</os>
   <rid>win-x64</rid>
   <machineArchitecture>x64</machineArchitecture>
-  <mainExe>journal-app.exe</mainExe>
+  <mainExe>bin/journal-app.exe</mainExe>
 </metadata>
 </package>"#;
 
@@ -723,7 +822,7 @@ mod tests {
   <os>win</os>
   <rid>win-x64</rid>
   <machineArchitecture>x64</machineArchitecture>
-  <mainExe>journal-app.exe</mainExe>
+  <mainExe>bin/journal-app.exe</mainExe>
 </metadata>
 </package>"#;
         let zip_bytes = make_test_zip(&[("SolstoneJournal.nuspec", nuspec)]);
@@ -742,7 +841,7 @@ mod tests {
   <os>win</os>
   <rid>win-x64</rid>
   <machineArchitecture>x64</machineArchitecture>
-  <mainExe>journal-app.exe</mainExe>
+  <mainExe>bin/journal-app.exe</mainExe>
 </metadata>
 </package>"#;
         let zip_bytes = make_test_zip(&[("SolstoneJournal.nuspec", nuspec)]);
@@ -760,7 +859,7 @@ mod tests {
   <os>win</os>
   <rid>win-x64</rid>
   <machineArchitecture>x64</machineArchitecture>
-  <mainExe>journal-app.exe</mainExe>
+  <mainExe>bin/journal-app.exe</mainExe>
   <malformed>
 </metadata>
 </package>"#;
