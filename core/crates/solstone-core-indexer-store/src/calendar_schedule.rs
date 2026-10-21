@@ -104,29 +104,48 @@ pub fn scheduled_on_day(journal: &Path, day: &str) -> Result<Vec<ScheduledEvent>
         return Ok(Vec::new());
     }
     let conn = open_index_reader(journal)?;
-    let records = {
+    let notes = {
         let mut statement = conn.prepare(
-            "SELECT DISTINCT n.record FROM calendar_hits h \
+            "SELECT DISTINCT n.event, n.occurrence, n.record FROM calendar_hits h \
              JOIN chunks c ON c.rowid=h.rowid AND c.path=h.path \
              JOIN calendar_notes n ON n.path=h.path AND n.line=(h.idx - ?1) / ?2 \
              WHERE h.version='latest' AND c.day=?3",
         )?;
         statement
             .query_map(params![LISTING_IDX_BASE, LISTING_IDX_STRIDE, day], |row| {
-                row.get::<_, String>(0)
+                Ok(((row.get(0)?, row.get(1)?), row.get::<_, String>(2)?))
             })?
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Result<Vec<(Identity, String)>, _>>()?
     };
-    if records.is_empty() {
+    if notes.is_empty() {
         return Ok(Vec::new());
     }
     let zone = listing_zone(journal)?;
-    let mut people = KnownPeople::new(journal);
+    let mut linked =
+        conn.prepare("SELECT dst FROM edges WHERE source=? AND anchor=? ORDER BY rowid")?;
     let mut events = Vec::new();
-    for record in records {
-        if let Some(event) = scheduled_event(&record, &zone, &mut people)? {
-            events.push(event);
-        }
+    for (identity, record) in notes {
+        let Some(mut event) = scheduled_event(&record, &zone) else {
+            continue;
+        };
+        // The people the index linked from this version, as they are named now.
+        let linked_ids = linked
+            .query_map(
+                params![CALENDAR_NOTE_EDGE_SOURCE, edge_anchor(&identity)],
+                |row| row.get::<_, String>(0),
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        event.people = linked_ids
+            .into_iter()
+            .filter_map(|entity_id| {
+                let identity = solstone_core_entity::read_entity_identity(journal, &entity_id)
+                    .ok()
+                    .flatten()?;
+                let name = identity.value().get("name")?.as_str()?.trim().to_owned();
+                (!name.is_empty()).then_some(InvitedPerson { entity_id, name })
+            })
+            .collect();
+        events.push(event);
     }
     events.sort_by(|left, right| {
         right
@@ -138,30 +157,23 @@ pub fn scheduled_on_day(journal: &Path, day: &str) -> Result<Vec<ScheduledEvent>
     Ok(events)
 }
 
-fn scheduled_event(
-    record: &str,
-    zone: &Tz,
-    people: &mut KnownPeople,
-) -> Result<Option<ScheduledEvent>, StoreError> {
-    let Ok(note) = parse_calendar_note(record) else {
-        return Ok(None);
-    };
-    let Some(schedule) = note.schedule else {
-        return Ok(None);
-    };
+/// An event as its latest note has it, with no one on it yet.
+fn scheduled_event(record: &str, zone: &Tz) -> Option<ScheduledEvent> {
+    let note = parse_calendar_note(record).ok()?;
+    let schedule = note.schedule?;
     let wall = |when: When| match when {
         When::Zoned(instant) => Some(instant.with_timezone(zone).naive_local()),
         When::Floating(wall) => Some(wall),
         When::Date(_) => None,
     };
-    Ok(Some(ScheduledEvent {
+    Some(ScheduledEvent {
         title: text(&note.record, "title").unwrap_or_default(),
         all_day: schedule.all_day,
         start: wall(schedule.start),
         end: schedule.end.and_then(wall),
         declined: owner_declined(&note.record),
-        people: people.on_invite(&note.record)?,
-    }))
+        people: Vec::new(),
+    })
 }
 
 fn text(record: &Map<String, Value>, key: &str) -> Option<String> {
@@ -323,10 +335,17 @@ pub(crate) fn relink_people(
         let Some(record) = record else {
             continue;
         };
-        let Some(event) = scheduled_event(&record, &zone, &mut people)? else {
+        let Some(event) = scheduled_event(&record, &zone) else {
             continue;
         };
-        if event.declined || event.people.is_empty() {
+        if event.declined {
+            continue;
+        }
+        let Ok(note) = serde_json::from_str::<Map<String, Value>>(&record) else {
+            continue;
+        };
+        let invited = people.on_invite(&note)?;
+        if invited.is_empty() {
             continue;
         }
         let Some(principal) = people.principal()? else {
@@ -336,7 +355,7 @@ pub(crate) fn relink_people(
             "INSERT INTO edges(src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight) \
              VALUES (?, ?, 'scheduled-with', 0, NULL, NULL, ?, '', ?, ?, ?, ?, NULL, 1)",
         )?;
-        for person in &event.people {
+        for person in &invited {
             insert.execute(params![
                 principal,
                 person.entity_id,

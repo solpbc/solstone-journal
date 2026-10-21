@@ -544,6 +544,17 @@
   color: var(--ink-soft);
 }
 
+.act-panel-calendar {
+  overflow-wrap: anywhere;
+}
+
+.act-panel-calendar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: -0.75rem;
+}
+
 .act-panel-evidence-list {
   display: flex;
   flex-direction: column;
@@ -1456,11 +1467,16 @@
     }
 
     // What the calendar had scheduled then, beside the activity
-    for (const meeting of item.calendar || []) {
-      const parts = [meeting.title ? fmt('calendar-then', { title: meeting.title }) : STRINGS['calendar-then-untitled']];
-      if (meeting.start && meeting.end) parts.push(`${meeting.start}–${meeting.end}`);
-      if (meeting.people?.length) parts.push(formatPeople(meeting.people));
-      phtml += `<div class="act-panel-calendar" data-copy-key="calendar-then">${esc(parts.join(' · '))}</div>`;
+    if (item.calendar?.length) {
+      phtml += '<div class="act-panel-calendar-list">';
+      for (const meeting of item.calendar) {
+        const key = meeting.title ? 'calendar-then' : 'calendar-then-untitled';
+        const parts = [fmt(key, { title: meeting.title })];
+        if (meeting.start && meeting.end) parts.push(`${meeting.start}–${meeting.end}`);
+        if (meeting.people?.length) parts.push(formatPeople(meeting.people));
+        phtml += `<div class="act-panel-calendar" data-copy-key="${key}">${esc(parts.join(' · '))}</div>`;
+      }
+      phtml += '</div>';
     }
 
     // Summary & People
