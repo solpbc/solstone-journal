@@ -12,7 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.0.53] - 2026-10-21
 
-on windows, this is your journal's first update since 2.0.51, so it also brings the changes from 2.0.52. they're listed under the last heading below.
+2.0.53 isn't available on windows. on windows, your journal stays on 2.0.51 and gets these changes, including the windows ones below, in 2.0.54, except recognizing text from your screens.
 
 ### Added
 
