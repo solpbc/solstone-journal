@@ -3,6 +3,7 @@
 
 import Foundation
 import JournalMarkKit
+import ServiceManagement
 import Testing
 @testable import journal
 
@@ -11,17 +12,18 @@ import Testing
 struct JournalAppConfigTests {
     private static let cachedMarkKey = "journalIconCachedMarkJSON"
 
-    @Test func launchAtLoginDefaultsOnAndRegisters() {
+    @Test func launchAtLoginDefaultsOnAndRegisters() async {
         let fixture = makeDefaults()
         defer { fixture.clear() }
         let loginItems = FakeLoginItemManager()
         let config = JournalAppConfig(defaults: fixture.defaults, loginItemManager: loginItems)
 
-        config.applyLaunchAtLoginPreference()
+        await config.applyLaunchAtLoginPreference()
 
         #expect(config.launchAtLoginEnabled)
         #expect(loginItems.registerCalls == 1)
         #expect(loginItems.unregisterCalls == 0)
+        #expect(loginItems.awaitedUnregisterCalls == 0)
     }
 
     @Test func disablingLaunchAtLoginDeregistersAndPersists() {
@@ -39,7 +41,7 @@ struct JournalAppConfigTests {
         #expect(loginItems.unregisterCalls == 1)
     }
 
-    @Test func ineligibleCurrentBundleDoesNotRegisterLoginItem() {
+    @Test func ineligibleCurrentBundleDoesNotRegisterLoginItem() async {
         let fixture = makeDefaults()
         defer { fixture.clear() }
         let loginItems = FakeLoginItemManager()
@@ -49,7 +51,7 @@ struct JournalAppConfigTests {
             loginItemEligibility: { false }
         )
 
-        let applied = config.applyLaunchAtLoginPreference()
+        let applied = await config.applyLaunchAtLoginPreference()
 
         #expect(applied == .deferred)
         #expect(config.launchAtLoginEnabled)
@@ -128,13 +130,13 @@ struct JournalAppConfigTests {
         #expect(fixture.defaults.bool(forKey: "launchAtLoginEnabled") == false)
     }
 
-    @Test func startupApplyFailureDoesNotWriteAndIsNotSuccess() {
+    @Test func startupApplyFailureDoesNotWriteAndIsNotSuccess() async {
         let fixture = makeDefaults()
         defer { fixture.clear() }
         let loginItems = ThrowingLoginItemManager()
         let config = JournalAppConfig(defaults: fixture.defaults, loginItemManager: loginItems)
 
-        let enabled = config.applyLaunchAtLoginPreference()
+        let enabled = await config.applyLaunchAtLoginPreference()
 
         #expect(enabled == .failed)
         #expect(enabled != .applied)
@@ -144,7 +146,7 @@ struct JournalAppConfigTests {
 
         fixture.defaults.set(false, forKey: "launchAtLoginEnabled")
         let unregistering = UnregisterThrowingLoginItemManager()
-        let disabled = JournalAppConfig(defaults: fixture.defaults, loginItemManager: unregistering)
+        let disabled = await JournalAppConfig(defaults: fixture.defaults, loginItemManager: unregistering)
             .applyLaunchAtLoginPreference()
         #expect(disabled == .failed)
         #expect(fixture.defaults.bool(forKey: "launchAtLoginEnabled") == false)
@@ -209,8 +211,10 @@ private struct DefaultsFixture {
 
 @MainActor
 private final class FakeLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
     private(set) var registerCalls = 0
     private(set) var unregisterCalls = 0
+    private(set) var awaitedUnregisterCalls = 0
 
     func register() throws {
         registerCalls += 1
@@ -219,10 +223,15 @@ private final class FakeLoginItemManager: LoginItemManaging {
     func unregister() throws {
         unregisterCalls += 1
     }
+
+    func unregisterAwaitingCompletion() async throws {
+        awaitedUnregisterCalls += 1
+    }
 }
 
 @MainActor
 private final class ThrowingLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
     private(set) var registerCalls = 0
 
     func register() throws {
@@ -231,10 +240,13 @@ private final class ThrowingLoginItemManager: LoginItemManaging {
     }
 
     func unregister() throws {}
+
+    func unregisterAwaitingCompletion() async throws {}
 }
 
 @MainActor
 private final class UnregisterThrowingLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
     private(set) var unregisterCalls = 0
 
     func register() throws {}
@@ -243,4 +255,6 @@ private final class UnregisterThrowingLoginItemManager: LoginItemManaging {
         unregisterCalls += 1
         throw CocoaError(.fileWriteUnknown)
     }
+
+    func unregisterAwaitingCompletion() async throws {}
 }
