@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "candidate_release": "2.0.53",
+  "candidate_release": "2.0.54",
   "predecessor": {
     "windows_release": "2.0.51",
     "source_commit": "c08d742b6670d2bf50a636e3f362504a3b544ba4",
