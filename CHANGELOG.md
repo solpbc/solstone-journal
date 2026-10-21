@@ -29,13 +29,13 @@ on windows, this is your journal's first update since 2.0.51, so it also brings 
 
 ### Fixed
 
-- security fix: your journal no longer accepts certificates issued through emSign certificate authorities whose private keys are now public. this includes its connections to the relay, to solstone.me and to your thinking provider, and its update checks and downloads. before, someone between your computer and one of these services could have used one of the exposed keys to pose as that service. posing as your thinking provider, they could have read what your journal sent it, and the key or sign-in your journal uses there.
+- security fix: your journal no longer accepts certificates issued through emSign certificate authorities whose private keys are now public. this includes its connections to the relay, to solstone.me, to the services portal and to a thinking provider you connect with your own key or sign-in, and its update checks and downloads. before, someone between your computer and one of these services could have used one of the exposed keys to pose as that service. posing as that thinking provider, they could have read what your journal sent it, and the key or sign-in your journal uses there. what your journal sends to confidential processing or local thinking wasn't exposed this way.
 - when your morning briefing leaves something out to keep within its size limit, its note now says how many activities, stories or location entries it left out, instead of listing internal names.
 - health shows processing progress sooner when you open it.
 - on windows, home in the journal window shows download progress in sizes like 1.2 GB of 4.8 GB, instead of two bare numbers.
 - long morning briefings and entity reviews no longer lose part of their instructions to fit your model. when one can't fit with its instructions whole, it stops.
 - if your thinking provider refuses an activity because it's too long, your journal sets it aside instead of trying the same request every hour. you can try it again after changing your thinking choice.
-- the health page's backup spot-check now says it checked 1 of 52 parts of your backup, as the backup page does, instead of a bare 42/52.
+- the health page's backup spot-check now says it checked 1 of 52 parts of your backup, as the backup page does, instead of a bare 42/52, which read as 42 parts checked.
 - health's line about older history no longer stops at a day whose recordings are finished but not yet searchable. those recordings now become searchable on their own.
 - in the agents app, the "what it did" filter now includes `list_activities` and `get_activity_sources`.
 - when a local thinking model download is interrupted, your journal picks it up where it stopped instead of starting over.
