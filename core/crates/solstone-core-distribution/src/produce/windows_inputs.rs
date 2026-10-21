@@ -965,6 +965,12 @@ pub(crate) fn ced_source_notices(snapshot: &Path) -> Result<BTreeMap<String, Vec
     source_notice_members(snapshot, CED_NOTICES)
 }
 
+pub(crate) fn parakeet_source_notices(
+    snapshot: &Path,
+) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    source_notice_members(snapshot, PARAKEET_NOTICES)
+}
+
 fn source_notice_members(
     snapshot: &Path,
     notices: &[SourceNotice],

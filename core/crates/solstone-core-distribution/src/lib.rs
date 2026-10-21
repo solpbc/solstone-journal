@@ -45,6 +45,7 @@ pub mod onnx_windows;
 pub mod onnx_windows_source;
 pub mod openmp_windows;
 pub mod parakeet_windows;
+pub mod parakeet_windows_arm64;
 pub mod parakeet_windows_source;
 pub mod pdfium;
 pub mod pe;

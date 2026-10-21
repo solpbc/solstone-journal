@@ -49,6 +49,7 @@ pub mod windows_ced_arm64;
 pub mod windows_cli;
 pub mod windows_inputs;
 pub mod windows_openmp;
+pub mod windows_parakeet_arm64;
 pub mod windows_restic;
 pub mod windows_stage;
 
