@@ -72,6 +72,57 @@ pub struct OpenMpInputPaths<'a> {
     pub development_root: &'a Path,
 }
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenMpFiles {
+    pub receipt: std::path::PathBuf,
+    pub evidence: std::path::PathBuf,
+    pub validation: std::path::PathBuf,
+    pub source_archive: std::path::PathBuf,
+    pub llvm_archive: std::path::PathBuf,
+    pub cmake_archive: std::path::PathBuf,
+    pub python_archive: std::path::PathBuf,
+    pub output_root: std::path::PathBuf,
+    pub development_root: std::path::PathBuf,
+}
+
+impl OpenMpFiles {
+    pub fn paths(&self) -> Result<OpenMpInputPaths<'_>, String> {
+        for path in [
+            &self.receipt,
+            &self.evidence,
+            &self.validation,
+            &self.source_archive,
+            &self.llvm_archive,
+            &self.cmake_archive,
+            &self.python_archive,
+            &self.output_root,
+            &self.development_root,
+        ] {
+            if !path.is_absolute()
+                || path
+                    .components()
+                    .any(|p| p == std::path::Component::ParentDir)
+            {
+                return Err("ordinary absolute OpenMP input paths required".into());
+            }
+        }
+        Ok(OpenMpInputPaths {
+            receipt: &self.receipt,
+            evidence: &self.evidence,
+            validation: &self.validation,
+            archives: OpenMpArchivePaths {
+                source: &self.source_archive,
+                llvm: &self.llvm_archive,
+                cmake: &self.cmake_archive,
+                python: &self.python_archive,
+            },
+            output_root: &self.output_root,
+            development_root: &self.development_root,
+        })
+    }
+}
+
 pub struct AdmittedOpenMp {
     runtime: AdmittedControlledInput,
     header: Vec<u8>,
@@ -87,6 +138,34 @@ impl AdmittedOpenMp {
     }
     pub fn import_library(&self) -> &[u8] {
         &self.import_library
+    }
+    /// Bind a consumer to this original runtime and development cohort.
+    /// These are input identities; the development members are not payload files.
+    pub fn build_inputs(&self) -> Vec<crate::controlled_build::InputIdentityEntry> {
+        let members: [(&str, &[u8]); 6] = [
+            (
+                "dependencies/openmp/receipt.json",
+                self.runtime.receipt_bytes(),
+            ),
+            (
+                "dependencies/openmp/build-evidence.json",
+                self.runtime.evidence_bytes(),
+            ),
+            (
+                "dependencies/openmp/validation.log",
+                self.runtime.validation_bytes(),
+            ),
+            (
+                "dependencies/openmp/libomp.dll",
+                &self.runtime.outputs()[recipe::OUTPUT_LABEL],
+            ),
+            ("dependencies/openmp/include/omp.h", &self.header),
+            ("dependencies/openmp/lib/libomp.lib", &self.import_library),
+        ];
+        members
+            .into_iter()
+            .map(|(label, bytes)| recipe::identity(label, bytes.len() as u64, &sha256_hex(bytes)))
+            .collect()
     }
     pub fn into_runtime(self) -> AdmittedControlledInput {
         self.runtime
@@ -413,7 +492,7 @@ fn absolute(values: &BTreeMap<String, String>, key: &str) -> Result<std::path::P
     Ok(p)
 }
 
-fn publish(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn publish(path: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let mut output = std::fs::OpenOptions::new()
         .write(true)

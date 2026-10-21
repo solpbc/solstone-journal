@@ -1048,7 +1048,9 @@ fn require_identity(bytes: &[u8], size: u64, sha256: &str) -> Result<(), String>
     Ok(())
 }
 
-fn with_snapshot<T>(operation: impl FnOnce(&Path) -> Result<T, String>) -> Result<T, String> {
+pub(crate) fn with_snapshot<T>(
+    operation: impl FnOnce(&Path) -> Result<T, String>,
+) -> Result<T, String> {
     let snapshot = tempfile::tempdir().map_err(|e| e.to_string())?;
     let result = operation(snapshot.path());
     match (result, snapshot.close()) {
@@ -1061,7 +1063,12 @@ fn with_snapshot<T>(operation: impl FnOnce(&Path) -> Result<T, String>) -> Resul
     }
 }
 
-fn snapshot_file(root: &Path, leaf: &str, source: &Path, limit: u64) -> Result<PathBuf, String> {
+pub(crate) fn snapshot_file(
+    root: &Path,
+    leaf: &str,
+    source: &Path,
+    limit: u64,
+) -> Result<PathBuf, String> {
     let bytes = read_bounded(source, limit)?;
     let path = root.join(leaf);
     fs::write(&path, bytes).map_err(|e| e.to_string())?;
@@ -1071,7 +1078,7 @@ fn snapshot_file(root: &Path, leaf: &str, source: &Path, limit: u64) -> Result<P
 // Existing source inspectors perform semantic/source-pin checks after this pass.
 // The outer Take bounds all decoder output, including tar metadata and padding.
 // Raw entries keep tar from allocating GNU/PAX bodies before their size is checked.
-fn preflight_source_archive(path: &Path) -> Result<(), String> {
+pub(crate) fn preflight_source_archive(path: &Path) -> Result<(), String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
     preflight_tar_stream(
         flate2::read::GzDecoder::new(file),

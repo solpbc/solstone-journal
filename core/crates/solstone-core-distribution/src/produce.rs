@@ -45,6 +45,7 @@ pub mod ffmpeg_bindings;
 pub mod target_cache;
 pub mod windows_archives;
 pub mod windows_build;
+pub mod windows_ced_arm64;
 pub mod windows_cli;
 pub mod windows_inputs;
 pub mod windows_openmp;
