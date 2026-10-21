@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.53 (build 101)] - 2026-10-21
+
 ### Changed
 
 - in setup, "your journal" at the top of the window sits on its own small label, so it stays easy to read at any time of day.
+- updated the bundled journal to [2.0.53](https://solstone.app/releases#v2.0.53) →
 
 ### Fixed
 
