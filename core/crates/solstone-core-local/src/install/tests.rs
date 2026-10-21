@@ -2024,6 +2024,27 @@ fn backend_choice_selects_cuda_when_hardware_qualifies_and_a_pin_exists() {
         _ => panic!("expected selected vulkan"),
     }
 
+    // Steps 7 and 8 need a broken selected CUDA tree on every artifact key; only
+    // the x86_64 split cases above leave one behind, so break it here by pin.
+    let mut broken_pin = cuda_id.clone();
+    broken_pin["sha256"] = json!("00".repeat(32));
+    let inv = manifest::runtime_inventory(&artifact_dir, &[]).unwrap();
+    let broken_manifest = manifest::build_manifest(
+        "local",
+        "llama-server-cuda",
+        "target",
+        json!({"pin_identity": broken_pin}),
+        inv,
+        None,
+        None,
+    )
+    .unwrap();
+    manifest::write_manifest(&manifest_path, &broken_manifest).unwrap();
+    assert_eq!(
+        local_backend_choice(&root, Some(probe.clone())),
+        crate::BackendSelection::IntegrityBlocked
+    );
+
     // 7. inspect_local on qualified hardware with a broken selected CUDA tree
     let inspected = readiness::inspect_local(
         serde_json::from_value(json!({
