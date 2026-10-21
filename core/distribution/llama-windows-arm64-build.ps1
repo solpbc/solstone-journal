@@ -141,6 +141,11 @@ function One([string]$Directory,[string]$Name) {
 try {
     $principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
     if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -or -not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64'){throw 'Administrative native AMD64 builder required'}
+    foreach($name in @('CL','_CL_','LINK','_LINK_','CFLAGS','CXXFLAGS','CPPFLAGS','LDFLAGS','CMAKE_TOOLCHAIN_FILE','CMAKE_GENERATOR','CMAKE_PREFIX_PATH','CARGO_TARGET_DIR','CARGO_BUILD_TARGET_DIR','RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','RUSTUP_TOOLCHAIN','RUSTC','RUSTC_WRAPPER','RUSTC_WORKSPACE_WRAPPER','CARGO_BUILD_RUSTC','CARGO_BUILD_RUSTC_WRAPPER','CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER')){
+        if(-not [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name,'Process'))){throw "Inherited Llama build override refused: $name"}
+    }
+    foreach($entry in @(Get-ChildItem Env:)){if($entry.Name.StartsWith('GIT_',[StringComparison]::OrdinalIgnoreCase)){Remove-Item ('Env:\'+$entry.Name)}}
+    $env:GIT_CONFIG_NOSYSTEM='1';$env:GIT_CONFIG_GLOBAL='NUL';$env:GIT_TERMINAL_PROMPT='0'
     $RepositoryRoot=Full-Path $RepositoryRoot;$SourceArchive=Full-Path $SourceArchive;$SdkArchive=Full-Path $SdkArchive;$OpenMpInputs=Full-Path $OpenMpInputs
     $WorkRoot=Full-Path $WorkRoot;$CaptureRoot=Full-Path $CaptureRoot;$ReportRoot=Full-Path $ReportRoot
     $roots=@($RepositoryRoot,$WorkRoot,$CaptureRoot,$ReportRoot)
@@ -211,8 +216,8 @@ try {
     foreach($file in $sdkActual){$label='sdk/'+$file.FullName.Substring($sdkRoot.Length+1).Replace('\','/').ToLowerInvariant();if(@($sdkExpected|Where-Object{$_.label -eq $label}).Count -ne 1){throw "Unpinned SDK program: $label"}}
     $sourceBefore=Source-Census $sourceRoot
     $patch=Join-Path $sourceRoot 'patches\0001-bounded-shader-build.patch'
-    $null=Run $git @('-C',(Join-Path $sourceRoot 'llama'),'apply','--check',$patch) 'check original bounded shader patch'
-    $null=Run $git @('-C',(Join-Path $sourceRoot 'llama'),'apply',$patch) 'apply original bounded shader patch'
+    $null=Run $git @('-c','core.autocrlf=false','-C',(Join-Path $sourceRoot 'llama'),'apply','--check',$patch) 'check original bounded shader patch'
+    $null=Run $git @('-c','core.autocrlf=false','-C',(Join-Path $sourceRoot 'llama'),'apply',$patch) 'apply original bounded shader patch'
     $sourcePatched=Source-Census $sourceRoot
     $clang=Join-Path $llvmRoot 'bin\clang-cl.exe';$python=Join-Path $pythonRoot 'python.exe'
     Set-Environment $hostEnvironment
@@ -265,11 +270,12 @@ try {
     $blockedBefore=Tcp-Error;if($blockedBefore -ne 10013){throw "Native network deny failed: $blockedBefore"}
     Set-Environment $armEnvironment
     foreach($name in @('CL','_CL_','CFLAGS','CXXFLAGS','CPPFLAGS','LDFLAGS','CMAKE_TOOLCHAIN_FILE','CMAKE_GENERATOR','CMAKE_GENERATOR_PLATFORM','CMAKE_GENERATOR_TOOLSET','PYTHONHOME','PYTHONPATH')){Remove-Item ('Env:\'+$name) -ErrorAction SilentlyContinue}
-    $env:INCLUDE=(Join-Path $openmpRoot 'include')+';'+$env:INCLUDE;$env:PATH=(Join-Path $llvmRoot 'bin')+';'+$env:PATH;$env:VULKAN_SDK=$sdkRoot
+    $env:INCLUDE=(Join-Path $openmpRoot 'include')+';'+$env:INCLUDE;$env:VULKAN_SDK=$sdkRoot
     $forward=$WorkRoot.Replace('\','/')
     Build-Step 'loader-configure' 'cmake/bin/cmake.exe' @($plan.loader_arguments)
     Build-Step 'loader-build' 'cmake/bin/cmake.exe' @('--build',($forward+'/loader-build'),'--config','Release','--target','vulkan','--parallel','1')
     Build-Step 'offset-replay' 'python/python.exe' @(($forward+'/source/loader/scripts/parse_asm_values.py'),($forward+'/offsets-replayed.asm'),($forward+'/loader-build/upstream/loader/Release/asm_offset.asm'),'MARMASM','MSVC','arm64')
+    $env:PATH=(Join-Path $llvmRoot 'bin')+';'+$env:PATH
     Build-Step 'engine-configure' 'cmake/bin/cmake.exe' @($plan.engine_arguments)
     Build-Step 'engine-build' 'cmake/bin/cmake.exe' @('--build',($forward+'/engine-build'),'--target','llama-server','--parallel','1')
     $blockedAfter=Tcp-Error;if($blockedAfter -ne 10013){throw "Native network deny changed: $blockedAfter"}
