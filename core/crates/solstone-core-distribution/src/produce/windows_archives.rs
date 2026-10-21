@@ -70,10 +70,11 @@ pub fn admit_rclone(
     license: &Path,
     expected: WindowsArchitecture,
 ) -> Result<AdmittedArchiveInput, String> {
-    if expected != WindowsArchitecture::X86_64 {
-        return Err("missing pinned ARM64 rclone input".into());
-    }
-    let members = admit_zip(archive, &RCLONE, expected)?;
+    let pin = match expected {
+        WindowsArchitecture::X86_64 => &RCLONE,
+        WindowsArchitecture::Aarch64 => &RCLONE_ARM64,
+    };
+    let members = admit_zip(archive, pin, expected)?;
     // licence-tree publishes this text; the pin still rejects a different file.
     let _ = pinned_file(
         license,
@@ -92,12 +93,13 @@ pub fn admit_msvc(
     runtime_license: &Path,
     expected: WindowsArchitecture,
 ) -> Result<AdmittedArchiveInput, String> {
-    if expected != WindowsArchitecture::X86_64 {
-        return Err("missing pinned ARM64 msvc input".into());
-    }
+    let pin = match expected {
+        WindowsArchitecture::X86_64 => &MSVC,
+        WindowsArchitecture::Aarch64 => &MSVC_ARM64,
+    };
     // Only the reviewed release CRT/OpenMP files, never debug_nonredist or
     // additional DLLs merely because the upstream VSIX happens to carry them.
-    let mut members = admit_zip(archive, &MSVC, expected)?;
+    let mut members = admit_zip(archive, pin, expected)?;
     // Original Microsoft runtime terms, not a grant of redistribution rights.
     // The applicable Visual Studio license remains an operator/release concern.
     members.insert(
@@ -124,12 +126,9 @@ pub fn admit_pdfium(
     archive: &Path,
     expected: WindowsArchitecture,
 ) -> Result<AdmittedArchiveInput, String> {
-    if expected != WindowsArchitecture::X86_64 {
-        return Err("missing pinned ARM64 pdfium input".into());
-    }
     let bytes = read_bounded(archive, 16 * 1024 * 1024)?;
-    let spec =
-        crate::pdfium::spec_for("windows-x86_64").ok_or("missing pinned Windows PDFium spec")?;
+    let spec = crate::pdfium::spec_for(expected.target_id())
+        .ok_or("missing pinned Windows PDFium spec")?;
     // The existing validator checks the archive digest before parsing, then
     // the exact member census, library and every original notice digest.
     let staged = crate::pdfium::stage_from_bytes(spec, &bytes).map_err(|e| e.to_string())?;
@@ -310,10 +309,97 @@ pub const MSVC: ArchivePin = ArchivePin {
     ],
 };
 
+pub(crate) const RCLONE_ARM64: ArchivePin = ArchivePin {
+    version: "1.74.4",
+    url: "https://downloads.rclone.org/v1.74.4/rclone-v1.74.4-windows-arm64.zip",
+    bytes: 26494445,
+    sha256: "72194ad0aaf210d7a55808801191fecc7e175444dab7be7491b7a63074521f3a",
+    members: &[MemberPin {
+        label: "rclone.exe",
+        path: "rclone-v1.74.4-windows-arm64/rclone.exe",
+        bytes: 72152064,
+        sha256: "37a68118889876ce61930c8c9284cf868871a44c0ac93f22ed4de91c249caaa0",
+        dll: false,
+    }],
+};
+
+// The catalog advertises 5,067,096 bytes; the downloaded, digest-matching
+// package is 5,046,547 bytes. Select only native ARM64 release CRT members.
+// Its vcruntime140_1.dll is AMD64/CHPE, and OpenMP is a separate source input.
+pub const MSVC_ARM64: ArchivePin = ArchivePin {
+    version: "14.44.35211.0",
+    url: "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/fc8f37250188509818258582758a3b704810c77b6d25845486d583ea99d9aa1f/Microsoft.VC.14.44.17.14.CRT.Redist.ARM64.base.vsix",
+    bytes: 5046547,
+    sha256: "fc8f37250188509818258582758a3b704810c77b6d25845486d583ea99d9aa1f",
+    members: &[
+        MemberPin {
+            label: "msvcp140.dll",
+            path: "Contents/VC/Redist/MSVC/14.44.35112/arm64/Microsoft.VC143.CRT/msvcp140.dll",
+            bytes: 1372216,
+            sha256: "045faeab0b5710816ae160ea20dae8495ffc11bb51feca15d22aaf7ff3752cb3",
+            dll: true,
+        },
+        MemberPin {
+            label: "vcruntime140.dll",
+            path: "Contents/VC/Redist/MSVC/14.44.35112/arm64/Microsoft.VC143.CRT/vcruntime140.dll",
+            bytes: 199200,
+            sha256: "d8a8513921544569837e400d37cc71302819967ae6defa932266a7ecb41dbaf9",
+            dll: true,
+        },
+    ],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    #[ignore = "operator qualification with retained pinned archives; set SOLSTONE_WINDOWS_ARCHIVE_TEST_INPUTS"]
+    fn real_archives_admit_both_architectures_and_refuse_cross_target_inputs() {
+        let input_file = std::env::var_os("SOLSTONE_WINDOWS_ARCHIVE_TEST_INPUTS")
+            .expect("retained archive input map required");
+        let paths: BTreeMap<String, BTreeMap<String, std::path::PathBuf>> =
+            serde_json::from_slice(&std::fs::read(input_file).unwrap()).unwrap();
+        for (key, expected, foreign) in [
+            (
+                "x64",
+                WindowsArchitecture::X86_64,
+                WindowsArchitecture::Aarch64,
+            ),
+            (
+                "arm64",
+                WindowsArchitecture::Aarch64,
+                WindowsArchitecture::X86_64,
+            ),
+        ] {
+            let files = &paths[key];
+            let rclone =
+                admit_rclone(&files["rclone_archive"], &files["rclone_license"], expected).unwrap();
+            assert!(rclone.outputs().contains_key("rclone.exe"));
+            let msvc =
+                admit_msvc(&files["msvc_archive"], &files["runtime_license"], expected).unwrap();
+            assert!(msvc.outputs().contains_key("msvcp140.dll"));
+            assert!(msvc.outputs().contains_key("vcruntime140.dll"));
+            assert_eq!(
+                msvc.outputs().contains_key("vcruntime140_1.dll"),
+                expected == WindowsArchitecture::X86_64
+            );
+            assert_eq!(
+                msvc.outputs().contains_key("vcomp140.dll"),
+                expected == WindowsArchitecture::X86_64
+            );
+            let pdfium = admit_pdfium(&files["pdfium_archive"], expected).unwrap();
+            assert!(pdfium.outputs().contains_key("pdfium.dll"));
+            assert!(
+                admit_rclone(&files["rclone_archive"], &files["rclone_license"], foreign).is_err()
+            );
+            assert!(
+                admit_msvc(&files["msvc_archive"], &files["runtime_license"], foreign).is_err()
+            );
+            assert!(admit_pdfium(&files["pdfium_archive"], foreign).is_err());
+        }
+    }
 
     #[test]
     fn pinned_zip_admission_checks_member_kind_and_refuses_substitution() {
