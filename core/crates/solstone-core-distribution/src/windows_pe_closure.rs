@@ -124,7 +124,7 @@ pub fn inspect_runtime_closure_for_arch<'a>(
         let (_, basename) = lower
             .rsplit_once('/')
             .ok_or_else(|| format!("PE must have a declared directory: {path}"))?;
-        if SYSTEM_DLLS.contains(&basename) {
+        if is_system_dll(basename, expected) {
             return Err(format!("package PE shadows a system contract: {path}"));
         }
         let seen = basenames.entry(basename.to_owned()).or_default();
@@ -157,7 +157,7 @@ pub fn inspect_runtime_closure_for_arch<'a>(
         }
         images.insert(lower, info);
     }
-    inspect_edges(&images)
+    inspect_edges_for_arch(&images, expected)
 }
 
 fn search_directory(path: &str, is_dll: bool) -> Result<&str, String> {
@@ -177,7 +177,19 @@ fn search_directory(path: &str, is_dll: bool) -> Result<&str, String> {
     ))
 }
 
+fn is_system_dll(name: &str, expected: WindowsArchitecture) -> bool {
+    SYSTEM_DLLS.contains(&name) || (expected == WindowsArchitecture::Aarch64 && name == "psapi.dll")
+}
+
+#[cfg(test)]
 fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<RuntimeEdge>, String> {
+    inspect_edges_for_arch(images, WindowsArchitecture::X86_64)
+}
+
+fn inspect_edges_for_arch(
+    images: &BTreeMap<String, PeDependencies>,
+    expected: WindowsArchitecture,
+) -> Result<Vec<RuntimeEdge>, String> {
     if images.is_empty() {
         return Err("Windows payload has no declared PE images".into());
     }
@@ -204,7 +216,7 @@ fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<Runtim
         let directory = search_directory(&path, info.is_dll)?;
         for name in &info.imports {
             let library = crate::pe_dependencies::dll_name(name)?;
-            if !SYSTEM_DLLS.contains(&library.as_str()) {
+            if !is_system_dll(&library, expected) {
                 let member = format!("{directory}/{library}");
                 if images.get(&member).is_some_and(|image| image.is_dll) {
                     pending.push(member);
@@ -225,13 +237,13 @@ fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<Runtim
                 let library = crate::pe_dependencies::dll_name(name)?;
                 if hosted.contains(path)
                     && (kind == "delay-import" || kind == "forwarder")
-                    && !SYSTEM_DLLS.contains(&library.as_str())
+                    && !is_system_dll(&library, expected)
                 {
                     return Err(format!(
                         "{path}: unsupported {kind} {library} under DllLoadDir"
                     ));
                 }
-                let member = if SYSTEM_DLLS.contains(&library.as_str()) {
+                let member = if is_system_dll(&library, expected) {
                     None
                 } else {
                     let member = format!("{directory}/{library}");
@@ -287,6 +299,36 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn arm_openmp_psapi_contract_does_not_change_the_x64_boundary() {
+        for delayed in [false, true] {
+            let mut runtime = pe_import("PSAPI.dll", delayed);
+            let path = "lib/solstone-native/libomp.dll";
+            assert!(
+                inspect_runtime_closure([(path, runtime.as_slice())])
+                    .unwrap_err()
+                    .contains("unresolved")
+            );
+            runtime[0x84..0x86].copy_from_slice(&0xaa64u16.to_le_bytes());
+            let edges = inspect_runtime_closure_for_arch(
+                [(path, runtime.as_slice())],
+                WindowsArchitecture::Aarch64,
+            )
+            .unwrap();
+            assert_eq!(edges.len(), 1);
+            assert_eq!(edges[0].library, "psapi.dll");
+            assert_eq!(edges[0].member, None);
+            assert!(
+                inspect_runtime_closure_for_arch(
+                    [("lib/solstone-native/psapi.dll", runtime.as_slice())],
+                    WindowsArchitecture::Aarch64,
+                )
+                .unwrap_err()
+                .contains("shadows a system contract")
+            );
+        }
     }
 
     #[test]
