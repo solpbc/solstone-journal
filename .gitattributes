@@ -12,6 +12,7 @@ core/crates/solstone-core-distribution/fixtures/nvattest-windows-build/*.json -t
 core/crates/solstone-core-distribution/fixtures/nvattest-windows-build/*.txt -text -whitespace
 core/crates/solstone-core-distribution/fixtures/nvattest-windows-build/*.lock -text -whitespace
 core/crates/solstone-core-distribution/tests/fixtures/llama-windows-arm64/*-cache.txt -text -whitespace
+core/crates/solstone-core-distribution/tests/fixtures/llama-windows-arm64/loader-offsets.asm -text -whitespace
 
 # Unified patches use a single space to mark an empty context line.
 core/distribution/mobile/*.patch whitespace=-blank-at-eol
