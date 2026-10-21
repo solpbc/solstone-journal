@@ -198,6 +198,13 @@ try {
     $configKeys=@($plan.configuration.PSObject.Properties.Name);[Array]::Sort($configKeys,[StringComparer]::Ordinal)
     foreach($key in $configKeys){if($key -notin @('CMAKE_GENERATOR','CMAKE_GENERATOR_PLATFORM','onnxruntime_REDUCED_OPS_BUILD')){$buildArguments+=($key+'='+[string]$plan.configuration.$key)}}
     $buildArguments+=@(('Python3_EXECUTABLE='+$python),('GIT_EXECUTABLE='+$gitBackend),('Patch_EXECUTABLE='+$patch),('CMAKE_MAKE_PROGRAM='+$msbuild))
+    $sourcePatch=Join-Path $RepositoryRoot ([string]$plan.source_patch)
+    $patchIdentity=File-Identity $sourcePatch 'patches/onnxruntime-arm64-fp16-activation.patch'
+    if($patchIdentity.size -ne $plan.inputs[6].size -or $patchIdentity.sha256 -ne $plan.inputs[6].sha256){throw 'ONNX ARM source patch differs'}
+    $providerCmake=Join-Path $sourceRoot 'cmake\onnxruntime_providers_cpu.cmake'
+    if((Sha $providerCmake) -ne '692191f92bfa9ad356875780c59c664de53aebce90e449fba619ec1ae71c44dc'){throw 'ONNX ARM source patch preimage differs'}
+    $null=Run-Checked $patch @('--batch','--forward','--fuzz=0','-p1','-d',$sourceRoot.Replace('\','/'),'--input',$sourcePatch.Replace('\','/')) 'source-pinned ARM FP16 Conv activation helper link fix'
+    if((Sha $providerCmake) -ne $plan.patched_provider_cmake_sha256){throw 'ONNX ARM source patch result differs'}
     $null=Run-Checked $python @('-c','import build_args; import flatbuffers; import util; print(build_args.__file__); print(flatbuffers.__file__); print(util.__file__)') 'isolated source-owned Python import closure'
     $null=Run-Checked $python $buildArguments 'reduced CPU ARM64 ONNX Runtime build'
     [IO.File]::AppendAllText((Join-Path $ReportRoot 'build.log'),"ONNX_ARM64_WINDOWS_BUILD_EXIT=0`n",$utf8)
@@ -207,7 +214,7 @@ try {
     New-Item -ItemType Directory (Join-Path $OutputRoot 'bin')|Out-Null
     Copy-Item -LiteralPath $dll[0].FullName -Destination (Join-Path $OutputRoot 'bin\onnxruntime.dll')
     $projects=[ordered]@{}
-    foreach($name in @('kleidiai','onnxruntime','onnxruntime_mlas')){
+    foreach($name in @('kleidiai','onnxruntime','onnxruntime_mlas','onnxruntime_providers')){
         $files=@(Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter ($name+'.vcxproj'))
         if($files.Count -ne 1){throw "ONNX ARM expected exactly one generated $name project"}
         $projects[$name]=[IO.File]::ReadAllText($files[0].FullName)
@@ -215,7 +222,7 @@ try {
     $systemLabels=@($systemIds.Keys);[Array]::Sort($systemLabels,[StringComparer]::Ordinal)
     $systemRows=@($systemLabels|ForEach-Object{$systemIds[$_]})
     $capture=[ordered]@{schema=$plan.capture_schema;archive_tools=@($archiveIds.ToArray());system_tools=$systemRows;supporting_inputs=@($support.ToArray());network_denied_tools=$labels}
-    $validation=[ordered]@{schema=$plan.validation_schema;work_root=$WorkRoot;tool_paths=$programs;network_denies=@($denies.ToArray());cache=[IO.File]::ReadAllText((Join-Path $buildRoot 'CMakeCache.txt'));build_log=[IO.File]::ReadAllText((Join-Path $ReportRoot 'build.log'));python_path_configuration=$pythonConfig;projects=$projects;build_arguments=$buildArguments}
+    $validation=[ordered]@{schema=$plan.validation_schema;work_root=$WorkRoot;tool_paths=$programs;network_denies=@($denies.ToArray());cache=[IO.File]::ReadAllText((Join-Path $buildRoot 'CMakeCache.txt'));build_log=[IO.File]::ReadAllText((Join-Path $ReportRoot 'build.log'));python_path_configuration=$pythonConfig;projects=$projects;build_arguments=$buildArguments;provider_sources_cmake=[IO.File]::ReadAllText($providerCmake)}
     $captureFile=Join-Path $ReportRoot 'capture.json';$validationFile=Join-Path $ReportRoot 'validation.log'
     Json-File $captureFile $capture;Json-File $validationFile $validation
     if((Sha $Inputs) -ne $inputMapSha){throw 'ONNX input-map snapshot changed'}

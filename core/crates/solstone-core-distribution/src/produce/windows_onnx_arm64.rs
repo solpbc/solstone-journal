@@ -27,6 +27,11 @@ const EVIDENCE_LABEL: &str = "provenance/windows-aarch64/onnxruntime-build-evide
 const EVIDENCE_SCHEMA: &str = "solstone.onnx-windows-arm64-build-evidence.v1";
 const VALIDATION_SCHEMA: &str = "solstone.onnx-windows-arm64-validation.v1";
 const OUTPUT: &str = "bin/onnxruntime.dll";
+const SOURCE_PATCH: &str = "core/distribution/patches/onnxruntime-arm64-fp16-activation.patch";
+const SOURCE_PATCH_BYTES: &[u8] =
+    include_bytes!("../../../../distribution/patches/onnxruntime-arm64-fp16-activation.patch");
+const PATCHED_PROVIDER_CMAKE_SHA256: &str =
+    "f3ecaa6f0a9d61b22a36a7fd71c05f1c96649aff145e9da4380967e339a4c0d4";
 pub const KLEIDIAI_MIRROR: &str =
     "github.com/ARM-software/kleidiai/archive/refs/tags/v1.20.0.tar.gz";
 
@@ -82,6 +87,7 @@ struct Validation {
     python_path_configuration: String,
     projects: BTreeMap<String, String>,
     build_arguments: Vec<String>,
+    provider_sources_cmake: String,
 }
 
 pub fn pinned_tools() -> Vec<InputIdentityEntry> {
@@ -133,6 +139,13 @@ fn source_inputs(repo: &Path, files: &OnnxArm64Files) -> Result<InspectedInputs,
         let mirror = source::inspect_onnx_windows_mirror_archive(repo, &mirror)
             .map_err(|e| e.to_string())?;
         let mut notices = super::windows_inputs::onnx_source_notices(&src)?;
+        let patch = read_bounded(&repo.join(SOURCE_PATCH), 16 * 1024)?;
+        let patch = exact(
+            &patch,
+            "patches/onnxruntime-arm64-fp16-activation.patch",
+            SOURCE_PATCH_BYTES.len() as u64,
+            &sha256_hex(SOURCE_PATCH_BYTES),
+        )?;
         let kleidi = exact(
             &kleidiai,
             "sources/kleidiai-v1.20.0.tar.gz",
@@ -180,6 +193,7 @@ fn source_inputs(repo: &Path, files: &OnnxArm64Files) -> Result<InspectedInputs,
                 source::inspect_cmake_archive(repo, &cmake).map_err(|e| e.to_string())?,
                 source::inspect_python_archive(repo, &python).map_err(|e| e.to_string())?,
                 source::inspect_protoc_archive(repo, &protoc).map_err(|e| e.to_string())?,
+                patch,
             ],
             notices,
         ))
@@ -214,6 +228,10 @@ pub fn cache_configuration() -> BTreeMap<String, String> {
 fn configuration() -> BuildConfiguration {
     let mut flags = source::onnx_controlled_build_configuration().flags;
     flags.push("--arm64".into());
+    flags.push(format!(
+        "source-patch-sha256={}",
+        sha256_hex(SOURCE_PATCH_BYTES)
+    ));
     flags.extend(
         cache_configuration()
             .into_iter()
@@ -433,12 +451,96 @@ fn validate_capture(capture: &Capture, validation: &Validation) -> Result<(), St
         .keys()
         .map(String::as_str)
         .collect::<Vec<_>>()
-        != ["kleidiai", "onnxruntime", "onnxruntime_mlas"]
+        != [
+            "kleidiai",
+            "onnxruntime",
+            "onnxruntime_mlas",
+            "onnxruntime_providers",
+        ]
     {
         return Err("ONNX ARM generated target population differs".into());
     }
     for project in validation.projects.values() {
         validate_project(project)?;
+    }
+    if sha256_hex(validation.provider_sources_cmake.as_bytes()) != PATCHED_PROVIDER_CMAKE_SHA256 {
+        return Err("ONNX ARM patched provider source configuration differs".into());
+    }
+    validate_provider_helper(
+        &validation.projects["onnxruntime_providers"],
+        &validation.work_root,
+    )?;
+    Ok(())
+}
+
+fn validate_provider_helper(text: &str, work_root: &str) -> Result<(), String> {
+    use quick_xml::{Reader, events::Event};
+    let mut reader = Reader::from_str(text);
+    reader.config_mut().expand_empty_elements = true;
+    let mut stack = Vec::new();
+    let mut conditional = Vec::new();
+    let mut count = 0;
+    let mut helper_depth = None;
+    let expected = windows_path(&format!(
+        "{work_root}/source/onnxruntime/contrib_ops/cpu/fused_activation.cc"
+    ))?;
+    loop {
+        match reader.read_event().map_err(|e| e.to_string())? {
+            Event::Start(tag) => {
+                if helper_depth.is_some() && tag.name().as_ref() == b"ExcludedFromBuild" {
+                    return Err("ONNX ARM FP16 activation helper is excluded".into());
+                }
+                let mut condition = false;
+                let mut include = None;
+                for attribute in tag.attributes() {
+                    let attribute = attribute.map_err(|e| e.to_string())?;
+                    if attribute.key.as_ref() == b"Condition" {
+                        condition = true;
+                    }
+                    if attribute.key.as_ref() == b"Include" {
+                        include = Some(
+                            attribute
+                                .decoded_and_normalized_value(
+                                    quick_xml::XmlVersion::Explicit1_0,
+                                    reader.decoder(),
+                                )
+                                .map_err(|e| e.to_string())?
+                                .into_owned(),
+                        );
+                    }
+                }
+                // CMake's generated vcxproj doubles Windows separators.
+                if tag.name().as_ref() == b"ClCompile"
+                    && let Some(include) = include
+                    && windows_path(&include.replace("\\\\", "\\"))? == expected
+                {
+                    if condition
+                        || conditional.contains(&true)
+                        || stack.as_slice() != [b"Project".to_vec(), b"ItemGroup".to_vec()]
+                    {
+                        return Err(
+                            "ONNX ARM FP16 activation helper is conditional or misplaced".into(),
+                        );
+                    }
+                    count += 1;
+                    helper_depth = Some(stack.len() + 1);
+                }
+                stack.push(tag.name().as_ref().to_vec());
+                conditional.push(condition);
+            }
+            Event::End(_) => {
+                if helper_depth == Some(stack.len()) {
+                    helper_depth = None;
+                }
+                stack.pop();
+                conditional.pop();
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if count != 1 {
+        return Err("ONNX ARM FP16 activation helper population differs".into());
     }
     Ok(())
 }
@@ -876,7 +978,7 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
     }
     let (inputs, _) = source_inputs(repo, &files)?;
     if op == "verify-inputs" {
-        return serde_json::to_string(&serde_json::json!({"inputs":inputs,"tools":pinned_tools(),"configuration":cache_configuration(),"kleidiai_mirror":KLEIDIAI_MIRROR,"capture_schema":"solstone.onnx-windows-arm64-build-capture.v1","validation_schema":VALIDATION_SCHEMA})).map_err(|e|e.to_string());
+        return serde_json::to_string(&serde_json::json!({"inputs":inputs,"tools":pinned_tools(),"configuration":cache_configuration(),"source_patch":SOURCE_PATCH,"patched_provider_cmake_sha256":PATCHED_PROVIDER_CMAKE_SHA256,"kleidiai_mirror":KLEIDIAI_MIRROR,"capture_schema":"solstone.onnx-windows-arm64-build-capture.v1","validation_schema":VALIDATION_SCHEMA})).map_err(|e|e.to_string());
     }
     let before = capture_source(repo)?;
     if before.commit != values["--product-commit"]
@@ -939,6 +1041,26 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
 mod tests {
     use super::*;
     #[test]
+    fn provider_helper_refuses_missing_commented_conditional_and_excluded_items() {
+        let item = r#"<ClCompile Include="C:\\work\\source\\onnxruntime\\contrib_ops\\cpu\\fused_activation.cc"/>"#;
+        let wrap = |item: &str| format!("<Project><ItemGroup>{item}</ItemGroup></Project>");
+        assert!(validate_provider_helper(&wrap(item), "C:/work").is_ok());
+        assert!(validate_provider_helper(&wrap(""), "C:/work").is_err());
+        assert!(validate_provider_helper(&wrap(&format!("<!-- {item} -->")), "C:/work").is_err());
+        assert!(validate_provider_helper(&wrap(&format!("{item}{item}")), "C:/work").is_err());
+        assert!(validate_provider_helper(&wrap(item), "C:/foreign").is_err());
+        let conditional = item.replace(" Include=", " Condition=\"false\" Include=");
+        assert!(validate_provider_helper(&wrap(&conditional), "C:/work").is_err());
+        let excluded = item.replace(
+            "/>",
+            "><ExcludedFromBuild>true</ExcludedFromBuild></ClCompile>",
+        );
+        assert!(validate_provider_helper(&wrap(&excluded), "C:/work").is_err());
+        let parent = wrap(item).replace("<ItemGroup>", "<ItemGroup Condition=\"false\">");
+        assert!(validate_provider_helper(&parent, "C:/work").is_err());
+    }
+
+    #[test]
     fn generated_crt_evidence_refuses_comment_static_debug_and_wrong_target() {
         let valid = "<Project><ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|ARM64'\"><ClCompile><RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary></ClCompile></ItemDefinitionGroup></Project>";
         validate_project(valid).unwrap();
@@ -974,7 +1096,7 @@ mod source_tests {
                 .unwrap();
         let repo = inventory.ancestors().nth(3).unwrap();
         let (inputs, notices) = source_inputs(repo, &files).unwrap();
-        assert_eq!(inputs.len(), 6);
+        assert_eq!(inputs.len(), 7);
         assert_eq!(
             notices.keys().map(String::as_str).collect::<Vec<_>>(),
             [

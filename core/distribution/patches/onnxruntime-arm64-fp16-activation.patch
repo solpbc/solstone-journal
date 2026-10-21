@@ -1,0 +1,9 @@
+--- a/cmake/onnxruntime_providers_cpu.cmake
++++ b/cmake/onnxruntime_providers_cpu.cmake
+@@ -69,2 +69,6 @@
+   list(APPEND onnxruntime_providers_src ${onnxruntime_cpu_contrib_ops_srcs})
++else()
++  # ARM FP16 Conv uses this helper even when contrib operators are disabled.
++  list(APPEND onnxruntime_providers_src
++    "${ONNXRUNTIME_ROOT}/contrib_ops/cpu/fused_activation.cc")
+ endif()
