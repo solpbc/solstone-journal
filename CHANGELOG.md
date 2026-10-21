@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix on windows: someone impersonating the update server could supply altered journal software as an update; updates now require a valid sol pbc signature on the complete package.
 - on a day with hundreds of activities, your morning briefing now arrives, leaving out what doesn't fit, instead of not at all.
 
 ## [2.0.54] - 2026-10-21

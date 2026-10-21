@@ -29,6 +29,11 @@ pub trait UpdateSource: Send + Sync {
     fn get_release_feed(&self, channel: &str, app: &bundle::Manifest, staged_user_id: &str) -> Result<VelopackAssetFeed, Error>;
     /// Download the specified VelopackAsset to the provided local file path.
     fn download_release_entry(&self, asset: &VelopackAsset, local_file: &Path, progress_sender: Option<Sender<i16>>) -> Result<(), Error>;
+    /// Admit the final package before helper extraction or cache reuse. A returned file
+    /// stays open through extraction so a source can prevent writes and replacement.
+    fn open_admitted_release_entry(&self, _asset: &VelopackAsset, _local_file: &Path) -> Result<Option<std::fs::File>, Error> {
+        Ok(None)
+    }
 }
 
 /// A source that does not provide any update capability.

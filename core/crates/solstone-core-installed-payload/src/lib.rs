@@ -16,7 +16,10 @@ pub mod windows_adapter;
 
 #[cfg(feature = "test-fixture-pin")]
 pub use pin::install_test_fixture_pin;
-pub use pin::{PRODUCT_PIN, resolve_pin, signed_package_pin_environment, verify_pinned_signature};
+pub use pin::{
+    PRODUCT_PIN, admit_prehashed_signature, resolve_pin, signed_package_pin_environment,
+    verify_pinned_signature, verify_pinned_signature_reader,
+};
 
 pub use posix::{
     COMPILED_VERSION, CurrentInstalledMember, CurrentScreenOcrBundle, ExecutablePlatform,
