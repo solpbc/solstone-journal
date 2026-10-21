@@ -95,6 +95,18 @@ impl AdmittedWindowsNativeInputs {
                 [output] if output.label == crate::nvattest_windows::NVATTEST_EXE_OUTPUT_LABEL => {
                     WindowsNativeComponent::Nvattest
                 }
+                [output]
+                    if architecture == WindowsArchitecture::Aarch64
+                        && output.label == crate::openmp_windows::OUTPUT_LABEL =>
+                {
+                    WindowsNativeComponent::Openmp
+                }
+                [output]
+                    if architecture == WindowsArchitecture::Aarch64
+                        && output.label == crate::restic_windows::OUTPUT_LABEL =>
+                {
+                    WindowsNativeComponent::Restic
+                }
                 _ => return Err("unsupported controlled Windows input output set".into()),
             };
             for (label, bytes) in input.into_retained_members()? {
