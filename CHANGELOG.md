@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - your journal now brings search up to date before its daily thinking starts, and its daily thinking no longer shows as failed.
+- on a day with hundreds of activities, your morning briefing now arrives, leaving out what doesn't fit, instead of not at all.
 
 ## [2.0.53] - 2026-10-21
 
