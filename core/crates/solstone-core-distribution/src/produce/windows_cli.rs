@@ -345,6 +345,30 @@ fn validate_rust_notices(
     Ok(())
 }
 
+fn validate_arm_rust_notices(
+    index: &[u8],
+    notices: &[u8],
+    lock: &[u8],
+    repo: &Path,
+) -> Result<(), String> {
+    let index: serde_json::Value = serde_json::from_slice(index).map_err(|e| e.to_string())?;
+    let expected = WindowsArchitecture::Aarch64;
+    let tree = patched_velopack_tree_sha256(&repo.join("core/vendor/velopack"))?;
+    if index["schema"] != "solstone.rust-notices.v1"
+        || index["target"] != expected.target_id()
+        || index["filter_platform"] != expected.rust_triple()
+        || index["shipped_feature_arguments"]
+            != serde_json::json!(super::shipped_core_feature_args())
+        || index["cargo_lock_sha256"] != crate::digest::sha256_hex(lock)
+        || index["notices_sha256"] != crate::digest::sha256_hex(notices)
+        || index["path_dependency_trees"]
+            != serde_json::json!({"velopack@1.2.0 (path+core/vendor/velopack)": tree})
+    {
+        return Err("Windows ARM Rust notices do not match the target, lock, shipped features, notice bytes and patched Velopack tree".into());
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 struct InputPath(PathBuf);
 
@@ -723,6 +747,26 @@ pub fn run_cli(
         &lock_bytes,
         repo,
     )?;
+    if expected == WindowsArchitecture::Aarch64 {
+        validate_arm_rust_notices(
+            &read_bounded(
+                &super::windows_stage::join_components(
+                    repo,
+                    "core/distribution/windows-aarch64-rust-sources.json",
+                ),
+                4 * 1024 * 1024,
+            )?,
+            &read_bounded(
+                &super::windows_stage::join_components(
+                    repo,
+                    "core/distribution/windows-aarch64-rust-NOTICES.txt",
+                ),
+                16 * 1024 * 1024,
+            )?,
+            &lock_bytes,
+            repo,
+        )?;
+    }
     assert_no_source_population_is_accounted_for(
         &lock_bytes,
         &workspace_owned_crate_names(repo)?,
@@ -786,6 +830,47 @@ pub fn run_cli(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arm_rust_notices_refuse_foreign_or_stale_bindings() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let index = include_bytes!("../../../../distribution/windows-aarch64-rust-sources.json");
+        let notices = include_bytes!("../../../../distribution/windows-aarch64-rust-NOTICES.txt");
+        let lock = include_bytes!("../../../../Cargo.lock");
+        validate_arm_rust_notices(index, notices, lock, repo).unwrap();
+        for (field, value) in [
+            (
+                "schema",
+                serde_json::json!("solstone.windows-rust-notices.v2"),
+            ),
+            ("target", serde_json::json!("windows-x86_64")),
+            (
+                "filter_platform",
+                serde_json::json!("x86_64-pc-windows-msvc"),
+            ),
+            ("shipped_feature_arguments", serde_json::json!([])),
+            ("cargo_lock_sha256", serde_json::json!("0".repeat(64))),
+            ("path_dependency_trees", serde_json::json!({})),
+        ] {
+            let mut changed: serde_json::Value = serde_json::from_slice(index).unwrap();
+            changed[field] = value;
+            assert!(
+                validate_arm_rust_notices(
+                    &serde_json::to_vec(&changed).unwrap(),
+                    notices,
+                    lock,
+                    repo
+                )
+                .is_err(),
+                "{field}"
+            );
+        }
+        assert!(validate_arm_rust_notices(index, b"changed", lock, repo).is_err());
+        assert!(validate_arm_rust_notices(index, notices, b"changed", repo).is_err());
+    }
 
     #[test]
     fn admission_only_cli_has_a_closed_target_and_path_contract() {
