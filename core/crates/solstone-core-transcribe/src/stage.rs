@@ -614,18 +614,6 @@ pub(crate) fn process_one_with(
         return Ok(outcome.0);
     }
 
-    let reduce_at = Instant::now();
-    let reduction = reduce_audio_if_needed(&full_audio, &vad, speech_ratio(&vad));
-    if reduction.is_some() {
-        timings.add_ms("reduce", elapsed_ms(reduce_at));
-    }
-    let (mut reduced_audio, mut reduction) = reduction
-        .map(|(audio, reduction)| (Some(audio), Some(reduction)))
-        .unwrap_or((None, None));
-    let mut reduced_seconds = reduced_audio
-        .as_ref()
-        .map(|audio| audio.len() as f64 / f64::from(SAMPLE_RATE));
-
     let resolve_backend = || {
         resolve_default_backend(
             explicit_backend,
@@ -648,7 +636,7 @@ pub(crate) fn process_one_with(
                 audio_path,
                 journal_path,
                 audio_seconds,
-                reduced_seconds,
+                reduced_seconds: None,
                 timings: &timings,
                 vad: &vad,
             },
@@ -656,6 +644,23 @@ pub(crate) fn process_one_with(
             None,
         );
     })?;
+    #[cfg(all(feature = "embedded", unix))]
+    let mobile = embedded.is_some();
+    #[cfg(not(all(feature = "embedded", unix)))]
+    let mobile = false;
+    let reduce_at = Instant::now();
+    let reduction = trims_silence(&backend, mobile)
+        .then(|| reduce_audio_if_needed(&full_audio, &vad, speech_ratio(&vad)))
+        .flatten();
+    if reduction.is_some() {
+        timings.add_ms("reduce", elapsed_ms(reduce_at));
+    }
+    let (mut reduced_audio, mut reduction) = reduction
+        .map(|(audio, reduction)| (Some(audio), Some(reduction)))
+        .unwrap_or((None, None));
+    let mut reduced_seconds = reduced_audio
+        .as_ref()
+        .map(|audio| audio.len() as f64 / f64::from(SAMPLE_RATE));
     // 🔴 Reduce anyway when the confidential limit would otherwise refuse this audio.
     //
     // `reduce_audio_if_needed` declines when the VAD result is noisy AND speech-dense,
@@ -667,8 +672,8 @@ pub(crate) fn process_one_with(
     // recording, so when the alternative is refusal we reduce to speech-only -- which
     // is what an STT wants regardless.
     //
-    // 🔒 Confidential-only and last-resort: every other backend keeps the heuristic
-    // untouched, and audio still too long after reduction is still refused below.
+    // 🔒 Confidential-only and last-resort: no other backend reaches this, and audio
+    // still too long after reduction is still refused below.
     if backend == "confidential"
         && reduced_audio.is_none()
         && !confidential::confidential_request_fits(full_audio.len())
@@ -1007,6 +1012,17 @@ fn first_pass_analysis(
         #[cfg(windows)]
         generation,
     )
+}
+
+/// Whether silence reduction runs before transcription.
+///
+/// 🔴 Desktop local engines get the whole recording. Reduction keeps only what Silero
+/// marked as speech, and Silero misses quiet speech: measured on an owner's journal
+/// 2026-10-22, it removed about 27% of the words in Apple Watch meeting recordings
+/// before any engine heard them. Confidential keeps reducing (its per-request limit),
+/// and so does the mobile runtime. The no-speech gate before this still applies.
+fn trims_silence(backend: &str, mobile: bool) -> bool {
+    backend == "confidential" || mobile
 }
 
 /// VAD over the voice-only masked audio, through the same transport as the first VAD.
@@ -1613,6 +1629,16 @@ mod tests {
             super::base_time_us_of_day(&raw_file),
             segment_clock + 90 * 1_000_000
         );
+    }
+
+    #[test]
+    fn desktop_local_engines_get_the_whole_recording() {
+        for backend in ["parakeet", "parakeet-cpp", "whisper"] {
+            assert!(!super::trims_silence(backend, false), "{backend}");
+            assert!(super::trims_silence(backend, true), "{backend} on mobile");
+        }
+        assert!(super::trims_silence("confidential", false));
+        assert!(super::trims_silence("confidential", true));
     }
 
     use chrono::DateTime;

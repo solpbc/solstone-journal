@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fixed local models using a different GPU from the one you selected.
 
 - on mac, local transcription now recovers opening words that it could silently leave out of a long recording. existing transcripts keep the words they have.
+- on linux, windows and mac, local transcription no longer cuts quiet stretches out of a recording, such as a conversation from your watch. it now transcribes the whole recording, so background tv or radio may show up in your transcripts too. existing transcripts keep the words they have.
 
 - in your connections, plans inferred by older versions of your journal no longer count as events attended together.
 - in your connections, people linked only by a calendar invite no longer show as "events together" or "often around". they're now labeled "calendar only".
