@@ -5,5 +5,5 @@ license_url = "https://raw.githubusercontent.com/velopack/velopack/f2edcbcafb81d
 license_commit = "f2edcbcafb81da5b3c884aaea330e225ad91d8b6"
 license_sha256 = "91845db83551c877ebbb1118e0fb92e4e527290d23b995c55dcd438b3293943f"
 license_length = 1091
-patched_tree_sha256 = "22a25c02972a6c237b0f2673556f7fe7764d6ab15eee4e59b496e90c28128e78"
+patched_tree_sha256 = "aa03c842b3945b7c7752b7b60a55c89937b467a212b32c5410f783c9271bc881"
 not_the_published_crate = "This tree is not the published crates.io crate velopack-1.2.0."

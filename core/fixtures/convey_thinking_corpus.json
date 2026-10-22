@@ -1512,7 +1512,7 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
@@ -3739,7 +3739,7 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
@@ -5946,7 +5946,7 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
@@ -8147,7 +8147,7 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
@@ -10537,7 +10537,7 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
@@ -14054,7 +14054,7 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",

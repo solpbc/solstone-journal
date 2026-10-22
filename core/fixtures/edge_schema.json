@@ -132,6 +132,15 @@
         },
         {
           "columns": [
+            "source",
+            "anchor"
+          ],
+          "name": "edges_source_anchor",
+          "origin": "c",
+          "unique": 0
+        },
+        {
+          "columns": [
             "dst",
             "kind",
             "day"

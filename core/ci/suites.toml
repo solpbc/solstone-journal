@@ -4786,12 +4786,16 @@ package = "solstone-core-system"
 target = "system_provider_runtime"
 set = "component"
 areas = ["system"]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
 runtime = "none"
+
+[suites.windows]
+satisfaction = "cargo"
+acknowledgement = "JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed/pass"
 
 [[suites]]
 id = "solstone-core-system::system_schedule_queue"

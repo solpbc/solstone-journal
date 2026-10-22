@@ -5621,11 +5621,14 @@ version = "2.0.54"
 dependencies = [
  "getrandom 0.3.4",
  "jsonschema",
+ "log",
+ "minisign",
  "quick-xml",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-about",
+ "solstone-core-installed-payload",
  "solstone-core-journal-io",
  "spl-core",
  "svgtypes",
@@ -5636,6 +5639,7 @@ dependencies = [
  "webview2-com",
  "windows 0.61.3",
  "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]
@@ -5865,6 +5869,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-convey-http",
+ "solstone-core-journal-config",
  "solstone-core-location",
  "tempfile",
  "tokio",

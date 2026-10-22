@@ -612,7 +612,8 @@ mod tests {
         }
     }
 
-    #[cfg(all(unix, test, feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(unix)]
     #[test]
     fn public_launcher_script_emits_notice_without_journal_directory() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))

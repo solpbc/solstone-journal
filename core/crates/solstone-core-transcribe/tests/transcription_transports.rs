@@ -1196,9 +1196,9 @@ fn coreml_successful_helper_collapses_subwords_and_punctuation() {
     assert_eq!(text, "hello world!");
     assert_eq!(words.len(), 2);
     assert_eq!(words[0].word, " hello");
-    assert_eq!(words[0].probability, 0.6);
+    assert_eq!(words[0].probability, Some(0.6));
     assert_eq!(words[1].word, " world!");
-    assert_eq!(words[1].probability, 0.7);
+    assert_eq!(words[1].probability, Some(0.7));
 }
 
 #[cfg(unix)]

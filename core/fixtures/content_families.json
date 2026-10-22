@@ -964,7 +964,7 @@
       "agent": "morning_briefing",
       "chunks": [
         {
-          "markdown": "## Your Day\n\nNothing to report.\n\n## Yesterday\n\nNothing to report.\n\n## Needs Attention\n\nNothing to report.\n\n## Forward Look\n\nNothing to report.\n\n## Reading\n\nNothing to report.",
+          "markdown": "## Yesterday\n\nNothing to report.\n\n## Needs Attention\n\nNothing to report.",
           "source": {
             "greeting": "Morning",
             "sections": [

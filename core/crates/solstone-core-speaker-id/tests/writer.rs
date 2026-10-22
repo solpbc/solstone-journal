@@ -145,6 +145,78 @@ fn ac1_every_written_sentence_id_is_persisted() {
 }
 
 #[test]
+fn native_timing_and_words_preserve_original_audio_offsets() {
+    let directory = TempDir::new();
+    let words = json!([
+        {"word":" A","start":10.125,"end":10.5,"probability":null},
+        {"word":" test.","start":10.75,"end":11.25,"probability":1.0}
+    ]);
+    let value = request(
+        &directory,
+        json!([{"id":1,"start_offset_us":10_125_000,"text":"A test.","timing":{"start":10.125,"end":11.25},"words":words}]),
+        json!([]),
+        json!([]),
+        0,
+    );
+    write(value).unwrap();
+    let rows = lines(&directory.path().join("segment.jsonl"));
+    assert_eq!(rows[1]["start"], "00:00:09");
+    assert_eq!(rows[1]["timing"], json!({"start":10.125,"end":11.25}));
+    assert_eq!(rows[1]["words"], words);
+    assert_eq!(rows[1]["text"], "A test.");
+    assert_eq!(rows[1]["source"], "mic_audio");
+}
+
+#[test]
+fn native_malformed_word_evidence_never_publishes_or_replaces_outputs() {
+    for evidence in [
+        json!({"timing":null}),
+        json!({"timing":{"start":0.125}}),
+        json!({"timing":{"start":false,"end":1.0}}),
+        json!({"words":{}}),
+        json!({"words":[null]}),
+        json!({"words":[{"word":3,"start":0.0,"end":1.0,"probability":null}]}),
+        json!({"words":[{"word":" hi","start":0.0,"end":1.0}]}),
+        json!({"words":[{"word":" hi","start":0.0,"end":null,"probability":null}]}),
+        json!({"words":[{"word":" hi","start":0.0,"end":1.0,"probability":"high"}]}),
+    ] {
+        for redo in [false, true] {
+            let directory = TempDir::new();
+            let mut statement = json!({"id":1,"start_offset_us":0,"text":"hi"});
+            statement
+                .as_object_mut()
+                .unwrap()
+                .extend(evidence.as_object().unwrap().clone());
+            let mut value = request(&directory, json!([statement]), json!([]), json!([]), 0);
+            value["output"]["redo"] = json!(redo);
+            let jsonl = directory.path().join("segment.jsonl");
+            let npz = directory.path().join("segment.npz");
+            if redo {
+                fs::write(&jsonl, b"existing transcript").unwrap();
+                fs::write(&npz, b"existing embeddings").unwrap();
+            }
+            assert!(
+                matches!(
+                    write(value),
+                    Err(SpeakerTranscriptWriteError::InvalidStatement {
+                        statement_index: 0,
+                        ..
+                    })
+                ),
+                "must refuse structurally malformed evidence: {evidence}"
+            );
+            if redo {
+                assert_eq!(fs::read(&jsonl).unwrap(), b"existing transcript");
+                assert_eq!(fs::read(&npz).unwrap(), b"existing embeddings");
+            } else {
+                assert!(!jsonl.exists());
+                assert!(!npz.exists());
+            }
+        }
+    }
+}
+
+#[test]
 fn blank_statement_text_refuses_before_publication() {
     let directory = TempDir::new();
     for text in ["", "   "] {

@@ -1089,14 +1089,6 @@ mod tests {
                      json.dumps default separators and this crate emits compact JSON. \
                      Tokenizes identically",
         },
-        DivergenceEntry {
-            case: "morning_briefing_nominal",
-            kind: Divergence::Accepted,
-            native_chunks: &[
-                "## Your Day\n\nNothing to report.\n\n## Yesterday\n\nNothing to report.\n\n## Needs Attention\n\nNothing to report.\n\n## Forward Look\n\nNothing to report.",
-            ],
-            reason: "reading section dropped with facet newsletter retirement; four sections instead of five",
-        },
     ];
 
     fn divergence_for(case: &str) -> Option<&'static DivergenceEntry> {

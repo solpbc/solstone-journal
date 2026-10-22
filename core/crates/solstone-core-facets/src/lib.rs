@@ -6,6 +6,7 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod action_log;
+mod activity_calendar;
 mod activity_placement;
 pub mod entity_doctor;
 mod speculative_facets;
@@ -16,8 +17,9 @@ pub use action_log::{
     ActionLogScan, append_action_log, append_action_log_checked, append_action_log_for_day,
     append_journal_action_log_at_root_checked, read_journal_action_rows,
 };
+pub use activity_calendar::{InvitedPerson, ScheduledEvent, calendar_beside, calendar_on_day};
 pub use activity_placement::{
-    ActivityCourse, PlacedRecord, ResolvedSegment, place_activity_records,
+    ActivityCourse, PlacedRecord, ResolvedSegment, activity_span, place_activity_records,
 };
 pub use solstone_core_entity::facet_links;
 pub use solstone_core_journal_io::AppendError;

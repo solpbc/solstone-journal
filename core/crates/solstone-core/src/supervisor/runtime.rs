@@ -1854,7 +1854,7 @@ pub(crate) async fn boot_and_tick(
         cap_resolver.set_override(partition, cap);
     }
     let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
-    let queue = TaskQueue::new(TaskQueueOptions {
+    let queue_options = TaskQueueOptions {
         #[cfg(windows)]
         read_file_grants: sense_child_environment.read_file_grants.clone(),
         journal_root: journal.clone(),
@@ -1868,7 +1868,11 @@ pub(crate) async fn boot_and_tick(
         before_deadline_commit: None,
         child_environment: sense_child_environment.environment.clone(),
         task_binary: journal_binary.clone(),
-    });
+    };
+    #[cfg(windows)]
+    let queue = TaskQueue::with_parakeet_runtime(queue_options, Arc::clone(&parakeet_shared));
+    #[cfg(not(windows))]
+    let queue = TaskQueue::new(queue_options);
     let clock: Arc<dyn solstone_core_system::provider_runtime::RuntimeClock> =
         Arc::new(SystemRuntimeClock::default());
     let local_shared = Arc::new(LocalRuntimeShared::default());

@@ -2,7 +2,7 @@
   "type": "generate",
 
   "title": "morning briefing",
-  "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+  "description": "synthesizes all daily agent outputs into a structured morning briefing",
   "color": "#1565c0",
   "schedule": "daily",
   "priority": 50,
@@ -23,20 +23,18 @@ Return only the JSON object. Do not wrap it in a markdown fence. Do not include 
 ```
 {
   "metadata": $briefing_metadata,
-  "your_day": [],
   "yesterday": [
     "what happened yesterday"
   ],
   "needs_attention": [
     {"text": "ranked action or pipeline gap", "source_id": "sol://... or empty string"}
-  ],
-  "forward_look": []
+  ]
 }
 ```
 
 Copy `metadata` exactly as injected above. Use the lowercase `$briefing_metadata` placeholder only in this prompt; never use the capitalized form because the runner's capitalization alias would corrupt the JSON string.
 
-Every root key shown above is required. Use empty arrays when a section has no content. `your_day` and `forward_look` are always empty arrays: the packet holds no calendar, and the briefing never predicts what is coming from the day's material.
+Every root key shown above is required. Use empty arrays when a section has no content.
 
 ## Source Packet
 
@@ -63,6 +61,8 @@ $pulse_surface
 **Source attribution.** Attribute high-consequence factual claims to their source using inline parenthetical links with `sol://` URIs when a source URI is present in the packet. Not every claim needs attribution.
 
 **Yesterday** - What happened. Draw from the activity digest and pulse. Highlight accomplishments and notable interactions. Keep to 3-5 bullets max. Only include if the activity digest or pulse has content for the analysis day.
+
+**Calendar.** An activity may carry what the owner's calendar had scheduled while it ran. You may name the activity by that meeting ("your design review"). The calendar says what was planned, not who was there: never say someone attended, joined or met because they were invited, and never mention a meeting that no activity carries.
 
 **Needs Attention** - Draw from pulse pipeline gaps only. Set `source_id` to the supplied primary source's `sol://` URI when one exists, else `""`. Keep inline `[label](sol://...)` links inside `text`.
 

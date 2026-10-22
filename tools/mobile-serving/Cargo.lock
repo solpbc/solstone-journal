@@ -5359,7 +5359,9 @@ dependencies = [
  "chrono",
  "log",
  "serde_json",
+ "sha2 0.10.9",
  "solstone-core-convey-http",
+ "solstone-core-journal-config",
  "solstone-core-location",
 ]
 

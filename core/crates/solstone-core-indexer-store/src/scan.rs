@@ -1246,6 +1246,11 @@ where
         tx.rollback()?;
         return Ok(Some(report));
     }
+    crate::calendar_schedule::relink_all_people(&tx, journal)?;
+    tx.execute(
+        "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
+        [CALENDAR_PEOPLE_EDGES_PATH],
+    )?;
     if !before_commit()? {
         tx.rollback()?;
         return Ok(None);
@@ -1395,6 +1400,25 @@ fn reconcile_edges(
         tx.commit()?;
     }
     report.removed = removed.len();
+    if !calendar_people_linked(conn)? {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        match crate::calendar_schedule::relink_all_people(&tx, journal) {
+            Ok(()) => {
+                tx.execute(
+                    "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
+                    [CALENDAR_PEOPLE_EDGES_PATH],
+                )?;
+                crate::db::admit_scan_journal(checkpoint)?;
+                tx.commit()?;
+            }
+            Err(error) => {
+                tx.rollback()?;
+                report
+                    .warnings
+                    .push(format!("calendar invites not linked yet: {error}"));
+            }
+        }
+    }
     if !plans_rechecked && report.failures.is_empty() {
         conn.execute(
             "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
@@ -1406,6 +1430,21 @@ fn reconcile_edges(
 
 /// Marks that files holding retired plan records had their edges re-extracted.
 const RETIRED_PLAN_EDGES_PATH: &str = "edges:retired-plans";
+
+/// Marks that the people on every listed calendar event have been linked.
+/// Calendar notes indexed before people links existed get theirs once.
+const CALENDAR_PEOPLE_EDGES_PATH: &str = "edges:calendar-people";
+
+fn calendar_people_linked(conn: &Connection) -> Result<bool, StoreError> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM edge_files WHERE path = ?",
+            [CALENDAR_PEOPLE_EDGES_PATH],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
 
 fn retired_plan_edges_rechecked(conn: &Connection) -> Result<bool, StoreError> {
     Ok(conn
@@ -1481,11 +1520,16 @@ fn process_edge_file(
 }
 
 fn edge_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64>, StoreError> {
-    let mut statement =
-        conn.prepare("SELECT path, mtime FROM edge_files WHERE path NOT IN (?, ?) ORDER BY path")?;
-    let rows = statement.query_map([EDGES_SCHEMA_PATH, RETIRED_PLAN_EDGES_PATH], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-    })?;
+    let mut statement = conn
+        .prepare("SELECT path, mtime FROM edge_files WHERE path NOT IN (?, ?, ?) ORDER BY path")?;
+    let rows = statement.query_map(
+        [
+            EDGES_SCHEMA_PATH,
+            RETIRED_PLAN_EDGES_PATH,
+            CALENDAR_PEOPLE_EDGES_PATH,
+        ],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+    )?;
     let mut mtimes = BTreeMap::new();
     for row in rows {
         let (path, mtime) = row?;
@@ -5467,6 +5511,7 @@ mod tests {
             edge_file_paths(&conn),
             vec![
                 "edges:__schema__".to_string(),
+                "edges:calendar-people".to_string(),
                 "edges:retired-plans".to_string(),
                 "facets/work/entities/123.jsonl".to_string(),
                 "facets/work/entities/20260304.jsonl".to_string(),
@@ -6748,7 +6793,10 @@ mod tests {
         assert_eq!(morning_row.2, "morning_briefing");
         assert_eq!(morning_row.3, None);
         assert_eq!(morning_row.4, "");
-        assert!(morning_row.5.contains("## Your Day"));
+        assert!(morning_row.5.contains("- Shipped."));
+        // A stored briefing's retired forecast sections are not indexed.
+        assert!(!morning_row.5.contains("Meet Alice."));
+        assert!(!morning_row.5.contains("Prepare."));
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup talent json root");
     }

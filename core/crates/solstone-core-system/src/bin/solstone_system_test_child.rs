@@ -7,6 +7,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+#[cfg(windows)]
+#[path = "support/parakeet_queue.rs"]
+mod parakeet_queue;
+
 use solstone_core_journal_config::work_priority::WorkPriority;
 use solstone_core_system::lifecycle::{SupervisorLifecycle, WriterId};
 #[cfg(unix)]
@@ -38,6 +42,10 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().unwrap_or_default();
     match mode.as_str() {
+        #[cfg(windows)]
+        "parakeet-queue-driver" => parakeet_queue::run(args),
+        #[cfg(windows)]
+        "journal" if args.next().as_deref() == Some("think") => parakeet_queue::probe(args),
         // "-m" is llama-server's model flag; "--model" is parakeet-server's.
         // Both real binaries land here as this fixture's stand-in.
         "-m" | "--model" => launch_stub(args),
@@ -544,7 +552,19 @@ fn launch_stub(mut args: impl Iterator<Item = String>) {
                 let mut stream = stream.expect("accept health probe");
                 let mut request = [0_u8; 1024];
                 #[cfg(windows)]
-                let request_len = stream.read(&mut request).unwrap_or_default();
+                let request_len = {
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    let mut length = 0;
+                    while length < request.len() && !request[..length].ends_with(b"\r\n\r\n") {
+                        match stream.read(&mut request[length..]) {
+                            Ok(0) | Err(_) => break,
+                            Ok(count) => length += count,
+                        }
+                    }
+                    length
+                };
                 #[cfg(not(windows))]
                 let _ = stream.read(&mut request);
                 #[cfg(windows)]
@@ -555,6 +575,8 @@ fn launch_stub(mut args: impl Iterator<Item = String>) {
                         std::env::var("SOLSTONE_PARAKEET_AUTH_NONCE").expect("fixture auth nonce");
                     let request = String::from_utf8_lossy(&request[..request_len]);
                     std::env::var("PARAKEET_ATT_CONTEXT").is_ok_and(|context| context == "128")
+                        && std::env::var("PARAKEET_SUBSAMPLING_TILE")
+                            .is_ok_and(|tile| tile == "256")
                         && request.contains(&format!("Authorization: Bearer {token}"))
                         && request.contains(&format!("X-Solstone-Nonce: {nonce}"))
                 } else {

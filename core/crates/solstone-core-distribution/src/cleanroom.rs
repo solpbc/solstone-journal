@@ -327,7 +327,7 @@ fn generation_completion(
     {
         return Ok((
             "morning_briefing",
-            r#"{"metadata":{"generated":"2099-01-01T00:00:00Z","model":"cleanroom","sources":{"segments":0},"gaps":[],"coverage_preamble":""},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[]}"#,
+            r#"{"metadata":{"generated":"2099-01-01T00:00:00Z","model":"cleanroom","sources":{"segments":0},"gaps":[],"coverage_preamble":""},"yesterday":[],"needs_attention":[]}"#,
         ));
     }
     if prompt.contains("Propose candidate durable factoids about attached entities")
