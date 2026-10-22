@@ -39,6 +39,16 @@ The host-loss command kills the observed host PID after indexing while the worke
 
 All data generated here is synthetic. The fault interface and test-hook dependency belong only to this development app. Do not embed this bridge in a release app.
 
+## Observing durable rebuild progress
+
+Add `--observe-rebuild` to a serving launch to collect read-only evidence from the journal opened by the native runtime. The selected synthetic suite must already contain its `health` and `talents/entities--entity_suggest` directories. The observer checks the native root identity and refuses replaced directories, unsupported file types and malformed records.
+
+Directory notifications trigger bounded reads of `health/work-intent.json` and active entity-suggestion use records. Each changed snapshot includes the original bytes, hashes and a monotonic timestamp. Notifications can coalesce; snapshots do not provide an atomic view across files or a complete event history. A temporary publication race refuses that sample and waits for another notification. These observations do not authorize an interruption or decide recovery eligibility.
+
+The observer allows at most 1 MiB per file, 2 MiB per snapshot, 16 MiB of emitted raw payload and 1,024 notification wakeups within the serving window. Unchanged and refused reads do not consume the emitted-payload allowance. Stop cancels observation and joins descriptor closure before reporting the observer stopped. The default launch leaves observation disabled.
+
+The macOS diagnostic in [RebuildObservationQualification.swift](diagnostics/RebuildObservationQualification.swift) exercises actual Darwin directory events, publication races, replaced identities, rejected file types and concurrent Stop callers. It checks descriptor closure at each Stop return and suppresses later observations. It supplies host controls; physical interruption and recovery require separate evidence.
+
 ## Authenticated LAN qualification
 
 The listener and production owner router run on a serial native queue in the foreground host. The standard non-UI helper has a measured 35 MiB dirty-memory limit, below the existing journal mark's 64 MiB Argon2 allocation. Host placement preserves that derivation. The host retains the helper process and private XPC connection for indexing and export. Both derive `Documents/journal-<suite>` from the dedicated signed app-group container; host-supplied paths confer no authority. The earlier storage qualification continues to use the helper's private container. Local owner setup and consent stay inside the app; it opens no unauthenticated loopback port. The host selects its private `en0` IPv4 address and binds only that address. A changed Wi-Fi address requires a restart. Keep the host foreground and the phone plugged in for this development capability.

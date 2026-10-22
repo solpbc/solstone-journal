@@ -74,13 +74,23 @@ pub fn is_current(
     segment: &Path,
     source_mtime_ms: Option<i64>,
 ) -> Result<bool, String> {
-    let saved: Publication = match std::fs::read(receipt_path(segment)) {
-        Ok(bytes) => match serde_json::from_slice(&bytes) {
+    let root = solstone_core_journal_io::JournalRoot::open(journal).map_err(|e| e.to_string())?;
+    let relative = receipt_path(segment)
+        .strip_prefix(journal)
+        .map_err(|e| e.to_string())?
+        .to_path_buf();
+    let saved: Publication = match solstone_core_journal_io::read_relative_file_bounded(
+        &root,
+        &relative,
+        4 * 1024 * 1024,
+    )
+    .map_err(|e| e.to_string())?
+    {
+        Some(observed) => match serde_json::from_slice(&observed.bytes) {
             Ok(saved) => saved,
             Err(_) => return Ok(false),
         },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.to_string()),
+        None => return Ok(false),
     };
     Ok(saved == snapshot(journal, segment, source_mtime_ms)?)
 }
@@ -137,6 +147,32 @@ pub fn publish_checked(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_receipt_refuses_aliases_fifos_and_oversized_files() {
+        use std::os::unix::fs::symlink;
+        for case in ["alias", "fifo", "oversized"] {
+            let journal = tempfile::tempdir().unwrap();
+            let segment = journal.path().join("chronicle/20260101/notes/090000_300");
+            std::fs::create_dir_all(segment.join("talents")).unwrap();
+            let receipt = receipt_path(&segment);
+            match case {
+                "alias" => {
+                    let other = journal.path().join("outside.json");
+                    std::fs::write(&other, "{}").unwrap();
+                    symlink(other, &receipt).unwrap();
+                }
+                "fifo" => nix::unistd::mkfifo(&receipt, nix::sys::stat::Mode::S_IRUSR).unwrap(),
+                "oversized" => std::fs::write(&receipt, vec![b'x'; 4 * 1024 * 1024 + 1]).unwrap(),
+                _ => unreachable!(),
+            }
+            assert!(
+                is_current(journal.path(), &segment, None).is_err(),
+                "{case}"
+            );
+        }
+    }
 
     #[test]
     fn an_unwritable_work_list_leaves_the_saved_publication_owed() {
