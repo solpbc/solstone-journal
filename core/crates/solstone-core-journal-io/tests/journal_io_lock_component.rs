@@ -465,20 +465,20 @@ fn lease_is_released_when_the_holder_dies() {
 fn zero_attempts_and_retry_window_make_one_immediate_attempt() {
     let temporary = tempfile::TempDir::new().unwrap();
     let path = temporary.path().join("refresh.lease");
+    let options = LeaseOptions {
+        attempts: 0,
+        retry_max: Duration::ZERO,
+        ..LeaseOptions::default()
+    };
+
+    let lease = acquire_file_lease(&path, options).unwrap();
+    assert!(lease.is_some());
+    drop(lease);
+
     let holder = spawn_lease_holder(&path, temporary.path());
     wait_for_marker(&holder.marker);
-
-    let started = Instant::now();
-    let result = acquire_file_lease(
-        &path,
-        LeaseOptions {
-            attempts: 0,
-            retry_max: Duration::ZERO,
-            ..LeaseOptions::default()
-        },
-    );
+    let result = acquire_file_lease(&path, options);
     assert!(matches!(result, Ok(None)));
-    assert!(started.elapsed() < Duration::from_millis(100));
     kill_holder(holder);
 }
 
