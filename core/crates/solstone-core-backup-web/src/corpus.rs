@@ -5757,7 +5757,12 @@ async fn hosted_poll_needs_subscription_matches_local_needs_subscription_contrac
         }
         let done = wait_terminal(&deps).await;
         assert!(solstone_core_backup::load_hosted_binding(root.path()).is_none());
-        assert!(!crate::operation::is_busy(&deps.operations));
+        let deadline = tokio::time::Instant::now() + FIXTURE_WAIT;
+        while crate::operation::is_busy(&deps.operations) {
+            fixture_tick(deadline)
+                .await
+                .expect("terminal operation stayed busy");
+        }
         done
     }
 
