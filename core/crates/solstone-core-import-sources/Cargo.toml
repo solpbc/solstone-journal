@@ -35,7 +35,7 @@ base64 = "0.22.1"
 chrono.workspace = true
 chrono-tz.workspace = true
 getrandom.workspace = true
-icalendar = { version = "0.17.13", features = ["chrono-tz"] }
+icalendar = { version = "0.17.13", features = ["chrono-tz", "recurrence"] }
 image.workspace = true
 regex.workspace = true
 serde.workspace = true
@@ -45,6 +45,7 @@ solstone-core-depict.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
+solstone-core-format.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-import.workspace = true
 solstone-core-ingest-resolve.workspace = true
@@ -69,6 +70,7 @@ solstone-core-journal-archive.workspace = true
 serde_json.workspace = true
 solstone-core-format.workspace = true
 solstone-core-indexer-store.workspace = true
+rusqlite.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["process", "signal"] }

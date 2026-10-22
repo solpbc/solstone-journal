@@ -22,6 +22,13 @@ pub enum RawReleaseClass {
     Policy,
     Offload,
     Owner,
+    /// Released by transcription after the owner's voice-only filtered words were saved.
+    ///
+    /// The caller holds the transcript's output claim and the segment commit, has re-verified
+    /// the original's size and digest against the transcript's record under them, and holds no
+    /// open handle to the original, all immediately before the release. Like every release, the
+    /// call runs the door's journal-wide recovery and activity census.
+    OwnerVoice,
 }
 
 impl RawReleaseClass {
@@ -32,6 +39,7 @@ impl RawReleaseClass {
             Self::Policy => "policy_raw_release",
             Self::Offload => "offload_raw_release",
             Self::Owner => "owner_raw_release",
+            Self::OwnerVoice => "owner_voice_raw_release",
         }
     }
 
@@ -42,6 +50,7 @@ impl RawReleaseClass {
             "policy_raw_release" => Some(Self::Policy),
             "offload_raw_release" => Some(Self::Offload),
             "owner_raw_release" => Some(Self::Owner),
+            "owner_voice_raw_release" => Some(Self::OwnerVoice),
             _ => None,
         }
     }
@@ -57,13 +66,16 @@ impl RawReleaseClass {
         }
     }
 
-    /// Convert to the matching general removal class.
+    /// Convert to the matching general removal class, if this release has one.
+    ///
+    /// An owner-voice release never comes from a removal mark.
     #[must_use]
-    pub fn to_removal_class(self) -> RemovalClass {
+    pub fn to_removal_class(self) -> Option<RemovalClass> {
         match self {
-            Self::Policy => RemovalClass::PolicyRawRelease,
-            Self::Offload => RemovalClass::OffloadRawRelease,
-            Self::Owner => RemovalClass::OwnerRawRelease,
+            Self::Policy => Some(RemovalClass::PolicyRawRelease),
+            Self::Offload => Some(RemovalClass::OffloadRawRelease),
+            Self::Owner => Some(RemovalClass::OwnerRawRelease),
+            Self::OwnerVoice => None,
         }
     }
 }

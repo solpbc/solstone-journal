@@ -51,6 +51,8 @@ const OVERLAP_DETECTOR: &str = "pyannote-segmentation-3.0";
 pub(crate) struct InputFacts {
     pub(crate) path: PathBuf,
     pub(crate) input_size: u64,
+    /// Members every processing record this attempt writes carries (voice-only fields).
+    pub(crate) record_extra: Map<String, Value>,
 }
 
 /// Capture the input's byte count so the processing record names these bytes.
@@ -64,6 +66,7 @@ pub(crate) fn capture_input_facts(path: &Path) -> Result<InputFacts, TranscribeE
     Ok(InputFacts {
         path: path.to_path_buf(),
         input_size,
+        record_extra: Map::new(),
     })
 }
 
@@ -244,6 +247,56 @@ pub(crate) fn process_one_with(
     if should_skip_process_one_processed(audio_path, redo, Some(journal_path), retry) {
         return Ok(ProcessOutcome::Skipped);
     }
+    // Voice-only eligibility is decided here, under the output claim and before any retry
+    // permission is consumed, from the output and the setting as they are on disk now.
+    let owner_voice_setting = crate::config::read_transcribe_config(journal_path)
+        .map(|config| crate::config::owner_voice_only(&config))
+        .map_err(|error| TranscribeError::ProcessingClaim {
+            path: audio_path.to_path_buf(),
+            detail: error.to_string(),
+        })?;
+    let owner_voice_eligibility =
+        crate::owner_voice::eligibility(audio_path, &output, owner_voice_setting);
+    if owner_voice_eligibility == crate::owner_voice::Eligibility::Final {
+        return Ok(ProcessOutcome::Skipped);
+    }
+    let owner_voice_print = if owner_voice_eligibility == crate::owner_voice::Eligibility::Filtered
+    {
+        match solstone_core_speaker_resolve::owner_centroid::owner_voice_print(journal_path) {
+            Some(print) => Some(print),
+            None => {
+                let first_time = !read_processing_record_header(&output)
+                    .as_ref()
+                    .is_some_and(solstone_core_processing_record::owner_voice_filtered);
+                let error = TranscribeError::OwnerVoiceUnavailable {
+                    detail: if first_time {
+                        "save a voice in Speakers, or turn off transcribe.owner_voice_only".into()
+                    } else {
+                        "save a voice in Speakers to finish this filtered recording".into()
+                    },
+                };
+                emit_event(
+                    audio_path,
+                    journal_path,
+                    TranscribedOutcome::Deferred,
+                    Some("owner_voice_unavailable"),
+                    Some("OwnerVoiceUnavailable"),
+                    Some(&error),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    &Timings::default(),
+                    None,
+                );
+                return Err(error);
+            }
+        }
+    } else {
+        None
+    };
     let automatic_retry = automatic_retry_replaces_output(&output);
     let observation = InputObservation::capture(&claim, audio_path).map_err(|error| {
         TranscribeError::ProcessingClaim {
@@ -284,10 +337,14 @@ pub(crate) fn process_one_with(
     // Keep both ordinary and explicitly admitted retry authority through
     // successful, empty and failed publication under this output claim.
     let redo = redo || admitted_retry || automatic_retry;
-    let facts = InputFacts {
+    let mut facts = InputFacts {
         path: audio_path.to_path_buf(),
         input_size: observation.input_size(),
+        record_extra: Map::new(),
     };
+    if owner_voice_print.is_some() {
+        facts.record_extra = crate::owner_voice::flag_extra();
+    }
     let mut timings = Timings::default();
     if let Some(queue_wait_ms) = queue_wait_ms() {
         timings.add_ms("queue_wait", queue_wait_ms);
@@ -395,6 +452,116 @@ pub(crate) fn process_one_with(
     if let Some(runtime) = embedded {
         runtime.checkpoint()?;
     }
+    // Voice-only: zero what is left out before anything below sees the audio.
+    let (full_audio, vad) = match owner_voice_print.as_ref() {
+        None => (full_audio, vad),
+        Some(print) => {
+            let filter_at = Instant::now();
+            let step = crate::owner_voice::filter_audio(
+                audio_path,
+                full_audio,
+                &vad,
+                &print.values,
+                |audio, statements| {
+                    first_pass_analysis(
+                        audio_path,
+                        audio,
+                        statements,
+                        #[cfg(all(feature = "embedded", unix))]
+                        embedded,
+                        #[cfg(windows)]
+                        generation,
+                    )
+                },
+            );
+            timings.add_ms("owner_voice_filter", elapsed_ms(filter_at));
+            #[cfg(all(feature = "embedded", unix))]
+            if let Some(runtime) = embedded {
+                runtime.checkpoint()?;
+            }
+            let step = match step {
+                Ok(step) => step,
+                Err(crate::owner_voice::FirstPassProblem::HelperOutdated) => {
+                    let commit = commit_input(&observation, &claim, audio_path, &checkpoint)?;
+                    let mut processing = crate::processing::backend_failure_record(
+                        facts.input_size,
+                        solstone_core_processing_record::vocab::REASON_ANALYSIS_FAILED,
+                    );
+                    processing["error"] = json!(
+                        "the speaker-analysis helper predates overlap ranges or speaker turns"
+                    );
+                    write_failed_record(&facts, redo, processing, context_attempt.as_ref())?;
+                    drop(commit);
+                    finish_context_output(
+                        journal_path,
+                        &facts.path.with_extension("jsonl"),
+                        context_attempt.as_ref(),
+                        audio_path,
+                        &checkpoint,
+                    )?;
+                    emit_event(
+                        audio_path,
+                        journal_path,
+                        TranscribedOutcome::Failed,
+                        Some("owner_voice_helper_outdated"),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(audio_seconds),
+                        None,
+                        None,
+                        &timings,
+                        Some(&vad),
+                    );
+                    return Ok(ProcessOutcome::Failed);
+                }
+                Err(crate::owner_voice::FirstPassProblem::Unusable(error)) => {
+                    let error = TranscribeError::SpeakerAnalysis(error);
+                    emit_event(
+                        audio_path,
+                        journal_path,
+                        TranscribedOutcome::Failed,
+                        Some("owner-voice-first-pass-failure"),
+                        Some("SpeakerAnalyzeError"),
+                        Some(&error),
+                        None,
+                        None,
+                        None,
+                        Some(audio_seconds),
+                        None,
+                        None,
+                        &timings,
+                        Some(&vad),
+                    );
+                    return Err(error);
+                }
+            };
+            let raw_name = audio_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            let filter = crate::owner_voice::filter_record(
+                &step.speech,
+                &step.decision,
+                raw_name,
+                facts.input_size,
+                &observation.input_sha256(),
+                &print.values,
+            );
+            facts.record_extra = crate::owner_voice::success_extra(&filter);
+            let masked_vad = masked_audio_vad(
+                &step.audio,
+                config,
+                #[cfg(all(feature = "embedded", unix))]
+                embedded,
+                #[cfg(windows)]
+                generation,
+            )?;
+            (step.audio, masked_vad)
+        }
+    };
     let (sound_tags, sound_tag_status) = tag_audio(&full_audio, journal_path);
 
     if !vad.has_speech {
@@ -411,6 +578,8 @@ pub(crate) fn process_one_with(
             sound_tag_status.as_ref(),
             context_attempt.as_ref(),
         )?;
+        drop(observation);
+        finish_voice_only_deletion(journal_path, &facts, &claim, &commit);
         drop(commit);
         finish_context_output(
             journal_path,
@@ -623,6 +792,8 @@ pub(crate) fn process_one_with(
             sound_tag_status.as_ref(),
             context_attempt.as_ref(),
         )?;
+        drop(observation);
+        finish_voice_only_deletion(journal_path, &facts, &claim, &commit);
         drop(commit);
         finish_context_output(
             journal_path,
@@ -728,6 +899,7 @@ pub(crate) fn process_one_with(
     timings.add_ms("speakers_analyze", elapsed_ms(speakers_at));
     let (jsonl_path, npz_path) = transcript_paths(audio_path);
     let mut processing = analyzed_record(facts.input_size);
+    merge_record_extra(&mut processing, &facts.record_extra);
     if let Some(attempt) = context_attempt.as_ref() {
         solstone_core_system::work_retry::raw::stamp_attempt_from(&mut processing, attempt)
             .map_err(|detail| TranscribeError::ProcessingClaim {
@@ -771,6 +943,8 @@ pub(crate) fn process_one_with(
         speaker_analysis_producer: Some(SPEAKER_ANALYSIS_PRODUCER),
         redo,
     })?;
+    drop(observation);
+    finish_voice_only_deletion(journal_path, &facts, &claim, &commit);
     drop(commit);
     finish_context_output(
         journal_path,
@@ -797,6 +971,66 @@ pub(crate) fn process_one_with(
         Some(&vad),
     );
     Ok(ProcessOutcome::Transcribed)
+}
+
+/// The voice-only first pass: the ordinary speaker analysis over the unmasked audio, with
+/// one synthetic statement per scored window, through the same transport as today.
+fn first_pass_analysis(
+    audio_path: &Path,
+    audio: &[f32],
+    statements: &[Map<String, Value>],
+    #[cfg(all(feature = "embedded", unix))] embedded: Option<&crate::embedded::EmbeddedContext<'_>>,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
+) -> Result<crate::speakers::SpeakerAnalyzeResult, crate::speakers::SpeakerAnalyzeError> {
+    #[cfg(all(feature = "embedded", unix))]
+    if let Some(runtime) = embedded {
+        return crate::speakers::analyze_speakers_embedded(
+            audio_path,
+            audio,
+            audio,
+            None,
+            statements,
+            statements,
+            runtime.models,
+            runtime.scratch,
+        );
+    }
+    analyze_speakers(
+        audio_path,
+        audio,
+        audio,
+        None,
+        statements,
+        statements,
+        SAMPLE_RATE,
+        crate::speakers::MIN_STATEMENT_DURATION_S,
+        #[cfg(windows)]
+        generation,
+    )
+}
+
+/// VAD over the voice-only masked audio, through the same transport as the first VAD.
+fn masked_audio_vad(
+    audio: &[f32],
+    config: &JournalConfigRead,
+    #[cfg(all(feature = "embedded", unix))] embedded: Option<&crate::embedded::EmbeddedContext<'_>>,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
+) -> Result<solstone_core_observe_audio::VadResult, TranscribeError> {
+    #[cfg(all(feature = "embedded", unix))]
+    if let Some(runtime) = embedded {
+        return crate::audio::run_vad_embedded(
+            audio,
+            min_speech_seconds(config),
+            runtime.models,
+            runtime.scratch,
+        );
+    }
+    run_vad(
+        audio,
+        min_speech_seconds(config),
+        #[cfg(windows)]
+        generation,
+    )
 }
 
 fn dispatch_after_egress_gate<T, F>(
@@ -942,11 +1176,14 @@ fn backend_error_reason(error: &TranscribeError) -> &str {
         | TranscribeError::ConfidentialDeferred { reason, .. } => reason,
         TranscribeError::SttSurface { .. } => "stt_surface",
         TranscribeError::BackendNotImplemented { .. } => "backend_not_implemented",
+        TranscribeError::OwnerVoiceUnavailable { .. } => "owner_voice_unavailable",
         _ => "backend_error",
     }
 }
 
-fn statements_from_words(words: &[parakeet_cpp::TranscriptionWord]) -> Vec<Map<String, Value>> {
+pub(crate) fn statements_from_words(
+    words: &[parakeet_cpp::TranscriptionWord],
+) -> Vec<Map<String, Value>> {
     let mut statements = Vec::new();
     let mut current = Vec::new();
     for word in words {
@@ -1198,6 +1435,7 @@ fn write_failed_record(
     let prior_attempts = prior_header.as_ref().map(record_attempts).unwrap_or(0);
     let base = std::cmp::max(0, prior_attempts);
     processing["attempts"] = json!(base + 1);
+    merge_record_extra(&mut processing, &facts.record_extra);
 
     write_terminal(TerminalWrite {
         raw_path: &facts.path,
@@ -1211,6 +1449,37 @@ fn write_failed_record(
         attempt,
     })?;
     Ok(TerminalOutcome::Failed)
+}
+
+/// After a voice-only success is published, delete its original through retention while this
+/// attempt still holds the transcript's claim and segment commit. Whatever happens, the
+/// published words stand; an unfinished deletion stays owed for the daily cleanup.
+fn finish_voice_only_deletion(
+    journal_path: &Path,
+    facts: &InputFacts,
+    claim: &OutputClaims,
+    commit: &solstone_core_segment::output_attempt::SegmentCommit<'_>,
+) {
+    use solstone_core_retention::owner_voice::{OwnerVoiceDeletion, finish_owner_voice_deletion};
+    if !facts
+        .record_extra
+        .contains_key(solstone_core_processing_record::OWNER_VOICE_KEY)
+    {
+        return;
+    }
+    let jsonl = facts.path.with_extension("jsonl");
+    match finish_owner_voice_deletion(journal_path, &jsonl, claim, commit, chrono::Utc::now()) {
+        OwnerVoiceDeletion::Deleted | OwnerVoiceDeletion::Gone => {}
+        outcome => log::warn!("voice-only original not deleted now: {outcome:?}"),
+    }
+}
+
+fn merge_record_extra(processing: &mut Value, extra: &Map<String, Value>) {
+    if let Some(record) = processing.as_object_mut() {
+        for (key, value) in extra {
+            record.insert(key.clone(), value.clone());
+        }
+    }
 }
 
 pub(crate) fn transcript_paths(audio_path: &Path) -> (PathBuf, PathBuf) {
@@ -1286,7 +1555,8 @@ where
     O: FnOnce(&Path, &Path) -> Result<(), TranscribeError>,
 {
     let (jsonl_path, npz_path) = transcript_paths(&facts.path);
-    let processing = empty_record(facts.input_size, reason);
+    let mut processing = empty_record(facts.input_size, reason);
+    merge_record_extra(&mut processing, &facts.record_extra);
     write_terminal_with(
         TerminalWrite {
             raw_path: &facts.path,
@@ -1448,6 +1718,8 @@ mod tests {
                             speaker_evidence_multi_fraction: 0.0,
                             overlap_fraction: 0.0,
                             statement_labels: None,
+                            turn_ranges: None,
+                            overlap_ranges: None,
                         };
                         let mut processing = crate::processing::analyzed_record(facts.input_size);
                         raw::stamp_attempt(&mut processing).unwrap();
@@ -1622,6 +1894,8 @@ mod tests {
                                 speaker_evidence_multi_fraction: 0.0,
                                 overlap_fraction: 0.0,
                                 statement_labels: None,
+                                turn_ranges: None,
+                                overlap_ranges: None,
                             };
                             let processing = crate::processing::analyzed_record(facts.input_size);
                             super::write_full_transcript(super::FullTranscriptWrite {
@@ -1736,6 +2010,8 @@ mod tests {
                             speaker_evidence_multi_fraction: 0.0,
                             overlap_fraction: 0.0,
                             statement_labels: None,
+                            turn_ranges: None,
+                            overlap_ranges: None,
                         };
                         let processing = crate::processing::analyzed_record(facts.input_size);
                         super::write_full_transcript(super::FullTranscriptWrite {
@@ -2196,7 +2472,12 @@ mod tests {
     #[test]
     fn automatic_retry_authority_reaches_full_and_empty_transcript_writers() {
         use solstone_core_segment::output_attempt::{InputObservation, OutputClaims};
-        for empty in [false, true] {
+        for (reason, attempts, empty) in [
+            ("hosted_transcribe_unreachable", 1, false),
+            ("hosted_transcribe_unreachable", 1, true),
+            ("server_not_ready", 3, false),
+            ("no_port", 1000, false),
+        ] {
             let temporary = tempfile::tempdir().unwrap();
             let facts = input(temporary.path());
             let original = fs::read(&facts.path).unwrap();
@@ -2204,8 +2485,8 @@ mod tests {
             let header = json!({
                 "raw": "clip.wav", "_solstone_processing": {
                     "schema": vocab::SCHEMA, "handler": vocab::HANDLER_TRANSCRIBE,
-                    "state": "failed", "reason_code": "hosted_transcribe_unreachable",
-                    "attempts": 1, "input_size": original.len()
+                    "state": "failed", "reason_code": reason,
+                    "attempts": attempts, "input_size": original.len()
                 }
             });
             fs::write(&jsonl, format!("{header}\n")).unwrap();
@@ -2229,6 +2510,8 @@ mod tests {
                     speaker_evidence_multi_fraction: 0.0,
                     overlap_fraction: 0.0,
                     statement_labels: None,
+                    turn_ranges: None,
+                    overlap_ranges: None,
                 };
                 super::write_full_transcript(super::FullTranscriptWrite {
                     raw_path: &facts.path,
@@ -2266,6 +2549,53 @@ mod tests {
                 );
             }
             assert!(!super::automatic_retry_replaces_output(&jsonl));
+            assert_eq!(fs::read(&facts.path).unwrap(), original);
+        }
+    }
+
+    #[test]
+    fn parakeet_availability_failure_after_three_attempts_remains_ordinary_work() {
+        for reason in ["server_not_ready", "no_port"] {
+            let temporary = tempfile::tempdir().unwrap();
+            let facts = input(temporary.path());
+            let original = fs::read(&facts.path).unwrap();
+            let output = facts.path.with_extension("jsonl");
+            let old = json!({"raw":"clip.wav","_solstone_processing":{
+                "schema":vocab::SCHEMA,"handler":"transcribe","state":"failed",
+                "reason_code":reason,"attempts":3,"input_size":original.len()
+            }});
+            fs::write(&output, format!("{old}\n")).unwrap();
+            let replaces = super::automatic_retry_replaces_output(&output);
+            assert!(replaces);
+            assert!(!crate::args::should_skip_process_one_processed(
+                &facts.path,
+                false,
+                None,
+                None
+            ));
+            let error = TranscribeError::ParakeetCppDeferred {
+                reason: reason.into(),
+                detail: "provider is still warming".into(),
+            };
+            assert_eq!(
+                super::backend_failure(&facts, replaces, &error, None).unwrap(),
+                TerminalOutcome::Failed
+            );
+            let record = read_header(&output)["_solstone_processing"].clone();
+            assert_eq!(record["attempts"], 4);
+            assert_eq!(record["reason_code"], reason);
+            assert_eq!(record["state"], "failed");
+            assert!(!is_failure_exhausted(&record));
+            assert_eq!(
+                evaluate_terminal_proof(Some(&record), "transcribe", facts.input_size),
+                TerminalProofOutcome::Refused
+            );
+            assert!(!crate::args::should_skip_process_one_processed(
+                &facts.path,
+                false,
+                None,
+                None
+            ));
             assert_eq!(fs::read(&facts.path).unwrap(), original);
         }
     }
@@ -2868,6 +3198,8 @@ mod tests {
             speaker_evidence_multi_fraction: 0.0,
             overlap_fraction: 0.0,
             statement_labels: None,
+            turn_ranges: None,
+            overlap_ranges: None,
         };
         let mut processing = crate::processing::analyzed_record(facts.input_size);
         raw::stamp_attempt_from(&mut processing, &context.attempt).unwrap();

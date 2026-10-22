@@ -247,10 +247,6 @@ fn render_summary(report: &Value) -> Vec<String> {
         display_value(&synthesis["activities_user_edited"])
     ));
     lines.push(format!(
-        "  activities_anticipated_unfilled: {}",
-        display_value(&synthesis["activities_anticipated_unfilled"])
-    ));
-    lines.push(format!(
         "  talent_run_failures_24h: {}",
         dash(&synthesis["talent_run_failures_24h"])
     ));

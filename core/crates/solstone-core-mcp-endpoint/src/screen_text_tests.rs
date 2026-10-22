@@ -543,7 +543,10 @@ fn screen_text_search_withholds_replaced_and_reindexed_hit_in_flight() {
         move || {
             let modified = fs::metadata(&source).unwrap().modified().unwrap();
             fs::write(&source, "## 00:20 · terminal\n- replacementwitness\n").unwrap();
-            fs::File::open(&source)
+            // Windows refuses set_times on a read-only handle.
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&source)
                 .unwrap()
                 .set_times(fs::FileTimes::new().set_modified(modified))
                 .unwrap();

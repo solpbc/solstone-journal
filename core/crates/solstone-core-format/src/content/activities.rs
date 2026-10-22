@@ -8,9 +8,15 @@ use super::{
     stripped_truthy_display, titleize,
 };
 
+/// Plan records the retired `schedule` talent inferred stay in their files but
+/// are not indexed. An agent's read of an indexed entry skips them the same way.
+pub fn is_retired_plan(record: &JsonObject) -> bool {
+    record.get("source").and_then(Value::as_str) == Some("anticipated")
+}
+
 pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
-    for record in records {
+    for record in records.iter().filter(|record| !is_retired_plan(record)) {
         let normalized = normalize_record(record);
         let mut lines = vec![format!("### {}", fallback_title(record))];
 

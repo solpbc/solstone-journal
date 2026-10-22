@@ -81,6 +81,15 @@ and only while every notice text stays referenced by a surviving package or
 path dependency, so the NOTICES file stays byte-identical. A surviving package that leaves the
 closure still refuses.
 
+The sixth is a **licence-identical crates.io upgrade**. Each removed version
+must pair with one newer version of the same crate, with lock checksums on
+both sides. Only the upgraded .crate archives are acquired; every other
+vendored member is copied unchanged. The declared permissive expression,
+licence/notice files and indexed notice texts must all remain identical,
+and rendering the NOTICES must reproduce its bytes. No closure promotion or
+removal, git pin move, or other external addition/removal may accompany it.
+Changed texts or expressions still require acquisition and licence review.
+
 The same shapes may come with a **new workspace crate**, such as a new Windows
 inventory binary root. It is admitted only when `core/Cargo.toml` declares it
 as a workspace member or exclude, and when every dependency edge it records
@@ -88,8 +97,8 @@ names a workspace crate, an unchanged external package, or a package this lock
 adds. What it brings into Windows reach is the notice-closure check's to decide.
 
 It refuses -- loudly, with the reason -- rather than proceed, when:
-  * the external package population upgraded a package by `(name,
-    version)`; lost one that is not a checksummed registry package, or lost
+  * the external package population upgraded a package outside the
+    licence-identical crates.io shape above; lost one that is not a checksummed registry package, or lost
     one alongside an addition, git pin move or promotion; or added one that
     is not a checksummed registry package, that reaches the Windows notice
     closure without being named for admission, or whose licence expression is
@@ -307,6 +316,50 @@ def split_registry_removals(
         return old_external, []
     surviving = [p for p in old_external if (p["name"], p["version"]) in new_ids]
     return surviving, sorted(removed, key=lambda p: (p["name"], p["version"]))
+
+
+def split_registry_upgrades(
+    old: list[dict[str, Any]], new: list[dict[str, Any]],
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Pair an upgrade-only crates.io delta; leave other shapes to the old checks."""
+    key = lambda row: (row["name"], row["version"])
+    before = {key(row): row for row in old}
+    after = {key(row): row for row in new}
+    if len(before) != len(old) or len(after) != len(new):
+        raise RefreshError("duplicate external name/version; cannot pair registry upgrades")
+    removed = [before[k] for k in before.keys() - after.keys()]
+    added = [after[k] for k in after.keys() - before.keys()]
+    if not removed or not added:
+        return []
+    names = {row["name"] for row in removed}
+    if (len(names) != len(removed) or len(added) != len(removed)
+            or {row["name"] for row in added} != names):
+        raise RefreshError("registry upgrades cannot mix additions, removals or ambiguous version pairs")
+    pairs = []
+    for left in sorted(removed, key=key):
+        right = next(row for row in added if row["name"] == left["name"])
+        for row in (left, right):
+            if (row.get("source") != "registry+https://github.com/rust-lang/crates.io-index"
+                    or not re.fullmatch(r"[0-9a-f]{64}", row.get("checksum", ""))):
+                raise RefreshError("registry upgrades require checksummed crates.io sources on both sides")
+            if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", row["version"]):
+                raise RefreshError("registry upgrades require stable numeric versions")
+        if tuple(map(int, right["version"].split("."))) <= tuple(map(int, left["version"].split("."))):
+            raise RefreshError("registry upgrade must increase the version")
+        pairs.append((left, right))
+    return pairs
+
+
+def replace_graph_identities(graph: dict[str, Any], replacements: dict[str, str]) -> dict[str, Any]:
+    """Compare reach with paired versions treated as the same package."""
+    result = {}
+    for key, node in graph.items():
+        result[replacements.get(key, key)] = {
+            **node,
+            "deps": [{**dep, "pkg": replacements.get(dep["pkg"], dep["pkg"])}
+                     for dep in node["deps"]],
+        }
+    return result
 
 
 def classify_external_delta(
@@ -1468,6 +1521,115 @@ def added_package_rows(
     return rows, members, texts
 
 
+def acquire_registry_upgrade(row: dict[str, Any], vendor: Path, fetch: Any = http_fetch) -> None:
+    """Acquire one lock-verified .crate, without resolving or vendoring the workspace."""
+    name, version = row["name"], row["version"]
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+        raise RefreshError(f"unsafe registry package name: {name!r}")
+    url = f"https://static.crates.io/crates/{name}/{name}-{version}.crate"
+    status, data = fetch(url)
+    if status != 200 or sha256_bytes(data) != row["checksum"]:
+        raise RefreshError(f"registry archive failed HTTP/checksum verification: {name} {version}")
+    prefix = f"{name}-{version}/"
+    files = {}
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+        seen = set()
+        for member in archive:
+            relative = member.name.removeprefix(prefix)
+            path = Path(relative)
+            if (not member.name.startswith(prefix) or not relative
+                    or path.drive or path.is_absolute() or ".." in path.parts
+                    or relative != path.as_posix() or relative in seen
+                    or not (member.isfile() or member.isdir())):
+                raise RefreshError(f"unsafe or duplicate registry archive member: {member.name}")
+            seen.add(relative)
+            if member.isfile():
+                files[relative] = archive.extractfile(member).read()
+    if ".cargo-checksum.json" in files or "Cargo.toml" not in files:
+        raise RefreshError(f"registry archive has invalid Cargo manifests: {name} {version}")
+    directory = vendor / f"{name}-{version}"
+    directory.mkdir(parents=True)
+    for relative, content in files.items():
+        destination = directory / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+    checks = {"package": row["checksum"],
+              "files": {path: sha256_bytes(content) for path, content in files.items()}}
+    (directory / ".cargo-checksum.json").write_text(json.dumps(checks, sort_keys=True))
+
+
+def upgraded_package_rows(
+    prior: Path, index: dict[str, Any],
+    upgrades: list[tuple[dict[str, Any], dict[str, Any]]],
+    fetch: Any = http_fetch,
+) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
+    """Replace sources only after proving the expression and all licence texts identical."""
+    rows, members = [], {}
+    with tempfile.TemporaryDirectory(prefix="windows-rust-upgrade-") as scratch, tarfile.open(prior) as archive:
+        vendor = Path(scratch)
+        for left, right in upgrades:
+            identity = f"{left['name']}@{left['version']} ({left['source']})"
+            matches = [row for row in index["packages"] if row["identity"] == identity]
+            if len(matches) != 1 or matches[0]["archive_sha256"] != left["checksum"]:
+                raise RefreshError(f"prior index does not attest upgraded package {identity}")
+            old_row = matches[0]
+            prefix = f"vendor/{left['name']}-{left['version']}/"
+            old_files = {m.name[len(prefix):]: archive.extractfile(m).read()
+                         for m in archive.getmembers() if m.isfile() and m.name.startswith(prefix)}
+            checks = json.loads(old_files.pop(".cargo-checksum.json"))
+            if (checks["package"] != left["checksum"]
+                    or checks["files"] != {name: sha256_bytes(data) for name, data in old_files.items()}):
+                raise RefreshError(f"prior upgraded package fails vendor checksums: {identity}")
+            old_manifest = tomllib.loads(old_files["Cargo.toml"].decode())["package"]
+            if ((old_manifest["name"], old_manifest["version"]) != (left["name"], left["version"])
+                    or old_manifest.get("license") != old_row["license_expression"]):
+                raise RefreshError(f"prior upgraded package manifest differs from its index: {identity}")
+            acquire_registry_upgrade(right, vendor, fetch)
+            directory = vendor / f"{right['name']}-{right['version']}"
+            metadata = vendored_package_metadata(vendor, [right])
+            manifest = metadata["packages"][0]
+            # The roots crate's data licence is allowed only on this identity-preserving path.
+            expression = manifest.get("license")
+            if expression != old_row["license_expression"]:
+                raise RefreshError(f"upgraded package licence expression changed: {identity}")
+            if expression != "CDLA-Permissive-2.0":
+                require_permissive_additions(metadata, [right])
+            new_files = {p.relative_to(directory).as_posix(): p.read_bytes()
+                         for p in directory.rglob("*") if p.is_file()}
+
+            def licence_files(files: dict[str, bytes], package: dict[str, Any]) -> dict[str, bytes]:
+                selected = {name: data for name, data in files.items()
+                            if Path(name).name.upper().startswith(LICENSE_FILE_PREFIXES)}
+                declared = package.get("license-file")
+                if declared:
+                    if declared not in files:
+                        raise RefreshError(f"declared licence file absent: {identity}: {declared}")
+                    selected[declared] = files[declared]
+                return selected
+
+            if licence_files(old_files, old_manifest) != licence_files(new_files, manifest):
+                raise RefreshError(f"upgraded package licence/notice texts changed: {identity}")
+            generated, acquired, _texts = added_package_rows(
+                [right], {(right["name"], right["version"]): manifest}, vendor,
+                frozenset({(right["name"], right["version"])}) if old_row["windows_notice_population"] else frozenset(),
+                fetch,
+            )
+            row = generated[0]
+            def references(package: dict[str, Any]) -> list[tuple[str, str, int]]:
+                return sorted((ref["source"]["member"], ref["sha256"], ref["bytes"])
+                              for ref in package["notice_references"])
+            if not references(old_row) or references(old_row) != references(row):
+                raise RefreshError(f"upgraded package indexed notice texts changed or absent: {identity}")
+            for reference in old_row["notice_references"]:
+                if reference["source"]["kind"] == "cargo-registry-archive":
+                    raw = old_files.get(reference["source"]["member"])
+                    if raw is None or len(raw) != reference["bytes"] or sha256_bytes(raw) != reference["sha256"]:
+                        raise RefreshError(f"prior indexed notice does not match acquired source: {identity}")
+            rows.append(row)
+            members.update(acquired)
+    return rows, members
+
+
 def promote_notice_rows(
     prior_archive: Path, rows: list[dict[str, Any]],
     standard_apache: frozenset[tuple[str, str]] = frozenset(),
@@ -1678,12 +1840,21 @@ def refresh(
             "Cargo.lock -- it was edited out of band"
         )
 
+    upgrades = split_registry_upgrades(old_external, new_external)
+    upgrade_old = {(row["name"], row["version"]) for row, _ in upgrades}
+    upgrade_new = {(row["name"], row["version"]) for _, row in upgrades}
     surviving_external, removed_external = split_registry_removals(
-        old_external,
-        new_external,
+        [row for row in old_external if (row["name"], row["version"]) not in upgrade_old],
+        [row for row in new_external if (row["name"], row["version"]) not in upgrade_new],
         frozenset(p["name"] for p in new_lock["package"] if not p.get("source")),
     )
-    moved_git, added_external = classify_external_delta(surviving_external, new_external)
+    moved_git, added_external = classify_external_delta(
+        surviving_external,
+        [row for row in new_external if (row["name"], row["version"]) not in upgrade_new],
+    )
+    if upgrades and (moved_git or added_external or removed_external or admissions
+                     or promotions or standard_apache or removals):
+        raise RefreshError("registry upgrades cannot mix git moves, additions, removals or closure reviews")
     if removed_external and (moved_git or promotions):
         raise RefreshError(
             "the lock removes registry packages and also moves a git pin or "
@@ -1741,9 +1912,9 @@ def refresh(
         old_lock,
         new_lock,
         external_unchanged=old_external == existing_new_external,
-        added=added_ids,
+        added=added_ids | frozenset((p["name"], p["version"], p["source"]) for _, p in upgrades),
         declared_workspace=declared_workspace_crates(repo),
-        removed=removed_ids,
+        removed=removed_ids | frozenset((p["name"], p["version"], p["source"]) for p, _ in upgrades),
     )
     added_workspace = frozenset(
         change.removeprefix("added:")
@@ -1759,9 +1930,11 @@ def refresh(
     def added_identity(row: dict[str, Any]) -> str:
         return normalize_identity(f"{row['name']}@{row['version']} ({row['source']})")
 
+    upgrade_forward = {added_identity(left): added_identity(right) for left, right in upgrades}
+    upgrade_backward = {right: left for left, right in upgrade_forward.items()}
     gained = require_explained_notice_closure(
         old_graph,
-        new_graph,
+        replace_graph_identities(new_graph, upgrade_backward),
         roots,
         added=frozenset(added_identity(row) for row in added_external),
         admitted=frozenset(
@@ -1791,7 +1964,7 @@ def refresh(
         for identity in selected_external_identities(new_meta, roots)
     }
     wanted = {
-        normalize_identity(p["identity"])
+        upgrade_forward.get(normalize_identity(p["identity"]), normalize_identity(p["identity"]))
         for p in old["packages"]
         if p["windows_notice_population"]
     } - lost | gained
@@ -1802,8 +1975,8 @@ def refresh(
             f"added={sorted(selected - wanted)}"
         )
     all_identities = {normalize_identity(p["identity"]) for p in old["packages"]} - {
-        added_identity(row) for row in removed_external
-    } | {added_identity(row) for row in added_external}
+        added_identity(row) for row in removed_external + [left for left, _ in upgrades]
+    } | {added_identity(row) for row in added_external + [right for _, right in upgrades]}
     if not selected < all_identities:
         raise RefreshError(
             "negative control failed: the selected population is not a proper "
@@ -1823,6 +1996,11 @@ def refresh(
     removed_identities = removed_index_identities(
         old, removed_external, lost, set(committed_texts)
     )
+    upgraded_rows, upgraded_members = upgraded_package_rows(prior_archive_path, old, upgrades)
+    if upgrades:
+        regenerated, _spans = render_notices(committed_texts)
+        if regenerated != notices:
+            raise RefreshError("registry upgrade must regenerate byte-identical NOTICES")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     new_archive_path = out_dir / f"windows-rust-dependencies-{lock_hash[:16]}.tar.gz"
@@ -1842,7 +2020,7 @@ def refresh(
         + b"\n"
     )
 
-    substitutions: dict[str, bytes] = {"Cargo.lock": lock_bytes}
+    substitutions: dict[str, bytes] = {"Cargo.lock": lock_bytes, **upgraded_members}
     with tarfile.open(prior_archive_path, "r:gz") as tar:
         if GRAPH_MEMBER_NAME in tar.getnames():
             substitutions[GRAPH_MEMBER_NAME] = graph_member_payload
@@ -1895,7 +2073,8 @@ def refresh(
                 del substitutions[name]
 
     dropped_prefixes = tuple(
-        f"vendor/{row['name']}-{row['version']}/" for row in removed_external
+        f"vendor/{row['name']}-{row['version']}/"
+        for row in removed_external + [left for left, _ in upgrades]
     )
 
     def dropped(name: str) -> bool:
@@ -1963,6 +2142,7 @@ def refresh(
             dest.addfile(info, io.BytesIO(substitutions[name]))
 
     observed: dict[str, dict[str, Any]] = {}
+    vendor_manifests: dict[str, bytes] = {}
     with tarfile.open(new_archive_path, "r:gz") as tar:
         for member in tar:
             data = tar.extractfile(member).read() if member.isfile() else None
@@ -1971,6 +2151,9 @@ def refresh(
                 "size": member.size,
                 "sha256": sha256_bytes(data) if data is not None else None,
             }
+            if (data is not None and member.name.startswith("vendor/")
+                    and Path(member.name).name in {".cargo-checksum.json", "Cargo.toml"}):
+                vendor_manifests[member.name] = data
 
     expected_dropped = {
         name
@@ -2029,45 +2212,51 @@ def refresh(
         )
 
     vendor_rows = []
-    with tarfile.open(new_archive_path, "r:gz") as tar:
-        for package in new_external:
-            prefix = f"vendor/{package['name']}-{package['version']}/"
-            checks = json.loads(tar.extractfile(prefix + ".cargo-checksum.json").read())
-            # A git dependency is not a registry archive: cargo writes a null
-            # `package` and the lock carries no checksum, so the comparison is
-            # null-to-absent and still meaningful.
-            if checks.get("package") != package.get("checksum"):
-                raise RefreshError(
-                    f"vendor checksum manifest for {package['name']} {package['version']} "
-                    "does not match the lock"
-                )
-            manifest = tomllib.loads(
-                tar.extractfile(prefix + "Cargo.toml").read().decode()
+    for package in new_external:
+        prefix = f"vendor/{package['name']}-{package['version']}/"
+        checks = json.loads(vendor_manifests[prefix + ".cargo-checksum.json"])
+        # A git dependency is not a registry archive: cargo writes a null
+        # `package` and the lock carries no checksum, so the comparison is
+        # null-to-absent and still meaningful.
+        if checks.get("package") != package.get("checksum"):
+            raise RefreshError(
+                f"vendor checksum manifest for {package['name']} {package['version']} "
+                "does not match the lock"
             )
-            if (
-                manifest["package"]["name"] != package["name"]
-                or manifest["package"]["version"] != package["version"]
-            ):
-                raise RefreshError(
-                    f"vendored manifest identity mismatch for {package['name']} {package['version']}"
-                )
-            for name, digest in checks["files"].items():
-                if sha256_bytes(tar.extractfile(prefix + name).read()) != digest:
-                    raise RefreshError(
-                        f"vendored file '{name}' for {package['name']} {package['version']} "
-                        "failed its checksum"
-                    )
-            vendor_rows.append(
-                {
-                    "name": package["name"],
-                    "version": package["version"],
-                    "source": package["source"],
-                    "verified_files": len(checks["files"]),
-                }
+        manifest = tomllib.loads(
+            vendor_manifests[prefix + "Cargo.toml"].decode()
+        )
+        if (
+            manifest["package"]["name"] != package["name"]
+            or manifest["package"]["version"] != package["version"]
+        ):
+            raise RefreshError(
+                f"vendored manifest identity mismatch for {package['name']} {package['version']}"
             )
+        for name, digest in checks["files"].items():
+            actual = observed.get(prefix + name)
+            if actual is None or actual["sha256"] is None or actual["sha256"] != digest:
+                raise RefreshError(
+                    f"vendored file '{name}' for {package['name']} {package['version']} "
+                    "failed its checksum"
+                )
+        vendor_rows.append(
+            {
+                "name": package["name"],
+                "version": package["version"],
+                "source": package["source"],
+                "verified_files": len(checks["files"]),
+            }
+        )
 
     new_index = copy.deepcopy(old)
     advance_git_index_rows(new_index, moved_git)
+    if upgraded_rows:
+        replaced = set(upgrade_forward)
+        new_index["packages"] = sorted(
+            [row for row in new_index["packages"] if normalize_identity(row["identity"]) not in replaced]
+            + upgraded_rows, key=lambda row: row["name"].lower(),
+        )
     if removed_external:
         new_index["packages"] = [
             p for p in new_index["packages"] if p["identity"] not in removed_identities
@@ -2143,6 +2332,10 @@ def refresh(
     report = {
         "workspace_version_or_existing_dependency_edge_changes": workspace_delta,
         "revendored_git_packages": revendored,
+        "licence_identical_registry_upgrades": [
+            {"from": added_identity(left), "to": added_identity(right),
+             "archive_sha256": right["checksum"]} for left, right in upgrades
+        ],
         "added_packages_outside_windows_notice_closure": [
             {
                 "identity": row["identity"],

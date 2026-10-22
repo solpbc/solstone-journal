@@ -3,6 +3,7 @@
 
 mod action_logs;
 mod activities;
+pub use activities::is_retired_plan;
 mod ai_chat;
 mod audio;
 mod browser;
@@ -63,6 +64,8 @@ pub enum Family {
     DesktopActivity,
     /// Text recognized from screens. This family is path-selected only.
     ScreenText,
+    /// Calendar notes from a linked device. This family is path-selected only.
+    Calendar,
 }
 
 /// Content that can be rendered for direct consumption but is deliberately
@@ -74,7 +77,7 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 19] = [
+const ALL_FAMILIES: [Family; 20] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
@@ -94,6 +97,7 @@ const ALL_FAMILIES: [Family; 19] = [
     Family::ProtectedVideo,
     Family::DesktopActivity,
     Family::ScreenText,
+    Family::Calendar,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -308,6 +312,17 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
         family: Family::Browser,
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Excluded,
+    },
+    // Notes about the owner's calendar. Readable by a connection that sees the
+    // whole journal's transcripts; they belong to no facet.
+    FamilyPattern {
+        pattern: "*/*/*/calendar_*.jsonl",
+        family: Family::Calendar,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::JournalWide,
+        },
     },
     FamilyPattern {
         pattern: "*/*/*/*_protected_video.jsonl",
@@ -602,6 +617,7 @@ pub fn produce_chunks_by_shape(
         Family::Sense => sense::render(records),
         Family::MorningBriefing => morning_briefing::render(records),
         Family::Workout => workout::render(records),
+        Family::Calendar => render_calendar(records),
         Family::AgentMemory => ProducedChunks {
             chunks: Vec::new(),
             agent_override: Some("memory".to_string()),
@@ -618,13 +634,46 @@ pub fn produce_chunks_by_shape(
         },
     };
     if produced.error.is_none() && produced.chunks.is_empty() {
-        for record in records.iter().filter(|record| has_partial_input(record)) {
+        for record in records
+            .iter()
+            .filter(|record| has_partial_input(record) && !is_retired_plan(record))
+        {
             produced
                 .chunks
                 .push(recorded_chunk(String::new(), 0, record));
         }
     }
     produced
+}
+
+/// One chunk per note that meets the contract, in file order, timed at when
+/// the change was recorded.
+fn render_calendar(records: &[JsonObject]) -> ProducedChunks {
+    let mut warnings = Vec::new();
+    let chunks = records
+        .iter()
+        .filter_map(
+            |record| match crate::calendar::calendar_note_from_record(record.clone()) {
+                Ok(note) => Some(IndexChunk {
+                    content: crate::calendar::render_calendar_note(&note),
+                    occurrence_time_ms: Some(OccurrenceTimeMs(note.changed_at_ms())),
+                    source: Some(record.clone()),
+                    group_offset_ms: None,
+                }),
+                Err(reason) => {
+                    warnings.push(format!("calendar note skipped: {reason}"));
+                    None
+                }
+            },
+        )
+        .collect();
+    ProducedChunks {
+        chunks,
+        agent_override: Some("calendar".to_string()),
+        header: None,
+        error: None,
+        warnings,
+    }
 }
 
 pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
@@ -1039,14 +1088,6 @@ mod tests {
             reason: "the accumulator chunk is the record re-serialized; the reference used \
                      json.dumps default separators and this crate emits compact JSON. \
                      Tokenizes identically",
-        },
-        DivergenceEntry {
-            case: "morning_briefing_nominal",
-            kind: Divergence::Accepted,
-            native_chunks: &[
-                "## Your Day\n\nNothing to report.\n\n## Yesterday\n\nNothing to report.\n\n## Needs Attention\n\nNothing to report.\n\n## Forward Look\n\nNothing to report.",
-            ],
-            reason: "reading section dropped with facet newsletter retirement; four sections instead of five",
         },
     ];
 

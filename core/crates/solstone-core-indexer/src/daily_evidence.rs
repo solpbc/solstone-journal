@@ -20,6 +20,7 @@ use std::{
 /// with an earlier version); re-deriving further back is `--from-scratch`.
 pub const SEMANTIC_EVIDENCE_VERSION: &str = "daily-sources-3";
 const OUTPUTS: &[&str] = &[
+    // Retired; outputs it already wrote are still not evidence.
     "schedule",
     "daily_schedule",
     "morning_briefing",
@@ -182,7 +183,6 @@ pub const DAILY_INPUTS: &[DailyInput] = &[DailyInput {
     version: "location-words-1",
     lookback_closed_days: 7,
     recipients: &[
-        "schedule",
         "entities:entity_suggest",
         "entities:entity_observer",
         "morning_briefing",
@@ -295,6 +295,10 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
         }
         let normalized = normalized_rel(&rel);
         let mut resolution = content::classify(&normalized);
+        // Calendar notes are not something the owner did; no daily unit reads them.
+        if resolution == ContentResolution::Indexed(Family::Calendar) {
+            continue;
+        }
         let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if resolution == ContentResolution::Unrecognized
             && (filename.ends_with("_transcript.md") || filename == "imported.md")
@@ -491,8 +495,7 @@ pub fn daily_hook(name: &str, metadata: &Map<String, Value>) -> Result<String, S
     }
     if !matches!(
         effective,
-        "schedule"
-            | "daily_schedule"
+        "daily_schedule"
             | "morning_briefing"
             | "entities:entities_review"
             | "entities:entity_suggest"
@@ -502,7 +505,6 @@ pub fn daily_hook(name: &str, metadata: &Map<String, Value>) -> Result<String, S
         return Err(format!("unsupported daily hook: {effective}"));
     }
     let phases_match = match effective {
-        "schedule" => pre.is_none() && post == Some(effective),
         "morning_briefing" => pre == Some(effective) && post.is_none(),
         _ => pre == Some(effective) && post == Some(effective),
     };
@@ -817,20 +819,22 @@ pub fn compute_daily_evidence_cached(
             let d = (anchor - Duration::days(offset))
                 .format("%Y%m%d")
                 .to_string();
+            // The schedule reads segment times as when the owner was active,
+            // which a calendar note is not.
             let keys = iter_segments(journal, PathOrDay::Day(&d))
                 .map_err(|e| e.to_string())?
                 .into_iter()
+                .filter(|s| !solstone_core_segment::is_calendar_segment(journal, s))
                 .map(|s| s.key().to_owned())
                 .collect::<Vec<_>>();
             windows.insert(d, keys);
         }
         json!({"anchor":anchor.to_string(),"windows":windows})
     } else {
-        // ⛔ No forward window for the briefing.  Its packet reads only the
-        // anticipated rows of the days after it, which the day's own `schedule`
-        // result (in `upstream`) already stands for, while a forward read of the
-        // activity files hashes the observed rows the packet never reads: every
-        // closed day then re-owed the eight briefings before it.  A briefing is
+        // ⛔ No forward window for the briefing.  Its packet reads nothing from
+        // the days after it, while a forward read of the activity files hashes
+        // rows the packet never reads: every closed day then re-owed the eight
+        // briefings before it.  A briefing is
         // generated the night its day closes, when every later day is still
         // today or the future, and it is frozen once its morning has passed
         // (`solstone_core_system::daily_coverage::accepted_reuse`).
@@ -860,7 +864,7 @@ pub fn compute_daily_evidence_cached(
         } else {
             String::new()
         };
-        json!({"day":day,"facet":facet,"sources":sources,"suggestions_digest":suggestions_digest,"upstream":if hook=="morning_briefing" {upstream_evidence(journal,day)?}else{Value::Null}})
+        json!({"day":day,"facet":facet,"sources":sources,"suggestions_digest":suggestions_digest})
     };
     Ok(DailyEvidence {
         revision: revision_digest(&contract, &evidence),
@@ -884,24 +888,6 @@ pub fn journal_today(journal: &Path) -> NaiveDate {
     chrono::Utc::now()
         .with_timezone(&solstone_core_journal_config::owner_zone(journal))
         .date_naive()
-}
-
-fn upstream_evidence(journal: &Path, day: &str) -> Result<Value, String> {
-    use solstone_core_journal_io::{
-        DailyUnitIdentity, accepted_daily_artifacts_valid, load_daily_unit_record,
-    };
-    let identities = vec![DailyUnitIdentity::new(day, "schedule", None)];
-    let mut values = Vec::new();
-    for identity in identities {
-        let value = match load_daily_unit_record(journal, &identity).map_err(|e| e.to_string())? {
-            None => Value::Null,
-            Some(record) => {
-                json!({"evidence":record.evidence_revision,"contract":record.contract_digest,"status":record.status,"accepted":record.accepted.as_ref().map(|a|json!({"evidence":a.evidence_revision,"status":a.status,"artifacts":a.receipts.iter().filter(|r|r.get("kind").and_then(Value::as_str)==Some("required_artifact")).collect::<Vec<_>>()})),"artifacts_valid":accepted_daily_artifacts_valid(journal,&record).map_err(|e|e.to_string())?})
-            }
-        };
-        values.push(json!({"name":identity.name,"facet":identity.facet,"outcome":value}));
-    }
-    Ok(json!(values))
 }
 
 fn template_contract(
@@ -956,7 +942,6 @@ mod tests {
 
     fn metadata_for(name: &str) -> Map<String, Value> {
         let hook = match name {
-            "schedule" => json!({"post":name}),
             "morning_briefing" => json!({"pre":name}),
             _ => json!({"pre":name,"post":name}),
         };
@@ -1018,11 +1003,11 @@ mod tests {
             "chronicle/20260910/talents/flow.md",
             "# Flow\nMeeting.",
         );
-        let metadata = Map::from_iter([("hook".to_owned(), json!({"post":"schedule"}))]);
+        let metadata = Map::from_iter([("hook".to_owned(), json!({"pre":"morning_briefing"}))]);
         let old = compute_daily_evidence(
             &root,
             "20260910",
-            "schedule",
+            "morning_briefing",
             &metadata,
             "old prompt",
             None,
@@ -1032,7 +1017,7 @@ mod tests {
         let new = compute_daily_evidence(
             &root,
             "20260910",
-            "schedule",
+            "morning_briefing",
             &metadata,
             "new prompt",
             None,
@@ -1050,7 +1035,7 @@ mod tests {
         let changed = compute_daily_evidence(
             &root,
             "20260910",
-            "schedule",
+            "morning_briefing",
             &metadata,
             "new prompt",
             None,
@@ -1070,7 +1055,7 @@ mod tests {
             "chronicle/20260910/talents/flow.md",
             "# Flow\nMeeting.",
         );
-        let names = ["schedule", "entities:entity_observer"];
+        let names = ["morning_briefing", "entities:entity_observer"];
         let before = names.map(|name| revision(&root, name, Some("work")));
         for text in [
             "# location on Thursday, September 10, 2026\n\n- readings near Golden, 14:00 to 14:09: 3 readings from your iphone.\n",
@@ -1121,6 +1106,93 @@ mod tests {
     }
 
     #[test]
+    fn calendar_notes_never_move_a_daily_units_evidence() {
+        let root = root("calendar-not-daily-evidence");
+        let today = journal_today(&root).format("%Y%m%d").to_string();
+        write(
+            &root,
+            "streams/phone_calendar.json",
+            r#"{"name":"phone_calendar","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"calendar"}"#,
+        );
+        write(
+            &root,
+            &format!("chronicle/{today}/talents/flow.md"),
+            "# Flow\nMeeting.",
+        );
+        let names = [
+            "morning_briefing",
+            "entities:entity_observer",
+            "daily_schedule",
+        ];
+        let before = names.map(|name| evidence_of(&root, &today, name, Some("work")).revision);
+        write(
+            &root,
+            &format!(
+                "chronicle/{today}/phone_calendar/094000_300/calendar_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jsonl"
+            ),
+            include_str!("../../../fixtures/calendar_notes/golden.jsonl"),
+        );
+        let with_notes = names.map(|name| evidence_of(&root, &today, name, Some("work")).revision);
+        assert_eq!(with_notes, before);
+        assert!(
+            capture_day_sources(&root, &today)
+                .unwrap()
+                .iter()
+                .all(|chunk| !chunk.path.contains("calendar_"))
+        );
+        // The twin: an ordinary capture segment moves every revision.
+        write(
+            &root,
+            &format!("chronicle/{today}/mic/100000_300/audio.jsonl"),
+            r#"{"start":"00:00:01","text":"hello there"}"#,
+        );
+        let with_capture =
+            names.map(|name| evidence_of(&root, &today, name, Some("work")).revision);
+        for (index, name) in names.iter().enumerate() {
+            assert_ne!(with_capture[index], before[index], "{name}");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_imported_calendar_s_notes_never_move_a_daily_units_evidence() {
+        let root = root("calendar-import-not-daily-evidence");
+        let today = journal_today(&root).format("%Y%m%d").to_string();
+        let window = format!("chronicle/{today}/import.ics/094130_301");
+        write(
+            &root,
+            &format!("{window}/event_transcript.md"),
+            "## planning\nThe garden beds.\n",
+        );
+        let names = [
+            "morning_briefing",
+            "entities:entity_observer",
+            "daily_schedule",
+        ];
+        let before = names.map(|name| evidence_of(&root, &today, name, Some("work")).revision);
+        write(
+            &root,
+            &format!("{window}/calendar_{}.jsonl", "b".repeat(64)),
+            include_str!("../../../fixtures/calendar_notes/golden.jsonl"),
+        );
+        let with_notes = names.map(|name| evidence_of(&root, &today, name, Some("work")).revision);
+        assert_eq!(with_notes, before);
+        // The twin: a changed transcript in the same window moves every unit
+        // that reads it; the schedule reads only segment times.
+        write(
+            &root,
+            &format!("{window}/event_transcript.md"),
+            "## planning\nThe garden beds, moved.\n",
+        );
+        let with_transcript =
+            names.map(|name| evidence_of(&root, &today, name, Some("work")).revision);
+        for (index, name) in names[..2].iter().enumerate() {
+            assert_ne!(with_transcript[index], before[index], "{name}");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn daily_evidence_tracks_named_direct_imported_sources_and_removal() {
         let root = root("daily-sources-shapes");
         let files = [
@@ -1137,15 +1209,15 @@ mod tests {
                 "# Imported\n\nAn event.",
             ),
         ];
-        let mut previous = revision(&root, "schedule", None);
+        let mut previous = revision(&root, "morning_briefing", None);
         for (rel, text) in files {
             write(&root, rel, text);
-            let next = revision(&root, "schedule", None);
+            let next = revision(&root, "morning_briefing", None);
             assert_ne!(previous, next, "{rel}");
             previous = next;
         }
         fs::remove_file(root.join(files[0].0)).unwrap();
-        assert_ne!(previous, revision(&root, "schedule", None));
+        assert_ne!(previous, revision(&root, "morning_briefing", None));
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -1210,10 +1282,10 @@ mod tests {
             projected.is_empty(),
             "positive control: search formatter must omit the long line"
         );
-        let before = revision(&root, "schedule", None);
+        let before = revision(&root, "morning_briefing", None);
         write(&root, path, &format!("{prefix}Meeting is on Friday."));
         assert_eq!(projected, capture_day_sources(&root, "20260910").unwrap());
-        assert_ne!(before, revision(&root, "schedule", None));
+        assert_ne!(before, revision(&root, "morning_briefing", None));
         let report = capture_day_projection(&root, "20260910").unwrap();
         assert_eq!(report.sources.len(), 1);
         assert!(
@@ -1246,19 +1318,19 @@ mod tests {
             audio,
             "{\"imported\":{\"facet\":\"work\",\"id\":\"one\"},\"_solstone_processing\":{\"state\":\"first\"}}\n{\"start\":\"00:00:00\",\"text\":\"A factual statement.\"}\n",
         );
-        let before = revision(&root, "schedule", None);
+        let before = revision(&root, "morning_briefing", None);
         write(
             &root,
             audio,
             "{\"imported\":{\"facet\":\"work\",\"id\":\"one\"},\"_solstone_processing\":{\"state\":\"second\"}}\n{\"start\":\"00:00:00\",\"text\":\"A factual statement.\"}\n",
         );
-        assert_eq!(before, revision(&root, "schedule", None));
+        assert_eq!(before, revision(&root, "morning_briefing", None));
         write(
             &root,
             audio,
             "{\"imported\":{\"facet\":\"personal\",\"id\":\"one\"}}\n{\"start\":\"00:00:00\",\"text\":\"A factual statement.\"}\n",
         );
-        assert_ne!(before, revision(&root, "schedule", None));
+        assert_ne!(before, revision(&root, "morning_briefing", None));
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -1352,33 +1424,38 @@ mod tests {
         let root = root("daily-contract");
         write(
             &root,
-            "talent/schedule.schema.json",
+            "talent/morning_briefing.schema.json",
             "{\"type\":\"object\"}",
         );
         let metadata = Map::from_iter([
-            ("path".to_owned(), json!(root.join("talent/schedule.md"))),
-            ("schema".to_owned(), json!("schedule.schema.json")),
-            ("hook".to_owned(), json!({"post":"schedule"})),
+            (
+                "path".to_owned(),
+                json!(root.join("talent/morning_briefing.md")),
+            ),
+            ("schema".to_owned(), json!("morning_briefing.schema.json")),
+            ("hook".to_owned(), json!({"pre":"morning_briefing"})),
             ("max_output_tokens".to_owned(), json!(1024)),
         ]);
         let first =
-            compute_contract_digest(&root, "schedule", &metadata, "prompt", None, None).unwrap();
+            compute_contract_digest(&root, "morning_briefing", &metadata, "prompt", None, None)
+                .unwrap();
         // Retuning a talent's ceiling, or an old owner override of it, re-owes nothing.
         let mut retuned = metadata.clone();
         retuned.insert("max_output_tokens".to_owned(), json!(4096));
         assert_eq!(
             first,
-            compute_contract_digest(&root, "schedule", &retuned, "prompt", None, None).unwrap()
+            compute_contract_digest(&root, "morning_briefing", &retuned, "prompt", None, None)
+                .unwrap()
         );
         let overrides = Map::from_iter([(
-            "talent.system.schedule".to_owned(),
+            "talent.system.morning_briefing".to_owned(),
             json!({"max_output_tokens":9999,"extract":true}),
         )]);
         assert_eq!(
             first,
             compute_contract_digest(
                 &root,
-                "schedule",
+                "morning_briefing",
                 &metadata,
                 "prompt",
                 Some(&overrides),
@@ -1386,14 +1463,20 @@ mod tests {
             )
             .unwrap()
         );
-        write(&root, "talent/schedule.schema.json", "{\"type\":\"array\"}");
+        write(
+            &root,
+            "talent/morning_briefing.schema.json",
+            "{\"type\":\"array\"}",
+        );
         assert_ne!(
             first,
-            compute_contract_digest(&root, "schedule", &metadata, "prompt", None, None).unwrap()
+            compute_contract_digest(&root, "morning_briefing", &metadata, "prompt", None, None)
+                .unwrap()
         );
-        write(&root, "talent/schedule.schema.json", "malformed");
+        write(&root, "talent/morning_briefing.schema.json", "malformed");
         assert!(
-            compute_contract_digest(&root, "schedule", &metadata, "prompt", None, None).is_err()
+            compute_contract_digest(&root, "morning_briefing", &metadata, "prompt", None, None)
+                .is_err()
         );
         fs::remove_dir_all(root).unwrap();
     }
@@ -1401,11 +1484,11 @@ mod tests {
     #[test]
     fn absent_cutoff_keeps_todays_contract_bytes() {
         let root = root("absent-cutoff-contract");
-        let evidence = evidence_of(&root, "20260910", "schedule", None);
+        let evidence = evidence_of(&root, "20260910", "morning_briefing", None);
         let direct = compute_contract_digest(
             &root,
-            "schedule",
-            &metadata_for("schedule"),
+            "morning_briefing",
+            &metadata_for("morning_briefing"),
             "prompt",
             None,
             None,
@@ -1423,7 +1506,6 @@ mod tests {
         let root = root("location-input-cutoff");
         write(&root, "facets/work/facet.json", r#"{"title":"Work"}"#);
         let recipients = [
-            "schedule",
             "entities:entity_suggest",
             "entities:entity_observer",
             "morning_briefing",
@@ -1443,7 +1525,7 @@ mod tests {
             assert!(evidence.evidence.get("daily_location_input").is_none());
         }
         for name in recipients {
-            let facet = (!matches!(name, "schedule" | "morning_briefing")).then_some("work");
+            let facet = (name != "morning_briefing").then_some("work");
             assert!(
                 compute_daily_evidence(
                     &root,
@@ -1463,7 +1545,7 @@ mod tests {
             &json!({"identity":{"timezone":"UTC"},"daily_inputs":{"location":{"location-words-1":"20260910"}}}),
         );
         for name in recipients {
-            let facet = (!matches!(name, "schedule" | "morning_briefing")).then_some("work");
+            let facet = (name != "morning_briefing").then_some("work");
             let on_cutoff = evidence_of(&root, "20260910", name, facet);
             let with_bit = compute_contract_digest(
                 &root,
@@ -1500,7 +1582,6 @@ mod tests {
     fn daily_location_input_version_is_none_until_the_cutoff() {
         let cutoff = chrono::NaiveDate::parse_from_str("20260910", "%Y%m%d").unwrap();
         for hook in [
-            "schedule",
             "entities:entity_suggest",
             "entities:entity_observer",
             "morning_briefing",
@@ -1530,7 +1611,7 @@ mod tests {
     #[test]
     fn compute_daily_evidence_on_a_journal_with_no_config_file_creates_none() {
         let root = root("evidence-no-config");
-        let evidence = evidence_of(&root, "20260910", "schedule", None);
+        let evidence = evidence_of(&root, "20260910", "morning_briefing", None);
         assert!(!evidence.contract.is_empty());
         assert!(!root.join("config/journal.json").exists());
         fs::remove_dir_all(root).unwrap();
@@ -1597,35 +1678,43 @@ mod tests {
             "config/journal.json",
             r#"{"providers":{"active":{"provider":"local","model":"m1","pid":1}}}"#,
         );
-        let first = revision(&root, "schedule", None);
+        let first = revision(&root, "morning_briefing", None);
         write(
             &root,
             "config/journal.json",
             r#"{"providers":{"active":{"provider":"local","model":"m1","pid":2}}}"#,
         );
-        assert_eq!(first, revision(&root, "schedule", None));
+        assert_eq!(first, revision(&root, "morning_briefing", None));
         write(
             &root,
             "config/journal.json",
             r#"{"providers":{"active":{"provider":"local","model":"m2","pid":2}}}"#,
         );
-        assert_ne!(first, revision(&root, "schedule", None));
+        assert_ne!(first, revision(&root, "morning_briefing", None));
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn daily_contract_refuses_missing_unknown_or_changed_hook_phases() {
-        assert!(daily_hook("schedule", &Map::new()).is_err());
+        assert!(daily_hook("morning_briefing", &Map::new()).is_err());
         assert!(
             daily_hook(
-                "schedule",
-                &Map::from_iter([("hook".to_owned(), json!({"pre":"schedule"}))])
+                "morning_briefing",
+                &Map::from_iter([("hook".to_owned(), json!({"post":"morning_briefing"}))])
             )
             .is_err()
         );
         assert!(
             daily_hook(
+                "morning_briefing",
+                &Map::from_iter([("hook".to_owned(), json!({"pre":"unknown"}))])
+            )
+            .is_err()
+        );
+        // A retired daily talent is an unknown hook.
+        assert!(
+            daily_hook(
                 "schedule",
-                &Map::from_iter([("hook".to_owned(), json!({"post":"unknown"}))])
+                &Map::from_iter([("hook".to_owned(), json!({"post":"schedule"}))])
             )
             .is_err()
         );
@@ -1634,8 +1723,7 @@ mod tests {
     // --- one projection per day, shared by the units of a coverage read ---------
 
     const DAY: &str = "20260910";
-    const UNITS: [(&str, Option<&str>); 5] = [
-        ("schedule", None),
+    const UNITS: [(&str, Option<&str>); 4] = [
         ("entities:entity_observer", Some("work")),
         ("entities:entity_suggest", Some("work")),
         ("entities:entities_review", Some("work")),
@@ -1695,7 +1783,6 @@ mod tests {
 
     fn unit_metadata(name: &str) -> Map<String, Value> {
         let hook = match name {
-            "schedule" => json!({"post":name}),
             "morning_briefing" => json!({"pre":name}),
             _ => json!({"pre":name,"post":name}),
         };
@@ -1854,7 +1941,7 @@ mod tests {
             failure
         );
         assert_eq!(
-            cached(&root, DAY, "schedule", None, &mut cache).unwrap_err(),
+            cached(&root, DAY, "morning_briefing", None, &mut cache).unwrap_err(),
             failure
         );
         fs::remove_dir_all(root).unwrap();
@@ -1900,7 +1987,7 @@ mod tests {
             "chronicle/20260910/mic/090000_60/talents/sense.md",
             "# Sense\n\nOriginal sense narrative.",
         );
-        let rev_before = revision(&root, "schedule", None);
+        let rev_before = revision(&root, "morning_briefing", None);
         let proj_before = capture_day_projection(&root, "20260910").expect("capture before");
         assert!(
             !proj_before.chunks.is_empty(),
@@ -1912,7 +1999,7 @@ mod tests {
             "chronicle/20260910/mic/090000_60/talents/topics.md",
             "## Topics\n- testing\n\n## Quotes\n- none\n",
         );
-        let rev_after = revision(&root, "schedule", None);
+        let rev_after = revision(&root, "morning_briefing", None);
         let proj_after = capture_day_projection(&root, "20260910").expect("capture after");
 
         assert_eq!(rev_before, rev_after);
@@ -1924,7 +2011,7 @@ mod tests {
             "chronicle/20260910/mic/090000_60/talents/sense.md",
             "# Sense\n\nUpdated sense narrative.",
         );
-        let rev_changed = revision(&root, "schedule", None);
+        let rev_changed = revision(&root, "morning_briefing", None);
         assert_ne!(rev_before, rev_changed);
 
         fs::remove_dir_all(root).unwrap();
@@ -1938,7 +2025,7 @@ mod tests {
             "chronicle/20260910/desk/090000_60/talents/sense.md",
             "# Sense\n\nOriginal sense narrative.",
         );
-        let rev_before = revision(&root, "schedule", None);
+        let rev_before = revision(&root, "morning_briefing", None);
         let proj_before = capture_day_projection(&root, "20260910").expect("capture before");
 
         write(
@@ -1946,7 +2033,7 @@ mod tests {
             "chronicle/20260910/desk/090000_60/talents/objects.md",
             "# Objects\n\n- person: in 2 frames, up to 3 at once\n",
         );
-        let rev_after = revision(&root, "schedule", None);
+        let rev_after = revision(&root, "morning_briefing", None);
         let proj_after = capture_day_projection(&root, "20260910").expect("capture after");
 
         assert_eq!(rev_before, rev_after);
@@ -1964,7 +2051,7 @@ mod tests {
             "chronicle/20260910/desk/090000_60/talents/sense.md",
             "# Sense\n\nOriginal sense narrative.",
         );
-        let rev_before = revision(&root, "schedule", None);
+        let rev_before = revision(&root, "morning_briefing", None);
         let proj_before = capture_day_projection(&root, "20260910").expect("capture before");
 
         write(
@@ -1972,7 +2059,7 @@ mod tests {
             "chronicle/20260910/desk/090000_60/talents/screen_text.md",
             "## 00:01 · editor\n\n- code on screen\n",
         );
-        let rev_after = revision(&root, "schedule", None);
+        let rev_after = revision(&root, "morning_briefing", None);
         let proj_after = capture_day_projection(&root, "20260910").expect("capture after");
 
         assert_eq!(rev_before, rev_after);

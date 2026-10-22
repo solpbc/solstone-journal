@@ -5,6 +5,7 @@ pub mod agent_memory;
 pub mod audio_archive;
 pub mod body;
 pub mod briefing;
+pub mod calendar;
 pub mod chunker;
 pub mod content;
 pub mod json;

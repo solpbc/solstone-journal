@@ -178,9 +178,11 @@ fn segment_ranges(
     day: &str,
 ) -> Result<Vec<(NaiveDateTime, NaiveDateTime)>, String> {
     let anchor = NaiveDate::from_ymd_opt(2000, 1, 1).expect("fixed date is valid");
+    // Calendar notes say what the owner planned, not when they were active.
     let mut ranges = iter_segments(journal, PathOrDay::Day(day))
         .map_err(|e| e.to_string())?
         .into_iter()
+        .filter(|segment| !solstone_core_segment::is_calendar_segment(journal, segment))
         .filter_map(|segment| parse_segment(segment.key(), anchor))
         .collect::<Vec<_>>();
     ranges.sort_by_key(|(start, _)| *start);
@@ -238,6 +240,40 @@ fn format_duration(start: NaiveDateTime, end: NaiveDateTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn calendar_segments_are_not_activity_windows() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        std::fs::create_dir_all(root.join("streams")).unwrap();
+        std::fs::write(
+            root.join("streams/phone_calendar.json"),
+            r#"{"name":"phone_calendar","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"calendar"}"#,
+        )
+        .unwrap();
+        for (stream, key) in [
+            ("phone_calendar", "094000_300"),
+            ("phone_calendar", "094500_300"),
+            ("phone_calendar", "095000_300"),
+            ("mic", "140000_300"),
+            ("mic", "140500_300"),
+            ("mic", "141000_300"),
+        ] {
+            let dir = root.join("chronicle/20261019").join(stream).join(key);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("note.jsonl"), "{}\n").unwrap();
+        }
+        let ranges = segment_ranges(root, "20261019").unwrap();
+        let starts = ranges
+            .iter()
+            .map(|(start, _)| start.format("%H:%M").to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(starts, ["14:00", "14:05", "14:10"]);
+        let summary =
+            generate_span_summary(root, 1, NaiveDate::from_ymd_opt(2026, 10, 19).unwrap()).unwrap();
+        assert!(summary.contains("14:00 - 14:15"), "{summary}");
+        assert!(!summary.contains("09:40"), "{summary}");
+    }
 
     #[test]
     fn parses_and_groups_reference_segment_ranges() {

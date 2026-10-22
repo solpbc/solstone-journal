@@ -345,8 +345,14 @@ fn get_day_segments<'a>(
     cache
         .entry(day.to_string())
         .or_insert_with(|| {
+            // A calendar segment holds no transcript, so it is never linked.
             iter_segments_skipping_unreadable_streams(journal_root, PathOrDay::Day(day))
                 .unwrap_or_default()
+                .into_iter()
+                .filter(|segment| {
+                    !solstone_core_segment::is_calendar_segment(journal_root, segment)
+                })
+                .collect()
         })
         .as_slice()
 }

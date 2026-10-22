@@ -66,10 +66,10 @@ solstone call entities history "<entity_name>"
 
 ### today — what's happening now
 
-Check what's anticipated for the current day:
+Check today's activities so far:
 
 ```bash
-solstone call activities list --source anticipated
+solstone call activities list
 ```
 
 ### transcript — meeting transcripts
@@ -124,10 +124,10 @@ External callers should not need to set these. Use explicit flags (`--day`,
 
 ## Composing queries
 
-**"Brief me on today"** — events plus active relationships:
+**"Brief me on today"** — today's activities plus active relationships:
 
 ```bash
-solstone call activities list --source anticipated
+solstone call activities list
 solstone call entities search --limit 5
 ```
 

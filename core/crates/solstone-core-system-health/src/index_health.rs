@@ -441,7 +441,10 @@ mod tests {
         solstone_core_indexer_store::scan::scan_journal(journal.path(), false).unwrap();
         let original_mtime = std::fs::metadata(&source).unwrap().modified().unwrap();
         std::fs::write(&source, [0xff]).unwrap();
-        std::fs::File::open(&source)
+        // Setting a time needs a writable handle on Windows.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&source)
             .unwrap()
             .set_modified(original_mtime)
             .unwrap();
@@ -478,7 +481,10 @@ mod tests {
         solstone_core_indexer_store::todo::drain(journal.path(), Default::default()).unwrap();
         assert!(evaluate_index_health(journal.path(), Utc::now()).failed > 0);
         std::fs::write(&source, "repaired kestrel").unwrap();
-        std::fs::File::open(&source)
+        // Setting a time needs a writable handle on Windows.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&source)
             .unwrap()
             .set_modified(original_mtime)
             .unwrap();

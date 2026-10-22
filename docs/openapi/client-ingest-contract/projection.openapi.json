@@ -27,6 +27,7 @@
               "backup_operation_failed",
               "backup_unavailable",
               "browser_record_invalid",
+              "calendar_note_invalid",
               "config_busy",
               "content_conflict",
               "convey_busy",
@@ -273,7 +274,7 @@
   "info": {
     "description": "Generated from client_ingest_authority.json. Covers only the two Rust-served linked-device devices/ingest operations: upload and segment listing.",
     "title": "Linked-device v3 ingest client contract",
-    "version": "15.0.0",
+    "version": "15.1.0",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },
@@ -440,7 +441,8 @@
               "segment_invalid",
               "multipart_malformed",
               "multipart_part_too_large",
-              "browser_record_invalid"
+              "browser_record_invalid",
+              "calendar_note_invalid"
             ]
           },
           "403": {

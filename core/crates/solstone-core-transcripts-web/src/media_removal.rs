@@ -95,6 +95,9 @@ fn reason_for_modality(
         [RawReleaseClass::Owner] => {
             format!("you deleted {what}")
         }
+        [RawReleaseClass::OwnerVoice] => {
+            format!("your journal deleted {what} after saving your words")
+        }
         _ => format!("{what} is no longer in your journal"),
     }
 }
@@ -102,6 +105,37 @@ fn reason_for_modality(
 #[cfg(test)]
 mod tests {
     use solstone_core_retention::marks::{Approval, RemovalClass};
+
+    #[test]
+    fn owner_voice_release_routes_to_its_own_reason() {
+        use solstone_core_retention::RawReleaseClass;
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let missing: BTreeSet<String> = ["120000_300.m4a".to_owned()].into();
+        let reason = |classes: &[(&str, RawReleaseClass)]| {
+            let recorded = classes
+                .iter()
+                .map(|(name, class)| ((*name).to_owned(), *class))
+                .collect::<BTreeMap<_, _>>();
+            super::reason_for_modality("audio", Some(&missing), &recorded)
+        };
+        let generic = reason(&[]);
+        let owner = reason(&[("120000_300.m4a", RawReleaseClass::Owner)]);
+        let owner_voice = reason(&[("120000_300.m4a", RawReleaseClass::OwnerVoice)]);
+        assert_ne!(owner_voice, generic);
+        assert_ne!(owner_voice, owner);
+
+        let both: BTreeSet<String> = ["a.m4a".to_owned(), "b.m4a".to_owned()].into();
+        let recorded = [
+            ("a.m4a".to_owned(), RawReleaseClass::OwnerVoice),
+            ("b.m4a".to_owned(), RawReleaseClass::Owner),
+        ]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+        let mixed = super::reason_for_modality("audio", Some(&both), &recorded);
+        let generic_both = super::reason_for_modality("audio", Some(&both), &BTreeMap::new());
+        assert_eq!(mixed, generic_both);
+    }
 
     #[test]
     fn policy_and_offload_raw_release_require_approval_copy_premise() {

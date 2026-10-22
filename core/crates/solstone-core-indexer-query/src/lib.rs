@@ -47,13 +47,15 @@ pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 pub use solstone_core_indexer_store::screen_text_source_current;
 pub use temporal::{TemporalExtraction, extract_temporal_references};
 pub use types::{
-    AdmittedCategory, ConnectionBoundary, ConnectionBoundaryError, ConnectionCorpusRefusal,
-    ConnectionIndexDegraded, ConnectionScope, ConnectionSearchHit, ConnectionSearchRequest,
-    ConnectionSearchResponse, ConnectionStartAfter, CountsResponse, CoverageResponse,
-    CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded, NeedsOwner, Order,
-    OwnerBoundary, QueryBoundary, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
+    AdmittedCategory, CalendarHit, CalendarVersion, ConnectionBoundary, ConnectionBoundaryError,
+    ConnectionCorpusRefusal, ConnectionIndexDegraded, ConnectionScope, ConnectionSearchHit,
+    ConnectionSearchRequest, ConnectionSearchResponse, ConnectionStartAfter, CountsResponse,
+    CoverageResponse, CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded, NeedsOwner,
+    Order, OwnerBoundary, QueryBoundary, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
 };
 
+#[cfg(test)]
+mod calendar_tests;
 #[cfg(test)]
 mod edges_tests;
 #[cfg(test)]

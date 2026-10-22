@@ -43,7 +43,7 @@ License notice: BSD 3-Clause License (BSD-3-Clause).
 ## bundled place names (area tier)
 
 `lib/solstone_journal_models/assets/geo/area-tier.bin` (SHA-256
-`dab887db0774bcecdf15dfed6f4bcdd64dbf595797f4a0ae172f30490e281494`) names a
+`ed233aa4129b23092154cfae5680df5f7200f59b89326e72e6bd88215de284ce`) names a
 location reading after a nearby town, and gives the map app its country and
 state borders. The journal reads it on the owner's own computer; nothing is
 looked up anywhere. It is built by `scripts/build_location_area_tier.py` from
@@ -170,6 +170,25 @@ project https://leafletjs.com
 License notice: BSD 2-Clause License (BSD-2-Clause). The licence text ships
 beside the library as `vendor/leaflet/LICENSE`.
 
+## Windows time zone names (Unicode CLDR)
+
+Calendar files exported from Outlook name time zones the Windows way, such as
+"Pacific Standard Time". The journal reads them through the world mappings of
+the Unicode CLDR `windowsZones` table, kept as data in
+`core/crates/solstone-core-import-sources/src/windows_zones.tsv` and compiled
+into the journal.
+
+Source: `common/supplemental/windowsZones.xml` from
+https://github.com/unicode-org/cldr at revision
+`a70bfe93a2c74473baaedf01eea43b027e782979`.
+
+Changes: only the world ("001") mappings are kept, one Windows name and its
+IANA zone per line, each zone written as its current IANA name from CLDR's
+`common/bcp47/timezone.xml` at the same revision.
+
+License notice: Unicode License v3 (Unicode-3.0), Copyright © Unicode, Inc.
+The full copyright and permission notice is in `licenses/Unicode-3.0.txt`.
+
 ## bundled test fixtures
 
 ### Paradigm Shift AI delayed-video regression fixture
@@ -210,6 +229,21 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## FluidAudio (macos speech helper)
+
+The macos journal's speech helper (`bin/parakeet-helper`) compiles in
+FluidAudio 0.17.7 by FluidInference
+(https://github.com/FluidInference/FluidAudio/tree/v0.17.7, commit
+`503b4bd1bbf7220882de39fe8ae6716aae4132da`), under the Apache License 2.0.
+FluidAudio includes code adapted from fastcluster (BSD-2-Clause), VBx
+(Apache-2.0) and a Japanese text frontend drawn from MIT, Apache-2.0 and BSD
+sources. The helper is built without FluidAudio's optional NeMo
+text-processing library.
+
+macos packages carry FluidAudio's `LICENSE` and its `fastcluster-LICENSE.md`,
+`vbx-LICENSE.md` and `JapaneseG2P-LICENSE.md`, unchanged from the tagged
+source, in `share/licenses/fluidaudio/`.
 
 ## provider artifacts (parakeet-cpp)
 

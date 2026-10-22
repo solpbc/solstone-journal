@@ -28,6 +28,10 @@ pub struct PyannoteSegmentationPassResult {
     pub avg_log_probs: FeatureMatrix,
     pub window_stats: Vec<SpeakerWindowStats>,
     pub speaker_turns: SpeakerTurnEvidence,
+    /// Seconds on the input timeline where any single window's own frame argmax is an overlap
+    /// class. Built before cross-window averaging, clamped to the unpadded duration, sorted and
+    /// merged where ranges overlap or touch.
+    pub overlap_ranges: Vec<(f64, f64)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,6 +193,8 @@ where
     )?;
     let audio_duration_s = audio.len() as f64 / f64::from(sample_rate_hz);
     let mut turn_ranges: Vec<SpeakerTurnRange> = Vec::new();
+    let mut overlap_ranges: Vec<(f64, f64)> = Vec::new();
+    let frame_duration_s = samples_per_frame / f64::from(sample_rate_hz);
     let mut accum = vec![0.0_f64; len];
     let mut counts = vec![0_usize; num_frames];
     let mut window_stats = Vec::with_capacity(starts.len());
@@ -231,6 +237,19 @@ where
             }
         }
 
+        for local_frame in 0..log_probs.frames() {
+            let row = log_probs
+                .row(local_frame)
+                .expect("validated window frame index is in bounds");
+            if PYANNOTE_OVERLAP_CLASSES.contains(&argmax(row)) {
+                let start_s = window_offset_s + local_frame as f64 * frame_duration_s;
+                let end_s = (start_s + frame_duration_s).min(audio_duration_s);
+                if start_s < end_s {
+                    overlap_ranges.push((start_s, end_s));
+                }
+            }
+        }
+
         let frame_start = frame_start_for_sample(start_sample, samples_per_frame);
         let frame_end = frame_start + log_probs.frames();
         // A validated window has exactly the expected frame count; with starts at or before the
@@ -262,6 +281,7 @@ where
             && a.end_s.total_cmp(&b.end_s) == std::cmp::Ordering::Equal
     });
     let speaker_turns = SpeakerTurnEvidence::new(audio_duration_s, turn_ranges);
+    let overlap_ranges = merge_ranges(overlap_ranges);
 
     let avg_log_probs =
         average_accumulated_log_probs(&accum, &counts, num_frames, PYANNOTE_CLASS_COUNT)
@@ -272,7 +292,21 @@ where
         avg_log_probs,
         window_stats,
         speaker_turns,
+        overlap_ranges,
     })
+}
+
+/// Sort and merge ranges that overlap or touch.
+fn merge_ranges(mut ranges: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+    ranges.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.total_cmp(&b.1)));
+    let mut merged: Vec<(f64, f64)> = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        match merged.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    merged
 }
 
 pub fn compute_speaker_window_stats(
@@ -973,6 +1007,141 @@ mod tests {
         let actual = result.avg_log_probs.row(236).expect("frame 236")[1];
         let expected = (1.0_f64 / 3.0) as f32;
         (actual, expected)
+    }
+
+    fn frame_s() -> f64 {
+        PYANNOTE_WINDOW_S as f64 / PYANNOTE_FRAMES_PER_WINDOW as f64
+    }
+
+    fn assert_ranges(actual: &[(f64, f64)], expected: &[(f64, f64)]) {
+        assert_eq!(actual.len(), expected.len(), "{actual:?} vs {expected:?}");
+        for (a, e) in actual.iter().zip(expected) {
+            assert!(
+                (a.0 - e.0).abs() < 1e-9 && (a.1 - e.1).abs() < 1e-9,
+                "{actual:?} vs {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn overlap_ranges_come_from_each_window_before_averaging() {
+        let audio = vec![0.0; 14 * PYANNOTE_SAMPLE_RATE_HZ as usize];
+        let result = run_pyannote_segmentation_pass(
+            &audio,
+            PYANNOTE_SAMPLE_RATE_HZ,
+            PYANNOTE_DIARIZE_STRIDE_S,
+            |window_index, _window| {
+                let mut matrix = zero_matrix();
+                match window_index {
+                    0 => set_log_prob(&mut matrix, 236, 4, 10.0),
+                    1 => set_log_prob(&mut matrix, 118, 1, 10.0),
+                    2 => set_log_prob(&mut matrix, 0, 1, 10.0),
+                    _ => {}
+                }
+                Ok::<FeatureMatrix, Infallible>(matrix)
+            },
+        )
+        .expect("segmentation pass");
+
+        // The averaged frame is single-speaker, but window 0's own frame is overlap.
+        assert_eq!(result.overlap_fraction, 0.0);
+        assert_ranges(
+            &result.overlap_ranges,
+            &[(236.0 * frame_s(), 237.0 * frame_s())],
+        );
+    }
+
+    #[test]
+    fn averaged_overlap_alone_emits_no_overlap_range() {
+        let audio = vec![0.0; 14 * PYANNOTE_SAMPLE_RATE_HZ as usize];
+        let result = run_pyannote_segmentation_pass(
+            &audio,
+            PYANNOTE_SAMPLE_RATE_HZ,
+            PYANNOTE_DIARIZE_STRIDE_S,
+            |window_index, _window| {
+                let mut matrix = zero_matrix();
+                match window_index {
+                    0 => {
+                        set_log_prob(&mut matrix, 236, 4, 1.0);
+                        set_log_prob(&mut matrix, 236, 1, 1.5);
+                    }
+                    1 => {
+                        set_log_prob(&mut matrix, 118, 4, 1.0);
+                        set_log_prob(&mut matrix, 118, 2, 1.5);
+                    }
+                    _ => {}
+                }
+                Ok::<FeatureMatrix, Infallible>(matrix)
+            },
+        )
+        .expect("segmentation pass");
+
+        // The averaged frame's argmax is the overlap class; no single window's argmax is.
+        let row = result.avg_log_probs.row(236).expect("frame 236");
+        assert!(row[4] > row[1] && row[4] > row[2] && row[4] > row[0]);
+        assert!(result.overlap_fraction > 0.0);
+        assert!(result.overlap_ranges.is_empty());
+    }
+
+    #[test]
+    fn overlap_ranges_use_the_shifted_final_window_and_clamp_to_duration() {
+        // 13 s pads to windows at 0 s, 2 s and a shifted final window at 3 s.
+        let audio = vec![0.0; 13 * PYANNOTE_SAMPLE_RATE_HZ as usize];
+        let result = run_pyannote_segmentation_pass(
+            &audio,
+            PYANNOTE_SAMPLE_RATE_HZ,
+            PYANNOTE_DIARIZE_STRIDE_S,
+            |window_index, _window| {
+                let mut matrix = zero_matrix();
+                if window_index == 2 {
+                    set_log_prob(&mut matrix, 588, 5, 10.0);
+                }
+                Ok::<FeatureMatrix, Infallible>(matrix)
+            },
+        )
+        .expect("segmentation pass");
+
+        assert_ranges(&result.overlap_ranges, &[(3.0 + 588.0 * frame_s(), 13.0)]);
+    }
+
+    #[test]
+    fn overlap_ranges_clamp_short_audio_and_merge_touching_frames() {
+        let audio = vec![0.0; 3 * PYANNOTE_SAMPLE_RATE_HZ as usize];
+        let result = run_pyannote_segmentation_pass(
+            &audio,
+            PYANNOTE_SAMPLE_RATE_HZ,
+            PYANNOTE_DIARIZE_STRIDE_S,
+            |_window_index, _window| {
+                let mut matrix = zero_matrix();
+                set_log_prob(&mut matrix, 100, 6, 10.0);
+                set_log_prob(&mut matrix, 101, 4, 10.0);
+                // Beyond the 3 s of real audio: padding, never reported.
+                set_log_prob(&mut matrix, 400, 4, 10.0);
+                Ok::<FeatureMatrix, Infallible>(matrix)
+            },
+        )
+        .expect("segmentation pass");
+
+        assert_ranges(
+            &result.overlap_ranges,
+            &[(100.0 * frame_s(), 102.0 * frame_s())],
+        );
+    }
+
+    #[test]
+    fn a_window_without_overlap_frames_adds_no_range() {
+        let audio = vec![0.0; PYANNOTE_WINDOW_S as usize * PYANNOTE_SAMPLE_RATE_HZ as usize];
+        let result = run_pyannote_segmentation_pass(
+            &audio,
+            PYANNOTE_SAMPLE_RATE_HZ,
+            PYANNOTE_OVERLAP_STRIDE_S,
+            |_, _window| {
+                Ok::<FeatureMatrix, Infallible>(class_matrix(&vec![1; PYANNOTE_FRAMES_PER_WINDOW]))
+            },
+        )
+        .expect("segmentation pass");
+
+        assert!(result.overlap_ranges.is_empty());
     }
 
     fn zero_matrix() -> FeatureMatrix {

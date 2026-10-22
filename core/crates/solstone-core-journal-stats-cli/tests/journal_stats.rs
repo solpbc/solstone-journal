@@ -794,8 +794,8 @@ fn journal_scoped_prerequisite_failure_names_the_prerequisite_not_a_day() {
 fn daily_talent(system: &Path) {
     fs::create_dir_all(system).unwrap();
     fs::write(
-        system.join("schedule.md"),
-        "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":10,\"hook\":{\"post\":\"schedule\"}\n}\nExtract scheduled items.",
+        system.join("morning_briefing.md"),
+        "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning.",
     )
     .unwrap();
 }

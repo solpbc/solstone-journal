@@ -2051,7 +2051,8 @@ pub fn apply(
                 files.push(SegmentFile {
                     day: day.clone(),
                     segment: segment.clone(),
-                    name: "workout.json",
+                    name: "workout.json".to_owned(),
+                    calendar: false,
                     contents: json_str,
                     units: 1,
                 });
@@ -2082,7 +2083,8 @@ pub fn apply(
                 files.push(SegmentFile {
                     day: day.clone(),
                     segment: segment.clone(),
-                    name: "workout.json",
+                    name: "workout.json".to_owned(),
+                    calendar: false,
                     contents: json_str,
                     units: 1,
                 });
@@ -2106,6 +2108,7 @@ pub fn apply(
     let summary = format_count_summary(&placement.counts);
 
     let rendered = RenderedImport {
+        calendar_counts: Default::default(),
         skipped: 0,
         source: RegistrySource::Strava,
         files,

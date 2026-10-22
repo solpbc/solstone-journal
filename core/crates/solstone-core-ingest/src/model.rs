@@ -50,11 +50,12 @@ pub enum ReasonCode {
     StreamBindingIncomplete,
     SegmentRemoved,
     BrowserRecordInvalid,
+    CalendarNoteInvalid,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 44] = [
+    const ALL: [Self; 45] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -99,6 +100,7 @@ impl ReasonCode {
         Self::StreamBindingIncomplete,
         Self::SegmentRemoved,
         Self::BrowserRecordInvalid,
+        Self::CalendarNoteInvalid,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -147,6 +149,7 @@ impl ReasonCode {
             Self::StreamBindingIncomplete => "stream_binding_incomplete",
             Self::SegmentRemoved => "segment_removed",
             Self::BrowserRecordInvalid => "browser_record_invalid",
+            Self::CalendarNoteInvalid => "calendar_note_invalid",
         }
     }
 }

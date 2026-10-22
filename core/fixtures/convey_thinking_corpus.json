@@ -1496,8 +1496,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2478,
-        "body_sha256": "40e1cc74c5cc2bb5b8ec544a95fe9a87e3b38a88eb9d8dea016d969ebc0d8d8a",
+        "body_bytes": 2209,
+        "body_sha256": "b394345ac50b1168477334759f367e90201086d1575ace49f93b41eb0d9e33ed",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -1512,19 +1512,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
               "title": "morning briefing"
-            },
-            {
-              "app": null,
-              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
-              "disabled": false,
-              "key": "schedule",
-              "source": "system",
-              "title": "upcoming schedule"
             },
             {
               "app": "entities",
@@ -3731,8 +3723,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2478,
-        "body_sha256": "40e1cc74c5cc2bb5b8ec544a95fe9a87e3b38a88eb9d8dea016d969ebc0d8d8a",
+        "body_bytes": 2209,
+        "body_sha256": "b394345ac50b1168477334759f367e90201086d1575ace49f93b41eb0d9e33ed",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -3747,19 +3739,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
               "title": "morning briefing"
-            },
-            {
-              "app": null,
-              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
-              "disabled": false,
-              "key": "schedule",
-              "source": "system",
-              "title": "upcoming schedule"
             },
             {
               "app": "entities",
@@ -5946,8 +5930,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2478,
-        "body_sha256": "40e1cc74c5cc2bb5b8ec544a95fe9a87e3b38a88eb9d8dea016d969ebc0d8d8a",
+        "body_bytes": 2209,
+        "body_sha256": "b394345ac50b1168477334759f367e90201086d1575ace49f93b41eb0d9e33ed",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -5962,19 +5946,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
               "title": "morning briefing"
-            },
-            {
-              "app": null,
-              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
-              "disabled": false,
-              "key": "schedule",
-              "source": "system",
-              "title": "upcoming schedule"
             },
             {
               "app": "entities",
@@ -8155,8 +8131,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2478,
-        "body_sha256": "40e1cc74c5cc2bb5b8ec544a95fe9a87e3b38a88eb9d8dea016d969ebc0d8d8a",
+        "body_bytes": 2209,
+        "body_sha256": "b394345ac50b1168477334759f367e90201086d1575ace49f93b41eb0d9e33ed",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -8171,19 +8147,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
               "title": "morning briefing"
-            },
-            {
-              "app": null,
-              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
-              "disabled": false,
-              "key": "schedule",
-              "source": "system",
-              "title": "upcoming schedule"
             },
             {
               "app": "entities",
@@ -10553,8 +10521,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2478,
-        "body_sha256": "40e1cc74c5cc2bb5b8ec544a95fe9a87e3b38a88eb9d8dea016d969ebc0d8d8a",
+        "body_bytes": 2209,
+        "body_sha256": "b394345ac50b1168477334759f367e90201086d1575ace49f93b41eb0d9e33ed",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -10569,19 +10537,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
               "title": "morning briefing"
-            },
-            {
-              "app": null,
-              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
-              "disabled": false,
-              "key": "schedule",
-              "source": "system",
-              "title": "upcoming schedule"
             },
             {
               "app": "entities",
@@ -14078,8 +14038,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2478,
-        "body_sha256": "40e1cc74c5cc2bb5b8ec544a95fe9a87e3b38a88eb9d8dea016d969ebc0d8d8a",
+        "body_bytes": 2209,
+        "body_sha256": "b394345ac50b1168477334759f367e90201086d1575ace49f93b41eb0d9e33ed",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -14094,19 +14054,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
               "title": "morning briefing"
-            },
-            {
-              "app": null,
-              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
-              "disabled": false,
-              "key": "schedule",
-              "source": "system",
-              "title": "upcoming schedule"
             },
             {
               "app": "entities",

@@ -130,6 +130,17 @@ mod tests {
         let dummy = Path::new("/dummy");
         let now = Utc::now();
 
+        for reason in ["server_not_ready", "no_port"] {
+            for attempts in [3, 1000] {
+                let record = json!({"state":"failed","handler":"transcribe",
+                    "reason_code":reason,"attempts":attempts});
+                assert_eq!(
+                    derive_modality_state(dummy, "audio", true, true, true, Some(&record), now),
+                    DataState::Failed
+                );
+            }
+        }
+
         let no_audio_stream = json!({
             "state": "failed",
             "reason_code": "no_audio_stream",

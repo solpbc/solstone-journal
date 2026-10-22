@@ -21,6 +21,9 @@ use solstone_core_callosum::{
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_format::calendar::{
+    CALENDAR_SOURCE, names_calendar_file, validate_calendar_file,
+};
 use solstone_core_ingest_contract::{
     CONNECTION_BODY_LIMIT, MAX_PART_BYTES, validate_browser_jsonl,
 };
@@ -98,6 +101,8 @@ impl IngestNotifier for CallosumIngestNotifier {
         let mut line = serde_json::to_string(&envelope)?;
         line.push('\n');
         // Text families can reach search without waiting for sense or a thinking engine.
+        // Calendar notes reach search only: they are not something the owner
+        // did, so no processing is asked for them.
         for file in notice.files {
             let path = format!(
                 "{}/{}/{}/{}",
@@ -107,7 +112,9 @@ impl IngestNotifier for CallosumIngestNotifier {
                 solstone_core_indexer_todo::enqueue_path(&self.journal, Path::new(&path))?;
             }
         }
-        self.sender.send_line(&line)?;
+        if marks_owner_activity(notice.source) {
+            self.sender.send_line(&line)?;
+        }
         Ok(())
     }
 }
@@ -120,6 +127,13 @@ impl IngestNotifier for TestIngestNotifier {
     fn notify(&self, _notice: &IngestNotice<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
         Ok(())
     }
+}
+
+/// Whether content from this bound source is something the owner did. A
+/// calendar stream holds notes about the owner's calendar, so its arrival
+/// neither asks for processing nor marks its day as changed.
+fn marks_owner_activity(source: &str) -> bool {
+    source != CALENDAR_SOURCE
 }
 
 fn wall_clock_ms() -> Arc<dyn Fn() -> i64 + Send + Sync> {
@@ -527,6 +541,7 @@ fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (Re
             validate_browser_jsonl(&file.bytes)
                 .map_err(|error| (ReasonCode::BrowserRecordInvalid, error.to_string()))?;
         }
+        validate_calendar_upload(&source, &day, &segment, file)?;
     }
     Ok(Envelope {
         day,
@@ -535,6 +550,36 @@ fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (Re
         meta,
         files,
     })
+}
+
+/// Calendar note files arrive only under the calendar source, and that source
+/// carries nothing else. Each file is checked line by line before it is kept.
+fn validate_calendar_upload(
+    source: &str,
+    day: &str,
+    segment: &str,
+    file: &IncomingFile,
+) -> Result<(), (ReasonCode, String)> {
+    let calendar_source = source == CALENDAR_SOURCE;
+    let calendar_name = names_calendar_file(&file.submitted);
+    if !calendar_source && !calendar_name {
+        return Ok(());
+    }
+    if !calendar_source {
+        return Err((
+            ReasonCode::CalendarNoteInvalid,
+            "calendar note files are accepted only from the calendar source".to_owned(),
+        ));
+    }
+    if !calendar_name {
+        return Err((
+            ReasonCode::CalendarNoteInvalid,
+            "the calendar source carries only calendar note files".to_owned(),
+        ));
+    }
+    validate_calendar_file(&file.submitted, &file.bytes, day, segment)
+        .map(|_| ())
+        .map_err(|error| (ReasonCode::CalendarNoteInvalid, error.to_string()))
 }
 
 fn stream_kind(source: &str) -> Kind {
@@ -871,7 +916,7 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
                         })
                 })
             });
-    if needs_dirty_marker {
+    if needs_dirty_marker && marks_owner_activity(&envelope.source) {
         // A later custody failure intentionally leaves this day dirty.
         if solstone_core_ingest_resolve::bump_stream_marker(&state.journal_root, &envelope.day)
             .is_err()
@@ -1041,6 +1086,7 @@ fn append_partial_and_fail(
         .map(|file| file.written.clone())
         .collect::<Vec<_>>();
     if !announced_files.is_empty()
+        && marks_owner_activity(&envelope.source)
         && solstone_core_ingest_resolve::bump_stream_marker(&state.journal_root, &envelope.day)
             .is_err()
     {
@@ -5052,6 +5098,420 @@ mod tests {
             let error = super::parse_envelope(envelope, files(invalid.last().unwrap().clone()))
                 .unwrap_err();
             assert!(error.1.contains("row=2"));
+        }
+    }
+
+    mod calendar_admission {
+        use sha2::Digest;
+
+        use super::super::{Envelope, RawFile, parse_envelope};
+        use crate::model::ReasonCode;
+
+        pub(super) const GOLDEN: &str =
+            include_str!("../../../fixtures/calendar_notes/golden.jsonl");
+
+        pub(super) fn golden(index: usize) -> &'static str {
+            GOLDEN.lines().nth(index).unwrap()
+        }
+
+        /// A device's file for these lines, named by its digest.
+        pub(super) fn calendar_file(lines: &[&str]) -> (String, Vec<u8>) {
+            let mut bytes = lines.join("\n").into_bytes();
+            bytes.push(b'\n');
+            (
+                format!("calendar_{:x}.jsonl", sha2::Sha256::digest(&bytes)),
+                bytes,
+            )
+        }
+
+        fn parse(
+            source: &str,
+            day: &str,
+            segment: &str,
+            name: &str,
+            bytes: &[u8],
+        ) -> Result<Envelope, (ReasonCode, String)> {
+            let envelope = serde_json::json!({
+                "day": day, "segment": segment, "source": source,
+                "files": [{"submitted": name}],
+            })
+            .to_string();
+            parse_envelope(
+                envelope,
+                vec![RawFile {
+                    filename: name.to_owned(),
+                    bytes: bytes.to_vec(),
+                }],
+            )
+        }
+
+        #[test]
+        fn each_golden_line_is_admitted_from_the_calendar_source_as_sent() {
+            for (index, day, segment) in [
+                (0, "20261019", "094000_300"),
+                (1, "20261020", "163000_300"),
+                (2, "20261020", "163000_300"),
+                (3, "20261020", "163000_300"),
+                (4, "20261022", "080500_300"),
+            ] {
+                let (name, bytes) = calendar_file(&[golden(index)]);
+                let envelope = parse("calendar", day, segment, &name, &bytes).unwrap();
+                assert_eq!(envelope.source, "calendar");
+                assert_eq!(envelope.files[0].submitted, name);
+                assert_eq!(envelope.files[0].bytes, bytes);
+            }
+            let (name, bytes) = calendar_file(&[golden(1), golden(2), golden(3)]);
+            assert!(parse("calendar", "20261020", "163000_300", &name, &bytes).is_ok());
+        }
+
+        #[test]
+        fn calendar_files_and_the_calendar_source_go_only_together() {
+            let (name, bytes) = calendar_file(&[golden(0)]);
+            for (source, file, expected) in [
+                ("calendar", name.as_str(), None),
+                (
+                    "audio",
+                    name.as_str(),
+                    Some(ReasonCode::CalendarNoteInvalid),
+                ),
+                ("", name.as_str(), Some(ReasonCode::CalendarNoteInvalid)),
+                (
+                    "calendar",
+                    "notes.jsonl",
+                    Some(ReasonCode::CalendarNoteInvalid),
+                ),
+                (
+                    "calendar",
+                    "audio.flac",
+                    Some(ReasonCode::CalendarNoteInvalid),
+                ),
+                ("audio", "notes.jsonl", None),
+            ] {
+                let outcome = parse(source, "20261019", "094000_300", file, &bytes);
+                assert_eq!(
+                    outcome.err().map(|error| error.0),
+                    expected,
+                    "{source} {file}"
+                );
+            }
+        }
+
+        #[test]
+        fn one_invalid_note_refuses_the_whole_file_with_the_registered_reason() {
+            let wrong_type =
+                golden(0).replace(r#""attendees":[{"#, r#""attendees":"x","ignored":[{"#);
+            let bad_v = golden(2).replace(r#""v":1"#, r#""v":2"#);
+            let shifted = golden(1).replace("16:30:00-06:00", "16:35:00-06:00");
+            for lines in [
+                vec![golden(1), golden(2), bad_v.as_str()],
+                vec![golden(1), shifted.as_str()],
+                vec![wrong_type.as_str()],
+            ] {
+                let day = if lines[0].contains("2026-10-19") {
+                    "20261019"
+                } else {
+                    "20261020"
+                };
+                let segment = if day == "20261019" {
+                    "094000_300"
+                } else {
+                    "163000_300"
+                };
+                let (name, bytes) = calendar_file(&lines);
+                let error = parse("calendar", day, segment, &name, &bytes).unwrap_err();
+                assert_eq!(error.0, ReasonCode::CalendarNoteInvalid);
+                assert_eq!(error.0.as_str(), "calendar_note_invalid");
+                assert!(!error.1.is_empty());
+            }
+            // An empty file or a name that is not the contract's is refused too.
+            let (empty_name, _) = calendar_file(&[]);
+            let empty = parse("calendar", "20261019", "094000_300", &empty_name, b"");
+            assert_eq!(empty.unwrap_err().0, ReasonCode::CalendarNoteInvalid);
+            let (_, bytes) = calendar_file(&[golden(0)]);
+            let misnamed = parse(
+                "calendar",
+                "20261019",
+                "094000_300",
+                "calendar_1.jsonl",
+                &bytes,
+            );
+            assert_eq!(misnamed.unwrap_err().0, ReasonCode::CalendarNoteInvalid);
+        }
+        #[test]
+        fn a_file_off_the_grid_or_over_its_limits_is_refused() {
+            let (name, bytes) = calendar_file(&[golden(0)]);
+            assert!(parse("calendar", "20261019", "094000_300", &name, &bytes).is_ok());
+            for segment in ["094100_300", "093500_600", "094000_60"] {
+                let error = parse("calendar", "20261019", segment, &name, &bytes).unwrap_err();
+                assert_eq!(error.0, ReasonCode::CalendarNoteInvalid, "{segment}");
+            }
+            let lines = (0..5_001)
+                .map(|index| {
+                    golden(2).replace(
+                        "48fa6175-2399-3bac-960a-fff947563ba7",
+                        &format!("event-{index:05}"),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
+            let (name, bytes) = calendar_file(&refs);
+            let error = parse("calendar", "20261020", "163000_300", &name, &bytes).unwrap_err();
+            assert_eq!(error.0, ReasonCode::CalendarNoteInvalid);
+            let (name, bytes) = calendar_file(&refs[..5_000]);
+            assert!(parse("calendar", "20261020", "163000_300", &name, &bytes).is_ok());
+            let notes = "x".repeat(1_100_000);
+            let big = (0..8)
+                .map(|index| {
+                    lines[index].replace(r#""notes":null"#, &format!(r#""notes":"{notes}""#))
+                })
+                .collect::<Vec<_>>();
+            let refs = big.iter().map(String::as_str).collect::<Vec<_>>();
+            let (name, bytes) = calendar_file(&refs);
+            assert!(bytes.len() > 8 * 1024 * 1024);
+            let error = parse("calendar", "20261020", "163000_300", &name, &bytes).unwrap_err();
+            assert_eq!(error.0, ReasonCode::CalendarNoteInvalid);
+        }
+    }
+
+    #[cfg(feature = "full-tests")]
+    mod calendar_ingest {
+        use super::calendar_admission::{calendar_file, golden};
+        use super::*;
+        use solstone_core_callosum::{CallosumConnectionPhase, CallosumReceiveEvent};
+
+        /// The last value keeps the Windows pipe registration for `socket`
+        /// alive; it ends when dropped, so callers hold it for the whole test.
+        async fn listening_peer(
+            root: &Path,
+        ) -> (
+            CallosumSocketServer,
+            CallosumSocketConnection,
+            Box<dyn std::any::Any>,
+        ) {
+            let socket = root.join("health/callosum.sock");
+            #[cfg(windows)]
+            let namespace: Box<dyn std::any::Any> = Box::new(
+                solstone_core_callosum::test_fixture::WindowsPipeNamespace::register(&socket),
+            );
+            #[cfg(not(windows))]
+            let namespace: Box<dyn std::any::Any> = Box::new(());
+            let server = CallosumSocketServer::bind(&socket).await.unwrap();
+            let mut peer = CallosumSocketConnection::new(&socket, Map::new());
+            peer.start();
+            wait_for_callosum_client(&server).await;
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match peer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => break,
+                        Some(CallosumReceiveEvent::Continuity { .. }) => {}
+                        event => panic!("peer not ready: {event:?}"),
+                    }
+                }
+            })
+            .await
+            .expect("peer connected");
+            (server, peer, namespace)
+        }
+
+        async fn no_processing_event(peer: &mut CallosumSocketConnection) {
+            let waited =
+                tokio::time::timeout(Duration::from_millis(300), next_observing(peer)).await;
+            assert!(waited.is_err(), "unexpected processing event");
+        }
+
+        fn upload(day: &str, segment: &str, source: &str, name: &str) -> Value {
+            json!({"day": day, "segment": segment, "source": source, "files": [{"submitted": name}]})
+        }
+
+        fn chronicle_files(root: &Path) -> Vec<String> {
+            fn walk(dir: &Path, base: &Path, out: &mut Vec<String>) {
+                let Ok(entries) = fs::read_dir(dir) else {
+                    return;
+                };
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        walk(&path, base, out);
+                    } else {
+                        // Journal keys use '/' on every platform.
+                        let relative = path.strip_prefix(base).unwrap();
+                        out.push(
+                            relative
+                                .iter()
+                                .map(|part| part.to_str().unwrap())
+                                .collect::<Vec<_>>()
+                                .join("/"),
+                        );
+                    }
+                }
+            }
+            let mut files = Vec::new();
+            walk(&root.join("chronicle"), &root.join("chronicle"), &mut files);
+            files.sort();
+            files
+        }
+
+        #[tokio::test]
+        async fn a_calendar_file_is_kept_as_sent_and_queued_for_search_with_no_processing_event() {
+            let dir = root();
+            let root = dir.path();
+            let (server, mut peer, _namespace) = listening_peer(root).await;
+            let app = api_router(root);
+            let (name, bytes) = calendar_file(&[golden(0)]);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "094000_300", "calendar", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "ok");
+            let stored = format!("20261019/device_calendar/094000_300/{name}");
+            assert_eq!(
+                fs::read(root.join("chronicle").join(&stored)).unwrap(),
+                bytes
+            );
+            let keys = solstone_core_indexer_store::todo::inspect(root)
+                .unwrap()
+                .keys;
+            assert_eq!(keys, vec![stored.clone()]);
+            no_processing_event(&mut peer).await;
+            // The day is not marked as changed.
+            assert!(!stream_marker_path(root, "20261019").exists());
+            // Nothing derived from the note is written to the chronicle.
+            let files = chronicle_files(root);
+            assert!(
+                files.iter().all(|file| !file.contains("/talents/")),
+                "{files:?}"
+            );
+            assert_eq!(
+                files
+                    .iter()
+                    .filter(|file| file.contains("/calendar_") && file.ends_with(".jsonl"))
+                    .count(),
+                1,
+                "{files:?}"
+            );
+
+            // The twin: a capture upload on the same day still asks for
+            // processing and marks the day.
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "100000_300", "audio", "audio.flac"),
+                "audio.flac",
+                b"sound",
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            let observed = next_observing(&mut peer).await;
+            assert_eq!(observed.extra["source"], "audio");
+            assert_eq!(stream_marker_generation(root, "20261019"), 1);
+            peer.stop().await;
+            server.stop().await;
+        }
+
+        #[tokio::test]
+        async fn the_window_is_read_in_each_note_s_own_offset_never_the_journal_zone_or_meta() {
+            let dir = root();
+            let root = dir.path();
+            fs::create_dir_all(root.join("config")).unwrap();
+            fs::write(
+                root.join("config/journal.json"),
+                json!({"identity": {"timezone": "Asia/Tokyo"}}).to_string(),
+            )
+            .unwrap();
+            let app = api_router_with_notifier(root, SpyNotifier::succeeding());
+            let (name, bytes) = calendar_file(&[golden(0)]);
+            // Shifted by the zone difference, the window is Tokyo's wall clock.
+            let mut shifted = upload("20261020", "004000_300", "calendar", &name);
+            shifted["meta"] = json!({"time_zone": "Asia/Tokyo"});
+            let (status, body) = call_upload(&app, shifted, &name, &bytes).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(body["reason_code"], "calendar_note_invalid");
+            assert!(!root.join("chronicle/20261020").exists());
+            // In the note's own offset it is accepted, even with meta naming
+            // a different zone, and with no zone in meta at all.
+            let mut own = upload("20261019", "094000_300", "calendar", &name);
+            own["meta"] = json!({"time_zone": "Asia/Tokyo", "utc_offset": 32400});
+            let (status, body) = call_upload(&app, own, &name, &bytes).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            let (name, bytes) = calendar_file(&[golden(4)]);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261022", "080500_300", "calendar", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            // The night the clocks go back: both 01:32s are in 01:30's window.
+            let first = golden(0).replace("2026-10-19T09:42:00-06:00", "2026-11-01T01:32:00-06:00");
+            let second =
+                golden(2).replace("2026-10-20T16:31:00-06:00", "2026-11-01T01:32:00-07:00");
+            let (name, bytes) = calendar_file(&[first.as_str(), second.as_str()]);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261101", "013000_300", "calendar", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            // One second past the window end is refused.
+            let late = golden(0).replace("09:42:00-06:00", "09:45:00-06:00");
+            let (name, bytes) = calendar_file(&[late.as_str()]);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "094000_300", "calendar", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(body["reason_code"], "calendar_note_invalid");
+        }
+
+        #[tokio::test]
+        async fn calendar_files_from_elsewhere_and_other_files_from_the_calendar_are_refused() {
+            let dir = root();
+            let root = dir.path();
+            let spy = SpyNotifier::succeeding();
+            let app = api_router_with_notifier(root, spy.clone());
+            let (name, bytes) = calendar_file(&[golden(0)]);
+            let wrong_type = golden(0).replace(r#""title":"design review""#, r#""title":{}"#);
+            let (bad_name, bad_bytes) = calendar_file(&[wrong_type.as_str()]);
+            for (source, file, contents) in [
+                ("audio", name.as_str(), bytes.as_slice()),
+                ("calendar", "notes.jsonl", bytes.as_slice()),
+                ("calendar", bad_name.as_str(), bad_bytes.as_slice()),
+            ] {
+                let (status, body) = call_upload(
+                    &app,
+                    upload("20261019", "094000_300", source, file),
+                    file,
+                    contents,
+                )
+                .await;
+                assert_eq!(status, StatusCode::BAD_REQUEST, "{source} {file}");
+                assert_eq!(body["reason_code"], "calendar_note_invalid");
+            }
+            assert!(!root.join("chronicle").exists());
+            assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+            // The twin: the same file from the calendar source is kept.
+            let (status, _) = call_upload(
+                &app,
+                upload("20261019", "094000_300", "calendar", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+            assert_eq!(spy.notices.lock().unwrap()[0].source, "calendar");
         }
     }
 }

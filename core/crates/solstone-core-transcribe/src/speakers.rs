@@ -96,6 +96,11 @@ pub(crate) struct SpeakerAnalyzeResult {
     pub(crate) speaker_evidence_multi_fraction: f64,
     pub(crate) overlap_fraction: f64,
     pub(crate) statement_labels: Option<Vec<Option<i64>>>,
+    /// Raw `pyannote.speaker_turns.ranges` in seconds; `None` when the response has no
+    /// `speaker_turns` (a helper that predates them).
+    pub(crate) turn_ranges: Option<Vec<(f64, f64)>>,
+    /// `pyannote.overlap_ranges` in seconds; `None` when the response has no such key.
+    pub(crate) overlap_ranges: Option<Vec<(f64, f64)>>,
 }
 
 /// Content-free attribution for a failed native speaker-analysis attempt.
@@ -922,6 +927,23 @@ fn ensure_span_parity(
     Ok(())
 }
 
+/// Whether the adapter's own admission test admits this one statement.
+pub(crate) fn admits_statement(
+    raw_path: &Path,
+    audio: &[f32],
+    statement: &Map<String, Value>,
+    sample_rate: u32,
+) -> bool {
+    admitted_statement_ids(
+        raw_path,
+        audio,
+        std::slice::from_ref(statement),
+        sample_rate,
+        MIN_STATEMENT_DURATION_S,
+    )
+    .is_ok_and(|admitted| !admitted.is_empty())
+}
+
 fn admitted_statement_ids(
     raw_path: &Path,
     audio: &[f32],
@@ -1163,6 +1185,17 @@ pub(crate) fn accepted_result_from_response(
             ));
         }
     }
+    let overlap_ranges = match pyannote.get("overlap_ranges") {
+        Some(value) => Some(overlap_ranges(raw_path, value, audio_duration_s)?),
+        None => None,
+    };
+    let turn_ranges = speaker_turn_evidence.as_ref().map(|evidence| {
+        evidence
+            .ranges
+            .iter()
+            .map(|range| (range.start_s, range.end_s))
+            .collect::<Vec<_>>()
+    });
     let labels = statement_labels(raw_path, object)?;
     let mut statements = statements_restored.to_vec();
     if let Some(labels) = &labels {
@@ -1205,7 +1238,43 @@ pub(crate) fn accepted_result_from_response(
         speaker_evidence_multi_fraction,
         overlap_fraction,
         statement_labels: labels,
+        turn_ranges,
+        overlap_ranges,
     })
+}
+
+fn overlap_ranges(
+    raw_path: &Path,
+    value: &Value,
+    audio_duration_s: f64,
+) -> Result<Vec<(f64, f64)>, SpeakerAnalyzeError> {
+    let invalid =
+        || SpeakerAnalyzeError::new(raw_path, "payload", "invalid-pyannote-overlap-ranges", None);
+    // Permit only floating-point serialization roundoff, as for speaker turns.
+    let tolerance = audio_duration_s.abs().max(1.0) * f64::EPSILON * 4.0;
+    value
+        .as_array()
+        .ok_or_else(invalid)?
+        .iter()
+        .map(|pair| {
+            let pair = pair
+                .as_array()
+                .filter(|pair| pair.len() == 2)
+                .ok_or_else(invalid)?;
+            let start = pair[0]
+                .as_f64()
+                .filter(|v| v.is_finite())
+                .ok_or_else(invalid)?;
+            let end = pair[1]
+                .as_f64()
+                .filter(|v| v.is_finite())
+                .ok_or_else(invalid)?;
+            if start < 0.0 || start > end || end > audio_duration_s + tolerance {
+                return Err(invalid());
+            }
+            Ok((start, end))
+        })
+        .collect()
 }
 
 fn validate_inputs(
@@ -1993,6 +2062,79 @@ mod speaker_turn_adapter_tests {
                 "effective_k": null,
             },
         })
+    }
+
+    fn parse_pyannote(
+        pyannote: Value,
+    ) -> Result<super::SpeakerAnalyzeResult, super::SpeakerAnalyzeError> {
+        let directory = tempfile::tempdir().unwrap();
+        let payload = directory.path().join("payload.f32le");
+        fs::write(&payload, []).unwrap();
+        let mut response = base_response(&payload, &[], 0);
+        response["pyannote"] = pyannote;
+        accepted_result_from_response(
+            Path::new("input.wav"),
+            &response,
+            &payload,
+            &[],
+            &[],
+            &[],
+            16_000,
+            10.0,
+        )
+    }
+
+    #[test]
+    fn overlap_and_turn_ranges_are_none_when_the_helper_omits_them() {
+        let result = parse_pyannote(json!({"window_stats": []})).expect("accepted");
+        assert_eq!(result.overlap_ranges, None);
+        assert_eq!(result.turn_ranges, None);
+    }
+
+    #[test]
+    fn overlap_and_turn_ranges_parse_when_present() {
+        let result = parse_pyannote(json!({
+            "window_stats": [],
+            "speaker_turns": {
+                "version": SPEAKER_TURN_EVIDENCE_VERSION,
+                "audio_duration_s": 10.0,
+                "ranges": [{"start_s": 1.0, "end_s": 1.5}],
+            },
+            "overlap_ranges": [[2.0, 2.5], [9.0, 10.0]],
+        }))
+        .expect("accepted");
+        assert_eq!(result.overlap_ranges, Some(vec![(2.0, 2.5), (9.0, 10.0)]));
+        assert_eq!(result.turn_ranges, Some(vec![(1.0, 1.5)]));
+
+        let empty = parse_pyannote(json!({
+            "window_stats": [],
+            "speaker_turns": {
+                "version": SPEAKER_TURN_EVIDENCE_VERSION,
+                "audio_duration_s": 10.0,
+                "ranges": [],
+            },
+            "overlap_ranges": [],
+        }))
+        .expect("accepted");
+        assert_eq!(empty.overlap_ranges, Some(vec![]));
+        assert_eq!(empty.turn_ranges, Some(vec![]));
+    }
+
+    #[test]
+    fn invalid_overlap_ranges_are_a_payload_error() {
+        for ranges in [
+            json!({"start": 1.0}),
+            json!([[1.0, 2.0, 3.0]]),
+            json!([[-1.0, 2.0]]),
+            json!([[3.0, 2.0]]),
+            json!([["a", 2.0]]),
+            json!([[1.0, 11.0]]),
+        ] {
+            let error = parse_pyannote(json!({"window_stats": [], "overlap_ranges": ranges}))
+                .expect_err("invalid overlap ranges");
+            assert_eq!(error.stage, "payload");
+            assert_eq!(error.reason, "invalid-pyannote-overlap-ranges");
+        }
     }
 
     #[test]

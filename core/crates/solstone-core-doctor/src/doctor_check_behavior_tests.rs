@@ -1773,13 +1773,13 @@ fn caught_up_native_backlog_fixture_states() {
     assert!(row.detail.contains("pending"), "{}", row.detail);
 
     let root = &capped.journal_path;
-    configure_daily_work(root, Some("schedule"));
+    configure_daily_work(root, Some("morning_briefing"));
     let coverage =
         solstone_core_system::daily_coverage::read_daily_coverage(root, "20251230").unwrap();
     let unit = coverage
         .units
         .iter()
-        .find(|unit| unit.identity.name == "schedule")
+        .find(|unit| unit.identity.name == "morning_briefing")
         .unwrap();
     let mut record = solstone_core_journal_io::DailyUnitRecord::new(
         unit.identity.clone(),
@@ -3440,7 +3440,7 @@ fn journal_caught_up_names_any_daily_unit_stopped_by_an_owner_change() {
     let c = fixture();
     let root = &c.journal_path;
     let day = "20251230";
-    configure_daily_work(root, Some("schedule"));
+    configure_daily_work(root, Some("morning_briefing"));
     let seg_dir = root.join("chronicle").join(day).join("120000_60");
     fs::create_dir_all(seg_dir.join("talents")).unwrap();
     fs::write(seg_dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
@@ -3452,7 +3452,7 @@ fn journal_caught_up_names_any_daily_unit_stopped_by_an_owner_change() {
     let unit = coverage
         .units
         .iter()
-        .find(|unit| unit.identity.name == "schedule")
+        .find(|unit| unit.identity.name == "morning_briefing")
         .unwrap();
     let mut record = solstone_core_journal_io::DailyUnitRecord::new(
         unit.identity.clone(),
@@ -3466,7 +3466,7 @@ fn journal_caught_up_names_any_daily_unit_stopped_by_an_owner_change() {
     let row = result("journal_caught_up", &c);
     assert_eq!(
         row.fix.as_deref(),
-        Some("schedule stopped on 20251230; it can retry on the next eligible run")
+        Some("morning_briefing stopped on 20251230; it can retry on the next eligible run")
     );
 
     record.failure_count = 2;
@@ -3475,7 +3475,7 @@ fn journal_caught_up_names_any_daily_unit_stopped_by_an_owner_change() {
     assert_eq!(
         row.fix.as_deref(),
         Some(
-            "schedule stopped on 20251230 after its automatic retry; run solstone journal reprocess 20251230 --from-scratch"
+            "morning_briefing stopped on 20251230 after its automatic retry; run solstone journal reprocess 20251230 --from-scratch"
         )
     );
 
@@ -3489,7 +3489,7 @@ fn journal_caught_up_names_any_daily_unit_stopped_by_an_owner_change() {
     assert_eq!(
         row.fix.as_deref(),
         Some(
-            "schedule may have started a change but did not confirm completion on 20251230; resolve the in-progress change before reprocessing"
+            "morning_briefing may have started a change but did not confirm completion on 20251230; resolve the in-progress change before reprocessing"
         )
     );
 }

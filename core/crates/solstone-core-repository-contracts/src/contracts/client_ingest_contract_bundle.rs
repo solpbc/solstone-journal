@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "15.0.0";
+const BUNDLE_SEMVER: &str = "15.1.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -45,6 +45,15 @@ const COMPONENT_CLOSURE: [&str; 5] = [
     "SegmentFile",
     "SegmentItem",
     "SegmentsEnvelope",
+];
+/// Upload refusals a device must handle for content it sends, each with an
+/// example detail.
+const UPLOAD_REFUSALS: [(&str, &str); 2] = [
+    ("browser_record_invalid", "row=1 field=blocks cause=limit"),
+    (
+        "calendar_note_invalid",
+        "line 2: changed_at falls outside the segment window",
+    ),
 ];
 const INGEST_STATUSES: [&str; 5] = ["ok", "duplicate", "collision", "conflict", "failed"];
 const SEGMENT_FILE_STATUSES: [&str; 3] = ["present", "missing", "processed"];
@@ -284,18 +293,20 @@ fn behavior_vectors() -> Value {
             })
         })
         .collect::<Vec<_>>();
-    vectors.push(json!({
-        "decision": {
-            "accepted": false,
-            "http_status": 400,
-            "kind": "refusal",
-            "reason_code": "browser_record_invalid",
-        },
-        "fixture_id": "declared.client.ingestUpload.refusal.browser_record_invalid",
-        "id": "client.ingestUpload.refusal.browser_record_invalid",
-        "kind": "declared",
-        "pointers": ["/reason_code"],
-    }));
+    for reason_code in UPLOAD_REFUSALS.map(|(reason_code, _)| reason_code) {
+        vectors.push(json!({
+            "decision": {
+                "accepted": false,
+                "http_status": 400,
+                "kind": "refusal",
+                "reason_code": reason_code,
+            },
+            "fixture_id": format!("declared.client.ingestUpload.refusal.{reason_code}"),
+            "id": format!("client.ingestUpload.refusal.{reason_code}"),
+            "kind": "declared",
+            "pointers": ["/reason_code"],
+        }));
+    }
     vectors.push(json!({
         "decision": {
             "accepted": true,
@@ -406,22 +417,24 @@ fn wire_behavior() -> Value {
             })
         })
         .collect::<Vec<_>>();
-    fixtures.push(json!({
-        "id": "declared.client.ingestUpload.refusal.browser_record_invalid",
-        "kind": "declared",
-        "payload": {
-            "detail": "row=1 field=blocks cause=limit",
-            "error": "Ingest request failed",
-            "reason_code": "browser_record_invalid",
-        },
-        "provenance": {
-            "http_status": 400,
-            "reason_code": "browser_record_invalid",
-        },
-        "schema_validation": {
-            "valid": true,
-        },
-    }));
+    for (reason_code, detail) in UPLOAD_REFUSALS {
+        fixtures.push(json!({
+            "id": format!("declared.client.ingestUpload.refusal.{reason_code}"),
+            "kind": "declared",
+            "payload": {
+                "detail": detail,
+                "error": "Ingest request failed",
+                "reason_code": reason_code,
+            },
+            "provenance": {
+                "http_status": 400,
+                "reason_code": reason_code,
+            },
+            "schema_validation": {
+                "valid": true,
+            },
+        }));
+    }
     fixtures.push(json!({
         "id": "declared.client.ingestSegments.collision.same_basename_distinct_streams",
         "kind": "declared",
@@ -581,7 +594,13 @@ fn regenerate_client_ingest_contract_bundle() {
 }
 
 #[test]
-fn browser_record_invalid_is_enumerated_in_authority_and_bundle() {
+fn content_refusals_are_enumerated_in_authority_and_bundle() {
+    for reason_code in ["browser_record_invalid", "calendar_note_invalid"] {
+        assert_refusal_enumerated(reason_code);
+    }
+}
+
+fn assert_refusal_enumerated(reason_code: &str) {
     let authority: Value =
         serde_json::from_str(CLIENT_INGEST_AUTHORITY).expect("parse authority OpenAPI");
     let upload_400_reason_codes = authority
@@ -591,8 +610,8 @@ fn browser_record_invalid_is_enumerated_in_authority_and_bundle() {
     assert!(
         upload_400_reason_codes
             .iter()
-            .any(|code| code.as_str() == Some("browser_record_invalid")),
-        "browser_record_invalid must be in 400 x-reason-codes"
+            .any(|code| code.as_str() == Some(reason_code)),
+        "{reason_code} must be in 400 x-reason-codes"
     );
 
     let error_enum = authority
@@ -602,27 +621,27 @@ fn browser_record_invalid_is_enumerated_in_authority_and_bundle() {
     assert!(
         error_enum
             .iter()
-            .any(|code| code.as_str() == Some("browser_record_invalid")),
-        "browser_record_invalid must be in Error reason_code enum"
+            .any(|code| code.as_str() == Some(reason_code)),
+        "{reason_code} must be in Error reason_code enum"
     );
 
     let vectors = behavior_vectors();
     let vectors_arr = vectors["vectors"].as_array().expect("vectors array");
     assert!(
         vectors_arr.iter().any(|v| {
-            v["id"] == "client.ingestUpload.refusal.browser_record_invalid"
-                && v["decision"]["reason_code"] == "browser_record_invalid"
+            v["id"] == format!("client.ingestUpload.refusal.{reason_code}")
+                && v["decision"]["reason_code"] == reason_code
         }),
-        "browser_record_invalid refusal vector must be present"
+        "{reason_code} refusal vector must be present"
     );
 
     let wire = wire_behavior();
     let fixtures_arr = wire["fixtures"].as_array().expect("fixtures array");
     assert!(
         fixtures_arr.iter().any(|f| {
-            f["id"] == "declared.client.ingestUpload.refusal.browser_record_invalid"
-                && f["payload"]["reason_code"] == "browser_record_invalid"
+            f["id"] == format!("declared.client.ingestUpload.refusal.{reason_code}")
+                && f["payload"]["reason_code"] == reason_code
         }),
-        "browser_record_invalid wire fixture must be present"
+        "{reason_code} wire fixture must be present"
     );
 }

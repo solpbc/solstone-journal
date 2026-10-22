@@ -43,6 +43,7 @@ pub use embedded::{
 #[allow(dead_code)]
 mod event;
 mod model_assets;
+mod owner_voice;
 mod speakers_installation;
 mod vad_runtime;
 #[cfg(windows)]
@@ -548,6 +549,8 @@ pub enum TranscribeError {
     ParakeetCoremlFailure { reason: String, detail: String },
     /// Confidential transcription was refused or unavailable for retryable work.
     ConfidentialDeferred { reason: String, detail: String },
+    /// Voice-only transcription applies but no saved owner voice is usable; the input waits.
+    OwnerVoiceUnavailable { detail: String },
     /// The native speaker-analysis helper could not produce a usable result.
     SpeakerAnalysis(SpeakerAnalyzeError),
     /// Audio decoding failed before a terminal failure record was written.
@@ -601,6 +604,7 @@ impl TranscribeError {
             Self::ParakeetCoremlDeferred { .. } => 69,
             Self::ParakeetCoremlFailure { .. } => 1,
             Self::ConfidentialDeferred { .. } => 69,
+            Self::OwnerVoiceUnavailable { .. } => 69,
             Self::SpeakerAnalysis(_) => 1,
             Self::Decode { .. } | Self::BackendNotImplemented { .. } => 1,
         }
@@ -726,6 +730,9 @@ impl std::fmt::Display for TranscribeError {
             Self::ConfidentialDeferred { reason, detail } => {
                 write!(formatter, "confidential transcription {reason}: {detail}")
             }
+            Self::OwnerVoiceUnavailable { detail } => {
+                write!(formatter, "voice-only transcription is waiting: {detail}")
+            }
             Self::SpeakerAnalysis(error) => error.fmt(formatter),
             Self::Decode { detail } => formatter.write_str(detail),
             Self::BackendNotImplemented { backend } => {
@@ -762,7 +769,8 @@ impl std::error::Error for TranscribeError {
             | Self::ParakeetCppFailure { .. }
             | Self::ParakeetCoremlDeferred { .. }
             | Self::ParakeetCoremlFailure { .. }
-            | Self::ConfidentialDeferred { .. } => None,
+            | Self::ConfidentialDeferred { .. }
+            | Self::OwnerVoiceUnavailable { .. } => None,
             Self::Decode { .. } | Self::BackendNotImplemented { .. } => None,
         }
     }

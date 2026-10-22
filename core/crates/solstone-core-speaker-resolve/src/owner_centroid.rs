@@ -697,3 +697,39 @@ mod zip2_name_tests {
         ));
     }
 }
+
+/// Width of a saved owner voice usable for voice-only transcription.
+pub const OWNER_VOICE_PRINT_DIMENSIONS: usize = 256;
+
+/// The owner's saved voice, as voice-only transcription scores against it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnerVoicePrint {
+    /// L2-normalized values, exactly as loaded.
+    pub values: Vec<f32>,
+}
+
+/// The admitted owner's saved voice, when it is usable for voice-only transcription.
+///
+/// Usable means: exactly one admitted owner, and a saved centroid that loads as
+/// [`OWNER_VOICE_PRINT_DIMENSIONS`] finite values with a non-zero norm. Anything else,
+/// including a load or admission error, is no usable voice.
+#[must_use]
+pub fn owner_voice_print(journal_root: &Path) -> Option<OwnerVoicePrint> {
+    let crate::owner_admission::OwnerAdmission::Admitted(owner) =
+        crate::owner_admission::admitted_owner_id(journal_root)
+    else {
+        return None;
+    };
+    let centroid = load_owner_centroid(journal_root, &owner).ok()??;
+    let values = centroid.centroid;
+    let norm = values
+        .iter()
+        .map(|value| f64::from(*value) * f64::from(*value))
+        .sum::<f64>()
+        .sqrt();
+    (values.len() == OWNER_VOICE_PRINT_DIMENSIONS
+        && values.iter().all(|value| value.is_finite())
+        && norm.is_finite()
+        && norm > 0.0)
+        .then_some(OwnerVoicePrint { values })
+}

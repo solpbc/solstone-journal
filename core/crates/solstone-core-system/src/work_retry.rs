@@ -396,6 +396,10 @@ pub fn list(journal: &Path) -> (Vec<Record>, Vec<String>) {
             .and_then(|s| s.to_str())
             .unwrap_or_default();
         match read(journal, id) {
+            Ok(Some(record))
+                if matches!(&record.unit, Unit::Daily { talent, .. }
+                    if crate::daily_coverage::RETIRED_DAILY_TALENTS.contains(&talent.as_str())) => {
+            }
             Ok(Some(record)) if record.held => records.push(record),
             Ok(_) => {}
             Err(e) => errors.push(format!("{}: {e}", path.display())),
@@ -752,6 +756,28 @@ mod tests {
         reason: "schema_invalid",
         introduced: "2.0.0",
     }];
+
+    #[test]
+    fn held_retries_of_a_retired_daily_talent_are_not_listed() {
+        let root = tempfile::tempdir().unwrap();
+        let daily = |talent: &str| Unit::Daily {
+            day: "20260910".into(),
+            talent: talent.into(),
+            facet: None,
+        };
+        observe_held(root.path(), &daily("schedule"), "schema_invalid", "input-a").unwrap();
+        observe_held(
+            root.path(),
+            &daily("morning_briefing"),
+            "schema_invalid",
+            "input-a",
+        )
+        .unwrap();
+        let (records, errors) = list(root.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].unit, daily("morning_briefing"));
+    }
 
     #[test]
     fn causes_are_consumed_before_work_and_new_intent_survives_old_completion() {

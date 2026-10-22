@@ -24,8 +24,71 @@ pub(crate) fn conversations_summary(messages: u64, conversations: usize, days: u
     format!("imported {messages} messages from {conversations} conversations across {days} days")
 }
 
-pub(crate) fn ics_summary(entry_count: u64, days: usize) -> String {
-    format!("imported {entry_count} calendar events across {days} days")
+pub(crate) fn ics_summary(
+    entry_count: u64,
+    days: usize,
+    counts: &crate::ics_notes::CalendarNoteCounts,
+) -> String {
+    let mut summary = format!(
+        "imported {entry_count} calendar {} across {days} {}",
+        noun(entry_count, "event", "events"),
+        noun(days as u64, "day", "days")
+    );
+    let skipped = counts.skipped();
+    if skipped > 0 {
+        let reasons: Vec<String> = [
+            (counts.no_change_time, "with no change time"),
+            (counts.unknown_zone, "in an unknown time zone"),
+            (counts.invalid, "unreadable"),
+        ]
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, reason)| format!("{count} {reason}"))
+        .collect();
+        summary.push_str(&format!(
+            "; {skipped} not listed by the day they happen ({})",
+            reasons.join(", ")
+        ));
+    }
+    if counts.truncated_series > 0 {
+        summary.push_str(&format!(
+            "; {} repeating series listed only for their latest {} dates",
+            counts.truncated_series,
+            grouped(crate::ics_notes::MAX_SERIES_OCCURRENCES as u64)
+        ));
+    }
+    if counts.unexpandable_series > 0 {
+        summary.push_str(&format!(
+            "; {} repeating series listed only for their first date",
+            counts.unexpandable_series
+        ));
+    }
+    if counts.over_limit > 0 {
+        summary.push_str(&format!(
+            "; {} not listed by the day they happen, past the {} dates one import lists",
+            counts.over_limit,
+            grouped(crate::ics_notes::MAX_IMPORT_LINES as u64)
+        ));
+    }
+    summary
+}
+
+/// The noun for a count: the singular for exactly one.
+pub(crate) fn noun(count: u64, one: &'static str, many: &'static str) -> &'static str {
+    if count == 1 { one } else { many }
+}
+
+/// A count with thousands separators, as an owner reads it: `200,000`.
+fn grouped(value: u64) -> String {
+    let digits = value.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
 }
 
 pub(crate) fn obsidian_summary(entry_count: u64, days: usize) -> String {
@@ -37,9 +100,12 @@ pub(crate) fn obsidian_summary(entry_count: u64, days: usize) -> String {
 pub struct SegmentFile {
     pub day: String,
     pub segment: String,
-    pub name: &'static str,
+    pub name: String,
     pub contents: String,
     pub units: u64,
+    /// A calendar note file beside the segment's transcript. It is queued for
+    /// search alone: it asks for no processing and marks no day as changed.
+    pub calendar: bool,
 }
 
 /// An import rendered from its source and ready to write.
@@ -53,6 +119,9 @@ pub struct RenderedImport {
     /// The source's own units: messages, events or notes.
     pub entries: u64,
     pub summary: String,
+    /// What a calendar import left out of, or shortened in, the calendar
+    /// listing.
+    pub calendar_counts: crate::ics_notes::CalendarNoteCounts,
 }
 
 impl RenderedImport {
@@ -86,6 +155,8 @@ impl std::error::Error for SaveError {}
 #[derive(Debug)]
 pub struct WriteOutcome {
     pub created: Vec<TextCreated>,
+    /// Calendar note files this save wrote or removed, for search alone.
+    pub calendar_files: Vec<PathBuf>,
     pub error: Option<SaveError>,
     pub skipped_deleted: Vec<(String, String)>,
     pub entries: u64,
@@ -102,6 +173,7 @@ pub fn render(
     path: &Path,
     import_id: &str,
     zone: Tz,
+    stamp: Option<&crate::ics_notes::ImportStamp>,
 ) -> Option<Result<RenderedImport, String>> {
     let conversations = |plan: Result<crate::ImportPlan, crate::SourceError>| {
         plan.map(|plan| crate::conversations::render(source, plan, import_id))
@@ -111,7 +183,9 @@ pub fn render(
         RegistrySource::Chatgpt => conversations(crate::chatgpt::plan(path, &zone)),
         RegistrySource::Claude => conversations(crate::claude::plan(path, &zone)),
         RegistrySource::Gemini => conversations(crate::gemini::plan(path, &zone)),
-        RegistrySource::Ics => crate::ics::render(path, &zone).map_err(|error| error.to_string()),
+        RegistrySource::Ics => {
+            crate::ics::render_with_notes(path, &zone, stamp).map_err(|error| error.to_string())
+        }
         RegistrySource::Obsidian => {
             crate::obsidian::render(path, &zone).map_err(|error| error.to_string())
         }
@@ -129,7 +203,8 @@ pub fn preview_size(
         skipped: rendered.skipped,
         ..Default::default()
     };
-    for file in &rendered.files {
+    // A calendar note file shares its segment with the transcript beside it.
+    for file in rendered.files.iter().filter(|file| !file.calendar) {
         let path = journal
             .join("chronicle")
             .join(&file.day)
@@ -161,8 +236,10 @@ pub fn write_rendered(
 ) -> WriteOutcome {
     let stream = rendered.stream();
     let mut created = Vec::with_capacity(rendered.files.len());
+    let mut calendar_files = Vec::new();
     let mut skipped_deleted = Vec::new();
     let mut written_files = Vec::with_capacity(rendered.files.len());
+    let mut written_segments = std::collections::BTreeSet::new();
 
     for file in &rendered.files {
         let segment_dir = journal
@@ -178,9 +255,10 @@ pub fn write_rendered(
             }
             Ok(false) => {}
             Err(error) => {
-                let path = segment_dir.join(file.name);
+                let path = segment_dir.join(&file.name);
                 return WriteOutcome {
                     created,
+                    calendar_files,
                     error: Some(SaveError {
                         path,
                         detail: error.to_string(),
@@ -192,15 +270,21 @@ pub fn write_rendered(
             }
         }
 
-        let path = segment_dir.join(file.name);
+        let path = segment_dir.join(&file.name);
         if let Err(error) = write_segment_private(&path, file.contents.as_bytes()) {
             return WriteOutcome {
                 created,
+                calendar_files,
                 error: Some(error),
                 skipped_deleted,
                 entries: 0,
                 summary: String::new(),
             };
+        }
+        written_segments.insert(segment_dir);
+        if file.calendar {
+            calendar_files.push(path);
+            continue;
         }
         created.push(TextCreated {
             day: file.day.clone(),
@@ -210,6 +294,29 @@ pub fn write_rendered(
             path,
         });
         written_files.push(file);
+    }
+
+    // Re-saving an import replaces only its own calendar files: the new ones
+    // are written above, then every other file of this import in those
+    // segments goes, including one an interrupted save left behind. Files of
+    // other imports that share a segment stay.
+    if let Some(import_id) = import_id {
+        let written = calendar_files.clone();
+        for segment_dir in &written_segments {
+            match prune_calendar_files(segment_dir, import_id, &written) {
+                Ok(pruned) => calendar_files.extend(pruned),
+                Err(error) => {
+                    return WriteOutcome {
+                        created,
+                        calendar_files,
+                        error: Some(error),
+                        skipped_deleted,
+                        entries: 0,
+                        summary: String::new(),
+                    };
+                }
+            }
+        }
     }
 
     let filtered_items: Vec<&Value> = rendered
@@ -274,7 +381,7 @@ pub fn write_rendered(
                 }
                 conversations_summary(entries, conversations_count, days_count)
             }
-            RegistrySource::Ics => ics_summary(entries, days_count),
+            RegistrySource::Ics => ics_summary(entries, days_count, &rendered.calendar_counts),
             RegistrySource::Obsidian => obsidian_summary(entries, days_count),
             _ => String::new(),
         };
@@ -295,11 +402,56 @@ pub fn write_rendered(
     });
     WriteOutcome {
         created,
+        calendar_files,
         error,
         skipped_deleted,
         entries,
         summary,
     }
+}
+
+/// Remove this import's calendar note files in a segment that this save did
+/// not just write, returning the paths removed.
+fn prune_calendar_files(
+    segment_dir: &Path,
+    import_id: &str,
+    written: &[PathBuf],
+) -> Result<Vec<PathBuf>, SaveError> {
+    let map_error = |path: &Path, error: std::io::Error| SaveError {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
+    };
+    let entries = match std::fs::read_dir(segment_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(map_error(segment_dir, error)),
+    };
+    let mut pruned = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| map_error(segment_dir, error))?;
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !solstone_core_format::calendar::is_calendar_file_name(name) || written.contains(&path) {
+            continue;
+        }
+        let file = std::fs::File::open(&path).map_err(|error| map_error(&path, error))?;
+        let mut first = String::new();
+        std::io::BufRead::read_line(&mut std::io::BufReader::new(file), &mut first)
+            .map_err(|error| map_error(&path, error))?;
+        let owner = serde_json::from_str::<Value>(&first).ok().and_then(|line| {
+            line.get("import")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+        if owner.as_deref() == Some(import_id) {
+            std::fs::remove_file(&path).map_err(|error| map_error(&path, error))?;
+            pruned.push(path);
+        }
+    }
+    pruned.sort();
+    Ok(pruned)
 }
 
 fn write_segment_private(path: &Path, contents: &[u8]) -> Result<(), SaveError> {
@@ -353,6 +505,15 @@ fn hints(source: RegistrySource) -> StreamHints {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn counts_are_grouped_by_thousands() {
+        assert_eq!(super::grouped(0), "0");
+        assert_eq!(super::grouped(999), "999");
+        assert_eq!(super::grouped(5_000), "5,000");
+        assert_eq!(super::grouped(200_000), "200,000");
+        assert_eq!(super::grouped(1_234_567), "1,234,567");
+    }
+
     #[test]
     fn direct_rendered_file_publication_preserves_owner_deleted_segments() {
         let root = tempfile::tempdir().unwrap();
@@ -412,27 +573,31 @@ mod tests {
         let c_dir = stream_dir.join("seg_c");
 
         let rendered = RenderedImport {
+            calendar_counts: Default::default(),
             skipped: 0,
             source: RegistrySource::Ics,
             files: vec![
                 SegmentFile {
                     day: "20260804".to_owned(),
                     segment: "seg_a".to_owned(),
-                    name: "calendar.ics",
+                    name: "calendar.ics".to_owned(),
+                    calendar: false,
                     contents: "event a\n".to_owned(),
                     units: 1,
                 },
                 SegmentFile {
                     day: "20260804".to_owned(),
                     segment: "seg_b".to_owned(),
-                    name: "calendar.ics",
+                    name: "calendar.ics".to_owned(),
+                    calendar: false,
                     contents: "event b\n".to_owned(),
                     units: 2,
                 },
                 SegmentFile {
                     day: "20260804".to_owned(),
                     segment: "seg_c".to_owned(),
-                    name: "calendar.ics",
+                    name: "calendar.ics".to_owned(),
+                    calendar: false,
                     contents: "event c\n".to_owned(),
                     units: 3,
                 },
@@ -475,7 +640,7 @@ mod tests {
         assert_eq!(outcome.created.len(), 1);
         assert_eq!(outcome.created[0].segment, "seg_c");
         assert_eq!(outcome.entries, 3);
-        assert_eq!(outcome.summary, "imported 3 calendar events across 1 days");
+        assert_eq!(outcome.summary, "imported 3 calendar events across 1 day");
 
         // Content manifest should contain only item-c; item-no-segments is dropped when anything was skipped
         let manifest_path = root.join("imports/imp-1/content_manifest.jsonl");
@@ -517,12 +682,14 @@ mod tests {
         assert!(solstone_core_segment::owner_deleted(&segment_dir).is_err());
 
         let rendered = RenderedImport {
+            calendar_counts: Default::default(),
             skipped: 0,
             source: RegistrySource::Ics,
             files: vec![SegmentFile {
                 day: "20260804".to_owned(),
                 segment: long_name.clone(),
-                name: "calendar.ics",
+                name: "calendar.ics".to_owned(),
+                calendar: false,
                 contents: "events\n".to_owned(),
                 units: 1,
             }],
@@ -537,12 +704,14 @@ mod tests {
 
         // Control layout writes successfully with normal name
         let control_rendered = RenderedImport {
+            calendar_counts: Default::default(),
             skipped: 0,
             source: RegistrySource::Ics,
             files: vec![SegmentFile {
                 day: "20260804".to_owned(),
                 segment: "normal_seg".to_owned(),
-                name: "calendar.ics",
+                name: "calendar.ics".to_owned(),
+                calendar: false,
                 contents: "events\n".to_owned(),
                 units: 1,
             }],

@@ -20,9 +20,11 @@ for package in $changed; do
 	manifest="core/crates/$package/Cargo.toml"
 	[ -f "$manifest" ] || continue
 	packages="$packages $package"
-	if sed -n '/^\[features\]/,/^\[/p' "$manifest" | grep -q '^full-tests *='; then
-		features="${features:+$features,}$package/full-tests"
-	fi
+	for feature in full-tests test-hooks; do
+		if sed -n '/^\[features\]/,/^\[/p' "$manifest" | grep -q "^$feature *="; then
+			features="${features:+$features,}$package/$feature"
+		fi
+	done
 done
 
 if [ -z "$packages" ]; then

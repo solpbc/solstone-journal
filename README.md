@@ -19,7 +19,7 @@ Your journal is a folder of dated directories on a machine you choose. You can r
 - **connections.** Who spoke with whom, who was in the room, which projects touch which people. A knowledge graph that builds itself.
 - **meetings.** Detected from natural conversation and kept with their source context. No manual entry.
 - **facets.** Group everything by project or context (work, personal, a client name) and see your journal through that lens in every view.
-- **daily and weekly synthesis.** A morning briefing, an upcoming schedule, and a weekly reflection, written from your own material. The briefing is grounded on the day's activity records.
+- **daily and weekly synthesis.** A morning briefing and a weekly reflection, written from your own material. The briefing is grounded on the day's activity records.
 - **imports.** Audio and images, documents, calendar files, Obsidian vaults, conversation exports from ChatGPT, Claude and Gemini, Plaud devices, Apple Health and Oura body data, and archives from another journal.
 - **full-text search.** From the command line and from your agents: `solstone call journal search`.
 - **your agents, your choice.** Claude Code, Codex, Gemini CLI, or anything that runs a shell reads your journal through its solstone skill. The journal does not chat with you. Your agent does, grounded in your journal.
@@ -122,7 +122,7 @@ Run `solstone` or `solstone journal` with no arguments for the full grouped list
 The journal ships no agent of its own. It carries a memory and the tools to read it, and lets you choose who thinks.
 
 - **Your coding agent, from any project.** `solstone journal setup` installs the `solstone` skill into Claude Code, Codex and Gemini CLI when they are configured. With it, an agent in any directory can search your memory, look up a person, check today's schedule, or read a transcript through `solstone call`, and every mutating call it makes is logged in the journal. The skill is [here](core/payload/solstone/talent/solstone/SKILL.md).
-- **Processing inside the journal.** Bounded model completions produce briefings, schedules, reflections, screen descriptions, speaker attribution, and other useful views. They use the model you configured; Rust prepares their context and applies their output and domain-write rules. Their prompts live in [core/payload/solstone/talent/](core/payload/solstone/talent/), their completion contract is [docs/GENERATE.md](docs/GENERATE.md), and their execution lifecycle is [docs/CORTEX.md](docs/CORTEX.md). A coding agent whose working directory is the journal itself gets its own `journal` skill, [here](core/payload/solstone/talent/journal/SKILL.md).
+- **Processing inside the journal.** Bounded model completions produce briefings, reflections, screen descriptions, speaker attribution, and other useful views. They use the model you configured; Rust prepares their context and applies their output and domain-write rules. Their prompts live in [core/payload/solstone/talent/](core/payload/solstone/talent/), their completion contract is [docs/GENERATE.md](docs/GENERATE.md), and their execution lifecycle is [docs/CORTEX.md](docs/CORTEX.md). A coding agent whose working directory is the journal itself gets its own `journal` skill, [here](core/payload/solstone/talent/journal/SKILL.md).
 - **MCP.** the journal serves ten read-only tools over MCP: `list_facets`, `list_activities`, `get_activity_sources`, `search`, `fetch`, `list_transcripts`, `get_transcript`, `list_entities`, `get_entity`, and `get_week`. it also serves two memory tools: `save_memory` writes a note the agent keeps as its own memory, and `recall_memory` reads back only that connection's own notes. an agent on the same computer connects at `http://127.0.0.1:7659/mcp`, which is on by default. an agent on your wifi or VPN connects over TLS on port 7660 at one of the journal's local network or VPN addresses, once you turn that on in the agents app. an agent pairs with a code from your journal, and the access it gets works only at the route it paired through. released journals are built with the `journal-mcp-endpoint` feature; a plain `cargo build` leaves it out. details and the OAuth pairing flow: [docs/SOLCLI.md](docs/SOLCLI.md#journal-mcp-endpoint), [docs/MCP_OAUTH.md](docs/MCP_OAUTH.md).
 
 What an agent gets back is structured and citable. This is `solstone call entities network` against the fixture journal in this repository:
@@ -192,7 +192,7 @@ Everything above reads and writes one directory, `~/journal` by default. No data
 | path | holds |
 |------|-------|
 | `chronicle/YYYYMMDD/` | one directory per day. Inside, one directory per segment (`HHMMSS_LEN/`): the audio and screen frames as they arrived, their `.jsonl` transcripts and descriptions, and that segment's talent outputs |
-| `chronicle/YYYYMMDD/talents/` | the day's synthesized outputs: briefing, schedule, stories, reflections |
+| `chronicle/YYYYMMDD/talents/` | the day's synthesized outputs: briefing, stories, reflections |
 | `entities/<id>/entity.json` | canonical identity for every person, company, project and tool the journal knows. Per-facet history and voiceprints sit under `facets/<name>/entities/` |
 | `facets/<name>/` | per-facet activities, relationships, events, news and action logs |
 | `talents/` | run logs for every talent execution |

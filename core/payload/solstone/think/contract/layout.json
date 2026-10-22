@@ -20,7 +20,8 @@
       "stage": "accepted",
       "producer_write_paths": [
         "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{stream.json,ingest.json,audio.jsonl,screen.jsonl}",
-        "chronicle/YYYYMMDD/{label}_browser/HHMMSS_LEN/browser_pages.jsonl"
+        "chronicle/YYYYMMDD/{label}_browser/HHMMSS_LEN/browser_pages.jsonl",
+        "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/calendar_{sha256}.jsonl"
       ],
       "legacy_read_paths": [
         "chronicle/YYYYMMDD/HHMMSS_LEN/{stream.json,audio.jsonl,screen.jsonl}",

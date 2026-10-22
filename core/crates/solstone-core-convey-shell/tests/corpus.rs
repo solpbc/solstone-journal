@@ -268,6 +268,26 @@ fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
     apps.retain(|app| app["name"] != "observer");
 }
 
+/// Permanent documented divergence, introduced 2026-10-20, with no expiry
+/// condition: the status answer now lists what the journal understands from a
+/// linked device, which the frozen record predates. The corpus CANNOT be
+/// regenerated, so the one added member is taken out of the live payload after
+/// checking it names calendar notes. Narrowness is the safeguard: it removes
+/// exactly that member and nothing else.
+fn strip_permanent_status_capabilities_addition_from_actual(actual: &mut Value) {
+    let capabilities = actual
+        .as_object_mut()
+        .expect("system status is an object")
+        .remove("capabilities")
+        .expect("system status lists its capabilities");
+    assert!(
+        capabilities
+            .as_array()
+            .is_some_and(|names| names.iter().any(|name| name == "calendar_notes")),
+        "system status lists calendar notes"
+    );
+}
+
 fn apply_client_capture_projection_rename(expected: &mut Value) {
     #[cfg(target_os = "linux")]
     {
@@ -742,6 +762,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                 }
                 if phase == "established" && path == "/api/system/status" {
                     apply_client_capture_projection_rename(&mut expected);
+                    strip_permanent_status_capabilities_addition_from_actual(&mut actual);
                 }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
                 normalize(&mut expected, &journal.0.display().to_string(), "");

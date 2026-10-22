@@ -3,6 +3,7 @@
 
 //! Places, one place, a place's edit menu, and a week of stays.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use axum::Json;
@@ -12,12 +13,16 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::{Datelike, Duration, NaiveDate};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_location::places::{Alias, PlaceStore, clean_name};
 use solstone_core_location::{Entry, PlaceView};
 
-use crate::{AppState, area_json, entry_json, invalid_day, place_json, round, valid_day};
+use crate::{
+    AppState, area_json, entry_json, invalid_day, invalid_month, place_json, round, town_json,
+    valid_day, valid_month,
+};
 
 pub(crate) fn valid_id(id: &str) -> bool {
     id.len() == 12
@@ -243,6 +248,210 @@ pub(crate) async fn week(
             "days": days,
             "previous": step(-1),
             "next": step(1),
+        }))
+        .into_response()
+    })
+    .await
+}
+
+fn device_month_payload(
+    view: &solstone_core_location::DayLocation,
+    index: usize,
+    device: &solstone_core_location::day::Device,
+) -> Value {
+    let hash = Sha256::digest(device.key.as_bytes());
+    let hex_key = format!("{hash:064x}")[..8].to_string();
+    json!({
+        "key": hex_key,
+        "word": device.word,
+        "phrase": view.device_phrase(index),
+        "platform": device.platform.as_str(),
+        "readings": device.readings,
+        "interrupted_segments": device.interrupted_segments,
+        "unreadable_lines": device.unreadable_lines,
+        "unreadable_files": device.unreadable_files,
+    })
+}
+
+fn day_items(view: &solstone_core_location::DayLocation, store: &PlaceStore) -> Vec<Value> {
+    view.entries
+        .iter()
+        .filter(|entry| matches!(entry, Entry::Visit { .. } | Entry::Stay { .. }))
+        .map(|entry| entry_json(entry, store))
+        .collect()
+}
+
+fn day_devices(view: &solstone_core_location::DayLocation) -> Vec<Value> {
+    view.devices
+        .iter()
+        .enumerate()
+        .map(|(index, device)| device_month_payload(view, index, device))
+        .collect()
+}
+
+/// A calendar month of visits and stays, framed by the days before and after.
+pub(crate) async fn month(
+    State(state): State<Arc<AppState>>,
+    RoutePath(month): RoutePath<String>,
+) -> Response {
+    if !valid_month(&month) {
+        return invalid_month(StatusCode::BAD_REQUEST);
+    }
+    let journal_root = state.journal_root.clone();
+    spawn_blocking_response(OwnerReadRole::MapMonth, move || {
+        let year: i32 = match month[..4].parse() {
+            Ok(y) => y,
+            Err(_) => return invalid_month(StatusCode::BAD_REQUEST),
+        };
+        let month_num: u32 = match month[4..6].parse() {
+            Ok(m) => m,
+            Err(_) => return invalid_month(StatusCode::BAD_REQUEST),
+        };
+        let Some(first_date) = NaiveDate::from_ymd_opt(year, month_num, 1) else {
+            return invalid_month(StatusCode::BAD_REQUEST);
+        };
+        let before_date = first_date - Duration::days(1);
+        let before_day = before_date.format("%Y%m%d").to_string();
+        let previous = before_date.format("%Y%m").to_string();
+
+        let next_date = if month_num == 12 {
+            NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
+        } else {
+            NaiveDate::from_ymd_opt(year, month_num + 1, 1).unwrap()
+        };
+        let next = next_date.format("%Y%m").to_string();
+        let after_day = next_date.format("%Y%m%d").to_string();
+
+        let days_in_month = (next_date - first_date).num_days();
+
+        let tier = match solstone_core_location::area_tier() {
+            Ok(tier) => tier,
+            Err(error) => return names_unavailable(error.to_string()),
+        };
+        let store = PlaceStore::read(&journal_root);
+
+        let before_view = match solstone_core_location::read_journal_day(&journal_root, &before_day)
+        {
+            Ok(v) => v,
+            Err(e) => return names_unavailable(e.to_string()),
+        };
+        let before_items = day_items(&before_view, &store);
+        let before_devices = day_devices(&before_view);
+
+        let after_view = match solstone_core_location::read_journal_day(&journal_root, &after_day) {
+            Ok(v) => v,
+            Err(e) => return names_unavailable(e.to_string()),
+        };
+        let after_items = day_items(&after_view, &store);
+        let after_devices = day_devices(&after_view);
+
+        let mut days = Vec::with_capacity(days_in_month as usize);
+        let mut day_views = Vec::with_capacity(days_in_month as usize);
+        let mut day_items_list = Vec::with_capacity(days_in_month as usize);
+
+        for offset in 0..days_in_month {
+            let date = first_date + Duration::days(offset);
+            let day_key = date.format("%Y%m%d").to_string();
+            let view = match solstone_core_location::read_journal_day(&journal_root, &day_key) {
+                Ok(v) => v,
+                Err(e) => return names_unavailable(e.to_string()),
+            };
+            let items = day_items(&view, &store);
+            let devices = day_devices(&view);
+            let has_location = !view.entries.is_empty();
+
+            days.push(json!({
+                "day": day_key,
+                "has_location": has_location,
+                "items": items,
+                "devices": devices,
+            }));
+            day_items_list.push(items);
+            day_views.push(view);
+        }
+
+        let mut place_ids = BTreeSet::new();
+        let collect_places = |items: &[Value], set: &mut BTreeSet<String>| {
+            for item in items {
+                if let Some(id) = item
+                    .get("place_ref")
+                    .and_then(|pr| pr.get("id"))
+                    .and_then(|id| id.as_str())
+                {
+                    set.insert(id.to_string());
+                }
+            }
+        };
+        collect_places(&before_items, &mut place_ids);
+        for day_items in &day_items_list {
+            collect_places(day_items, &mut place_ids);
+        }
+        collect_places(&after_items, &mut place_ids);
+
+        let mut places = BTreeMap::new();
+        for id in place_ids {
+            if let Some(place) = store.get(&id) {
+                places.insert(
+                    place.id.clone(),
+                    json!({
+                        "id": place.id,
+                        "lat": round(place.latitude),
+                        "lon": round(place.longitude),
+                    }),
+                );
+            }
+        }
+
+        let mut seen_towns = BTreeSet::new();
+        let mut towns = Vec::new();
+        for (view, items) in day_views.iter().zip(&day_items_list) {
+            if items.is_empty() {
+                continue;
+            }
+            if let Some(records) = super::record_bounds(view, &store) {
+                let context = super::context_bounds(records);
+                for town in tier.towns_in(context, 12) {
+                    let key = (
+                        town.name.clone(),
+                        (town.latitude * 100.0).round() as i64,
+                        (town.longitude * 100.0).round() as i64,
+                    );
+                    if seen_towns.insert(key) {
+                        towns.push(town_json(&town));
+                    }
+                }
+            }
+        }
+
+        let any_day_has_devices = !before_view.is_empty()
+            || !after_view.is_empty()
+            || day_views.iter().any(|v| !v.is_empty());
+        let journal_has_location = !solstone_core_location::list_location_days(&journal_root)
+            .is_empty()
+            || any_day_has_devices;
+
+        let today = chrono::Utc::now()
+            .with_timezone(&solstone_core_journal_config::owner_zone(&journal_root))
+            .format("%Y%m%d")
+            .to_string();
+
+        Json(json!({
+            "month": month,
+            "previous": previous,
+            "next": next,
+            "today": today,
+            "journal_has_location": journal_has_location,
+            "days": days,
+            "before": {
+                "items": before_items,
+                "devices": before_devices,
+            },
+            "after": {
+                "items": after_items,
+                "devices": after_devices,
+            },
+            "places": places,
+            "towns": towns,
         }))
         .into_response()
     })

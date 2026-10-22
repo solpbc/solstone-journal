@@ -162,7 +162,8 @@
               "segment_invalid",
               "multipart_malformed",
               "multipart_part_too_large",
-              "browser_record_invalid"
+              "browser_record_invalid",
+              "calendar_note_invalid"
             ]
           },
           "403": {
@@ -378,6 +379,7 @@
               "backup_operation_failed",
               "backup_unavailable",
               "browser_record_invalid",
+              "calendar_note_invalid",
               "config_busy",
               "content_conflict",
               "convey_busy",

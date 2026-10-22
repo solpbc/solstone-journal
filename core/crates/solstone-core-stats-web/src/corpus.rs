@@ -135,8 +135,15 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
     replace_text(
         &mut wanted,
         "synthesizes all daily agent outputs into a structured five-section morning briefing",
-        "synthesizes all daily agent outputs into a structured four-section morning briefing",
+        "synthesizes all daily agent outputs into a structured morning briefing",
     );
+    // The schedule talent was retired after the corpus was recorded.
+    if let Some(generators) = wanted
+        .pointer_mut("/generators")
+        .and_then(Value::as_object_mut)
+    {
+        generators.remove("schedule");
+    }
     if expected["status"] == 200 && case["name"] == "index" {
         wanted = Value::String(
             include_str!("../../solstone-core-convey-shell/assets/static/shell.html").into(),

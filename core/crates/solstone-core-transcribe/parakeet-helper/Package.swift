@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
@@ -10,7 +10,8 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/FluidInference/FluidAudio.git",
-            exact: "0.14.0"
+            exact: "0.17.7",
+            traits: []
         )
     ],
     targets: [
@@ -29,5 +30,6 @@ let package = Package(
             name: "parakeet-helperTests",
             dependencies: ["InstalledModels"]
         )
-    ]
+    ],
+    swiftLanguageModes: [.v5]
 )

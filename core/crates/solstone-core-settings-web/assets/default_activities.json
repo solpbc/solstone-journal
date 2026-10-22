@@ -14,7 +14,7 @@
     "description": "a call you have planned",
     "emoji": "📞",
     "icon": "phone",
-    "instructions": "Added by the upcoming schedule run from plans in what your journal holds for that day; not detected from what you are doing."
+    "instructions": "Not detected automatically."
   },
   {
     "id": "deadline",
@@ -22,7 +22,7 @@
     "description": "a deadline you are working toward",
     "emoji": "⏰",
     "icon": "alarm-clock",
-    "instructions": "Added by the upcoming schedule run from plans in what your journal holds for that day; not detected from what you are doing."
+    "instructions": "Not detected automatically."
   },
   {
     "id": "appointment",
@@ -30,7 +30,7 @@
     "description": "an appointment on your calendar",
     "emoji": "📌",
     "icon": "pin",
-    "instructions": "Added by the upcoming schedule run from plans in what your journal holds for that day; not detected from what you are doing."
+    "instructions": "Not detected automatically."
   },
   {
     "id": "event",
@@ -38,7 +38,7 @@
     "description": "an event you plan to attend",
     "emoji": "🎟️",
     "icon": "ticket",
-    "instructions": "Added by the upcoming schedule run from plans in what your journal holds for that day; not detected from what you are doing."
+    "instructions": "Not detected automatically."
   },
   {
     "id": "travel",
@@ -46,7 +46,7 @@
     "description": "travel you have planned",
     "emoji": "✈️",
     "icon": "plane",
-    "instructions": "Added by the upcoming schedule run from plans in what your journal holds for that day; not detected from what you are doing."
+    "instructions": "Not detected automatically."
   },
   {
     "id": "reminder",
@@ -54,7 +54,7 @@
     "description": "a reminder for something upcoming",
     "emoji": "🔔",
     "icon": "bell",
-    "instructions": "Added by the upcoming schedule run from plans in what your journal holds for that day; not detected from what you are doing."
+    "instructions": "Not detected automatically."
   },
   {
     "id": "errand",
@@ -62,7 +62,7 @@
     "description": "an errand you plan to do",
     "emoji": "🧾",
     "icon": "receipt",
-    "instructions": "Added by the upcoming schedule run from plans in what your journal holds for that day; not detected from what you are doing."
+    "instructions": "Not detected automatically."
   },
   {
     "id": "celebration",
@@ -70,7 +70,7 @@
     "description": "a celebration on the calendar",
     "emoji": "🎉",
     "icon": "party-popper",
-    "instructions": "Added by the upcoming schedule run from plans in what your journal holds for that day; not detected from what you are doing."
+    "instructions": "Not detected automatically."
   },
   {
     "id": "doctor_appointment",
@@ -78,7 +78,7 @@
     "description": "a medical appointment on your calendar",
     "emoji": "🩺",
     "icon": "stethoscope",
-    "instructions": "Added by the upcoming schedule run from plans in what your journal holds for that day; not detected from what you are doing."
+    "instructions": "Not detected automatically."
   },
   {
     "id": "coding",

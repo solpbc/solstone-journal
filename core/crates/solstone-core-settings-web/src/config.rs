@@ -13,7 +13,7 @@ use solstone_core_journal_config_write::{
 use crate::{
     http::{
         config_busy, invalid_config_value, json_response, missing_request_body,
-        missing_required_field, settings_operation_failed,
+        missing_required_field, owner_voice_consent_required, settings_operation_failed,
     },
     request_body::{JsonBody, json_body},
 };
@@ -68,6 +68,9 @@ fn merge_processing(target: &mut Map<String, Value>, patch: &Map<String, Value>)
     }
 }
 
+/// The write closure's refusal when voice-only transcription is turned on without consent.
+const OWNER_VOICE_CONSENT_REFUSAL: &str = "owner voice consent required";
+
 /// Off, then the three budgets an owner can choose on the "your own model" lane.
 const BYO_THINKING_BUDGETS: [u64; 4] = [0, 8192, 16384, 32768];
 
@@ -81,6 +84,8 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     if request.is_empty() {
         return missing_request_body();
     }
+    // Only the settings page's confirmation step sends this; it is never stored.
+    let owner_voice_consent = request.get("owner_voice_consent") == Some(&Value::Bool(true));
     let mut section = request
         .get("section")
         .and_then(Value::as_str)
@@ -118,7 +123,12 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             "email_addresses",
             "timezone",
         ],
-        "transcribe" => &["backend", "preserve_all", "confidential_audio"],
+        "transcribe" => &[
+            "backend",
+            "preserve_all",
+            "confidential_audio",
+            "owner_voice_only",
+        ],
         "env" => &["PLAUD_ACCESS_TOKEN"],
         "processing" => &[],
         // The "your own model" thinking budget: one value for the lane.
@@ -153,7 +163,7 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 "transcribe.parakeet-cpp.device must be one of: auto, cpu",
             );
         }
-        for key in ["preserve_all", "confidential_audio"] {
+        for key in ["preserve_all", "confidential_audio", "owner_voice_only"] {
             if data.contains_key(key) && !data[key].is_boolean() {
                 return invalid_config_value(format!("transcribe.{key} must be a boolean"));
             }
@@ -208,6 +218,18 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         };
         let mut changed = false;
         let mut changed_fields = Map::new();
+        // Turning voice-only transcription on needs the owner's confirmation, decided here
+        // against the stored value so concurrent writes cannot slip past it.
+        if section_for_write == "transcribe"
+            && data_for_write.get("owner_voice_only") == Some(&Value::Bool(true))
+            && target.get("owner_voice_only") != Some(&Value::Bool(true))
+            && !owner_voice_consent
+        {
+            return JournalConfigMutation {
+                changed: false,
+                value: Err(OWNER_VOICE_CONSENT_REFUSAL.to_owned()),
+            };
+        }
         if section_for_write == "processing" {
             let before = Value::Object(target.clone());
             let mut proposed = target.clone();
@@ -280,6 +302,9 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     let (config, changed_fields) = match result {
         Ok(value) => match value.value {
             Ok(config) => config,
+            Err(error) if error == OWNER_VOICE_CONSENT_REFUSAL => {
+                return owner_voice_consent_required();
+            }
             Err(error) => return invalid_config_value(error),
         },
         Err(error) => {
@@ -292,6 +317,9 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         }
     };
     if !changed_fields.is_empty() {
+        let owner_voice_enabled = changed_fields
+            .get("owner_voice_only")
+            .is_some_and(|change| change["new"] == Value::Bool(true));
         let log_fields = if section == "env" {
             changed_fields
                 .keys()
@@ -300,13 +328,17 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         } else {
             changed_fields
         };
+        let mut log_body = json!({"changed_fields": log_fields});
+        if section == "transcribe" && owner_voice_consent && owner_voice_enabled {
+            log_body["consent"] = json!("owner_confirmed");
+        }
         if solstone_core_facets::append_action_log(
             &journal_root,
             None,
             "app",
             "settings",
             &format!("{section}_update"),
-            json!({"changed_fields": log_fields}),
+            log_body,
         )
         .is_err()
         {
@@ -413,6 +445,10 @@ pub fn project_transcribe(value: Value, include_confidential_audio: bool) -> Val
             {
                 projected.insert(key.clone(), value.clone());
             }
+            // Only a JSON `true` is on, as the transcriber reads it.
+            "owner_voice_only" => {
+                projected.insert(key.clone(), Value::Bool(value == &Value::Bool(true)));
+            }
             _ => {}
         }
     }
@@ -484,6 +520,141 @@ mod tests {
     };
     use serde_json::json;
     use tower::ServiceExt;
+
+    fn files_containing(root: &std::path::Path, needle: &str) -> usize {
+        let mut count = 0;
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if std::fs::read_to_string(&path).is_ok_and(|text| text.contains(needle)) {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    async fn send(
+        root: &std::path::Path,
+        method: &str,
+        body: serde_json::Value,
+    ) -> (u16, serde_json::Value) {
+        let request = Request::builder()
+            .method(method)
+            .uri("/app/settings/api/config")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let response = crate::test_support::shell_router(root)
+            .oneshot(request)
+            .await
+            .unwrap();
+        let status = response.status().as_u16();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    #[tokio::test]
+    async fn turning_voice_only_on_needs_the_confirmation_on_every_route() {
+        let root = crate::test_support::phase_root("established");
+        let path = root.path().join("config/journal.json");
+        for method in ["PUT", "POST"] {
+            for consent in [None, Some(json!(false)), Some(json!("true"))] {
+                let before = std::fs::read(&path).unwrap();
+                let mut body = json!({"section": "transcribe", "data": {"owner_voice_only": true}});
+                if let Some(consent) = consent {
+                    body["owner_voice_consent"] = consent;
+                }
+                let (status, response) = send(root.path(), method, body).await;
+                assert_eq!(status, 403, "{method}");
+                assert_eq!(response["reason_code"], "owner_voice_consent_required");
+                assert!(!response.to_string().contains("owner_voice_consent\""));
+                assert_eq!(std::fs::read(&path).unwrap(), before);
+            }
+            let (status, _) = send(
+                root.path(),
+                method,
+                json!({"section": "transcribe", "key": "owner_voice_only", "value": true}),
+            )
+            .await;
+            assert_eq!(status, 403, "key/value form on {method}");
+        }
+        for value in [json!("true"), json!(1), serde_json::Value::Null] {
+            let before = std::fs::read(&path).unwrap();
+            let (status, _) = send(
+                root.path(),
+                "PUT",
+                json!({"section": "transcribe", "data": {"owner_voice_only": value}, "owner_voice_consent": true}),
+            )
+            .await;
+            assert_eq!(status, 400, "{value}");
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+
+        let (status, response) = send(
+            root.path(),
+            "PUT",
+            json!({"section": "transcribe", "data": {"owner_voice_only": true}, "owner_voice_consent": true}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(response["config"]["transcribe"]["owner_voice_only"], true);
+        let stored = std::fs::read_to_string(&path).unwrap();
+        assert!(stored.contains("owner_voice_only"));
+        assert!(!stored.contains("owner_voice_consent"));
+        assert_eq!(files_containing(root.path(), "owner_confirmed"), 1);
+
+        // Already on: re-saving needs no confirmation and records none.
+        let (status, _) = send(
+            root.path(),
+            "PUT",
+            json!({"section": "transcribe", "data": {"owner_voice_only": true}}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        // Turning it off needs none either.
+        let (status, response) = send(
+            root.path(),
+            "PUT",
+            json!({"section": "transcribe", "data": {"owner_voice_only": false}}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(response["config"]["transcribe"]["owner_voice_only"], false);
+        let (status, _) = send(
+            root.path(),
+            "PUT",
+            json!({"section": "transcribe", "data": {"backend": "parakeet"}, "owner_voice_consent": true}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(files_containing(root.path(), "owner_confirmed"), 1);
+    }
+
+    #[test]
+    fn the_projection_reads_only_json_true_as_on() {
+        for (value, on) in [
+            (json!(true), true),
+            (json!(false), false),
+            (json!("true"), false),
+            (json!(1), false),
+            (serde_json::Value::Null, false),
+        ] {
+            let projected = super::project_transcribe(json!({"owner_voice_only": value}), false);
+            assert_eq!(projected["owner_voice_only"], json!(on), "{value}");
+        }
+        assert!(
+            super::project_transcribe(json!({}), false)
+                .get("owner_voice_only")
+                .is_none()
+        );
+    }
 
     #[tokio::test]
     async fn processing_gate_roundtrips_partial_updates_and_rejects_invalid_without_writing() {

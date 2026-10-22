@@ -6,9 +6,25 @@ use std::path::PathBuf;
 use axum::Json;
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
-use serde_json::json;
+use serde_json::{Value, json};
 use solstone_core_home::HomeContext;
 use solstone_core_home::readers::get_capture_health;
+
+/// What this journal understands from a linked device, beyond the ingest
+/// protocol itself. A device sends a kind of content only to a journal that
+/// lists it here.
+const CAPABILITIES: &[&str] = &["calendar_notes"];
+
+/// The status body every platform answers with; only how the version is
+/// worked out differs between them.
+fn status_body(version: Value, capture: Value) -> Value {
+    json!({
+        "version": version,
+        "capture": capture,
+        "capabilities": CAPABILITIES,
+        "ok": true,
+    })
+}
 
 #[allow(clippy::needless_return)]
 pub async fn status(journal_root: PathBuf) -> Response {
@@ -44,25 +60,19 @@ pub async fn status(journal_root: PathBuf) -> Response {
             )
         });
 
-        return Json(json!({
-            "version": version_report,
-            "capture": capture,
-            "ok": true,
-        }))
-        .into_response();
+        return Json(status_body(json!(version_report), json!(capture))).into_response();
     }
 
     #[cfg(not(target_os = "linux"))]
     {
-        return Json(json!({
-            "version": {
+        return Json(status_body(
+            json!({
                 "current": env!("CARGO_PKG_VERSION"),
                 "latest": env!("CARGO_PKG_VERSION"),
                 "update_available": false,
-            },
-            "capture": capture,
-            "ok": true,
-        }))
+            }),
+            json!(capture),
+        ))
         .into_response();
     }
 }
@@ -165,6 +175,33 @@ mod update_tests {
             assert_eq!(status.current, cli.current);
             assert_eq!(status.target, cli.target);
             assert_eq!(status.latest_platform_version, cli.latest_platform_version);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::status_body;
+
+    #[test]
+    fn every_platform_status_lists_calendar_notes_and_keeps_its_fields() {
+        // The Linux answer carries an update report and other platforms a plain
+        // version; both go through the one builder.
+        for (version, capture) in [
+            (json!({"availability": "available"}), json!({"state": "ok"})),
+            (
+                json!({"current": "1.0.0", "latest": "1.0.0", "update_available": false}),
+                json!({"state": "stale"}),
+            ),
+        ] {
+            let body = status_body(version.clone(), capture.clone());
+            let capabilities = body["capabilities"].as_array().unwrap();
+            assert!(capabilities.iter().any(|value| value == "calendar_notes"));
+            assert_eq!(body["version"], version);
+            assert_eq!(body["capture"], capture);
+            assert_eq!(body["ok"], true);
         }
     }
 }

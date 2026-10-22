@@ -570,8 +570,15 @@ pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
                 let Some(name) = entry.name.to_str() else {
                     continue;
                 };
+                // A journal rel is `/`-separated on every platform; Windows
+                // would otherwise spell it with backslashes, which callers
+                // matching journal keys never see and removal cannot contain.
                 let rel = match entry.path.strip_prefix(journal) {
-                    Ok(rel) => rel.to_string_lossy().into_owned(),
+                    Ok(rel) => rel
+                        .components()
+                        .map(|component| component.as_os_str().to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join("/"),
                     Err(_) => continue,
                 };
                 let retained = |reason| Retained {
@@ -778,7 +785,7 @@ pub fn plan_compactions(
     };
     let mut planned = Vec::new();
     for log in COMPACTABLE {
-        // A planned rel carries the host's separators; compare paths, not text.
+        // A planned rel is '/'-separated on every platform.
         if plan
             .prunable
             .iter()

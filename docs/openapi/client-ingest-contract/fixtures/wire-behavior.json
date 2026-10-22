@@ -91,6 +91,22 @@
       }
     },
     {
+      "id": "declared.client.ingestUpload.refusal.calendar_note_invalid",
+      "kind": "declared",
+      "payload": {
+        "detail": "line 2: changed_at falls outside the segment window",
+        "error": "Ingest request failed",
+        "reason_code": "calendar_note_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "reason_code": "calendar_note_invalid"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
       "consumer_decision": {
         "accepted": true,
         "selected": [

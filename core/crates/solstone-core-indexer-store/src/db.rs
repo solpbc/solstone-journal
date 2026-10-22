@@ -12,6 +12,11 @@ use crate::StoreError;
 use crate::activity_provenance::{
     CREATE_ACTIVITY_MEMBERSHIP, CREATE_ACTIVITY_PROVENANCE, delete_activity_provenance,
 };
+use crate::calendar::{
+    CREATE_CALENDAR_HITS, CREATE_CALENDAR_HITS_IDENTITY, CREATE_CALENDAR_HITS_PATH,
+    CREATE_CALENDAR_NOTES, CREATE_CALENDAR_NOTES_IDENTITY, CREATE_CALENDAR_NOTES_STREAM,
+    calendar_paths_in_stream, ensure_calendar_note_columns, forget_calendar_path, relist,
+};
 use crate::chunk_sources::{
     CHUNK_SOURCES_LOOKUP_PATHS, CREATE_CHUNK_SOURCE_READINESS, CREATE_CHUNK_SOURCES,
     CREATE_CHUNK_SOURCES_PATH_INDEX, chunk_path_lookup_ready, delete_chunk_source_rowids,
@@ -70,6 +75,8 @@ ts INTEGER,
 weight INTEGER NOT NULL
 )";
 const CREATE_EDGES_PATH_INDEX: &str = "CREATE INDEX IF NOT EXISTS edges_path ON edges(path)";
+const CREATE_EDGES_SOURCE_ANCHOR_INDEX: &str =
+    "CREATE INDEX IF NOT EXISTS edges_source_anchor ON edges(source, anchor)";
 const CREATE_EDGES_SRC_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src, kind, day)";
 const CREATE_EDGES_DST_INDEX: &str =
@@ -293,6 +300,7 @@ pub(crate) fn reset_index_admitted(
     tx.execute("DROP TABLE IF EXISTS activity_membership", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_source_readiness", [])?;
     tx.execute("DROP INDEX IF EXISTS edges_path", [])?;
+    tx.execute("DROP INDEX IF EXISTS edges_source_anchor", [])?;
     tx.execute("DROP INDEX IF EXISTS idx_edges_src", [])?;
     tx.execute("DROP INDEX IF EXISTS idx_edges_dst", [])?;
     tx.execute("DROP TABLE IF EXISTS edges", [])?;
@@ -304,6 +312,9 @@ pub(crate) fn reset_index_admitted(
     tx.execute("DROP TABLE IF EXISTS chunk_classification_backfill", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_group_offset", [])?;
     tx.execute("DROP TABLE IF EXISTS screen_text_source", [])?;
+    tx.execute("DROP TABLE IF EXISTS calendar_notes", [])?;
+    tx.execute("DROP TABLE IF EXISTS calendar_hits", [])?;
+    tx.execute("DROP TABLE IF EXISTS calendar_people", [])?;
     // A reset builds a new index: it carries this writer's stamp, not one the
     // gate let through because it could not be read.
     tx.execute("DROP TABLE IF EXISTS index_meta", [])?;
@@ -334,6 +345,10 @@ pub fn prune_chunks_by_stream(
     }
     let mut conn = open_index_admitted(journal, &admission, &|| Ok(()))?;
     let tx = conn.transaction()?;
+    let mut calendar_identities = std::collections::BTreeSet::new();
+    for path in calendar_paths_in_stream(&tx, stream)? {
+        calendar_identities.extend(forget_calendar_path(&tx, &path)?);
+    }
     let paths = {
         let mut statement = tx.prepare(
             "SELECT path FROM chunks WHERE stream=? UNION SELECT path FROM memory_originals WHERE stream=?",
@@ -358,6 +373,11 @@ pub fn prune_chunks_by_stream(
         tx.execute("DELETE FROM chunk_group_offset WHERE path=?", [&path])?;
         tx.execute("DELETE FROM screen_text_source WHERE path=?", [&path])?;
         files += tx.execute("DELETE FROM files WHERE path=?", [path])? as u64;
+    }
+    let relisted = relist(&tx, journal, &calendar_identities)?;
+    relisted.mark_for_reindex(&tx)?;
+    for warning in relisted.warnings {
+        log::warn!(target: "solstone::indexer", "{warning}");
     }
     tx.commit()?;
     Ok(StreamPruneCounts { chunks, files })
@@ -406,10 +426,16 @@ pub(crate) fn prune_by_paths_admitted(
     let mut conn = open_index_admitted(journal, admission, &|| Ok(()))?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut counts = StreamPruneCounts::default();
+    let mut calendar_identities = std::collections::BTreeSet::new();
     for rel in rels {
         let Some(pred) = prune_path_predicate(rel) else {
             continue;
         };
+        // Calendar rows go through their notes first: a listing row filed
+        // under a removed note is replaced from the latest surviving note.
+        for path in select_prune_predicate_paths(&tx, "calendar_notes", &pred)? {
+            calendar_identities.extend(forget_calendar_path(&tx, &path)?);
+        }
         delete_chunk_classifications_by_predicate(&tx, &pred)?;
         let chunk_rowids = select_prune_predicate_rowids(&tx, "chunks", &pred)?;
         delete_activity_provenance(&tx, &chunk_rowids)?;
@@ -421,6 +447,11 @@ pub(crate) fn prune_by_paths_admitted(
         counts.files += execute_prune_predicate(&tx, "files", &pred)?;
         execute_prune_predicate(&tx, "edges", &pred)?;
         execute_prune_predicate(&tx, "edge_files", &pred)?;
+    }
+    let relisted = relist(&tx, journal, &calendar_identities)?;
+    relisted.mark_for_reindex(&tx)?;
+    for warning in relisted.warnings {
+        log::warn!(target: "solstone::indexer", "{warning}");
     }
     tx.commit()?;
     Ok(Some(counts))
@@ -698,6 +729,7 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_EDGE_FILES, [])?;
     conn.execute(CREATE_EDGES, [])?;
     conn.execute(CREATE_EDGES_PATH_INDEX, [])?;
+    conn.execute(CREATE_EDGES_SOURCE_ANCHOR_INDEX, [])?;
     conn.execute(CREATE_EDGES_SRC_INDEX, [])?;
     conn.execute(CREATE_EDGES_DST_INDEX, [])?;
     conn.execute(CREATE_INDEX_BUILD_STATE, [])?;
@@ -709,6 +741,14 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_CHUNK_CLASSIFICATION_BACKFILL, [])?;
     conn.execute(CREATE_CHUNK_GROUP_OFFSET, [])?;
     conn.execute(CREATE_SCREEN_TEXT_SOURCE, [])?;
+    conn.execute(CREATE_CALENDAR_NOTES, [])?;
+    ensure_calendar_note_columns(conn)?;
+    conn.execute(CREATE_CALENDAR_NOTES_IDENTITY, [])?;
+    conn.execute(CREATE_CALENDAR_NOTES_STREAM, [])?;
+    conn.execute(CREATE_CALENDAR_HITS, [])?;
+    conn.execute(CREATE_CALENDAR_HITS_PATH, [])?;
+    conn.execute(CREATE_CALENDAR_HITS_IDENTITY, [])?;
+    conn.execute(crate::calendar_schedule::CREATE_CALENDAR_PEOPLE, [])?;
     conn.execute(CREATE_ACTIVITY_PROVENANCE, [])?;
     conn.execute(CREATE_ACTIVITY_MEMBERSHIP, [])?;
     conn.execute(
@@ -837,6 +877,39 @@ fn select_prune_predicate_rowids(
         }
     };
     Ok(rowids)
+}
+
+fn select_prune_predicate_paths(
+    conn: &Connection,
+    table: &str,
+    pred: &PrunePathPredicate,
+) -> Result<Vec<String>, StoreError> {
+    let (sql, values): (String, Vec<&str>) = match &pred.shape2 {
+        Some((shape2_exact, shape2_prefix)) => (
+            format!(
+                "SELECT DISTINCT path FROM {table} WHERE path = ?1 OR path LIKE ?2 ESCAPE ?5 OR path = ?3 OR path LIKE ?4 ESCAPE ?5"
+            ),
+            vec![
+                pred.shape1_exact.as_str(),
+                pred.shape1_prefix.as_str(),
+                shape2_exact.as_str(),
+                shape2_prefix.as_str(),
+                "\\",
+            ],
+        ),
+        None => (
+            format!("SELECT DISTINCT path FROM {table} WHERE path = ?1 OR path LIKE ?2 ESCAPE ?3"),
+            vec![
+                pred.shape1_exact.as_str(),
+                pred.shape1_prefix.as_str(),
+                "\\",
+            ],
+        ),
+    };
+    let mut statement = conn.prepare(&sql)?;
+    Ok(statement
+        .query_map(rusqlite::params_from_iter(values), |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?)
 }
 
 fn execute_prune_predicate(

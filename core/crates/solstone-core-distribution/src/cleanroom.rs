@@ -327,11 +327,8 @@ fn generation_completion(
     {
         return Ok((
             "morning_briefing",
-            r#"{"metadata":{"generated":"2099-01-01T00:00:00Z","model":"cleanroom","sources":{"segments":0,"anticipated_activities":0},"gaps":[],"coverage_preamble":""},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[]}"#,
+            r#"{"metadata":{"generated":"2099-01-01T00:00:00Z","model":"cleanroom","sources":{"segments":0},"gaps":[],"coverage_preamble":""},"yesterday":[],"needs_attention":[]}"#,
         ));
-    }
-    if prompt.contains("Future Schedule Extraction") && prompt.contains("cancelled") {
-        return Ok(("schedule", r#"{"events":[]}"#));
     }
     if prompt.contains("Propose candidate durable factoids about attached entities")
         && prompt.contains("No active entities found in today's content.")
@@ -565,12 +562,6 @@ mod tests {
         assert_eq!(
             generation_completion("Maintenance Window Analysis primary fallback", anchor),
             Err("daily_schedule-anchor-missing")
-        );
-        assert_eq!(
-            generation_completion("Future Schedule Extraction cancelled", anchor)
-                .expect("schedule response")
-                .0,
-            "schedule"
         );
         assert_eq!(
             generation_completion(

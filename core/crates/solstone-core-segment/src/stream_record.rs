@@ -1721,7 +1721,7 @@ pub fn delete_stream_record(journal: &Path, name: &str) -> Result<Removed, Segme
     Ok(remove_file(journal, &rel)?)
 }
 
-fn read_typed_stream_record(path: &Path) -> Result<Option<StreamRecord>, SegmentError> {
+pub(crate) fn read_typed_stream_record(path: &Path) -> Result<Option<StreamRecord>, SegmentError> {
     match read_json(path, None, MalformedPolicy::Raise) {
         Ok(record) => Ok(record),
         Err(error @ ReadError::Malformed(_)) => Err(SegmentError::MalformedStreamRecord {

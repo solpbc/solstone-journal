@@ -620,7 +620,7 @@ fn read_json_object(path: &Path, source: &'static str) -> Result<JsonObject, Edg
 /// The journal's owner zone. A config that exists but does not parse fails
 /// the scan rather than guessing; a missing or unknown zone falls back to this
 /// computer's zone.
-pub(crate) fn owner_timezone_for_journal(journal: &Path) -> Result<Tz, EdgeError> {
+pub fn owner_timezone_for_journal(journal: &Path) -> Result<Tz, EdgeError> {
     read_journal_config(journal).map_err(|error| EdgeError::JournalConfigCorrupt {
         path: get_journal_config_path(journal),
         message: error.to_string(),
@@ -1543,6 +1543,47 @@ mod tests {
         assert_eq!(calendar.facet.as_deref(), Some(""));
         assert_eq!(calendar.label, EdgeValue::Text("Planning".to_string()));
         assert_eq!(calendar.weight, 1);
+        fs::remove_dir_all(root).expect("cleanup screen root");
+    }
+
+    #[test]
+    fn a_screen_calendar_guest_links_only_to_a_person_named_in_full() {
+        let root = temp_root("screen-calendar-first-name");
+        write_json(
+            &root,
+            "config/journal.json",
+            json!({"identity":{"timezone":"UTC"}}),
+        );
+        seed_entity(&root, "edge_ada", "Ada Edge");
+        seed_entity(&root, "edge_sam", "Sam Rivera");
+        let rel = "20260430/default/093000_300/screen.jsonl";
+        write_jsonl(
+            &root,
+            &format!("chronicle/{rel}"),
+            &[json!({"content":{"calendar":{"app":"Calendar","events":[
+                {"title":"Planning","start":"2026-05-01T09:00:00","end":"2026-05-01T10:00:00","calendar":"Work","guests":["Ada Edge","Sam"]},
+                {"title":"Review","start":"2026-05-01T11:00:00","end":"2026-05-01T12:00:00","calendar":"Work","guests":["ada edge","Sam Rivera"]}
+            ]}}})],
+        );
+
+        let mut resolver = EdgeResolver::new(&root);
+        resolver.begin_file();
+        let extracted =
+            extract_file_edges(&root, rel, &root.join("chronicle").join(rel), &mut resolver)
+                .expect("extract screen edges");
+        let linked = extracted
+            .rows
+            .iter()
+            .map(|row| (row.src.as_str(), row.dst.as_str(), &row.label))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            linked,
+            [(
+                "edge_ada",
+                "edge_sam",
+                &EdgeValue::Text("Review".to_string())
+            )]
+        );
         fs::remove_dir_all(root).expect("cleanup screen root");
     }
 

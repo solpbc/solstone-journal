@@ -439,29 +439,17 @@ pub(crate) fn execute_with_paths(
                     record.generated_result = None;
                     error.stage = "daily_output_validation";
                 }
-                // Every day's schedule writes into the same later-dated
-                // calendars, so its conflicts are mostly another day's schedule
-                // rather than the owner. A facet's merge proposals are likewise
-                // rewritten by other days' reviews of that facet, so a proposal
+                // A facet's merge proposals are rewritten by other days'
+                // reviews of that facet, so a proposal
                 // that changed after preparation is stale input, not an owner
                 // decision (accepted or dismissed proposals never conflict).
                 // Reusing the prompt and response can only conflict again, so the
                 // next attempt prepares a fresh prompt. A saved plan is cleared
                 // only when no owner-action receipts have landed.
-                let stale_preparation = match error.owner_conflict_kind() {
-                    Some(
-                        "merge_proposal_preparation"
-                        | "merge_proposals_changed"
-                        | "calendar_changed",
-                    ) => true,
-                    None => {
-                        name == "schedule"
-                            && error
-                                .detail
-                                .contains("calendar changed after prompt preparation")
-                    }
-                    _ => false,
-                };
+                let stale_preparation = matches!(
+                    error.owner_conflict_kind(),
+                    Some("merge_proposal_preparation" | "merge_proposals_changed")
+                );
                 let receipt_free = !record
                     .receipts
                     .iter()
@@ -848,7 +836,7 @@ mod tests {
                 "_daily_artifact_before":{"chronicle/20260101/talents/morning_briefing.md":null},
             }},
             "hook":"morning_briefing",
-            "state":{"MorningBriefing":{"values":{},"activities":[],"initial_gaps":[],"counts":{},"forward_count":0,"generated":"","model":""}},
+            "state":{"MorningBriefing":{"values":{},"activities":[],"initial_gaps":[],"counts":{},"generated":"","model":""}},
         });
         let mut record = DailyUnitRecord::new(identity.clone(), "E", "contract");
         record.lock_token = Some("attempt-1".to_owned());
@@ -1365,7 +1353,7 @@ mod tests {
         let model_output = json!({"needs_attention":[
             {"text":"Prepare for today's meeting","source_id":"sol://calendar/meeting"},
             {"text":"Yesterday's audio is still processing","source_id":"sol://chronicle/20251231/audio"}
-        ],"your_day":[]});
+        ]});
         let stub = crate::test_support::one_shot_stub(root.path(), &model_output.to_string());
         let outcome = execute(
             request,
@@ -1465,12 +1453,30 @@ mod tests {
             journal: root.path().join("journal"),
         };
         fs::create_dir_all(&context.journal).unwrap();
-        let identity = DailyUnitIdentity::new("20260101", "schedule", None);
+        solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
+            .unwrap();
+        for (day, name) in [("20260101", "Ada"), ("20260102", "Ada Lovelace")] {
+            solstone_core_facets::upsert_detection_segment(
+                &context.journal,
+                "work",
+                day,
+                "090000_300",
+                &[solstone_core_facets::DetectedEntityInput {
+                    entity_type: "Person".to_owned(),
+                    name: name.to_owned(),
+                    description: "Collaborator.".to_owned(),
+                }],
+            )
+            .unwrap();
+        }
+        let identity =
+            DailyUnitIdentity::new("20260108", "entities:entities_review", Some("work".into()));
         let prepared = PreparedTalent {
-            name: "schedule".to_owned(),
+            name: "entities:entities_review".to_owned(),
             config: json!({
-                "day":"20260101", "type":"generate", "max_output_tokens":1024, "prompt":"frozen calendar evidence",
-                "model":"test-model", "provider":"test", "hook":{"post":"schedule"}
+                "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
+                "prompt":"frozen review evidence", "model":"test-model", "provider":"test",
+                "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"}
             })
             .as_object()
             .unwrap()
@@ -1482,9 +1488,9 @@ mod tests {
         record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
         record.frozen_packet = Some(packet);
         record.generated_result =
-            Some(json!({"response":"malformed calendar", "usage":{"input_tokens":12}}));
+            Some(json!({"response":"malformed review", "usage":{"input_tokens":12}}));
         save_daily_unit_record(&context.journal, &record).unwrap();
-        let request = json!({"name":"schedule","day":"20260101","lock_token":"attempt"})
+        let request = json!({"name":"entities:entities_review","day":"20260108","facet":"work","lock_token":"attempt"})
             .as_object()
             .unwrap()
             .clone();
@@ -1506,7 +1512,8 @@ mod tests {
         assert!(failed.action_plan.is_none());
         assert!(failed.accepted.is_none());
         assert!(failed.receipts.is_empty());
-        let stub = crate::test_support::one_shot_stub(root.path(), "[]");
+        let stub =
+            crate::test_support::one_shot_stub(root.path(), r#"{"promotions":[],"merges":[]}"#);
         let outcome = execute(
             request,
             &context,
@@ -1514,13 +1521,7 @@ mod tests {
             &mut Vec::new(),
         );
         assert!(
-            matches!(
-                outcome,
-                RuntimeOutcome::Finished {
-                    disposition: CommitDisposition::CommittedNoOutput,
-                    ..
-                }
-            ),
+            matches!(outcome, RuntimeOutcome::Finished { .. }),
             "{outcome:?}"
         );
         assert!(
@@ -1679,24 +1680,52 @@ mod tests {
     fn daily_parse_failure_terminal_and_persisted_counter_use_the_same_cause() {
         for (previous, expected_count) in [("schema_invalid", 2), ("no_output", 0)] {
             let root = tempfile::tempdir().unwrap();
-            let (context, old_identity, _) = fixture(root.path(), true);
-            let mut record = load_daily_unit_record(&context.journal, &old_identity)
-                .unwrap()
+            let context = ExecutionContext {
+                journal: root.path().join("journal"),
+            };
+            solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
                 .unwrap();
-            record.identity = DailyUnitIdentity::new("20260101", "schedule", None);
+            for (day, name) in [("20260101", "Ada"), ("20260102", "Ada Lovelace")] {
+                solstone_core_facets::upsert_detection_segment(
+                    &context.journal,
+                    "work",
+                    day,
+                    "090000_300",
+                    &[solstone_core_facets::DetectedEntityInput {
+                        entity_type: "Person".to_owned(),
+                        name: name.to_owned(),
+                        description: "Collaborator.".to_owned(),
+                    }],
+                )
+                .unwrap();
+            }
+            let prepared = PreparedTalent {
+                name: "entities:entities_review".to_owned(),
+                config: json!({
+                    "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
+                    "prompt":"review", "model":"test-model", "provider":"test",
+                    "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            };
+            let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
+            let mut record = DailyUnitRecord::new(
+                DailyUnitIdentity::new("20260108", "entities:entities_review", Some("work".into())),
+                "E",
+                "contract",
+            );
+            record.lock_token = Some("attempt-1".to_owned());
+            record.use_id = Some("attempt-1".to_owned());
             record.reason_code = Some(previous.to_owned());
             record.failure_count = 2;
             record.generated_result =
                 Some(json!({"response":"invalid json","usage":null,"degraded":null}));
-            let packet = record.frozen_packet.as_mut().unwrap();
-            packet["prepared"]["name"] = json!("schedule");
-            packet["prepared"]["config"]["hook"] = json!({"post":"schedule"});
-            packet["hook"] = json!("schedule");
-            packet["state"] = json!("None");
-            record.packet_digest = Some(crate::daily_prepare::packet_digest(packet));
+            record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
+            record.frozen_packet = Some(packet);
             save_daily_unit_record(&context.journal, &record).unwrap();
-            let request =
-                json!({"name":"schedule","day":"20260101","lock_token":record.lock_token});
+            let request = json!({"name":"entities:entities_review","day":"20260108","facet":"work","lock_token":record.lock_token});
             let generate = OneShotClient::at_path(root.path().join("absent-generate"));
             let paths = crate::prepare::RuntimePaths {
                 talent_root: root.path().join("absent-talents"),
@@ -1711,12 +1740,12 @@ mod tests {
                 &context,
                 Ok(&generate),
             );
-            let terminal: Value = String::from_utf8(wire)
-                .unwrap()
+            let wire_text = String::from_utf8(wire).unwrap();
+            let terminal: Value = wire_text
                 .lines()
                 .map(|line| serde_json::from_str::<Value>(line).unwrap())
                 .find(|row| row["terminal"] == true)
-                .unwrap();
+                .unwrap_or_else(|| panic!("{wire_text}"));
             assert_eq!(terminal["reason_code"], "schema_invalid");
             let after = load_daily_unit_record(&context.journal, &record.identity)
                 .unwrap()
@@ -1725,88 +1754,6 @@ mod tests {
             assert_eq!(after.failure_count, expected_count);
             assert!(after.generated_result.is_none());
         }
-    }
-
-    #[test]
-    fn a_schedule_calendar_conflict_retries_from_a_fresh_prompt() {
-        let root = tempfile::tempdir().unwrap();
-        let context = ExecutionContext {
-            journal: root.path().join("journal"),
-        };
-        fs::create_dir_all(&context.journal).unwrap();
-        solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
-            .unwrap();
-        let events = |details: &str| {
-            json!({"events":[{"activity":"meeting", "target_date":"2026-01-20", "start":"09:00:00",
-                "title":"Planning review", "description":"Discuss", "details":details,
-                "facet":"work", "participation":[]}]})
-            .to_string()
-        };
-        let schedule = |day: &str, details: &str| {
-            for batch in
-                crate::schedule::prepare_publication(&context.journal, &events(details), day)
-                    .unwrap()
-            {
-                solstone_core_facets::publish_anticipation_batch(
-                    &context.journal,
-                    &batch,
-                    true,
-                    || Ok(()),
-                )
-                .unwrap();
-            }
-        };
-        let calendar = || {
-            solstone_core_facets::read_activity_file(&context.journal, "work", "20260120.jsonl")
-                .unwrap()
-        };
-        schedule("20260105", "first");
-        let facet_id =
-            solstone_core_facets::facet_write_identity(&context.journal, "work").unwrap();
-        let prepared = PreparedTalent {
-            name: "schedule".to_owned(),
-            config: json!({
-                "day":"20260110", "type":"generate", "max_output_tokens":1024, "prompt":"frozen calendar evidence",
-                "model":"test-model", "provider":"test", "hook":{"post":"schedule"},
-                "_daily_facet_ids":{"work":facet_id},
-                "_daily_calendar_before":{"work/20260120":calendar()},
-            })
-            .as_object()
-            .unwrap()
-            .clone(),
-        };
-        let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
-        let identity = DailyUnitIdentity::new("20260110", "schedule", None);
-        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
-        record.lock_token = Some("attempt".to_owned());
-        record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
-        record.frozen_packet = Some(packet);
-        record.generated_result = Some(json!({"response":events("third")}));
-        save_daily_unit_record(&context.journal, &record).unwrap();
-        // Another day's schedule updates the same event while this one ran.
-        schedule("20260106", "second");
-        let moved = calendar();
-        let outcome = execute(
-            json!({"name":"schedule","day":"20260110","lock_token":"attempt"})
-                .as_object()
-                .unwrap()
-                .clone(),
-            &context,
-            &OneShotClient::at_path(root.path().join("no-model")),
-            &mut Vec::new(),
-        );
-        let RuntimeOutcome::StageFailed(error) = outcome else {
-            panic!("expected a calendar conflict, got {outcome:?}")
-        };
-        assert_eq!(error.phase, "conflict", "{error}");
-        let record = load_daily_unit_record(&context.journal, &identity)
-            .unwrap()
-            .unwrap();
-        assert_eq!(record.status, DailyUnitStatus::Conflicting);
-        assert_eq!(record.failure_count, 1);
-        assert!(record.frozen_packet.is_none());
-        assert!(record.generated_result.is_none());
-        assert_eq!(calendar(), moved);
     }
 
     #[test]
@@ -1910,13 +1857,14 @@ mod tests {
 
     #[test]
     fn every_owner_conflict_counts_toward_its_retry_budget() {
-        let identity = DailyUnitIdentity::new("20260910", "schedule", None);
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
         let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
         let conflict = StageError::new(
             "conflict",
             "daily",
             "daily",
-            "conflict: calendar changed after prompt preparation",
+            "conflict: merge proposals changed after prompt preparation",
         )
         .with_identity(&identity);
         apply_stage_failure(&mut record, &conflict);
@@ -2011,66 +1959,6 @@ mod tests {
     }
 
     #[test]
-    fn calendar_changed_conflict_family_shares_retry_budget() {
-        let identity = DailyUnitIdentity::new("20260910", "schedule", None);
-
-        // 1. Two calendar_changed failures share one counter (count 2)
-        let mut record1 = DailyUnitRecord::new(identity.clone(), "E", "C");
-        let cal = StageError::new("conflict", "daily", "daily", "calendar changed")
-            .with_identity(&identity)
-            .with_owner_conflict_kind("calendar_changed");
-        apply_stage_failure(&mut record1, &cal);
-        assert_eq!(record1.failure_count, 1);
-        assert_eq!(
-            record1.owner_conflict_kind.as_deref(),
-            Some("calendar_changed")
-        );
-        apply_stage_failure(&mut record1, &cal);
-        assert_eq!(record1.failure_count, 2);
-
-        // 2. Kind-absent schedule detail containing "calendar changed after prompt preparation", then calendar_changed -> stays count 2
-        let mut record2 = DailyUnitRecord::new(identity.clone(), "E", "C");
-        let legacy_cal = StageError::new(
-            "conflict",
-            "daily",
-            "daily",
-            "conflict: calendar changed after prompt preparation",
-        )
-        .with_identity(&identity);
-        apply_stage_failure(&mut record2, &legacy_cal);
-        assert_eq!(record2.failure_count, 1);
-        assert_eq!(record2.owner_conflict_kind.as_deref(), None);
-        apply_stage_failure(&mut record2, &cal);
-        assert_eq!(record2.failure_count, 2);
-        assert_eq!(
-            record2.owner_conflict_kind.as_deref(),
-            Some("calendar_changed")
-        );
-
-        // 3. Kind-absent schedule detail containing "conflict: owning facet changed after prompt preparation", then calendar_changed -> is count 1
-        let mut record3 = DailyUnitRecord::new(identity.clone(), "E", "C");
-        let legacy_facet = StageError::new(
-            "conflict",
-            "daily",
-            "daily",
-            "conflict: owning facet changed after prompt preparation",
-        )
-        .with_identity(&identity);
-        apply_stage_failure(&mut record3, &legacy_facet);
-        assert_eq!(record3.failure_count, 1);
-        assert_eq!(record3.owner_conflict_kind.as_deref(), None);
-        apply_stage_failure(&mut record3, &cal);
-        assert_eq!(
-            record3.failure_count, 1,
-            "distinct owning facet conflict followed by calendar changed must reset and count 1"
-        );
-        assert_eq!(
-            record3.owner_conflict_kind.as_deref(),
-            Some("calendar_changed")
-        );
-    }
-
-    #[test]
     fn stale_preparation_clearing_and_retained_receipt_rules() {
         let root = tempfile::tempdir().unwrap();
         let journal = root.path().join("journal");
@@ -2079,25 +1967,6 @@ mod tests {
         };
         fs::create_dir_all(&journal).unwrap();
         solstone_core_facets::create_facet(&journal, "work", "Work", "", "", "", None).unwrap();
-
-        // Helpers for schedule calendar
-        let events = |details: &str| {
-            json!({"events":[{"activity":"meeting", "target_date":"2026-01-20", "start":"09:00:00",
-                "title":"Planning review", "description":"Discuss", "details":details,
-                "facet":"work", "participation":[]}]})
-            .to_string()
-        };
-        let schedule_cal = |day: &str, details: &str| {
-            for batch in
-                crate::schedule::prepare_publication(&journal, &events(details), day).unwrap()
-            {
-                solstone_core_facets::publish_anticipation_batch(&journal, &batch, true, || Ok(()))
-                    .unwrap();
-            }
-        };
-        let calendar = || {
-            solstone_core_facets::read_activity_file(&journal, "work", "20260120.jsonl").unwrap()
-        };
 
         // Helpers for review merge proposals
         for (day, name) in [("20260101", "Ada"), ("20260102", "Ada Lovelace")] {
@@ -2250,51 +2119,6 @@ mod tests {
         assert!(loaded_rev2.action_plan.is_none());
         assert!(loaded_rev2.frozen_packet.is_none());
 
-        // 1c. Receipt-free action_plan is cleared for calendar_changed
-        schedule_cal("20260105", "first");
-        let facet_id = solstone_core_facets::facet_write_identity(&journal, "work").unwrap();
-        let sched_prep = PreparedTalent {
-            name: "schedule".to_owned(),
-            config: json!({
-                "day":"20260110", "type":"generate", "max_output_tokens":1024, "prompt":"frozen cal",
-                "model":"test-model", "provider":"test", "hook":{"post":"schedule"},
-                "_daily_facet_ids":{"work":facet_id.clone()},
-                "_daily_calendar_before":{"work/20260120":calendar()},
-            })
-            .as_object()
-            .unwrap()
-            .clone(),
-        };
-        let sched_packet = crate::daily_prepare::freeze(sched_prep, &context).unwrap();
-        let sched_identity = DailyUnitIdentity::new("20260110", "schedule", None);
-        let mut sched_record = DailyUnitRecord::new(sched_identity.clone(), "E", "C");
-        sched_record.lock_token = Some("attempt-sched".to_owned());
-        sched_record.packet_digest = Some(crate::daily_prepare::packet_digest(&sched_packet));
-        sched_record.frozen_packet = Some(sched_packet);
-        sched_record.generated_result = Some(json!({"response":events("third")}));
-        save_daily_unit_record(&journal, &sched_record).unwrap();
-        schedule_cal("20260106", "second"); // calendar conflict
-
-        let outcome = execute(
-            json!({"name":"schedule","day":"20260110","lock_token":"attempt-sched"})
-                .as_object()
-                .unwrap()
-                .clone(),
-            &context,
-            &OneShotClient::at_path(root.path().join("no-model")),
-            &mut Vec::new(),
-        );
-        let RuntimeOutcome::StageFailed(err) = outcome else {
-            panic!("expected StageFailed, got {outcome:?}");
-        };
-        assert_eq!(err.owner_conflict_kind(), Some("calendar_changed"));
-        let loaded_sched = load_daily_unit_record(&journal, &sched_identity)
-            .unwrap()
-            .unwrap();
-        assert!(loaded_sched.action_plan.is_none());
-        assert!(loaded_sched.frozen_packet.is_none());
-        assert!(loaded_sched.generated_result.is_none());
-
         // 2. Conflict whose detail is "conflict: owning facet changed after prompt preparation"
         // and whose kind is absent keeps the plan
         let obs_root = tempfile::tempdir().unwrap();
@@ -2337,29 +2161,33 @@ mod tests {
 
         // 3. Current-attempt owner_action receipt keeps plan and packet, while receipts only on accepted do not.
         // Also: started receipt without a commit does not take the fresh-prep path.
-        let facet_id = solstone_core_facets::facet_write_identity(&journal, "work").unwrap();
-        let cal_before = calendar();
+        let review_for = |day: &str| {
+            let prepared = PreparedTalent {
+                name: "entities:entities_review".to_owned(),
+                config: json!({
+                    "day":day, "facet":"work", "type":"generate", "max_output_tokens":1024,
+                    "prompt":"review", "model":"test-model", "provider":"test",
+                    "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            };
+            crate::daily_prepare::freeze(prepared, &context).unwrap()
+        };
+        let merge_response = json!({"response":json!({"promotions":[],
+            "merges":[{"source":"Ada", "canonical":"Ada Lovelace", "evidence":"same person"}]})
+        .to_string()});
 
         // 3a. Receipts sit only on accepted -> does clear plan and packet
-        let prep_acc = PreparedTalent {
-            name: "schedule".to_owned(),
-            config: json!({
-                "day":"20260112", "type":"generate", "max_output_tokens":1024, "prompt":"frozen cal",
-                "model":"test-model", "provider":"test", "hook":{"post":"schedule"},
-                "_daily_facet_ids":{"work":facet_id.clone()},
-                "_daily_calendar_before":{"work/20260120":cal_before.clone()},
-            })
-            .as_object()
-            .unwrap()
-            .clone(),
-        };
-        let packet_acc = crate::daily_prepare::freeze(prep_acc, &context).unwrap();
-        let id_acc = DailyUnitIdentity::new("20260112", "schedule", None);
+        let packet_acc = review_for("20260110");
+        let id_acc =
+            DailyUnitIdentity::new("20260110", "entities:entities_review", Some("work".into()));
         let mut rec_acc = DailyUnitRecord::new(id_acc.clone(), "E", "C");
         rec_acc.lock_token = Some("attempt-acc".to_owned());
         rec_acc.packet_digest = Some(crate::daily_prepare::packet_digest(&packet_acc));
         rec_acc.frozen_packet = Some(packet_acc);
-        rec_acc.generated_result = Some(json!({"response":events("fifth")}));
+        rec_acc.generated_result = Some(merge_response.clone());
         rec_acc.accepted = Some(AcceptedDailyResult {
             evidence_revision: "E0".into(),
             contract_digest: "C0".into(),
@@ -2372,10 +2200,10 @@ mod tests {
             committed_at_ms: 1,
         });
         save_daily_unit_record(&journal, &rec_acc).unwrap();
-        schedule_cal("20260107", "conflict-acc"); // trigger calendar conflict
+        propose("20260108", "conflict-acc"); // trigger a proposal conflict
 
         let outcome = execute(
-            json!({"name":"schedule","day":"20260112","lock_token":"attempt-acc"})
+            json!({"name":"entities:entities_review","day":"20260110","facet":"work","lock_token":"attempt-acc"})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -2383,39 +2211,30 @@ mod tests {
             &OneShotClient::at_path(root.path().join("no-model")),
             &mut Vec::new(),
         );
-        assert!(matches!(outcome, RuntimeOutcome::StageFailed(_)));
+        assert!(
+            matches!(outcome, RuntimeOutcome::StageFailed(_)),
+            "{outcome:?}"
+        );
         let loaded_acc = load_daily_unit_record(&journal, &id_acc).unwrap().unwrap();
         assert!(loaded_acc.action_plan.is_none());
         assert!(loaded_acc.frozen_packet.is_none());
 
         // 3b. Current-attempt owner_action receipt (started) -> keeps plan and packet (no fresh-prep path)
-        let cal_before = calendar();
-        let prep_cur = PreparedTalent {
-            name: "schedule".to_owned(),
-            config: json!({
-                "day":"20260113", "type":"generate", "max_output_tokens":1024, "prompt":"frozen cal",
-                "model":"test-model", "provider":"test", "hook":{"post":"schedule"},
-                "_daily_facet_ids":{"work":facet_id},
-                "_daily_calendar_before":{"work/20260120":cal_before},
-            })
-            .as_object()
-            .unwrap()
-            .clone(),
-        };
-        let packet_cur = crate::daily_prepare::freeze(prep_cur, &context).unwrap();
-        let id_cur = DailyUnitIdentity::new("20260113", "schedule", None);
+        let packet_cur = review_for("20260111");
+        let id_cur =
+            DailyUnitIdentity::new("20260111", "entities:entities_review", Some("work".into()));
         let mut rec_cur = DailyUnitRecord::new(id_cur.clone(), "E", "C");
         rec_cur.lock_token = Some("attempt-cur".to_owned());
         rec_cur.packet_digest = Some(crate::daily_prepare::packet_digest(&packet_cur));
         rec_cur.frozen_packet = Some(packet_cur);
-        rec_cur.generated_result = Some(json!({"response":events("sixth")}));
+        rec_cur.generated_result = Some(merge_response);
         rec_cur.action_plan = Some(json!({"actions": []}));
         rec_cur.receipts.push(json!({"kind": "owner_action", "action_id": "0:cur", "token": "attempt-cur", "state": "started"}));
         save_daily_unit_record(&journal, &rec_cur).unwrap();
-        schedule_cal("20260108", "conflict-cur"); // trigger calendar conflict
+        propose("20260109", "conflict-cur"); // trigger a proposal conflict
 
         let outcome = execute(
-            json!({"name":"schedule","day":"20260113","lock_token":"attempt-cur"})
+            json!({"name":"entities:entities_review","day":"20260111","facet":"work","lock_token":"attempt-cur"})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -3089,47 +2908,6 @@ mod tests {
         record.packet_digest = Some(crate::daily_prepare::packet_digest(packet));
         record.failure_count = failure_count;
         save_daily_unit_record(journal, &record).unwrap();
-    }
-
-    #[test]
-    fn clipped_empty_schedule_retains_metadata_without_inventing_an_activity() {
-        let root = tempfile::tempdir().unwrap();
-        let (context, old_identity, _) = fixture(root.path(), true);
-        let mut record = load_daily_unit_record(&context.journal, &old_identity)
-            .unwrap()
-            .unwrap();
-        record.identity = DailyUnitIdentity::new("20260101", "schedule", None);
-        record.generated_result = Some(
-            json!({"response":"{\"events\":[]}","input_budget":{"clipped":true,"dropped_entries":1}}),
-        );
-        let packet = record.frozen_packet.as_mut().unwrap();
-        packet["prepared"]["name"] = json!("schedule");
-        packet["prepared"]["config"]["output"] = json!("json");
-        packet["prepared"]["config"]["hook"] = json!({"post":"schedule"});
-        packet["prepared"]["config"]["_daily_calendar_before"] = json!({});
-        packet["hook"] = json!("schedule");
-        packet["state"] = json!("None");
-        record.packet_digest = Some(crate::daily_prepare::packet_digest(packet));
-        save_daily_unit_record(&context.journal, &record).unwrap();
-        let request = json!({"name":"schedule","day":"20260101","lock_token":"attempt-1","evidence_revision":"E","contract_digest":"contract"}).as_object().unwrap().clone();
-        let never = |_: &solstone_core_generate::GenerateRequest| -> Result<
-            solstone_core_generate::GenerateResponse,
-            solstone_core_generate::ClientError,
-        > {
-            panic!("must reuse");
-        };
-        let outcome = execute(request, &context, &never, &mut Vec::new());
-        let RuntimeOutcome::Finished {
-            output, degraded, ..
-        } = outcome
-        else {
-            panic!("{outcome:?}");
-        };
-        let result: Value = serde_json::from_str(&output).unwrap();
-        assert_eq!(result["events"], json!([]));
-        assert_eq!(result["partial_input"]["dropped_entries"], 1);
-        assert_eq!(degraded.unwrap()["reason"], "partial_input");
-        assert!(!context.journal.join("facets").exists());
     }
 
     #[test]

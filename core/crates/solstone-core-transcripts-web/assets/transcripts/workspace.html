@@ -5786,6 +5786,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         html += '<div class="tr-entry-content">';
         html += `<div class="tr-entry-text">${markdown}</div>`;
         html += '</div></div>';
+      } else if (item.type === 'calendar') {
+        // A calendar note reads as plain text, one field per line.
+        const timeStr = item.time || '';
+        const text = escapeHtml(item.text || '').replace(/\n/g, '<br>');
+        html += `<div class="tr-entry tr-entry-transcript" data-idx="${idx}" data-type="calendar" data-timestamp="${item.timestamp}" role="listitem" tabindex="0">`;
+        html += `<div class="tr-entry-time">${timeStr}</div>`;
+        html += '<div class="tr-entry-content">';
+        html += `<div class="tr-entry-text">${text}</div>`;
+        html += '</div></div>';
       } else if (item.type === 'browser') {
         const timeStr = item.time || '';
         const markdown = window.AppServices.renderMarkdown(item.markdown) || '';

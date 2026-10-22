@@ -261,11 +261,6 @@
   z-index: 15;
 }
 
-.act-block--plan {
-  border-style: dashed;
-  background: transparent;
-}
-
 .act-block--hidden {
   background: repeating-linear-gradient(
     45deg,
@@ -543,9 +538,21 @@
   color: var(--ink);
 }
 
-.act-panel-people {
+.act-panel-people,
+.act-panel-calendar {
   font-size: 0.85rem;
   color: var(--ink-soft);
+}
+
+.act-panel-calendar {
+  overflow-wrap: anywhere;
+}
+
+.act-panel-calendar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: -0.75rem;
 }
 
 .act-panel-evidence-list {
@@ -757,9 +764,7 @@
     'loading': 'loading activities…',
     'load-error': "couldn't load activities",
     'empty-pick': "pick an activity to see what it's based on.",
-    'empty-pick-plan': 'pick a plan to see where it came from.',
     'today-note': 'activities appear here a little while after they end, and can still grow as more comes in.',
-    'future-note': "plans the journal noticed in what you've shared.",
     'untimed-heading': 'without a time',
     'hidden-footer': '{n} hidden on this day',
     'showing-hidden': 'showing {n} hidden',
@@ -783,10 +788,8 @@
     'sheet-close': 'close',
     'reason-owner': 'you hid this',
     'reason-command': 'hidden with the solstone command',
-    'reason-replaced': 'replaced by a newer version of this plan',
     'reason-cancelled': 'seen as cancelled or declined',
     'reason-other': 'hidden',
-    'cue-planned': 'planned',
     'cue-edited': 'edited by you',
     'source-mixed': 'more than one source',
     'source-unknown': 'source unknown',
@@ -794,9 +797,6 @@
     'evidence-open': 'open in transcripts ›',
     'evidence-open-narrow': 'open ›',
     'evidence-show-all': 'show all {n} segments',
-    'plan-heading': 'where it came from',
-    'plan-origin': "a plan the journal noticed in what you've shared. it shows what was planned, not what happened.",
-    'plan-origin-future': "a plan the journal noticed in what you've shared.",
     'heading-summary': 'summary',
     'heading-description': 'description',
     'heading-details': 'details',
@@ -805,10 +805,6 @@
     'history-found-mixed': 'found in segments from more than one source',
     'history-found-unknown': 'found in segments from an unknown source',
     'history-grew': 'grew as more of it came in',
-    'history-plan-noticed': 'noticed as a plan in what you shared',
-    'history-plan-updated': 'updated when the plan showed up again in what you shared',
-    'history-plan-replaced': 'replaced by a newer version of this plan',
-    'history-cancelled': 'seen as cancelled or declined',
     'history-you-changed': 'you changed {fields}',
     'history-you-hid': 'you hid it',
     'history-you-unhid': 'you unhid it',
@@ -823,13 +819,13 @@
     'empty-facet-show-all': 'show all facets',
     'empty-today-heading': 'nothing yet today',
     'empty-today-body': 'as the day goes on, activities from what you share show up here.',
-    'empty-future-heading': 'no plans found for this day',
-    'empty-future-body': 'plans for this day show up here once the journal notices them in what you share.',
     'scope-all-option': 'all facets',
     'source-unknown-phrase': 'an unknown source',
     'segments-one': '1 segment from {source}, {range}',
     'segments-many': '{n} segments from {source}, {range}',
     'segment-minutes': '{n} min',
+    'calendar-then': 'on your calendar then: {title}',
+    'calendar-then-untitled': 'on your calendar then',
     'people-one': 'with {a}',
     'people-two': 'with {a} and {b}',
     'people-many-one': 'with {a}, {b} and 1 other',
@@ -1047,8 +1043,7 @@
   function computeDayContext() {
     if (!window.JournalClock) return 'past';
     const today = window.JournalClock.today();
-    if (state.day === today) return 'today';
-    return state.day > today ? 'future' : 'past';
+    return state.day === today ? 'today' : 'past';
   }
 
   function render() {
@@ -1098,10 +1093,6 @@
       if (ctx === 'today') {
         noteEl.textContent = STRINGS['today-note'];
         noteEl.setAttribute('data-copy-key', 'today-note');
-        noteEl.hidden = false;
-      } else if (ctx === 'future') {
-        noteEl.textContent = STRINGS['future-note'];
-        noteEl.setAttribute('data-copy-key', 'future-note');
         noteEl.hidden = false;
       } else {
         noteEl.hidden = true;
@@ -1198,7 +1189,7 @@
     if (timed.length) {
       minMinute = Math.min(...timed.map(it => it.start_min));
       maxMinute = Math.max(...timed.map(it => {
-        const span = it.end_min != null ? (it.end_min - it.start_min) : (it.kind === 'plan' ? 15 : 24);
+        const span = it.end_min != null ? (it.end_min - it.start_min) : 24;
         return it.start_min + Math.max(24, span);
       }));
       if (nowMinute != null) {
@@ -1246,7 +1237,7 @@
 
     // Lane allocation & block preparation
     const processed = timed.map(it => {
-      const rawSpan = it.end_min != null ? (it.end_min - it.start_min) : (it.kind === 'plan' ? 15 : 24);
+      const rawSpan = it.end_min != null ? (it.end_min - it.start_min) : 24;
       const drawnSpan = Math.max(24, rawSpan);
       return {
         ...it,
@@ -1327,13 +1318,11 @@
         return;
       }
 
-      const isPlan = item.kind === 'plan';
       const isSelected = item.id === state.selectedId && (!state.selectedFacet || item.facet === state.selectedFacet);
       const isHidden = Boolean(item.hidden);
       const isShort = item.drawn_span < 40;
 
       let classes = 'act-block';
-      if (isPlan) classes += ' act-block--plan';
       if (isHidden) classes += ' act-block--hidden';
       if (isSelected) classes += ' act-block--selected';
       if (isShort) classes += ' act-block--short';
@@ -1343,7 +1332,7 @@
       const facetObj = (state.view.facets || []).find(f => f.name === item.facet);
       const facetTitle = facetObj ? (facetObj.title || facetObj.name) : item.facet;
       const streamWords = item.concurrent && window.JournalFormat?.hasStreamLabel?.(item.stream) ? window.JournalFormat.stream(item.stream) : '';
-      const stateWords = [isPlan ? STRINGS['cue-planned'] : '', isHidden ? STRINGS['hidden-outline'] : ''].filter(Boolean).join(', ');
+      const stateWords = isHidden ? STRINGS['hidden-outline'] : '';
       const ariaLabel = `${timeRange}, ${facetTitle}${streamWords ? ', ' + streamWords : ''}${stateWords ? ', ' + stateWords : ''}: ${item.title}`;
 
       // Line 1
@@ -1354,9 +1343,8 @@
 
       // Line 2
       const sourceSpan = streamWords ? `<span class="act-block-source" title="${esc(item.stream)}">${esc(streamWords)}</span>` : '';
-      const planIcon = isPlan && window.ConveyIcons ? `<span class="act-block-icon">${window.ConveyIcons.svg('calendar')}</span> ` : '';
       const eyeIcon = isHidden && window.ConveyIcons ? `<span class="act-block-icon">${window.ConveyIcons.svg('eye-off')}</span> ` : '';
-      const line2 = `<div class="act-block-line2">${sourceSpan}<span class="act-block-title">${planIcon}${eyeIcon}${esc(item.title)}</span></div>`;
+      const line2 = `<div class="act-block-line2">${sourceSpan}<span class="act-block-title">${eyeIcon}${esc(item.title)}</span></div>`;
 
       bhtml += `<button type="button" class="${classes}" data-id="${esc(item.id)}" data-facet="${esc(item.facet)}" data-lane="${item.lane}" data-width="${item.fraction}" data-drawn-minutes="${item.drawn_span}" style="top: ${top}px; height: ${height}px; left: ${leftPct}%; width: ${widthPct}%;" aria-pressed="${isSelected}" aria-label="${esc(ariaLabel)}">${line1}${line2}</button>`;
     });
@@ -1366,12 +1354,10 @@
   }
 
   function renderGenericEmpty(emptyArea, ctx) {
-    if (ctx === 'past') {
-      emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-past-heading">${STRINGS['empty-past-heading']}</h2><p class="act-empty-body" data-copy-key="empty-past-body">${STRINGS['empty-past-body']}</p>`;
-    } else if (ctx === 'today') {
+    if (ctx === 'today') {
       emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-today-heading">${STRINGS['empty-today-heading']}</h2><p class="act-empty-body" data-copy-key="empty-today-body">${STRINGS['empty-today-body']}</p>`;
     } else {
-      emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-future-heading">${STRINGS['empty-future-heading']}</h2><p class="act-empty-body" data-copy-key="empty-future-body">${STRINGS['empty-future-body']}</p>`;
+      emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-past-heading">${STRINGS['empty-past-heading']}</h2><p class="act-empty-body" data-copy-key="empty-past-body">${STRINGS['empty-past-body']}</p>`;
     }
   }
 
@@ -1426,9 +1412,7 @@
         if (!items.length) {
           panelArea.innerHTML = '';
         } else {
-          const ctx = computeDayContext();
-          const pickKey = ctx === 'future' ? 'empty-pick-plan' : 'empty-pick';
-          panelArea.innerHTML = `<div class="act-panel-empty" data-copy-key="${pickKey}">${STRINGS[pickKey]}</div>`;
+          panelArea.innerHTML = `<div class="act-panel-empty" data-copy-key="empty-pick">${STRINGS['empty-pick']}</div>`;
         }
       }
       return;
@@ -1454,16 +1438,13 @@
     }
 
     // Title
-    const isPlan = item.kind === 'plan';
-    const calIcon = isPlan && window.ConveyIcons ? window.ConveyIcons.svg('calendar') + ' ' : '';
-    phtml += `<div class="act-panel-header"><div class="act-panel-title-wrap"><h2 class="act-panel-title">${calIcon}${esc(item.title)}</h2></div>`;
+    phtml += `<div class="act-panel-header"><div class="act-panel-title-wrap"><h2 class="act-panel-title">${esc(item.title)}</h2></div>`;
 
     // Meta
     const timeRange = item.end_min != null ? `${item.start}–${item.end}` : item.start;
     const facetObj = (state.view.facets || []).find(f => f.name === item.facet);
     const facetTitle = facetObj ? (facetObj.title || facetObj.name) : item.facet;
     const dot = !state.facet && facetObj && facetObj.color ? `<span class="act-block-dot" style="background-color: ${esc(facetObj.color)}"></span>` : '';
-    const plannedCue = isPlan ? `<span class="act-cue" data-copy-key="cue-planned">${STRINGS['cue-planned']}</span>` : '';
     const editedCue = item.edited_by_owner ? `<span class="act-cue" data-copy-key="cue-edited">${STRINGS['cue-edited']}</span>` : '';
     let metaSource = '';
     if (item.mixed) {
@@ -1474,7 +1455,7 @@
       metaSource = STRINGS['source-unknown'];
     }
     const metaSourceHtml = metaSource ? `<span class="act-panel-source">${esc(metaSource)}</span> · ` : '';
-    phtml += `<div class="act-panel-meta"><span class="act-panel-time">${esc(timeRange)}</span> · ${metaSourceHtml}<span class="act-panel-kind">${esc(item.activity_label || item.kind)}</span> · <span>${dot} ${esc(facetTitle)}</span>${plannedCue}${editedCue}</div></div>`;
+    phtml += `<div class="act-panel-meta"><span class="act-panel-time">${esc(timeRange)}</span> · ${metaSourceHtml}<span class="act-panel-kind">${esc(item.activity_label || item.kind)}</span> · <span>${dot} ${esc(facetTitle)}</span>${editedCue}</div></div>`;
 
     // Hidden status & reason line
     if (item.hidden) {
@@ -1485,14 +1466,25 @@
       phtml += `<div class="act-panel-hidden-reason" data-copy-key="${reasonKey}">${STRINGS[reasonKey] || STRINGS['reason-other']}</div>`;
     }
 
-    // Summary & People for non-plan
-    if (!isPlan) {
-      if (item.summary != null) {
-        phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-summary">${STRINGS['heading-summary']}</h3><p class="act-panel-text">${esc(item.summary)}</p></div>`;
+    // What the calendar had scheduled then, beside the activity
+    if (item.calendar?.length) {
+      phtml += '<div class="act-panel-calendar-list">';
+      for (const meeting of item.calendar) {
+        const key = meeting.title ? 'calendar-then' : 'calendar-then-untitled';
+        const parts = [fmt(key, { title: meeting.title })];
+        if (meeting.start && meeting.end) parts.push(`${meeting.start}–${meeting.end}`);
+        if (meeting.people?.length) parts.push(formatPeople(meeting.people));
+        phtml += `<div class="act-panel-calendar" data-copy-key="${key}">${esc(parts.join(' · '))}</div>`;
       }
-      if (item.people?.length) {
-        phtml += `<div class="act-panel-people" data-copy-key="people">${esc(formatPeople(item.people))}</div>`;
-      }
+      phtml += '</div>';
+    }
+
+    // Summary & People
+    if (item.summary != null) {
+      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-summary">${STRINGS['heading-summary']}</h3><p class="act-panel-text">${esc(item.summary)}</p></div>`;
+    }
+    if (item.people?.length) {
+      phtml += `<div class="act-panel-people" data-copy-key="people">${esc(formatPeople(item.people))}</div>`;
     }
 
     // Description
@@ -1506,7 +1498,7 @@
     }
 
     // Evidence
-    if (!isPlan && item.segments?.length) {
+    if (item.segments?.length) {
       const count = item.segments.length;
       const shown = state.expandedEvidence ? item.segments : item.segments.slice(0, 4);
       const openKey = mobile ? 'evidence-open-narrow' : 'evidence-open';
@@ -1544,17 +1536,6 @@
       phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="evidence-heading">${STRINGS['evidence-heading']}</h3><div class="act-panel-text" data-copy-key="evidence-count">${esc(countLine)}</div><ul class="act-panel-evidence-list">${eitems}</ul>${showAllBtn}</div>`;
     }
 
-    // Plan origin
-    if (isPlan) {
-      const ctx = computeDayContext();
-      const originKey = ctx === 'future' ? 'plan-origin-future' : 'plan-origin';
-      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="plan-heading">${STRINGS['plan-heading']}</h3><div class="act-panel-text" data-copy-key="${originKey}">${STRINGS[originKey]}</div>`;
-      if (item.people?.length) {
-        phtml += `<div class="act-panel-people" data-copy-key="people">${esc(formatPeople(item.people))}</div>`;
-      }
-      phtml += `</div>`;
-    }
-
     // History
     const historyEntries = [];
     if (item.kind === 'detected' && item.found_at) {
@@ -1587,9 +1568,6 @@
       let kindKey = null;
       switch (ed.kind) {
         case 'grew': kindKey = 'history-grew'; break;
-        case 'plan_noticed': kindKey = 'history-plan-noticed'; break;
-        case 'plan_updated': kindKey = 'history-plan-updated'; break;
-        case 'plan_replaced': kindKey = 'history-plan-replaced'; break;
         case 'owner_update': kindKey = 'history-you-changed'; break;
         case 'owner_hide': kindKey = 'history-you-hid'; break;
         case 'owner_unhide': kindKey = 'history-you-unhid'; break;
@@ -1606,9 +1584,6 @@
           label = fmt('history-you-changed', { fields: formatFieldList(ed.fields) });
         }
         editHtml += `<li class="act-panel-history-item"><span data-copy-key="${kindKey}">${esc(label)}</span>${dateStr ? `<span class="act-panel-history-date">${esc(dateStr)}</span>` : ''}</li>`;
-      }
-      if (ed.cancelled) {
-        editHtml += `<li class="act-panel-history-item"><span data-copy-key="history-cancelled">${STRINGS['history-cancelled']}</span>${dateStr ? `<span class="act-panel-history-date">${esc(dateStr)}</span>` : ''}</li>`;
       }
       if (editHtml) {
         const editInstant = ed.timestamp ? new Date(ed.timestamp).getTime() : null;

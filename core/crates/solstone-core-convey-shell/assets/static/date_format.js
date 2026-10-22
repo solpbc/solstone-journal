@@ -198,8 +198,9 @@
   }
 
   // What a stream's label says, as parts: its what word ("audio", "screen",
-  // "camera", "location") or null, and whether it names an import. Pages use
-  // this to avoid printing a content type the label already says.
+  // "camera", "location", "calendar") or null, and whether it names an
+  // import. Pages use this to avoid printing a content type the label already
+  // says.
   function streamLabelSays(stream) {
     const raw = String(stream || '').trim();
     const none = { what: null, imported: false };

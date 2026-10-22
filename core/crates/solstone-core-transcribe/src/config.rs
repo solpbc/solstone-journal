@@ -45,6 +45,16 @@ pub(crate) fn confidential_audio_enabled(config: &JournalConfigRead) -> bool {
         .is_none_or(|value| value.as_bool().unwrap_or(false))
 }
 
+/// Whether voice-only transcription is on: only a JSON `true` turns it on.
+pub(crate) fn owner_voice_only(config: &JournalConfigRead) -> bool {
+    config
+        .config
+        .as_ref()
+        .and_then(|root| root.get("transcribe"))
+        .and_then(|transcribe| transcribe.get("owner_voice_only"))
+        .is_some_and(|value| value == &serde_json::Value::Bool(true))
+}
+
 /// Minimum detected speech duration before processing continues.
 pub(crate) fn min_speech_seconds(config: &JournalConfigRead) -> f64 {
     config

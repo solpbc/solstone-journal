@@ -113,7 +113,11 @@ pub trait ServiceOps {
         journal: &Path,
     ) -> Result<bool, String>;
     fn restart(&mut self, runner: &mut dyn CommandRunner, journal: &Path) -> Result<(), String>;
-    fn up(&mut self, runner: &mut dyn CommandRunner, journal: &Path) -> Result<i32, String>;
+    fn up(
+        &mut self,
+        runner: &mut dyn CommandRunner,
+        journal: &Path,
+    ) -> Result<CommandOutput, String>;
 }
 
 pub struct NativeServiceOps {
@@ -172,8 +176,12 @@ impl ServiceOps for NativeServiceOps {
             Err(format!("service restart exited {}", output.exit_code))
         }
     }
-    fn up(&mut self, runner: &mut dyn CommandRunner, _journal: &Path) -> Result<i32, String> {
-        self.run(runner, &["up"]).map(|output| output.exit_code)
+    fn up(
+        &mut self,
+        runner: &mut dyn CommandRunner,
+        _journal: &Path,
+    ) -> Result<CommandOutput, String> {
+        self.run(runner, &["up"])
     }
 }
 
@@ -2071,15 +2079,15 @@ fn step_service_with_guard(
         .service_ops
         .up(context.runner, &context.journal_path)
         .map_err(|message| StepExecutionError::Unhandled { message })?;
-    if up != 0 {
+    if up.exit_code != 0 {
         return Ok(StepResult::failed(
             StepName::Service,
             paths,
             (context.now)(),
             StepError {
                 code: ErrorCode::ServiceUpFailed,
-                message: format!("service up failed (exit {up})"),
-                details: String::new(),
+                message: format!("service up failed (exit {})", up.exit_code),
+                details: tail(&up.stderr),
                 exit_code: 1,
             },
         ));
@@ -2764,6 +2772,80 @@ mod tests {
     }
     struct Prompt(bool);
     #[test]
+    fn native_service_up_preserves_the_child_output() {
+        let expected = CommandOutput {
+            exit_code: 70,
+            stdout: "unused output".into(),
+            stderr: "native journal process launch failed: access denied\n".into(),
+            timed_out: false,
+        };
+        let mut runner = FakeRunner::new(vec![Ok(expected.clone())]);
+        let mut ops = NativeServiceOps::new(Path::new("/install/bin"));
+        assert_eq!(
+            ops.up(&mut runner, Path::new("/journal")).unwrap(),
+            expected
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn failed_service_up_keeps_bounded_stderr_in_manifest_and_log() {
+        let (args, resolved, root, home) = fixture("service-up-stderr", &["--jsonl"]);
+        let diagnostic = "native journal process launch failed: access denied\n";
+        let stderr = "x".repeat(12000) + diagnostic;
+        let output = |exit_code, stderr| {
+            Ok(CommandOutput {
+                exit_code,
+                stdout: "not diagnostic".into(),
+                stderr,
+                timed_out: false,
+            })
+        };
+        let mut runner =
+            FakeRunner::new(vec![output(0, String::new()), output(70, stderr.clone())]);
+        let mut prompt = Prompt(false);
+        let mut ops = NativeServiceOps::new(&root.join("bin"));
+        let mut log = crate::events::JsonlEmitter::new(Vec::new());
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            Some(&mut log),
+        );
+        setup.service_ops = &mut ops;
+        let result = run_setup(
+            &mut setup,
+            &[StepSpec {
+                name: StepName::Service,
+                executor: Some(step_service),
+                plan: plan_service,
+            }],
+        );
+        assert_eq!(result.exit_code, 1);
+        let manifest = read_manifest(&manifest_path(&resolved.journal_path)).unwrap();
+        let error = &manifest.steps[0]["error"];
+        assert_eq!(error["code"], "service_up_failed");
+        let details = error["details"].as_str().unwrap();
+        assert_eq!(details.len(), 8192);
+        assert!(details.ends_with(diagnostic));
+        assert!(!details.contains("not diagnostic"));
+        let events: Vec<Value> = String::from_utf8(log.into_inner())
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let failed = events
+            .iter()
+            .find(|event| event["event"] == EventType::StepFailed.as_str())
+            .unwrap();
+        assert_eq!(failed["error"], *error);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn native_service_operations_use_the_canonical_sibling() {
         let bin_dir = Path::new("/install/bin");
         let mut ops = NativeServiceOps::new(bin_dir);
@@ -2772,7 +2854,7 @@ mod tests {
         assert!(ops.is_installed(&mut runner, journal).unwrap());
         assert!(ops.health_check(&mut runner, journal).unwrap());
         ops.restart(&mut runner, journal).unwrap();
-        assert_eq!(ops.up(&mut runner, journal).unwrap(), 0);
+        assert_eq!(ops.up(&mut runner, journal).unwrap().exit_code, 0);
         assert_eq!(runner.requests.len(), 4);
         for (request, tail) in runner.requests.iter().zip([
             &["service", "status"][..],
@@ -2818,8 +2900,17 @@ mod tests {
         ) -> Result<(), String> {
             Ok(())
         }
-        fn up(&mut self, _runner: &mut dyn CommandRunner, _journal: &Path) -> Result<i32, String> {
-            Ok(0)
+        fn up(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<CommandOutput, String> {
+            Ok(CommandOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            })
         }
     }
     struct NoopCheck;
@@ -2864,8 +2955,17 @@ mod tests {
             self.restarts += 1;
             Ok(())
         }
-        fn up(&mut self, _runner: &mut dyn CommandRunner, _journal: &Path) -> Result<i32, String> {
-            Ok(self.up)
+        fn up(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<CommandOutput, String> {
+            Ok(CommandOutput {
+                exit_code: self.up,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            })
         }
     }
     struct FailingServiceOps;
@@ -2891,7 +2991,11 @@ mod tests {
         ) -> Result<(), String> {
             unreachable!()
         }
-        fn up(&mut self, _runner: &mut dyn CommandRunner, _journal: &Path) -> Result<i32, String> {
+        fn up(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<CommandOutput, String> {
             unreachable!()
         }
     }
@@ -3503,9 +3607,18 @@ mod tests {
         ) -> Result<(), String> {
             Ok(())
         }
-        fn up(&mut self, _runner: &mut dyn CommandRunner, _journal: &Path) -> Result<i32, String> {
+        fn up(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<CommandOutput, String> {
             self.up_count += 1;
-            Ok(0)
+            Ok(CommandOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            })
         }
     }
 

@@ -53,6 +53,45 @@ mod tests {
     }
 
     #[test]
+    fn a_day_holding_only_calendar_notes_is_never_pending() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        configure_daily_work(root, Some("morning_briefing"));
+        fs::create_dir_all(root.join("streams")).unwrap();
+        fs::write(
+            root.join("streams/phone_calendar.json"),
+            r#"{"name":"phone_calendar","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"calendar"}"#,
+        )
+        .unwrap();
+        let notes = root.join("chronicle/20990101/phone_calendar/094000_300");
+        fs::create_dir_all(&notes).unwrap();
+        fs::write(
+            notes.join(format!("calendar_{}.jsonl", "a".repeat(64))),
+            "{}\n",
+        )
+        .unwrap();
+        // The twin: a day with an ordinary capture segment.
+        fs::create_dir_all(root.join("chronicle/20990102/mic/100000_300")).unwrap();
+        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let view = read_backlog_view(
+            &FilesystemHealthLogSource::new(root),
+            &FilesystemSegmentSource,
+            root,
+            10,
+            now,
+        )
+        .unwrap();
+        let days = view
+            .days
+            .iter()
+            .map(|day| day.day.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(days, ["20990102"]);
+        assert_eq!(view.pending_days, 1);
+        assert_eq!(view.oldest_pending_day.as_deref(), Some("20990102"));
+    }
+
+    #[test]
     fn acceptance_1_completed_day_unfinished_activities_fold() {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
@@ -334,13 +373,13 @@ mod tests {
         fs::create_dir_all(root.join("chronicle").join(day)).unwrap();
 
         // Enable schedule talent and write a capped daily unit record
-        configure_daily_work(root, Some("schedule"));
+        configure_daily_work(root, Some("morning_briefing"));
         let coverage =
             solstone_core_system::daily_coverage::read_daily_coverage(root, day).unwrap();
         let unit = coverage
             .units
             .iter()
-            .find(|unit| unit.identity.name == "schedule")
+            .find(|unit| unit.identity.name == "morning_briefing")
             .unwrap();
         let mut record = solstone_core_journal_io::DailyUnitRecord::new(
             unit.identity.clone(),

@@ -17,11 +17,11 @@ use crate::ladder::relaxed_plan;
 use crate::predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 use crate::temporal::TemporalExtraction;
 use crate::types::{
-    AdmittedCategory, ConnectionBoundary, ConnectionCorpusRefusal, ConnectionIndexDegraded,
-    ConnectionScope, ConnectionSearchHit, ConnectionSearchRequest, ConnectionSearchResponse,
-    CountsResponse, CoverageResponse, CoverageState, IndexAccessError, IndexBuildCounts,
-    IndexDegraded, Order, OwnerBoundary, QueryBoundary, SearchHit, SearchMetadata, SearchRequest,
-    SearchResponse,
+    AdmittedCategory, CalendarHit, ConnectionBoundary, ConnectionCorpusRefusal,
+    ConnectionIndexDegraded, ConnectionScope, ConnectionSearchHit, ConnectionSearchRequest,
+    ConnectionSearchResponse, CountsResponse, CoverageResponse, CoverageState, IndexAccessError,
+    IndexBuildCounts, IndexDegraded, Order, OwnerBoundary, QueryBoundary, SearchHit,
+    SearchMetadata, SearchRequest, SearchResponse,
 };
 
 /// Execute one journal search.
@@ -1040,9 +1040,10 @@ impl QueryConnection {
         })
     }
 
-    fn screen_text_projection(
-        &self,
-    ) -> Result<(&'static str, &'static str, String), IndexAccessError> {
+    /// Extra per-hit columns, in order: the screen-text group offset, the
+    /// screen-text source digest, then a calendar hit's version, recorded time
+    /// and continuation. Each is NULL where its table does not exist.
+    fn hit_projection(&self) -> Result<(String, String), IndexAccessError> {
         let has_table = |name: &str| -> Result<bool, IndexAccessError> {
             self.connection
                 .query_row(
@@ -1053,21 +1054,34 @@ impl QueryConnection {
                 .map_err(|error| self.classify(error))
         };
         let mut joins = String::new();
-        let offset = if has_table("chunk_group_offset")? {
+        let mut columns = Vec::new();
+        if has_table("chunk_group_offset")? {
             joins.push_str(
                 " LEFT JOIN (SELECT path, idx, offset_ms FROM chunk_group_offset) USING(path, idx)",
             );
-            "offset_ms"
+            columns.push("offset_ms");
         } else {
-            "NULL"
-        };
-        let digest = if has_table("screen_text_source")? {
+            columns.push("NULL");
+        }
+        if has_table("screen_text_source")? {
             joins.push_str(" LEFT JOIN (SELECT path, sha256 AS screen_text_digest FROM screen_text_source) USING(path)");
-            "screen_text_digest"
+            columns.push("screen_text_digest");
         } else {
-            "NULL"
-        };
-        Ok((offset, digest, joins))
+            columns.push("NULL");
+        }
+        // Matching path and position too keeps a reused row id from borrowing
+        // another hit's version.
+        if has_table("calendar_hits")? {
+            joins.push_str(" LEFT JOIN (SELECT rowid AS calendar_rowid, path AS calendar_path, idx AS calendar_idx, version AS calendar_version, changed_at AS calendar_changed_at, continues AS calendar_continues FROM calendar_hits) ON calendar_rowid=chunks.rowid AND calendar_path=chunks.path AND calendar_idx=chunks.idx");
+            columns.extend([
+                "calendar_version",
+                "calendar_changed_at",
+                "calendar_continues",
+            ]);
+        } else {
+            columns.extend(["NULL", "NULL", "NULL"]);
+        }
+        Ok((columns.join(", "), joins))
     }
 
     fn require_nonempty_chunks(
@@ -1256,9 +1270,9 @@ impl QueryConnection {
             }
             self.fetch_hits_calls += 1;
         }
-        let (offset_expr, digest_expr, joins) = self.screen_text_projection()?;
+        let (extra_columns, joins) = self.hit_projection()?;
         let sql = format!(
-            "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), chunks.rowid, {offset_expr}, {digest_expr} FROM chunks{joins} WHERE {} {ordering} LIMIT ? OFFSET ?",
+            "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), chunks.rowid, {extra_columns} FROM chunks{joins} WHERE {} {ordering} LIMIT ? OFFSET ?",
             plan.where_clause
         );
         let mut values = plan.params.clone();
@@ -1281,6 +1295,7 @@ impl QueryConnection {
                 let row_id: i64 = row.get(8)?;
                 let group_offset_ms: Option<i64> = row.get(9)?;
                 let source_digest: Option<String> = row.get(10)?;
+                let calendar = CalendarHit::from_columns(row.get(11)?, row.get(12)?, row.get(13)?);
                 let agent = agent.unwrap_or_default();
                 Ok(SearchHit {
                     row_id,
@@ -1295,6 +1310,7 @@ impl QueryConnection {
                         idx,
                         group_offset_ms,
                         source_digest,
+                        calendar,
                     },
                     score,
                 })
@@ -1340,9 +1356,9 @@ impl QueryConnection {
         } else {
             ("0.0", "ORDER BY day DESC, rowid DESC")
         };
-        let (offset_expr, digest_expr, joins) = self.screen_text_projection()?;
+        let (extra_columns, joins) = self.hit_projection()?;
         let sql = format!(
-            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, chunks.rowid, {offset_expr}, {digest_expr} FROM chunks{joins} WHERE {} AND day IN ({placeholders}) {order_clause}",
+            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, chunks.rowid, {extra_columns} FROM chunks{joins} WHERE {} AND day IN ({placeholders}) {order_clause}",
             plan.where_clause
         );
         let mut values = plan.params.clone();
@@ -1371,6 +1387,7 @@ impl QueryConnection {
                 let row_id: i64 = row.get(8)?;
                 let group_offset_ms: Option<i64> = row.get(9)?;
                 let source_digest: Option<String> = row.get(10)?;
+                let calendar = CalendarHit::from_columns(row.get(11)?, row.get(12)?, row.get(13)?);
                 let agent = agent.unwrap_or_default();
                 Ok(SearchHit {
                     row_id,
@@ -1385,6 +1402,7 @@ impl QueryConnection {
                         idx,
                         group_offset_ms,
                         source_digest,
+                        calendar,
                     },
                     score,
                 })

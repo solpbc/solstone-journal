@@ -60,14 +60,11 @@ pub(crate) fn run(
         if excluded(config, stream) {
             continue;
         }
-        let Ok(hook) =
-            solstone_core_indexer::daily_evidence::daily_hook(&config.key, &config.metadata)
-        else {
+        if solstone_core_indexer::daily_evidence::daily_hook(&config.key, &config.metadata).is_err()
+        {
             continue;
-        };
-        if hook == "schedule" {
-            write_facets.extend(facets.iter().cloned());
-        } else if config.metadata.get("multi_facet") == Some(&Value::Bool(true)) {
+        }
+        if config.metadata.get("multi_facet") == Some(&Value::Bool(true)) {
             write_facets.extend(
                 facets
                     .iter()
@@ -395,36 +392,6 @@ fn queue_daily(
     }
     if config.key == "daily_schedule" {
         extra.insert("day".to_owned(), Value::String(today.clone()));
-    }
-    if config.key == "morning_briefing" {
-        let coverage = solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
-            &context.journal,
-            &context.day,
-            &context.talent_root,
-            &context.apps_root,
-        )?;
-        let mut upstream = Map::new();
-        for unit in coverage.units {
-            if unit.identity.name.as_str() != "schedule" {
-                continue;
-            }
-            let key = unit.identity.facet.as_ref().map_or_else(
-                || unit.identity.name.clone(),
-                |facet| format!("{}:{facet}", unit.identity.name),
-            );
-            let record =
-                solstone_core_journal_io::load_daily_unit_record(&context.journal, &unit.identity)
-                    .map_err(|e| e.to_string())?;
-            let usable = unit.state == solstone_core_system::daily_coverage::CoverageState::Current
-                && record.is_some_and(|r| {
-                    r.status == solstone_core_journal_io::DailyUnitStatus::Committed
-                        && r.accepted.as_ref().is_some_and(|a| {
-                            a.status == solstone_core_journal_io::DailyUnitStatus::Committed
-                        })
-                });
-            upstream.insert(key, Value::Bool(usable));
-        }
-        extra.insert("_daily_upstream".to_owned(), Value::Object(upstream));
     }
     let retained = existing_record
         .as_ref()
@@ -2227,17 +2194,19 @@ mod tests {
     fn ordinary_daily_rerun_consumes_new_evidence_and_commits_changed_owner_result() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let day = "20260910";
         std::fs::create_dir_all(root.join("config")).unwrap();
         std::fs::write(root.join("config/journal.json"),r#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#).unwrap();
+        // Today's briefing is never frozen, so new evidence always re-owes it.
+        let day = solstone_core_system::daily_coverage::local_day(root, chrono::Utc::now());
+        let day = day.as_str();
         let talent = root.join("payload/talent");
         let apps = root.join("payload/apps");
         std::fs::create_dir_all(&talent).unwrap();
         std::fs::create_dir_all(&apps).unwrap();
-        std::fs::create_dir_all(root.join("facets/work")).unwrap();
-        std::fs::write(root.join("facets/work/facet.json"), "{}").unwrap();
-        std::fs::write(talent.join("schedule.md"),"{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\",\"hook\":{\"post\":\"schedule\"},\"load\":{\"transcripts\":true}\n}\nExtract upcoming scheduled events.").unwrap();
-        let source = root.join("chronicle/20260910/default/090000_60/note_transcript.md");
+        std::fs::write(talent.join("morning_briefing.md"),"{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\",\"hook\":{\"pre\":\"morning_briefing\"},\"load\":{\"transcripts\":true}\n}\nWrite the morning briefing. $briefing_metadata $activity_digest").unwrap();
+        let source = root.join(format!(
+            "chronicle/{day}/default/090000_60/note_transcript.md"
+        ));
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
         std::fs::write(
             &source,
@@ -2246,19 +2215,19 @@ mod tests {
         .unwrap();
         let stub = root.join("generate-stub.sh");
         for title in ["red", "blue"] {
-            let event = json!({"activity":"meeting","target_date":"2026-09-11","title":title,"description":format!("The meeting topic is {title}"),"facet":"work","start":"09:00:00","end":"10:00:00","participation":[]});
+            let briefing = json!({"summary":format!("The meeting topic is {title}")});
             std::fs::write(
                 root.join(format!("response-{title}.json")),
-                model_response(&json!([event]).to_string(), Value::Null).to_string(),
+                model_response(&briefing.to_string(), Value::Null).to_string(),
             )
             .unwrap();
         }
+        std::fs::write(root.join("response-mode"), "red").unwrap();
         std::fs::write(
             &stub,
             r#"#!/bin/sh
-request=$(cat)
-case "$request" in *blue*) response=blue;; *) response=red;; esac
-cat "${0%/*}/response-$response.json"
+cat >/dev/null
+cat "${0%/*}/response-$(cat "${0%/*}/response-mode").json"
 "#,
         )
         .unwrap();
@@ -2286,26 +2255,8 @@ cat "${0%/*}/response-$response.json"
         .with_talent_roots(talent.clone(), apps.clone())
         .with_boundary(worker.clone());
         let mut log = RunLogWriter::open(root, day, "daily");
-        let enabled = std::fs::read_to_string(talent.join("schedule.md")).unwrap();
-        std::fs::write(
-            talent.join("schedule.md"),
-            enabled.replace("\"priority\":10", "\"priority\":10,\"disabled\":true"),
-        )
-        .unwrap();
-        run(&context, &mut log, None, false, 1).unwrap();
-        assert!(
-            serde_json::from_str::<Value>(
-                &std::fs::read_to_string(root.join("facets/work/facet.json")).unwrap()
-            )
-            .unwrap()
-            .get("id")
-            .is_none()
-        );
-        std::fs::write(talent.join("schedule.md"), enabled).unwrap();
         let first = run(&context, &mut log, None, false, 1).unwrap();
-        assert_eq!(first.failed, 0);
-        let admitted_facet = std::fs::read(root.join("facets/work/facet.json")).unwrap();
-        assert!(serde_json::from_slice::<Value>(&admitted_facet).unwrap()["id"].is_string());
+        assert_eq!(first.failed, 0, "{first:?}");
         let coverage = solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
             root, day, &talent, &apps,
         )
@@ -2315,7 +2266,7 @@ cat "${0%/*}/response-$response.json"
             solstone_core_system::daily_coverage::CoverageState::Current
         );
         let first_e = coverage.units[0].evidence_revision.clone();
-        let output = root.join("facets/work/activities/20260911.jsonl");
+        let output = root.join(format!("chronicle/{day}/talents/morning_briefing.json"));
         assert!(std::fs::read_to_string(&output).unwrap().contains("red"));
         run(&context, &mut log, None, false, 1).unwrap();
         assert_eq!(worker.outcomes.lock().unwrap().len(), 1);
@@ -2324,6 +2275,7 @@ cat "${0%/*}/response-$response.json"
             "# Imported note\nThe meeting topic tomorrow changed to blue.",
         )
         .unwrap();
+        std::fs::write(root.join("response-mode"), "blue").unwrap();
         assert!(
             !solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
                 root, day, &talent, &apps
@@ -2343,15 +2295,12 @@ cat "${0%/*}/response-$response.json"
             solstone_core_system::daily_coverage::CoverageState::Current
         );
         assert_ne!(first_e, coverage.units[0].evidence_revision);
-        let rows = std::fs::read_to_string(output).unwrap();
-        let rows = rows
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["title"], "blue");
+        let briefing = std::fs::read_to_string(&output).unwrap();
+        assert!(briefing.contains("blue"), "{briefing}");
+        assert!(!briefing.contains("red"), "{briefing}");
         // A conflicting replacement cannot borrow the previous accepted result's success.
-        let identity = solstone_core_journal_io::DailyUnitIdentity::new(day, "schedule", None);
+        let identity =
+            solstone_core_journal_io::DailyUnitIdentity::new(day, "morning_briefing", None);
         let mut record = solstone_core_journal_io::load_daily_unit_record(root, &identity)
             .unwrap()
             .unwrap();
@@ -2367,10 +2316,6 @@ cat "${0%/*}/response-$response.json"
         );
         run(&context, &mut log, None, false, 1).unwrap();
         assert_eq!(worker.outcomes.lock().unwrap().len(), 3);
-        assert_eq!(
-            std::fs::read(root.join("facets/work/facet.json")).unwrap(),
-            admitted_facet
-        );
     }
     #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
@@ -2387,10 +2332,21 @@ cat "${0%/*}/response-$response.json"
         std::fs::create_dir_all(&apps).unwrap();
         std::fs::create_dir_all(root.join("facets/work")).unwrap();
         std::fs::write(root.join("facets/work/facet.json"), "{}").unwrap();
-        std::fs::write(talent.join("schedule.md"),"{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\",\"schema\":\"schedule-schema.json\",\"hook\":{\"post\":\"schedule\"},\"load\":{\"transcripts\":true}\n}\nExtract upcoming scheduled events.").unwrap();
-        std::fs::write(talent.join("schedule-schema.json"), r#"{"type":"array"}"#).unwrap();
+        let entities = apps.join("entities/talent");
+        std::fs::create_dir_all(&entities).unwrap();
+        std::fs::write(entities.join("entity_suggest.md"),"{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"multi_facet\":true,\"output\":\"json\",\"schema\":\"entity_suggest-schema.json\",\"hook\":{\"pre\":\"entities:entity_suggest\",\"post\":\"entities:entity_suggest\"},\"load\":{\"transcripts\":true}\n}\nSuggest entity observations.").unwrap();
+        std::fs::write(
+            entities.join("entity_suggest-schema.json"),
+            r#"{"type":"object"}"#,
+        )
+        .unwrap();
         let source = root.join("chronicle/20260910/default/090000_60/note_transcript.md");
-        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(source.parent().unwrap().join("talents")).unwrap();
+        std::fs::write(
+            source.parent().unwrap().join("talents/facets.json"),
+            r#"[{"facet":"work"}]"#,
+        )
+        .unwrap();
         std::fs::write(
             &source,
             "# Imported note\nThe meeting topic tomorrow is red.",
@@ -2399,11 +2355,7 @@ cat "${0%/*}/response-$response.json"
         let stub = root.join("generate-stub.sh");
         for (mode, text, validation) in [
             ("parse", "not json", Value::Null),
-            (
-                "schema",
-                r#"[{"activity":"meeting"}]"#,
-                json!({"valid":false}),
-            ),
+            ("schema", r#"{"entities":[]}"#, json!({"valid":false})),
         ] {
             std::fs::write(
                 root.join(format!("response-{mode}.json")),
@@ -2448,7 +2400,11 @@ fi
         .with_talent_roots(talent.clone(), apps.clone())
         .with_boundary(worker.clone());
         let mut log = RunLogWriter::open(root, day, "daily");
-        let identity = solstone_core_journal_io::DailyUnitIdentity::new(day, "schedule", None);
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+            day,
+            "entities:entity_suggest",
+            Some("work".to_owned()),
+        );
         let modes = [
             ("parse", "schema_invalid", 1),
             ("schema", "schema_invalid", 2),
@@ -2715,7 +2671,6 @@ cat "${0%/*}/response-$mode.json"
             )
             .unwrap();
         }
-        std::fs::write(talent.join("schedule.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":1,\"output\":\"json\",\"disabled\":true,\"hook\":{\"post\":\"schedule\"}\n}\nDisabled scheduling.").unwrap();
         std::fs::create_dir_all(apps.join("entities/talent")).unwrap();
         std::fs::write(apps.join("entities/talent/entities_review.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":2,\"multi_facet\":true,\"output\":\"json\",\"hook\":{\"pre\":\"entities:entities_review\",\"post\":\"entities:entities_review\"},\"load\":{\"transcripts\":false}\n}\nReview entities.").unwrap();
         let stub = root.join("generate-stub.sh");
@@ -2787,191 +2742,6 @@ cat "${0%/*}/review-response.json"
     #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
-    fn actual_upstream_no_output_does_not_lend_old_artifacts_to_briefing_and_recovers() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        // The briefing still being presented is the live one: yesterday's.
-        // A briefing from an earlier day is frozen and never regenerated.
-        let today = chrono::Utc::now().date_naive();
-        let day = (today - chrono::Duration::days(1))
-            .format("%Y%m%d")
-            .to_string();
-        let day = day.as_str();
-        let next = today.format("%Y%m%d").to_string();
-        let talent = root.join("payload/talent");
-        let apps = root.join("payload/apps");
-        std::fs::create_dir_all(&talent).unwrap();
-        std::fs::create_dir_all(&apps).unwrap();
-        std::fs::create_dir_all(root.join("config")).unwrap();
-        std::fs::write(root.join("config/journal.json"), r#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#).unwrap();
-        solstone_core_facets::create_facet(root, "work", "Work", "", "", "", None).unwrap();
-        for (name, metadata, body) in [
-            (
-                "schedule",
-                json!({"priority":1,"output":"json","hook":{"post":"schedule"},"load":{"transcripts":true}}),
-                "SCHEDULE_PROOF: extract future appointments.",
-            ),
-            (
-                "morning_briefing",
-                json!({"priority":3,"output":"json","hook":{"pre":"morning_briefing"},"load":{"transcripts":false}}),
-                "BRIEFING_PROOF: $briefing_metadata $activity_digest $anticipated_today",
-            ),
-        ] {
-            let mut metadata = metadata.as_object().unwrap().clone();
-            metadata.insert("type".into(), json!("generate"));
-            metadata.insert("schedule".into(), json!("daily"));
-            metadata.insert("max_output_tokens".into(), json!(1024));
-            std::fs::write(
-                talent.join(format!("{name}.md")),
-                format!(
-                    "{}\n{body}",
-                    serde_json::to_string_pretty(&metadata).unwrap()
-                ),
-            )
-            .unwrap();
-        }
-        let source = root.join(format!(
-            "facets/work/activities/{day}/meeting_090000/story.md"
-        ));
-        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
-        let transcript = root.join(format!("chronicle/{day}/mic/090000_60/note_transcript.md"));
-        std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
-        let stub = root.join("generate-stub.sh");
-        std::fs::write(
-            &stub,
-            r#"#!/bin/sh
-request=$(cat)
-case "$request" in
- *SCHEDULE_PROOF*) kind=schedule;;
- *BRIEFING_PROOF*) kind=briefing;;
- *) exit 91;;
-esac
-cat "${0%/*}/response-$kind.json"
-"#,
-        )
-        .unwrap();
-        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let worker = Arc::new(Worker {
-            context: solstone_core_talent_runtime::ExecutionContext {
-                journal: root.to_owned(),
-            },
-            paths: solstone_core_talent_runtime::prepare::RuntimePaths {
-                talent_root: talent.clone(),
-                apps_root: apps.clone(),
-                templates_dir: root.join("payload/think/templates"),
-            },
-            stub,
-            outcomes: Mutex::new(Default::default()),
-            sibling_rewrites: None,
-        });
-        let context = ThinkContext::new(
-            root,
-            day.to_owned(),
-            root.join("chronicle").join(day),
-            1789400000000,
-        )
-        .unwrap()
-        .with_talent_roots(talent.clone(), apps.clone())
-        .with_boundary(worker.clone());
-        let mut log = RunLogWriter::open(root, day, "daily");
-        let identity = |name, facet| DailyUnitIdentity::new(day, name, facet);
-        let record = |name, facet| {
-            load_daily_unit_record(root, &identity(name, facet))
-                .unwrap()
-                .unwrap()
-        };
-        let calendar_path = root.join(format!("facets/work/activities/{next}.jsonl"));
-        for phase in ["OLD", "EMPTY", "NEW"] {
-            if phase == "EMPTY" {
-                std::fs::remove_file(&source).unwrap();
-                std::fs::remove_file(&transcript).unwrap();
-            } else {
-                std::fs::write(
-                    &source,
-                    format!("# Work\n\n{phase} source: planning appointment tomorrow."),
-                )
-                .unwrap();
-                std::fs::write(
-                    &transcript,
-                    format!("# Source\n{phase} planning appointment tomorrow."),
-                )
-                .unwrap();
-            }
-            let events = if phase == "EMPTY" {
-                json!([])
-            } else {
-                json!([{"activity":"meeting","target_date":today.format("%Y-%m-%d").to_string(),"title":format!("{phase} appointment"),"description":"Planning","facet":"work","start":"09:00:00","end":"10:00:00","participation":[]}])
-            };
-            for (kind, response) in [
-                ("schedule", events.to_string()),
-                (
-                    "briefing",
-                    json!({"summary":"Prepared from this pass"}).to_string(),
-                ),
-            ] {
-                std::fs::write(
-                    root.join(format!("response-{kind}.json")),
-                    model_response(&response, Value::Null).to_string(),
-                )
-                .unwrap();
-            }
-            let outcome = run(&context, &mut log, None, false, 1).unwrap();
-            assert_eq!(outcome.failed, 0, "phase {phase}: {outcome:?}");
-            let expected = if phase == "EMPTY" {
-                DailyUnitStatus::CommittedNoOutput
-            } else {
-                DailyUnitStatus::Committed
-            };
-            assert_eq!(
-                record("schedule", None).accepted.unwrap().status,
-                expected,
-                "schedule {phase}"
-            );
-            let briefing = record("morning_briefing", None);
-            let packet = briefing.frozen_packet.unwrap();
-            let agenda = packet
-                .pointer("/state/MorningBriefing/values/anticipated_today")
-                .unwrap()
-                .as_str()
-                .unwrap();
-            if phase == "EMPTY" {
-                assert!(
-                    std::fs::read_to_string(&calendar_path)
-                        .unwrap()
-                        .contains("OLD appointment"),
-                    "no output does not imply cancellation"
-                );
-                assert!(!agenda.contains("OLD appointment"), "{agenda}");
-                assert_eq!(
-                    packet.pointer("/prepared/config/_daily_upstream/schedule"),
-                    Some(&json!(false))
-                );
-            } else {
-                assert!(agenda.contains(&format!("{phase} appointment")), "{agenda}");
-                if phase == "NEW" {
-                    assert!(!agenda.contains("OLD appointment"));
-                }
-            }
-            assert_eq!(
-                solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
-                    root, day, &talent, &apps
-                )
-                .unwrap()
-                .state,
-                solstone_core_system::daily_coverage::CoverageState::Current
-            );
-        }
-        let requests = worker.outcomes.lock().unwrap().len();
-        run(&context, &mut log, None, false, 1).unwrap();
-        assert_eq!(
-            worker.outcomes.lock().unwrap().len(),
-            requests,
-            "unchanged recovery is reusable"
-        );
-    }
-    #[cfg(all(test, feature = "full-tests"))]
-    #[cfg(unix)]
-    #[test]
     fn historical_days_share_the_current_maintenance_packet_and_failure_is_separate() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -2983,7 +2753,7 @@ cat "${0%/*}/response-$kind.json"
         std::fs::write(root.join("config/journal.json"), r#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#).unwrap();
         std::fs::write(talent.join("daily_schedule.md"), format!("{}\nChoose a daily processing time from $activity_spans.", serde_json::to_string_pretty(&json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"json","hook":{"pre":"daily_schedule","post":"daily_schedule"},"load":{"transcripts":false}})).unwrap())).unwrap();
         // Keep one real historical unit independently current when maintenance fails.
-        std::fs::write(talent.join("schedule.md"), format!("{}\nExtract appointments.", serde_json::to_string_pretty(&json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":2,"output":"json","hook":{"post":"schedule"},"load":{"transcripts":true}})).unwrap())).unwrap();
+        std::fs::write(talent.join("morning_briefing.md"), format!("{}\nBRIEFING_PROOF: $briefing_metadata $activity_digest", serde_json::to_string_pretty(&json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":2,"output":"json","hook":{"pre":"morning_briefing"},"load":{"transcripts":false}})).unwrap())).unwrap();
         let today = solstone_core_system::daily_coverage::local_day(root, chrono::Utc::now());
         std::fs::create_dir_all(root.join("chronicle").join(&today).join("mic/090000_600"))
             .unwrap();
@@ -2994,8 +2764,19 @@ cat "${0%/*}/response-$kind.json"
         )
         .unwrap();
         std::fs::write(
+            root.join("response-briefing.json"),
+            model_response(r#"{"summary":"Prepared"}"#, Value::Null).to_string(),
+        )
+        .unwrap();
+        std::fs::write(
             &stub,
-            "#!/bin/sh\ncat >/dev/null\ncat \"${0%/*}/response.json\"\n",
+            r#"#!/bin/sh
+request=$(cat)
+case "$request" in
+ *BRIEFING_PROOF*) cat "${0%/*}/response-briefing.json";;
+ *) cat "${0%/*}/response.json";;
+esac
+"#,
         )
         .unwrap();
         std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -3952,11 +3733,6 @@ cat "${0%/*}/response-$kind.json"
             "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":56,\"output\":\"json\",\"multi_facet\":true,\"hook\":{\"pre\":\"entities:entities_review\",\"post\":\"entities:entities_review\"}\n}\nprompt",
         )
         .unwrap();
-        std::fs::write(
-            talent_root.join("schedule.md"),
-            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":20,\"output\":\"markdown\",\"hook\":{\"post\":\"schedule\"}\n}\nprompt",
-        )
-        .unwrap();
 
         struct MockCortex;
         impl crate::context::CortexBoundary for MockCortex {
@@ -4033,20 +3809,30 @@ cat "${0%/*}/response-$kind.json"
         )
         .unwrap();
 
-        let sched_config = configs.iter().find(|c| c.key == "schedule").unwrap();
-        let sched_identity =
-            solstone_core_journal_io::DailyUnitIdentity::new("20260101", "schedule", None);
-        let sched_evidence =
-            crate::snapshot::compute_daily_evidence(&journal, "20260101", sched_config, None)
-                .unwrap();
-        let old_contract = "old_contract_digest";
-        let accepted_rev = sched_evidence.revision_under(old_contract);
-        let mut sched_record = solstone_core_journal_io::DailyUnitRecord::new(
-            sched_identity.clone(),
-            &sched_evidence.revision,
-            &sched_evidence.contract,
+        let review_config = configs
+            .iter()
+            .find(|c| c.key == "entities:entities_review")
+            .unwrap();
+        let review_identity = solstone_core_journal_io::DailyUnitIdentity::new(
+            "20260101",
+            "entities:entities_review",
+            Some("work".to_owned()),
         );
-        sched_record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+        let review_evidence = crate::snapshot::compute_daily_evidence(
+            &journal,
+            "20260101",
+            review_config,
+            Some("work"),
+        )
+        .unwrap();
+        let old_contract = "old_contract_digest";
+        let accepted_rev = review_evidence.revision_under(old_contract);
+        let mut review_record = solstone_core_journal_io::DailyUnitRecord::new(
+            review_identity.clone(),
+            &review_evidence.revision,
+            &review_evidence.contract,
+        );
+        review_record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
             evidence_revision: accepted_rev,
             contract_digest: old_contract.into(),
             status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
@@ -4055,7 +3841,7 @@ cat "${0%/*}/response-$kind.json"
             receipts: Vec::new(),
             committed_at_ms: 1,
         });
-        solstone_core_journal_io::save_daily_unit_record(&journal, &sched_record).unwrap();
+        solstone_core_journal_io::save_daily_unit_record(&journal, &review_record).unwrap();
 
         let mb_config = configs
             .iter()
@@ -4096,8 +3882,8 @@ cat "${0%/*}/response-$kind.json"
             &context,
             &mut log,
             &tokio_rt,
-            sched_config,
-            None,
+            review_config,
+            Some("work"),
             false,
             &mut pending,
             &mut result,
@@ -4108,15 +3894,15 @@ cat "${0%/*}/response-$kind.json"
             1,
             "qualifying sibling must be skipped without dispatch"
         );
-        let sched_loaded =
-            solstone_core_journal_io::load_daily_unit_record(&journal, &sched_identity)
+        let review_loaded =
+            solstone_core_journal_io::load_daily_unit_record(&journal, &review_identity)
                 .unwrap()
                 .unwrap();
         assert_eq!(
-            sched_loaded.evidence_revision,
-            sched_record.evidence_revision
+            review_loaded.evidence_revision,
+            review_record.evidence_revision
         );
-        assert_eq!(sched_loaded.contract_digest, sched_record.contract_digest);
+        assert_eq!(review_loaded.contract_digest, review_record.contract_digest);
 
         // Subsequent ordinary failure has the real digests, so accepted_reuse is FrozenBriefing again
         let mut fail_rec = reserved_rec.clone();

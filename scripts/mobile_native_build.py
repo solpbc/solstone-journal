@@ -505,7 +505,7 @@ class Build:
         output = self.work / "swift-derived/Build/Products/Release-iphoneos/parakeet-helper"
         self.inspect("swift-helper", output)
         resolved = json.loads((staged / "Package.resolved").read_text())
-        if len(resolved["pins"]) != 1 or resolved["pins"][0]["state"]["revision"] != "b10bdcb51dcfeedb8001353b4ba363da1a616d6d":
+        if len(resolved["pins"]) != 1 or resolved["pins"][0]["state"]["revision"] != "503b4bd1bbf7220882de39fe8ae6716aae4132da":
             raise ValueError("FluidAudio resolution differs from pin")
         self.summary["inputs"]["swift-lock"] = {"sha256": sha256(staged / "Package.resolved")}
 

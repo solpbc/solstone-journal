@@ -630,6 +630,35 @@ pub fn record_queued_task(
     write_import_metadata_unlocked(journal_root, import_id, &metadata)
 }
 
+/// When an import happened, for what its saves write: its upload time, or for
+/// a record with none, the time its first save recorded, set to `now_ms` by
+/// the first save that finds neither. Every later save of the import reads
+/// the same time.
+pub fn import_time_ms(
+    journal_root: &Path,
+    import_id: &str,
+    now_ms: u64,
+) -> Result<u64, ImportError> {
+    let _lock = hold_import_lock(journal_root, import_id)?;
+    let mut metadata = read_import_metadata(journal_root, import_id)?;
+    let millis = |key: &str| {
+        metadata.get(key).and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_f64().filter(|ms| *ms >= 0.0).map(|ms| ms as u64))
+        })
+    };
+    if let Some(ms) = millis("upload_timestamp").or_else(|| millis(FIRST_SAVED_AT_MS)) {
+        return Ok(ms);
+    }
+    metadata.insert(FIRST_SAVED_AT_MS.to_owned(), serde_json::json!(now_ms));
+    write_import_metadata_unlocked(journal_root, import_id, &metadata)?;
+    Ok(now_ms)
+}
+
+/// The record key [`import_time_ms`] keeps a first save's time under.
+pub const FIRST_SAVED_AT_MS: &str = "first_saved_at_ms";
+
 /// Read a complete open import metadata record.
 pub fn read_import_metadata(
     journal_root: &Path,
@@ -841,6 +870,47 @@ mod tests {
         ]);
         write_import_metadata(root, id, &metadata).unwrap();
         started
+    }
+
+    #[test]
+    fn an_import_s_time_is_its_upload_time_or_its_first_save_s() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let uploaded = "20261020_180000";
+        let metadata = ImportMetadata::from_iter([(
+            "upload_timestamp".to_owned(),
+            serde_json::json!(1_761_000_000_500_f64),
+        )]);
+        write_import_metadata(root, uploaded, &metadata).unwrap();
+        assert_eq!(
+            import_time_ms(root, uploaded, 5).unwrap(),
+            1_761_000_000_500
+        );
+        assert!(
+            !read_import_metadata(root, uploaded)
+                .unwrap()
+                .contains_key(FIRST_SAVED_AT_MS)
+        );
+
+        // A record with no upload time keeps its first save's time for good.
+        let legacy = "20250101_000000";
+        let metadata =
+            ImportMetadata::from_iter([("task_id".to_owned(), serde_json::json!(legacy))]);
+        write_import_metadata(root, legacy, &metadata).unwrap();
+        assert_eq!(
+            import_time_ms(root, legacy, 1_792_500_000_000).unwrap(),
+            1_792_500_000_000
+        );
+        assert_eq!(
+            import_time_ms(root, legacy, 1_800_000_000_000).unwrap(),
+            1_792_500_000_000
+        );
+        let stored = read_import_metadata(root, legacy).unwrap();
+        assert_eq!(stored["task_id"], serde_json::json!(legacy));
+        assert_eq!(
+            stored[FIRST_SAVED_AT_MS],
+            serde_json::json!(1_792_500_000_000_u64)
+        );
     }
 
     fn status(root: &Path, id: &str) -> crate::ProjectionStatus {

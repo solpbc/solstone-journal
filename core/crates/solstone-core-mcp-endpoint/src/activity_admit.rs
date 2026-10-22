@@ -186,6 +186,8 @@ fn kept_record_and_identity(text: &str, idx: i64) -> Option<(Map<String, Value>,
             continue;
         }
         match serde_json::from_str::<Value>(trimmed) {
+            // Retired plans are not indexed, so entry positions skip them too.
+            Ok(Value::Object(record)) if solstone_core_facets::is_retired_plan(&record) => {}
             Ok(Value::Object(record)) => {
                 let identity = compute_record_identity(&record, trimmed);
                 kept.push((record, identity));
@@ -218,7 +220,8 @@ pub(crate) fn record_by_identity(
             _ => return None,
         }
     }
-    if count == 1 { matched } else { None }
+    // A retired plan reads as not found, like a record that is gone.
+    matched.filter(|(record, _)| count == 1 && !solstone_core_facets::is_retired_plan(record))
 }
 
 pub(crate) fn read_contained_source(journal_root: &Path, rel: &str) -> Option<Vec<u8>> {

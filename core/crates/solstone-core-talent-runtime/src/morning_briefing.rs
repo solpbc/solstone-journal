@@ -3,7 +3,7 @@
 
 //! Morning-briefing pre-hook.
 
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{load_activity_records, read_facet_declaration};
 use solstone_core_home::{
@@ -33,6 +33,9 @@ pub struct DigestActivity {
     pub entities: Vec<String>,
     pub source_limitation: bool,
     pub story_body: Option<String>,
+    /// What the owner's calendar had scheduled while the activity ran.
+    #[serde(default)]
+    pub scheduled: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -41,7 +44,6 @@ pub struct MorningBriefingPreState {
     pub activities: Vec<DigestActivity>,
     pub initial_gaps: Vec<String>,
     pub counts: Value,
-    pub forward_count: usize,
     pub generated: String,
     pub model: String,
 }
@@ -80,10 +82,6 @@ pub fn build(
             .and_then(Value::as_str)
             .unwrap_or("unknown"),
         context,
-        prepared
-            .config
-            .get("_daily_upstream")
-            .and_then(Value::as_object),
     )
     .map_err(|error| RuntimeOutcome::Skipped {
         stage: "morning_briefing".into(),
@@ -125,14 +123,14 @@ pub fn apply_prompt_override(
     let n = briefing_state.activities.len();
     let mut include_stories = vec![true; n];
     let mut include_activities = vec![true; n];
-    let mut omissions: Vec<String> = Vec::new();
 
-    let measure = |inc_acts: &[bool],
-                   inc_stories: &[bool],
-                   omissions: &[String]|
-     -> (Map<String, Value>, u32) {
+    let measure = |inc_acts: &[bool], inc_stories: &[bool]| -> (Map<String, Value>, u32) {
         let mut current_gaps = briefing_state.initial_gaps.clone();
-        current_gaps.extend(omissions.iter().cloned());
+        current_gaps.extend(omission_gaps(
+            &briefing_state.activities,
+            inc_acts,
+            inc_stories,
+        ));
 
         let mut values = briefing_state.values.clone();
         let digest_text =
@@ -142,7 +140,7 @@ pub fn apply_prompt_override(
             "model": briefing_state.model,
             "sources": briefing_state.counts,
             "gaps": current_gaps,
-            "coverage_preamble": coverage_preamble(&briefing_state.counts, &current_gaps, briefing_state.forward_count),
+            "coverage_preamble": coverage_preamble(&current_gaps),
         });
         values.insert("activity_digest".into(), Value::String(digest_text));
         values.insert(
@@ -162,15 +160,13 @@ pub fn apply_prompt_override(
         (values, total_tokens)
     };
 
-    let (mut current_values, mut current_tokens) =
-        measure(&include_activities, &include_stories, &omissions);
+    let (mut current_values, mut current_tokens) = measure(&include_activities, &include_stories);
 
     if current_tokens > floor_budget {
         for i in (0..n).rev() {
             if briefing_state.activities[i].story_body.is_some() {
                 include_stories[i] = false;
-                omissions.push(format!("story for {}", briefing_state.activities[i].id));
-                let (vals, tokens) = measure(&include_activities, &include_stories, &omissions);
+                let (vals, tokens) = measure(&include_activities, &include_stories);
                 current_values = vals;
                 current_tokens = tokens;
                 if current_tokens <= floor_budget {
@@ -183,11 +179,7 @@ pub fn apply_prompt_override(
     if current_tokens > floor_budget {
         for i in (0..n).rev() {
             include_activities[i] = false;
-            let id = &briefing_state.activities[i].id;
-            let story_omission = format!("story for {id}");
-            omissions.retain(|g| g != &story_omission);
-            omissions.push(format!("activity {id}"));
-            let (vals, tokens) = measure(&include_activities, &include_stories, &omissions);
+            let (vals, tokens) = measure(&include_activities, &include_stories);
             current_values = vals;
             current_tokens = tokens;
             if current_tokens <= floor_budget {
@@ -245,9 +237,8 @@ fn build_packet(
     analysis_day: NaiveDate,
     model: &str,
     context: &ExecutionContext,
-    upstream: Option<&Map<String, Value>>,
 ) -> Result<Map<String, Value>, String> {
-    let state = build_briefing_state(day, analysis_day, model, context, upstream)?;
+    let state = build_briefing_state(day, analysis_day, model, context)?;
     Ok(state.values)
 }
 
@@ -256,7 +247,6 @@ fn build_briefing_state(
     analysis_day: NaiveDate,
     model: &str,
     context: &ExecutionContext,
-    upstream: Option<&Map<String, Value>>,
 ) -> Result<MorningBriefingPreState, String> {
     let dates = BriefingDates::for_analysis(analysis_day).ok_or("briefing date overflow")?;
     let presentation_day = dates.presentation.format("%Y%m%d").to_string();
@@ -278,47 +268,15 @@ fn build_briefing_state(
 
     let digest_activities = load_digest_activities(&facets, day, context, &mut gaps);
 
-    let schedule_current =
-        upstream.is_none_or(|outcomes| outcomes.get("schedule") == Some(&Value::Bool(true)));
-    let schedule_facets = if schedule_current {
-        facets.as_slice()
-    } else {
-        gaps.push("the latest plans, which weren't ready".to_owned());
-        &[]
-    };
-    let today = load_activities(
-        schedule_facets,
-        std::slice::from_ref(&presentation_day),
-        context,
-        &mut gaps,
-        NO_PLANS_TODAY,
-    );
-    let forward_days = (1..8)
-        .map(|offset| {
-            (dates.presentation + Duration::days(offset))
-                .format("%Y%m%d")
-                .to_string()
-        })
-        .collect::<Vec<_>>();
-    let forward = load_activities(
-        schedule_facets,
-        &forward_days,
-        context,
-        &mut gaps,
-        NO_PLANS_FORWARD,
-    );
     let pulse = read_pulse(&home, day, &mut gaps);
-    let counts = json!({
-        "segments": 0,
-        "anticipated_activities": today.len(),
-    });
+    let counts = json!({"segments": 0});
     let generated = generated_stamp(&home);
     let metadata = json!({
         "generated": generated,
         "model": model,
         "sources": counts,
         "gaps": gaps,
-        "coverage_preamble": coverage_preamble(&counts, &gaps, forward.len()),
+        "coverage_preamble": coverage_preamble(&gaps),
     });
     let n = digest_activities.len();
     let include_activities = vec![true; n];
@@ -351,14 +309,6 @@ fn build_briefing_state(
             )),
         ),
         (
-            "anticipated_today".into(),
-            Value::String(render_activities(&today, false)),
-        ),
-        (
-            "anticipated_forward".into(),
-            Value::String(render_activities(&forward, true)),
-        ),
-        (
             "pulse_surface".into(),
             Value::String(if pulse.is_empty() {
                 "(missing)".into()
@@ -372,7 +322,6 @@ fn build_briefing_state(
         activities: digest_activities,
         initial_gaps: gaps,
         counts,
-        forward_count: forward.len(),
         generated,
         model: model.to_owned(),
     })
@@ -385,6 +334,7 @@ fn load_digest_activities(
     gaps: &mut Vec<String>,
 ) -> Vec<DigestActivity> {
     let mut activities = Vec::new();
+    let calendar = solstone_core_facets::calendar_on_day(&context.journal, day);
     for (facet_idx, (facet, title)) in facets.iter().enumerate() {
         match load_activity_records(&context.journal, facet, day, false) {
             Ok(records) => {
@@ -496,6 +446,15 @@ fn load_digest_activities(
                                     .is_some()
                         });
 
+                    let scheduled = solstone_core_facets::activity_span(&record)
+                        .map(|span| {
+                            solstone_core_facets::calendar_beside(&calendar, day, span)
+                                .iter()
+                                .map(describe_scheduled)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
                     activities.push((
                         facet_idx,
                         DigestActivity {
@@ -513,6 +472,7 @@ fn load_digest_activities(
                             entities,
                             source_limitation,
                             story_body,
+                            scheduled,
                         },
                     ));
                 }
@@ -540,6 +500,29 @@ fn load_digest_activities(
             .then_with(|| act_a.id.cmp(&act_b.id))
     });
     activities.into_iter().map(|(_, act)| act).collect()
+}
+
+/// One scheduled event as a digest line: its title, its time and the known
+/// people invited.
+fn describe_scheduled(event: &Value) -> String {
+    let mut text = string_or(event.get("title"), "untitled event");
+    if let (Some(start), Some(end)) = (
+        event.get("start").and_then(Value::as_str),
+        event.get("end").and_then(Value::as_str),
+    ) {
+        text.push_str(&format!(", {start}–{end}"));
+    }
+    let people = event
+        .get("people")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    if !people.is_empty() {
+        text.push_str(&format!(", invited: {}", people.join(", ")));
+    }
+    text
 }
 
 fn render_digest_activity(act: &DigestActivity, include_story: bool) -> String {
@@ -576,6 +559,11 @@ fn render_digest_activity(act: &DigestActivity, include_story: bool) -> String {
     if !act.participants.is_empty() {
         lines.push(format!("- participants: {}", act.participants.join(", ")));
     }
+    for scheduled in &act.scheduled {
+        lines.push(format!(
+            "- on the owner's calendar then (scheduled, not who attended): {scheduled}"
+        ));
+    }
     if !act.entities.is_empty() {
         lines.push(format!("- entities: {}", act.entities.join(", ")));
     }
@@ -605,56 +593,6 @@ pub(crate) fn render_digest_activities(
     } else {
         items.join("\n\n")
     }
-}
-
-fn load_activities(
-    facets: &[(String, String)],
-    days: &[String],
-    context: &ExecutionContext,
-    gaps: &mut Vec<String>,
-    empty_gap: &str,
-) -> Vec<Value> {
-    let mut values = Vec::new();
-    for day in days {
-        for (facet, title) in facets {
-            match load_activity_records(&context.journal, facet, day, false) {
-                Ok(records) => {
-                    for mut record in records.into_iter().filter(|record| {
-                        record.get("source").and_then(Value::as_str) == Some("anticipated")
-                    }) {
-                        record.insert(
-                            "facet".into(),
-                            Value::String(string_or(record.get("facet"), facet)),
-                        );
-                        record.insert(
-                            "day".into(),
-                            Value::String(string_or(record.get("target_date"), day)),
-                        );
-                        values.push(Value::Object(record));
-                    }
-                }
-                Err(error) => {
-                    log::warn!("morning briefing: plans for {facet} {day} unreadable: {error}");
-                    gaps.push(format!(
-                        "plans from {title} for {}, which couldn't be read",
-                        spoken_day(day)
-                    ));
-                }
-            }
-        }
-    }
-    values.sort_by_key(|value| {
-        (
-            string_or(value.get("day"), ""),
-            string_or(value.get("start"), ""),
-            string_or(value.get("facet"), ""),
-            string_or(value.get("title"), ""),
-        )
-    });
-    if !facets.is_empty() && values.is_empty() {
-        gaps.push(empty_gap.into());
-    }
-    values
 }
 
 /// When the briefing was prepared, as a wall time on the journal's clock; home
@@ -714,110 +652,98 @@ fn render_facets(facets: &[(String, String)]) -> String {
     }
 }
 
-fn render_activities(values: &[Value], grouped: bool) -> String {
-    if values.is_empty() {
-        return "(none)".into();
-    }
-    let mut lines = Vec::new();
-    let mut prior = String::new();
-    for value in values {
-        let day = string_or(value.get("day"), "");
-        if grouped && day != prior {
-            if !lines.is_empty() {
-                lines.push(String::new());
-            }
-            lines.push(format!("### {day}"));
-            prior = day;
-        }
-        let start = short_time(value.get("start"));
-        let end = short_time(value.get("end"));
-        let time = if !start.is_empty() && !end.is_empty() {
-            format!("{start}-{end}")
-        } else if !start.is_empty() {
-            start
-        } else {
-            "unscheduled".into()
-        };
-        let title = string_or(
-            value.get("title").or_else(|| value.get("activity")),
-            "Untitled activity",
-        );
-        let activity = string_or(value.get("activity"), "activity");
-        let facet = string_or(value.get("facet"), "unknown");
-        let participants = participants(value);
-        lines.push(format!(
-            "- {time} {title} [{activity}, {facet}]{}",
-            if participants.is_empty() {
-                String::new()
-            } else {
-                format!(" - participants: {participants}")
-            }
-        ));
-    }
-    lines.join("\n")
-}
+/// The owner's note on what this briefing could not draw on.
+const ACTIVITIES_OMITTED: &str = "activities omitted: ";
+const STORIES_OMITTED: &str = "activity stories omitted: ";
 
-fn short_time(value: Option<&Value>) -> String {
-    string_or(value, "").chars().take(5).collect()
-}
-
-fn participants(value: &Value) -> String {
-    let mut names = value
-        .get("participation")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|entry| entry.as_object())
-        .map(|entry| string_or(entry.get("name").or_else(|| entry.get("entity_id")), ""))
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
-    if names.is_empty() {
-        names = value
-            .get("active_entities")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .map(|entry| string_or(Some(entry), ""))
-            .filter(|value| !value.is_empty())
-            .collect();
-    }
-    names.join(", ")
-}
-
-/// Gaps that say a day is empty rather than that a source is missing. The
-/// model still sees them; the owner's note leaves them out, since its counts
-/// already say 0.
-const NO_PLANS_TODAY: &str = "no plans today";
-const NO_PLANS_FORWARD: &str = "no plans in the next 7 days";
-
-pub(crate) fn coverage_preamble(counts: &Value, gaps: &[String], forward: usize) -> String {
-    let count = |key: &str| counts[key].as_u64().unwrap_or(0);
-    let plural = |n: u64, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-    let mut sentence = format!(
-        "This briefing draws on {} for today and {} in the next 7 days.",
-        plural(count("anticipated_activities"), "plan", "plans"),
-        plural(forward as u64, "plan", "plans"),
-    );
-    let missing = gaps
+/// Counts, not record ids: one gap per omitted record grows with the day, and a
+/// day with hundreds of activities could never fit the floor even with all of
+/// them left out. Which records were left out is in `_briefing_inclusion`.
+pub(crate) fn omission_gaps(
+    activities: &[DigestActivity],
+    include_activities: &[bool],
+    include_stories: &[bool],
+) -> Vec<String> {
+    let omitted = include_activities.iter().filter(|kept| !**kept).count();
+    let stories = activities
         .iter()
-        .map(String::as_str)
-        .filter(|gap| *gap != NO_PLANS_TODAY && *gap != NO_PLANS_FORWARD)
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        let joined = missing.join("; ");
-        if joined.ends_with('.') {
-            sentence.push_str(&format!(" Missing: {joined}"));
-        } else {
-            sentence.push_str(&format!(" Missing: {joined}."));
-        }
+        .enumerate()
+        .filter(|(i, act)| {
+            include_activities[*i] && !include_stories[*i] && act.story_body.is_some()
+        })
+        .count();
+    let mut gaps = Vec::new();
+    if omitted > 0 {
+        gaps.push(format!("{ACTIVITIES_OMITTED}{omitted}."));
     }
-    sentence
+    if stories > 0 {
+        gaps.push(format!("{STORIES_OMITTED}{stories}."));
+    }
+    gaps
 }
 
-/// A `YYYYMMDD` day as an owner reads it, like "October 17".
-fn spoken_day(day: &str) -> String {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map_or_else(|_| day.to_owned(), |date| date.format("%B %-d").to_string())
+/// Whether `gap` is an omission gap, in the count form or the per-record form
+/// earlier packets stored.
+pub(crate) fn is_omission_gap(gap: &str, activities: &[DigestActivity]) -> bool {
+    gap.starts_with(ACTIVITIES_OMITTED)
+        || gap.starts_with(STORIES_OMITTED)
+        || activities.iter().any(|act| {
+            gap.strip_prefix("activity ")
+                .or_else(|| gap.strip_prefix("story for "))
+                == Some(act.id.as_str())
+        })
+}
+
+pub(crate) fn coverage_preamble(gaps: &[String]) -> String {
+    let mut parts = Vec::new();
+    let (mut activities, mut stories) = (0, 0);
+    let count = |gap: &str, prefix: &str| {
+        gap.strip_prefix(prefix)
+            .and_then(|rest| rest.strip_suffix('.'))
+            .and_then(|count| count.parse::<usize>().ok())
+    };
+    for gap in gaps {
+        if let Some(omitted) = count(gap, ACTIVITIES_OMITTED) {
+            activities += omitted;
+        } else if let Some(omitted) = count(gap, STORIES_OMITTED) {
+            stories += omitted;
+        } else if gap.starts_with("story for ") {
+            stories += 1;
+        } else if gap.starts_with("activity ") {
+            activities += 1;
+        } else if let Some(count) = gap
+            .strip_prefix("location entries omitted: ")
+            .and_then(|rest| rest.strip_suffix('.'))
+        {
+            parts.push(if count == "1" {
+                "one location entry".to_owned()
+            } else {
+                format!("{count} location entries")
+            });
+        } else if gap == "the latest pulse" {
+            parts.push("the latest running summary".to_owned());
+        } else {
+            parts.push(gap.trim_end_matches('.').to_owned());
+        }
+    }
+    if activities > 0 {
+        parts.push(if activities == 1 {
+            "one activity".to_owned()
+        } else {
+            format!("{activities} activities")
+        });
+    }
+    if stories > 0 {
+        parts.push(if stories == 1 {
+            "the story of one activity".to_owned()
+        } else {
+            format!("the stories of {stories} activities")
+        });
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!("Not in this briefing: {}.", parts.join("; "))
 }
 
 fn string_or(value: Option<&Value>, fallback: &str) -> String {
@@ -842,30 +768,29 @@ mod tests {
     }
 
     #[test]
-    fn coverage_preamble_counts_plans_in_words() {
-        let one = json!({"segments": 0, "anticipated_activities": 1});
-        let sentence1 = coverage_preamble(&one, &[], 1);
-        assert!(sentence1.contains("1 plan for today"));
-        assert!(sentence1.contains("1 plan in the next 7 days"));
-        assert!(!sentence1.contains("newsletter"));
-
-        let many = json!({"segments": 4, "anticipated_activities": 0});
-        let sentence2 = coverage_preamble(
-            &many,
-            &[NO_PLANS_TODAY.to_owned(), "the latest pulse".to_owned()],
-            3,
+    fn coverage_preamble_names_only_what_is_missing() {
+        assert_eq!(coverage_preamble(&[]), "");
+        assert_eq!(
+            coverage_preamble(&["the latest pulse".to_owned()]),
+            "Not in this briefing: the latest running summary."
         );
-        assert!(sentence2.contains("0 plans for today"));
-        assert!(sentence2.contains("3 plans in the next 7 days"));
-        assert!(sentence2.contains("Missing: the latest pulse"));
-        assert!(!sentence2.contains("newsletter"));
     }
 
     #[test]
-    fn spoken_day_names_the_month_and_falls_back_to_the_key() {
-        assert_eq!(spoken_day("20261017"), "October 17");
-        assert_eq!(spoken_day("20260301"), "March 1");
-        assert_eq!(spoken_day("notaday"), "notaday");
+    fn coverage_preamble_counts_omitted_records_without_their_ids() {
+        let gaps = [
+            "the latest pulse",
+            "story for 20261019_meeting_1",
+            "activity 20261019_x",
+            "story for 20261019_y",
+            "location entries omitted: 3.",
+        ]
+        .map(str::to_owned);
+        assert_eq!(
+            coverage_preamble(&gaps),
+            "Not in this briefing: the latest running summary; 3 location entries; \
+             one activity; the stories of 2 activities."
+        );
     }
 
     #[test]
@@ -894,21 +819,24 @@ mod tests {
     }
 
     #[test]
-    fn packet_keeps_analysis_sources_but_uses_the_next_mornings_agenda() {
+    fn packet_reads_the_analysis_day_and_never_a_retained_plan() {
         let root = tempfile::TempDir::new().unwrap();
         let facet = root.path().join("facets/work");
         fs::create_dir_all(facet.join("activities")).unwrap();
         fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        let observed = json!({"id":"seen","title":"observed work"}).to_string();
         for (day, title) in [
-            ("20261231", "analysis agenda"),
-            ("20270101", "presentation agenda"),
-            ("20270102", "forward agenda"),
+            ("20261231", "analysis plan"),
+            ("20270101", "presentation plan"),
+            ("20270102", "forward plan"),
         ] {
-            fs::write(
-                facet.join(format!("activities/{day}.jsonl")),
-                json!({"id":day,"source":"anticipated","title":title}).to_string(),
-            )
-            .unwrap();
+            let plan = json!({"id":day,"source":"anticipated","title":title}).to_string();
+            let rows = if day == "20261231" {
+                format!("{observed}\n{plan}\n")
+            } else {
+                format!("{plan}\n")
+            };
+            fs::write(facet.join(format!("activities/{day}.jsonl")), rows).unwrap();
         }
         let context = ExecutionContext {
             journal: root.path().to_owned(),
@@ -918,21 +846,16 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
             "test",
             &context,
-            None,
         )
         .unwrap();
         assert_eq!(values["briefing_analysis_day"], "20261231");
         assert_eq!(values["briefing_presentation_day"], "20270101");
-        let today = values["anticipated_today"].as_str().unwrap();
-        assert!(today.contains("presentation agenda"), "{today}");
-        assert!(!today.contains("forward agenda"));
-        let forward = values["anticipated_forward"].as_str().unwrap();
-        assert!(forward.contains("forward agenda"), "{forward}");
-        assert!(!forward.contains("presentation agenda"));
         let digest = values["activity_digest"].as_str().unwrap();
-        assert!(digest.contains("analysis agenda"), "{digest}");
-        assert!(!digest.contains("presentation agenda"));
-        assert!(values.get("facet_newsletters").is_none());
+        assert!(digest.contains("observed work"), "{digest}");
+        let text = serde_json::to_string(&values).unwrap();
+        assert!(!text.contains(" plan"), "{text}");
+        assert!(values.get("anticipated_today").is_none());
+        assert!(values.get("anticipated_forward").is_none());
     }
 
     #[test]
@@ -948,32 +871,6 @@ mod tests {
             gate(&prepared, &context).unwrap(),
             GateDecision::Skip("missing day".into())
         );
-    }
-
-    #[test]
-    fn briefing_never_lends_retained_calendar_after_no_output_then_accepts_recovery() {
-        let root = tempfile::tempdir().unwrap();
-        let facet = root.path().join("facets/work");
-        fs::create_dir_all(facet.join("activities")).unwrap();
-        fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
-        fs::write(
-            facet.join("activities/20260911.jsonl"),
-            r#"{"id":"old","source":"anticipated","title":"Retained OLD agenda"}"#,
-        )
-        .unwrap();
-        let context = ExecutionContext {
-            journal: root.path().to_owned(),
-        };
-        let date = NaiveDate::from_ymd_opt(2026, 9, 10).unwrap();
-        let unavailable = Map::from_iter([("schedule".to_owned(), json!(false))]);
-        let values = build_packet("20260910", date, "test", &context, Some(&unavailable)).unwrap();
-        let text = serde_json::to_string(&values).unwrap();
-        assert!(!text.contains("Retained OLD"));
-
-        let available = Map::from_iter([("schedule".to_owned(), json!(true))]);
-        let values = build_packet("20260910", date, "test", &context, Some(&available)).unwrap();
-        let text2 = serde_json::to_string(&values).unwrap();
-        assert!(text2.contains("Retained OLD agenda"));
     }
 
     // 1. Populated analysis day: title, description, times, participants, entities, story body,
@@ -1006,8 +903,8 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values1 = build_packet("20261019", date, "test", &context, None).unwrap();
-        let values2 = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values1 = build_packet("20261019", date, "test", &context).unwrap();
+        let values2 = build_packet("20261019", date, "test", &context).unwrap();
         assert_eq!(
             without_generated(values1.clone()),
             without_generated(values2.clone())
@@ -1038,8 +935,8 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values1 = build_packet("20261019", date, "test", &context, None).unwrap();
-        let values2 = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values1 = build_packet("20261019", date, "test", &context).unwrap();
+        let values2 = build_packet("20261019", date, "test", &context).unwrap();
         assert_eq!(
             without_generated(values1.clone()),
             without_generated(values2.clone())
@@ -1094,8 +991,8 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values1 = build_packet("20261019", date, "test", &context, None).unwrap();
-        let values2 = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values1 = build_packet("20261019", date, "test", &context).unwrap();
+        let values2 = build_packet("20261019", date, "test", &context).unwrap();
         assert_eq!(
             without_generated(values1.clone()),
             without_generated(values2.clone())
@@ -1122,6 +1019,59 @@ mod tests {
     // 4. Oversize stories: measured prompt + schema fit compute_input_budget(max_output_tokens, LOCAL_MIN_CONTEXT_TOKENS).
     // A gap names an omitted id.
     // Story bodies are absent once dropped; no mid-string remnant of a dropped story.
+    #[test]
+    fn a_day_with_hundreds_of_activities_fits_the_floor() {
+        let root = tempfile::tempdir().unwrap();
+        let facet = root.path().join("facets/work");
+        fs::create_dir_all(facet.join("activities")).unwrap();
+        fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        let records = (0..1200)
+            .map(|i| {
+                json!({
+                    "id": format!("20261019_activity_{i:04}"),
+                    "title": format!("Activity {i}"),
+                    "start": "09:00",
+                    "story": {"body": "a short story about what happened in this activity"},
+                })
+                .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(facet.join("activities/20261019.jsonl"), records).unwrap();
+
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let mut prepared = PreparedTalent {
+            name: "morning_briefing".into(),
+            config: Map::from_iter([
+                ("day".into(), json!("20261019")),
+                ("max_output_tokens".into(), json!(2560)),
+                ("json_schema".into(), json!({"type": "object"})),
+                (
+                    "prompt".into(),
+                    json!("Prompt with $activity_digest and $briefing_metadata"),
+                ),
+            ]),
+        };
+        let state = build(&mut prepared, &context).unwrap();
+        apply_prompt_override(&mut prepared, &state).unwrap();
+
+        let metadata: Value =
+            serde_json::from_str(prepared.config["briefing_metadata"].as_str().unwrap()).unwrap();
+        let gaps = metadata["gaps"].as_array().unwrap();
+        assert!(
+            gaps.iter().any(|gap| gap
+                .as_str()
+                .is_some_and(|gap| gap.starts_with(ACTIVITIES_OMITTED))),
+            "{gaps:?}"
+        );
+        assert!(
+            gaps.len() < 10,
+            "omissions are counted, not listed: {gaps:?}"
+        );
+    }
+
     #[test]
     fn test_oversize_story_clipping() {
         let root = tempfile::tempdir().unwrap();
@@ -1182,7 +1132,7 @@ mod tests {
             total_tokens <= budget,
             "tokens {total_tokens} must fit budget {budget}"
         );
-        assert!(prompt.contains("story for act_huge") || prompt.contains("activity act_huge"));
+        assert!(prompt.contains(STORIES_OMITTED) || prompt.contains(ACTIVITIES_OMITTED));
         assert!(!prompt.contains(&huge_story));
         assert!(!prompt.contains(&huge_story[..100]));
     }
@@ -1216,6 +1166,40 @@ mod tests {
     }
 
     #[test]
+    fn an_activity_carries_the_meeting_it_ran_during_as_scheduled_not_attended() {
+        let act = DigestActivity {
+            facet: "work".into(),
+            day: "20261019".into(),
+            id: "act".into(),
+            start: None,
+            end: None,
+            target_date: None,
+            duration: None,
+            title: Some("Talked through the mocks".into()),
+            description: None,
+            details: None,
+            participants: vec![],
+            entities: vec![],
+            source_limitation: false,
+            story_body: None,
+            scheduled: vec![describe_scheduled(&json!({
+                "title": "design review", "start": "10:00", "end": "11:00",
+                "people": ["Alex Rivera", "Dana Ortiz"],
+            }))],
+        };
+        let rendered = render_digest_activity(&act, false);
+        let line = rendered
+            .lines()
+            .find(|line| line.contains("design review"))
+            .unwrap_or_else(|| panic!("{rendered}"));
+        for part in ["scheduled", "10:00", "11:00", "Alex Rivera", "Dana Ortiz"] {
+            assert!(line.contains(part), "{line}");
+        }
+        // Invitees are never offered as people who took part.
+        assert!(!rendered.contains("participants"));
+    }
+
+    #[test]
     fn test_source_gaps_not_substring_deleted() {
         let huge_story = "A".repeat(50000);
         let act = DigestActivity {
@@ -1233,6 +1217,7 @@ mod tests {
             entities: vec![],
             source_limitation: false,
             story_body: Some(huge_story),
+            scheduled: vec![],
         };
         let initial_gap = "activities from Work, which couldn't be read".to_string();
         let values = Map::from_iter([
@@ -1240,16 +1225,13 @@ mod tests {
             ("briefing_presentation_day".into(), json!("20261020")),
             ("briefing_metadata".into(), json!("{}")),
             ("activity_digest".into(), json!("")),
-            ("anticipated_today".into(), json!("")),
-            ("anticipated_forward".into(), json!("")),
             ("pulse_surface".into(), json!("")),
         ]);
         let state = PrePostState::MorningBriefing(MorningBriefingPreState {
             values,
             activities: vec![act],
             initial_gaps: vec![initial_gap.clone()],
-            counts: json!({"segments": 0, "anticipated_activities": 0}),
-            forward_count: 0,
+            counts: json!({"segments": 0}),
             generated: "2026-10-20T07:00:00Z".into(),
             model: "test-model".into(),
         });
@@ -1298,7 +1280,7 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert!(digest.contains("valid_act"));
 
@@ -1338,7 +1320,7 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert!(
             digest.contains("act_valid_1"),
@@ -1383,7 +1365,7 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert!(digest.contains("act_valid_1"));
         assert!(digest.contains("act_valid_2"));
@@ -1428,7 +1410,7 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert!(
             digest.contains("act_valid"),
@@ -1484,7 +1466,7 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert_eq!(digest, "(none)");
 
@@ -1528,7 +1510,7 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values = build_packet("20261019", date, "test", &context).unwrap();
 
         let metadata: Value =
             serde_json::from_str(values["briefing_metadata"].as_str().unwrap()).unwrap();
@@ -1583,7 +1565,7 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values1 = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values1 = build_packet("20261019", date, "test", &context).unwrap();
         let digest1 = values1["activity_digest"].as_str().unwrap();
         assert!(digest1.contains("source_limitation: partial_input"));
 
@@ -1600,7 +1582,7 @@ mod tests {
             format!("{record2}\n"),
         )
         .unwrap();
-        let values2 = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values2 = build_packet("20261019", date, "test", &context).unwrap();
         let digest2 = values2["activity_digest"].as_str().unwrap();
         assert!(!digest2.contains("partial_input"));
     }
@@ -1631,7 +1613,7 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
-        let values1 = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values1 = build_packet("20261019", date, "test", &context).unwrap();
 
         // Change only the news file
         fs::write(
@@ -1639,7 +1621,7 @@ mod tests {
             "Completely Different News Content",
         )
         .unwrap();
-        let values2 = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values2 = build_packet("20261019", date, "test", &context).unwrap();
         assert_eq!(
             without_generated(values1.clone()),
             without_generated(values2.clone())
@@ -1658,7 +1640,7 @@ mod tests {
             format!("{record_updated}\n"),
         )
         .unwrap();
-        let values3 = build_packet("20261019", date, "test", &context, None).unwrap();
+        let values3 = build_packet("20261019", date, "test", &context).unwrap();
         assert_ne!(values1, values3);
     }
 }

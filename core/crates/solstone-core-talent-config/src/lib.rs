@@ -855,6 +855,7 @@ mod tests {
             "partner",
             "steward",
             "entities:entity_assist",
+            "schedule",
         ] {
             assert!(
                 !keys.contains(&retired),

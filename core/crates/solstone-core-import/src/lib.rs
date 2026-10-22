@@ -72,15 +72,15 @@ pub use events::{
 pub use force_notice::{flush_force_notice, flush_force_notice_then, force_day_notice};
 pub use heartbeat::{HeartbeatExit, ImportHeartbeat};
 pub use metadata::{
-    AttemptFacts, AttemptHolder, AttemptRead, AttemptState, IMPORT_FAILED_REASON,
-    IMPORT_UNCONFIRMED_REASON, ImportMetadata, RUNNING_ATTEMPT_BOUND_MS, StagedEntityList,
-    StagedEntityRecord, admit_running_attempt, attempt_holder, get_attempt_facts, hold_import_lock,
-    journal_archive_result_metadata, queued_task_ms, read_attempt_facts, read_import_metadata,
-    read_provenance, record_completed_attempt, record_completed_attempt_unlocked,
-    record_completed_attempt_with_input_failures_unlocked, record_import_results_unlocked,
-    record_queued_task, record_running_attempt, record_unconfirmed_attempt,
-    record_unconfirmed_attempt_unlocked, refuse_if_live_running, release_attempt,
-    resume_running_attempt, settle_exited_import, write_import_metadata,
+    AttemptFacts, AttemptHolder, AttemptRead, AttemptState, FIRST_SAVED_AT_MS,
+    IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON, ImportMetadata, RUNNING_ATTEMPT_BOUND_MS,
+    StagedEntityList, StagedEntityRecord, admit_running_attempt, attempt_holder, get_attempt_facts,
+    hold_import_lock, import_time_ms, journal_archive_result_metadata, queued_task_ms,
+    read_attempt_facts, read_import_metadata, read_provenance, record_completed_attempt,
+    record_completed_attempt_unlocked, record_completed_attempt_with_input_failures_unlocked,
+    record_import_results_unlocked, record_queued_task, record_running_attempt,
+    record_unconfirmed_attempt, record_unconfirmed_attempt_unlocked, refuse_if_live_running,
+    release_attempt, resume_running_attempt, settle_exited_import, write_import_metadata,
 };
 pub use projection::{
     ImportProjection, MAX_PROJECTED_STAGED_ENTITIES, ProjectedStagedEntities, ProjectionStatus,

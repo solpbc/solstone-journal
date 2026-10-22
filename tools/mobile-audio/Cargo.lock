@@ -1540,9 +1540,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -1694,7 +1694,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-artifact-download"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "log",
  "serde",
@@ -1708,7 +1708,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-assets"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "serde",
  "serde_json",
@@ -1717,7 +1717,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-auth-flow"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "getrandom 0.3.4",
  "sha2",
@@ -1725,7 +1725,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-backup"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "getrandom 0.3.4",
  "hmac",
@@ -1742,7 +1742,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-body-source"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "ryu",
  "sha2",
@@ -1750,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-brain"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
@@ -1770,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-callosum"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "getrandom 0.3.4",
  "hmac",
@@ -1788,7 +1788,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-chatgpt-auth"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "getrandom 0.3.4",
  "serde",
@@ -1802,7 +1802,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-check"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "log",
  "nix 0.30.1",
@@ -1816,7 +1816,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-distribution"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "bzip2-rs",
  "flate2",
@@ -1841,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-entity"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "caseless",
  "chrono",
@@ -1863,7 +1863,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-entity-matching"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "caseless",
  "md5",
@@ -1874,7 +1874,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-facets"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "caseless",
  "chrono",
@@ -1890,14 +1890,14 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-ffmpeg-build-support"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "sha2",
 ]
 
 [[package]]
 name = "solstone-core-format"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "glob",
@@ -1911,7 +1911,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-generate"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "log",
  "serde",
@@ -1920,7 +1920,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-indexer"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -1934,14 +1934,16 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-segment",
  "solstone-core-speaker-id",
 ]
 
 [[package]]
 name = "solstone-core-indexer-store"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "log",
  "rusqlite",
  "serde",
@@ -1954,11 +1956,12 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-memory-original",
  "solstone-core-retention",
+ "solstone-core-segment",
 ]
 
 [[package]]
 name = "solstone-core-indexer-todo"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "serde",
  "serde_json",
@@ -1969,7 +1972,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-installation-identity"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "getrandom 0.3.4",
  "nix 0.30.1",
@@ -1979,7 +1982,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-installed-payload"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "minisign",
  "serde",
@@ -1990,14 +1993,14 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "toml_edit",
 ]
 
 [[package]]
 name = "solstone-core-journal-config"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -2012,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal-config-write"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "serde_json",
  "solstone-core-journal-config",
@@ -2021,7 +2024,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal-io"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
@@ -2037,7 +2040,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-local"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "flate2",
@@ -2064,7 +2067,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-memory-original"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "serde",
  "serde_json",
@@ -2075,11 +2078,11 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-npy"
-version = "2.0.52"
+version = "2.0.54"
 
 [[package]]
 name = "solstone-core-nvattest-authority"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "serde",
  "serde_json",
@@ -2087,7 +2090,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-observe-audio"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "ffmpeg-next",
  "ffmpeg-sys-next",
@@ -2096,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-processing-record"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "serde",
  "serde_json",
@@ -2104,7 +2107,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-retention"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
@@ -2122,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-segment"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "caseless",
  "serde",
@@ -2136,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-sound-tags"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "log",
  "serde_json",
@@ -2148,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-speaker-id"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "serde",
  "serde_json",
@@ -2160,8 +2163,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-speaker-resolve"
+version = "2.0.54"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "getrandom 0.3.4",
+ "log",
+ "ndarray",
+ "nix 0.30.1",
+ "percent-encoding",
+ "rapidfuzz",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-entity",
+ "solstone-core-entity-matching",
+ "solstone-core-facets",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-local",
+ "solstone-core-npy",
+ "solstone-core-segment",
+ "solstone-core-speaker-id",
+ "solstone-core-system",
+ "thiserror 2.0.21",
+ "zip",
+]
+
+[[package]]
 name = "solstone-core-speakers"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "hdbscan",
  "serde_json",
@@ -2169,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-speakers-analyze"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "env_logger",
  "log",
@@ -2181,7 +2214,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-speakers-onnx"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "ort",
  "solstone-core-local",
@@ -2191,7 +2224,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-spp-attest"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "base64 0.22.1",
  "plist",
@@ -2208,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-spp-ratls"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "nix 0.30.1",
  "ring",
@@ -2223,7 +2256,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-system"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -2257,7 +2290,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-system-health"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "log",
@@ -2272,6 +2305,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+ "solstone-core-segment",
  "solstone-core-system",
  "thiserror 2.0.21",
  "unicode-xid",
@@ -2280,14 +2314,14 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-talent-config"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "solstone-core-transcribe"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
@@ -2305,9 +2339,11 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-observe-audio",
  "solstone-core-processing-record",
+ "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-sound-tags",
  "solstone-core-speaker-id",
+ "solstone-core-speaker-resolve",
  "solstone-core-speakers",
  "solstone-core-speakers-analyze",
  "solstone-core-spp-ratls",
@@ -2322,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-vad-analyze"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "ort",
  "serde_json",
@@ -2332,7 +2368,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-win-dll-load"
-version = "2.0.52"
+version = "2.0.54"
 dependencies = [
  "libloading 0.8.9",
  "windows-sys 0.61.2",
@@ -2772,9 +2808,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.9"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+checksum = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9"
 dependencies = [
  "rustls-pki-types",
 ]

@@ -191,7 +191,9 @@ fn project_sunday(
             }
 
             for (row, rec_id) in rows.into_iter().zip(line_identities) {
-                if row.get("hidden").and_then(Value::as_bool).unwrap_or(false) {
+                if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
+                    || solstone_core_facets::is_retired_plan(&row)
+                {
                     continue;
                 }
                 let (_, _, dur) = crate::tools::activities::activity_times_and_duration(&row);

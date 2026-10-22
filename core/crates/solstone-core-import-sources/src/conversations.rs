@@ -60,7 +60,8 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
         files.push(SegmentFile {
             day: segment.day.clone(),
             segment: segment.segment_key.clone(),
-            name: TRANSCRIPT_FILE,
+            name: TRANSCRIPT_FILE.to_owned(),
+            calendar: false,
             contents,
             units: segment.entries.len() as u64,
         });
@@ -89,6 +90,7 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
         .collect::<Vec<_>>();
 
     RenderedImport {
+        calendar_counts: Default::default(),
         skipped: plan.skipped.len(),
         source,
         summary: crate::save::conversations_summary(

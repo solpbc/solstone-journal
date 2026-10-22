@@ -17,6 +17,7 @@ mod context;
 pub use context::{CortexBoundary, DispatchFailure, IndexBoundary, ThinkContext};
 mod daily;
 mod daily_lifecycle;
+pub use daily_lifecycle::{INDEXER_ARGS, INDEXER_INPUTS_ARGS};
 mod day;
 mod dispatch;
 mod dry_run;
@@ -1377,14 +1378,14 @@ mod tests {
 
     fn seed_oracle_case(journal: &Path, line: usize, now_ms: i64) {
         match line {
-            103 | 128 | 137 => {
+            102 | 126 | 135 => {
                 for facet in ["personal", "work"] {
                     let declaration = journal.join("facets").join(facet).join("facet.json");
                     fs::create_dir_all(declaration.parent().unwrap()).unwrap();
                     fs::write(declaration, "{}\n").unwrap();
                 }
             }
-            189 => {
+            187 => {
                 for (key, body) in [
                     ("093000_600", "browser_first.jsonl"),
                     ("141500_900", "browser_second.jsonl"),
@@ -1394,7 +1395,7 @@ mod tests {
                     fs::write(segment.join(body), "browser content\n").unwrap();
                 }
             }
-            217 => {
+            215 => {
                 let cadence = journal.join("health/cadence.json");
                 fs::create_dir_all(cadence.parent().unwrap()).unwrap();
                 fs::write(cadence, format!(r#"{{"pulse":{now_ms}}}"#)).unwrap();
@@ -2132,8 +2133,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "schedule",
-                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"hook\":{\"post\":\"schedule\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
+                "entities:entity_suggest",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"hook\":{\"pre\":\"entities:entity_suggest\",\"post\":\"entities:entity_suggest\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2173,8 +2174,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "schedule",
-                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
+                "entities:entity_suggest",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"pre\":\"entities:entity_suggest\",\"post\":\"entities:entity_suggest\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2197,8 +2198,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "schedule",
-                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true, \"always\": true\n}\n",
+                "entities:entity_suggest",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"pre\":\"entities:entity_suggest\",\"post\":\"entities:entity_suggest\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true, \"always\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 10);
@@ -2207,7 +2208,10 @@ mod tests {
         let result = daily::run(&context, &mut log, None, false, 2).unwrap();
         assert_eq!(
             result.applicable_units,
-            BTreeSet::from([("schedule".to_owned(), Some("work".to_owned()))])
+            BTreeSet::from([(
+                "entities:entity_suggest".to_owned(),
+                Some("work".to_owned())
+            )])
         );
         assert_eq!(recorder.requests.lock().unwrap()[0].config["facet"], "work");
     }
@@ -2235,8 +2239,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "schedule",
-                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
+                "morning_briefing",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"pre\":\"morning_briefing\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2249,7 +2253,7 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.complete","ts":1,"mode":"daily","name":"schedule"}"#,
+            r#"{"event":"talent.complete","ts":1,"mode":"daily","name":"morning_briefing"}"#,
         );
         let repeated = daily::run(&context, &mut log, None, false, 2).unwrap();
         assert_eq!(repeated.applicable_units, fresh.applicable_units);
@@ -2266,8 +2270,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "schedule",
-                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
+                "morning_briefing",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"pre\":\"morning_briefing\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2278,8 +2282,8 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.fail","ts":10,"mode":"daily","name":"schedule","reason_code":"no_output"}
-{"event":"talent.fail","ts":11,"mode":"daily","name":"schedule","reason_code":"no_output"}"#,
+            r#"{"event":"talent.fail","ts":10,"mode":"daily","name":"morning_briefing","reason_code":"no_output"}
+{"event":"talent.fail","ts":11,"mode":"daily","name":"morning_briefing","reason_code":"no_output"}"#,
         );
         let repeated = daily::run(&context, &mut log, None, false, 2).unwrap();
         assert_eq!(repeated.applicable_units, fresh.applicable_units);
@@ -2294,14 +2298,14 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"schedule","reason_code":"no_output"}"#,
+            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"morning_briefing","reason_code":"no_output"}"#,
         );
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "schedule",
-                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
+                "morning_briefing",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"pre\":\"morning_briefing\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2322,14 +2326,14 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"schedule","reason_code":"no_output"}"#,
+            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"morning_briefing","reason_code":"no_output"}"#,
         );
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "schedule",
-                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"retry_on_deterministic_failure\": true\n}\n",
+                "morning_briefing",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"pre\":\"morning_briefing\"}, \"priority\": 1, \"output\": \"md\", \"retry_on_deterministic_failure\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2353,8 +2357,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "schedule",
-                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"hook\":{\"post\":\"schedule\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
+                "entities:entity_suggest",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"hook\":{\"pre\":\"entities:entity_suggest\",\"post\":\"entities:entity_suggest\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2391,8 +2395,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "schedule",
-                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
+                "entities:entity_suggest",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"pre\":\"entities:entity_suggest\",\"post\":\"entities:entity_suggest\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2402,8 +2406,14 @@ mod tests {
         assert_eq!(
             result.applicable_units,
             BTreeSet::from([
-                ("schedule".to_owned(), Some("home".to_owned())),
-                ("schedule".to_owned(), Some("work".to_owned())),
+                (
+                    "entities:entity_suggest".to_owned(),
+                    Some("home".to_owned())
+                ),
+                (
+                    "entities:entity_suggest".to_owned(),
+                    Some("work".to_owned())
+                ),
             ])
         );
         assert_eq!(result.success, 2);
@@ -2472,8 +2482,8 @@ mod tests {
             roots.path(),
             &[
                 (
-                    "schedule",
-                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"json\"\n}\n",
+                    "morning_briefing",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"pre\":\"morning_briefing\"}, \"priority\": 1, \"output\": \"json\"\n}\n",
                 ),
                 (
                     "weekly-output",
@@ -2500,7 +2510,7 @@ mod tests {
         )
         .unwrap();
         let requests = recorder.requests.lock().unwrap();
-        for name in ["schedule", "weekly-output", "cadence-output"] {
+        for name in ["morning_briefing", "weekly-output", "cadence-output"] {
             let request = requests
                 .iter()
                 .find(|request| request.name == name)
@@ -6041,7 +6051,7 @@ mod tests {
         let blocks = oracle_blocks();
         assert_eq!(
             blocks.iter().map(|(line, _, _)| *line).collect::<Vec<_>>(),
-            vec![26, 48, 60, 72, 76, 85, 91, 97, 103, 128, 137, 189, 217]
+            vec![26, 47, 59, 71, 75, 84, 90, 96, 102, 126, 135, 187, 215]
         );
         assert_eq!(blocks.len(), 13);
         assert!(oracle_dry_run_argv(&["--dry-run"]).is_err());

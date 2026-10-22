@@ -75,6 +75,21 @@ fn parse_segment_key(key: &str) -> (Option<u32>, Option<u32>) {
     (Some(start), Some(length))
 }
 
+/// When a record ran on its day, as half-open `[start, end)` seconds from
+/// midnight, from its segment keys alone. None when no key parses.
+pub fn activity_span(record: &Map<String, Value>) -> Option<(u32, u32)> {
+    record
+        .get("segments")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(Value::as_str)
+        .filter_map(|key| match parse_segment_key(key) {
+            (Some(start), Some(length)) => Some((start, start + length.max(1))),
+            _ => None,
+        })
+        .reduce(|(start, end), (next_start, next_end)| (start.min(next_start), end.max(next_end)))
+}
+
 pub fn place_activity_records(
     journal: &Path,
     day: &str,

@@ -78,7 +78,6 @@ pub(crate) struct SynthesisHealth {
     pub(crate) activities_with_participation: u64,
     pub(crate) activities_with_story: u64,
     pub(crate) activities_user_edited: u64,
-    pub(crate) activities_anticipated_unfilled: u64,
     pub(crate) talent_run_failures_24h: Option<u64>,
     pub(crate) talent_degraded_outputs_24h: Option<u64>,
     pub(crate) index_activity_at: Option<i64>,
@@ -135,7 +134,6 @@ pub(crate) struct ScanAggregate {
     activities_with_participation: u64,
     activities_with_story: u64,
     activities_user_edited: u64,
-    activities_anticipated_unfilled: u64,
 }
 
 #[derive(Debug, Default)]
@@ -236,7 +234,6 @@ fn scan_records(
     now: DateTime<impl TimeZone>,
 ) -> Result<ScanAggregate, HealthError> {
     let zone = now.timezone();
-    let now_ms = now.timestamp_millis();
     let mut aggregate = ScanAggregate::default();
     for day in days_inclusive(range) {
         let day_name = day.format("%Y%m%d").to_string();
@@ -244,7 +241,7 @@ fn scan_records(
             let records = load_activity_records(journal_root, facet, &day_name, true)
                 .map_err(|error| HealthError::internal(error.to_string()))?;
             for record in records {
-                add_record(&mut aggregate, &record, day, &zone, now_ms);
+                add_record(&mut aggregate, &record, day, &zone);
             }
         }
     }
@@ -256,7 +253,6 @@ fn add_record(
     record: &Map<String, Value>,
     day: NaiveDate,
     zone: &impl TimeZone,
-    now_ms: i64,
 ) {
     for raw_segment in values(record.get("segments")) {
         let Some(raw_segment) = raw_segment.as_str() else {
@@ -313,19 +309,6 @@ fn add_record(
             })
     }) {
         aggregate.activities_user_edited += 1;
-    }
-    if record.get("source").and_then(Value::as_str) == Some("anticipated")
-        && !record
-            .get("cancelled")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        && record
-            .get("start")
-            .and_then(Value::as_str)
-            .and_then(parse_start)
-            .is_some_and(|start| start.timestamp_millis() <= now_ms)
-    {
-        aggregate.activities_anticipated_unfilled += 1;
     }
 }
 
@@ -588,7 +571,6 @@ pub(crate) fn build_synthesis_health(
             activities_with_participation: aggregate.activities_with_participation,
             activities_with_story: aggregate.activities_with_story,
             activities_user_edited: aggregate.activities_user_edited,
-            activities_anticipated_unfilled: aggregate.activities_anticipated_unfilled,
             talent_run_failures_24h: failures,
             talent_degraded_outputs_24h: degraded,
             index_activity_at,
@@ -948,17 +930,6 @@ fn wall_instant(zone: &impl TimeZone, local: &NaiveDateTime) -> Option<DateTime<
 // Naive `%Y-%m-%dT%H:%M:%S` is UTC-naive by contract; schedule talent writes
 // `HH:MM:SS` (unparsed here, different gap); health-web tests use RFC3339 `Z`.
 // Do not rebind this arm to local.
-fn parse_start(value: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|value| value.with_timezone(&Utc))
-        .or_else(|| {
-            chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
-                .ok()
-                .map(|value| DateTime::<Utc>::from_naive_utc_and_offset(value, Utc))
-        })
-}
-
 fn values(value: Option<&Value>) -> &[Value] {
     value
         .and_then(Value::as_array)
@@ -1238,10 +1209,10 @@ mod tests {
             "work",
             "20260409",
             &[
-                json!({"id":"visible","segments":["230000_7200"],"participation":"yes","story":{"text":"story"},"edits":[{"actor":"cli:owner"}],"source":"anticipated","start":"2026-04-09T10:00:00Z"}),
+                json!({"id":"visible","segments":["230000_7200"],"participation":"yes","story":{"text":"story"},"edits":[{"actor":"cli:owner"}]}),
                 json!({"id":"hidden","hidden":true,"participation":true,"story":"hidden"}),
-                json!({"id":"falsey","participation":false,"story":"","edits":[{"actor":"system"}],"source":"anticipated","start":"2026-04-11T10:00:00Z"}),
-                json!({"id":"cancelled","source":"anticipated","cancelled":true,"start":"2026-04-09T10:00:00Z"}),
+                json!({"id":"falsey","participation":false,"story":"","edits":[{"actor":"system"}]}),
+                json!({"id":"cancelled","cancelled":true}),
             ],
         );
         activities(
@@ -1266,7 +1237,6 @@ mod tests {
         assert_eq!(aggregate.activities_with_participation, 1);
         assert_eq!(aggregate.activities_with_story, 1);
         assert_eq!(aggregate.activities_user_edited, 1);
-        assert_eq!(aggregate.activities_anticipated_unfilled, 1);
         let (capture, _) = build_capture_health(
             root,
             &aggregate,
@@ -1384,30 +1354,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(aggregate.activities_user_edited, 1);
-    }
-
-    #[test]
-    fn anticipated_unfilled_excludes_future_and_cancelled_rows() {
-        let temporary = temporary();
-        facet(temporary.path(), "work");
-        activities(
-            temporary.path(),
-            "work",
-            "20260410",
-            &[
-                json!({"id":"past","source":"anticipated","start":"2026-04-10T12:00:00Z"}),
-                json!({"id":"future","source":"anticipated","start":"2026-04-10T12:00:01Z"}),
-                json!({"id":"cancelled","source":"anticipated","start":"2026-04-09T12:00:00Z","cancelled":true}),
-            ],
-        );
-        let aggregate = scan_records(
-            temporary.path(),
-            &["work".to_owned()],
-            (now().date_naive(), now().date_naive()),
-            now(),
-        )
-        .unwrap();
-        assert_eq!(aggregate.activities_anticipated_unfilled, 1);
     }
 
     fn capture_notes_for_gap(hours: i64) -> Vec<super::HealthNote> {

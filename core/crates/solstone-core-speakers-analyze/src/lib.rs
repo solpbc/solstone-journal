@@ -6,7 +6,8 @@
 //! Native one-record speaker analysis command contract.
 //!
 //! Scalar and vector response fields such as `statement_ids`, `durations_s`,
-//! `encoder`, `evidence.*`, `pyannote.window_stats`, `pyannote.speaker_turns`, and `diarization.*` are
+//! `encoder`, `evidence.*`, `pyannote.window_stats`, `pyannote.speaker_turns`,
+//! `pyannote.overlap_ranges`, and `diarization.*` are
 //! written directly to stdout.
 //!
 //! Matrix-valued fields (`statement_embeddings.embeddings` and
@@ -497,6 +498,7 @@ fn analyze_request(request: &Request) -> Result<Value, AnalyzeError> {
         "pyannote": pyannote_response_value(
             &pyannote_result.window_stats,
             &pyannote_result.speaker_turns,
+            &pyannote_result.overlap_ranges,
         ),
         "evidence": {
             "speaker_evidence": evidence.speaker_evidence.as_str(),
@@ -1235,10 +1237,15 @@ fn window_stats_value(stats: &[SpeakerWindowStats]) -> Value {
 fn pyannote_response_value(
     window_stats: &[SpeakerWindowStats],
     speaker_turns: &SpeakerTurnEvidence,
+    overlap_ranges: &[(f64, f64)],
 ) -> Value {
     json!({
         "window_stats": window_stats_value(window_stats),
         "speaker_turns": speaker_turns.to_value(),
+        "overlap_ranges": overlap_ranges
+            .iter()
+            .map(|(start, end)| json!([start, end]))
+            .collect::<Vec<_>>(),
     })
 }
 
@@ -1537,7 +1544,7 @@ mod tests {
         #[test]
         fn single_and_no_speech_sections_include_speaker_turns() {
             let empty_evidence = SpeakerTurnEvidence::new(10.0, vec![]);
-            let response = pyannote_response_value(&[], &empty_evidence);
+            let response = pyannote_response_value(&[], &empty_evidence, &[]);
 
             assert_eq!(
                 response["speaker_turns"]["version"],
@@ -1549,6 +1556,41 @@ mod tests {
             let legacy = json!({ "window_stats": [] });
             assert!(legacy.get("speaker_turns").is_none());
             assert_ne!(legacy, response);
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn pyannote_section_adds_overlap_ranges_and_keeps_existing_keys() {
+            let turns = SpeakerTurnEvidence::new(
+                10.0,
+                vec![solstone_core_speakers::SpeakerTurnRange {
+                    start_s: 1.0,
+                    end_s: 1.5,
+                }],
+            );
+            let stats = [SpeakerWindowStats {
+                speech_frames: 3,
+                active_slot_count: 1,
+                overlap_frames: 0,
+            }];
+            let response = pyannote_response_value(&stats, &turns, &[(2.0, 2.25)]);
+
+            assert_eq!(
+                response,
+                json!({
+                    "window_stats": [
+                        { "speech_frames": 3, "active_slot_count": 1, "overlap_frames": 0 }
+                    ],
+                    "speaker_turns": {
+                        "version": SPEAKER_TURN_EVIDENCE_VERSION,
+                        "audio_duration_s": 10.0,
+                        "ranges": [{ "start_s": 1.0, "end_s": 1.5 }]
+                    },
+                    "overlap_ranges": [[2.0, 2.25]]
+                })
+            );
+            let empty = pyannote_response_value(&[], &SpeakerTurnEvidence::new(10.0, vec![]), &[]);
+            assert_eq!(empty["overlap_ranges"], json!([]));
         }
     }
 

@@ -150,10 +150,8 @@ fn attach_daily_location(
     let (part, omitted) = if hook == "morning_briefing"
         && matches!(state, FrozenState::MorningBriefing(_))
     {
-        let (activities, counts, forward_count) = match state {
-            FrozenState::MorningBriefing(bs) => {
-                (bs.activities.clone(), bs.counts.clone(), bs.forward_count)
-            }
+        let activities = match state {
+            FrozenState::MorningBriefing(bs) => bs.activities.clone(),
             _ => unreachable!(),
         };
 
@@ -277,22 +275,16 @@ fn attach_daily_location(
 
                     if is_story_drop {
                         include_stories[drop_idx] = false;
-                        let id = &activities[drop_idx].id;
-                        let story_gap = format!("story for {id}");
-                        if !gaps.contains(&story_gap) {
-                            gaps.push(story_gap);
-                        }
                     } else {
                         include_activities[drop_idx] = false;
                         include_stories[drop_idx] = false;
-                        let id = &activities[drop_idx].id;
-                        let story_gap = format!("story for {id}");
-                        gaps.retain(|g| g != &story_gap);
-                        let act_gap = format!("activity {id}");
-                        if !gaps.contains(&act_gap) {
-                            gaps.push(act_gap);
-                        }
                     }
+                    gaps.retain(|gap| !crate::morning_briefing::is_omission_gap(gap, &activities));
+                    gaps.extend(crate::morning_briefing::omission_gaps(
+                        &activities,
+                        &include_activities,
+                        &include_stories,
+                    ));
 
                     let new_digest = crate::morning_briefing::render_digest_activities(
                         &activities,
@@ -306,8 +298,7 @@ fn attach_daily_location(
                         }
                     }
 
-                    let new_preamble =
-                        crate::morning_briefing::coverage_preamble(&counts, &gaps, forward_count);
+                    let new_preamble = crate::morning_briefing::coverage_preamble(&gaps);
                     let mut meta_val: Value =
                         serde_json::from_str(&curr_meta_str).map_err(|e| {
                             failure(prepared, format!("invalid briefing_metadata JSON: {e}"))
@@ -431,8 +422,7 @@ fn attach_daily_location(
             }
         }
 
-        let new_preamble =
-            crate::morning_briefing::coverage_preamble(&bs.counts, &gaps_vec, bs.forward_count);
+        let new_preamble = crate::morning_briefing::coverage_preamble(&gaps_vec);
         obj.insert(
             "gaps".to_owned(),
             Value::Array(gaps_vec.into_iter().map(Value::String).collect()),
@@ -525,7 +515,7 @@ fn fit_location_part(
         .and_then(|tokens| u32::try_from(tokens).ok())
         .unwrap_or(0);
 
-    let FrozenState::MorningBriefing(bs) = state else {
+    let FrozenState::MorningBriefing(_) = state else {
         let budget =
             compute_input_budget(max_output_tokens, launched_context_window(&context.journal));
         let ordinary_tokens = ordinary.iter().fold(0u32, |total, text| {
@@ -627,8 +617,7 @@ fn fit_location_part(
         worst_gaps.push(worst_notice.clone());
     }
 
-    let worst_preamble =
-        crate::morning_briefing::coverage_preamble(&bs.counts, &worst_gaps, bs.forward_count);
+    let worst_preamble = crate::morning_briefing::coverage_preamble(&worst_gaps);
     meta_obj.insert(
         "gaps".into(),
         Value::Array(worst_gaps.into_iter().map(Value::String).collect()),
@@ -766,7 +755,8 @@ pub fn thaw(packet: &Value) -> Result<ThawedStage, String> {
     )
     .map_err(|e| e.to_string())?;
     let (state, expected) = match frozen {
-        FrozenState::None => (PrePostState::None, "schedule"),
+        // Every current daily hook freezes its own pre-state.
+        FrozenState::None => (PrePostState::None, ""),
         FrozenState::DailySchedule(v) => (PrePostState::DailySchedule(v), "daily_schedule"),
         FrozenState::MorningBriefing(v) => (PrePostState::MorningBriefing(v), "morning_briefing"),
         FrozenState::EntitiesReview(v) => {
@@ -843,10 +833,7 @@ fn capture_owner_expectations(
     let facet_ids = {
         let _guard = solstone_core_facets::hold_facet_trust_lock(&context.journal)
             .map_err(|e| failure(prepared, e.to_string()))?;
-        let names = if hook == "schedule" {
-            solstone_core_facets::list_declared_facet_names(&context.journal)
-                .map_err(|e| failure(prepared, e.to_string()))?
-        } else if matches!(
+        let names = if matches!(
             hook,
             "entities:entities_review" | "entities:entity_suggest" | "entities:entity_observer"
         ) {
@@ -931,92 +918,7 @@ fn capture_owner_expectations(
             before.unwrap_or(Value::Null),
         );
     }
-    if hook == "schedule" {
-        let day = prepared
-            .config
-            .get("day")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                failure(
-                    prepared,
-                    "daily calendar preparation requires day".to_owned(),
-                )
-            })?
-            .to_owned();
-        let _lock = solstone_core_facets::hold_facet_trust_lock(&context.journal)
-            .map_err(|e| failure(prepared, e.to_string()))?;
-        let mut before = Map::new();
-        for facet in
-            strict_entries(&context.journal.join("facets")).map_err(|e| failure(prepared, e))?
-        {
-            if !facet
-                .file_type()
-                .map_err(|e| failure(prepared, e.to_string()))?
-                .is_dir()
-            {
-                continue;
-            }
-            let facet_name = facet
-                .file_name()
-                .to_str()
-                .ok_or_else(|| failure(prepared, "invalid facet filename".to_owned()))?
-                .to_owned();
-            for entry in strict_entries(&facet.path().join("activities"))
-                .map_err(|e| failure(prepared, e))?
-            {
-                let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
-                    continue;
-                }
-                let target = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .ok_or_else(|| failure(prepared, "invalid activity filename".to_owned()))?;
-                if chrono::NaiveDate::parse_from_str(target, "%Y%m%d").is_err()
-                    || target <= day.as_str()
-                {
-                    continue;
-                }
-                let raw = solstone_core_facets::read_activity_file(
-                    &context.journal,
-                    &facet_name,
-                    &format!("{target}.jsonl"),
-                )
-                .map_err(|e| failure(prepared, e.to_string()))?;
-                if let Some(raw) = &raw {
-                    for line in raw.lines().filter(|s| !s.trim().is_empty()) {
-                        let row: Value = serde_json::from_str(line).map_err(|e| {
-                            failure(prepared, format!("calendar {facet_name}/{target}: {e}"))
-                        })?;
-                        if !row.is_object() {
-                            return Err(failure(
-                                prepared,
-                                format!("calendar {facet_name}/{target} row is not an object"),
-                            ));
-                        }
-                    }
-                }
-                before.insert(
-                    format!("{facet_name}/{target}"),
-                    raw.map(Value::String).unwrap_or(Value::Null),
-                );
-            }
-        }
-        prepared
-            .config
-            .insert("_daily_calendar_before".to_owned(), Value::Object(before));
-    }
     Ok(())
-}
-
-fn strict_entries(path: &std::path::Path) -> Result<Vec<std::fs::DirEntry>, String> {
-    match std::fs::read_dir(path) {
-        Ok(entries) => entries
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(format!("{}: {e}", path.display())),
-    }
 }
 
 #[cfg(test)]
@@ -1110,12 +1012,15 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let config = Map::from_iter([
-            ("hook".to_owned(), json!({"post":"schedule"})),
+            (
+                "hook".to_owned(),
+                json!({"pre":"daily_schedule","post":"daily_schedule"}),
+            ),
             ("skip_reason".to_owned(), json!("no_input")),
         ]);
         let packet = freeze(
             PreparedTalent {
-                name: "schedule".to_owned(),
+                name: "daily_schedule".to_owned(),
                 config,
             },
             &context,
@@ -1208,9 +1113,7 @@ mod tests {
     }
 
     #[test]
-    fn freeze_appends_location_for_the_five_recipients_only() {
-        assert!(crate::contract::SCHEDULE.gate.is_none());
-        assert!(crate::contract::SCHEDULE.build.is_none());
+    fn freeze_appends_location_for_its_recipients_only() {
         let root = tempfile::tempdir().unwrap();
         location_journal(root.path(), LOCATION_DAY);
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
@@ -1227,14 +1130,6 @@ mod tests {
         );
 
         let recipients = [
-            (
-                "schedule",
-                prepared(
-                    "schedule",
-                    LOCATION_DAY,
-                    json!({"hook":{"post":"schedule"}}),
-                ),
-            ),
             (
                 "morning_briefing",
                 prepared(
@@ -1320,7 +1215,11 @@ mod tests {
                     "skip_reason":"no_input"
                 }),
             ),
-            prepared("schedule", "20260901", json!({"hook":{"post":"schedule"}})),
+            prepared(
+                "entities:entity_observer",
+                "20260901",
+                json!({"facet":"work","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"skip_reason":"no_input"}),
+            ),
         ];
         for talent in excluded {
             let name = talent.name.clone();
@@ -1335,9 +1234,9 @@ mod tests {
         }
 
         let empty = prepared(
-            "schedule",
+            "entities:entity_observer",
             LOCATION_DAY,
-            json!({"hook":{"post":"schedule"},"prompt":""}),
+            json!({"facet":"work","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"skip_reason":"no_input","prompt":""}),
         );
         let packet = freeze(empty, &context).unwrap();
         let config = packet["prepared"]["config"].as_object().unwrap();
@@ -1359,9 +1258,9 @@ mod tests {
         );
         let malformed = freeze(
             prepared(
-                "schedule",
+                "entities:entity_observer",
                 LOCATION_DAY,
-                json!({"hook":{"post":"schedule"}}),
+                json!({"facet":"work","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"skip_reason":"no_input"}),
             ),
             &context,
         );
@@ -1433,17 +1332,6 @@ mod tests {
             root.path(),
             &format!("facets/work/activities/{LOCATION_DAY}.jsonl"),
             &format!("{record}\n"),
-        );
-        let forward_record = json!({
-            "id": "act-fwd",
-            "source": "anticipated",
-            "title": "Forward Plan",
-            "start": "10:00",
-        });
-        write(
-            root.path(),
-            "facets/work/activities/20261003.jsonl",
-            &format!("{forward_record}\n"),
         );
 
         let context = ExecutionContext {
@@ -1636,7 +1524,7 @@ mod tests {
         assert!(
             gaps.iter().any(|g| {
                 let s = g.as_str().unwrap_or("");
-                s == "activity act-1" || s == "story for act-1"
+                s.starts_with("activities omitted: ") || s.starts_with("activity stories omitted: ")
             }),
             "gaps must contain activity/story omission gap: {gaps:?}"
         );
@@ -1645,11 +1533,8 @@ mod tests {
             !preamble.to_lowercase().contains("complete"),
             "coverage_preamble must not contain 'complete'"
         );
-        assert!(preamble.contains(&notice));
-        assert!(
-            preamble.contains("1 plan in the next 7 days"),
-            "preamble must contain forward count: {preamble}"
-        );
+        assert!(preamble.contains(" location entr"), "{preamble}");
+        assert!(!preamble.contains("act-1"), "{preamble}");
         assert!(!preamble.contains(".."), "{preamble}");
     }
 
@@ -1673,17 +1558,6 @@ mod tests {
             root.path(),
             &format!("facets/work/activities/{LOCATION_DAY}.jsonl"),
             &format!("{record}\n"),
-        );
-        let forward_record = json!({
-            "id": "act-fwd",
-            "source": "anticipated",
-            "title": "Forward Plan",
-            "start": "10:00",
-        });
-        write(
-            root.path(),
-            "facets/work/activities/20261003.jsonl",
-            &format!("{forward_record}\n"),
         );
 
         let context = ExecutionContext {
@@ -1721,7 +1595,6 @@ mod tests {
             .and_then(Value::as_str)
             .unwrap();
         let orig_meta_val: Value = serde_json::from_str(orig_meta_str).unwrap();
-        let counts = orig_meta_val["sources"].clone();
         let base_gaps: Vec<String> = orig_meta_val["gaps"]
             .as_array()
             .unwrap()
@@ -1730,9 +1603,9 @@ mod tests {
             .collect();
 
         let mut story_dropped_gaps = base_gaps.clone();
-        story_dropped_gaps.push("story for act-1".into());
+        story_dropped_gaps.push("activity stories omitted: 1.".into());
         let story_dropped_preamble =
-            crate::morning_briefing::coverage_preamble(&counts, &story_dropped_gaps, 1);
+            crate::morning_briefing::coverage_preamble(&story_dropped_gaps);
         let mut story_dropped_meta_val = orig_meta_val.clone();
         {
             let obj = story_dropped_meta_val.as_object_mut().unwrap();
@@ -1755,7 +1628,7 @@ mod tests {
 
         let mut final_gaps = story_dropped_gaps;
         final_gaps.push(expected_notice.clone());
-        let final_preamble = crate::morning_briefing::coverage_preamble(&counts, &final_gaps, 1);
+        let final_preamble = crate::morning_briefing::coverage_preamble(&final_gaps);
         let mut final_meta_val = story_dropped_meta_val.clone();
         {
             let obj = final_meta_val.as_object_mut().unwrap();
@@ -1898,17 +1771,14 @@ mod tests {
         assert!(
             gaps.iter().any(|g| {
                 let s = g.as_str().unwrap_or("");
-                s == "activity act-1" || s == "story for act-1"
+                s.starts_with("activities omitted: ") || s.starts_with("activity stories omitted: ")
             }),
             "gaps must contain activity/story omission gap from padding: {gaps:?}"
         );
         let preamble = metadata["coverage_preamble"].as_str().unwrap();
         assert!(!preamble.to_lowercase().contains("complete"));
-        assert!(preamble.contains(&expected_notice));
-        assert!(
-            preamble.contains("1 plan in the next 7 days"),
-            "preamble must contain forward plan count: {preamble}"
-        );
+        assert!(preamble.contains(" location entr"), "{preamble}");
+        assert!(!preamble.contains("act-1"), "{preamble}");
         assert!(!preamble.contains(".."), "{preamble}");
     }
 
@@ -1917,7 +1787,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         location_journal(root.path(), LOCATION_DAY);
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
-        let description = "A".repeat(44812);
+        let description = "A".repeat(44950);
         let record = json!({
             "id": "act-1",
             "title": "Activity",
@@ -1994,17 +1864,13 @@ mod tests {
             serde_json::from_str(raw_metadata).expect("valid briefing_metadata JSON");
         let gaps = metadata["gaps"].as_array().expect("gaps array");
         assert!(
-            gaps.iter().any(|g| g.as_str() == Some("activity act-1")),
-            "gaps must include activity act-1: {gaps:?}"
-        );
-        assert!(
-            gaps.iter().any(|g| g.as_str() == Some("no plans today")),
-            "gaps must still include initial gap 'no plans today': {gaps:?}"
-        );
-        assert!(
             gaps.iter()
-                .any(|g| g.as_str() == Some("no plans in the next 7 days")),
-            "gaps must still include initial gap 'no plans in the next 7 days': {gaps:?}"
+                .any(|g| g.as_str() == Some("activities omitted: 1.")),
+            "gaps must count the omitted activity: {gaps:?}"
+        );
+        assert!(
+            gaps.iter().any(|g| g.as_str() == Some("the latest pulse")),
+            "gaps must still include initial gap 'the latest pulse': {gaps:?}"
         );
 
         assert!(
@@ -2067,7 +1933,7 @@ mod tests {
         solstone_core_facets::create_facet(root.path(), "a", "A", "", "", "", None).unwrap();
         solstone_core_facets::create_facet(root.path(), "b", "B", "", "", "", None).unwrap();
 
-        let desc_a = "A".repeat(43027);
+        let desc_a = "A".repeat(43194);
         let story_s = "S".repeat(1500);
         let story_t = "T".repeat(1500);
 
@@ -2141,8 +2007,8 @@ mod tests {
         };
         let unclipped_total = unclipped_text_tokens + unclipped_schema_tokens;
         assert_eq!(
-            unclipped_total, 15576,
-            "unclipped model_text_parts + schema tokens ({unclipped_total}) must be 15576"
+            unclipped_total, 15585,
+            "unclipped model_text_parts + schema tokens ({unclipped_total}) must be 15585"
         );
 
         (stage.prompt_override.unwrap())(&mut probe_talent, &state).unwrap();
@@ -2270,18 +2136,14 @@ mod tests {
         let gaps = metadata["gaps"].as_array().expect("gaps array");
 
         assert!(
-            gaps.iter()
-                .any(|g| g.as_str() == Some("story for anticipated_meeting_090000_1001")),
-            "gaps must include 'story for anticipated_meeting_090000_1001': {gaps:?}"
+            gaps.iter().any(|g| g
+                .as_str()
+                .is_some_and(|g| g.starts_with("activity stories omitted: "))),
+            "gaps must count the omitted story: {gaps:?}"
         );
         assert!(
-            gaps.iter().any(|g| g.as_str() == Some("no plans today")),
-            "gaps must include 'no plans today': {gaps:?}"
-        );
-        assert!(
-            gaps.iter()
-                .any(|g| g.as_str() == Some("no plans in the next 7 days")),
-            "gaps must include 'no plans in the next 7 days': {gaps:?}"
+            gaps.iter().any(|g| g.as_str() == Some("the latest pulse")),
+            "gaps must include 'the latest pulse': {gaps:?}"
         );
         assert!(
             !gaps
@@ -2442,13 +2304,8 @@ mod tests {
             serde_json::from_str(raw_metadata).expect("valid briefing_metadata JSON");
         let gaps = metadata["gaps"].as_array().expect("gaps array");
         assert!(
-            gaps.iter().any(|g| g.as_str() == Some("no plans today")),
-            "gaps must include initial gap 'no plans today': {gaps:?}"
-        );
-        assert!(
-            gaps.iter()
-                .any(|g| g.as_str() == Some("no plans in the next 7 days")),
-            "gaps must include initial gap 'no plans in the next 7 days': {gaps:?}"
+            gaps.iter().any(|g| g.as_str() == Some("the latest pulse")),
+            "gaps must include initial gap 'the latest pulse': {gaps:?}"
         );
 
         let max_output_tokens = thawed
@@ -2522,9 +2379,9 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let talent = prepared(
-            "schedule",
+            "entities:entity_observer",
             LOCATION_DAY,
-            json!({"hook":{"post":"schedule"},"prompt":"keep me"}),
+            json!({"facet":"work","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"skip_reason":"no_input","prompt":"keep me"}),
         );
         let packet = freeze(talent, &context).unwrap();
         let config = packet["prepared"]["config"].as_object().unwrap();
@@ -2585,8 +2442,14 @@ mod tests {
                 );
             }))
         });
-        let mut talent = prepared("schedule", LOCATION_DAY, json!({}));
-        attach_daily_location(&mut talent, &mut FrozenState::None, &context, "schedule").unwrap();
+        let mut talent = prepared("entities:entity_suggest", LOCATION_DAY, json!({}));
+        attach_daily_location(
+            &mut talent,
+            &mut FrozenState::None,
+            &context,
+            "entities:entity_suggest",
+        )
+        .unwrap();
         worker.borrow_mut().take().unwrap().join().unwrap();
         assert_eq!(
             solstone_core_location::daily_location_fingerprint(root.path(), LOCATION_DAY).unwrap(),
@@ -2606,10 +2469,10 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let talent = prepared("schedule", LOCATION_DAY, json!({}));
+        let talent = prepared("entities:entity_suggest", LOCATION_DAY, json!({}));
         let rendered = format!("# location\n\n- {}\n", "長".repeat(3500));
         let (part, omitted) = fit_location_part(
-            "schedule",
+            "entities:entity_suggest",
             LOCATION_DAY,
             &rendered,
             &["ordinary".into()],

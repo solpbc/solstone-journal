@@ -14,6 +14,7 @@ pub mod conversations;
 pub mod document;
 pub mod gemini;
 pub mod ics;
+pub mod ics_notes;
 pub mod image;
 pub mod obsidian;
 pub mod oura;

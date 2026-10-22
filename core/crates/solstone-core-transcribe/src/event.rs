@@ -235,6 +235,7 @@ fn error_type_name(error: &TranscribeError) -> &'static str {
         TranscribeError::ParakeetCoremlDeferred { .. } => "ParakeetCoremlDeferred",
         TranscribeError::ParakeetCoremlFailure { .. } => "ParakeetCoremlFailure",
         TranscribeError::ConfidentialDeferred { .. } => "ConfidentialDeferred",
+        TranscribeError::OwnerVoiceUnavailable { .. } => "OwnerVoiceUnavailable",
         TranscribeError::SpeakerAnalysis(_) => "SpeakerAnalyzeError",
         TranscribeError::Decode { .. } => "Decode",
         TranscribeError::BackendNotImplemented { .. } => "BackendNotImplemented",

@@ -441,3 +441,47 @@ fn indexer_native_mutation_verbs_write_and_report_json() {
     assert_eq!(fingerprint["fingerprint"].as_str().map(str::len), Some(64));
     fs::remove_dir_all(root).expect("cleanup mutation verbs root");
 }
+
+#[test]
+fn daily_thinking_drain_argv_applies_queued_search_updates() {
+    for (name, argv) in [
+        ("inputs", solstone_core_think_cli::INDEXER_INPUTS_ARGS),
+        ("indexer", solstone_core_think_cli::INDEXER_ARGS),
+    ] {
+        let root = temp_path(&format!("daily-drain-{name}"));
+        let source = root.join("chronicle/20261020/talents/input.md");
+        write(
+            &root,
+            "chronicle/20261020/talents/input.md",
+            "kestrel planning input",
+        );
+        solstone_core_indexer_store::todo::enqueue_path(&root, &source).expect("enqueue");
+
+        // Daily thinking spawns its own executable with this argv and the
+        // journal in the environment, the same on Linux, macOS and Windows.
+        let output = Command::new(bin())
+            .args(argv)
+            .env("SOLSTONE_JOURNAL", &root)
+            .output()
+            .expect("solstone-core should execute");
+
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{argv:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let status = solstone_core_indexer_store::todo::inspect(&root).expect("inspect");
+        assert!(status.keys.is_empty(), "{argv:?} left {:?}", status.keys);
+        let hits: i64 = solstone_core_indexer_store::open_index_reader(&root)
+            .expect("open index")
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE path = '20261020/talents/input.md' AND chunks MATCH 'kestrel'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count chunks");
+        assert_eq!(hits, 1, "{argv:?} did not index the queued file");
+        let _ = fs::remove_dir_all(&root);
+    }
+}

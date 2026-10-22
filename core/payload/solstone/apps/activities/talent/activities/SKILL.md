@@ -33,7 +33,7 @@ List activity records for one day or an inclusive day range.
 - `-f, --facet`: optional facet filter. Omit to include all facets.
 - `-a, --activity`: optional activity-type filter.
 - `--entity`: optional active-entity filter.
-- `--source`: optional record-source filter (`anticipated`, `user`, or historical `cogitate`). Omit to include all sources.
+- `--source`: optional record-source filter (`user`, or historical `cogitate`). Omit to include all sources.
 - `--all`: include hidden activity records.
 - `--json`: emit raw JSON instead of formatted text.
 

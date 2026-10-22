@@ -162,7 +162,8 @@ pub fn render_notes(
         files.push(SegmentFile {
             day: window.day.clone(),
             segment: window.segment_key.clone(),
-            name: TRANSCRIPT_FILE,
+            name: TRANSCRIPT_FILE.to_owned(),
+            calendar: false,
             contents,
             units: window.items.len() as u64,
         });
@@ -191,6 +192,7 @@ pub fn render_notes(
         .collect::<BTreeSet<_>>()
         .len();
     RenderedImport {
+        calendar_counts: Default::default(),
         skipped,
         source: RegistrySource::Obsidian,
         files,

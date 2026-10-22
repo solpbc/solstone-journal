@@ -121,17 +121,31 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-retention -
 echo === cargo build --locked (portable journal substrate and CI runner) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-system -p solstone-core-win-owner-rail || exit /b 1
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-repository-contracts --bin solstone-ci || exit /b 1
+call :run_exact_library "solstone-core-installed-payload" "pin::stock_fixture_tests::stock_minisign_package_and_malformed_comment_signatures" "test-fixture-pin" || exit /b 1
 echo === cargo test --locked (the Windows journal app) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-app || exit /b 1
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "setup_receiver::native_tests::prepared_receiver_reads_real_resources_and_guards_launch" "full-tests" || exit /b 1
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "setup_receiver::native_tests::prepared_receiver_refuses_real_directory_junctions" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::package_admission::tests::production_metadata_and_namespace_duplicates" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::a_sibling_package_streams_to_disk_and_reports_progress" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::redirect_is_refused_before_contacting_its_destination" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::rejections_for_unsigned_wrong_key_tampered_and_mismatch" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::bad_zip_shapes_signed_refuse_through_download" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::manager_reauthenticates_before_helper_extraction" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::partial_links_and_sidecar_failure_preserve_prior_pending" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::manager_check_skips_unsigned_cached_delta_base" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::directory_feed_signed_admits_unsigned_refuses" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::cached_bad_final_preflight_and_preservation_of_other" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::apply_failure_and_spawn_verified_helper_argv_inspection" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::delta_rejections_and_plan_clearing" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::non_plain_filename_does_not_delete_outside_packages_dir" "full-tests" || exit /b 1
 echo === cargo test --locked (Windows local thinking runtime) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-callosum --lib --features full-tests windows_native_tests || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --lib --features full-tests provider_runtime || exit /b 1
 echo === cargo test --locked (late material reaches an old or finished day) ===
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --lib --features full-tests -- --exact daily_coverage::tests::late_raw_input_adopts_an_old_day_and_reopens_a_finished_one daily_coverage::tests::adoption_persists_closed_calendar_boundary_and_reconciles_derived_only_changes daily_coverage::tests::explicit_old_day_registration_survives_restart_and_finds_lost_wake_changes || exit /b 1
+call :run_exact_library "solstone-core-think-cli" "planner::tests::discovery_reaches_old_segments_and_never_queues_their_day_first" || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-local --lib --features full-tests || exit /b 1
 call :run_exact_library "solstone-core-generate-wire" "confidential::tests::nvattest_directory_refuses_config_outside_an_installed_windows_package" || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wire --lib || exit /b 1
@@ -332,7 +346,7 @@ call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::
 call :run_exact_library "solstone-core-indexer-store" "writer_admission::tests::full_process_tests::classification_drain_stops_on_a_busy_next_batch" "full-tests" || exit /b 1
 call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_classifications" "full-tests,journal-mcp-endpoint" || exit /b 1
 call :run_exact_binary "solstone-core" "solstone-core" "tests::indexer_path_lookup" "full-tests,journal-mcp-endpoint" || exit /b 1
-call :run_exact_library "solstone-core-journal-cli" "local_ops::tests::facet_doctor_adopt_merge_indexes_only_after_trust_release" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-journal-cli" "local_ops::tests::facet_doctor_merge_queues_under_a_held_writer_and_releases_trust" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::guarded_action_round_trips_nondefault_port_and_unicode_path" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::rejects_missing_partial_duplicate_malformed_and_extra_guard_fields" || exit /b 1
 call :run_exact_library "solstone-core-service-unit" "windows_action::tests::quoting_matches_independent_literal_vectors" || exit /b 1

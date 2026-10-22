@@ -29,6 +29,12 @@ const BUILDER_INPUT_ALLOWED_HOSTS: &[&str] = &[
     // every archive is byte-pinned by the distribution input table.
     "repo.msys2.org",
     "www.nasm.us",
+    // Screen OCR detector, recognizer and dictionary inputs. Each is pinned
+    // by commit and SHA-256 in core/screen-ocr-helper/recipe.toml; the
+    // resolve URL redirects to Hugging Face's Xet CDN.
+    "huggingface.co",
+    "us.aws.cdn.hf.co",
+    "cas-bridge.xethub.hf.co",
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -651,7 +657,34 @@ mod tests {
             "https://static.rust-lang.org/dist/rust-std.tar.xz",
             "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
             "https://files.pythonhosted.org/packages/onnxruntime.whl",
+            // Redirect targets of the screen OCR recipe's resolve URLs.
+            "https://huggingface.co/api/resolve-cache/models/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/2612ab37152ae0a677521bae4e1e3d4fb4cf7c30/inference.yml",
+            "https://us.aws.cdn.hf.co/xet-bridge-us/6a279271dc67269551b59313/0f0b672e7a5f",
+            "https://cas-bridge.xethub.hf.co/xet-bridge-us/6a279271dc67269551b59313/0f0b672e7a5f",
         ] {
+            validate_url(url, &policy).unwrap_or_else(|error| panic!("{url}: {error}"));
+        }
+    }
+
+    #[test]
+    fn builder_input_policy_admits_every_screen_ocr_recipe_url() {
+        let policy = DownloadHostPolicy {
+            allowed_hosts: BUILDER_INPUT_ALLOWED_HOSTS,
+            allow_http: false,
+        };
+        let recipe = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../screen-ocr-helper/recipe.toml"),
+        )
+        .expect("read the screen OCR recipe");
+        let urls: Vec<&str> = recipe
+            .lines()
+            .filter_map(|line| {
+                let (key, value) = line.split_once('=')?;
+                matches!(key.trim(), "url" | "source_url").then(|| value.trim().trim_matches('"'))
+            })
+            .collect();
+        assert!(urls.len() >= 4, "recipe URLs not found: {urls:?}");
+        for url in urls {
             validate_url(url, &policy).unwrap_or_else(|error| panic!("{url}: {error}"));
         }
     }

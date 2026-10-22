@@ -3,10 +3,8 @@
   "additionalProperties": false,
   "required": [
     "metadata",
-    "your_day",
     "yesterday",
-    "needs_attention",
-    "forward_look"
+    "needs_attention"
   ],
   "properties": {
     "metadata": {
@@ -33,15 +31,10 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "segments",
-            "anticipated_activities"
+            "segments"
           ],
           "properties": {
             "segments": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "anticipated_activities": {
               "type": "integer",
               "minimum": 0
             }
@@ -58,35 +51,6 @@
         "coverage_preamble": {
           "type": "string",
           "maxLength": 1200
-        }
-      }
-    },
-    "your_day": {
-      "type": "array",
-      "maxItems": 16,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "start",
-          "end",
-          "text"
-        ],
-        "properties": {
-          "start": {
-            "type": "string",
-            "pattern": "^(([0-1][0-9]|2[0-3]):[0-5][0-9])?$",
-            "maxLength": 5
-          },
-          "end": {
-            "type": "string",
-            "pattern": "^(([0-1][0-9]|2[0-3]):[0-5][0-9])?$",
-            "maxLength": 5
-          },
-          "text": {
-            "type": "string",
-            "maxLength": 700
-          }
         }
       }
     },
@@ -119,14 +83,6 @@
             "maxLength": 240
           }
         }
-      }
-    },
-    "forward_look": {
-      "type": "array",
-      "maxItems": 16,
-      "items": {
-        "type": "string",
-        "maxLength": 700
       }
     }
   }

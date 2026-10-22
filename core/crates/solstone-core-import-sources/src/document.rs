@@ -1313,6 +1313,7 @@ pub fn install_and_publish_document(
                 revision: request.revision,
                 segments: &created_segments,
                 files_created: &paths,
+                index_only: &[],
                 may_write_record,
             },
             publication,

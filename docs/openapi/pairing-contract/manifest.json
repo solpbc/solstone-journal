@@ -1,7 +1,7 @@
 {
   "audited_consumer_revisions": [],
   "bundle_schema_identity": "solstone.pairing-contract-bundle.schema.v1",
-  "bundle_semver": "2.0.1",
+  "bundle_semver": "2.0.2",
   "component_closure": [
     "Error",
     "PairRequest",
@@ -19,7 +19,7 @@
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "3b82b57026023b47a3d03f1a5c5760deb0bb97e082c61603f4ba34c1043a6898"
+      "sha256": "c47eb0967bca80f418298da5eeac325beef8b62dfc6903ea8440b5df7f642f9a"
     },
     {
       "path": "vectors.json",
@@ -42,13 +42,13 @@
   ],
   "projection_path": "projection.openapi.json",
   "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
-  "scope_rationale": "This pairing-identity bundle projects only POST /app/network/pair. Consumer-audit arrays are empty because the native joiner still sends empty additional_fields and no shipped consumer has adopted client_label/platform yet.",
+  "scope_rationale": "This pairing-identity bundle projects only POST /app/network/pair. Consumer-audit arrays are empty: this bundle audits no consumer commit, and each pairing client checks the hints it sends in its own tests.",
   "vocabularies": [
     {
       "classification": "closed",
       "id": "PairRequest.platform",
       "source_pointer": "/components/schemas/PairRequest/properties/platform",
-      "unknown_value_behavior": "reject",
+      "unknown_value_behavior": "ignore",
       "values": [
         "linux",
         "macos",

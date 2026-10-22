@@ -107,12 +107,46 @@ pub fn finish_import_attempt(
     )
 }
 
+/// Finish an import that also wrote files for search alone, such as calendar
+/// note files beside its transcripts. Those are queued for search with the
+/// rest, but bind no segment, mark no day and ask for no processing.
+pub fn finish_import_attempt_indexing(
+    journal: &Path,
+    import_id: &str,
+    generation: u64,
+    importer: &str,
+    input: ImportTerminalInput<'_>,
+    index_only: &[PathBuf],
+) -> Result<ImportFinish, ImportFinishError> {
+    finish_import_attempt_inner(
+        journal,
+        import_id,
+        generation,
+        importer,
+        input,
+        index_only,
+        ImportTerminalSeams::default(),
+    )
+}
+
 pub fn finish_import_attempt_with(
     journal: &Path,
     import_id: &str,
     generation: u64,
     importer: &str,
     input: ImportTerminalInput<'_>,
+    seams: ImportTerminalSeams<'_>,
+) -> Result<ImportFinish, ImportFinishError> {
+    finish_import_attempt_inner(journal, import_id, generation, importer, input, &[], seams)
+}
+
+fn finish_import_attempt_inner(
+    journal: &Path,
+    import_id: &str,
+    generation: u64,
+    importer: &str,
+    input: ImportTerminalInput<'_>,
+    index_only: &[PathBuf],
     seams: ImportTerminalSeams<'_>,
 ) -> Result<ImportFinish, ImportFinishError> {
     let _lock = match seams.hold_lock_fn {
@@ -176,6 +210,7 @@ pub fn finish_import_attempt_with(
             revision: None,
             segments: &created_segments,
             files_created: &files_created,
+            index_only,
             may_write_record: Some(&may_write),
         };
 

@@ -18,6 +18,7 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod calendar;
 mod chronicle_migration;
 mod content_name;
 mod continuity;
@@ -39,6 +40,7 @@ mod supervisor;
 pub(crate) mod test_support;
 mod write;
 
+pub use calendar::{day_holds_only_calendar, is_calendar_segment, is_calendar_stream};
 pub use chronicle_migration::{
     ChronicleMigrationError, ChronicleMigrationReport, migrate_root_days_to_chronicle,
 };

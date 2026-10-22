@@ -101,7 +101,7 @@
   "info": {
     "description": "Generated from pairing_contract_authority.json. Covers only the pairing ceremony POST. Pairer-supplied identity fields are non-attestation and non-authorization.",
     "title": "Linked-device pairing identity contract",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "x-disclaimer": "pairer-supplied / non-attestation / non-authorization",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
@@ -178,7 +178,7 @@
       "classification": "closed",
       "id": "PairRequest.platform",
       "source_pointer": "/components/schemas/PairRequest/properties/platform",
-      "unknown_value_behavior": "reject",
+      "unknown_value_behavior": "ignore",
       "values": [
         "linux",
         "macos",

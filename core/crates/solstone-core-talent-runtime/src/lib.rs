@@ -31,7 +31,6 @@ pub mod participation;
 pub mod prepare;
 mod prompt_context;
 pub mod pulse;
-pub mod schedule;
 mod screen_batch;
 pub mod source_passages;
 pub mod speaker_attribution;
@@ -2426,9 +2425,9 @@ mod tests {
         );
 
         let (source_root, source_paths, source_context) = fixture(
-            "schedule-source-fixture",
+            "source-fixture",
             r#"{
-"type":"generate","max_output_tokens":1024, "hook":{"post":"schedule"}, "load":{"transcripts":true,"percepts":false,"talents":{"screen":true}}
+"type":"generate","max_output_tokens":1024, "load":{"transcripts":true,"percepts":false,"talents":{"screen":true}}
 }"#,
         );
         let source_client =
@@ -2441,7 +2440,7 @@ mod tests {
         )
         .unwrap();
         let source_request = json!({
-            "name":"schedule-source-fixture", "day":source_day, "segment":source_segment, "prompt":"hello"
+            "name":"source-fixture", "day":source_day, "segment":source_segment, "prompt":"hello"
         })
         .as_object()
         .unwrap()
@@ -2452,7 +2451,7 @@ mod tests {
             &source_context,
             prepare::PrepareMode::Execute,
         )
-        .expect("schedule source prepares");
+        .expect("source fixture prepares");
         assert!(
             source_prepared.config["transcript"]
                 .as_str()
@@ -4314,7 +4313,9 @@ mod tests {
             {"text":"Prepare for today's meeting","source_id":"sol://calendar/meeting"},
             {"text":"Yesterday's audio is still processing","source_id":"sol://chronicle/20251231/audio"}
         ]);
-        let model_output = json!({"metadata":{},"your_day":[],"yesterday":[],"needs_attention":attention,"forward_look":[],"reading":[]}).to_string();
+        let model_output =
+            json!({"metadata":{},"yesterday":[],"needs_attention":attention,"reading":[]})
+                .to_string();
         let client =
             OneShotClient::at_path(test_support::one_shot_stub(root.path(), &model_output));
         let output_path = context.journal.join("briefing.json");

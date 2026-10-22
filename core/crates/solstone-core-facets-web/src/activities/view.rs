@@ -6,9 +6,9 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{
-    ActivityRecord, PlacedRecord, activity_value_truthy, list_activity_day_stems,
-    list_declared_facet_names, load_activity_records, observe_facet_declaration,
-    place_activity_records, read_activity_definitions,
+    ActivityRecord, PlacedRecord, ScheduledEvent, activity_value_truthy, calendar_beside,
+    calendar_on_day, list_activity_day_stems, list_declared_facet_names, load_activity_records,
+    observe_facet_declaration, place_activity_records, read_activity_definitions,
 };
 
 pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, usize> {
@@ -161,6 +161,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
         }
     }
 
+    let calendar = calendar_on_day(root, day);
     let mut items = Vec::new();
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
@@ -168,7 +169,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
             continue;
         }
 
-        let item = project_item(facet, row, &course, &definitions_by_facet);
+        let item = project_item(facet, row, &course, &definitions_by_facet, (day, &calendar));
         items.push(item);
     }
 
@@ -184,6 +185,7 @@ fn project_item(
     record: &Map<String, Value>,
     course: &solstone_core_facets::ActivityCourse,
     definitions_by_facet: &BTreeMap<String, BTreeMap<String, String>>,
+    (day, calendar): (&str, &[ScheduledEvent]),
 ) -> Value {
     let mut item = Map::new();
 
@@ -239,49 +241,14 @@ fn project_item(
     item.insert("activity_label".to_owned(), activity_label);
 
     let kind = match source.as_deref() {
-        Some("anticipated") => "plan",
         Some("user") => "added",
         None => "detected",
         Some(_) => "other",
     };
     item.insert("kind".to_owned(), Value::String(kind.to_owned()));
 
-    let (start_min, end_min, start_str, end_str) = if source.as_deref() == Some("anticipated") {
-        let parse_time = |val: Option<&str>| -> Option<(u32, u32)> {
-            let s = val?;
-            if s.len() != 8 || s.as_bytes()[2] != b':' || s.as_bytes()[5] != b':' {
-                return None;
-            }
-            if !s
-                .bytes()
-                .enumerate()
-                .all(|(i, b)| matches!(i, 2 | 5) || b.is_ascii_digit())
-            {
-                return None;
-            }
-            let h = s[0..2].parse::<u32>().ok()?;
-            let m = s[3..5].parse::<u32>().ok()?;
-            let sec = s[6..8].parse::<u32>().ok()?;
-            if h > 23 || m > 59 || sec > 59 {
-                return None;
-            }
-            Some((h * 60 + m, sec))
-        };
-        let start_parsed = parse_time(record.get("start").and_then(Value::as_str));
-        let end_parsed = parse_time(record.get("end").and_then(Value::as_str));
-
-        let start_min = start_parsed.map(|(m, _)| m);
-        let mut end_min = end_parsed.map(|(m, _)| m);
-
-        if let (Some(s), Some(e)) = (start_min, &mut end_min)
-            && *e < s
-        {
-            *e += 1440;
-        }
-        let start_str = start_min.map(|m| format!("{:02}:{:02}", (m % 1440) / 60, (m % 1440) % 60));
-        let end_str = end_min.map(|m| format!("{:02}:{:02}", (m % 1440) / 60, (m % 1440) % 60));
-        (start_min, end_min, start_str, end_str)
-    } else if let Some((span_start, span_end)) = course.span {
+    let (start_min, end_min, start_str, end_str) = if let Some((span_start, span_end)) = course.span
+    {
         let start_min = span_start / 60;
         let end_min = span_end / 60;
         let start_str = Some(format!(
@@ -362,13 +329,10 @@ fn project_item(
                 };
                 if fields.iter().any(|f| f.as_str() == Some("hidden")) {
                     let actor = obj.get("actor").and_then(Value::as_str).unwrap_or("");
-                    let note = obj.get("note").and_then(Value::as_str).unwrap_or("");
                     if actor.starts_with("owner:") {
                         reason = Some("owner");
                     } else if actor.starts_with("cli:") {
                         reason = Some("command");
-                    } else if actor == "schedule" && note.starts_with("superseded by ") {
-                        reason = Some("replaced");
                     }
                     break;
                 }
@@ -428,6 +392,11 @@ fn project_item(
         })
         .unwrap_or_default();
     item.insert("people".to_owned(), Value::Array(people));
+    let beside = course
+        .span
+        .map(|span| calendar_beside(calendar, day, span))
+        .unwrap_or_default();
+    item.insert("calendar".to_owned(), Value::Array(beside));
 
     let edits = record
         .get("edits")
@@ -445,13 +414,9 @@ fn project_item(
                         .cloned()
                         .unwrap_or_else(|| Value::Array(Vec::new()));
                     let note_val = obj.get("note").cloned().unwrap_or(Value::Null);
-                    let note_str = obj.get("note").and_then(Value::as_str).unwrap_or("");
 
                     let kind = match actor_str {
                         "activity" => "grew",
-                        "schedule" if note_str.starts_with("created by schedule") => "plan_noticed",
-                        "schedule" if note_str.starts_with("superseded by ") => "plan_replaced",
-                        "schedule" => "plan_updated",
                         "owner:update" => "owner_update",
                         "owner:mute" => "owner_hide",
                         "owner:unmute" => "owner_unhide",
@@ -468,16 +433,6 @@ fn project_item(
                     edit_out.insert("fields".to_owned(), fields_val.clone());
                     edit_out.insert("note".to_owned(), note_val);
                     edit_out.insert("kind".to_owned(), Value::String(kind.to_owned()));
-
-                    let fields_contain_cancelled = fields_val
-                        .as_array()
-                        .is_some_and(|arr| arr.iter().any(|f| f.as_str() == Some("cancelled")));
-                    if actor_str == "schedule"
-                        && note_str.contains("cancelled")
-                        && fields_contain_cancelled
-                    {
-                        edit_out.insert("cancelled".to_owned(), Value::Bool(true));
-                    }
                     Value::Object(edit_out)
                 })
                 .collect::<Vec<_>>()

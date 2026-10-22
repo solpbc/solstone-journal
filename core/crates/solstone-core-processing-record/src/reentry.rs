@@ -21,8 +21,8 @@ fn reenters_failed_analysis_record(handler: &str) -> bool {
     reenters_on_analysis_output(handler) || handler == vocab::HANDLER_TRANSCRIBE
 }
 
-/// Read one bounded JSONL metadata header's processing record.
-pub fn read_processing_record_header(path: &Path) -> Option<Value> {
+/// Read one bounded JSONL metadata header (the first row) as an object.
+pub fn read_jsonl_header(path: &Path) -> Option<Value> {
     let mut file = File::open(path).ok()?;
     let mut window = Vec::with_capacity(vocab::MAX_FIRST_ROW_BYTES);
     file.by_ref()
@@ -31,10 +31,15 @@ pub fn read_processing_record_header(path: &Path) -> Option<Value> {
         .ok()?;
     let newline = window.iter().position(|byte| *byte == b'\n')?;
     let header = std::str::from_utf8(&window[..newline]).ok()?;
-    let Value::Object(header) = serde_json::from_str(header).ok()? else {
+    let header @ Value::Object(_) = serde_json::from_str(header).ok()? else {
         return None;
     };
-    header
+    Some(header)
+}
+
+/// Read one bounded JSONL metadata header's processing record.
+pub fn read_processing_record_header(path: &Path) -> Option<Value> {
+    read_jsonl_header(path)?
         .get("_solstone_processing")
         .filter(|record| record.is_object())
         .cloned()

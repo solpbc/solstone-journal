@@ -21,11 +21,11 @@ use crate::health_glance::build_health_glance;
 use crate::needs_you::{classify_needs_you, classify_owner_voice_needs, needs_dedup_key};
 use crate::readers::{
     briefing_freshness, briefing_lateness_state, briefing_needs_items, collect_activities,
-    collect_anticipated_activities, collect_top_activities_yesterday, compute_briefing_phase,
-    count_journal_age_days, get_capture_health, last_observe_relative_seconds, load_awareness,
-    load_backlog_source, load_briefing, load_connections_network, load_flow_md,
-    load_pulse_narrative, load_stats, load_yesterday_stats, overnight_window_passed,
-    render_briefing_sections, resolve_attention, resolve_owner_voice_tier, summarize_pipeline_day,
+    collect_top_activities_yesterday, compute_briefing_phase, count_journal_age_days,
+    get_capture_health, last_observe_relative_seconds, load_awareness, load_backlog_source,
+    load_briefing, load_connections_network, load_flow_md, load_pulse_narrative, load_stats,
+    load_yesterday_stats, overnight_window_passed, render_briefing_sections, resolve_attention,
+    resolve_owner_voice_tier, summarize_pipeline_day,
 };
 
 const FIRST_WEEK_FRAMING: &str = "most of what your journal keeps becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
@@ -110,7 +110,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             Value::Null,
         )
     };
-    let anticipated_activities = collect_anticipated_activities(context, &today);
     let activities = collect_activities(context, &today);
     let latest_weekly_reflection = crate::weekly::card(context);
     let last_observe_relative = last_observe_relative_seconds(context)
@@ -151,7 +150,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         .get("state")
         .and_then(Value::as_str);
     let show_welcome = narrative_content.is_none()
-        && anticipated_activities.is_empty()
         && activities.is_empty()
         && !briefing_exists
         && attention.is_null()
@@ -221,13 +219,8 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             }
         )
     });
-    let briefing_summary = (briefing_phase == "active").then(|| {
-        briefing::summary(
-            briefing.as_ref(),
-            &briefing_sections,
-            briefing_needs_deduped.len() as i64,
-        )
-    });
+    let briefing_summary = (briefing_phase == "active")
+        .then(|| briefing::summary(&briefing_sections, briefing_needs_deduped.len() as i64));
 
     let brain = crate::readers::build_brain_snapshot(context);
     let transcription_issue = solstone_core_thinking::read_config(context.journal_root())
@@ -259,10 +252,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         )
     });
     let mut today_parts = Vec::new();
-    if !anticipated_activities.is_empty() {
-        let count = anticipated_activities.len();
-        today_parts.push(format!("{count} plan{}", if count == 1 { "" } else { "s" }));
-    }
     if !activities.is_empty() {
         let count = activities.len();
         today_parts.push(format!(
@@ -294,10 +283,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("pulse_needs".to_owned(), Value::Array(pulse_needs));
     fields.insert("flow_content".to_owned(), flow.content.into());
     fields.insert("flow_updated_at".to_owned(), flow_updated_at.into());
-    fields.insert(
-        "anticipated_activities".to_owned(),
-        Value::Array(anticipated_activities),
-    );
     fields.insert("activities".to_owned(), Value::Array(activities));
     fields.insert("needs_you_items".to_owned(), Value::Array(needs_you_items));
     fields.insert("briefing_sections".to_owned(), briefing_sections);
@@ -357,7 +342,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("narrative_summary".to_owned(), narrative_summary.into());
     fields.insert("today_summary".to_owned(), today_parts.join(", ").into());
     fields.insert("needs_summary".to_owned(), needs_summary.into());
-    debug_assert_eq!(fields.len(), 39);
+    debug_assert_eq!(fields.len(), 38);
     PulseContext {
         fields,
         now: context.now_local(),
@@ -658,7 +643,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 38);
+        assert_eq!(payload.as_object().unwrap().len(), 37);
         assert_eq!(
             payload
                 .as_object()
@@ -683,7 +668,6 @@ mod tests {
                 "pulse_needs",
                 "flow_content",
                 "flow_updated_at",
-                "anticipated_activities",
                 "activities",
                 "needs_you_items",
                 "briefing_sections",
@@ -948,7 +932,6 @@ mod tests {
         assert_eq!(payload["facet_data"], stats["facet_data"]);
         for pointer in [
             "/activities",
-            "/anticipated_activities",
             "/needs_you_items",
             "/briefing_sections",
             "/pulse_needs",
@@ -1415,13 +1398,6 @@ mod tests {
         let payload = pulse_payload(&context);
         assert!(
             payload["activities"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|activity| activity["facet"] == "muted")
-        );
-        assert!(
-            payload["anticipated_activities"]
                 .as_array()
                 .unwrap()
                 .iter()

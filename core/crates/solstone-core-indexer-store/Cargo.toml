@@ -13,6 +13,7 @@ workspace = true
 solstone-core-indexer-todo.workspace = true
 solstone-core-entity.workspace = true
 chrono.workspace = true
+chrono-tz.workspace = true
 log.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
@@ -23,6 +24,10 @@ solstone-core-indexer.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-memory-original.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-segment.workspace = true
+
+[dev-dependencies]
+solstone-core-journal-config.workspace = true
 
 [features]
 full-tests = []

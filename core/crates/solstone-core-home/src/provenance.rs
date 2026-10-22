@@ -44,6 +44,7 @@ pub enum WhatWord {
     Screen,
     Camera,
     Location,
+    Calendar,
 }
 
 impl WhatWord {
@@ -53,6 +54,7 @@ impl WhatWord {
             Self::Screen => "screen",
             Self::Camera => "camera",
             Self::Location => "location",
+            Self::Calendar => "calendar",
         }
     }
 }
@@ -322,13 +324,15 @@ fn classify_bound_source(
         source if source.starts_with("browser") => (Some(DeviceWord::Browser), None),
         // An empty source is what ingest stores when a client names none: the
         // device's own recording, with nothing read about what it recorded.
-        "" | "audio" | "screen" | "camera" | "location" | "mobile-segment" | "mobile" => {
+        "" | "audio" | "screen" | "camera" | "location" | "calendar" | "mobile-segment"
+        | "mobile" => {
             let device_word = resolve_platform_device_word(record, description, ledger_entry);
             let what_word = match source {
                 "audio" => Some(WhatWord::Audio),
                 "screen" => Some(WhatWord::Screen),
                 "camera" => Some(WhatWord::Camera),
                 "location" => Some(WhatWord::Location),
+                "calendar" => Some(WhatWord::Calendar),
                 _ => None,
             };
             (device_word, what_word)
@@ -1267,6 +1271,51 @@ mod tests {
             resolve_stream_label(&table, "device_2"),
             bound(Some(DeviceWord::Computer), None, Some("fedora"))
         );
+    }
+
+    #[test]
+    fn a_calendar_source_reads_as_the_device_s_calendar() {
+        let root = make_journal();
+        write_stream(
+            root.path(),
+            "phone_calendar",
+            "observer",
+            Some("sha256:1"),
+            Some("calendar"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "phone_location",
+            "observer",
+            Some("sha256:1"),
+            Some("location"),
+            None,
+        );
+        describe(
+            root.path(),
+            &[("sha256:1", Some("pocket"), Some("ios"), Some("phone"))],
+        );
+        let table = load_stream_labels(root.path());
+        assert_eq!(
+            resolve_stream_label(&table, "phone_calendar"),
+            bound(
+                Some(DeviceWord::Iphone),
+                Some(WhatWord::Calendar),
+                Some("pocket")
+            )
+        );
+        assert_eq!(
+            resolve_stream_label(&table, "phone_location"),
+            bound(
+                Some(DeviceWord::Iphone),
+                Some(WhatWord::Location),
+                Some("pocket")
+            )
+        );
+        let says = rendered_stream_says(&table).unwrap();
+        assert_eq!(says["phone_calendar"].what, Some("calendar"));
+        assert_eq!(says["phone_location"].what, Some("location"));
     }
 
     #[test]

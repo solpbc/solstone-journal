@@ -27,9 +27,6 @@ pub enum PreparedDailyAction {
     Observation {
         batch: solstone_core_facets::PreparedObservationBatch,
     },
-    Anticipation {
-        batch: solstone_core_facets::PreparedAnticipationBatch,
-    },
     Identity {
         facet: String,
         facet_id: String,
@@ -96,7 +93,6 @@ fn relative_output(root: &Path, path: &Path) -> Result<String, String> {
 fn action_facet(action: &PreparedDailyAction) -> Option<(&str, &str)> {
     match action {
         PreparedDailyAction::Observation { batch } => Some((&batch.facet, &batch.facet_id)),
-        PreparedDailyAction::Anticipation { batch } => Some((&batch.facet, &batch.facet_id)),
         PreparedDailyAction::Attachment { change } => Some((&change.facet, &change.facet_id)),
         PreparedDailyAction::Identity {
             facet, facet_id, ..
@@ -235,7 +231,6 @@ fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
         WriteIntent::EntitySuggest { output, .. } => (output, "suggest"),
         WriteIntent::EntityObserver { output, .. } => (output, "observer"),
         WriteIntent::EntitiesReview { output, .. } => (output, "review"),
-        WriteIntent::Schedule { output, .. } => (output, "schedule"),
         WriteIntent::DailySchedule { output, .. } => (output, "maintenance"),
         _ => return Ok(()),
     };
@@ -278,17 +273,6 @@ fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
             if chrono::NaiveTime::parse_from_str(primary, "%H:%M").is_err() {
                 return Err(invalid("maintenance primary must be HH:MM"));
             }
-        }
-        "schedule" => {
-            let _ = value
-                .as_array()
-                .or_else(|| value.get("events").and_then(Value::as_array))
-                .ok_or_else(|| invalid("schedule events must be an array"))?;
-            let WriteIntent::Schedule { day, .. } = intent else {
-                unreachable!()
-            };
-            chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-                .map_err(|_| invalid("invalid schedule day"))?;
         }
         _ => unreachable!(),
     }
@@ -365,30 +349,6 @@ pub fn prepare_daily_publication(
                 )
                 .map_err(|e| error(e.to_string()))?,
             );
-        }
-        CommitPlan::Write(WriteIntent::Schedule { output, day }) => {
-            let frozen = prepared
-                .config
-                .get("_daily_calendar_before")
-                .and_then(Value::as_object)
-                .ok_or_else(|| error("missing frozen calendar snapshots"))?;
-            for batch in crate::schedule::prepare_publication(root, &output, &day).map_err(error)? {
-                let expected = frozen
-                    .get(&format!("{}/{}", batch.facet, batch.day))
-                    .unwrap_or(&Value::Null);
-                let expected = match expected {
-                    Value::Null => None,
-                    Value::String(text) => Some(text.as_str()),
-                    _ => return Err(error("invalid frozen calendar snapshot")),
-                };
-                if !solstone_core_facets::anticipation_batch_matches_prompt(&batch, expected)
-                    .map_err(error)?
-                {
-                    return Err(error("conflict: calendar changed after prompt preparation")
-                        .with_owner_conflict_kind("calendar_changed"));
-                }
-                actions.push(PreparedDailyAction::Anticipation { batch });
-            }
         }
         CommitPlan::Write(WriteIntent::DailySchedule {
             output,
@@ -677,16 +637,6 @@ pub(crate) fn publish_daily_publication_cancellable(
         match action {
             PreparedDailyAction::Observation { batch } => {
                 solstone_core_facets::publish_observation_batch_checked(
-                    &context.journal,
-                    batch,
-                    allow_before,
-                    || super::check_cancellation(cancellation),
-                    receipt,
-                )
-                .map_err(make_error)?
-            }
-            PreparedDailyAction::Anticipation { batch } => {
-                solstone_core_facets::publish_anticipation_batch_checked(
                     &context.journal,
                     batch,
                     allow_before,
@@ -1463,12 +1413,13 @@ mod tests {
             journal: root.path().into(),
         };
         let prepared = PreparedTalent {
-            name: "schedule".into(),
+            name: "entities:entities_review".into(),
             config: Default::default(),
         };
         let error = prepare_daily_publication(
-            CommitPlan::Write(WriteIntent::Schedule {
+            CommitPlan::Write(WriteIntent::EntitiesReview {
                 output: "not-json".into(),
+                facet: "work".into(),
                 day: "20260910".into(),
             }),
             &prepared,
@@ -1477,8 +1428,9 @@ mod tests {
         .unwrap_err();
         assert_eq!(error.phase, "parse");
         let error = prepare_daily_publication(
-            CommitPlan::Write(WriteIntent::Schedule {
-                output: "[]".into(),
+            CommitPlan::Write(WriteIntent::EntitiesReview {
+                output: r#"{"promotions":[],"merges":[]}"#.into(),
+                facet: "work".into(),
                 day: "20260910".into(),
             }),
             &prepared,
@@ -1486,144 +1438,6 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.phase, "publication");
-    }
-
-    #[test]
-    fn schedule_intent_validation_accepts_mixed_future_and_non_future_events() {
-        let valid_event = json!({
-            "activity": "meeting",
-            "target_date": "2026-09-20",
-            "start": "09:00:00",
-            "title": "Project sync",
-            "description": "Discuss roadmap",
-            "facet": "work",
-            "participation": []
-        });
-        let non_future_event = json!({
-            "activity": "meeting",
-            "target_date": "2026-09-10",
-            "start": "09:00:00",
-            "title": "Past sync",
-            "description": "Past roadmap",
-            "facet": "work",
-            "participation": []
-        });
-        let intent = WriteIntent::Schedule {
-            output: json!({"events": [valid_event, non_future_event]}).to_string(),
-            day: "20260910".into(),
-        };
-        assert!(validate_model_intent(&intent).is_ok());
-
-        let array_intent = WriteIntent::Schedule {
-            output: json!([valid_event, non_future_event]).to_string(),
-            day: "20260910".into(),
-        };
-        assert!(validate_model_intent(&array_intent).is_ok());
-    }
-
-    #[test]
-    fn schedule_intent_validation_rejects_malformed_json_events_shape_and_day() {
-        let invalid_json = WriteIntent::Schedule {
-            output: "not-json".into(),
-            day: "20260910".into(),
-        };
-        let err = validate_model_intent(&invalid_json).unwrap_err();
-        assert!(err.detail.starts_with("validation: invalid schedule JSON:"));
-
-        let not_array = WriteIntent::Schedule {
-            output: json!({"events": "not an array"}).to_string(),
-            day: "20260910".into(),
-        };
-        let err = validate_model_intent(&not_array).unwrap_err();
-        assert_eq!(err.detail, "validation: schedule events must be an array");
-
-        let bad_day = WriteIntent::Schedule {
-            output: "[]".into(),
-            day: "bad-day".into(),
-        };
-        let err = validate_model_intent(&bad_day).unwrap_err();
-        assert_eq!(err.detail, "validation: invalid schedule day");
-    }
-
-    #[test]
-    fn calendar_replacement_and_supersession_are_one_recoverable_file() {
-        let root = fixture();
-        let old = json!({"id":"old", "source":"anticipated", "title":"Planning", "hidden":false})
-            .as_object()
-            .unwrap()
-            .clone();
-        assert!(matches!(
-            solstone_core_facets::append_activity_record(root.path(), "work", "20260920", old)
-                .unwrap(),
-            solstone_core_facets::AppendOutcome::Written(_)
-        ));
-        let replacement = json!({"id":"new", "source":"anticipated", "title":"Planning", "cancelled":false, "hidden":false}).as_object().unwrap().clone();
-        let batch = solstone_core_facets::prepare_anticipation_batch(
-            root.path(),
-            "work",
-            "20260920",
-            &[(replacement, vec!["old".into()])],
-            "2026-09-14T10:00:00Z",
-        )
-        .unwrap();
-        assert!(
-            solstone_core_facets::publish_anticipation_batch(root.path(), &batch, true, || Err(
-                "interrupt".into()
-            ))
-            .is_err()
-        );
-        solstone_core_facets::publish_anticipation_batch(root.path(), &batch, false, || Ok(()))
-            .unwrap();
-        let rows =
-            solstone_core_facets::load_activity_records(root.path(), "work", "20260920", true)
-                .unwrap();
-        assert_eq!(rows.len(), 2);
-        assert_eq!(
-            rows.iter().find(|row| row["id"] == "old").unwrap()["hidden"],
-            true
-        );
-        let cancelled = json!({"id":"new", "source":"anticipated", "title":"Planning corrected", "cancelled":true, "hidden":true}).as_object().unwrap().clone();
-        let correction = solstone_core_facets::prepare_anticipation_batch(
-            root.path(),
-            "work",
-            "20260920",
-            &[(cancelled, vec![])],
-            "2026-09-14T11:00:00Z",
-        )
-        .unwrap();
-        solstone_core_facets::publish_anticipation_batch(root.path(), &correction, true, || Ok(()))
-            .unwrap();
-        assert!(
-            solstone_core_facets::load_activity_records(root.path(), "work", "20260920", false)
-                .unwrap()
-                .is_empty()
-        );
-        solstone_core_facets::set_activity_hidden(
-            root.path(),
-            "work",
-            "20260920",
-            "new",
-            false,
-            "owner",
-            None,
-            "2026-09-14T12:00:00Z",
-        )
-        .unwrap();
-        assert!(
-            solstone_core_facets::publish_anticipation_batch(
-                root.path(),
-                &correction,
-                false,
-                || Ok(())
-            )
-            .is_err()
-        );
-        assert_eq!(
-            solstone_core_facets::load_activity_records(root.path(), "work", "20260920", false)
-                .unwrap()
-                .len(),
-            1
-        );
     }
 
     #[test]
@@ -2103,18 +1917,10 @@ mod tests {
 
     #[test]
     fn retained_facet_actions_cannot_recreate_deleted_owner_paths() {
-        for kind in [
-            "calendar",
-            "output",
-            "identity",
-            "attachment",
-            "aliases",
-            "proposals",
-        ] {
+        for kind in ["output", "identity", "attachment", "aliases", "proposals"] {
             let root = fixture();
             let facet_id = solstone_core_facets::facet_write_identity(root.path(), "work").unwrap();
             let action = match kind {
-                "calendar" => PreparedDailyAction::Anticipation { batch: solstone_core_facets::prepare_anticipation_batch(root.path(), "work", "20260920", &[(json!({"id":"event", "source":"anticipated", "title":"Planning"}).as_object().unwrap().clone(), vec![])], "2026-09-14T10:00:00Z").unwrap() },
                 "output" => bind_output_action(root.path(), &root.path().join("facets/work/entities/20260910_review_outcome.json"), b"result".to_vec(), false).unwrap(),
                 "proposals" => PreparedDailyAction::MergeProposals { facet:"work".into(), facet_id, batch:solstone_core_entity::prepare_merge_proposals(root.path(), &[json!({"facet":"work", "day":"20260910", "source":"Ada", "source_slug":"ada", "target":"Grace", "target_slug":"grace", "summary":"Variant"})]).unwrap() },
                 _ => {
@@ -2179,222 +1985,6 @@ mod tests {
                     .is_none()
             );
         }
-    }
-
-    #[test]
-    fn schedule_same_title_siblings_remain_visible_across_e_to_e2() {
-        let root = fixture();
-        let event = |start: &str| json!({"activity":"meeting", "target_date":"2026-09-20", "start":start, "title":"Project sync", "description":"Discuss roadmap", "facet":"work", "participation":[]});
-        let output = json!({"events":[event("09:00:00"), event("15:00:00")]}).to_string();
-        for _ in 0..2 {
-            let batches =
-                crate::schedule::prepare_publication(root.path(), &output, "20260910").unwrap();
-            assert_eq!(batches.len(), 1);
-            solstone_core_facets::publish_anticipation_batch(
-                root.path(),
-                &batches[0],
-                true,
-                || Ok(()),
-            )
-            .unwrap();
-            assert_eq!(
-                solstone_core_facets::load_activity_records(root.path(), "work", "20260920", false)
-                    .unwrap()
-                    .len(),
-                2
-            );
-        }
-        // One exact-ID update and a new replacement must not supersede the
-        // exact-ID sibling that appears elsewhere in the incoming batch.
-        let output = json!({"events":[event("10:00:00"), event("15:00:00")]}).to_string();
-        let batches =
-            crate::schedule::prepare_publication(root.path(), &output, "20260910").unwrap();
-        solstone_core_facets::publish_anticipation_batch(root.path(), &batches[0], true, || Ok(()))
-            .unwrap();
-        let visible =
-            solstone_core_facets::load_activity_records(root.path(), "work", "20260920", false)
-                .unwrap();
-        assert_eq!(visible.len(), 2);
-        assert!(visible.iter().any(|row| row["start"] == "15:00:00"));
-        assert!(visible.iter().any(|row| row["start"] == "10:00:00"));
-    }
-
-    #[test]
-    fn schedule_conflicts_only_when_its_own_calendar_rows_move() {
-        let root = fixture();
-        let context = ExecutionContext {
-            journal: root.path().into(),
-        };
-        let event = |start: &str, title: &str, details: &str| {
-            json!({"activity":"meeting", "target_date":"2026-09-20", "start":start, "title":title,
-                "description":"Discuss", "details":details, "facet":"work", "participation":[]})
-        };
-        let planning = |details: &str| event("09:00:00", "Planning review", details);
-        let dentist = event("15:00:00", "Dentist", "");
-        let schedule = |day: &str, events: Vec<Value>| {
-            let output = json!({ "events": events }).to_string();
-            for batch in crate::schedule::prepare_publication(root.path(), &output, day).unwrap() {
-                solstone_core_facets::publish_anticipation_batch(root.path(), &batch, true, || {
-                    Ok(())
-                })
-                .unwrap();
-            }
-        };
-        let calendar = || {
-            solstone_core_facets::read_activity_file(root.path(), "work", "20260920.jsonl")
-                .unwrap()
-                .unwrap()
-        };
-        let publish = |prepared: &PreparedTalent, events: Vec<Value>| {
-            prepare_daily_publication(
-                CommitPlan::Write(WriteIntent::Schedule {
-                    output: json!({ "events": events }).to_string(),
-                    day: "20260910".into(),
-                }),
-                prepared,
-                &context,
-            )
-        };
-        schedule("20260903", vec![planning("first")]);
-        let mut prepared = PreparedTalent {
-            name: "schedule".into(),
-            config: Default::default(),
-        };
-        let facet_id = solstone_core_facets::facet_write_identity(root.path(), "work").unwrap();
-        prepared
-            .config
-            .insert("_daily_facet_ids".into(), json!({ "work": facet_id }));
-        prepared.config.insert(
-            "_daily_calendar_before".into(),
-            json!({ "work/20260920": calendar() }),
-        );
-
-        // Another day's schedule changing a row this batch leaves alone is not
-        // a conflict; changing one this batch would overwrite is.
-        schedule("20260904", vec![planning("second")]);
-        assert!(publish(&prepared, vec![dentist.clone()]).is_ok());
-        let error = publish(&prepared, vec![planning("third"), dentist.clone()]).unwrap_err();
-        assert_eq!(error.phase, "conflict");
-
-        // An owner change conflicts only for the batch that would overwrite it.
-        let id = "anticipated_meeting_090000_0920";
-        solstone_core_facets::set_activity_hidden(
-            root.path(),
-            "work",
-            "20260920",
-            id,
-            true,
-            "cli:mute",
-            None,
-            "2026-09-10T12:00:00Z",
-        )
-        .unwrap();
-        assert!(publish(&prepared, vec![dentist.clone()]).is_ok());
-        let error = publish(&prepared, vec![planning("third")]).unwrap_err();
-        assert_eq!(error.phase, "conflict");
-
-        // Publication keeps a row another writer changed since preparation.
-        let batches = crate::schedule::prepare_publication(
-            root.path(),
-            &json!({ "events": [dentist] }).to_string(),
-            "20260910",
-        )
-        .unwrap();
-        solstone_core_facets::set_activity_hidden(
-            root.path(),
-            "work",
-            "20260920",
-            id,
-            false,
-            "cli:unmute",
-            None,
-            "2026-09-10T12:05:00Z",
-        )
-        .unwrap();
-        let unmuted = calendar().lines().next().unwrap().to_owned();
-        for _ in 0..2 {
-            solstone_core_facets::publish_anticipation_batch(
-                root.path(),
-                &batches[0],
-                true,
-                || Ok(()),
-            )
-            .unwrap();
-        }
-        let rows = calendar();
-        assert_eq!(rows.lines().next(), Some(unmuted.as_str()));
-        assert_eq!(rows.lines().count(), 2);
-
-        // It still refuses when one of the batch's own rows moved.
-        let batches = crate::schedule::prepare_publication(
-            root.path(),
-            &json!({ "events": [planning("fourth")] }).to_string(),
-            "20260910",
-        )
-        .unwrap();
-        schedule("20260905", vec![planning("fifth")]);
-        let error = solstone_core_facets::publish_anticipation_batch(
-            root.path(),
-            &batches[0],
-            true,
-            || Ok(()),
-        )
-        .unwrap_err();
-        assert!(error.starts_with("conflict:"), "{error}");
-    }
-
-    #[test]
-    fn facet_replacement_during_generation_cannot_be_adopted_by_empty_before_image() {
-        let root = fixture();
-        let facet_id = solstone_core_facets::facet_write_identity(root.path(), "work").unwrap();
-        let mut prepared = PreparedTalent {
-            name: "schedule".into(),
-            config: Default::default(),
-        };
-        prepared
-            .config
-            .insert("_daily_facet_ids".into(), json!({"work":facet_id}));
-        prepared.config.insert(
-            "_daily_calendar_before".into(),
-            json!({"work/20260920": null}),
-        );
-        // A journal keeps one enabled facet; the sibling lets "work" go.
-        let _ = solstone_core_facets::create_facet(
-            root.path(),
-            "personal",
-            "Personal",
-            "",
-            "",
-            "",
-            None,
-        );
-        solstone_core_facets::delete_facet(root.path(), "work").unwrap();
-        // These tests recreate "work" to prove the fences against a replaced facet;
-        // the store never reuses a name, so the retired record is dropped as a hand edit would.
-        let _ = std::fs::remove_file(std::path::Path::new(root.path()).join("facets/retired.json"));
-        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
-        let event = json!({
-            "activity": "meeting",
-            "target_date": "2026-09-20",
-            "start": "09:00:00",
-            "title": "Planning review",
-            "description": "Discuss",
-            "details": "",
-            "facet": "work",
-            "participation": []
-        });
-        let error = prepare_daily_publication(
-            CommitPlan::Write(WriteIntent::Schedule {
-                output: json!({ "events": [event] }).to_string(),
-                day: "20260910".into(),
-            }),
-            &prepared,
-            &ExecutionContext {
-                journal: root.path().into(),
-            },
-        )
-        .unwrap_err();
-        assert_eq!(error.phase, "conflict");
     }
 
     fn set_relation_test_alias(root: &Path, id: &str, aliases: &[&str]) {

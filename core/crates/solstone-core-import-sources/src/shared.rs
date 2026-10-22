@@ -298,15 +298,37 @@ pub(crate) const WINDOW_SECONDS: i64 = 300;
 /// and otherwise hour/minute/second plus start, while clamped_segment_end_seconds
 /// only bounds the segment end.
 pub(crate) fn window<T>(
-    mut items: Vec<(DateTime<Utc>, T)>,
+    items: Vec<(DateTime<Utc>, T)>,
     zone: &impl TimeZone<Offset: fmt::Display>,
 ) -> Vec<Window<T>> {
+    windows(items, zone, false)
+}
+
+/// Windows as [`window`] makes them, each also closed where the zone's offset
+/// changes, so every time in one window reads in a single offset. A window
+/// with no offset change inside it keeps the same key.
+pub(crate) fn window_by_offset<T>(
+    items: Vec<(DateTime<Utc>, T)>,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+) -> Vec<Window<T>> {
+    windows(items, zone, true)
+}
+
+fn windows<T>(
+    mut items: Vec<(DateTime<Utc>, T)>,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+    by_offset: bool,
+) -> Vec<Window<T>> {
+    use chrono::Offset;
+    let offset = |timestamp: DateTime<Utc>| timestamp.with_timezone(zone).offset().fix();
     items.sort_by_key(|(timestamp, _)| *timestamp);
     let mut windows: Vec<Window<T>> = Vec::new();
     for (timestamp, item) in items {
         let day = day_key(timestamp, zone);
         let open = windows.last_mut().filter(|window| {
-            window.day == day && (timestamp - window.start).num_seconds() < WINDOW_SECONDS
+            window.day == day
+                && (timestamp - window.start).num_seconds() < WINDOW_SECONDS
+                && (!by_offset || offset(timestamp) == offset(window.start))
         });
         match open {
             Some(window) => window.items.push((timestamp, item)),

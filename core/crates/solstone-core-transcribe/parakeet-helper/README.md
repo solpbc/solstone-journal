@@ -56,7 +56,7 @@ Success emits one UTF-8 JSON object followed by `\n`:
     }
   ],
   "model_version": "parakeet-tdt-0.6b-v3",
-  "fluidaudio_version": "0.14.0",
+  "fluidaudio_version": "0.17.7",
   "hardware": "MacBookPro18,3 / Apple M4 Max",
   "macos_version": "26.4.1",
   "swift_version": "Apple Swift version 6.3.1"
@@ -67,7 +67,7 @@ Success emits one UTF-8 JSON object followed by `\n`:
 
 ```json
 {
-  "fluidaudio_version": "0.14.0",
+  "fluidaudio_version": "0.17.7",
   "model_version_default": "v3",
   "swift_version": "Apple Swift version 6.3.1",
   "hardware": "MacBookPro18,3 / Apple M4 Max",

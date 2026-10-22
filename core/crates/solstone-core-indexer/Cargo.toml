@@ -21,6 +21,7 @@ workspace = true
 serde.workspace = true
 sha2.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-segment.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 glob.workspace = true

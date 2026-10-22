@@ -67,7 +67,12 @@ impl Drop for Coordinator {
 fn helper_stopped(pid: u32) -> bool {
     match fs::read_to_string(format!("/proc/{pid}/stat")) {
         Ok(stat) => stat.rsplit_once(") ").unwrap().1.starts_with('Z'),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => true,
+        Err(error)
+            if error.kind() == io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(nix::libc::ESRCH) =>
+        {
+            true
+        }
         Err(error) => panic!("read helper state: {error}"),
     }
 }
@@ -116,8 +121,20 @@ fn coordinator_sigkill_keeps_native_exclusion_until_actual_child_stops() {
         );
         thread::sleep(Duration::from_millis(5));
     }
-    ActivityLease::try_acquire(root)
-        .unwrap()
-        .revalidate()
-        .unwrap();
+    // The leader reads as a zombie before the helper's other threads drop the
+    // inherited descriptor, so the kernel frees the lock a moment later.
+    let lease = loop {
+        match ActivityLease::try_acquire(root.clone()) {
+            Ok(lease) => break lease,
+            Err(solstone_core_journal_io::activity::ActivityAdmissionError::Busy) => {
+                assert!(
+                    Instant::now() < deadline,
+                    "native exclusion remained after the helper stopped"
+                );
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("activity admission after helper stop: {error:?}"),
+        }
+    };
+    lease.revalidate().unwrap();
 }

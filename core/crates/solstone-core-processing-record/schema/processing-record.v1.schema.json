@@ -14,7 +14,38 @@
     "attempted_at": {"type": "string"},
     "input_size": {"type": "integer", "minimum": 0},
     "attempts": {"type": "integer"},
-    "source": {"type": "string"}
+    "source": {"type": "string"},
+    "owner_voice_filter": {"type": "boolean", "description": "Present and true on every transcribe record written by an attempt that keeps only the owner's speech."},
+    "owner_voice": {
+      "type": "object",
+      "description": "What a voice-only transcribe attempt kept and which original it processed.",
+      "required": ["version", "speech_s", "kept_s", "left_out_s", "windows_scored", "windows_kept", "original", "print"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {"const": 1},
+        "speech_s": {"type": "number", "minimum": 0},
+        "kept_s": {"type": "number", "minimum": 0},
+        "left_out_s": {"type": "number", "minimum": 0},
+        "windows_scored": {"type": "integer", "minimum": 0},
+        "windows_kept": {"type": "integer", "minimum": 0},
+        "original": {
+          "type": "object",
+          "required": ["name", "size", "sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"type": "string"},
+            "size": {"type": "integer", "minimum": 0},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        "print": {
+          "type": "object",
+          "required": ["sha256"],
+          "additionalProperties": false,
+          "properties": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+        }
+      }
+    }
   },
   "examples": [
     {"schema": "solstone.processing.v1", "state": "analyzed", "reason_code": "ok", "handler": "transcribe", "attempted_at": "2026-07-25T05:14:46Z", "input_size": 5},

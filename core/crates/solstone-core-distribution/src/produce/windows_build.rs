@@ -29,7 +29,8 @@ pub struct WindowsCargoEvidence {
     pub ffmpeg_run_id: String,
     pub ffmpeg_source_sha256: String,
     pub files: Vec<WindowsCargoOutput>,
-    pub screen_ocr_helper: ScreenOcrCargoEvidence,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen_ocr_helper: Option<ScreenOcrCargoEvidence>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -175,19 +176,26 @@ pub fn build_windows_product_for_architecture(
     let text = std::str::from_utf8(&stdout).map_err(|e| format!("Cargo JSON is not UTF-8: {e}"))?;
     require_finished_cargo(text)?;
     let mut artifacts = super::bind_cargo_json(text, triple).map_err(|e| e.to_string())?;
-    let screen_ocr =
-        build_screen_ocr_helper(checkout, &target_dir, log_directory, &epoch, architecture)?;
-    let screen_ocr_id = ArtifactId {
-        package: crate::screen_ocr::HELPER_PACKAGE.into(),
-        bin: crate::screen_ocr::HELPER_BIN.into(),
-        triple: triple.into(),
-    };
-    artifacts.insert(screen_ocr_id.clone(), screen_ocr.path.clone());
-    if capture_source(checkout)? != source {
-        return Err(
-            "product source or Cargo.lock changed during independent helper compilation".into(),
+    let screen_ocr = if screen_ocr_helper_selected(inventory, architecture) {
+        let helper =
+            build_screen_ocr_helper(checkout, &target_dir, log_directory, &epoch, architecture)?;
+        artifacts.insert(
+            ArtifactId {
+                package: crate::screen_ocr::HELPER_PACKAGE.into(),
+                bin: crate::screen_ocr::HELPER_BIN.into(),
+                triple: triple.into(),
+            },
+            helper.path.clone(),
         );
-    }
+        if capture_source(checkout)? != source {
+            return Err(
+                "product source or Cargo.lock changed during independent helper compilation".into(),
+            );
+        }
+        Some(helper)
+    } else {
+        None
+    };
     crate::select::refuse_wrong_triple(inventory, architecture.target_id(), &artifacts)
         .map_err(|e| e.to_string())?;
     crate::select::refuse_extra(inventory, architecture.target_id(), &artifacts)
@@ -228,7 +236,10 @@ pub fn build_windows_product_for_architecture(
         }
         let data = read_bounded(&path, PE_LIMIT)?;
         if bin.package == crate::screen_ocr::HELPER_PACKAGE
-            && sha256_hex(&data) != screen_ocr.evidence.artifact_sha256
+            && screen_ocr
+                .as_ref()
+                .map(|helper| &helper.evidence.artifact_sha256)
+                != Some(&sha256_hex(&data))
         {
             return Err("independent screen OCR helper changed after its build receipt".into());
         }
@@ -294,7 +305,7 @@ pub fn build_windows_product_for_architecture(
         ffmpeg_run_id,
         ffmpeg_source_sha256,
         files,
-        screen_ocr_helper: screen_ocr.evidence,
+        screen_ocr_helper: screen_ocr.map(|helper| helper.evidence),
     };
     let evidence_bytes = serde_json::to_vec_pretty(&evidence).map_err(|e| e.to_string())?;
     create_log(&log_directory.join("cargo-evidence.json"))?
@@ -308,6 +319,21 @@ pub fn build_windows_product_for_architecture(
     })
 }
 
+/// Whether the inventory ships the independent screen OCR helper on Windows.
+/// The helper has its own Cargo lock, so it is compiled only when selected.
+fn screen_ocr_helper_selected(inventory: &Inventory, architecture: WindowsArchitecture) -> bool {
+    inventory.entry.iter().any(|entry| {
+        matches!(
+            entry,
+            Entry::Bin { package, targets, .. }
+                if package == crate::screen_ocr::HELPER_PACKAGE
+                    && targets
+                        .iter()
+                        .any(|t| t == architecture.target_id())
+        )
+    })
+}
+
 fn build_screen_ocr_helper(
     checkout: &Path,
     target_dir: &Path,
@@ -316,9 +342,7 @@ fn build_screen_ocr_helper(
     architecture: WindowsArchitecture,
 ) -> Result<BuiltScreenOcrHelper, String> {
     let triple = architecture.rust_triple();
-    let manifest_path = checkout.join(crate::screen_ocr::HELPER_MANIFEST);
-    let lock_path = checkout.join(crate::screen_ocr::HELPER_LOCK);
-    let recipe_path = checkout.join(crate::screen_ocr::RECIPE);
+    let [manifest_path, lock_path, recipe_path] = screen_ocr_input_paths(checkout);
     let manifest = read_bounded(&manifest_path, 4 * 1024 * 1024)?;
     let lock = read_bounded(&lock_path, 64 * 1024 * 1024)?;
     let recipe_bytes = read_bounded(&recipe_path, 1024 * 1024)?;
@@ -414,6 +438,18 @@ fn build_screen_ocr_helper(
             artifact_bytes: artifact.len() as u64,
         },
     })
+}
+
+/// The helper's manifest, lock and recipe under `checkout`, joined one
+/// component at a time: a bounded read opens the parent as a root, and Windows
+/// refuses a root spelled with a forward slash.
+fn screen_ocr_input_paths(checkout: &Path) -> [PathBuf; 3] {
+    [
+        crate::screen_ocr::HELPER_MANIFEST,
+        crate::screen_ocr::HELPER_LOCK,
+        crate::screen_ocr::RECIPE,
+    ]
+    .map(|relative| super::windows_stage::join_components(checkout, relative))
 }
 
 struct BuiltScreenOcrHelper {
@@ -782,6 +818,30 @@ mod tests {
     }
 
     #[test]
+    fn screen_ocr_helper_inputs_are_read_through_component_paths() {
+        let temporary = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let root = temporary.path().to_path_buf();
+        #[cfg(not(windows))]
+        let root = temporary.path().canonicalize().unwrap();
+        for (path, relative) in screen_ocr_input_paths(&root).iter().zip([
+            crate::screen_ocr::HELPER_MANIFEST,
+            crate::screen_ocr::HELPER_LOCK,
+            crate::screen_ocr::RECIPE,
+        ]) {
+            assert_eq!(
+                path,
+                &super::super::windows_stage::join_components(&root, relative)
+            );
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, relative.as_bytes()).unwrap();
+            assert_eq!(read_bounded(path, 64).unwrap(), relative.as_bytes());
+            #[cfg(windows)]
+            assert!(read_bounded(&root.join(relative), 64).is_err());
+        }
+    }
+
+    #[test]
     fn cargo_completion_and_freshness_are_required_together() {
         let artifact = r#"{"reason":"compiler-artifact","fresh":false}"#;
         let finish = r#"{"reason":"build-finished","success":true}"#;
@@ -860,6 +920,44 @@ mod tests {
                     .any(|pair| pair == ["--target", architecture.rust_triple()])
             );
             assert!(!helper.iter().any(|argument| argument == "core/Cargo.toml"));
+        }
+    }
+
+    #[test]
+    fn windows_builds_the_screen_ocr_helper_only_for_its_selected_architecture() {
+        let inventory_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../distribution/inventory.toml")
+            .canonicalize()
+            .unwrap();
+        for selected in WindowsArchitecture::ALL {
+            let mut inventory = crate::inventory::load_inventory(&inventory_path).unwrap();
+            for entry in &mut inventory.entry {
+                if let Entry::Bin {
+                    package, targets, ..
+                } = entry
+                    && package == crate::screen_ocr::HELPER_PACKAGE
+                {
+                    targets.retain(|target| WindowsArchitecture::from_target_id(target).is_none());
+                }
+            }
+            for architecture in WindowsArchitecture::ALL {
+                assert!(!screen_ocr_helper_selected(&inventory, architecture));
+            }
+            for entry in &mut inventory.entry {
+                if let Entry::Bin {
+                    package, targets, ..
+                } = entry
+                    && package == crate::screen_ocr::HELPER_PACKAGE
+                {
+                    targets.push(selected.target_id().into());
+                }
+            }
+            for architecture in WindowsArchitecture::ALL {
+                assert_eq!(
+                    screen_ocr_helper_selected(&inventory, architecture),
+                    architecture == selected,
+                );
+            }
         }
     }
 }

@@ -134,6 +134,10 @@ pub fn local_now(journal: &Path, now: DateTime<Utc>) -> chrono::NaiveDateTime {
 /// The hour of the owner's day at which a morning briefing's morning is over.
 pub const BRIEFING_MORNING_ENDS_HOUR: u32 = 12;
 
+/// Daily talents that no longer ship. Their old unit records and held retries
+/// stay on disk, but nothing owes, shows or reruns them.
+pub const RETIRED_DAILY_TALENTS: &[&str] = &["schedule"];
+
 pub fn daily_configs(
     journal: &Path,
     talent: &Path,
@@ -560,16 +564,10 @@ pub fn stale_receipt_free_conflict(record: &solstone_core_journal_io::DailyUnitR
     {
         return false;
     }
-    match record.owner_conflict_kind.as_deref() {
-        Some("merge_proposal_preparation" | "merge_proposals_changed" | "calendar_changed") => true,
-        None => {
-            record.identity.name == "schedule"
-                && record.error_detail.as_deref().is_some_and(|detail| {
-                    detail.contains("calendar changed after prompt preparation")
-                })
-        }
-        _ => false,
-    }
+    matches!(
+        record.owner_conflict_kind.as_deref(),
+        Some("merge_proposal_preparation" | "merge_proposals_changed")
+    )
 }
 
 /// Entity review conflicts found before the conflicting action writes. Each
@@ -699,13 +697,41 @@ mod tests {
         let apps = dir.path().join("payload/apps");
         fs::create_dir_all(&talent).unwrap();
         fs::create_dir_all(&apps).unwrap();
-        fs::write(talent.join("schedule.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":10,\"hook\":{\"post\":\"schedule\"}\n}\nExtract scheduled items.").unwrap();
+        fs::create_dir_all(apps.join("entities/talent")).unwrap();
+        fs::write(
+            suggest_path(&apps),
+            suggest_talent("Propose durable facts."),
+        )
+        .unwrap();
+        // The daily unit is facet-scoped: one declared facet, active on every
+        // day a fixture gives material (`source`).
+        let work = dir.path().join("facets/work");
+        fs::create_dir_all(&work).unwrap();
+        fs::write(work.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
         (dir, talent, apps)
+    }
+    const SUGGEST: &str = "entities:entity_suggest";
+    fn suggest_path(apps: &Path) -> PathBuf {
+        apps.join("entities/talent/entity_suggest.md")
+    }
+    fn suggest_talent(body: &str) -> String {
+        format!(
+            "{{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":57,\"multi_facet\":true,\"hook\":{{\"pre\":\"{SUGGEST}\",\"post\":\"{SUGGEST}\"}}\n}}\n{body}"
+        )
+    }
+    fn suggest(day: &str) -> DailyUnitIdentity {
+        DailyUnitIdentity::new(day, SUGGEST, Some("work".to_owned()))
     }
     fn source(journal: &Path, day: &str, text: &str) {
         let path = journal.join("chronicle").join(day).join("talents/flow.md");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
+        let segment = journal
+            .join("chronicle")
+            .join(day)
+            .join("120000_60/talents");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("facets.json"), r#"[{"facet":"work"}]"#).unwrap();
     }
     fn accept(journal: &Path, day: &str, talent: &Path, apps: &Path) -> DailyUnitRecord {
         let before = read_daily_coverage_with_roots(journal, day, talent, apps).unwrap();
@@ -772,7 +798,7 @@ mod tests {
         fs::create_dir_all(&health).unwrap();
         fs::write(
             health.join("old.jsonl"),
-            "{\"event\":\"talent.complete\",\"mode\":\"daily\",\"name\":\"schedule\"}\n",
+            "{\"event\":\"talent.complete\",\"mode\":\"daily\",\"name\":\"entities:entity_suggest\",\"facet\":\"work\"}\n",
         )
         .unwrap();
         assert!(
@@ -991,8 +1017,8 @@ mod tests {
         let mut cache = DayProjectionCache::new(root, day);
         let mut shared =
             read_daily_coverage_with_cache(root, day, &talent, &apps, &mut cache).unwrap();
-        // schedule + morning_briefing through both call sites.
-        assert_eq!(shared.units.len(), 2, "{:?}", shared.units);
+        // The suggestion unit for each active facet and the briefing, through both call sites.
+        assert_eq!(shared.units.len(), 3, "{:?}", shared.units);
         assert_eq!(
             cache.captures(),
             1,
@@ -1227,8 +1253,9 @@ mod tests {
                     serde_json::json!({"providers":{"active":{"provider":"local","model":"b"}}}),
                 );
             } else {
-                fs::create_dir_all(root.join("facets/work")).unwrap();
-                fs::write(root.join("facets/work/facet.json"), r#"{"title":"Work"}"#).unwrap();
+                // A newly declared facet, not active on any of these days.
+                fs::create_dir_all(root.join("facets/home")).unwrap();
+                fs::write(root.join("facets/home/facet.json"), r#"{"title":"Home"}"#).unwrap();
             }
             for (index, day) in days.iter().enumerate() {
                 let unit = unit_state(root, day, &talent, &apps);
@@ -1367,7 +1394,7 @@ mod tests {
     fn a_briefing_is_frozen_once_its_morning_has_passed() {
         let (dir, talent, apps) = fixture();
         let root = dir.path();
-        fs::remove_file(talent.join("schedule.md")).unwrap();
+        fs::remove_file(suggest_path(&apps)).unwrap();
         fs::write(
             talent.join("morning_briefing.md"),
             "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning.",
@@ -1510,7 +1537,7 @@ mod tests {
     }
 
     #[test]
-    fn activation_reowes_exactly_seven_closed_schedule_days() {
+    fn activation_reowes_exactly_seven_closed_days() {
         let (dir, talent, apps) = fixture();
         let root = dir.path();
         utc_journal(root, serde_json::json!({}));
@@ -1528,7 +1555,7 @@ mod tests {
             .collect();
         for day in &days {
             source(root, day, "# Flow\nMeeting.");
-            accept_named(root, day, "schedule", &talent, &apps);
+            accept_named(root, day, SUGGEST, &talent, &apps);
         }
         fs::write(
             talent.join("morning_briefing.md"),
@@ -1557,33 +1584,30 @@ mod tests {
             cutoff
         );
         let configs = daily_configs(root, &talent, &apps).unwrap();
-        let schedule = configs
-            .iter()
-            .find(|config| config.key == "schedule")
-            .unwrap();
+        let suggestion = configs.iter().find(|config| config.key == SUGGEST).unwrap();
         let briefing = configs
             .iter()
             .find(|config| config.key == "morning_briefing")
             .unwrap();
         let evidence = |config: &solstone_core_talent_config::TalentConfig, day: &str| {
+            let facet = (config.key == SUGGEST).then_some("work");
             solstone_core_indexer::daily_evidence::compute_daily_evidence(
                 root,
                 day,
                 &config.key,
                 &config.metadata,
                 &config.body,
-                None,
+                facet,
                 None,
             )
             .unwrap()
         };
         let mut reowed = Vec::new();
         for day in &days {
-            let record =
-                load_daily_unit_record(root, &DailyUnitIdentity::new(day, "schedule", None))
-                    .unwrap()
-                    .unwrap();
-            let current = evidence(schedule, day);
+            let record = load_daily_unit_record(root, &suggest(day))
+                .unwrap()
+                .unwrap();
+            let current = evidence(suggestion, day);
             let reuse = accepted_reuse(&record, &current, wall);
             let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
             if date >= chrono::NaiveDate::parse_from_str(&cutoff, "%Y%m%d").unwrap() {
@@ -1629,43 +1653,40 @@ mod tests {
             Some(cutoff.as_str())
         );
         source(root, &days[0], "# Flow\nA different meeting.");
-        let oldest =
-            load_daily_unit_record(root, &DailyUnitIdentity::new(&days[0], "schedule", None))
-                .unwrap()
-                .unwrap();
+        let oldest = load_daily_unit_record(root, &suggest(&days[0]))
+            .unwrap()
+            .unwrap();
         assert_eq!(
-            accepted_reuse(&oldest, &evidence(schedule, &days[0]), wall),
+            accepted_reuse(&oldest, &evidence(suggestion, &days[0]), wall),
             None
         );
         let recent = days.last().unwrap();
         source(root, recent, "# Flow\nA different meeting.");
-        let recent_record =
-            load_daily_unit_record(root, &DailyUnitIdentity::new(recent, "schedule", None))
-                .unwrap()
-                .unwrap();
+        let recent_record = load_daily_unit_record(root, &suggest(recent))
+            .unwrap()
+            .unwrap();
         assert_eq!(
-            accepted_reuse(&recent_record, &evidence(schedule, recent), wall),
+            accepted_reuse(&recent_record, &evidence(suggestion, recent), wall),
             None
         );
         let open = today.format("%Y%m%d").to_string();
         source(root, &open, "# Flow\nMeeting.");
-        accept_named(root, &open, "schedule", &talent, &apps);
+        accept_named(root, &open, SUGGEST, &talent, &apps);
         fs::write(
-            talent.join("schedule.md"),
-            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":10,\"hook\":{\"post\":\"schedule\"}\n}\nExtract scheduled items, differently.",
+            suggest_path(&apps),
+            suggest_talent("Propose durable facts, differently."),
         )
         .unwrap();
         let rewritten = daily_configs(root, &talent, &apps).unwrap();
-        let schedule = rewritten
+        let suggestion = rewritten
             .iter()
-            .find(|config| config.key == "schedule")
+            .find(|config| config.key == SUGGEST)
             .unwrap();
         for day in days.iter().skip(1).chain(std::iter::once(&open)) {
-            let record =
-                load_daily_unit_record(root, &DailyUnitIdentity::new(day, "schedule", None))
-                    .unwrap()
-                    .unwrap();
-            let current = evidence(schedule, day);
+            let record = load_daily_unit_record(root, &suggest(day))
+                .unwrap()
+                .unwrap();
+            let current = evidence(suggestion, day);
             let reuse = accepted_reuse(&record, &current, wall);
             let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
             if date < today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS) {

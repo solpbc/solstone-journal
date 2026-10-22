@@ -12,7 +12,6 @@
   },
   "pulse": {
     "activities": [],
-    "anticipated_activities": [],
     "attention": null,
     "briefing_exists": false,
     "briefing_lateness": {

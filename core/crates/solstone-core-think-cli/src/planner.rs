@@ -1842,9 +1842,12 @@ fn reconcile_pass_with_roots(
         }
     };
     let policy = WorkPolicy::read(journal)?;
+    // A day holding only calendar notes holds nothing the owner did, so it
+    // owes no work.
     let mut days = solstone_core_journal_io::day_dirs(journal)
         .map_err(|error| error.to_string())?
         .into_iter()
+        .filter(|(day, _)| !solstone_core_segment::day_holds_only_calendar(journal, day))
         .collect::<BTreeMap<_, _>>();
     let imports = solstone_core_import::thinking::read(journal)?;
     let pending_archives =
@@ -3063,6 +3066,73 @@ mod tests {
         assert!(work.history.owed > 0);
     }
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn old_parakeet_availability_failure_discovers_ordinary_segment_work() {
+        for (reason, previous_hold) in [
+            ("server_not_ready", false),
+            ("no_port", false),
+            ("server_not_ready", true),
+            ("no_port", true),
+        ] {
+            let root = fixture("local");
+            let day = daily_coverage::local_day(root.path(), chrono::Utc::now());
+            let directory = root
+                .path()
+                .join("chronicle")
+                .join(&day)
+                .join("notes/120000_60");
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("audio.wav"), b"retained audio").unwrap();
+            let header = serde_json::json!({"raw":"audio.wav","_solstone_processing":{
+                "schema":"solstone.processing.v1","handler":"transcribe","state":"failed",
+                "reason_code":reason,"attempts":3,"input_size":14
+            }});
+            std::fs::write(directory.join("audio.jsonl"), format!("{header}\n")).unwrap();
+            if previous_hold {
+                let unit = work_retry::raw::unit_for_output(
+                    root.path(),
+                    &directory.join("audio.jsonl"),
+                    "transcribe",
+                )
+                .unwrap();
+                let fingerprint =
+                    work_retry::file_fingerprint(&directory.join("audio.wav")).unwrap();
+                work_retry::observe_held(root.path(), &unit, reason, &fingerprint).unwrap();
+            }
+            let queue = queue(root.path());
+            let mut report = WorkInventory::default();
+            let work = inspect_day(
+                root.path(),
+                &day,
+                &queue,
+                None,
+                DaySources {
+                    imports: &[],
+                    archive_coordinates: &BTreeSet::new(),
+                    roots: None,
+                },
+                WorkPolicy::read(root.path()).unwrap(),
+                &mut report,
+                &|| Ok(()),
+            )
+            .unwrap();
+            assert!(
+                work.candidates.iter().any(|task| task.request.reference
+                    == format!("supervisor-work-{day}-notes-120000_60"))
+            );
+            assert_eq!(work.history.set_aside, 0);
+            assert_eq!(
+                root.path().join("health/work-retry").exists(),
+                previous_hold
+            );
+            assert_eq!(
+                std::fs::read(directory.join("audio.wav")).unwrap(),
+                b"retained audio"
+            );
+        }
+    }
+
     #[test]
     fn native_readmissions_keep_today_owner_and_background_priority_and_spend() {
         use solstone_core_system::work_policy::ThinkingLane;
@@ -3214,6 +3284,37 @@ mod tests {
         assert!(queue.contains_reference("supervisor-work-20040101-notes-120000_60"));
         assert!(!queue.contains_reference("supervisor-work-19990101-notes-120000_60"));
         assert!(!queue.contains_reference("supervisor-work-20040101-daily"));
+    }
+
+    #[test]
+    fn a_day_holding_only_calendar_notes_owes_no_work() {
+        let root = fixture("local");
+        std::fs::create_dir_all(root.path().join("streams")).unwrap();
+        std::fs::write(
+            root.path().join("streams/phone_calendar.json"),
+            r#"{"name":"phone_calendar","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"calendar"}"#,
+        )
+        .unwrap();
+        let notes = root
+            .path()
+            .join("chronicle/19990101/phone_calendar/094000_300");
+        std::fs::create_dir_all(&notes).unwrap();
+        std::fs::write(
+            notes.join(format!("calendar_{}.jsonl", "a".repeat(64))),
+            "{}\n",
+        )
+        .unwrap();
+        // The twin: an ordinary capture day still owes its work.
+        segment(root.path(), "20000101", "120000_60");
+        let queue = queue(root.path());
+        reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+        let report = solstone_core_system::work_inventory::read(root.path())
+            .unwrap()
+            .unwrap();
+        assert_eq!(report.days_total, 1);
+        assert_eq!(report.oldest_day.as_deref(), Some("20000101"));
+        assert!(queue.contains_reference("supervisor-work-20000101-notes-120000_60"));
+        assert!(!queue.contains_reference("supervisor-work-19990101-daily"));
     }
 
     #[test]
@@ -3906,12 +4007,20 @@ mod tests {
         let today =
             chrono::NaiveDate::parse_from_str(&daily_coverage::local_day(journal, now), "%Y%m%d")
                 .unwrap();
+        // The location input's recipients that a closed day can still owe are
+        // the facet-scoped entity talents, so each day has an active facet.
+        solstone_core_facets::create_facet(journal, "work", "Work", "", "", "", None).unwrap();
         let mut days = Vec::new();
         for age in 1..=12 {
             let day = (today - chrono::Duration::days(age))
                 .format("%Y%m%d")
                 .to_string();
-            std::fs::create_dir_all(journal.join("chronicle").join(&day)).unwrap();
+            let talents = journal
+                .join("chronicle")
+                .join(&day)
+                .join("notes/120000_60/talents");
+            std::fs::create_dir_all(&talents).unwrap();
+            std::fs::write(talents.join("facets.json"), r#"[{"facet":"work"}]"#).unwrap();
             let coverage = daily_coverage::read_daily_coverage(journal, &day).unwrap();
             for unit in &coverage.units {
                 if unit.evidence_revision.is_empty() || unit.contract_digest.is_empty() {

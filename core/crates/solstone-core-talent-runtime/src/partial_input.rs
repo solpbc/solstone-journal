@@ -90,7 +90,6 @@ pub(crate) fn decorate(mut plan: CommitPlan, prepared: &PreparedTalent) -> Commi
             }
             WriteIntent::DailySchedule { output, .. }
             | WriteIntent::Participation { output, .. }
-            | WriteIntent::Schedule { output, .. }
             | WriteIntent::EntityDetection { output, .. }
             | WriteIntent::EntitiesReview { output, .. }
             | WriteIntent::EntitySuggest { output, .. }
@@ -313,15 +312,6 @@ mod tests {
                     "{path}: {last}"
                 );
             }
-            assert!(
-                crate::schedule::apply_result(
-                    root.path(),
-                    &json_text(r#"{"events":[]}"#, marker(&prepared).as_ref()),
-                    "20260101"
-                )
-                .is_ok()
-            );
-            assert!(!root.path().join("facets/work/activities").exists());
         }
     }
 }

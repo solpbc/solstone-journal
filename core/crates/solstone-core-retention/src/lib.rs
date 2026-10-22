@@ -66,6 +66,7 @@ pub mod marks;
 pub mod notify;
 pub mod oplog_retention;
 pub mod original_deletion;
+pub mod owner_voice;
 pub mod policy;
 pub mod receipt;
 pub mod remove_marked;

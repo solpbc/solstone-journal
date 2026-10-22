@@ -16,6 +16,7 @@ use solstone_core_format::paths::{relative_to_journal, resolve_journal_path};
 use solstone_core_journal_io::atomic::{AtomicWriteOptions, atomic_replace, write_bytes_exclusive};
 use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
 use solstone_core_journal_io::errors::AtomicWriteError;
+use solstone_core_journal_io::paths::realpath_non_strict;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Token {
@@ -73,7 +74,7 @@ fn valid_key(key: &str) -> bool {
 
 fn path_key(journal: &Path, path: &Path) -> io::Result<String> {
     let key = if path.is_absolute() || path.starts_with(journal) {
-        relative_to_journal(journal, path)
+        relative_to_journal(journal, path).or_else(|| resolved_relative(journal, path))
     } else {
         path.to_str().map(str::to_owned)
     }
@@ -91,6 +92,16 @@ fn path_key(journal: &Path, path: &Path) -> io::Result<String> {
         ));
     }
     Ok(key)
+}
+
+/// Writers that resolve their target through `contained_path` hold its
+/// realpath. On Windows that is the verbatim `\\?\C:\...` form while the
+/// configured journal root is not, so the lexical comparison misses; compare
+/// both resolved before refusing.
+fn resolved_relative(journal: &Path, path: &Path) -> Option<String> {
+    let journal = realpath_non_strict(journal).ok()?;
+    let path = realpath_non_strict(path).ok()?;
+    relative_to_journal(&journal, &path)
 }
 
 pub fn now_ms() -> u64 {
@@ -272,3 +283,7 @@ pub fn path_absent(journal: &Path, key: &str) -> bool {
         |path| matches!(fs::metadata(path), Err(error) if error.kind() == io::ErrorKind::NotFound),
     )
 }
+
+#[cfg(test)]
+#[path = "lib_tests.rs"]
+mod tests;

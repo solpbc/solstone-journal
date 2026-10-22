@@ -352,8 +352,6 @@ fn prepared_report_fixture() -> (Fixture, chrono::DateTime<Utc>, String) {
             "participation":true,
             "story":{"summary":"done"},
             "edits":[{"actor":"owner"}],
-            "source":"anticipated",
-            "start":"2020-01-01T00:00:00Z",
         })],
     );
     fixture.activities(
@@ -396,7 +394,7 @@ async fn rich_fixture_matches_the_complete_report_contract() {
             },
             "synthesis_health":{
                 "activities_count":2,"activities_with_participation":1,"activities_with_story":1,
-                "activities_user_edited":1,"activities_anticipated_unfilled":1,
+                "activities_user_edited":1,
                 "talent_run_failures_24h":0,"talent_degraded_outputs_24h":0,
                 "index_activity_at":null,
                 "search_index":{
@@ -442,7 +440,7 @@ async fn activity_fixture_variation_changes_only_synthesis_fields() {
         "work",
         &day,
         &[
-            json!({"id":"work-rich","created_at":1,"segments":["000000_3600"],"participation":true,"story":{"summary":"done"},"edits":[{"actor":"owner"}],"source":"anticipated","start":"2020-01-01T00:00:00Z"}),
+            json!({"id":"work-rich","created_at":1,"segments":["000000_3600"],"participation":true,"story":{"summary":"done"},"edits":[{"actor":"owner"}]}),
             json!({"id":"activity-only"}),
         ],
     );

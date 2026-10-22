@@ -116,12 +116,19 @@ pub fn segment_start_and_end_seconds(value: &str) -> Option<(SegmentTimes, u64)>
 }
 
 pub fn time_bucket(rel: &str) -> String {
-    match segment_parse(rel).map(|times| times.hour) {
-        Some(6..=11) => "morning".to_string(),
-        Some(12..=16) => "afternoon".to_string(),
-        Some(17..=20) => "evening".to_string(),
-        Some(_) => "night".to_string(),
-        None => String::new(),
+    segment_parse(rel)
+        .map(|times| hour_bucket(u32::from(times.hour)))
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// The time-of-day bucket an hour falls in.
+pub fn hour_bucket(hour: u32) -> &'static str {
+    match hour {
+        6..=11 => "morning",
+        12..=16 => "afternoon",
+        17..=20 => "evening",
+        _ => "night",
     }
 }
 

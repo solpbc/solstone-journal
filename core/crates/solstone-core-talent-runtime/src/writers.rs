@@ -51,10 +51,6 @@ pub enum WriteIntent {
         day: String,
         activity: Map<String, Value>,
     },
-    Schedule {
-        output: String,
-        day: String,
-    },
     EntityDetection {
         output: String,
         day: String,
@@ -398,16 +394,6 @@ fn apply_with_sources(
             .map_err(|detail| {
                 StageError::new("write-intent", "participation", "participation", detail)
             })?;
-            Ok(CommitDisposition::CommittedNoOutput)
-        }
-        CommitPlan::Write(WriteIntent::Schedule { output, day }) => {
-            crate::schedule::apply_result_cancellable(
-                &context.journal,
-                &output,
-                &day,
-                cancellation,
-            )
-            .map_err(|detail| StageError::new("write-intent", "schedule", "schedule", detail))?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::EntityDetection {

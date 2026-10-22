@@ -1497,7 +1497,16 @@ mod tests {
         let apps = bed.root.join("embedded/apps");
         fs::create_dir_all(&talent).unwrap();
         fs::create_dir_all(&apps).unwrap();
-        fs::write(talent.join("schedule.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":10,\"hook\":{\"post\":\"schedule\"}\n}\nExtract scheduled items.").unwrap();
+        bed.write(
+            "embedded/apps/entities/talent/entity_suggest.md",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":57,\"multi_facet\":true,\"hook\":{\"pre\":\"entities:entity_suggest\",\"post\":\"entities:entity_suggest\"}\n}\nPropose durable facts.",
+        );
+        // The daily unit is facet-scoped: one declared facet, active on the day.
+        bed.write("facets/work/facet.json", r#"{"title":"Work"}"#);
+        bed.write(
+            format!("chronicle/{day}/120000_60/talents/facets.json"),
+            r#"[{"facet":"work"}]"#,
+        );
         bed.write(
             format!("chronicle/{day}/talents/flow.md"),
             "Meeting at ten.",
@@ -1560,11 +1569,11 @@ mod tests {
             match case {
                 "missing-root" => fs::remove_dir_all(&apps).unwrap(),
                 "changed-contract" => {
-                    let path = talent.join("schedule.md");
+                    let path = apps.join("entities/talent/entity_suggest.md");
                     let prompt = fs::read_to_string(&path).unwrap();
                     fs::write(
                         path,
-                        prompt.replace("Extract scheduled items.", "A changed instruction."),
+                        prompt.replace("Propose durable facts.", "A changed instruction."),
                     )
                     .unwrap();
                 }
@@ -1624,7 +1633,7 @@ mod tests {
             "cancelled",
         ] {
             let bed = Bed::new(&format!("embedded-stale-{case}"));
-            let (mut talent, apps, fingerprint) = accepted_embedded_daily(&bed, day);
+            let (talent, mut apps, fingerprint) = accepted_embedded_daily(&bed, day);
             record_daily_catchup_attempt(&bed.root, day, "embedded", 10.0, 2, &fingerprint);
             // The desktop reader cannot certify this distinct embedded contract.
             assert!(
@@ -1650,18 +1659,17 @@ mod tests {
             match case {
                 "missing-root" => fs::remove_dir_all(&apps).unwrap(),
                 "wrong-root" => {
-                    let other = bed.root.join("other/talent");
-                    fs::create_dir_all(&other).unwrap();
-                    let prompt = fs::read_to_string(talent.join("schedule.md")).unwrap();
-                    fs::write(
-                        other.join("schedule.md"),
+                    let other = bed.root.join("other/apps");
+                    let prompt =
+                        fs::read_to_string(apps.join("entities/talent/entity_suggest.md")).unwrap();
+                    bed.write(
+                        "other/apps/entities/talent/entity_suggest.md",
                         prompt.replace(
-                            "Extract scheduled items.",
+                            "Propose durable facts.",
                             "A different declared daily contract.",
                         ),
-                    )
-                    .unwrap();
-                    talent = other;
+                    );
+                    apps = other;
                 }
                 "changed-marker" => bed.write(
                     format!("chronicle/{day}/health/daily.updated"),

@@ -501,7 +501,6 @@ talent_orchestration_rung() {
 	[ "$sorted" = "daily_schedule
 entity_suggest
 morning_briefing
-schedule
 sense" ] || {
 		cat "$journal/generation-evidence" >&2
 		refuse "generation fixture saw an incomplete or unexpected production daily batch"

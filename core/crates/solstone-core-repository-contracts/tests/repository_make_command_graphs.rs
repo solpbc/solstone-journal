@@ -87,6 +87,8 @@ fn make_ci_never_executes_forbidden_interpreters() {
         "ci",
         &[
             "run", "metadata", "fmt", "run", "clippy", "clippy", "clippy", "test", "test",
+            // The screen OCR helper keeps its own lockfile, so it gets its own lane.
+            "fmt", "clippy", "test",
         ],
     );
 }
@@ -362,15 +364,34 @@ fn ci_entrypoints_override_hostile_cargo_disk_settings() {
                 String::from_utf8_lossy(&output.stderr)
             );
 
+            // Every invocation runs disk-lean in the configured target. The
+            // screen OCR helper has its own lockfile and may build in its own
+            // subtree of that target, as the release producer does.
             let expected = format!("0|0|{}", target.display());
+            let helper_expected = format!("0|0|{}", target.join("screen-ocr-helper").display());
+            let invocations = fs::read_to_string(&cargo_log)
+                .expect("CI entry point must record its Cargo invocations");
             let observed = fs::read_to_string(&environment_log)
                 .expect("CI entry point must execute a Cargo-backed command");
             assert!(
                 observed.lines().next().is_some(),
                 "make {gate} under {channel:?} did not record a Cargo invocation"
             );
+            assert_eq!(
+                invocations.lines().count(),
+                observed.lines().count(),
+                "make {gate} under {channel:?} recorded mismatched Cargo logs"
+            );
             assert!(
-                observed.lines().all(|line| line == expected),
+                invocations
+                    .lines()
+                    .zip(observed.lines())
+                    .all(|(invocation, line)| {
+                        line == expected
+                            || (invocation
+                                .contains("--manifest-path core/screen-ocr-helper/Cargo.toml")
+                                && line == helper_expected)
+                    }),
                 "make {gate} under {channel:?} leaked hostile Cargo settings or lost the configured target:\n{observed}"
             );
         }

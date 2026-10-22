@@ -162,12 +162,13 @@ and remote-network boundary, not a defense against malware already running as th
 **Purpose:** Navigate the browser to a URL path. Workspace-local facet selection stays in that workspace's URL/query contract.
 
 ### `retention` - Raw-original deletion records
-**Source:** `solstone-core-retention` (`door.rs`, `release_raw`)
-**Purpose:** Record why the journal deleted a raw original, so the transcripts page names a cause only from a record and never from a missing file.
-**Events:** `original_deleted`
+**Source:** `solstone-core-retention` (`door.rs`, `release_raw`; `owner_voice.rs`)
+**Purpose:** Record why the journal deleted a raw original, so the transcripts page names a cause only from a record and never from a missing file, and record an original that voice-only transcription keeps for good because it changed after it was transcribed.
+**Events:** `original_deleted`, `original_release_refused`
 **Key fields:**
 - `name` (string): The filename within the segment directory (e.g., `"audio.flac"`, `"screen.webm"`)
-- `class` (string): Wire cause tag (`"policy_raw_release"`, `"offload_raw_release"`, `"owner_raw_release"`)
+- `class` (string): Wire cause tag (`"policy_raw_release"`, `"offload_raw_release"`, `"owner_raw_release"`, `"owner_voice_raw_release"`)
+- `reason` (string, `original_release_refused` only): `"size_changed"` or `"bytes_changed"`
 - `ts` (integer): Milliseconds since Unix epoch
 **Semantics:**
 - Durable-only: written to `chronicle/**/<seg>/events.jsonl` by the deletion door after a confirmed unlink

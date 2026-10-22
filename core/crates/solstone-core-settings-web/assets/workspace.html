@@ -2472,6 +2472,25 @@ button:focus:not(:focus-visible) {
         </p>
       </fieldset>
       <div class="form-help" id="transcribeResourceInfo"></div>
+
+      <div class="settings-field" id="ownerVoiceField">
+        <small id="ownerVoiceStatus"></small>
+        <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
+          <label class="toggle-switch toggle-positive">
+            <input type="checkbox" id="ownerVoiceOnly" disabled aria-describedby="ownerVoiceDescription">
+            <span class="slider"></span>
+          </label>
+          <label for="ownerVoiceOnly" class="toggle-label" style="cursor: pointer;">leave out other voices</label>
+        </div>
+        <p class="settings-field-note" id="ownerVoiceDescription">keeps your words in your journal and leaves out stretches where only other people speak. other voices may remain, and some of your words may be missed.</p>
+        <p class="settings-field-note" id="ownerVoiceDetail"><strong>what happens to the audio</strong><br>this runs after audio arrives in your journal. once a recording is processed, your journal deletes its original audio, including the parts with your voice. audio processed before you turned this on, and existing backups, are unchanged. a backup made before processing may still hold the original audio.</p>
+        <p class="settings-field-note" id="ownerVoiceSetup" style="display:none"><a href="/app/speakers/">set up your voice first</a></p>
+        <p class="settings-field-note" id="ownerVoiceHeld" style="display:none">audio is waiting. set up your voice again, or turn this mode off to process it.</p>
+        <p class="settings-field-note" id="ownerVoiceCount" style="display:none"></p>
+        <p class="settings-field-note" id="ownerVoiceNone" style="display:none">no speech left out today</p>
+        <p class="settings-field-note" id="ownerVoicePending" style="display:none">the words are saved, but the original audio hasn't been deleted yet. your journal will try again.</p>
+        <p class="settings-field-note" id="ownerVoiceUnknown" style="display:none">couldn't confirm which choice is saved. reload the page to check.</p>
+      </div>
       </form>
     </section>
 
@@ -2619,6 +2638,7 @@ button:focus:not(:focus-visible) {
           <span>list originals for removal after processing</span>
         </label>
         <div id="retentionStatus" style="margin-top: 0.75em; color: var(--ink-soft); font-size: 0.9em;">currently: keep everything.</div>
+        <div id="ownerVoiceStorageNote" style="display:none; margin-top: 0.75em; color: var(--ink-soft); font-size: 0.9em;">"leave out other voices" is on, so your journal deletes each recording's original audio once it's processed from now on, and these settings don't change that.</div>
       </div>
 
       <div class="settings-field" id="emptyAudioField">
@@ -2780,6 +2800,17 @@ button:focus:not(:focus-visible) {
         </div>
       </div>
     </section>
+
+    <div id="ownerVoiceConsentModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="ownerVoiceConsentHeading" aria-describedby="ownerVoiceConsentBody">
+      <div class="color-modal-content" style="max-width: 440px;">
+        <h3 id="ownerVoiceConsentHeading">turn on "leave out other voices"?</h3>
+        <p id="ownerVoiceConsentBody">from now on, after each recording is processed, your journal deletes its original audio for good. your words, when you said them and who was speaking are kept. some of your words may be missed, and those can't be brought back.</p>
+        <div style="display: flex; gap: 0.75em; justify-content: flex-end; margin-top: 1em;">
+          <button type="button" id="ownerVoiceConsentCancel">cancel</button>
+          <button type="button" class="save-color-btn" id="ownerVoiceConsentConfirm">turn on</button>
+        </div>
+      </div>
+    </div>
 
     <div id="customActivityModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="customActivityHeading">
       <div class="color-modal-content" style="max-width: 400px;">
@@ -3035,6 +3066,7 @@ function setupModalAccessibility(modalId) {
 setupModalAccessibility('colorPickerModal');
 setupModalAccessibility('iconPickerModal');
 setupModalAccessibility('customActivityModal');
+setupModalAccessibility('ownerVoiceConsentModal');
 setupModalAccessibility('cleanupModal');
 setupModalAccessibility('facetCreateModal');
 
@@ -3429,6 +3461,10 @@ async function loadConfig() {
     const journalConfig = await window.apiJson('api/config');
     configData = journalConfig;
     populateFields(configData);
+    ownerVoice.stored = configData?.transcribe?.owner_voice_only === true;
+    ownerVoice.known = true;
+    renderOwnerVoice();
+    loadOwnerVoiceStatus();
   } catch (err) {
     console.error('Error loading config:', err);
     notifyError( 'Load Failed', 'Error loading configuration');
@@ -4637,6 +4673,141 @@ document.getElementById('field-transcribe-backend').addEventListener('change', a
     console.error('Error saving backend:', err);
     showFieldStatus(e.target, 'error', err.message);
   }
+});
+
+// ========== LEAVE OUT OTHER VOICES ==========
+const ownerVoice = {
+  stored: false,
+  known: false,
+  available: false,
+  statusLoaded: false,
+  statusFailed: false,
+  today: null,
+  pending: 0,
+  busy: false,
+};
+
+function ownerVoiceCanTurnOn() {
+  return ownerVoice.statusLoaded && !ownerVoice.statusFailed && ownerVoice.available;
+}
+
+function renderOwnerVoice() {
+  const toggle = document.getElementById('ownerVoiceOnly');
+  if (!toggle) return;
+  const show = (id, visible) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? '' : 'none';
+  };
+  const on = ownerVoice.known && ownerVoice.stored;
+  const status = ownerVoice.statusLoaded && !ownerVoice.statusFailed;
+  toggle.checked = on;
+  toggle.disabled = ownerVoice.busy || !ownerVoice.known || (!on && !ownerVoiceCanTurnOn());
+  toggle.setAttribute('aria-disabled', toggle.disabled ? 'true' : 'false');
+  show('ownerVoiceUnknown', !ownerVoice.known);
+  show('ownerVoiceSetup', ownerVoice.known && !on && status && !ownerVoice.available);
+  show('ownerVoiceHeld', on && status && !ownerVoice.available);
+  const recordings = Number(ownerVoice.today?.recordings || 0);
+  const count = document.getElementById('ownerVoiceCount');
+  if (count && on && status && recordings > 0) {
+    const duration = window.JournalFormat.duration(ownerVoice.today.left_out_s);
+    count.textContent = recordings === 1
+      ? `speech left out today: ${duration} across 1 recording`
+      : `speech left out today: ${duration} across ${recordings} recordings`;
+  }
+  show('ownerVoiceCount', on && status && recordings > 0);
+  show('ownerVoiceNone', on && status && ownerVoice.available && recordings === 0);
+  show('ownerVoicePending', status && ownerVoice.pending > 0);
+  // Unknown errs toward telling the owner originals may be deleted.
+  show('ownerVoiceStorageNote', on || !ownerVoice.known);
+}
+
+async function loadOwnerVoiceStatus() {
+  try {
+    const data = await window.apiJson('api/transcribe/owner-voice');
+    ownerVoice.available = data.available === true;
+    ownerVoice.today = data.today || null;
+    ownerVoice.pending = Number(data.pending_deletions || 0);
+    ownerVoice.statusLoaded = true;
+    ownerVoice.statusFailed = false;
+  } catch (err) {
+    ownerVoice.statusLoaded = true;
+    ownerVoice.statusFailed = true;
+    showFieldStatus(document.getElementById('ownerVoiceOnly'), 'error');
+  }
+  renderOwnerVoice();
+}
+
+async function saveOwnerVoice(value) {
+  const toggle = document.getElementById('ownerVoiceOnly');
+  ownerVoice.busy = true;
+  renderOwnerVoice();
+  try {
+    const body = { section: 'transcribe', data: { owner_voice_only: value } };
+    if (value) body.owner_voice_consent = true;
+    const response = await fetch('api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'not saved');
+    configData = result.config;
+    ownerVoice.stored = result.config?.transcribe?.owner_voice_only === true;
+    ownerVoice.known = true;
+    showFieldStatus(toggle, 'saved');
+  } catch (err) {
+    // A write can land and still report an error: show what is stored, never a guess.
+    try {
+      const stored = await window.apiJson('api/config');
+      configData = stored;
+      ownerVoice.stored = stored?.transcribe?.owner_voice_only === true;
+      ownerVoice.known = true;
+    } catch (readError) {
+      ownerVoice.known = false;
+    }
+    showFieldStatus(toggle, 'error', err.message);
+  } finally {
+    ownerVoice.busy = false;
+    renderOwnerVoice();
+  }
+}
+
+function closeOwnerVoiceConsent() {
+  document.getElementById('ownerVoiceConsentModal')._closeAccessible();
+  renderOwnerVoice();
+}
+
+document.getElementById('ownerVoiceOnly')?.addEventListener('change', (event) => {
+  const toggle = event.target;
+  const wantsOn = toggle.checked;
+  // Nothing changes until the owner confirms or the save returns.
+  toggle.checked = ownerVoice.known && ownerVoice.stored;
+  if (ownerVoice.busy || !ownerVoice.known) {
+    renderOwnerVoice();
+    return;
+  }
+  if (wantsOn) {
+    if (!ownerVoiceCanTurnOn()) {
+      renderOwnerVoice();
+      return;
+    }
+    const modal = document.getElementById('ownerVoiceConsentModal');
+    modal.style.display = 'block';
+    modal._openAccessible(toggle);
+    return;
+  }
+  saveOwnerVoice(false);
+});
+document.getElementById('ownerVoiceConsentCancel')?.addEventListener('click', closeOwnerVoiceConsent);
+document.getElementById('ownerVoiceConsentModal')?.addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) closeOwnerVoiceConsent();
+});
+document.getElementById('ownerVoiceConsentModal')?.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') renderOwnerVoice();
+});
+document.getElementById('ownerVoiceConsentConfirm')?.addEventListener('click', () => {
+  document.getElementById('ownerVoiceConsentModal')._closeAccessible();
+  saveOwnerVoice(true);
 });
 
 // Backend key warning link

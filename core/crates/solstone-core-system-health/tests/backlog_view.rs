@@ -379,12 +379,12 @@ fn current_revision_caps_surface_alongside_repair_escalation() {
             r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"summary","reason_code":"provider_request_rejected"}"#,
         ],
     );
-    super::configure_daily_work(root, Some("schedule"));
+    super::configure_daily_work(root, Some("morning_briefing"));
     let coverage = solstone_core_system::daily_coverage::read_daily_coverage(root, day).unwrap();
     let unit = coverage
         .units
         .iter()
-        .find(|u| u.identity.name == "schedule")
+        .find(|u| u.identity.name == "morning_briefing")
         .unwrap();
     let mut record = solstone_core_journal_io::DailyUnitRecord::new(
         unit.identity.clone(),

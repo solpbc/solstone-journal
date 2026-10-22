@@ -198,10 +198,12 @@ fn assert_stable_talent_metadata(body: &Value, expected: &Value) {
     );
     assert_eq!(talents["entities:detection"]["source"], "app");
     assert_eq!(talents["entities:detection"]["app"], "entities");
+    // The schedule talent was retired after the corpus was recorded.
     for key in expected["talents"]
         .as_object()
         .expect("corpus talents")
         .keys()
+        .filter(|key| *key != "schedule")
     {
         assert!(
             talents.contains_key(key),

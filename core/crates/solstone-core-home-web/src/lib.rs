@@ -646,7 +646,6 @@ mod tests {
             "pulse_needs",
             "flow_content",
             "flow_updated_at",
-            "anticipated_activities",
             "activities",
             "needs_you_items",
             "briefing_sections",

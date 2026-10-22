@@ -13,7 +13,6 @@ pub enum StageId {
     MorningBriefing,
     EntityDescribe,
     Participation,
-    Schedule,
     DailySchedule,
     EntityDetection,
     EntitiesReview,
@@ -110,7 +109,7 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 14] = [
+pub const HOOK_TABLE: [HookBinding; 13] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -134,10 +133,6 @@ pub const HOOK_TABLE: [HookBinding; 14] = [
     HookBinding {
         hook: "participation",
         stage: StageId::Participation,
-    },
-    HookBinding {
-        hook: "schedule",
-        stage: StageId::Schedule,
     },
     HookBinding {
         hook: "daily_schedule",
@@ -238,20 +233,6 @@ pub static PARTICIPATION: StageSpec = StageSpec {
     commit: Some(CommitSpec {
         parse: crate::participation::parse,
         commit: crate::participation::commit,
-    }),
-    unavailable_commit: None,
-    unavailable_before_generate: None,
-    writes_as_intent: Some(crate::writers::apply_prepared),
-    output_override: None,
-};
-pub static SCHEDULE: StageSpec = StageSpec {
-    stage: StageId::Schedule,
-    gate: None,
-    build: None,
-    prompt_override: None,
-    commit: Some(CommitSpec {
-        parse: crate::schedule::parse,
-        commit: crate::schedule::commit,
     }),
     unavailable_commit: None,
     unavailable_before_generate: None,
@@ -368,7 +349,6 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::MorningBriefing => &MORNING_BRIEFING,
         StageId::EntityDescribe => &ENTITY_DESCRIBE,
         StageId::Participation => &PARTICIPATION,
-        StageId::Schedule => &SCHEDULE,
         StageId::DailySchedule => &DAILY_SCHEDULE,
         StageId::EntityDetection => &ENTITY_DETECTION,
         StageId::EntitiesReview => &ENTITIES_REVIEW,

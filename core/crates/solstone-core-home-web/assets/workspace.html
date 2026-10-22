@@ -269,33 +269,6 @@
   border: 1px solid var(--hairline);
 }
 
-.pulse-events {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.pulse-event {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  font-size: 0.85rem;
-  color: var(--ink);
-  padding: 0.25rem 0.35rem 0.25rem 0;
-}
-
-.pulse-event-time {
-  font-size: 0.8rem;
-  color: var(--ink-faint);
-  min-width: 50px;
-  font-variant-numeric: tabular-nums;
-}
-
-.pulse-event-title { flex: 1; }
-.pulse-event.past { opacity: 0.6; }
-.pulse-event.past .pulse-event-title::before { content: "✓ "; color: var(--success); }
-
 .pulse-activities-label {
   font-size: 0.75rem;
   color: var(--ink-faint);
@@ -1071,7 +1044,6 @@
   .pulse-facet-chip,
   .pulse-briefing-section-toggle,
   .pulse-section-toggle,
-  .pulse-event,
   .pulse-activity,
   .pulse-needs-item,
   .pulse-connections-row {
@@ -1167,7 +1139,6 @@
   }
 
   .pulse-needs-item,
-  .pulse-event,
   .pulse-activity {
     padding-left: 0.35rem;
   }

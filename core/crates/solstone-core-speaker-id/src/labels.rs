@@ -868,13 +868,25 @@ mod tests {
             let before = b"{\"labels\":[]}\n";
             std::fs::write(&path, before).unwrap();
             let replaced = std::cell::Cell::new(false);
+            let refused = std::cell::Cell::new(false);
             let checkpoint = || {
                 if !replaced.get()
                     && solstone_core_journal_io::locking::lock_is_held(&path)
                         .map_err(|error| error.to_string())?
                 {
                     replaced.set(true);
-                    std::fs::rename(child, &parked).unwrap();
+                    // Windows refuses to move a directory while the writer
+                    // holds handles inside it, so there the replacement
+                    // cannot happen at all.
+                    let renamed = std::fs::rename(child, &parked);
+                    #[cfg(windows)]
+                    if let Err(error) = renamed {
+                        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+                        refused.set(true);
+                        return Ok(());
+                    }
+                    #[cfg(not(windows))]
+                    renamed.unwrap();
                     std::fs::create_dir(child).unwrap();
                     std::fs::write(&path, before).unwrap();
                 }
@@ -891,6 +903,21 @@ mod tests {
                 write_stub_labels_checked(&segment, "declared-skip", &checkpoint)
             };
             assert!(replaced.get(), "actual public sidecar must be held");
+            if refused.get() {
+                result.unwrap();
+                assert!(!parked.exists());
+                // With the writer done, the same move succeeds: the refusal
+                // came from the writer's own handles.
+                std::fs::rename(child, &parked).unwrap();
+                std::fs::rename(&parked, child).unwrap();
+                let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                if full {
+                    assert_eq!(saved["labels"][0]["speaker_id"], "fresh");
+                } else {
+                    assert_eq!(saved["reason"], "declared-skip");
+                }
+                continue;
+            }
             assert!(result.is_err());
             assert_eq!(std::fs::read(&path).unwrap(), before);
             assert_eq!(

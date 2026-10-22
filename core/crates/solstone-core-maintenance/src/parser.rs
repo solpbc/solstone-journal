@@ -158,6 +158,18 @@ fn run_routine(
     if id == "speakers:backfill-pool" {
         return crate::bodies::speakers::backfill_pool(forwarded, journal);
     }
+    if id == "retention:owner-voice-originals" {
+        return match health_services {
+            Some(health_services) => {
+                crate::bodies::retention::owner_voice_originals(forwarded, journal, health_services)
+            }
+            None => CliRun {
+                stdout: String::new(),
+                stderr: "health maintenance services are unavailable.\n".to_owned(),
+                exit_code: 1,
+            },
+        };
+    }
     if matches!(id.as_str(), "health:mark-raw" | "health:prune-logs") {
         return match health_services {
             Some(health_services) => {

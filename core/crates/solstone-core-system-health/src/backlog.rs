@@ -70,8 +70,11 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
     window: usize,
     now: DateTime<Utc>,
 ) -> Result<BacklogView, HealthError> {
+    // A day holding only calendar notes holds nothing the owner did, so it is
+    // never pending.
     let mut days = solstone_core_journal_io::day_dirs(journal)?
         .into_keys()
+        .filter(|day| !solstone_core_segment::day_holds_only_calendar(journal, day))
         .collect::<Vec<_>>();
     days.sort_by(|left, right| right.cmp(left));
     days.truncate(window);

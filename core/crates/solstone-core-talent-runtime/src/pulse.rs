@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_facets::{
     load_activity_records, load_current, load_imports, load_recent_entity_names,
 };
-use solstone_core_home::{HomeContext, readers::collect_anticipated_activities};
+use solstone_core_home::HomeContext;
 use solstone_core_system_health::find_segment_dir;
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
@@ -56,7 +56,6 @@ pub struct PulsePreState {
     completed_since: String,
     as_of: String,
     awareness: String,
-    anticipated: String,
     recent_entities: String,
     gaps: String,
 }
@@ -105,10 +104,6 @@ pub fn apply_prompt_override(
             (
                 "awareness".to_owned(),
                 Value::String(state.awareness.clone()),
-            ),
-            (
-                "anticipated".to_owned(),
-                Value::String(state.anticipated.clone()),
             ),
             (
                 "recent_entities".to_owned(),
@@ -198,8 +193,6 @@ fn build_packet(
     let default = default_pulse();
     let (completed, mut window) = completed_since(&prepared.config, context, &mut gaps);
     let awareness = awareness_context(&context.journal, &mut gaps);
-    // This reader already owns the declared-facet activity scan used by the reference.
-    let anticipated = collect_anticipated_activities(&home, &day);
     let recent = match load_recent_entity_names(&context.journal, 12) {
         Ok(Some(names)) => names,
         Ok(None) => Vec::new(),
@@ -216,7 +209,6 @@ fn build_packet(
         completed_since: compact_json(completed),
         as_of: home.now_local().to_rfc3339_opts(SecondsFormat::Secs, false),
         awareness: compact_json(awareness),
-        anticipated: compact_json(Value::Array(anticipated)),
         recent_entities: compact_json(json!(recent)),
         gaps: if gaps.is_empty() {
             "(none)".to_owned()
@@ -798,7 +790,6 @@ mod tests {
             completed_since: String::new(),
             as_of: "2026-09-07T09:34:00-06:00".to_owned(),
             awareness: String::new(),
-            anticipated: String::new(),
             recent_entities: String::new(),
             gaps: String::new(),
         }));

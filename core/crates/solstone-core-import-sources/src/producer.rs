@@ -486,6 +486,7 @@ where
                             revision: request.revision,
                             segments: &segments,
                             files_created: &image_outcome.files_created,
+                            index_only: &[],
                             may_write_record: Some(&may_write),
                         },
                         publication,

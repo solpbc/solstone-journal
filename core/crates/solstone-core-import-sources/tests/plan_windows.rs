@@ -249,7 +249,7 @@ fn chatgpt_fall_back_allocates_stepped_window_and_preserves_instants() {
         (t2.timestamp(), "assistant", "later"),
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
-    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-chatgpt", zone)
+    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-chatgpt", zone, None)
         .unwrap()
         .unwrap();
 
@@ -345,9 +345,15 @@ fn ordinary_day_control_groups_first_two_and_steps_third() {
         (t3.timestamp(), "user", "third"),
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
-    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-ordinary", zone)
-        .unwrap()
-        .unwrap();
+    let rendered = save::render(
+        RegistrySource::Chatgpt,
+        &archive,
+        "imp-ordinary",
+        zone,
+        None,
+    )
+    .unwrap()
+    .unwrap();
 
     assert_eq!(rendered.files.len(), 2);
     assert_eq!(rendered.files[0].day, "20260311");
@@ -404,7 +410,7 @@ fn spring_pair_inside_one_window_keeps_both_instants() {
         (t2.timestamp(), "assistant", "second"),
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
-    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-spring", zone)
+    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-spring", zone, None)
         .unwrap()
         .unwrap();
 
@@ -447,9 +453,15 @@ fn reimport_leaves_paths_source_ms_and_sibling_marker_unchanged() {
         (t2.timestamp(), "assistant", "later"),
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
-    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-reimport", zone)
-        .unwrap()
-        .unwrap();
+    let rendered = save::render(
+        RegistrySource::Chatgpt,
+        &archive,
+        "imp-reimport",
+        zone,
+        None,
+    )
+    .unwrap()
+    .unwrap();
 
     let marker_path = journal.join("imports/keep-me/marker");
     fs::create_dir_all(marker_path.parent().unwrap()).unwrap();
@@ -536,7 +548,7 @@ fn tombstone_skips_only_that_key_and_leaves_second_window() {
             &[(t2.timestamp(), "user", "later")],
         ],
     );
-    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-tomb", zone)
+    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-tomb", zone, None)
         .unwrap()
         .unwrap();
 
@@ -598,9 +610,15 @@ fn claude_and_gemini_fall_back_archives_render_distinct_keys_and_instants() {
             claude_conv.to_string().into_bytes(),
         )],
     );
-    let claude_rendered = save::render(RegistrySource::Claude, &claude_path, "imp-claude", zone)
-        .unwrap()
-        .unwrap();
+    let claude_rendered = save::render(
+        RegistrySource::Claude,
+        &claude_path,
+        "imp-claude",
+        zone,
+        None,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(claude_rendered.files.len(), 2);
     assert_eq!(claude_rendered.files[0].segment, "015800_300");
     assert_eq!(claude_rendered.files[1].segment, "015800_301");
@@ -645,9 +663,15 @@ fn claude_and_gemini_fall_back_archives_render_distinct_keys_and_instants() {
             gemini_activities.to_string().into_bytes(),
         )],
     );
-    let gemini_rendered = save::render(RegistrySource::Gemini, &gemini_path, "imp-gemini", zone)
-        .unwrap()
-        .unwrap();
+    let gemini_rendered = save::render(
+        RegistrySource::Gemini,
+        &gemini_path,
+        "imp-gemini",
+        zone,
+        None,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(gemini_rendered.files.len(), 2);
     assert_eq!(gemini_rendered.files[0].segment, "015800_300");
     assert_eq!(gemini_rendered.files[1].segment, "015800_301");
@@ -701,10 +725,15 @@ fn owner_zone_beats_the_host_zone_for_repeated_clocks() {
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
 
-    let rendered_denver =
-        save::render(RegistrySource::Chatgpt, &archive, "imp-denver", zone_denver)
-            .unwrap()
-            .unwrap();
+    let rendered_denver = save::render(
+        RegistrySource::Chatgpt,
+        &archive,
+        "imp-denver",
+        zone_denver,
+        None,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(rendered_denver.files.len(), 2);
     assert_eq!(rendered_denver.files[0].segment, "015800_300");
     assert_eq!(rendered_denver.files[1].segment, "015800_301");
@@ -714,7 +743,7 @@ fn owner_zone_beats_the_host_zone_for_repeated_clocks() {
     let journal_utc = tree_utc.path().join("journal");
     fs::create_dir_all(&journal_utc).unwrap();
     let zone_utc = solstone_core_journal_config::owner_zone(&journal_utc);
-    let rendered_utc = save::render(RegistrySource::Chatgpt, &archive, "imp-utc", zone_utc)
+    let rendered_utc = save::render(RegistrySource::Chatgpt, &archive, "imp-utc", zone_utc, None)
         .unwrap()
         .unwrap();
     assert_eq!(rendered_utc.files.len(), 2);

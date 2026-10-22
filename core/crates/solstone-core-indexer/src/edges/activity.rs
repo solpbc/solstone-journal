@@ -16,7 +16,10 @@ pub(crate) fn extract_activity_edges(
 ) -> Result<Vec<EdgeRow>, EdgeError> {
     let mut rows = Vec::new();
 
-    for entry in entries {
+    for entry in entries
+        .iter()
+        .filter(|entry| !solstone_core_format::content::is_retired_plan(entry))
+    {
         let record_id = edge_str(entry.get("id"), "id")?;
         let title = fallback_activity_title(entry)?;
         let edge_title = edge_str(Some(&Value::String(title)), "title")?;

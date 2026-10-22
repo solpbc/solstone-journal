@@ -36,6 +36,9 @@ use crate::activity_provenance::{
     hidden_flag, missing_activity_memberships, record_activity_membership,
     record_activity_provenance,
 };
+use crate::calendar::{
+    Identity, Relisted, forget_calendar_path, index_calendar_file, listing_zone, relist,
+};
 use crate::chunk_sources::{
     CHUNK_SOURCES_LOOKUP_ROWIDS, chunk_path_lookup_ready, delete_chunk_source_rowids,
     record_chunk_source, require_chunk_path_lookup,
@@ -301,11 +304,22 @@ impl PendingChunkRows {
     }
 }
 
+/// Delete every index row filed under one source file. For a calendar file
+/// this returns the identities it held notes for; the caller relists them in
+/// the same transaction.
 fn delete_file_chunks(
     conn: &Connection,
     path: &str,
     known_rows: Option<&[i64]>,
-) -> Result<(), StoreError> {
+) -> Result<BTreeSet<Identity>, StoreError> {
+    // Listing rows can be filed under a calendar file by another file's
+    // relist in this same pass, after `known_rows` was read; the calendar
+    // rows are found through their own table instead.
+    let identities = if is_calendar_note(path) {
+        forget_calendar_path(conn, path)?
+    } else {
+        BTreeSet::new()
+    };
     if let Some(rows) = known_rows {
         let mut statement = conn.prepare_cached("DELETE FROM chunks WHERE rowid=? AND path=?")?;
         for id in rows {
@@ -330,7 +344,7 @@ fn delete_file_chunks(
     conn.execute("DELETE FROM memory_originals WHERE path=?", [path])?;
     conn.execute("DELETE FROM chunk_group_offset WHERE path=?", [path])?;
     conn.execute("DELETE FROM screen_text_source WHERE path=?", [path])?;
-    Ok(())
+    Ok(identities)
 }
 
 #[derive(Clone, Debug)]
@@ -591,6 +605,9 @@ fn scan_journal_pass(
             .chain(removed.iter().cloned()),
     );
     let mut invalid_memory_removed = 0;
+    // Read once per pass. An unreadable settings file leaves calendar rows as
+    // they are; the edge pass below reports that file once for the whole scan.
+    let mut calendar_zone_readable: Option<bool> = None;
     for (rel, path, mtime) in &to_index {
         let family = match resolve_content_shape(path, rel) {
             ContentResolution::Indexed(family) => family,
@@ -673,6 +690,12 @@ fn scan_journal_pass(
         {
             continue;
         }
+        if family == Family::Calendar
+            && !*calendar_zone_readable.get_or_insert_with(|| listing_zone(journal).is_ok())
+        {
+            report.skipped += 1;
+            continue;
+        }
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let chunk_rows = pending_chunks.take(&tx, rel)?;
         let warnings = match ensure_file_current(
@@ -712,8 +735,11 @@ fn scan_journal_pass(
     for rel in &removed {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let chunk_rows = pending_chunks.take(&tx, rel)?;
-        delete_file_chunks(&tx, rel, Some(&chunk_rows))?;
+        let forgotten = delete_file_chunks(&tx, rel, Some(&chunk_rows))?;
         tx.execute("DELETE FROM files WHERE path=?", [rel])?;
+        let relisted = relist(&tx, journal, &forgotten)?;
+        relisted.mark_for_reindex(&tx)?;
+        report.warnings.extend(relisted.warnings);
         commit_scanned(tx, checkpoint)?;
         removed_count += 1;
     }
@@ -1122,6 +1148,10 @@ pub(crate) fn rescan_file_admitted(
     if edge_source.is_some() {
         edge_resolver.preflight_owner_timezone()?;
     }
+    if family == Some(Family::Calendar) {
+        // Existing rows stay as they are until the settings file can be read.
+        listing_zone(journal)?;
+    }
     let mtime = if family == Some(Family::AgentMemory) {
         memory_file_mtime_secs(&path)?
     } else {
@@ -1216,6 +1246,11 @@ where
         tx.rollback()?;
         return Ok(Some(report));
     }
+    crate::calendar_schedule::relink_all_people(&tx, journal)?;
+    tx.execute(
+        "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
+        [CALENDAR_PEOPLE_EDGES_PATH],
+    )?;
     if !before_commit()? {
         tx.rollback()?;
         return Ok(None);
@@ -1291,6 +1326,24 @@ fn reconcile_edges(
         }
     }
 
+    // Edges follow file mtimes, and retired plan records stay in files that no
+    // longer change. Re-extract those files once so their edges are dropped.
+    let plans_rechecked = retired_plan_edges_rechecked(conn)?;
+    if !plans_rechecked {
+        for (rel, path) in &files {
+            let activity_file = rel.starts_with("facets/")
+                && rel.contains("/activities/")
+                && rel.ends_with(".jsonl");
+            if activity_file
+                && !to_index.iter().any(|(queued, _, _)| queued == rel)
+                && fs::read_to_string(path).is_ok_and(|text| text.contains("\"anticipated\""))
+                && let Ok(mtime) = file_mtime_secs(path)
+            {
+                to_index.push((rel.clone(), path.clone(), mtime));
+            }
+        }
+    }
+
     let mut resolver = EdgeResolver::new(journal);
     let mut report = EdgeScanReport {
         failures: unreadable,
@@ -1347,7 +1400,61 @@ fn reconcile_edges(
         tx.commit()?;
     }
     report.removed = removed.len();
+    if !calendar_people_linked(conn)? {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        match crate::calendar_schedule::relink_all_people(&tx, journal) {
+            Ok(()) => {
+                tx.execute(
+                    "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
+                    [CALENDAR_PEOPLE_EDGES_PATH],
+                )?;
+                crate::db::admit_scan_journal(checkpoint)?;
+                tx.commit()?;
+            }
+            Err(error) => {
+                tx.rollback()?;
+                report
+                    .warnings
+                    .push(format!("calendar invites not linked yet: {error}"));
+            }
+        }
+    }
+    if !plans_rechecked && report.failures.is_empty() {
+        conn.execute(
+            "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
+            [RETIRED_PLAN_EDGES_PATH],
+        )?;
+    }
     Ok(report)
+}
+
+/// Marks that files holding retired plan records had their edges re-extracted.
+const RETIRED_PLAN_EDGES_PATH: &str = "edges:retired-plans";
+
+/// Marks that the people on every listed calendar event have been linked.
+/// Calendar notes indexed before people links existed get theirs once.
+const CALENDAR_PEOPLE_EDGES_PATH: &str = "edges:calendar-people";
+
+fn calendar_people_linked(conn: &Connection) -> Result<bool, StoreError> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM edge_files WHERE path = ?",
+            [CALENDAR_PEOPLE_EDGES_PATH],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+fn retired_plan_edges_rechecked(conn: &Connection) -> Result<bool, StoreError> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM edge_files WHERE path = ?",
+            [RETIRED_PLAN_EDGES_PATH],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
 }
 
 fn replace_edge_file_edges(
@@ -1413,11 +1520,16 @@ fn process_edge_file(
 }
 
 fn edge_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64>, StoreError> {
-    let mut statement =
-        conn.prepare("SELECT path, mtime FROM edge_files WHERE path != ? ORDER BY path")?;
-    let rows = statement.query_map([EDGES_SCHEMA_PATH], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-    })?;
+    let mut statement = conn
+        .prepare("SELECT path, mtime FROM edge_files WHERE path NOT IN (?, ?, ?) ORDER BY path")?;
+    let rows = statement.query_map(
+        [
+            EDGES_SCHEMA_PATH,
+            RETIRED_PLAN_EDGES_PATH,
+            CALENDAR_PEOPLE_EDGES_PATH,
+        ],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+    )?;
     let mut mtimes = BTreeMap::new();
     for row in rows {
         let (path, mtime) = row?;
@@ -1968,18 +2080,27 @@ fn ensure_file_current(
         FileUpdate::Scan(rows) => Some(rows),
         FileUpdate::Force | FileUpdate::IfChanged => None,
     };
-    delete_file_chunks(conn, rel, known_chunk_rows)?;
-    let warnings =
-        index_file(conn, journal, rel, path, family, memory_original).map_err(|warning| {
-            StoreError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                warning,
-            ))
-        })?;
+    let forgotten = delete_file_chunks(conn, rel, known_chunk_rows)?;
+    let indexed = if family == Family::Calendar {
+        index_calendar_source(conn, journal, rel, path, forgotten)
+    } else {
+        index_file(conn, journal, rel, path, family, memory_original)
+            .map(|warnings| (warnings, None))
+    };
+    let (warnings, relisted) = indexed.map_err(|warning| {
+        StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            warning,
+        ))
+    })?;
     conn.execute(
         "REPLACE INTO files(path, mtime) VALUES (?, ?)",
         params![rel, mtime],
     )?;
+    // After this file's own row, so a file left to index again stays marked.
+    if let Some(relisted) = relisted {
+        relisted.mark_for_reindex(conn)?;
+    }
     Ok(warnings)
 }
 
@@ -2097,6 +2218,43 @@ fn index_file(
     Ok(warnings)
 }
 
+/// Index one calendar file's notes on the day they were stored, then relist
+/// every identity it holds now or held before, in the caller's transaction.
+fn index_calendar_source(
+    conn: &Connection,
+    journal: &Path,
+    rel: &str,
+    path: &Path,
+    mut identities: BTreeSet<Identity>,
+) -> Result<(Vec<String>, Option<Relisted>), String> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("content read failed for {rel}: {error}"))?;
+    let metadata = extract_path_metadata(rel);
+    let stream_lookup = extract_stream(journal, rel);
+    let declarations = FacetDeclarationSet::from_journal(journal)
+        .map_err(|error| format!("facet declaration scan failed for {rel}: {error}"))?;
+    let classification =
+        classify_source(journal, rel, stream_lookup.stream.as_deref(), &declarations);
+    let (indexed, mut warnings) = index_calendar_file(
+        conn,
+        journal,
+        rel,
+        &text,
+        &metadata.day,
+        stream_lookup.stream.as_deref(),
+        &time_bucket(rel),
+    )
+    .map_err(|error| format!("calendar note insert failed for {rel}: {error}"))?;
+    warnings.extend(stream_lookup.warning);
+    identities.extend(indexed);
+    replace_chunk_classification(conn, &classification)
+        .map_err(|error| format!("classification insert failed for {rel}: {error}"))?;
+    let mut relisted = relist(conn, journal, &identities)
+        .map_err(|error| format!("calendar listing failed for {rel}: {error}"))?;
+    warnings.append(&mut relisted.warnings);
+    Ok((warnings, Some(relisted)))
+}
+
 fn resolve_rescan_target(journal: &Path, input: &Path) -> Result<(String, PathBuf), StoreError> {
     if input.is_absolute() {
         let journal_abs = fs::canonicalize(journal)?;
@@ -2124,6 +2282,11 @@ pub(crate) fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
 
 fn written_activity(path: &Path, rel: &str) -> bool {
     resolve_content_shape(path, rel) == ContentResolution::Indexed(Family::Activity)
+}
+
+fn is_calendar_note(rel: &str) -> bool {
+    solstone_core_format::content::resolve_spec(rel)
+        .is_some_and(|spec| spec.family == Family::Calendar)
 }
 
 pub(crate) fn is_memory_note(rel: &str) -> bool {
@@ -5348,6 +5511,8 @@ mod tests {
             edge_file_paths(&conn),
             vec![
                 "edges:__schema__".to_string(),
+                "edges:calendar-people".to_string(),
+                "edges:retired-plans".to_string(),
                 "facets/work/entities/123.jsonl".to_string(),
                 "facets/work/entities/20260304.jsonl".to_string(),
                 "facets/work/entities/99999999.jsonl".to_string(),
@@ -6628,7 +6793,10 @@ mod tests {
         assert_eq!(morning_row.2, "morning_briefing");
         assert_eq!(morning_row.3, None);
         assert_eq!(morning_row.4, "");
-        assert!(morning_row.5.contains("## Your Day"));
+        assert!(morning_row.5.contains("- Shipped."));
+        // A stored briefing's retired forecast sections are not indexed.
+        assert!(!morning_row.5.contains("Meet Alice."));
+        assert!(!morning_row.5.contains("Prepare."));
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup talent json root");
     }

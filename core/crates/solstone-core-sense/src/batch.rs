@@ -223,7 +223,11 @@ fn run_batch_with_environment_and_timeout_with_marker_policy(
     check_deadline(deadline)?;
 
     if let Some(reprocess) = request.reprocess {
-        let deleted = delete_outputs(
+        let DeletedOutputs {
+            deleted,
+            kept_voice_only,
+            kept_while_voice_only_on,
+        } = delete_outputs_counted(
             journal,
             &day_dir,
             reprocess,
@@ -232,6 +236,16 @@ fn run_batch_with_environment_and_timeout_with_marker_policy(
             request.dry_run,
         )?;
         check_deadline(deadline)?;
+        if kept_voice_only > 0 {
+            println!(
+                "Kept {kept_voice_only} voice-only output file(s): a voice-only result is not reprocessed"
+            );
+        }
+        if kept_while_voice_only_on > 0 {
+            println!(
+                "Kept {kept_while_voice_only_on} transcript(s) made before \"leave out other voices\" was on: turn it off to reprocess them"
+            );
+        }
         if request.dry_run {
             if deleted.is_empty() {
                 println!("No files to delete");
@@ -394,12 +408,79 @@ pub fn delete_outputs(
     stream_filter: Option<&str>,
     dry_run: bool,
 ) -> Result<Vec<PathBuf>, BatchError> {
-    if !day_dir.exists() {
-        return Ok(Vec::new());
+    delete_outputs_counted(
+        journal,
+        day_dir,
+        reprocess,
+        segment_filter,
+        stream_filter,
+        dry_run,
+    )
+    .map(|outcome| outcome.deleted)
+}
+
+/// What a reprocess deletion did.
+#[derive(Debug, Default)]
+pub struct DeletedOutputs {
+    pub deleted: Vec<PathBuf>,
+    /// Voice-only outputs left in place: a voice-only result is final and is never reprocessed.
+    pub kept_voice_only: usize,
+    /// Transcripts made without voice-only filtering, left in place while it is on: reprocessing
+    /// them now would filter them and delete their originals.
+    pub kept_while_voice_only_on: usize,
+}
+
+/// A finished transcript made without voice-only filtering.
+fn is_unfiltered_transcript(path: &Path) -> bool {
+    use solstone_core_processing_record::vocab;
+    match solstone_core_processing_record::read_processing_record_header(path) {
+        Some(record) => {
+            record.get("handler").and_then(Value::as_str) == Some(vocab::HANDLER_TRANSCRIBE)
+                && matches!(
+                    record.get("state").and_then(Value::as_str),
+                    Some(vocab::STATE_ANALYZED | vocab::STATE_EMPTY)
+                )
+                && !solstone_core_processing_record::owner_voice_filtered(&record)
+        }
+        None => solstone_core_processing_record::jsonl_has_row_with_key(
+            path,
+            vocab::AUDIO_TRANSCRIPT_ROW_KEY,
+        ),
     }
+}
+
+fn owner_voice_only_on(journal: &Path) -> bool {
+    solstone_core_journal_config::read_journal_config(journal)
+        .ok()
+        .and_then(|config| config.config)
+        .and_then(|config| config.get("transcribe").cloned())
+        .and_then(|transcribe| transcribe.get("owner_voice_only").cloned())
+        == Some(Value::Bool(true))
+}
+
+/// A voice-only output (success or failure) is never deleted for reprocessing.
+fn is_voice_only_output(path: &Path) -> bool {
+    solstone_core_processing_record::read_processing_record_header(path)
+        .as_ref()
+        .is_some_and(solstone_core_processing_record::owner_voice_filtered)
+}
+
+/// [`delete_outputs`], also counting the voice-only outputs it left in place.
+pub fn delete_outputs_counted(
+    journal: &Path,
+    day_dir: &Path,
+    reprocess: ReprocessKind,
+    segment_filter: Option<&str>,
+    stream_filter: Option<&str>,
+    dry_run: bool,
+) -> Result<DeletedOutputs, BatchError> {
+    let mut outcome = DeletedOutputs::default();
+    if !day_dir.exists() {
+        return Ok(outcome);
+    }
+    let voice_only_on = owner_voice_only_on(journal);
     let listed = iter_segments(journal, PathOrDay::Directory(day_dir))?;
     check_record_identities(selected_segments(&listed, segment_filter, stream_filter))?;
-    let mut deleted = Vec::new();
     for segment in listed {
         if stream_filter.is_some_and(|value| !segment.stream().matches(value)) {
             continue;
@@ -446,8 +527,17 @@ pub fn delete_outputs(
             if !selected {
                 continue;
             }
-            deleted.push(path.clone());
-            if !dry_run {
+            if is_voice_only_output(&path) {
+                outcome.kept_voice_only += 1;
+                continue;
+            }
+            if voice_only_on && is_unfiltered_transcript(&path) {
+                outcome.kept_while_voice_only_on += 1;
+                continue;
+            }
+            if dry_run {
+                outcome.deleted.push(path.clone());
+            } else {
                 let failure = |source| BatchError::Delete {
                     path: path.clone(),
                     source,
@@ -471,6 +561,12 @@ pub fn delete_outputs(
                     return Err(failure(std::io::Error::other(
                         "reprocess selection changed before deletion",
                     )));
+                }
+                // Re-read under the claim: a voice-only result published after selection
+                // is final too.
+                if is_voice_only_output(&path) {
+                    outcome.kept_voice_only += 1;
+                    continue;
                 }
                 // A journal rel is `/`-separated on every platform; the native
                 // spelling carries backslashes on Windows, which `sync_dir` refuses.
@@ -505,6 +601,7 @@ pub fn delete_outputs(
                     path: path.clone(),
                     source,
                 })?;
+                outcome.deleted.push(path.clone());
                 // The unlink and its dirty transition precede every later
                 // fallible scan/deadline/dispatcher step. A failed marker is
                 // terminal, but cannot pretend the already-removed output was
@@ -529,8 +626,8 @@ pub fn delete_outputs(
             }
         }
     }
-    deleted.sort();
-    Ok(deleted)
+    outcome.deleted.sort();
+    Ok(outcome)
 }
 
 /// Dispatch a scanned day through the native handler worker/process path.
@@ -1130,6 +1227,67 @@ mod tests {
     }
 
     #[test]
+    fn reprocess_keeps_voice_only_outputs_in_every_mode() {
+        let temp = tempfile::tempdir().expect("journal");
+        let path = segment(temp.path());
+        let day = temp.path().join("chronicle").join("20260812");
+        let header = |record: serde_json::Value| {
+            format!(
+                "{}\n",
+                serde_json::json!({"raw": "mic_audio.flac", "_solstone_processing": record})
+            )
+        };
+        for record in [
+            serde_json::json!({"state": "analyzed", "owner_voice_filter": true}),
+            serde_json::json!({"state": "failed", "owner_voice_filter": true}),
+        ] {
+            fs::write(path.join("mic_audio.jsonl"), header(record)).expect("sidecar");
+            fs::write(path.join("mic_audio.flac"), "audio").expect("source");
+            for (kind, dry_run) in [
+                (ReprocessKind::All, true),
+                (ReprocessKind::Audio, true),
+                (ReprocessKind::All, false),
+                (ReprocessKind::Audio, false),
+            ] {
+                let outcome = delete_outputs_counted(temp.path(), &day, kind, None, None, dry_run)
+                    .expect("reprocess");
+                assert!(outcome.deleted.is_empty());
+                assert_eq!(outcome.kept_voice_only, 1);
+                assert!(path.join("mic_audio.jsonl").exists());
+            }
+        }
+        // While voice-only is on, an ordinary finished transcript is kept, not reprocessed.
+        fs::create_dir_all(temp.path().join("config")).expect("config dir");
+        fs::write(
+            temp.path().join("config/journal.json"),
+            r#"{"transcribe": {"owner_voice_only": true}}"#,
+        )
+        .expect("config");
+        fs::write(
+            path.join("mic_audio.jsonl"),
+            header(serde_json::json!({"state": "analyzed", "handler": "transcribe"})),
+        )
+        .expect("sidecar");
+        let outcome =
+            delete_outputs_counted(temp.path(), &day, ReprocessKind::Audio, None, None, false)
+                .expect("reprocess");
+        assert!(outcome.deleted.is_empty());
+        assert_eq!(outcome.kept_while_voice_only_on, 1);
+        fs::remove_file(temp.path().join("config/journal.json")).expect("config");
+        // An ordinary output in the same segment is still deleted.
+        fs::write(
+            path.join("mic_audio.jsonl"),
+            header(serde_json::json!({"state": "analyzed"})),
+        )
+        .expect("sidecar");
+        let outcome =
+            delete_outputs_counted(temp.path(), &day, ReprocessKind::Audio, None, None, false)
+                .expect("reprocess");
+        assert_eq!(outcome.deleted, vec![path.join("mic_audio.jsonl")]);
+        assert_eq!(outcome.kept_voice_only, 0);
+    }
+
+    #[test]
     fn all_reprocess_uses_exact_source_name_while_screen_lowercases_only_its_stem() {
         let temp = tempfile::tempdir().expect("journal");
         let path = segment(temp.path());
@@ -1451,6 +1609,30 @@ mod tests {
                 .expect("recordless scan")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn old_parakeet_availability_failures_reenter_ordinary_scan() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = segment(temp.path());
+        fs::write(path.join("audio.flac"), b"retained audio").unwrap();
+        let day = temp.path().join("chronicle/20260812");
+        for reason in ["server_not_ready", "no_port"] {
+            for attempts in [3, 1000] {
+                let header = serde_json::json!({"_solstone_processing":{
+                    "schema":"solstone.processing.v1","handler":"transcribe","state":"failed",
+                    "reason_code":reason,"attempts":attempts
+                }});
+                fs::write(path.join("audio.jsonl"), format!("{header}\n")).unwrap();
+                let work = scan_unprocessed(temp.path(), &day, None, None, None).unwrap();
+                assert_eq!(work.len(), 1);
+                assert_eq!(work[0].handler, "transcribe");
+                assert_eq!(
+                    fs::read(path.join("audio.flac")).unwrap(),
+                    b"retained audio"
+                );
+            }
+        }
     }
 
     #[test]

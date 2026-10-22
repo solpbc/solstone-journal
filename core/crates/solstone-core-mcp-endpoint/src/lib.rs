@@ -36,6 +36,8 @@ mod byo_relay;
 #[cfg(unix)]
 #[cfg(all(test, feature = "full-tests"))]
 mod byo_relay_tests;
+#[cfg(all(test, feature = "full-tests"))]
+mod calendar_tests;
 mod dispatch;
 mod http1;
 mod jsonrpc;

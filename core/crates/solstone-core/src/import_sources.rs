@@ -16,7 +16,7 @@ use solstone_core_import::{
 };
 use solstone_core_import_host::cli_argv::RegistryDispatch;
 use solstone_core_import_host::import_publication::{
-    ImportFinish, ImportTerminalInput, finish_import_attempt,
+    ImportFinish, ImportTerminalInput, finish_import_attempt, finish_import_attempt_indexing,
 };
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, ArchiveMergeResult, FullReindexRequester, ReindexStatus, RetryDisposition,
@@ -86,9 +86,13 @@ fn preview_size(
     journal: &Path,
 ) -> Result<solstone_core_import::size::ImportSize, String> {
     let zone = solstone_core_journal_config::owner_zone(journal);
-    if let Some(rendered) =
-        save::render(dispatch.source, &dispatch.media, &dispatch.timestamp, zone)
-    {
+    if let Some(rendered) = save::render(
+        dispatch.source,
+        &dispatch.media,
+        &dispatch.timestamp,
+        zone,
+        None,
+    ) {
         let rendered = rendered?;
         if !dispatch.force && already_saved(journal, &dispatch.media) {
             return Ok(solstone_core_import::size::ImportSize {
@@ -299,7 +303,8 @@ fn run_save(
     };
 
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let rendered = match save::render(source, &dispatch.media, import_id, zone)
+    let stamp = import_stamp(journal, import_id);
+    let rendered = match save::render(source, &dispatch.media, import_id, zone, Some(&stamp))
         .expect("run_save is only dispatched for sources save renders")
     {
         Ok(rendered) if rendered.files.is_empty() => {
@@ -328,7 +333,15 @@ fn run_save(
         let _ = finish(ImportTerminalInput::Failed(&written.created));
         return failure(format!("{name} import failed: {detail}\n"));
     }
-    match finish(ImportTerminalInput::Success(&written.created)) {
+    let finished = finish_import_attempt_indexing(
+        journal,
+        import_id,
+        generation,
+        name,
+        ImportTerminalInput::Success(&written.created),
+        &written.calendar_files,
+    );
+    match finished {
         Ok(ImportFinish::Applied) => {}
         Ok(ImportFinish::Stale) => {
             return failure(format!(
@@ -366,6 +379,23 @@ fn run_save(
             raw_retention: None,
         },
     ))
+}
+
+/// The import a save writes calendar notes for, and when it happened: the
+/// upload time its own record keeps, or the time its first save recorded
+/// there, so every save of one import stamps the same time.
+fn import_stamp(
+    journal: &Path,
+    import_id: &str,
+) -> solstone_core_import_sources::ics_notes::ImportStamp {
+    let imported_at = solstone_core_import::import_time_ms(journal, import_id, now_ms())
+        .ok()
+        .and_then(|ms| i64::try_from(ms).ok())
+        .and_then(chrono::DateTime::from_timestamp_millis);
+    solstone_core_import_sources::ics_notes::ImportStamp {
+        id: import_id.to_owned(),
+        imported_at: imported_at.unwrap_or_else(chrono::Utc::now),
+    }
 }
 
 fn write_save_manifest(
@@ -2140,6 +2170,46 @@ mod tests {
             proj_unconfirmed.error.as_deref(),
             Some("Import never completed")
         );
+    }
+
+    #[test]
+    fn calendar_notes_carry_the_upload_time_from_the_import_record_not_its_id() {
+        let journal = tempfile::tempdir().unwrap();
+        for (id, uploaded_ms) in [
+            ("20250101_000000", 1_792_500_000_000_i64),
+            ("20261020_180000", 1_761_000_000_500_i64),
+        ] {
+            let dir = journal.path().join("imports").join(id);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("import.json"),
+                serde_json::to_vec(&serde_json::json!({
+                    "task_id": id,
+                    "upload_timestamp": uploaded_ms as f64,
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let stamp = import_stamp(journal.path(), id);
+            assert_eq!(stamp.id, id);
+            assert_eq!(stamp.imported_at.timestamp_millis(), uploaded_ms);
+        }
+        // A record with no upload time keeps the first save's time, so a
+        // later save of the same import stamps the same time.
+        let legacy = "20240101_000000";
+        let dir = journal.path().join("imports").join(legacy);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("import.json"),
+            serde_json::to_vec(&serde_json::json!({"task_id": legacy})).unwrap(),
+        )
+        .unwrap();
+        let before = chrono::Utc::now();
+        let first = import_stamp(journal.path(), legacy);
+        assert!(first.imported_at >= before - chrono::Duration::seconds(1));
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let again = import_stamp(journal.path(), legacy);
+        assert_eq!(again.imported_at, first.imported_at);
     }
 
     #[test]

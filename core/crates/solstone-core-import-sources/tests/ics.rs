@@ -246,7 +246,7 @@ END:VEVENT\r\n\
 END:VCALENDAR\r\n";
 
     let calendar = tree.file("fallback.ics", cal_text);
-    let rendered = save::render(RegistrySource::Ics, &calendar, "imp-ics", zone)
+    let rendered = save::render(RegistrySource::Ics, &calendar, "imp-ics", zone, None)
         .unwrap()
         .unwrap();
 

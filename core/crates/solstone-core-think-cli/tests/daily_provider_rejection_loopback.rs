@@ -55,7 +55,7 @@ fn cross_boundary_loopback_400_to_capped_daily_unit_with_detail() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let day = "20260914";
-    let identity = DailyUnitIdentity::new(day, "schedule", None);
+    let identity = DailyUnitIdentity::new(day, "morning_briefing", None);
 
     solstone_core_think_cli::test_support::reserve_daily_attempt(
         root,
@@ -82,7 +82,7 @@ fn cross_boundary_loopback_400_to_capped_daily_unit_with_detail() {
     };
     let request = solstone_core_generate::GenerateRequest {
         id: None,
-        context: "schedule".into(),
+        context: "morning_briefing".into(),
         contents: vec![solstone_core_generate::ContentPart::Text {
             text: "prompt".into(),
         }],
@@ -129,14 +129,14 @@ fn cross_boundary_loopback_400_to_capped_daily_unit_with_detail() {
         detail: refusal.detail.clone(),
     };
 
-    let use_dir = root.join("talents/schedule");
+    let use_dir = root.join("talents/morning_briefing");
     std::fs::create_dir_all(&use_dir).unwrap();
     let start_line = "{\"event\":\"start\",\"use_id\":\"use-loopback-1\"}\n";
     let mut worker_log_bytes = start_line.as_bytes().to_vec();
     let error = solstone_core_talent_runtime::StageError::new(
         "generate",
         "runtime",
-        "schedule".to_owned(),
+        "morning_briefing".to_owned(),
         refusal.detail.clone(),
     );
     solstone_core_talent_runtime::emit_outcome_for_test(
@@ -151,7 +151,7 @@ fn cross_boundary_loopback_400_to_capped_daily_unit_with_detail() {
     solstone_core_think_cli::test_support::log_daily_terminal(
         root,
         day,
-        "schedule",
+        "morning_briefing",
         "use-loopback-1",
         wire_reason_code,
         1_000_000,
@@ -174,7 +174,7 @@ fn cross_boundary_loopback_400_to_capped_daily_unit_with_detail() {
         for line in std::fs::read_to_string(&path).unwrap().lines() {
             let row: Value = serde_json::from_str(line).unwrap();
             if row.get("event") == Some(&Value::String("talent.fail".to_owned()))
-                && row.get("name") == Some(&Value::String("schedule".to_owned()))
+                && row.get("name") == Some(&Value::String("morning_briefing".to_owned()))
             {
                 found = Some((row, line.to_owned()));
             }

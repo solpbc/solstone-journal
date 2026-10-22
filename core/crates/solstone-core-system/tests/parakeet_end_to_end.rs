@@ -75,7 +75,10 @@ fn fixture_launch_paths(
         binary,
         model,
         Some(package),
-        BTreeMap::from([("PARAKEET_ATT_CONTEXT".to_owned(), "128".to_owned())]),
+        BTreeMap::from([
+            ("PARAKEET_ATT_CONTEXT".to_owned(), "128".to_owned()),
+            ("PARAKEET_SUBSAMPLING_TILE".to_owned(), "256".to_owned()),
+        ]),
     )
 }
 
@@ -134,6 +137,7 @@ fn pump(
 #[test]
 fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
     let journal = journal();
+    #[cfg(unix)]
     let _generation = crate::fixture_binary::TestGeneration::admit(&journal);
     let (binary_path, model_path, package_root, env_updates) = fixture_launch_paths(&journal);
     let shared = Arc::new(ParakeetRuntimeShared::default());
@@ -270,4 +274,44 @@ fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
     assert!(!port_path.exists());
 
     let _ = std::fs::remove_dir_all(journal);
+}
+
+#[cfg(windows)]
+#[test]
+fn queued_analysis_authenticates_after_provider_readiness_and_rotation_without_leaking_to_other_children()
+ {
+    let root = std::env::temp_dir().join(format!("pq-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("bin")).expect("fixture bin");
+    for name in ["queue-driver.exe", "solstone.exe", "parakeet-server.exe"] {
+        std::fs::copy(crate::fixture_binary::path(), root.join("bin").join(name))
+            .expect("fixture executable");
+    }
+    let output = std::process::Command::new(root.join("bin/queue-driver.exe"))
+        .args([
+            "parakeet-queue-driver",
+            root.to_str().expect("fixture root"),
+        ])
+        .env("solstone_parakeet_auth_token", "ambient-token")
+        .env("Solstone_Parakeet_Auth_Nonce", "ambient-nonce")
+        .env("SOLSTONE_PARAKEET_AUTH_PORT", "1")
+        .output()
+        .expect("native queue proof");
+    assert!(
+        output.status.success(),
+        "native queue proof: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("PARAKEET_QUEUE_CAPABILITY_PROOF=pass")
+    );
+    for tag in [
+        "authenticated-1",
+        "authenticated-2",
+        "unrelated",
+        "unbound",
+        "revoked",
+    ] {
+        assert!(root.join(format!("{tag}.json")).is_file());
+    }
+    std::fs::remove_dir_all(root).expect("remove native queue fixture");
 }

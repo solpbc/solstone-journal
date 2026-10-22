@@ -22,13 +22,11 @@
     'pulse-today': 'false',
     'pulse-needs': 'false'
   };
-  const briefingSectionOrder = ['your_day', 'yesterday', 'forward_look'];
-  const briefingRenderOrder = ['your_day', 'yesterday', 'needs_attention', 'forward_look'];
+  const briefingSectionOrder = ['yesterday'];
+  const briefingRenderOrder = ['yesterday', 'needs_attention'];
   const briefingSectionLabels = {
-    your_day: 'your day',
     yesterday: 'yesterday',
-    needs_attention: 'needs attention',
-    forward_look: 'forward look'
+    needs_attention: 'needs attention'
   };
 
   let homeInitialized = false;
@@ -1016,14 +1014,6 @@
     replaceHomeSurface('reflection', renderWeeklyReflectionHtml(pulse), predecessors('reflection'));
   }
 
-  function currentTimeString(now) {
-    const text = String(now || '');
-    if (text.includes('T')) {
-      return text.split('T', 2)[1].substring(0, 8);
-    }
-    return text.substring(0, 8);
-  }
-
   function plural(count, one, many) {
     return count + ' ' + (count === 1 ? one : many);
   }
@@ -1064,41 +1054,20 @@
   }
 
   function renderTodayHtml(pulse) {
-    const anticipated = Array.isArray(pulse.anticipated_activities) ? pulse.anticipated_activities : [];
     const activities = Array.isArray(pulse.activities) ? pulse.activities : [];
-    if (!anticipated.length && !activities.length) {
+    if (!activities.length) {
       return '<div class="pulse-empty-state" data-home-surface="today">'
         + '<h2 class="pulse-section-header">today</h2>'
-        + '<div class="pulse-empty-message">no plans or recent activity yet today.</div>'
+        + '<div class="pulse-empty-message">no recent activity yet today.</div>'
         + '<a class="pulse-today-link" href="/app/activities/" data-copy-key="home-today-link">all of today\'s activities →</a>'
         + '</div>';
     }
-    const nowTime = currentTimeString(pulse.now);
     let html = '<div class="pulse-today" id="pulse-today" data-home-surface="today" data-section-collapsed="true">'
       + '<div class="pulse-section-toggle" role="button" tabindex="0" aria-expanded="false">'
       + '<h2 class="pulse-section-header">today</h2>'
       + '<span class="pulse-section-summary">' + esc(pulse.today_summary || '') + '</span>'
       + '</div>'
       + '<div class="pulse-section-body">';
-    if (anticipated.length) {
-      html += '<div class="pulse-events">';
-      anticipated.forEach(function (event) {
-        const title = event.title || 'Untitled';
-        const start = String(event.start || '').substring(0, 5);
-        const isPast = Boolean(event.occurred) || Boolean(event.end && String(event.end) < nowTime);
-        const day = event.day || pulse.today || pulse.day || '';
-        const facet = event.facet || '';
-        const id = event.id || '';
-        const href = '/app/activities/' + esc(day)
-          + '?facet=' + esc(encodeURIComponent(facet))
-          + '#' + esc(encodeURIComponent(facet)) + '/' + esc(encodeURIComponent(id));
-        html += '<a class="pulse-event' + (isPast ? ' past' : '') + '" href="' + href + '">'
-          + '<span class="pulse-event-time">' + esc(start) + '</span>'
-          + '<span class="pulse-event-title">' + esc(title) + '</span>'
-          + '</a>';
-      });
-      html += '</div>';
-    }
     if (activities.length) {
       // The header counted all of them, the list showed six, and the chips
       // measured a third population. Each number now says what it counts, and

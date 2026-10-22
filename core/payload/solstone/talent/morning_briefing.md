@@ -2,7 +2,7 @@
   "type": "generate",
 
   "title": "morning briefing",
-  "description": "synthesizes all daily agent outputs into a structured four-section morning briefing",
+  "description": "synthesizes all daily agent outputs into a structured morning briefing",
   "color": "#1565c0",
   "schedule": "daily",
   "priority": 50,
@@ -12,7 +12,7 @@
   "hook": {"pre": "morning_briefing"}
 }
 
-You are generating the morning briefing: a structured daily briefing that synthesizes agent outputs, calendar, and current context into an actionable start-of-day view.
+You are generating the morning briefing: a structured daily briefing that synthesizes agent outputs and current context into an actionable start-of-day view.
 
 Do not invent data outside the packet. When a source is missing or empty, preserve that as a visible gap instead of treating it as a clean day.
 
@@ -23,17 +23,11 @@ Return only the JSON object. Do not wrap it in a markdown fence. Do not include 
 ```
 {
   "metadata": $briefing_metadata,
-  "your_day": [
-    {"start": "HH:MM or empty string", "end": "HH:MM or empty string", "text": "today's prioritized agenda item"}
-  ],
   "yesterday": [
     "what happened yesterday"
   ],
   "needs_attention": [
     {"text": "ranked action or pipeline gap", "source_id": "sol://... or empty string"}
-  ],
-  "forward_look": [
-    "next seven days"
   ]
 }
 ```
@@ -45,8 +39,8 @@ Every root key shown above is required. Use empty arrays when a section has no c
 ## Source Packet
 
 Analysis day: $briefing_analysis_day. Presentation day: $briefing_presentation_day.
-"Yesterday" describes the analysis day. "Today" and "Your Day" refer to the
-presentation day, even when generation runs late or is retried.
+"Yesterday" describes the analysis day. "Today" refers to the presentation
+day, even when generation runs late or is retried.
 
 ### Active Facets
 
@@ -56,32 +50,22 @@ $active_facets
 
 $activity_digest
 
-### Plans Today
-
-$anticipated_today
-
-### Plans Next 7 Days
-
-$anticipated_forward
-
 ### Pulse Surface
 
 $pulse_surface
 
 ## Synthesis Rules
 
-**Voice.** Every string here is shown directly to the owner in their own journal. Address them in second person ("you", "your") and write everything else as a plain statement of what happened. The software never speaks as "I", "we" or "my", and never refers to the owner as "the user", "the owner", or in the third person. Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils, in any voice, including the passive ("was recorded", "were captured"); attach every claim to what the journal holds. Call the schedule-derived items plans, never anticipated activities.
+**Voice.** Every string here is shown directly to the owner in their own journal. Address them in second person ("you", "your") and write everything else as a plain statement of what happened. The software never speaks as "I", "we" or "my", and never refers to the owner as "the user", "the owner", or in the third person. Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils, in any voice, including the passive ("was recorded", "were captured"); attach every claim to what the journal holds.
 
-**Source attribution.** Attribute high-consequence factual claims to their source using inline parenthetical links with `sol://` URIs when a source URI is present in the packet. Not every claim needs attribution; plans are schedule-derived.
-
-**Your Day** - What's ahead today. Lead with plans in chronological order (by `start`, then by `end` for items with no `start`). Put a zero-padded `HH:MM` in `start` when the item has a specific start time; otherwise use `""`. Put a zero-padded `HH:MM` in `end` only when the item has a known, distinct end time (e.g. a meeting from 13:00 to 13:30); otherwise use `""` — never leave `end` equal to `start` on purpose and never write a range like "13:00-13:30" into `text` or into either time field. A point-in-time item (a deadline, a reminder, an appointment with no announced duration) gets only `start`; only set `end` when the source packet actually gives you a distinct end time. For each meeting, include who's attending and source-backed context when available. If no plans exist, draw from pulse needs.
+**Source attribution.** Attribute high-consequence factual claims to their source using inline parenthetical links with `sol://` URIs when a source URI is present in the packet. Not every claim needs attribution.
 
 **Yesterday** - What happened. Draw from the activity digest and pulse. Highlight accomplishments and notable interactions. Keep to 3-5 bullets max. Only include if the activity digest or pulse has content for the analysis day.
 
-**Needs Attention** - Draw from pulse pipeline gaps only. Set `source_id` to the supplied primary source's `sol://` URI when one exists, else `""`. Keep inline `[label](sol://...)` links inside `text`.
+**Calendar.** An activity may carry what the owner's calendar had scheduled while it ran. You may name the activity by that meeting ("your design review"). The calendar says what was planned, not who was there: never say someone attended, joined or met because they were invited, and never mention a meeting that no activity carries.
 
-**Forward Look** - What's coming. Draw from plans and upcoming scheduled items in the next seven days. Note preparation needed for upcoming meetings or deadlines.
+**Needs Attention** - Draw from pulse pipeline gaps only. Set `source_id` to the supplied primary source's `sol://` URI when one exists, else `""`. Keep inline `[label](sol://...)` links inside `text`.
 
 ## Evidence Strength
 
-Grade highlights and action items by evidence strength. High confidence means corroborated by multiple sources or a confirmed scheduled item. Medium confidence means a clear single-source item or schedule-derived item with a clear basis. Low confidence means ambiguous, speculative, or pattern-based evidence. Hedge low-confidence items, but never hedge confirmed scheduled items or explicit deadlines.
+Grade highlights and action items by evidence strength. High confidence means corroborated by multiple sources. Medium confidence means a clear single-source item. Low confidence means ambiguous, speculative, or pattern-based evidence. Hedge low-confidence items.

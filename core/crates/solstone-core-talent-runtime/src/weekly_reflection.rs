@@ -6,9 +6,9 @@
 //! presentation-day helper.
 //!
 //! `assess_day` classifies a day in this order. A missing day directory
-//! (`NotFound`) or a directory whose `iter_segments` is empty is
-//! `NothingShared`: absent, not unreadable, and a briefing file does not
-//! override the empty-segment case. Any other metadata error, a
+//! (`NotFound`) or a directory whose `iter_segments` holds no segment outside
+//! calendar streams is `NothingShared`: absent, not unreadable, and a briefing
+//! file does not override the empty-segment case. Any other metadata error, a
 //! non-directory, an `iter_segments` error, a briefing read error other
 //! than `NotFound`, bad JSON, a non-object, or a missing or non-array
 //! `yesterday` is `Unreadable`. Segments exist and the briefing is
@@ -1242,8 +1242,11 @@ fn assess_day(journal: &Path, day: &str) -> (DayClassification, Vec<Candidate>) 
         return (DayClassification::Unreadable, Vec::new());
     }
 
+    // Calendar notes are not something the owner shared that day.
     let has_segments = match iter_segments(journal, solstone_core_journal_io::PathOrDay::Day(day)) {
-        Ok(segments) => !segments.is_empty(),
+        Ok(segments) => segments
+            .iter()
+            .any(|segment| !solstone_core_segment::is_calendar_segment(journal, segment)),
         Err(_) => return (DayClassification::Unreadable, Vec::new()),
     };
 
@@ -1472,6 +1475,37 @@ mod tests {
         let norm = normalize_markdown_text(raw_memory_text);
         assert_eq!(norm, "First part of memory. Second part of memory.");
         assert!(raw_memory_text.contains('\n'));
+    }
+
+    #[test]
+    fn a_day_holding_only_calendar_notes_shared_nothing() {
+        let journal = tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("streams")).unwrap();
+        fs::write(
+            journal.path().join("streams/phone_calendar.json"),
+            r#"{"name":"phone_calendar","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"calendar"}"#,
+        )
+        .unwrap();
+        let day_dir = journal.path().join("chronicle/20260308");
+        let notes = day_dir.join("phone_calendar/094000_300");
+        fs::create_dir_all(&notes).unwrap();
+        fs::write(
+            notes.join(
+                "calendar_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jsonl",
+            ),
+            "{}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            assess_day(journal.path(), "20260308").0,
+            DayClassification::NothingShared
+        );
+        // The twin: an ordinary capture segment makes the day one with data.
+        fs::create_dir_all(day_dir.join("default/120000_60")).unwrap();
+        assert_eq!(
+            assess_day(journal.path(), "20260308").0,
+            DayClassification::NotReady
+        );
     }
 
     #[test]

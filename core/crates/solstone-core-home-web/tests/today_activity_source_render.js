@@ -61,10 +61,3 @@ assert(html.includes('href="/app/activities/" data-copy-key="home-today-link"'))
 
 const emptyHtml = renderTodayHtml({});
 assert(emptyHtml.includes('href="/app/activities/" data-copy-key="home-today-link"'));
-
-const planHtml = renderTodayHtml({
-  anticipated_activities: [
-    { id: 'p1', day: '20260602', facet: 'work', title: 'Plan Item', start: '10:00' },
-  ],
-});
-assert(planHtml.includes('href="/app/activities/20260602?facet=work#work/p1"'));

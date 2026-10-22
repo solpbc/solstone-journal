@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use chrono::Offset;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use solstone_core_indexer_query::AdmittedCategory;
+use solstone_core_indexer_query::{AdmittedCategory, ConnectionScope};
 use solstone_core_transcripts::{MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS};
 
 use super::{
@@ -546,7 +547,7 @@ pub(crate) fn execute_list(
                     .get("hidden")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
-                if hidden {
+                if hidden || solstone_core_facets::is_retired_plan(&record) {
                     continue;
                 }
                 let entities = activity_entities(&record);
@@ -604,6 +605,13 @@ pub(crate) fn execute_list(
         now.offset().fix().local_minus_utc(),
     );
 
+    // The calendar belongs to no facet: only a connection that already reads
+    // the whole journal's transcripts, where calendar notes are, sees what it
+    // had scheduled during an activity.
+    let sees_calendar = matches!(snapshot.scope, ConnectionScope::WholeJournal)
+        && snapshot.categories.contains(&AdmittedCategory::Transcripts);
+    let mut calendars = BTreeMap::new();
+
     let mut activities = Vec::new();
     for item in &page {
         let reference = codec()
@@ -627,7 +635,7 @@ pub(crate) fn execute_list(
         let entities = activity_entities(&item.record);
         let title = activity_title(&item.record);
 
-        activities.push(json!({
+        let mut activity = json!({
             "title": title,
             "facet": item.facet_title,
             "day": item.day,
@@ -638,7 +646,25 @@ pub(crate) fn execute_list(
             "entities": entities,
             "reference": reference,
             "zone": zone_str,
-        }));
+        });
+        if sees_calendar && let Some(span) = solstone_core_facets::activity_span(&item.record) {
+            let calendar = calendars
+                .entry(item.day.clone())
+                .or_insert_with(|| solstone_core_facets::calendar_on_day(journal_root, &item.day));
+            let mut scheduled = solstone_core_facets::calendar_beside(calendar, &item.day, span);
+            // Naming the people on an invite takes the people grant too.
+            if !snapshot.categories.contains(&AdmittedCategory::Entities) {
+                for event in &mut scheduled {
+                    if let Some(event) = event.as_object_mut() {
+                        event.remove("people");
+                    }
+                }
+            }
+            if !scheduled.is_empty() {
+                activity["scheduled"] = Value::Array(scheduled);
+            }
+        }
+        activities.push(activity);
     }
 
     let next_cursor = if has_more {

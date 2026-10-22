@@ -145,6 +145,13 @@ pub(crate) fn activity_source_current(
     if digests.len() as i64 != chunk_count {
         return Ok(false);
     }
+    // An index written before retired plans stopped being indexed still holds
+    // their entries; the same bytes now render fewer chunks.
+    if text.contains("\"anticipated\"")
+        && produce_chunks(Family::Activity, rel, &text).chunks.len() as i64 != chunk_count
+    {
+        return Ok(false);
+    }
     Ok(digests
         .iter()
         .all(|stored| stored.as_deref() == Some(digest.as_slice())))

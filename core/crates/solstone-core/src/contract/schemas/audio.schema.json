@@ -61,6 +61,32 @@
       "required": ["start", "text"],
       "properties": {
         "start": {"type": "string"},
+        "timing": {
+          "type": "object",
+          "description": "Precise statement bounds in seconds from the start of header.raw, restored to the original audio after any silence reduction. The separate start string is the displayed clock time.",
+          "required": ["start", "end"],
+          "properties": {
+            "start": {"type": "number"},
+            "end": {"type": "number"}
+          }
+        },
+        "words": {
+          "type": "array",
+          "description": "Normalized speech-model words in order. Start and end use the same original-audio-relative seconds as timing; they are not clock times.",
+          "items": {
+            "type": "object",
+            "required": ["word", "start", "end", "probability"],
+            "properties": {
+              "word": {"type": "string"},
+              "start": {"type": "number"},
+              "end": {"type": "number"},
+              "probability": {
+                "type": ["number", "null"],
+                "description": "Measured word confidence, or null when the speech engine supplied none."
+              }
+            }
+          }
+        },
         "text": {"type": "string"},
         "sentence_id": {"type": "integer"},
         "source": {"type": "string"},
@@ -77,7 +103,7 @@
     "allowed_producers": ["journal transcriber", "native observers via ingest"],
     "write_discipline": "headered_jsonl atomic whole-file replace",
     "file_kind": "headered_jsonl",
-    "key_fields": ["header.raw", "record.start", "record.text", "record.sentence_id", "record.corrected", "record.source", "record.speaker", "record.emotion"],
+    "key_fields": ["header.raw", "record.start", "record.timing", "record.words", "record.text", "record.sentence_id", "record.corrected", "record.source", "record.speaker", "record.emotion"],
     "producer_write_paths": ["chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/audio.jsonl"],
     "legacy_read_paths": ["chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{source}_audio.jsonl"]
   }

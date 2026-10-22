@@ -990,6 +990,142 @@ async function testCase(name, fn) {
     assert.strictEqual(h.document.getElementById('retentionStatus').textContent, 'currently: list originals for removal after 14 days, and audio with no speech after processing.');
   });
 
+  function ownerVoiceHarness(fetchImpl) {
+    const h = createHarness();
+    const calls = [];
+    h.context.fetch = async (url, opts = {}) => {
+      const call = { url: String(url), method: String(opts.method || 'GET').toUpperCase(), body: opts.body ? JSON.parse(opts.body) : null };
+      calls.push(call);
+      return fetchImpl(call);
+    };
+    return { h, calls, puts: () => calls.filter(c => c.method === 'PUT') };
+  }
+
+  async function ownerVoiceReady(h, state) {
+    await run(h, `Object.assign(ownerVoice, ${JSON.stringify(state)}); renderOwnerVoice();`);
+  }
+
+  function browserToggle(h, checked) {
+    const toggle = h.document.getElementById('ownerVoiceOnly');
+    toggle.checked = checked;
+    toggle.dispatchEvent(event('click', { bubbles: true }));
+    toggle.dispatchEvent(event('change', { bubbles: true }));
+    return toggle;
+  }
+
+  await testCase('leave out other voices asks for consent every time it is turned on', async () => {
+    const { h, puts } = ownerVoiceHarness(async (call) => {
+      if (call.method === 'PUT') return response({ success: true, config: { transcribe: { owner_voice_only: call.body.data.owner_voice_only } } });
+      return response({});
+    });
+    await ownerVoiceReady(h, { known: true, stored: false, statusLoaded: true, statusFailed: false, available: true, today: { left_out_s: 0, recordings: 0 }, pending: 0 });
+    const modal = h.document.getElementById('ownerVoiceConsentModal');
+    const toggle = h.document.getElementById('ownerVoiceOnly');
+
+    for (const dismiss of ['cancel', 'escape', 'backdrop']) {
+      browserToggle(h, true);
+      await settle();
+      assert.strictEqual(modal.style.display, 'block', dismiss);
+      assert.strictEqual(toggle.checked, false, dismiss);
+      if (dismiss === 'cancel') h.document.getElementById('ownerVoiceConsentCancel').dispatchEvent(event('click', { bubbles: true }));
+      if (dismiss === 'escape') modal.dispatchEvent(event('keydown', { key: 'Escape' }));
+      if (dismiss === 'backdrop') modal.dispatchEvent(event('click'));
+      await settle();
+      assert.strictEqual(modal.style.display, 'none', dismiss);
+      assert.strictEqual(toggle.checked, false, dismiss);
+      assert.strictEqual(h.document.activeElement, toggle, dismiss);
+      assert.strictEqual(puts().length, 0, dismiss);
+    }
+
+    browserToggle(h, true);
+    await settle();
+    h.document.getElementById('ownerVoiceConsentConfirm').dispatchEvent(event('click', { bubbles: true }));
+    await settle();
+    assert.strictEqual(puts().length, 1);
+    assert.strictEqual(puts()[0].body.owner_voice_consent, true);
+    assert.strictEqual(puts()[0].body.data.owner_voice_only, true);
+    assert.strictEqual(toggle.checked, true);
+    assert.strictEqual(h.document.getElementById('ownerVoiceStorageNote').style.display, '');
+
+    // Turning off saves at once, with no dialog and no consent field.
+    browserToggle(h, false);
+    await settle();
+    assert.strictEqual(modal.style.display, 'none');
+    assert.strictEqual(puts().length, 2);
+    assert.strictEqual(puts()[1].body.owner_voice_consent, undefined);
+    assert.strictEqual(toggle.checked, false);
+
+    // And turning it on again asks again.
+    browserToggle(h, true);
+    await settle();
+    assert.strictEqual(modal.style.display, 'block');
+    assert.strictEqual(puts().length, 2);
+  });
+
+  await testCase('leave out other voices shows the stored state after a failed save', async () => {
+    let stored = false;
+    const { h, puts } = ownerVoiceHarness(async (call) => {
+      if (call.method === 'PUT') {
+        stored = call.body.data.owner_voice_only; // the write landed
+        return response({ error: 'log failed' }, 500);
+      }
+      if (call.url.includes('api/config')) return response({ transcribe: { owner_voice_only: stored } });
+      return response({});
+    });
+    await ownerVoiceReady(h, { known: true, stored: false, statusLoaded: true, statusFailed: false, available: true, today: { left_out_s: 0, recordings: 0 }, pending: 0 });
+    browserToggle(h, true);
+    await settle();
+    h.document.getElementById('ownerVoiceConsentConfirm').dispatchEvent(event('click', { bubbles: true }));
+    await settle();
+    await settle();
+    assert.strictEqual(puts().length, 1);
+    assert.strictEqual(h.document.getElementById('ownerVoiceOnly').checked, true, 'stored on is shown on');
+    assert.strictEqual(h.document.getElementById('ownerVoiceDescription').textContent.startsWith('keeps your words'), true);
+  });
+
+  await testCase('leave out other voices goes unknown when the save and the re-read both fail', async () => {
+    const { h, puts } = ownerVoiceHarness(async (call) => {
+      if (call.method === 'PUT') return response({ error: 'failed' }, 500);
+      throw new Error('offline');
+    });
+    await ownerVoiceReady(h, { known: true, stored: false, statusLoaded: true, statusFailed: false, available: true, today: { left_out_s: 0, recordings: 0 }, pending: 0 });
+    browserToggle(h, true);
+    await settle();
+    h.document.getElementById('ownerVoiceConsentConfirm').dispatchEvent(event('click', { bubbles: true }));
+    await settle();
+    await settle();
+    const toggle = h.document.getElementById('ownerVoiceOnly');
+    assert.strictEqual(toggle.disabled, true);
+    assert.strictEqual(h.document.getElementById('ownerVoiceUnknown').style.display, '');
+    assert.strictEqual(h.document.getElementById('ownerVoiceStorageNote').style.display, '');
+    browserToggle(h, false);
+    await settle();
+    assert.strictEqual(puts().length, 1);
+    assert.notStrictEqual(h.document.getElementById('ownerVoiceConsentModal').style.display, 'block');
+  });
+
+  await testCase('leave out other voices cannot turn on before its status answers or without a voice', async () => {
+    const { h, puts } = ownerVoiceHarness(async () => response({}));
+    for (const state of [
+      { known: true, stored: false, statusLoaded: false, statusFailed: false, available: false },
+      { known: true, stored: false, statusLoaded: true, statusFailed: true, available: false },
+      { known: true, stored: false, statusLoaded: true, statusFailed: false, available: false },
+    ]) {
+      await ownerVoiceReady(h, state);
+      const toggle = browserToggle(h, true);
+      await settle();
+      assert.strictEqual(toggle.checked, false);
+      assert.notStrictEqual(h.document.getElementById('ownerVoiceConsentModal').style.display, 'block');
+      assert.strictEqual(puts().length, 0);
+    }
+    assert.strictEqual(h.document.getElementById('ownerVoiceSetup').style.display, '');
+    // On, with no usable voice: the held line shows and turning off still works.
+    await ownerVoiceReady(h, { known: true, stored: true, statusLoaded: true, statusFailed: false, available: false, today: { left_out_s: 0, recordings: 0 }, pending: 2 });
+    assert.strictEqual(h.document.getElementById('ownerVoiceHeld').style.display, '');
+    assert.strictEqual(h.document.getElementById('ownerVoicePending').style.display, '');
+    assert.strictEqual(h.document.getElementById('ownerVoiceOnly').disabled, false);
+  });
+
   await testCase('AC8 storage retention UI error rollbacks toggle and status text', async () => {
     const h = createHarness();
     h.window.SettingsRender.buildStreamOverridesDrawerProps = () => null;

@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "2.0.1";
+const BUNDLE_SEMVER: &str = "2.0.2";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/pairing-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/pairing_contract_authority.json";
@@ -180,7 +180,7 @@ fn platform_vocabulary() -> Value {
         "classification": "closed",
         "id": "PairRequest.platform",
         "source_pointer": "/components/schemas/PairRequest/properties/platform",
-        "unknown_value_behavior": "reject",
+        "unknown_value_behavior": "ignore",
         "values": PLATFORM_VALUES,
     })
 }
@@ -440,7 +440,7 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
         "operation_ids": OPERATION_SPECS.map(|(_, _, id)| id),
         "projection_path": "projection.openapi.json",
         "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
-        "scope_rationale": "This pairing-identity bundle projects only POST /app/network/pair. Consumer-audit arrays are empty because the native joiner still sends empty additional_fields and no shipped consumer has adopted client_label/platform yet.",
+        "scope_rationale": "This pairing-identity bundle projects only POST /app/network/pair. Consumer-audit arrays are empty: this bundle audits no consumer commit, and each pairing client checks the hints it sends in its own tests.",
         "vocabularies": [platform_vocabulary()],
         "windows_linux_rollout_targets": []
     })

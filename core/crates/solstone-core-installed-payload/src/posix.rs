@@ -303,11 +303,9 @@ fn resolve_screen_ocr_bundle(
     let (runtime_name, dependency_name) = screen_ocr_runtime_members(target, target_uses_gnu)?;
 
     Ok(CurrentScreenOcrBundle {
-        helper: resolve(if cfg!(target_os = "windows") {
-            "bin/solstone-screen-ocr-helper.exe"
-        } else {
-            "bin/solstone-screen-ocr-helper"
-        })?,
+        // Named for the admitted target, not the host this was built on; no
+        // admitted target uses an executable suffix.
+        helper: resolve("bin/solstone-screen-ocr-helper")?,
         recipe: resolve("lib/solstone-screen-ocr/recipe.toml")?,
         detector: resolve("lib/solstone-screen-ocr/models/detector.onnx")?,
         recognizer: resolve("lib/solstone-screen-ocr/models/recognizer.onnx")?,
@@ -1063,7 +1061,10 @@ mod tests {
         assert_eq!(member.revalidate().unwrap_err().code, code::MEMBER_CHANGED);
     }
 
-    #[cfg(unix)]
+    #[cfg(any(
+        all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+        all(target_os = "macos", target_arch = "aarch64")
+    ))]
     #[test]
     fn current_screen_ocr_resolver_uses_exact_installed_members() {
         let directory = scratch();
@@ -1162,7 +1163,28 @@ mod tests {
         }
     }
 
-    #[cfg(all(unix, not(target_os = "macos")))]
+    // The installed-bundle tests above and below need a host whose target is
+    // admitted for screen OCR; any other unix host must refuse before lookup.
+    #[cfg(all(
+        unix,
+        not(any(
+            all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+            all(target_os = "macos", target_arch = "aarch64")
+        ))
+    ))]
+    #[test]
+    fn current_screen_ocr_resolver_refuses_unadmitted_host_target() {
+        let directory = scratch();
+        let root = directory.path();
+        let executable = screen_ocr_tree(root, true);
+        seal(root, COMPILED_VERSION, crate::compiled_target());
+
+        let error = super::resolve_current_screen_ocr_bundle_from_executable(&executable)
+            .expect_err("screen OCR is not admitted on this host target");
+        assert_eq!(error.code, code::SCREEN_OCR_UNQUALIFIED);
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
     #[test]
     fn current_screen_ocr_resolver_rejects_missing_private_runtime_dependency() {
         let missing_dir = scratch();
@@ -1177,7 +1199,10 @@ mod tests {
         assert_eq!(missing.code, code::MEMBER_MISSING);
     }
 
-    #[cfg(unix)]
+    #[cfg(any(
+        all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+        all(target_os = "macos", target_arch = "aarch64")
+    ))]
     #[test]
     fn current_screen_ocr_resolver_rejects_changed_model_member() {
         let changed_dir = scratch();
@@ -1197,7 +1222,10 @@ mod tests {
         assert_eq!(changed.code, code::MEMBER_CHANGED);
     }
 
-    #[cfg(unix)]
+    #[cfg(any(
+        all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+        all(target_os = "macos", target_arch = "aarch64")
+    ))]
     #[test]
     fn current_screen_ocr_resolver_rejects_bundle_path_escape() {
         let directory = scratch();

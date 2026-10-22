@@ -1367,8 +1367,17 @@ mod tests {
         ) -> Result<(), String> {
             Ok(())
         }
-        fn up(&mut self, _runner: &mut dyn CommandRunner, _journal: &Path) -> Result<i32, String> {
-            Ok(0)
+        fn up(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<CommandOutput, String> {
+            Ok(CommandOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            })
         }
     }
 
@@ -1395,8 +1404,17 @@ mod tests {
         ) -> Result<(), String> {
             Ok(())
         }
-        fn up(&mut self, _runner: &mut dyn CommandRunner, _journal: &Path) -> Result<i32, String> {
-            Ok(0)
+        fn up(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<CommandOutput, String> {
+            Ok(CommandOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            })
         }
     }
 
@@ -3932,7 +3950,11 @@ mod tests {
         ) -> Result<(), String> {
             panic!("service ops must not be called");
         }
-        fn up(&mut self, _runner: &mut dyn CommandRunner, _journal: &Path) -> Result<i32, String> {
+        fn up(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<CommandOutput, String> {
             panic!("service up must not be called");
         }
     }

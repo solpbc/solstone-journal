@@ -1183,7 +1183,7 @@ mod tests {
                 };
                 (
                     key,
-                    serde_json::json!({"disabled":config.key != "schedule"}),
+                    serde_json::json!({"disabled":config.key != "morning_briefing"}),
                 )
             })
             .collect::<serde_json::Map<String, serde_json::Value>>();
@@ -1684,7 +1684,8 @@ mod tests {
         let sibling_bytes_before = fs::read(&sibling_path).unwrap();
 
         // 2. Target unit record without facet
-        let identity = solstone_core_journal_io::DailyUnitIdentity::new(DAY, "schedule", None);
+        let identity =
+            solstone_core_journal_io::DailyUnitIdentity::new(DAY, "morning_briefing", None);
         let mut record =
             solstone_core_journal_io::DailyUnitRecord::new(identity.clone(), "rev-1", "digest-1");
         record.status = solstone_core_journal_io::DailyUnitStatus::Failed;
@@ -1693,7 +1694,7 @@ mod tests {
 
         let mut transport_calls = 0;
         let result = run_cli_with(
-            &words(&[DAY, "--unit", "schedule"]),
+            &words(&[DAY, "--unit", "morning_briefing"]),
             root.path(),
             now(),
             chrono_tz::UTC,
@@ -1706,7 +1707,7 @@ mod tests {
         assert_eq!(result.exit_code, 0);
         assert_eq!(
             result.stdout,
-            format!("retry request saved for schedule on {DAY}\n")
+            format!("retry request saved for morning_briefing on {DAY}\n")
         );
 
         let loaded = solstone_core_journal_io::load_daily_unit_record(root.path(), &identity)
@@ -1787,43 +1788,43 @@ mod tests {
         // Mutual exclusivity with --through, --yes, --from-scratch, --mark-updated, --owed (both orders)
         let pairs = [
             (
-                vec![DAY, "--unit", "schedule", "--through", DAY],
+                vec![DAY, "--unit", "morning_briefing", "--through", DAY],
                 "argument --unit: not allowed with argument --through",
             ),
             (
-                vec![DAY, "--through", DAY, "--unit", "schedule"],
+                vec![DAY, "--through", DAY, "--unit", "morning_briefing"],
                 "argument --unit: not allowed with argument --through",
             ),
             (
-                vec![DAY, "--unit", "schedule", "--yes"],
+                vec![DAY, "--unit", "morning_briefing", "--yes"],
                 "argument --unit: not allowed with argument --yes",
             ),
             (
-                vec![DAY, "--yes", "--unit", "schedule"],
+                vec![DAY, "--yes", "--unit", "morning_briefing"],
                 "argument --unit: not allowed with argument --yes",
             ),
             (
-                vec![DAY, "--unit", "schedule", "--from-scratch"],
+                vec![DAY, "--unit", "morning_briefing", "--from-scratch"],
                 "argument --from-scratch: not allowed with argument --unit",
             ),
             (
-                vec![DAY, "--from-scratch", "--unit", "schedule"],
+                vec![DAY, "--from-scratch", "--unit", "morning_briefing"],
                 "argument --unit: not allowed with argument --from-scratch",
             ),
             (
-                vec![DAY, "--unit", "schedule", "--mark-updated"],
+                vec![DAY, "--unit", "morning_briefing", "--mark-updated"],
                 "argument --mark-updated: not allowed with argument --unit",
             ),
             (
-                vec![DAY, "--mark-updated", "--unit", "schedule"],
+                vec![DAY, "--mark-updated", "--unit", "morning_briefing"],
                 "argument --unit: not allowed with argument --mark-updated",
             ),
             (
-                vec![DAY, "--unit", "schedule", "--owed"],
+                vec![DAY, "--unit", "morning_briefing", "--owed"],
                 "argument --owed: not allowed with argument --unit",
             ),
             (
-                vec![DAY, "--owed", "--unit", "schedule"],
+                vec![DAY, "--owed", "--unit", "morning_briefing"],
                 "argument --unit: not allowed with argument --owed",
             ),
         ];
@@ -1852,7 +1853,7 @@ mod tests {
 
         // 1. Today or future day (now is 20260103)
         let res_today = run_cli_with(
-            &words(&["20260103", "--unit", "schedule"]),
+            &words(&["20260103", "--unit", "morning_briefing"]),
             root.path(),
             now(),
             chrono_tz::UTC,
@@ -1863,7 +1864,7 @@ mod tests {
 
         // 2. Malformed day
         let res_malformed = run_cli_with(
-            &words(&["not-a-day", "--unit", "schedule"]),
+            &words(&["not-a-day", "--unit", "morning_briefing"]),
             root.path(),
             now(),
             chrono_tz::UTC,
@@ -1878,7 +1879,7 @@ mod tests {
 
         // 3. Record not found
         let res_not_found = run_cli_with(
-            &words(&[DAY, "--unit", "schedule"]),
+            &words(&[DAY, "--unit", "morning_briefing"]),
             root.path(),
             now(),
             chrono_tz::UTC,

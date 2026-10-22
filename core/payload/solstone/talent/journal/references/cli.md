@@ -10,7 +10,7 @@ Common pattern:
 solstone call journal <command> [args...]
 ```
 
-**Typical workflow**: `search` to find content across all types → `facet` for project detail. For future scheduled items, use `solstone call activities list`.
+**Typical workflow**: `search` to find content across all types → `facet` for project detail. For a day's activities, use `solstone call activities list`.
 
 ## search
 

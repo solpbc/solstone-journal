@@ -1374,7 +1374,7 @@ mod tests {
         );
         assert_eq!(
             items16.iter().find(|i| i["id"] == "h_repl").unwrap()["hidden_reason"],
-            "replaced"
+            "other"
         );
         assert_eq!(
             items16.iter().find(|i| i["id"] == "h_canc").unwrap()["hidden_reason"],
@@ -1399,11 +1399,12 @@ mod tests {
                 .is_none()
         );
 
+        // Retired plan records are never shown.
+        for plan in ["v_plan", "plan_null_start", "plan_midnight", "plan_same"] {
+            assert!(items16.iter().all(|i| i["id"] != plan), "{plan}");
+        }
+
         // kind mapping
-        assert_eq!(
-            items16.iter().find(|i| i["id"] == "v_plan").unwrap()["kind"],
-            "plan"
-        );
         assert_eq!(
             items16.iter().find(|i| i["id"] == "v_open").unwrap()["kind"],
             "added"
@@ -1422,9 +1423,9 @@ mod tests {
             .as_array()
             .unwrap();
         assert_eq!(edits[0]["kind"], "grew");
-        assert_eq!(edits[1]["kind"], "plan_noticed");
-        assert_eq!(edits[2]["kind"], "plan_replaced");
-        assert_eq!(edits[3]["kind"], "plan_updated");
+        assert_eq!(edits[1]["kind"], "other");
+        assert_eq!(edits[2]["kind"], "other");
+        assert_eq!(edits[3]["kind"], "other");
         assert_eq!(edits[4]["kind"], "owner_update");
         assert_eq!(edits[5]["kind"], "owner_hide");
         assert_eq!(edits[6]["kind"], "owner_unhide");
@@ -1433,8 +1434,7 @@ mod tests {
         assert_eq!(edits[9]["kind"], "command_unhide");
         assert_eq!(edits[10]["kind"], "command_create");
         assert_eq!(edits[11]["kind"], "other");
-        // cancelled: true on edit only for schedule edit whose note contains cancelled and fields contains cancelled
-        assert_eq!(edits[12]["cancelled"], true);
+        assert!(edits[12].get("cancelled").is_none());
         assert!(edits[13].get("cancelled").is_none());
 
         // edited_by_owner
@@ -1468,25 +1468,6 @@ mod tests {
         );
 
         // Minute cases:
-        let p_null = items16
-            .iter()
-            .find(|i| i["id"] == "plan_null_start")
-            .unwrap();
-        assert!(p_null["start_min"].is_null());
-        assert_eq!(p_null["end_min"], 600);
-        assert!(p_null["start"].is_null());
-        assert_eq!(p_null["end"], "10:00");
-
-        let p_mid = items16.iter().find(|i| i["id"] == "plan_midnight").unwrap();
-        assert_eq!(p_mid["start_min"], 1380);
-        assert_eq!(p_mid["end_min"], 1470);
-        assert_eq!(p_mid["start"], "23:00");
-        assert_eq!(p_mid["end"], "00:30");
-
-        let p_same = items16.iter().find(|i| i["id"] == "plan_same").unwrap();
-        assert_eq!(p_same["start_min"], 540);
-        assert_eq!(p_same["end_min"], 540);
-
         let d_mid = items16.iter().find(|i| i["id"] == "det_midnight").unwrap();
         assert!(d_mid["end_min"].as_u64().unwrap() > 1440);
 
@@ -1634,7 +1615,7 @@ mod tests {
             w_0405,
         );
 
-        // Future day 20990115: 1 visible plan
+        // Future day 20990115: only a retired plan, so no activities
         let w_future = r#"{"id":"plan_future","hidden":false,"source":"anticipated","start":"10:00:00","end":"11:00:00"}"#;
         write(
             &root.path().join("facets/work/activities/20990115.jsonl"),
@@ -1675,7 +1656,7 @@ mod tests {
         // Unscoped omits muted facet quiet
         assert!(months.contains_key("202603"));
         assert!(months.contains_key("202604"));
-        assert!(months.contains_key("209901"));
+        assert!(!months.contains_key("209901"));
 
         // Unscoped stats for 202603: {YYYYMMDD: count} and nothing else
         let (status_st, res_st) = request(

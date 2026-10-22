@@ -296,6 +296,49 @@ pub struct SearchMetadata {
     /// Source identity read in the same SQLite statement as this chunk.
     #[serde(skip)]
     pub source_digest: Option<String>,
+    /// Which version of a calendar event this hit is, for a calendar hit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar: Option<CalendarHit>,
+}
+
+/// Which version of a calendar event a hit is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CalendarVersion {
+    /// The latest version received, listed under a day the event happens.
+    Latest,
+    /// A change, found on the day it was recorded.
+    Recorded,
+}
+
+/// What a calendar hit says about itself.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CalendarHit {
+    pub version: CalendarVersion,
+    /// When this version was recorded, as the device wrote it.
+    pub changed_at: String,
+    /// The event goes on past the last day it is listed under.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub continues: bool,
+}
+
+impl CalendarHit {
+    pub(crate) fn from_columns(
+        version: Option<String>,
+        changed_at: Option<String>,
+        continues: Option<i64>,
+    ) -> Option<Self> {
+        let version = match version.as_deref()? {
+            "latest" => CalendarVersion::Latest,
+            "recorded" => CalendarVersion::Recorded,
+            _ => return None,
+        };
+        Some(Self {
+            version,
+            changed_at: changed_at?,
+            continues: continues == Some(1),
+        })
+    }
 }
 
 /// Search rows and optional requested counts.

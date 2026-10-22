@@ -635,7 +635,7 @@ mod tests {
     struct Journal(PathBuf);
     impl Journal {
         fn new() -> Self {
-            let path = PathBuf::from("/var/tmp").join(format!(
+            let path = std::env::temp_dir().join(format!(
                 "solstone-core-journal-cli-facet-names-{}-{}",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)

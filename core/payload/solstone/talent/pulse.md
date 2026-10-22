@@ -21,8 +21,7 @@ the CLI, and do not read or write files. Return only the JSON object matching
 the schema.
 
 The date being summarized is $day_YYYYMMDD. The current local time is $as_of.
-Planned or anticipated activity is not evidence of completion, even when its
-scheduled time has passed. Never describe later activity as already completed.
+Never describe later activity as already completed.
 Build this Pulse from the dated
 activity evidence below. The completed entries cover recent work, so describe
 what they show without claiming to cover the whole day. State any gap that
@@ -64,10 +63,6 @@ $completed_since
 ## Awareness
 
 $awareness
-
-## Anticipated activities
-
-$anticipated
 
 ## Recent entities
 

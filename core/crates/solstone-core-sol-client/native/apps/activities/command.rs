@@ -14,7 +14,7 @@ use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 const ACTIVITY_NOT_FOUND: &str = "activity_not_found";
 const ACTIVITY_ALREADY_EXISTS: &str = "activity_already_exists";
 const ACTIVITY_INVALID: &str = "activity_invalid";
-const VALID_LIST_SOURCES: &[&str] = &["anticipated", "cogitate", "user"];
+const VALID_LIST_SOURCES: &[&str] = &["cogitate", "user"];
 const VALID_CREATE_SOURCES: &[&str] = &["user"];
 const MUTABLE_FIELDS: &[&str] = &["title", "description", "details"];
 
@@ -46,7 +46,7 @@ pub fn list(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(source) = source
         && !VALID_LIST_SOURCES.contains(&source)
     {
-        return stderr("Error: --source must be 'anticipated', 'cogitate', or 'user'.");
+        return stderr("Error: --source must be 'cogitate' or 'user'.");
     }
     let resolved_days = if let Some(day) = day {
         match resolve_day(Some(day), ctx) {

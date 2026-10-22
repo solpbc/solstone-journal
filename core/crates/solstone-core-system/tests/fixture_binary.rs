@@ -26,7 +26,10 @@ fn copy_fixture() -> PathBuf {
         module_path!().replace("::", "-")
     ));
     fs::create_dir_all(&directory).expect("fixture copy directory");
-    let destination = directory.join("solstone-system-test-child");
+    let destination = directory.join(format!(
+        "solstone-system-test-child{}",
+        std::env::consts::EXE_SUFFIX
+    ));
     let source = Path::new(env!("CARGO_BIN_EXE_solstone-system-test-child"));
     let bytes = fs::read(source).expect("read Cargo fixture");
     let mut destination_file = fs::File::create(&destination).expect("create stable fixture copy");

@@ -220,6 +220,24 @@ fn prepare_segment(
                 Ok(entries) => browser_chunks(&mut chunks, zone, name, &entries),
                 Err(error) => warnings.push(warning("browser", path, error, now)),
             }
+        } else if solstone_core_format::calendar::names_calendar_file(name)
+            && solstone_core_segment::is_calendar_stream(root, stream)
+        {
+            // Each calendar note as plain text, at the moment it was recorded.
+            match fs::read_to_string(path) {
+                Ok(text) => {
+                    for chunk in produce_chunks(Family::Calendar, name, &text).chunks {
+                        let timestamp = chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0);
+                        chunks.push(json!({
+                            "type": "calendar",
+                            "time": local_time(zone, timestamp),
+                            "timestamp": timestamp,
+                            "text": chunk.content,
+                        }));
+                    }
+                }
+                Err(error) => warnings.push(warning("calendar", path, error, now)),
+            }
         } else if name.ends_with("_protected_video.jsonl") {
             match fs::read_to_string(path) {
                 Ok(text) => {
@@ -1053,6 +1071,58 @@ mod tests {
         let md_files = val["md_files"].as_object().unwrap();
         assert!(md_files.contains_key("screen_text"));
         assert!(md_files.contains_key("summary"));
+    }
+
+    #[test]
+    fn a_calendar_segment_shows_each_note_as_plain_text() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("streams")).unwrap();
+        std::fs::write(
+            root.join("streams/phone_calendar.json"),
+            r#"{"name":"phone_calendar","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"calendar"}"#,
+        )
+        .unwrap();
+        let golden = include_str!("../../../fixtures/calendar_notes/golden.jsonl");
+        let seg_dir = root.join("chronicle/20261020/phone_calendar/163000_300");
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        let lines = golden.lines().collect::<Vec<_>>();
+        std::fs::write(
+            seg_dir.join(format!("calendar_{}.jsonl", "a".repeat(64))),
+            format!("{}\n{}\n", lines[1], lines[3]),
+        )
+        .unwrap();
+        let value =
+            prepare_segment(root, "20261020", "phone_calendar", "163000_300", Utc::now()).unwrap();
+        let notes = value["chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|chunk| chunk["type"] == "calendar")
+            .map(|chunk| chunk["text"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(notes.len(), 2);
+        for (text, expected) in [
+            (
+                &notes[0],
+                ["standup", "9:30", "Work", "every weekday", "changed"],
+            ),
+            (
+                &notes[1],
+                [
+                    "Kate Bell's Birthday",
+                    "2027",
+                    "Birthdays",
+                    "every year",
+                    "added",
+                ],
+            ),
+        ] {
+            for word in expected {
+                assert!(text.contains(word), "{word} in {text}");
+            }
+            assert!(!text.contains("null"), "{text}");
+        }
     }
 
     #[test]

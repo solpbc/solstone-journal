@@ -40,6 +40,10 @@ pub struct PublicationInput<'a> {
     pub revision: Option<&'a str>,
     pub segments: &'a [CreatedSegment],
     pub files_created: &'a [PathBuf],
+    /// Files queued for search alone. They bind no segment, mark no day as
+    /// changed and ask for no processing: calendar note files beside an
+    /// import's transcripts, and those a re-save removed.
+    pub index_only: &'a [PathBuf],
     pub may_write_record: Option<&'a (dyn Fn() -> bool + 'a)>,
 }
 
@@ -323,7 +327,7 @@ pub fn publish_with_operations(
     }
 
     let mut indexing = IndexPublicationOutcomes::default();
-    for path in input.files_created {
+    for path in input.files_created.iter().chain(input.index_only) {
         let under_deleted = segments.iter().any(|s| {
             matches!(s.outcome, SegmentBindingOutcome::OwnerDeleted)
                 && is_path_under_segment(path, &s.day, &s.stream, &s.segment)
@@ -591,6 +595,7 @@ mod tests {
             revision: Some("test"),
             segments,
             files_created: files,
+            index_only: &[],
             may_write_record: None,
         }
     }
@@ -698,6 +703,49 @@ mod tests {
         assert_eq!(*fake.drains.borrow(), vec!["20260803".to_owned()]);
         assert_eq!(*fake.enrichment.borrow(), vec![(expected, 1)]);
         assert_eq!(fake.observed.borrow().len(), 4);
+    }
+
+    #[test]
+    fn index_only_files_are_queued_for_search_and_ask_for_no_processing() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let notes = vec![
+            PathBuf::from("chronicle/20260801/import.ics/120000_60/calendar_a.jsonl"),
+            PathBuf::from("chronicle/20260802/import.ics/090000_60/calendar_b.jsonl"),
+        ];
+        let fake = FakeOperations {
+            enqueues: RefCell::new(vec![Ok(QueueFileOutcome::Queued); 2]),
+            ..FakeOperations::default()
+        };
+        let mut alone = input(temporary.path(), None, &[], &[]);
+        alone.index_only = &notes;
+        let record = publish_with_operations(alone, &fake).unwrap();
+        assert_eq!(*fake.enqueues_seen.borrow(), notes);
+        assert_eq!(record.indexing.queued.len(), 2);
+        assert!(record.day_markers.is_empty());
+        assert!(fake.markers.borrow().is_empty());
+        assert!(fake.drains.borrow().is_empty());
+        assert!(fake.enrichment.borrow().is_empty());
+
+        // The twin: the transcript beside them still marks its day and asks
+        // for processing, counted without the calendar files.
+        let segments = vec![segment("20260801", "120000_60")];
+        let transcript = vec![PathBuf::from(
+            "chronicle/20260801/import.ics/120000_60/event_transcript.md",
+        )];
+        let fake = FakeOperations {
+            advances: RefCell::new(vec![advance(1)]),
+            enqueues: RefCell::new(vec![Ok(QueueFileOutcome::Queued); 3]),
+            ..FakeOperations::default()
+        };
+        let mut both = input(temporary.path(), None, &segments, &transcript);
+        both.index_only = &notes;
+        publish_with_operations(both, &fake).unwrap();
+        assert_eq!(fake.enqueues_seen.borrow().len(), 3);
+        assert_eq!(*fake.markers.borrow(), vec!["20260801".to_owned()]);
+        assert_eq!(
+            *fake.enrichment.borrow(),
+            vec![(vec!["20260801".to_owned()], 1)]
+        );
     }
 
     #[test]

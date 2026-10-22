@@ -21,10 +21,12 @@ require OAuth.
 
 The endpoint advertises `2025-03-26`. It accepts JSON-RPC over Streamable HTTP
 at `/mcp`: `initialize` returns an `Mcp-Session-Id`, then `tools/list` and
-`tools/call` use that session. `DELETE /mcp` ends it. The journal returns JSON
-responses; it has no MCP GET/SSE stream or stdio transport.
+`tools/call` use that session. `DELETE /mcp` ends it. `ping` gets an empty
+result. A notification such as `notifications/initialized` gets HTTP 202 with
+no body and changes nothing. The journal returns JSON responses; it has no MCP
+GET/SSE stream (GET returns 405) or stdio transport.
 
-This is a tools-and-session subset: `notifications/initialized` is not handled.
+This is a tools-and-session subset.
 The endpoint does not implement the stateless `2026-07-28` revision, its
 per-request metadata and header validation, or `server/discover`.
 

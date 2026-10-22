@@ -30,9 +30,8 @@ solstone journal talent passages <name> --day YYYYMMDD --facet NAME --activity I
 
 `--day` selects the analysis day. Daily artifacts, including `morning_briefing.json`,
 remain under that day. A morning briefing presents the following local calendar
-morning: its retrospective sources use the analysis day, its agenda uses the
-presentation day, and its forward look starts after the presentation day. Home
-reads exactly the preceding analysis day's briefing and links that generating run.
+morning: its sources use the analysis day, and it does not forecast the
+presentation day or anything after it. Home reads exactly the preceding analysis day's briefing and links that generating run.
 Late execution and retries do not change either coordinate.
 
 Terminal work identity includes the source day from its event payload. The local
@@ -132,6 +131,73 @@ Mobile hosts supply the same drain capability in process, after thinking and fro
 their scheduled loop. Health reports queued work, failed removals, and the age and
 repair counts of the last finished light check. A segment publication receipt
 means its saved outputs were queued successfully; search visibility follows later.
+
+### Calendar listing
+
+Ingest queues each kept calendar note file on the search work list, and the
+single index writer indexes it like any other path. Each note becomes a hit on
+the day it was stored. The writer also keeps a listing: for every event identity,
+rows under each day the event happens, built from the latest note received for
+it (latest `changed_at` as an instant, then `removed` over `changed` over
+`added`, then by file name). A removal lists nothing. A timed event belongs to
+each local day it overlaps in the journal's zone, end exclusive; an all-day event
+to its own dates; an event lists at most 366 days. The rows are filed under the
+latest note's file, and replacing them happens in the same index transaction
+that indexes the newer note.
+
+The listing is derived from stored notes alone, so a rebuild yields the same
+listing, and nothing outside the index writer writes it. Removing a segment
+drops its notes and falls each affected event back to its latest surviving note.
+Timed events are listed in the journal's zone as it is when they are indexed: if
+the owner changes the journal's time zone, timed events keep their old days until
+the search index is rebuilt. The journal's usual fallback zone applies when none
+is configured. While the settings file cannot be read, existing listing rows stay
+as they are, the scan reports the failure once, and a note that arrives meanwhile
+is listed once the file reads again.
+
+A calendar file imported from an `.ics` export or a zip of them also joins the
+listing. The importer writes calendar note files in the same format beside each
+import window's transcript in the `import.ics` stream, one line per event or
+expanded occurrence, and queues them for search alone: they ask for no
+processing and mark no day as changed. The importer reads each event's `UID` as
+its `event` (or derives a stable one from its content when there is none) and
+its `RECURRENCE-ID` as its `occurrence`. It expands a repeating event's rule
+up to a year past the import, keeping a series' most recent 5,000 dates, and
+keeps each start's local wall time across daylight-saving changes, whatever the
+machine's own zone; lines expanded from a rule carry `"expanded": true`. An
+override stands for its date only when it writes a line of its own. Each line's
+`changed_at` is the instant that placed its event's transcript, `LAST-MODIFIED`
+or else `CREATED`, in the journal zone's offset, and it must fall inside that
+segment's own span rather than the 300-second grid; an import window closes
+where the zone's offset changes, so a daylight-saving change never splits one
+file's times between two offsets. Each line also names its `import` and when
+that import happened (`imported_at`, the upload time from the import's record,
+or for a record with none the time its first save recorded there). An event
+whose change time is missing or unreadable, or whose `TZID` matches no zone,
+directly or through the Windows zone names Outlook exports, writes no line, and
+the import's summary counts it. One import writes at most 200,000 lines; the
+summary counts the events past that limit.
+
+Imported lines are listed only: the import's transcript stays the record of the
+day each event was stored, so they add no stored-day hit, and like phone notes
+they carry no facet. An imported calendar file that fails the note contract or
+its segment's span is skipped and reported once.
+Among imported lines, each import of an event defines it across the dates it
+covers, for every older import: from its earliest written occurrence to its
+latest, or, when it expanded the event's rule, to a year past that import.
+Imports are ordered by `imported_at`, with the import id breaking ties, and an
+import's line counts only where no newer import covers its date. So dates a
+newer export dropped stay out of the listing even after a still newer import
+that holds a single changed date, and an older import's dates outside every
+newer span still count. Phone notes are never set aside by this rule, and
+between them and the imported lines that count the latest `changed_at` still
+wins. Re-saving an import replaces only that import's calendar files in its
+segments. Spans are read from surviving lines, so removing every segment of an
+import that holds an event lets the older imports' dates it covered count
+again. A repeating event that a later export holds as a single event keeps the
+older imports' dates outside that one date, since the newer import covers only
+the date it holds. Calendars imported before this change wrote no calendar note
+files, and nothing backfills them.
 
 ### Interrupted activity work
 

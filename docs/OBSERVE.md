@@ -40,6 +40,20 @@ Linked-device clients send segments to the journal through protocol v3 at [`POST
 
 An authenticated linked device may upload browser JSONL with `source="browser"` through the existing protocol-v3 ingest path; admission is independent of `solstone journal sense`, `solstone journal transcribe`, and `solstone journal describe`; each finalized segment period is one immutable `browser_pages.jsonl`. Allocation, reconciliation, reserved-marker, and segment-listing behavior follow the rules specified below.
 
+### Calendar notes
+
+A linked device may send the owner's calendar as calendar notes, with `source="calendar"`, through the same protocol-v3 ingest path. It sends them only to a journal whose `/api/system/status` lists `calendar_notes` in its `capabilities` array; every platform the journal is built for lists it. A journal recognizes a calendar stream by that bound source alone.
+
+- **File.** Each envelope carries one file named `calendar_<id>.jsonl`, where `<id>` is the 64-character lowercase hex SHA-256 of the file's bytes. Each line is compact JSON with sorted keys, lines are sorted by `event` and then `occurrence` (null first), and the file ends with a newline, so a resend is recognized as a duplicate. A file holds at most 5,000 lines and 8 MiB; larger sets split into consecutive files for the same window.
+- **Window.** `day` and `segment` name one window on the journal's 300-second grid. Every line's `changed_at`, read as wall-clock time in its own offset, falls inside that window. The journal checks each line against its own offset, never against `meta` or the journal's configured zone.
+- **Lines.** Every key is always present, with `null` for a value that is not known: `v` (`1`), `change` (`added`, `changed` or `removed`), `event`, `occurrence`, `changed_at` (RFC 3339 with an offset), `calendar`, `title`, `location`, `notes`, `url`, `start`, `end`, `all_day`, `time_zone`, `organizer`, `attendees` and `repeats`. A timed event's `start` and `end` carry the event zone's offset, a floating event's carry none, and an all-day event's are dates with `end` the day after its last day. A `removed` line carries only the last-known `title` and `calendar` besides its identity and `changed_at`. Unknown keys are ignored.
+- **Identity.** An event's identity is its `event` and `occurrence`. Occurrences compare as normalized values, so `…T15:00:00Z`, `…T15:00:00.000Z` and `…T15:00:00+00:00` are one occurrence. Repeating events arrive already expanded, one line per occurrence.
+- **Answers.** `ok`, `duplicate` and `collision` mean delivered. `segment_removed` means the owner deleted that window's segment, and the notes are not sent again. A file that breaks any rule is refused whole with `calendar_note_invalid`, and so is a calendar file under another source or any other file under the calendar source.
+
+A kept file is stored exactly as sent and queued for search at once. It sends no processing event and does not mark its day as changed: a calendar note is not something the owner did, so sense, the daily and weekly units, the maintenance schedule, health and the agent transcript listing leave it out. Search finds each note on the day it was stored and lists every event under the days it happens, as described in [THINK.md](THINK.md#calendar-listing).
+
+Importing a calendar exported as an `.ics` file writes notes in the same format beside each import window's transcript; [THINK.md](THINK.md#calendar-listing) describes how they differ.
+
 ## Commands
 
 | Command | Purpose |

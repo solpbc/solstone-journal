@@ -25,8 +25,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use crate::{
-        ActivityRecord, AppendOutcome, append_activity_record, create_facet,
-        prepare_anticipation_batch, publish_anticipation_batch, save_detected_entity,
+        ActivityRecord, AppendOutcome, append_activity_record, create_facet, save_detected_entity,
     };
 
     fn record(value: Value) -> ActivityRecord {
@@ -64,48 +63,6 @@ mod tests {
             root.path(),
             "facets/work/activities/20260510.jsonl",
             "Kestrel review"
-        ));
-    }
-
-    #[test]
-    fn an_anticipated_batch_queues_its_retry_for_search() {
-        let root = tempfile::tempdir().unwrap();
-        create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
-        let batch = prepare_anticipation_batch(
-            root.path(),
-            "work",
-            "20260920",
-            &[(
-                record(json!({"id": "p1", "source": "anticipated", "title": "Osprey planning", "hidden": false})),
-                vec![],
-            )],
-            "2026-09-14T10:00:00Z",
-        )
-        .unwrap();
-        // The first attempt writes the file and then fails its receipt; the
-        // retry finds the batch already written.
-        assert!(
-            publish_anticipation_batch(root.path(), &batch, true, || Err("interrupt".into()))
-                .is_err()
-        );
-        let index = root.path().join("indexer");
-        if index.exists() {
-            std::fs::remove_dir_all(&index).unwrap();
-        }
-        assert!(!index.exists());
-        // The daily writer publishes its batch under facet trust.
-        let trust = crate::hold_facet_trust_lock(root.path()).unwrap();
-        publish_anticipation_batch(root.path(), &batch, true, || Ok(())).unwrap();
-        drop(trust);
-        let report =
-            solstone_core_indexer_store::todo::drain(root.path(), Default::default()).unwrap();
-        assert_eq!(report.failed, 0);
-        let check = solstone_core_indexer_store::scan::scan_journal(root.path(), false).unwrap();
-        assert_eq!((check.indexed, check.removed), (0, 0));
-        assert!(searchable(
-            root.path(),
-            "facets/work/activities/20260920.jsonl",
-            "Osprey planning"
         ));
     }
 

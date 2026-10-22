@@ -1496,6 +1496,7 @@ impl ObsidianWriter for JournalObsidianWriter<'_> {
             revision: None,
             segments: &segments,
             files_created: &files,
+            index_only: &[],
             may_write_record: None,
         })
         .map_err(|error| error.to_string())?;

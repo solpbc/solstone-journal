@@ -187,12 +187,21 @@ assert.strictEqual(missingCard.includes('role="button"'), false, missingCard);
 assert.strictEqual(missingCard.includes('pulse-briefing-body'), false, missingCard);
 
 const readyCard = renderBriefingCardHtml(
-  { phase: 'morning', exists: true, sections: { your_day: 'a steady morning.' }, needs_deduped: [] },
+  { phase: 'morning', exists: true, sections: { yesterday: 'a steady morning.' }, needs_deduped: [] },
   { today: '20260906' },
 );
 assert(readyCard.includes('role="button"'), readyCard);
 assert(readyCard.includes('aria-expanded'), readyCard);
 assert(readyCard.includes('pulse-briefing-body'), readyCard);
+
+// The briefing shows what happened, never a forecast of the day ahead.
+const forecastCard = renderBriefingCardHtml(
+  { phase: 'morning', exists: true, sections: { your_day: 'a planned call.', yesterday: 'a steady morning.', forward_look: 'next week.' }, needs_deduped: [] },
+  { today: '20260906' },
+);
+assert(forecastCard.includes('a steady morning.'), forecastCard);
+assert.strictEqual(forecastCard.includes('a planned call.'), false, forecastCard);
+assert.strictEqual(forecastCard.includes('next week.'), false, forecastCard);
 
 // The narrative card is named for what it holds, not for the run that wrote it.
 // X-03.

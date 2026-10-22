@@ -76,6 +76,11 @@ const SKIP_BLOCKED: &str = "blocked";
 const SKIP_NOTHING_CHANGED: &str = "nothing_changed";
 const SENSE_PHASE_TIMEOUT: Duration = Duration::from_secs(1_800);
 const INDEXER_PHASE_TIMEOUT: Duration = Duration::from_secs(3_600);
+/// `solstone-core` arguments for the bounded search-input drain before daily thinking.
+pub const INDEXER_INPUTS_ARGS: &[&str] =
+    &["indexer", "drain", "--force", "--budget-seconds", "600"];
+/// `solstone-core` arguments for the whole-journal indexer phase.
+pub const INDEXER_ARGS: &[&str] = &["indexer", "drain"];
 const STATS_PHASE_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Clone, Copy)]
@@ -297,13 +302,7 @@ fn run_with_phase_process(
                     segment_outcome.borrow().result.clone()
                 }
                 "daily" => {
-                    let command = journal_command(&[
-                        "indexer",
-                        "drain",
-                        "--force",
-                        "--budget-seconds",
-                        "600",
-                    ]);
+                    let command = journal_command(INDEXER_INPUTS_ARGS);
                     let _ = run_process_phase(
                         phase_process,
                         "indexer_inputs",
@@ -349,7 +348,7 @@ fn run_with_phase_process(
                         halted.set(true);
                         return failed_phase("indexer", "thinking cancelled");
                     }
-                    let command = journal_command(&["indexer", "drain"]);
+                    let command = journal_command(INDEXER_ARGS);
                     let result = run_process_phase(
                         phase_process,
                         "indexer",
@@ -1075,6 +1074,16 @@ mod tests {
             _day: &str,
             _timeout: Duration,
         ) -> PhaseProcessOutcome {
+            // The desktop runner spawns `command` as `solstone-core`; an argv it
+            // cannot parse fails every daily run while this stub reports success.
+            let argv = command[1..]
+                .iter()
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>();
+            assert!(
+                solstone_core_cli::evaluate_args(&argv).is_ok(),
+                "{phase} spawns an argv solstone-core does not parse: {command:?}"
+            );
             if phase == "indexer_inputs" {
                 return PhaseProcessOutcome::Exited(0);
             }
@@ -1186,8 +1195,8 @@ mod tests {
     fn terminal_context(journal: &std::path::Path, end_state: UseEndState) -> ThinkContext {
         let context = context(journal);
         fs::write(
-            context.talent_root.join("schedule.md"),
-            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
+            context.talent_root.join("morning_briefing.md"),
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"pre\":\"morning_briefing\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
         )
         .unwrap();
         context.with_boundary(Arc::new(TerminalCortex {
@@ -1304,7 +1313,7 @@ mod tests {
                 .value
                 .contains(&solstone_core_system_health::CompletedUnit {
                     mode: "daily".to_owned(),
-                    name: "schedule".to_owned(),
+                    name: "morning_briefing".to_owned(),
                     facet: None,
                 })
         );
@@ -1333,8 +1342,8 @@ mod tests {
         assert!(rows.iter().any(|row| {
             row["event"] == "talent.fail"
                 && row["mode"] == "daily"
-                && row["name"] == "schedule"
-                && row["use_id"] == "use-schedule"
+                && row["name"] == "morning_briefing"
+                && row["use_id"] == "use-morning_briefing"
                 && row["state"] == "error"
         }));
     }
@@ -1344,7 +1353,8 @@ mod tests {
         let journal = tempdir().unwrap();
         bump_stream_marker(journal.path(), DAY).unwrap();
         let context = terminal_context(journal.path(), UseEndState::Finish);
-        let identity = solstone_core_journal_io::DailyUnitIdentity::new(DAY, "schedule", None);
+        let identity =
+            solstone_core_journal_io::DailyUnitIdentity::new(DAY, "morning_briefing", None);
         let malformed = solstone_core_journal_io::daily_unit_record_path(journal.path(), &identity);
         fs::create_dir_all(malformed.parent().unwrap()).unwrap();
         fs::write(malformed, b"{not json}\n").unwrap();
@@ -3178,10 +3188,10 @@ mod tests {
             ("sense", "segment", 1, "json"),
             ("screen", "segment", 2, "md"),
             ("entities:detection", "segment", 2, "json"),
-            ("schedule", "daily", 3, "json"),
+            ("morning_briefing", "daily", 3, "json"),
         ] {
             let hook = if schedule == "daily" {
-                ",\"hook\":{\"post\":\"schedule\"}"
+                ",\"hook\":{\"pre\":\"morning_briefing\"}"
             } else {
                 ""
             };
@@ -3208,7 +3218,7 @@ mod tests {
                     ("sense".into(), "sense_active_success"),
                     ("entities:detection".into(), "success"),
                     ("screen".into(), "success"),
-                    ("schedule".into(), "daily_success"),
+                    ("morning_briefing".into(), "daily_success"),
                 ]);
             }
             let mut run_log = log(journal.path());
@@ -3249,7 +3259,7 @@ mod tests {
             2
         );
         assert_eq!(names.iter().filter(|name| *name == "screen").count(), 2);
-        assert_eq!(names.last().map(String::as_str), Some("schedule"));
+        assert_eq!(names.last().map(String::as_str), Some("morning_briefing"));
         let mut run_log = log(journal.path());
         let runner = RecordingPhaseProcessRunner::new([]);
         let settled = run_with_phase_process(
@@ -3307,10 +3317,10 @@ mod tests {
                 ("sense", "segment", 1, "json"),
                 ("screen", "segment", 2, "md"),
                 ("entities:detection", "segment", 2, "json"),
-                ("schedule", "daily", 3, "json"),
+                ("morning_briefing", "daily", 3, "json"),
             ] {
                 let hook = if schedule == "daily" {
-                    ",\"hook\":{\"post\":\"schedule\"}"
+                    ",\"hook\":{\"pre\":\"morning_briefing\"}"
                 } else {
                     ""
                 };
@@ -3324,7 +3334,7 @@ mod tests {
             ];
             script.extend(failures.iter().map(|action| ("screen".to_owned(), *action)));
             if reaches_daily {
-                script.push(("schedule".to_owned(), "daily_success"));
+                script.push(("morning_briefing".to_owned(), "daily_success"));
             }
             let cortex = Arc::new(ScriptedSegmentCortex {
                 journal: journal.path().to_owned(),
@@ -3375,7 +3385,9 @@ mod tests {
                 "{label}: retain sibling"
             );
             assert_eq!(
-                dispatches.iter().any(|(name, _)| name == "schedule"),
+                dispatches
+                    .iter()
+                    .any(|(name, _)| name == "morning_briefing"),
                 reaches_daily,
                 "{label}: actual daily dispatch; result={result:?}; phases={:?}; blockers={:?}",
                 lifecycle_rows(journal.path(), "phase.complete"),

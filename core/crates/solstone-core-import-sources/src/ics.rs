@@ -16,8 +16,9 @@ use serde_json::{Map, Value, json};
 use solstone_core_import::{ImportPreview, RegistrySource};
 use zip::ZipArchive;
 
+use crate::ics_notes::{ImportNotes, ImportStamp, MAX_IMPORT_LINES, Placement, SourceEvent};
 use crate::save::{RenderedImport, SegmentFile};
-use crate::shared::{day_key, window};
+use crate::shared::day_key;
 
 /// A calendar person read from an organizer or attendee property.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -165,13 +166,85 @@ pub fn render(
     path: &Path,
     zone: &impl TimeZone<Offset: fmt::Display>,
 ) -> Result<RenderedImport, IcsError> {
-    let entries = parse_events(path, zone)?;
+    render_with_notes(path, zone, None)
+}
+
+/// Render a calendar for saving, and with an import's stamp also the calendar
+/// note files that list each event under the days it happens.
+///
+/// Each window's notes sit beside its transcript, stamped at the instant that
+/// placed each event, in the journal zone's offset.
+pub fn render_with_notes(
+    path: &Path,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+    stamp: Option<&ImportStamp>,
+) -> Result<RenderedImport, IcsError> {
+    render_with_line_cap(path, zone, stamp, MAX_IMPORT_LINES)
+}
+
+pub(crate) fn render_with_line_cap(
+    path: &Path,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+    stamp: Option<&ImportStamp>,
+    line_cap: usize,
+) -> Result<RenderedImport, IcsError> {
+    let members = extract_ics_members(path)?;
+    let calendars = members
+        .into_iter()
+        .filter_map(|(member, data)| {
+            let contents = String::from_utf8(data).ok()?;
+            let calendar = contents.parse::<Calendar>().ok()?;
+            Some((member, calendar))
+        })
+        .collect::<Vec<_>>();
+    let mut sources = Vec::new();
+    for (member, calendar) in &calendars {
+        let name = calendar
+            .property_value("X-WR-CALNAME")
+            .or_else(|| calendar.get_name())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+            .or_else(|| member.clone());
+        for event in calendar.events() {
+            sources.push(SourceEvent {
+                event,
+                calendar: name.clone(),
+            });
+        }
+    }
+    let entries = sources
+        .iter()
+        .map(|source| parse_event(source.event, zone))
+        .collect::<Vec<_>>();
+    // Calendar notes are stamped only by a readable change time, never by the
+    // start a transcript falls back to.
+    let placements = sources
+        .iter()
+        .zip(&entries)
+        .map(|(source, entry)| match entry {
+            None => Placement::NotPlaced,
+            Some(entry) => match change_time(source.event, zone) {
+                Some(_) => Placement::Stamped(entry.create_ts),
+                None => Placement::Unstamped,
+            },
+        })
+        .collect::<Vec<_>>();
+    let mut notes =
+        stamp.map(|stamp| ImportNotes::new(&sources, placements, stamp, zone, line_cap));
+    let entries = entries
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, entry)| entry.map(|entry| (entry, index)))
+        .collect::<Vec<_>>();
     let entry_count = u64::try_from(entries.len()).expect("event count fits u64");
     let stream = format!("import.{}", RegistrySource::Ics.name());
-    let windows = window(
+    // A window closes where the zone's offset changes, so each calendar file's
+    // times read in one offset inside its segment.
+    let windows = crate::shared::window_by_offset(
         entries
             .into_iter()
-            .map(|entry| (entry.create_ts, entry))
+            .map(|(entry, index)| (entry.create_ts, (entry, index)))
             .collect(),
         zone,
     );
@@ -181,18 +254,39 @@ pub fn render(
         let mut contents = window
             .items
             .iter()
-            .map(|(_, entry)| event_markdown(entry, zone))
+            .map(|(_, (entry, _))| event_markdown(entry, zone))
             .collect::<Vec<_>>()
             .join("\n\n");
         contents.push('\n');
         files.push(SegmentFile {
             day: window.day.clone(),
             segment: window.segment_key.clone(),
-            name: TRANSCRIPT_FILE,
+            name: TRANSCRIPT_FILE.to_owned(),
+            calendar: false,
             contents,
             units: window.items.len() as u64,
         });
-        for (_, entry) in &window.items {
+        let records = match notes.as_mut() {
+            Some(notes) => crate::ics_notes::one_per_identity(
+                window
+                    .items
+                    .iter()
+                    .flat_map(|(_, (_, index))| notes.lines(*index))
+                    .collect(),
+            ),
+            None => Vec::new(),
+        };
+        for (name, bytes) in solstone_core_format::calendar::write_calendar_files(records) {
+            files.push(SegmentFile {
+                day: window.day.clone(),
+                segment: window.segment_key.clone(),
+                name,
+                calendar: true,
+                contents: String::from_utf8(bytes).expect("calendar notes are UTF-8"),
+                units: 0,
+            });
+        }
+        for (_, (entry, _)) in &window.items {
             items.push(event_item(
                 items.len(),
                 entry,
@@ -208,13 +302,15 @@ pub fn render(
         .map(|window| window.day.as_str())
         .collect::<HashSet<_>>()
         .len();
+    let counts = notes.as_ref().map(ImportNotes::counts).unwrap_or_default();
     Ok(RenderedImport {
         skipped: 0,
         source: RegistrySource::Ics,
         files,
         items,
         entries: entry_count,
-        summary: crate::save::ics_summary(entry_count, days),
+        summary: crate::save::ics_summary(entry_count, days, &counts),
+        calendar_counts: counts,
     })
 }
 
@@ -390,9 +486,21 @@ fn parse_ics_data(data: Vec<Vec<u8>>, zone: &impl TimeZone) -> Vec<CalendarEntry
 }
 
 fn extract_ics_data(path: &Path) -> Result<Vec<Vec<u8>>, IcsError> {
+    Ok(extract_ics_members(path)?
+        .into_iter()
+        .map(|(_, data)| data)
+        .collect())
+}
+
+/// One calendar's bytes, with the calendar name its archive member gives.
+type IcsMember = (Option<String>, Vec<u8>);
+
+/// Each calendar in the source, with the calendar name its archive member
+/// gives (an export of several calendars holds one file per calendar).
+fn extract_ics_members(path: &Path) -> Result<Vec<IcsMember>, IcsError> {
     if has_extension(path, "ics") {
         return fs::read(path)
-            .map(|data| vec![data])
+            .map(|data| vec![(None, data)])
             .map_err(|source| IcsError::Read {
                 path: path.to_path_buf(),
                 source,
@@ -433,7 +541,13 @@ fn extract_ics_data(path: &Path) -> Result<Vec<Vec<u8>>, IcsError> {
                 path: path.to_path_buf(),
                 source,
             })?;
-        data.push(bytes);
+        let member = Path::new(name)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::trim)
+            .filter(|stem| !stem.is_empty())
+            .map(str::to_owned);
+        data.push((member, bytes));
     }
     Ok(data)
 }
@@ -475,6 +589,19 @@ fn parse_event(event: &icalendar::Event, zone: &impl TimeZone) -> Option<Calenda
     })
 }
 
+/// The change time a calendar note is stamped with: the event's
+/// `LAST-MODIFIED`, or with none its `CREATED`. One that is present but
+/// unreadable gives none; the start a transcript may fall back to never does.
+fn change_time(event: &icalendar::Event, zone: &impl TimeZone) -> Option<DateTime<Utc>> {
+    let properties = event.properties();
+    let property = properties
+        .get("LAST-MODIFIED")
+        .or_else(|| properties.get("CREATED"))?;
+    DatePerhapsTime::from_property(property)
+        .as_ref()
+        .and_then(|value| date_perhaps_time_utc(value, zone))
+}
+
 fn creation_timestamp(event: &icalendar::Event, zone: &impl TimeZone) -> Option<DateTime<Utc>> {
     ["LAST-MODIFIED", "CREATED"]
         .into_iter()
@@ -502,8 +629,20 @@ fn date_perhaps_time_utc(value: &DatePerhapsTime, zone: &impl TimeZone) -> Optio
         DatePerhapsTime::DateTime(CalendarDateTime::Floating(date_time)) => {
             in_zone(*date_time, zone)
         }
-        DatePerhapsTime::DateTime(date_time) => date_time.try_into_utc(),
+        DatePerhapsTime::DateTime(date_time) => date_time
+            .try_into_utc()
+            .or_else(|| mapped_zone_time(date_time).map(|time| time.with_timezone(&Utc))),
     }
+}
+
+/// A time whose `TZID` the parser cannot read, such as a Windows zone name as
+/// Outlook writes it, read through the same zone table the calendar notes use.
+fn mapped_zone_time(value: &CalendarDateTime) -> Option<DateTime<chrono_tz::Tz>> {
+    let CalendarDateTime::WithTimezone { date_time, tzid } = value else {
+        return None;
+    };
+    let zone = crate::ics_notes::resolve_zone(tzid)?;
+    zone.from_local_datetime(date_time).earliest()
 }
 
 /// A wall time in `zone`; one the clocks skip reads an hour on, as it would on
@@ -528,7 +667,9 @@ fn date_perhaps_time_iso(value: &DatePerhapsTime) -> Option<String> {
         }
         DatePerhapsTime::DateTime(CalendarDateTime::Utc(date_time)) => Some(date_time.to_rfc3339()),
         DatePerhapsTime::DateTime(date_time @ CalendarDateTime::WithTimezone { .. }) => {
-            date_time.try_into_utc()?;
+            if date_time.try_into_utc().is_none() {
+                return mapped_zone_time(date_time).map(|date_time| date_time.to_rfc3339());
+            }
             date_time
                 .clone()
                 .as_dt_with_tz()
@@ -599,7 +740,7 @@ fn push_attendee(
     }
 }
 
-fn describe_rrule(value: &str) -> Option<String> {
+pub(crate) fn describe_rrule(value: &str) -> Option<String> {
     let fields = value
         .split(';')
         .filter_map(|part| part.split_once('='))

@@ -1439,6 +1439,11 @@ fn search(
             if let Some(origin) = memory_origin {
                 value["origin"] = public_memory_origin(&origin);
             }
+            // A calendar result says whether it is the latest version of the
+            // event or a change recorded on its date, and when it was recorded.
+            if let Some(calendar) = &hit.metadata.calendar {
+                value["calendar"] = json!(calendar);
+            }
             if !single_subject[0].segments.is_empty() {
                 value["segments"] = Value::Array(std::mem::take(&mut single_subject[0].segments));
             }
@@ -2421,6 +2426,11 @@ fn list_transcripts(
             };
             let stream = identity.stream.to_string();
             let name = identity.name.to_string();
+            // Calendar notes are not something the owner did; they are found
+            // through search, not listed as a moment of the day.
+            if solstone_core_segment::is_calendar_stream(journal_root, &stream) {
+                continue;
+            }
             let clock = segment_clock(&name);
             if let Some((from_sec, to_sec)) = time_filter {
                 let Some(ref clock) = clock else {
@@ -2612,6 +2622,7 @@ fn get_transcript(
                     .record_identity()
                     .is_ok_and(|id| id.stream == reference.stream && id.name == reference.segment)
             })
+            .filter(|segment| !solstone_core_segment::is_calendar_segment(journal_root, segment))
             .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
     let probe_path =
         segment_assignment_probe_path(&reference.day, &reference.stream, &reference.segment);

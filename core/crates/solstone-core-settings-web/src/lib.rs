@@ -20,6 +20,7 @@ mod http;
 mod icons;
 mod keys;
 mod logs;
+mod owner_voice;
 mod processing;
 mod request_body;
 mod retention;
@@ -59,6 +60,7 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let logs_root = journal_root.clone();
     let facet_logs_root = journal_root.clone();
     let storage_root = journal_root.clone();
+    let owner_voice_root = journal_root.clone();
     let storage_config_root = journal_root.clone();
     let storage_put_root = journal_root.clone();
     let purge_root = journal_root.clone();
@@ -89,6 +91,10 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         .route(
             "/app/settings/api/transcribe",
             get(move || transcribe::get(transcribe_root.clone())),
+        )
+        .route(
+            "/app/settings/api/transcribe/owner-voice",
+            get(move || owner_voice::get(owner_voice_root.clone())),
         )
         .route(
             "/app/settings/api/processing",

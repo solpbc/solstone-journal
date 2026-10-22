@@ -186,6 +186,7 @@ pub fn finish_audio_attempt(
                     revision: None,
                     segments: &created.segments,
                     files_created: &created.files_created,
+                    index_only: &[],
                     may_write_record: Some(&may_write),
                 },
                 &AudioPublicationOperations,

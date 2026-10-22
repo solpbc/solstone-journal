@@ -740,7 +740,10 @@ fn three_killed_claims_with_resaves_leave_same_second_content_for_the_catch_all(
     scan_journal(journal.path(), false).unwrap();
     let modified = fs::metadata(&source).unwrap().modified().unwrap();
     fs::write(&source, "latest kestrel").unwrap();
-    fs::File::open(&source)
+    // Setting a time needs a writable handle on Windows.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&source)
         .unwrap()
         .set_modified(modified)
         .unwrap();
@@ -816,4 +819,183 @@ fn a_competing_writer_can_acquire_between_drain_batches() {
             .unwrap();
     assert_eq!(report["batches"], 2);
     assert_eq!(report["processed"], BATCH_SIZE + 1);
+}
+
+mod calendar_delete {
+    use super::*;
+    use sha2::Digest;
+
+    const GOLDEN: &str = include_str!("../../../fixtures/calendar_notes/golden.jsonl");
+    const MEETING: &str = "6CF25C80-68D2-44D9-B52C-6CAD5BEC8C10";
+
+    fn calendar_journal() -> Journal {
+        let journal = Journal::new();
+        fs::create_dir_all(journal.path().join("streams")).unwrap();
+        fs::write(
+            journal.path().join("streams/phone_calendar.json"),
+            serde_json::json!({
+                "name": "phone_calendar", "kind": "observer", "host": null, "platform": null,
+                "created_at": 0, "last_day": null, "last_segment": null, "seq": 1,
+                "cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "source": "calendar",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        journal
+    }
+
+    /// Store one calendar note file the way ingest does, and queue it.
+    fn store(journal: &Journal, day: &str, segment: &str, line: &str) -> String {
+        let bytes = format!("{line}\n");
+        let name = format!(
+            "calendar_{:x}.jsonl",
+            sha2::Sha256::digest(bytes.as_bytes())
+        );
+        let rel = format!("{day}/phone_calendar/{segment}/{name}");
+        journal.save(
+            &format!("{day}/phone_calendar/{segment}/stream.json"),
+            r#"{"stream":"phone_calendar","prev_day":null,"prev_segment":null,"seq":1}"#,
+        );
+        let source = journal.save(&rel, &bytes);
+        enqueue_path(journal.path(), &source).unwrap();
+        rel
+    }
+
+    fn owner_deletes(journal: &Journal, day: &str, segment: &str) {
+        let removed = solstone_core_retention::door::remove_segments(
+            journal.path(),
+            &[solstone_core_retention::Target {
+                day: day.into(),
+                stream: "phone_calendar".into(),
+                dir: segment.into(),
+            }],
+            "2026-10-23T00:00:00Z",
+            solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
+            "fixture",
+        );
+        assert!(removed.removed_paths().next().is_some(), "{removed:?}");
+        solstone_core_retention::door::notify_index(
+            &crate::retention::RetentionIndex::new(journal.path()),
+            &removed,
+        )
+        .unwrap();
+        assert_eq!(drain_now(journal.path()).unwrap().failed, 0);
+    }
+
+    fn listed(journal: &Journal) -> Vec<(String, String)> {
+        let conn = open_index(journal.path()).unwrap();
+        let mut statement = conn
+            .prepare(
+                "SELECT c.day, c.path FROM chunks c JOIN calendar_hits h ON h.rowid=c.rowid \
+                 WHERE h.version='latest' AND h.event=? ORDER BY c.day",
+            )
+            .unwrap();
+        statement
+            .query_map([MEETING], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    fn text_left(journal: &Journal, word: &str) -> i64 {
+        let conn = open_index(journal.path()).unwrap();
+        let tables = {
+            let mut statement = conn
+                .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'chunks%' AND name NOT LIKE 'sqlite_%'")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        let mut found = 0;
+        for table in tables {
+            let mut statement = conn.prepare(&format!("SELECT * FROM {table}")).unwrap();
+            let columns = statement.column_count();
+            let mut rows = statement.query([]).unwrap();
+            while let Some(row) = rows.next().unwrap() {
+                for column in 0..columns {
+                    if let rusqlite::types::ValueRef::Text(bytes) = row.get_ref(column).unwrap()
+                        && String::from_utf8_lossy(bytes).contains(word)
+                    {
+                        found += 1;
+                    }
+                }
+            }
+        }
+        found
+            + conn
+                .query_row(
+                    "SELECT count(*) FROM chunks WHERE chunks MATCH ?",
+                    [word],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+    }
+
+    #[test]
+    fn an_owner_delete_through_the_work_list_falls_back_in_both_orders() {
+        let added = GOLDEN.lines().next().unwrap();
+        let moved = added
+            .replace(r#""change":"added""#, r#""change":"changed""#)
+            .replace("2026-10-19T09:42:00-06:00", "2026-10-20T08:01:00-06:00")
+            .replace("2026-10-27T10:00:00-06:00", "2026-10-28T14:00:00-06:00")
+            .replace("2026-10-27T11:00:00-06:00", "2026-10-28T15:00:00-06:00")
+            .replace("design review", "design review in the ocelot room");
+        for reverse in [false, true] {
+            let journal = calendar_journal();
+            let mut stores = vec![
+                ("20261019", "094000_300", added.to_owned()),
+                ("20261020", "080000_300", moved.clone()),
+            ];
+            if reverse {
+                stores.reverse();
+            }
+            let mut files = Vec::new();
+            for (day, segment, line) in &stores {
+                files.push(store(&journal, day, segment, line));
+                assert_eq!(drain_now(journal.path()).unwrap().failed, 0);
+            }
+            if reverse {
+                files.reverse();
+            }
+            // The journal keeps days in UTC here: 14:00 at -06:00 is 20:00.
+            assert_eq!(
+                listed(&journal),
+                [("20261028".to_owned(), files[1].clone())]
+            );
+            assert!(text_left(&journal, "ocelot") > 0);
+            owner_deletes(&journal, "20261020", "080000_300");
+            assert_eq!(
+                listed(&journal),
+                [("20261027".to_owned(), files[0].clone())],
+                "reverse {reverse}"
+            );
+            assert_eq!(text_left(&journal, "ocelot"), 0);
+        }
+    }
+
+    #[test]
+    fn deleting_a_removal_through_the_work_list_brings_the_meeting_back() {
+        let journal = calendar_journal();
+        let lines = GOLDEN.lines().collect::<Vec<_>>();
+        store(&journal, "20261022", "080500_300", lines[4]);
+        store(&journal, "20261019", "094000_300", lines[0]);
+        assert_eq!(drain_now(journal.path()).unwrap().failed, 0);
+        assert!(listed(&journal).is_empty());
+        // Deleting a segment that holds only an older note changes nothing.
+        let older = lines[0]
+            .replace("2026-10-19T09:42:00-06:00", "2026-10-18T10:00:00-06:00")
+            .replace("2026-10-27T10:00", "2026-10-26T10:00")
+            .replace("2026-10-27T11:00", "2026-10-26T11:00");
+        store(&journal, "20261018", "100000_300", &older);
+        assert_eq!(drain_now(journal.path()).unwrap().failed, 0);
+        owner_deletes(&journal, "20261018", "100000_300");
+        assert!(listed(&journal).is_empty());
+        owner_deletes(&journal, "20261022", "080500_300");
+        assert_eq!(listed(&journal).len(), 1);
+        assert_eq!(listed(&journal)[0].0, "20261027");
+    }
 }

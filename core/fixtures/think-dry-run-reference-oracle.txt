@@ -17,9 +17,9 @@
 ### ⚠ `--dry-run` is NOT read-only: it creates the day directory. That is
 ### reference behaviour and is contract.
 ###
-### The partner and steward talents were removed after this capture. Their
-### rows are deleted below, scenario D's cadence seed names pulse instead of
-### steward, and the identity bootstrap the reference ran is gone.
+### The partner, steward and schedule talents were removed after this capture.
+### Their rows are deleted below and the daily totals reduced to match; scenario
+### D's cadence seed names pulse, not steward; the identity bootstrap is gone.
 ###
 ### The coverage boundary of this capture is stated at the foot of the file.
 
@@ -29,7 +29,6 @@ Day 2026-01-01
 Pre-phase:  journal sense --day 20260101 -j 4
 Priority 10:
   gen  daily_schedule (new)
-  gen  schedule (new)
 
 Priority 50:
   gen  morning_briefing (new)
@@ -40,7 +39,7 @@ Priority 57:
 
 Priority 58:
 
-Total: 3 agents
+Total: 2 agents
 Post-phase: journal indexer --rescan
 Post-phase: journal journal-stats
 (exit 0)
@@ -106,7 +105,6 @@ Day 2026-01-01
 Pre-phase:  journal sense --day 20260101 -j 4
 Priority 10:
   gen  daily_schedule (new)
-  gen  schedule (new)
 
 Priority 50:
   gen  morning_briefing (new)
@@ -120,7 +118,7 @@ Priority 57:
 Priority 58:
   skip entities:entity_observer — no activity: personal, work
 
-Total: 3 agents
+Total: 2 agents
 Post-phase: journal indexer --rescan
 Post-phase: journal journal-stats
 (exit 0)
@@ -171,7 +169,7 @@ Sense orchestrator (linear):
 ### TALENT'S DECLARED OUTPUT FORMAT, not from any file found on disk. App-scoped
 ### keys mangle: "app:name" -> "_app_name".
 ###
-###   baseline .................. all three daily gens report (new)
+###   baseline .................. both daily gens report (new)
 ###   place talents/morning_briefing.json ... ONLY morning_briefing -> (exists)
 ###   place talents/daily_schedule.md  ...... NO CHANGE (that talent is json)
 ###
