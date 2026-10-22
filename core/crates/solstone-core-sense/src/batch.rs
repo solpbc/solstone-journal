@@ -1612,6 +1612,30 @@ mod tests {
     }
 
     #[test]
+    fn old_parakeet_availability_failures_reenter_ordinary_scan() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = segment(temp.path());
+        fs::write(path.join("audio.flac"), b"retained audio").unwrap();
+        let day = temp.path().join("chronicle/20260812");
+        for reason in ["server_not_ready", "no_port"] {
+            for attempts in [3, 1000] {
+                let header = serde_json::json!({"_solstone_processing":{
+                    "schema":"solstone.processing.v1","handler":"transcribe","state":"failed",
+                    "reason_code":reason,"attempts":attempts
+                }});
+                fs::write(path.join("audio.jsonl"), format!("{header}\n")).unwrap();
+                let work = scan_unprocessed(temp.path(), &day, None, None, None).unwrap();
+                assert_eq!(work.len(), 1);
+                assert_eq!(work[0].handler, "transcribe");
+                assert_eq!(
+                    fs::read(path.join("audio.flac")).unwrap(),
+                    b"retained audio"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn image_reprocess_scans_bare_stills_and_never_deletes_sidecars() {
         let temp = tempfile::tempdir().expect("journal");
         let path = segment(temp.path());

@@ -62,6 +62,16 @@ pub fn is_failure_exhausted(record: &Value) -> bool {
     {
         return true;
     }
+    // Provider readiness says nothing about whether valid speech can be
+    // processed. Keep old failures eligible too, even after three attempts.
+    if record.get("handler").and_then(Value::as_str) == Some(vocab::HANDLER_TRANSCRIBE)
+        && matches!(
+            record.get("reason_code").and_then(Value::as_str),
+            Some("server_not_ready" | "no_port")
+        )
+    {
+        return false;
+    }
     record_attempts(record) >= vocab::FAILED_ATTEMPT_BOUND
 }
 
