@@ -143,7 +143,8 @@ mod tests {
             ("linux", "arm64", Some(4 * GIB)),
             ("windows", "x86_64", Some(4 * GIB)),
             ("macos", "x86_64", None),
-            ("windows", "aarch64", None),
+            ("windows", "aarch64", Some(4 * GIB)),
+            ("windows", "armv7l", None),
             ("linux", "armv7l", None),
             ("unknown", "x86_64", None),
         ] {
@@ -245,34 +246,36 @@ mod tests {
     fn local_stt_backend_rejects_unsupported_platforms() {
         assert_eq!(local_stt_backend_for("darwin", "x86_64"), None);
         assert_eq!(local_stt_backend_for("linux", "armv7l"), None);
-        assert_eq!(local_stt_backend_for("windows", "aarch64"), None);
+        assert_eq!(local_stt_backend_for("windows", "armv7l"), None);
     }
 
     #[test]
     fn windows_default_and_explicit_cpu_selection_preserve_resource_refusal() {
-        let local = local_stt_backend_for("windows", "x86_64");
-        let floor = platform_floor_bytes_for("windows", "x86_64");
-        assert_eq!(local, Some("parakeet"));
-        assert_eq!(floor, Some(4 * GIB));
-        assert_eq!(
-            resolve_default_backend(None, local, floor, floor, false, false)
-                .unwrap()
-                .backend,
-            "parakeet"
-        );
-        for available in [None, Some(0), Some(4 * GIB - 1)] {
-            assert!(matches!(
-                resolve_default_backend(None, local, available, floor, false, false),
-                Err(TranscribeError::SttSurface { .. })
-            ));
-        }
-        for explicit in ["parakeet", "parakeet-cpp"] {
+        for arch in ["x86_64", "aarch64"] {
+            let local = local_stt_backend_for("windows", arch);
+            let floor = platform_floor_bytes_for("windows", arch);
+            assert_eq!(local, Some("parakeet"));
+            assert_eq!(floor, Some(4 * GIB));
             assert_eq!(
-                resolve_default_backend(Some(explicit), local, None, floor, false, false)
+                resolve_default_backend(None, local, floor, floor, false, false)
                     .unwrap()
                     .backend,
-                explicit
+                "parakeet"
             );
+            for available in [None, Some(0), Some(4 * GIB - 1)] {
+                assert!(matches!(
+                    resolve_default_backend(None, local, available, floor, false, false),
+                    Err(TranscribeError::SttSurface { .. })
+                ));
+            }
+            for explicit in ["parakeet", "parakeet-cpp"] {
+                assert_eq!(
+                    resolve_default_backend(Some(explicit), local, None, floor, false, false)
+                        .unwrap()
+                        .backend,
+                    explicit
+                );
+            }
         }
     }
 

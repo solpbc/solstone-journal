@@ -5,6 +5,7 @@
 //! these values retain bytes under the original controlled-build output labels.
 //! Historical product identities and original receipt/log bytes are preserved.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read};
@@ -179,7 +180,7 @@ impl CapturedBuild {
             &super::windows_stage::join_components(output_root, expected_label),
             output,
         )?;
-        let pe = crate::pe_dependencies::inspect_dependencies(&bytes)?;
+        let pe = crate::pe_dependencies::inspect_dependencies(&bytes, WindowsArchitecture::X86_64)?;
         if pe.is_dll != expected_label.ends_with(".dll") {
             return Err(
                 "native output PE kind differs from its declared library/command role".into(),
@@ -607,53 +608,60 @@ pub fn admit_llama(
             validation_bytes: files["report/execution.json"].clone(),
             outputs,
         };
-        attach_source_notices(&mut admitted, &archive, LLAMA_NOTICES)?;
-        // These embedded license comments are copied verbatim from the exact
-        // pinned source files above, including upstream copyright attribution.
-        for (member, destination, first) in [
-            ("loader/loader/cJSON.h", "notices/cJSON-LICENSE.txt", true),
-            (
-                "loader/loader/dirent_on_windows.c",
-                "notices/dirent-LICENSE.txt",
-                false,
-            ),
-            (
-                "llama/vendor/stb/stb_image.h",
-                "notices/stb-LICENSE.txt",
-                false,
-            ),
-            (
-                "llama/vendor/miniaudio/miniaudio.h",
-                "notices/miniaudio-LICENSE.txt",
-                false,
-            ),
-        ] {
-            let bytes = admitted
-                .outputs
-                .remove(member)
-                .ok_or("missing embedded source notice")?;
-            let text = std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
-            let start = if first {
-                text.find("/*")
-            } else {
-                text.rfind("/*")
-            }
-            .ok_or("missing license comment")?;
-            let end = text[start..]
-                .find("*/")
-                .ok_or("unterminated license comment")?
-                + start
-                + 2;
-            if admitted
-                .outputs
-                .insert(destination.into(), text.as_bytes()[start..end].to_vec())
-                .is_some()
-            {
-                return Err("duplicate llama notice destination".into());
+        for (label, bytes) in llama_source_notices(&archive)? {
+            if admitted.outputs.insert(label, bytes).is_some() {
+                return Err("llama source notice collides with a native output".into());
             }
         }
         Ok(admitted)
     })
+}
+
+pub(crate) fn llama_source_notices(snapshot: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    let mut outputs = source_notice_members(snapshot, LLAMA_NOTICES)?;
+    // These embedded license comments are copied verbatim from the exact
+    // pinned source files above, including upstream copyright attribution.
+    for (member, destination, first) in [
+        ("loader/loader/cJSON.h", "notices/cJSON-LICENSE.txt", true),
+        (
+            "loader/loader/dirent_on_windows.c",
+            "notices/dirent-LICENSE.txt",
+            false,
+        ),
+        (
+            "llama/vendor/stb/stb_image.h",
+            "notices/stb-LICENSE.txt",
+            false,
+        ),
+        (
+            "llama/vendor/miniaudio/miniaudio.h",
+            "notices/miniaudio-LICENSE.txt",
+            false,
+        ),
+    ] {
+        let bytes = outputs
+            .remove(member)
+            .ok_or("missing embedded source notice")?;
+        let text = std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
+        let start = if first {
+            text.find("/*")
+        } else {
+            text.rfind("/*")
+        }
+        .ok_or("missing license comment")?;
+        let end = text[start..]
+            .find("*/")
+            .ok_or("unterminated license comment")?
+            + start
+            + 2;
+        if outputs
+            .insert(destination.into(), text.as_bytes()[start..end].to_vec())
+            .is_some()
+        {
+            return Err("duplicate llama notice destination".into());
+        }
+    }
+    Ok(outputs)
 }
 
 const LLAMA_NOTICES: &[SourceNotice] = &[
@@ -885,6 +893,7 @@ pub fn admit_ffmpeg_notices(
             "source_commit": pin.commit, "url": pin.url, "bytes": pin.size, "sha256": pin.sha256,
         })).map_err(|e| e.to_string())?);
         Ok(super::windows_archives::AdmittedArchiveInput {
+            architecture: None,
             component: crate::inventory::WindowsNativeComponent::Ffmpeg,
             members,
         })
@@ -957,6 +966,20 @@ fn attach_source_notices(
         }
     }
     Ok(())
+}
+
+pub(crate) fn onnx_source_notices(snapshot: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    source_notice_members(snapshot, ONNX_NOTICES)
+}
+
+pub(crate) fn ced_source_notices(snapshot: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    source_notice_members(snapshot, CED_NOTICES)
+}
+
+pub(crate) fn parakeet_source_notices(
+    snapshot: &Path,
+) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    source_notice_members(snapshot, PARAKEET_NOTICES)
 }
 
 fn source_notice_members(
@@ -1046,7 +1069,9 @@ fn require_identity(bytes: &[u8], size: u64, sha256: &str) -> Result<(), String>
     Ok(())
 }
 
-fn with_snapshot<T>(operation: impl FnOnce(&Path) -> Result<T, String>) -> Result<T, String> {
+pub(crate) fn with_snapshot<T>(
+    operation: impl FnOnce(&Path) -> Result<T, String>,
+) -> Result<T, String> {
     let snapshot = tempfile::tempdir().map_err(|e| e.to_string())?;
     let result = operation(snapshot.path());
     match (result, snapshot.close()) {
@@ -1059,7 +1084,12 @@ fn with_snapshot<T>(operation: impl FnOnce(&Path) -> Result<T, String>) -> Resul
     }
 }
 
-fn snapshot_file(root: &Path, leaf: &str, source: &Path, limit: u64) -> Result<PathBuf, String> {
+pub(crate) fn snapshot_file(
+    root: &Path,
+    leaf: &str,
+    source: &Path,
+    limit: u64,
+) -> Result<PathBuf, String> {
     let bytes = read_bounded(source, limit)?;
     let path = root.join(leaf);
     fs::write(&path, bytes).map_err(|e| e.to_string())?;
@@ -1069,7 +1099,7 @@ fn snapshot_file(root: &Path, leaf: &str, source: &Path, limit: u64) -> Result<P
 // Existing source inspectors perform semantic/source-pin checks after this pass.
 // The outer Take bounds all decoder output, including tar metadata and padding.
 // Raw entries keep tar from allocating GNU/PAX bodies before their size is checked.
-fn preflight_source_archive(path: &Path) -> Result<(), String> {
+pub(crate) fn preflight_source_archive(path: &Path) -> Result<(), String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
     preflight_tar_stream(
         flate2::read::GzDecoder::new(file),
@@ -1460,8 +1490,11 @@ mod llama_capture_tests {
                     .contains("Copyright")
             );
         }
-        super::super::windows_stage::AdmittedWindowsNativeInputs::from_controlled(vec![input])
-            .unwrap();
+        super::super::windows_stage::AdmittedWindowsNativeInputs::from_controlled(
+            vec![input],
+            WindowsArchitecture::X86_64,
+        )
+        .unwrap();
         let scratch = tempfile::tempdir().unwrap();
         let evidence = scratch.path().join("evidence.json");
         fs::write(&evidence, b"{}").unwrap();
@@ -1691,7 +1724,8 @@ mod nvattest_retained_tests {
             "220849fea69d60563fc6ef0ea7c020450d842565d08e7cbd2eecfecbd41ecdc8"
         );
         // Imports parsed from the real executable bytes match the real report.
-        let pe = crate::pe_dependencies::inspect_dependencies(exe).unwrap();
+        let pe =
+            crate::pe_dependencies::inspect_dependencies(exe, WindowsArchitecture::X86_64).unwrap();
         let report = decode_build_report(&report_raw).unwrap();
         let reported: std::collections::BTreeSet<String> = report
             .imports
@@ -1715,8 +1749,11 @@ mod nvattest_retained_tests {
             sha256_hex(&input.outputs()[NVATTEST_LICENSE_LABEL]),
             "82d36972a71088e8d4a4793313e64e18340c60de08e3175a58360a277c962a33"
         );
-        crate::produce::windows_stage::AdmittedWindowsNativeInputs::from_controlled(vec![input])
-            .unwrap();
+        crate::produce::windows_stage::AdmittedWindowsNativeInputs::from_controlled(
+            vec![input],
+            WindowsArchitecture::X86_64,
+        )
+        .unwrap();
 
         type Forgery = (
             &'static str,

@@ -91,7 +91,7 @@ pub fn runtime_label(os: &str, arch: &str) -> &'static str {
 }
 
 /// Whether the `parakeet` backend runs the parakeet.cpp server on this host:
-/// Linux on both architectures, and Windows x86_64 from its bundled package.
+/// Linux on both architectures, and Windows from its bundled package.
 pub fn parakeet_uses_cpp(os: &str, arch: &str) -> bool {
     stt_host_policy(os, arch).uses_parakeet_cpp()
 }
@@ -112,7 +112,8 @@ mod tests {
         assert_eq!(runtime_label("darwin", "arm64"), "macOS CoreML helper");
         assert_eq!(runtime_label("linux", "x86_64"), "Linux parakeet.cpp");
         assert_eq!(runtime_label("windows", "x86_64"), "Windows parakeet.cpp");
-        assert_eq!(runtime_label("windows", "aarch64"), "unsupported");
+        assert_eq!(runtime_label("windows", "aarch64"), "Windows parakeet.cpp");
+        assert_eq!(runtime_label("windows", "armv7l"), "unsupported");
     }
 
     #[test]
@@ -126,11 +127,12 @@ mod tests {
     }
 
     #[test]
-    fn parakeet_uses_cpp_on_linux_and_windows_x86_64() {
+    fn parakeet_uses_cpp_on_linux_and_windows() {
         assert!(parakeet_uses_cpp("linux", "x86_64"));
         assert!(parakeet_uses_cpp("linux", "aarch64"));
         assert!(parakeet_uses_cpp("windows", "x86_64"));
-        assert!(!parakeet_uses_cpp("windows", "aarch64"));
+        assert!(parakeet_uses_cpp("windows", "aarch64"));
+        assert!(!parakeet_uses_cpp("windows", "armv7l"));
         assert!(!parakeet_uses_cpp("macos", "aarch64"));
         assert!(!parakeet_uses_cpp("darwin", "arm64"));
     }
@@ -169,7 +171,8 @@ mod tests {
             ("linux", "amd64", Some(4), true, "Linux parakeet.cpp"),
             ("linux", "arm64", Some(4), true, "Linux parakeet.cpp"),
             ("windows", "x86_64", Some(4), true, "Windows parakeet.cpp"),
-            ("windows", "aarch64", None, false, "unsupported"),
+            ("windows", "aarch64", Some(4), true, "Windows parakeet.cpp"),
+            ("windows", "armv7l", None, false, "unsupported"),
             ("darwin", "x86_64", None, false, "unsupported"),
             ("linux", "riscv64", None, false, "unsupported"),
             ("unknown", "x86_64", None, false, "unsupported"),

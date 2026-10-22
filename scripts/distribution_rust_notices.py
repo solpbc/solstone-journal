@@ -5,7 +5,7 @@
 """Generate and check target-specific Rust notices for journal releases.
 
 The Windows source index records verified licence provenance for the lock's
-external packages. This command selects each non-Windows binary closure from
+external packages. This command selects each target binary closure from
 Cargo metadata and carries only its licence texts into that target's payload.
 Run --write when the lock or inventory changes; run --check before a release.
 Neither operation belongs in routine make ci.
@@ -34,6 +34,7 @@ TARGETS = {
     "linux-x86_64": "x86_64-unknown-linux-gnu",
     "linux-aarch64": "aarch64-unknown-linux-gnu",
     "macos-arm64": "aarch64-apple-darwin",
+    "windows-aarch64": "aarch64-pc-windows-msvc",
 }
 SCREEN_OCR_MANIFEST = ROOT / "core/screen-ocr-helper/Cargo.toml"
 SCREEN_OCR_LOCK = ROOT / "core/screen-ocr-helper/Cargo.lock"
@@ -46,6 +47,7 @@ SCREEN_OCR_TARGETS = {
     "linux-aarch64": "aarch64-unknown-linux-gnu",
     "macos-arm64": "aarch64-apple-darwin",
     "windows-x86_64": "x86_64-pc-windows-msvc",
+    "windows-aarch64": "aarch64-pc-windows-msvc",
 }
 OAR_URL = "https://github.com/GreatV/oar-ocr"
 OAR_REVISION = "84817f58d7a0932d5368a9fa18105ba5d842af29"

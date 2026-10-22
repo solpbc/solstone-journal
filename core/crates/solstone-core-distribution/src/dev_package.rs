@@ -285,7 +285,8 @@ mod tests {
              [runtime.linux_x86_64]\nfilename = \"runtime.whl\"\nurl = \"https://example.invalid/runtime\"\nsha256 = \"{wheel_sha}\"\n\
              [runtime.linux_aarch64]\nfilename = \"runtime.whl\"\nurl = \"https://example.invalid/runtime\"\nsha256 = \"{wheel_sha}\"\n\
              [runtime.macos_arm64]\nfilename = \"runtime.whl\"\nurl = \"https://example.invalid/runtime\"\nsha256 = \"{wheel_sha}\"\n\
-             [runtime.windows_x86_64]\nfilename = \"runtime.whl\"\nurl = \"https://example.invalid/runtime\"\nsha256 = \"{wheel_sha}\"\n",
+             [runtime.windows_x86_64]\nfilename = \"runtime.whl\"\nurl = \"https://example.invalid/runtime\"\nsha256 = \"{wheel_sha}\"\n\n\
+             [runtime.windows_aarch64]\nfilename = \"runtime.whl\"\nurl = \"https://example.invalid/runtime\"\nsha256 = \"{wheel_sha}\"\n",
             crate::digest::sha256_hex(detector),
             crate::digest::sha256_hex(recognizer),
             crate::digest::sha256_hex(dictionary_yaml),

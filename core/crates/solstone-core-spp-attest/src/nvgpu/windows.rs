@@ -15,11 +15,16 @@ use crate::error::GpuAppraisalReason;
 pub(super) const BINARY: &str = "lib/solstone-nvattest/nvattest.exe";
 #[cfg(windows)]
 const CA_BUNDLE: &str = "share/ca/ca-bundle.pem";
-#[cfg(windows)]
+#[cfg(all(windows, not(target_arch = "aarch64")))]
 const RUNTIME: [&str; 3] = [
     "lib/solstone-nvattest/msvcp140.dll",
     "lib/solstone-nvattest/vcruntime140.dll",
     "lib/solstone-nvattest/vcruntime140_1.dll",
+];
+#[cfg(all(windows, target_arch = "aarch64"))]
+const RUNTIME: [&str; 2] = [
+    "lib/solstone-nvattest/msvcp140.dll",
+    "lib/solstone-nvattest/vcruntime140.dll",
 ];
 
 pub(super) fn child_path(path: &Path) -> Result<PathBuf, GpuAppraisalReason> {
@@ -112,7 +117,7 @@ pub(super) fn locate(root: &Path) -> Result<super::NvattestInstallation, GpuAppr
         child_path(&path)
     };
     // Inventory admission checks every non-system DLL before the first spawn;
-    // these three must also be present so the loader cannot fall back to a
+    // the target's runtime must also be present so the loader cannot fall back to a
     // machine-wide VC runtime. The CA is pinned even for offline appraisals.
     for runtime in RUNTIME {
         member(runtime)?;

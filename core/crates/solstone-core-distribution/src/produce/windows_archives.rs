@@ -4,6 +4,7 @@
 //! Local pinned upstream inputs; this module performs no downloads or installation.
 //! The inventory alone assigns destinations to these retained member labels.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 use std::path::Path;
@@ -13,6 +14,7 @@ use crate::digest::sha256_hex;
 use crate::inventory::WindowsNativeComponent;
 
 pub struct AdmittedArchiveInput {
+    pub(super) architecture: Option<WindowsArchitecture>,
     pub(super) component: WindowsNativeComponent,
     pub(super) members: BTreeMap<String, Vec<u8>>,
 }
@@ -41,8 +43,15 @@ pub struct MemberPin {
     pub dll: bool,
 }
 
-pub fn admit_restic(archive: &Path, license: &Path) -> Result<AdmittedArchiveInput, String> {
-    let members = admit_zip(archive, &RESTIC)?;
+pub fn admit_restic(
+    archive: &Path,
+    license: &Path,
+    expected: WindowsArchitecture,
+) -> Result<AdmittedArchiveInput, String> {
+    if expected != WindowsArchitecture::X86_64 {
+        return Err("missing pinned ARM64 restic input".into());
+    }
+    let members = admit_zip(archive, &RESTIC, expected)?;
     // licence-tree publishes this text; the pin still rejects a different file.
     let _ = pinned_file(
         license,
@@ -50,13 +59,22 @@ pub fn admit_restic(archive: &Path, license: &Path) -> Result<AdmittedArchiveInp
         "6f08a01a9fab5b24e139a09f15cc24a73087c7bc09e3bacf099fdf2d767bf897",
     )?;
     Ok(AdmittedArchiveInput {
+        architecture: Some(expected),
         component: WindowsNativeComponent::Restic,
         members,
     })
 }
 
-pub fn admit_rclone(archive: &Path, license: &Path) -> Result<AdmittedArchiveInput, String> {
-    let members = admit_zip(archive, &RCLONE)?;
+pub fn admit_rclone(
+    archive: &Path,
+    license: &Path,
+    expected: WindowsArchitecture,
+) -> Result<AdmittedArchiveInput, String> {
+    let pin = match expected {
+        WindowsArchitecture::X86_64 => &RCLONE,
+        WindowsArchitecture::Aarch64 => &RCLONE_ARM64,
+    };
+    let members = admit_zip(archive, pin, expected)?;
     // licence-tree publishes this text; the pin still rejects a different file.
     let _ = pinned_file(
         license,
@@ -64,15 +82,24 @@ pub fn admit_rclone(archive: &Path, license: &Path) -> Result<AdmittedArchiveInp
         "8cd2e9e750b90a04b7d82dbbca3930c696ae0309d7c10464f90a44f45754cd04",
     )?;
     Ok(AdmittedArchiveInput {
+        architecture: Some(expected),
         component: WindowsNativeComponent::Rclone,
         members,
     })
 }
 
-pub fn admit_msvc(archive: &Path, runtime_license: &Path) -> Result<AdmittedArchiveInput, String> {
+pub fn admit_msvc(
+    archive: &Path,
+    runtime_license: &Path,
+    expected: WindowsArchitecture,
+) -> Result<AdmittedArchiveInput, String> {
+    let pin = match expected {
+        WindowsArchitecture::X86_64 => &MSVC,
+        WindowsArchitecture::Aarch64 => &MSVC_ARM64,
+    };
     // Only the reviewed release CRT/OpenMP files, never debug_nonredist or
     // additional DLLs merely because the upstream VSIX happens to carry them.
-    let mut members = admit_zip(archive, &MSVC)?;
+    let mut members = admit_zip(archive, pin, expected)?;
     // Original Microsoft runtime terms, not a grant of redistribution rights.
     // The applicable Visual Studio license remains an operator/release concern.
     members.insert(
@@ -89,19 +116,23 @@ pub fn admit_msvc(archive: &Path, runtime_license: &Path) -> Result<AdmittedArch
         "sha256": "f1e3d56ceb2ad68aae0711b910375009e651ac5530fa0760f0dea6e81e54fae1",
     })).map_err(|e| e.to_string())?);
     Ok(AdmittedArchiveInput {
+        architecture: Some(expected),
         component: WindowsNativeComponent::Msvc,
         members,
     })
 }
 
-pub fn admit_pdfium(archive: &Path) -> Result<AdmittedArchiveInput, String> {
+pub fn admit_pdfium(
+    archive: &Path,
+    expected: WindowsArchitecture,
+) -> Result<AdmittedArchiveInput, String> {
     let bytes = read_bounded(archive, 16 * 1024 * 1024)?;
-    let spec =
-        crate::pdfium::spec_for("windows-x86_64").ok_or("missing pinned Windows PDFium spec")?;
+    let spec = crate::pdfium::spec_for(expected.target_id())
+        .ok_or("missing pinned Windows PDFium spec")?;
     // The existing validator checks the archive digest before parsing, then
     // the exact member census, library and every original notice digest.
     let staged = crate::pdfium::stage_from_bytes(spec, &bytes).map_err(|e| e.to_string())?;
-    if !crate::pe_dependencies::inspect_dependencies(&staged.library)?.is_dll {
+    if !crate::pe_dependencies::inspect_dependencies(&staged.library, expected)?.is_dll {
         return Err("pinned PDFium member is not a DLL".into());
     }
     let mut members = staged.notices;
@@ -118,6 +149,7 @@ pub fn admit_pdfium(archive: &Path) -> Result<AdmittedArchiveInput, String> {
         serde_json::to_vec(&provenance).map_err(|e| e.to_string())?,
     );
     Ok(AdmittedArchiveInput {
+        architecture: Some(expected),
         component: WindowsNativeComponent::Pdfium,
         members,
     })
@@ -136,8 +168,21 @@ fn require_pin(bytes: &[u8], size: u64, digest: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn admit_zip(path: &Path, pin: &ArchivePin) -> Result<BTreeMap<String, Vec<u8>>, String> {
-    let bytes = pinned_file(path, pin.bytes, pin.sha256)?;
+fn admit_zip(
+    path: &Path,
+    pin: &ArchivePin,
+    architecture: WindowsArchitecture,
+) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    let bytes = read_bounded(path, pin.bytes)?;
+    admit_zip_bytes(&bytes, pin, architecture)
+}
+
+fn admit_zip_bytes(
+    bytes: &[u8],
+    pin: &ArchivePin,
+    architecture: WindowsArchitecture,
+) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    require_pin(bytes, pin.bytes, pin.sha256)?;
     let archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
     if archive.len() > 512 {
         return Err("pinned upstream archive exceeds member limit".into());
@@ -179,7 +224,9 @@ fn admit_zip(path: &Path, pin: &ArchivePin) -> Result<BTreeMap<String, Vec<u8>>,
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
         require_pin(&bytes, expected.bytes, expected.sha256)?;
-        if crate::pe_dependencies::inspect_dependencies(&bytes)?.is_dll != expected.dll {
+        if crate::pe_dependencies::inspect_dependencies(&bytes, architecture)?.is_dll
+            != expected.dll
+        {
             return Err(format!("unexpected upstream PE kind: {}", expected.path));
         }
         if members.insert(expected.label.into(), bytes).is_some() {
@@ -269,10 +316,104 @@ pub const MSVC: ArchivePin = ArchivePin {
     ],
 };
 
+pub(crate) const RCLONE_ARM64: ArchivePin = ArchivePin {
+    version: "1.74.4",
+    url: "https://downloads.rclone.org/v1.74.4/rclone-v1.74.4-windows-arm64.zip",
+    bytes: 26494445,
+    sha256: "72194ad0aaf210d7a55808801191fecc7e175444dab7be7491b7a63074521f3a",
+    members: &[MemberPin {
+        label: "rclone.exe",
+        path: "rclone-v1.74.4-windows-arm64/rclone.exe",
+        bytes: 72152064,
+        sha256: "37a68118889876ce61930c8c9284cf868871a44c0ac93f22ed4de91c249caaa0",
+        dll: false,
+    }],
+};
+
+// The catalog advertises 5,067,096 bytes; the downloaded, digest-matching
+// package is 5,046,547 bytes. Select only native ARM64 release CRT members.
+// Its vcruntime140_1.dll is AMD64/CHPE, and OpenMP is a separate source input.
+pub const MSVC_ARM64: ArchivePin = ArchivePin {
+    version: "14.44.35211.0",
+    url: "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/fc8f37250188509818258582758a3b704810c77b6d25845486d583ea99d9aa1f/Microsoft.VC.14.44.17.14.CRT.Redist.ARM64.base.vsix",
+    bytes: 5046547,
+    sha256: "fc8f37250188509818258582758a3b704810c77b6d25845486d583ea99d9aa1f",
+    members: &[
+        MemberPin {
+            label: "msvcp140.dll",
+            path: "Contents/VC/Redist/MSVC/14.44.35112/arm64/Microsoft.VC143.CRT/msvcp140.dll",
+            bytes: 1372216,
+            sha256: "045faeab0b5710816ae160ea20dae8495ffc11bb51feca15d22aaf7ff3752cb3",
+            dll: true,
+        },
+        MemberPin {
+            label: "msvcp140_1.dll",
+            path: "Contents/VC/Redist/MSVC/14.44.35112/arm64/Microsoft.VC143.CRT/msvcp140_1.dll",
+            bytes: 50744,
+            sha256: "af9dd287c5e5d47186fec391099e140bf9e758245d39c78e94f8cb4ffaada1e5",
+            dll: true,
+        },
+        MemberPin {
+            label: "vcruntime140.dll",
+            path: "Contents/VC/Redist/MSVC/14.44.35112/arm64/Microsoft.VC143.CRT/vcruntime140.dll",
+            bytes: 199200,
+            sha256: "d8a8513921544569837e400d37cc71302819967ae6defa932266a7ecb41dbaf9",
+            dll: true,
+        },
+    ],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    #[ignore = "operator qualification with retained pinned archives; set SOLSTONE_WINDOWS_ARCHIVE_TEST_INPUTS"]
+    fn real_archives_admit_both_architectures_and_refuse_cross_target_inputs() {
+        let input_file = std::env::var_os("SOLSTONE_WINDOWS_ARCHIVE_TEST_INPUTS")
+            .expect("retained archive input map required");
+        let paths: BTreeMap<String, BTreeMap<String, std::path::PathBuf>> =
+            serde_json::from_slice(&std::fs::read(input_file).unwrap()).unwrap();
+        for (key, expected, foreign) in [
+            (
+                "x64",
+                WindowsArchitecture::X86_64,
+                WindowsArchitecture::Aarch64,
+            ),
+            (
+                "arm64",
+                WindowsArchitecture::Aarch64,
+                WindowsArchitecture::X86_64,
+            ),
+        ] {
+            let files = &paths[key];
+            let rclone =
+                admit_rclone(&files["rclone_archive"], &files["rclone_license"], expected).unwrap();
+            assert!(rclone.outputs().contains_key("rclone.exe"));
+            let msvc =
+                admit_msvc(&files["msvc_archive"], &files["runtime_license"], expected).unwrap();
+            assert!(msvc.outputs().contains_key("msvcp140.dll"));
+            assert!(msvc.outputs().contains_key("vcruntime140.dll"));
+            assert_eq!(
+                msvc.outputs().contains_key("vcruntime140_1.dll"),
+                expected == WindowsArchitecture::X86_64
+            );
+            assert_eq!(
+                msvc.outputs().contains_key("vcomp140.dll"),
+                expected == WindowsArchitecture::X86_64
+            );
+            let pdfium = admit_pdfium(&files["pdfium_archive"], expected).unwrap();
+            assert!(pdfium.outputs().contains_key("pdfium.dll"));
+            assert!(
+                admit_rclone(&files["rclone_archive"], &files["rclone_license"], foreign).is_err()
+            );
+            assert!(
+                admit_msvc(&files["msvc_archive"], &files["runtime_license"], foreign).is_err()
+            );
+            assert!(admit_pdfium(&files["pdfium_archive"], foreign).is_err());
+        }
+    }
 
     #[test]
     fn pinned_zip_admission_checks_member_kind_and_refuses_substitution() {
@@ -298,10 +439,12 @@ mod tests {
             sha256: Box::leak(sha256_hex(&bytes).into_boxed_str()),
             members: member,
         };
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("upstream.zip");
-        std::fs::write(&path, &bytes).unwrap();
-        let admitted = admit_zip(&path, &pin).unwrap();
+        let admitted = admit_zip_bytes(&bytes, &pin, WindowsArchitecture::X86_64).unwrap();
+        assert!(
+            admit_zip_bytes(&bytes, &pin, WindowsArchitecture::Aarch64)
+                .unwrap_err()
+                .contains("ARM64")
+        );
         assert_eq!(admitted["engine.dll"], original);
         let wrong_kind = ArchivePin {
             members: Box::leak(Box::new([MemberPin {
@@ -314,15 +457,15 @@ mod tests {
             ..pin
         };
         assert!(
-            admit_zip(&path, &wrong_kind)
+            admit_zip_bytes(&bytes, &wrong_kind, WindowsArchitecture::X86_64)
                 .unwrap_err()
                 .contains("PE kind")
         );
         let mut replacement = bytes;
         replacement[0] ^= 1;
-        std::fs::write(&path, &replacement).unwrap();
+
         assert!(
-            admit_zip(&path, &wrong_kind)
+            admit_zip_bytes(&replacement, &wrong_kind, WindowsArchitecture::X86_64)
                 .unwrap_err()
                 .contains("pinned size or SHA-256")
         );
@@ -339,11 +482,9 @@ mod tests {
             sha256: Box::leak(sha256_hex(&bytes).into_boxed_str()),
             members: &[],
         };
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("dup.zip");
-        std::fs::write(&path, &bytes).unwrap();
+
         assert_eq!(
-            admit_zip(&path, &pin).unwrap_err(),
+            admit_zip_bytes(&bytes, &pin, WindowsArchitecture::X86_64).unwrap_err(),
             "duplicate upstream archive member"
         );
     }

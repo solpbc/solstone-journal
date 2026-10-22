@@ -15,11 +15,11 @@ use std::str;
 use flate2::read::GzDecoder;
 use solstone_core_ffmpeg_build_support::{
     BUILD_RUN_ID_ENV, ConfigureReceipt, ConfigureRunRecord, EVIDENCE_DIR, SourceAdmission,
-    configure_mode_args, controlled_component_args_for_audio_remux, msvc_crt_configure_arg,
-    parse_build_profile, parse_component_inventory, parse_debug_env, parse_ffmpeg_pin,
-    read_configure_receipt, read_current_run_record, select_source_admission,
-    validate_controlled_component_inventory, verify_sha256, write_configure_receipt,
-    write_current_run_record,
+    WINDOWS_ARM64_TARGET, WindowsArm64Tools, configure_mode_args,
+    controlled_component_args_for_audio_remux, msvc_crt_configure_arg, parse_build_profile,
+    parse_component_inventory, parse_debug_env, parse_ffmpeg_pin, read_configure_receipt,
+    read_current_run_record, select_source_admission, validate_controlled_component_inventory,
+    verify_sha256, windows_arm64_configure_args, write_configure_receipt, write_current_run_record,
 };
 use tar::Archive;
 
@@ -450,6 +450,42 @@ fn validated_cpu_flag(var: &str, value: String) -> String {
     value
 }
 
+fn configure_windows_arm64(configure: &mut Command) -> io::Result<()> {
+    let mut values = Vec::new();
+    for name in [
+        "SOLSTONE_FFMPEG_WINDOWS_ARM64_CLANG_CL",
+        "SOLSTONE_FFMPEG_WINDOWS_ARM64_AS",
+        "SOLSTONE_FFMPEG_WINDOWS_ARM64_LINK",
+        "SOLSTONE_FFMPEG_WINDOWS_ARM64_LIB",
+        "SOLSTONE_FFMPEG_WINDOWS_ARM64_DUMPBIN",
+        "SOLSTONE_FFMPEG_WINDOWS_ARM64_HOST_CC",
+    ] {
+        println!("cargo:rerun-if-env-changed={name}");
+        values.push(
+            env::var(name).map_err(|error| {
+                io::Error::other(format!("missing required:\n  {name} ({error})"))
+            })?,
+        );
+    }
+    configure.args(
+        windows_arm64_configure_args(&WindowsArm64Tools {
+            compiler: &values[0],
+            assembler: &values[1],
+            linker: &values[2],
+            librarian: &values[3],
+            dumpbin: &values[4],
+            host_compiler: &values[5],
+        })
+        .map_err(io::Error::other)?,
+    );
+    if env::var("MSYS2_ARG_CONV_EXCL").as_deref() != Ok("/O2;/MT") {
+        return Err(io::Error::other(
+            "controlled Windows ARM FFmpeg build requires MSYS2_ARG_CONV_EXCL=/O2;/MT",
+        ));
+    }
+    Ok(())
+}
+
 fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
     let source_dir = source();
     if cfg!(target_os = "windows") {
@@ -499,7 +535,14 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
 
     let target = env::var("TARGET").unwrap();
     let host = env::var("HOST").unwrap();
-    if target != host {
+    if target == WINDOWS_ARM64_TARGET {
+        if host != "x86_64-pc-windows-msvc" {
+            return Err(io::Error::other(
+                "controlled Windows ARM FFmpeg build requires the x64 Windows host tool closure",
+            ));
+        }
+        configure_windows_arm64(&mut configure)?;
+    } else if target != host {
         configure.arg("--enable-cross-compile");
 
         // Rust targets are subtly different than naming scheme for compiler prefixes.
@@ -1102,10 +1145,16 @@ fn check_features(
     .expect("Write failed");
 
     let executable = out_dir.join(if cfg!(windows) { "check.exe" } else { "check" });
-    let mut compiler = cc::Build::new()
-        .target(&env::var("HOST").unwrap()) // don't cross-compile this
-        .get_compiler()
-        .to_command();
+    let mut host_compiler = cc::Build::new();
+    host_compiler.target(&env::var("HOST").unwrap()); // don't cross-compile this
+    if env::var("TARGET").as_deref() == Ok(WINDOWS_ARM64_TARGET) {
+        // Cargo's target SDK environment belongs to ARM64. This executable
+        // runs on the x64 builder and must restore its own SDK and libraries.
+        let name = "SOLSTONE_FFMPEG_WINDOWS_ARM64_HOST_CC";
+        println!("cargo:rerun-if-env-changed={name}");
+        host_compiler.compiler(env::var(name).expect("Windows ARM host compiler proxy"));
+    }
+    let mut compiler = host_compiler.get_compiler().to_command();
 
     for dir in include_paths {
         compiler.arg("-I");

@@ -18,6 +18,7 @@ param(
     [Parameter(Mandatory=$true)][string]$LlvmArchive,
     [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedProductCommit,
     [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedCargoLockSha256,
+    [ValidateSet('windows-x86_64','windows-aarch64')][string]$WindowsTarget='windows-x86_64',
     [string]$GitRoot='C:\Program Files\Git'
 )
 Set-StrictMode -Version Latest
@@ -35,7 +36,8 @@ $failures=[Collections.Generic.List[string]]::new()
 $rules=[Collections.Generic.List[string]]::new()
 $environmentChanges=@{}
 $nativeNames=@('cl','link','MSBuild','rustc','cargo','ninja','cmake','ctest','vpk','signtool',
-    'rfdetr-cli','solstone-distribution','git','bash','sh','make','nasm','perl')
+    'rfdetr-cli','solstone-distribution','git','bash','sh','make','nasm','perl',
+    'clang','clang-cl','host-cc','host-link','host-lib','arm-as','arm-link','arm-lib','arm-nm')
 
 function Assert-FirstApplication([string]$Name, [string]$Expected) {
     $applications=@(Get-Command $Name -CommandType Application -ErrorAction Stop)
@@ -161,6 +163,13 @@ foreach ($path in @($RecorderRepositoryRoot,$ProductRepositoryRoot,$RunRoot,$Inp
 $RecorderRepositoryRoot=(Resolve-Path -LiteralPath $RecorderRepositoryRoot).ProviderPath
 $ProductRepositoryRoot=(Resolve-Path -LiteralPath $ProductRepositoryRoot).ProviderPath
 $RunRoot=[IO.Path]::GetFullPath($RunRoot)
+if ($WindowsTarget -ceq 'windows-aarch64') {
+    if ($RunRoot -notmatch '^[A-Za-z]:\\[A-Za-z0-9_.\\-]+$') { throw 'ARM compiler tool root requires an ASCII path without spaces' }
+    $processors=@(Get-CimInstance Win32_Processor -ErrorAction Stop)
+    if ($processors.Count -eq 0 -or @($processors | Where-Object { $_.Architecture -ne 9 }).Count -ne 0 -or $env:PROCESSOR_ARCHITECTURE -cne 'AMD64') {
+        throw 'ARM cross-production requires a native Intel/AMD x64 Windows host and x64 PowerShell'
+    }
+}
 $roots=@($RecorderRepositoryRoot.TrimEnd('\'),$ProductRepositoryRoot.TrimEnd('\'),$RunRoot.TrimEnd('\'))
 for ($i=0;$i -lt $roots.Count;$i++) {
     for ($j=0;$j -lt $roots.Count;$j++) {
@@ -179,6 +188,13 @@ try {
     foreach ($name in @('CL','_CL_','LINK','_LINK_','CFLAGS','CXXFLAGS','CPPFLAGS','LDFLAGS','FFMPEG_DIR',
         'CMAKE_TOOLCHAIN_FILE','CMAKE_GENERATOR','CMAKE_PREFIX_PATH','CARGO_TARGET_DIR','RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','RUSTC_WRAPPER','RUSTC_WORKSPACE_WRAPPER')) {
         if (-not [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name))) { throw "inherited build override refused: $name" }
+    }
+    if ($WindowsTarget -ceq 'windows-aarch64') {
+        foreach ($entry in @(Get-ChildItem Env:)) {
+            if ($entry.Name -match '^(SOLSTONE_FFMPEG_WINDOWS_ARM64_|CARGO_TARGET_(AARCH64|X86_64)_PC_WINDOWS_MSVC_LINKER$|MSYS2_ARG_CONV_EXCL$|(?:CC|CXX|AR)(?:_|$))') {
+                throw "inherited ARM cross-build override refused: $($entry.Name)"
+            }
+        }
     }
     Assert-NoNative 'host-before-fence'
     $cmd=Join-Path $env:SystemRoot 'System32\cmd.exe'
@@ -259,6 +275,8 @@ try {
     $rustc=$rustTools.rustc
     $cl=(Get-Command cl.exe -CommandType Application -ErrorAction Stop).Source
     $link=(Get-Command link.exe -CommandType Application -ErrorAction Stop).Source
+    $hostEnvironment=@{}
+    foreach ($name in @('PATH','INCLUDE','LIB','LIBPATH')) { $hostEnvironment[$name]=[Environment]::GetEnvironmentVariable($name,'Process') }
     $msbuild=Join-Path $vs 'MSBuild\Current\Bin\MSBuild.exe'
     foreach ($program in @($cargo,$rustc,$cl,$link,$msbuild,$git,(Join-Path $GitRoot 'mingw64\bin\git.exe'))) { Add-Deny $program }
     Invoke-Native 'build-recorder' $cargo @('build','--manifest-path','core\Cargo.toml','-p','solstone-core-distribution','--bin','solstone-distribution','--target','x86_64-pc-windows-msvc','--locked','--offline','-j','2') $RecorderRepositoryRoot 1800
@@ -301,6 +319,72 @@ try {
         Set-BuildEnvironment 'LIBCLANG_PATH' (Split-Path -Parent $libclang)
         Set-BuildEnvironment 'CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER' $link
         Set-BuildEnvironment 'CC' 'cl'
+        if ($WindowsTarget -ceq 'windows-aarch64') {
+            # The recorder and capture controls stay native x64. Only the
+            # product build selects the ARM SDK. Host compiler/linker proxies
+            # restore x64 SDK paths for build-time generators and proc macros.
+            $armBatch=Join-Path $RunRoot 'arm-build-environment.cmd'
+            Write-NewText $armBatch ("@echo off`r`ncall `"$vcvars`" x64_arm64 >nul`r`nif errorlevel 1 exit /b %errorlevel%`r`nset`r`nexit /b 0`r`n")
+            Invoke-Native 'arm-build-environment' $cmd @('/d','/s','/c',"`"$armBatch`"") $RunRoot 60 ('/d /s /c ""{0}""' -f $armBatch)
+            foreach ($line in (Log-Text 'arm-build-environment') -split "`r?`n") {
+                if ($line -match '^(PATH|PATHEXT|INCLUDE|LIB|LIBPATH|VCToolsInstallDir|VCToolsVersion|VCToolsRedistDir|WindowsSdkDir|WindowsSDKVersion|WindowsSDKLibVersion|WindowsSdkBinPath|WindowsSdkVerBinPath|VSINSTALLDIR|VCINSTALLDIR|VSCMD_ARG_TGT_ARCH)=(.*)$') { Set-BuildEnvironment $Matches[1] $Matches[2] }
+            }
+            if ($env:VSCMD_ARG_TGT_ARCH -cne 'arm64') { throw 'ARM MSVC environment target differs' }
+            $armEnvironment=@{}
+            foreach ($name in @('PATH','INCLUDE','LIB','LIBPATH')) { $armEnvironment[$name]=[Environment]::GetEnvironmentVariable($name,'Process') }
+            $armBin=Join-Path $env:VCToolsInstallDir 'bin\Hostx64\arm64'
+            $armCl=Join-Path $armBin 'cl.exe'
+            $armLink=Join-Path $armBin 'link.exe'
+            $armLib=Join-Path $armBin 'lib.exe'
+            $armDumpbin=Join-Path $armBin 'dumpbin.exe'
+            $hostLib=Join-Path (Split-Path -Parent $cl) 'lib.exe'
+            $llvmBin=Split-Path -Parent $libclang
+            $clang=Join-Path $llvmBin 'clang.exe'
+            $clangCl=Join-Path $llvmBin 'clang-cl.exe'
+            foreach ($program in @($armCl,$armLink,$armLib,$armDumpbin,$hostLib,$clang,$clangCl)) { Add-Deny $program }
+            $proxyRoot=Join-Path $toolsRoot 'arm-proxies'
+            New-Item -ItemType Directory -Path $proxyRoot -ErrorAction Stop | Out-Null
+            . (Join-Path $PSScriptRoot 'ffmpeg-windows-arm64-tools.ps1')
+            $proxyRows=[Collections.Generic.List[object]]::new()
+            foreach ($proxy in @(
+                @('host-cc','host-cc',$clangCl,$hostEnvironment),
+                @('host-link','arm-link',$link,$hostEnvironment),
+                @('host-lib','arm-lib',$hostLib,$hostEnvironment),
+                @('arm-as','arm-as',$clang,$armEnvironment),
+                @('arm-link','arm-link',$armLink,$armEnvironment),
+                @('arm-lib','arm-lib',$armLib,$armEnvironment),
+                @('arm-nm','arm-nm',$armDumpbin,$armEnvironment)
+            )) {
+                $name=[string]$proxy[0];$role=[string]$proxy[1];$program=[string]$proxy[2];$sdk=$proxy[3]
+                $source=Join-Path $proxyRoot ($name+'.c')
+                $exe=Join-Path $proxyRoot ($name+'.exe')
+                $object=Join-Path $proxyRoot ($name+'.obj')
+                Write-NewText $source (New-FfmpegWindowsArm64ProxySource -Role $role -Program $program -Environment $sdk)
+                foreach ($key in $hostEnvironment.Keys) { Set-BuildEnvironment $key $hostEnvironment[$key] }
+                Invoke-Native ('compile-proxy-'+$name) $cl @('/nologo','/O2','/MT',('/Fe'+$exe),('/Fo'+$object),$source) $RunRoot 120
+                Add-Deny $exe
+                $proxyRows.Add([ordered]@{name=$name;role=$role;source_sha256=(Digest $source);exe_sha256=(Digest $exe);program=$program;program_sha256=(Digest $program);shipped=$false})
+            }
+            foreach ($key in $armEnvironment.Keys) { Set-BuildEnvironment $key $armEnvironment[$key] }
+            Set-BuildEnvironment 'PATH' ($armBin+';'+$llvmBin+';'+(Split-Path -Parent $nasm)+';'+(Split-Path -Parent $git)+';'+$env:PATH+';'+$msysBin)
+            Set-BuildEnvironment 'CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER' (Join-Path $proxyRoot 'host-link.exe')
+            Set-BuildEnvironment 'CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER' $armLink
+            Set-BuildEnvironment 'CC_x86_64_pc_windows_msvc' (Join-Path $proxyRoot 'host-cc.exe')
+            Set-BuildEnvironment 'CXX_x86_64_pc_windows_msvc' (Join-Path $proxyRoot 'host-cc.exe')
+            Set-BuildEnvironment 'AR_x86_64_pc_windows_msvc' (Join-Path $proxyRoot 'host-lib.exe')
+            Set-BuildEnvironment 'CC_aarch64_pc_windows_msvc' $armCl
+            Set-BuildEnvironment 'CXX_aarch64_pc_windows_msvc' $armCl
+            Set-BuildEnvironment 'AR_aarch64_pc_windows_msvc' $armLib
+            Set-BuildEnvironment 'MSYS2_ARG_CONV_EXCL' '/O2;/MT'
+            Set-BuildEnvironment 'SOLSTONE_FFMPEG_WINDOWS_ARM64_CLANG_CL' $clangCl
+            Set-BuildEnvironment 'SOLSTONE_FFMPEG_WINDOWS_ARM64_AS' (Join-Path $proxyRoot 'arm-as.exe')
+            Set-BuildEnvironment 'SOLSTONE_FFMPEG_WINDOWS_ARM64_LINK' (Join-Path $proxyRoot 'arm-link.exe')
+            Set-BuildEnvironment 'SOLSTONE_FFMPEG_WINDOWS_ARM64_LIB' (Join-Path $proxyRoot 'arm-lib.exe')
+            Set-BuildEnvironment 'SOLSTONE_FFMPEG_WINDOWS_ARM64_DUMPBIN' (Join-Path $proxyRoot 'arm-nm.exe')
+            Set-BuildEnvironment 'SOLSTONE_FFMPEG_WINDOWS_ARM64_HOST_CC' (Join-Path $proxyRoot 'host-cc.exe')
+            $cl=$armCl;$link=$armLink
+            Write-NewJson (Join-Path $reportRoot 'arm-compiler-proxies.json') @($proxyRows.ToArray())
+        }
         Set-BuildEnvironment 'FFMPEG_MARCH' ''
         Set-BuildEnvironment 'FFMPEG_MTUNE' ''
         Set-BuildEnvironment 'SOLSTONE_DISTRIBUTION_OFFLINE' '1'
@@ -314,9 +398,9 @@ try {
         if ((Digest $InputPaths) -cne $InputPathsSha256) { throw 'local input path file changed before production' }
         $destination=Join-Path $RunRoot 'payload'
         $cargoLogs=Join-Path $RunRoot 'cargo-product'
-        Invoke-Native 'produce' $recorder @('produce','windows-x86_64',$destination,'--inputs',$InputPaths,'--logs',$cargoLogs) $ProductRepositoryRoot 7200
+        Invoke-Native 'produce' $recorder @('produce',$WindowsTarget,$destination,'--inputs',$InputPaths,'--logs',$cargoLogs) $ProductRepositoryRoot 7200
         $outcome=Log-Text 'produce' | ConvertFrom-Json
-        if ($outcome.signed -ne $false -or $outcome.durability_proven -ne $false -or $outcome.source.commit -cne $ExpectedProductCommit -or $outcome.source.lock_sha256 -cne $ExpectedCargoLockSha256) { throw 'producer outcome differs from requested unsigned source' }
+        if ($outcome.target -cne $WindowsTarget -or $outcome.signed -ne $false -or $outcome.durability_proven -ne $false -or $outcome.source.commit -cne $ExpectedProductCommit -or $outcome.source.lock_sha256 -cne $ExpectedCargoLockSha256) { throw 'producer outcome differs from requested unsigned source and target' }
         Write-NewJson (Join-Path $reportRoot 'payload.json') $outcome
     }
     Check-Repository $RecorderRepositoryRoot 'recorder-after'
@@ -339,7 +423,7 @@ try {
     }
     if ($pending -or $failures.Count -ne 0) { $exitCode=1 }
     foreach ($name in $environmentChanges.Keys) { [Environment]::SetEnvironmentVariable($name,$environmentChanges[$name],'Process') }
-    Write-NewJson (Join-Path $reportRoot 'execution.json') ([ordered]@{actual_exit_code=$exitCode;mode=$Mode;pending_reconciliation=$pending;
+    Write-NewJson (Join-Path $reportRoot 'execution.json') ([ordered]@{actual_exit_code=$exitCode;mode=$Mode;windows_target=$WindowsTarget;pending_reconciliation=$pending;
         fence_retained=$fenceOwned;fence_present=(Test-Path -LiteralPath $fence);fence=$fence;owner_token=$token;firewall_rules_retained=@($rules.ToArray());
         captures=@($captures | ForEach-Object { [ordered]@{pid=$_.pid;started=$_.started;actual_exit_code=$_.exit_code;completed=$_.completed;elapsed_ms=$_.elapsed_ms;error=$_.error} });
         failures=@($failures.ToArray());process_ownership='Unowned';whole_tree_quiescence_proven=$false;input_paths_sha256=$InputPathsSha256;

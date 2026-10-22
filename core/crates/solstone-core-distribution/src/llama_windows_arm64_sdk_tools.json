@@ -1,0 +1,187 @@
+[
+  {
+    "label": "sdk/bin/dxc.exe",
+    "size": 1105336,
+    "sha256": "b05bc2ba3355fda065f1b39fa3b1aa6d87689a84a290e5f201c5b6efcce6cab8"
+  },
+  {
+    "label": "sdk/bin/gfxrecon-compress.exe",
+    "size": 816056,
+    "sha256": "ba1b1bc1129ddcd20f75a9f5b639a2ca520dbdfbbdab354a516e12054f2c09df"
+  },
+  {
+    "label": "sdk/bin/gfxrecon-convert.exe",
+    "size": 10769336,
+    "sha256": "54fd84cfeba0e6aa73bdd7bbdf0f4827b6ac66ab539810d424fbe7a8f626ea56"
+  },
+  {
+    "label": "sdk/bin/gfxrecon-extract.exe",
+    "size": 6394808,
+    "sha256": "5d76d95c0d1c71b93d106e063023293b7514fd6a0ca6323a4267a781f383a6ef"
+  },
+  {
+    "label": "sdk/bin/gfxrecon-info.exe",
+    "size": 6602168,
+    "sha256": "044d2e33bf9e80f7fda79d26a14dd7cfc7f22b30fe777f7a923403b9676275c2"
+  },
+  {
+    "label": "sdk/bin/gfxrecon-optimize.exe",
+    "size": 6608824,
+    "sha256": "11ce78bc07afe30481cdda51e2156965ba8d5d2193cf65c6493f7dfbfde4e56a"
+  },
+  {
+    "label": "sdk/bin/gfxrecon-replay.exe",
+    "size": 16488376,
+    "sha256": "02f43cb3da7453d886a4ac7b43afd8c6da1e0b27d43912d94a4db9620a00140f"
+  },
+  {
+    "label": "sdk/bin/glslang.exe",
+    "size": 8764856,
+    "sha256": "2f4825516c1e00ab923d4d6736ec4b536caddd8a15b41b0692ead207064ebb73"
+  },
+  {
+    "label": "sdk/bin/glslangvalidator.exe",
+    "size": 5101496,
+    "sha256": "82cbcb538fe8e9c5773fc13a35a41df3d22124754c4e3d2edad5d7e4a2602e12"
+  },
+  {
+    "label": "sdk/bin/glslc.exe",
+    "size": 5264312,
+    "sha256": "f8c97ee2c8bfcd31da87b602622c6e742389f98a83693b504cf538de4c75d3fa"
+  },
+  {
+    "label": "sdk/bin/slang.exe",
+    "size": 172984,
+    "sha256": "6f1188b0427126729a0c6c56cb79019258599a15e932ffd67703ed83c0027fcd"
+  },
+  {
+    "label": "sdk/bin/slangc.exe",
+    "size": 179640,
+    "sha256": "d97a4dab06c98a3a4b6d63ea694c2ad253c210453635ff5d15fda3536fc7d1a0"
+  },
+  {
+    "label": "sdk/bin/slangd.exe",
+    "size": 54712,
+    "sha256": "2458e6b82387e92095389d280ee9f520ef05cc388597974eef21132f2de5ea62"
+  },
+  {
+    "label": "sdk/bin/slangi.exe",
+    "size": 170936,
+    "sha256": "c9afdadf67a42cfdb717d19cd59c6aabd021990dc40a12a7cbca6fcac0fbfe65"
+  },
+  {
+    "label": "sdk/bin/spirv-as.exe",
+    "size": 881592,
+    "sha256": "c6e145607a18d12a68e5428ccaf0b7a36e033184cc41391f633060be653df324"
+  },
+  {
+    "label": "sdk/bin/spirv-cfg.exe",
+    "size": 815032,
+    "sha256": "f38e9ca7c012f85ea938e7daf3238dd457a2ae3f5854c828eb8e8d8c3ca6c03c"
+  },
+  {
+    "label": "sdk/bin/spirv-cross.exe",
+    "size": 2266552,
+    "sha256": "d78687cd0bfadec0734dc7b1688c4d3e971d6537f5fc1545ee3a4c44b1c9851e"
+  },
+  {
+    "label": "sdk/bin/spirv-diff.exe",
+    "size": 4012472,
+    "sha256": "047ecde192a05c7f355358c3b19285911fed7e6407a0971986273f925c33f815"
+  },
+  {
+    "label": "sdk/bin/spirv-dis.exe",
+    "size": 967096,
+    "sha256": "decbe91bd0693eae5d1e7c4d41014ab27455412c0013a35d1b280ba368dc6c01"
+  },
+  {
+    "label": "sdk/bin/spirv-link.exe",
+    "size": 4087224,
+    "sha256": "61bd569a44e9e80f30b5b6059b3c12b39f405caaf64476afc220f819e9e0f501"
+  },
+  {
+    "label": "sdk/bin/spirv-lint.exe",
+    "size": 3920824,
+    "sha256": "84cd3b8f3e39a1e6cdd6646370f8ef2b26ff371c990980833f4bb3f0dca508d9"
+  },
+  {
+    "label": "sdk/bin/spirv-objdump.exe",
+    "size": 424888,
+    "sha256": "09783411de34b575445a2c39eb41f70311a25abd6619890726054f27b7f3d742"
+  },
+  {
+    "label": "sdk/bin/spirv-opt.exe",
+    "size": 5681080,
+    "sha256": "d5ae37abd1a642c0cdd38e242fd43e6b20e3ab421d18fd68e9474f2d88888ab5"
+  },
+  {
+    "label": "sdk/bin/spirv-reduce.exe",
+    "size": 4007352,
+    "sha256": "ef6e140f59e186c360b19c0a48444f250920504eb36aca6d4bf17c97ea05dbd6"
+  },
+  {
+    "label": "sdk/bin/spirv-reflect-pp.exe",
+    "size": 327608,
+    "sha256": "ea83b757219bd70397c032d2c5666ffdfdfa3e8102157c9441b17d05f18f253a"
+  },
+  {
+    "label": "sdk/bin/spirv-reflect.exe",
+    "size": 327608,
+    "sha256": "eb4859c5cae339e9516e80d65d6868ee5f1446556cc1aebc06795ab9b9087336"
+  },
+  {
+    "label": "sdk/bin/spirv-val.exe",
+    "size": 2713016,
+    "sha256": "55b0bde93c20d427a95d6deb95181ab6621d9bb18e6f1519d30ceba8d3f1de17"
+  },
+  {
+    "label": "sdk/bin/vkconfig-gui.exe",
+    "size": 42735544,
+    "sha256": "f5ab69fc776c402873ba7eb3b8004f35f2478eefb6bb88877ad76b5332c55d16"
+  },
+  {
+    "label": "sdk/bin/vkconfig.exe",
+    "size": 41121208,
+    "sha256": "1291b380e521abd6934e2cc2a16f56e6bbb257fe059c41711c4c4970febedfdb"
+  },
+  {
+    "label": "sdk/bin/vkcube.exe",
+    "size": 1129400,
+    "sha256": "31ae268df86c97486e2aaa07b5593ec39fb2edae8e053b574f01f44c034b82b2"
+  },
+  {
+    "label": "sdk/bin/vkcubepp.exe",
+    "size": 1873848,
+    "sha256": "9997dc64a368808c37d74f367a8a4ec289711febe323bff9645ce9598504c334"
+  },
+  {
+    "label": "sdk/bin/vulkancapsviewer.exe",
+    "size": 26398648,
+    "sha256": "076c6809692cf959198cffdad5e6c7ce6f2786e8574f61947c1c99577ac6e242"
+  },
+  {
+    "label": "sdk/bin/vulkaninfosdk.exe",
+    "size": 2793400,
+    "sha256": "a768cb815af3de5366721f4e014d41f5dcb1c8eaa0faeb04d28af1a630a1f04a"
+  },
+  {
+    "label": "sdk/helpers/install_helper.exe",
+    "size": 213432,
+    "sha256": "5d8554f9fa1206405f802217685aa8531a163033368d0e948a5821b6c62094ab"
+  },
+  {
+    "label": "sdk/helpers/launch_helper.exe",
+    "size": 3113400,
+    "sha256": "51a04660be277c570d85ed2efe5607470ef65ef9f4ea118f5fcfcb2ec3d4c9d0"
+  },
+  {
+    "label": "sdk/helpers/vulkanrt.exe",
+    "size": 25720248,
+    "sha256": "f9c16c8262f7e6c34b7b36a920eabd98fc9462a487e4de251e7283ccf91717ff"
+  },
+  {
+    "label": "sdk/maintenancetool.exe",
+    "size": 34729472,
+    "sha256": "360cffe9b4c21e2ec779e23cc596b97a178fca7d3ac3629caadc12afed8ff5a8"
+  }
+]

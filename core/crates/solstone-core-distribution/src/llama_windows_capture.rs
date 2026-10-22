@@ -9,6 +9,7 @@ use crate::digest::sha256_hex;
 use crate::llama_windows_config as config;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
@@ -908,7 +909,8 @@ fn validate_outputs(files: &BTreeMap<String, Vec<u8>>) -> Result<()> {
             bytes.len() as u64 == output.bytes && sha256_hex(bytes) == output.sha256,
             "output differs from original pre-sign capture",
         )?;
-        let info = crate::pe_dependencies::inspect_dependencies(bytes)?;
+        let info =
+            crate::pe_dependencies::inspect_dependencies(bytes, WindowsArchitecture::X86_64)?;
         insist(
             info.is_dll == (output.path == "bin/vulkan-1.dll"),
             "output executable/DLL kind mismatch",

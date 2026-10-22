@@ -22,7 +22,7 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|dev-package|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|llama-windows|nvattest-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
+    "usage: solstone-distribution <validate|produce|dev-package|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|windows-native-inputs|ced-windows|ced-windows-arm64|ffmpeg-windows|onnx-windows|onnx-windows-arm64|parakeet-windows|parakeet-windows-arm64|rfdetr-windows|rfdetr-windows-arm64|restic-windows|openmp-windows|llama-windows|llama-windows-arm64|nvattest-windows|nvattest-windows-arm64|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
 }
 
 fn main() -> ExitCode {
@@ -121,6 +121,147 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("windows-native-inputs") => {
+            let rest = args.collect::<Vec<_>>();
+            let cwd = match env::current_dir() {
+                Ok(cwd) => cwd,
+                Err(error) => {
+                    eprintln!("{error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match solstone_core_distribution::produce::windows_cli::run_verify_cli(&cwd, &rest) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("restic-windows") => {
+            let rest = args.collect::<Vec<_>>();
+            let cwd = match env::current_dir() {
+                Ok(cwd) => cwd,
+                Err(error) => {
+                    eprintln!("{error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match solstone_core_distribution::produce::windows_restic::run_cli(&cwd, &rest) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("openmp-windows") => {
+            let rest = args.collect::<Vec<_>>();
+            let cwd = match env::current_dir() {
+                Ok(cwd) => cwd,
+                Err(error) => {
+                    eprintln!("{error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match solstone_core_distribution::produce::windows_openmp::run_cli(&cwd, &rest) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("ced-windows-arm64") => {
+            let rest = args.collect::<Vec<_>>();
+            let cwd = match env::current_dir() {
+                Ok(cwd) => cwd,
+                Err(error) => {
+                    eprintln!("{error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match solstone_core_distribution::produce::windows_ced_arm64::run_cli(&cwd, &rest) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("parakeet-windows-arm64") => {
+            let rest = args.collect::<Vec<_>>();
+            let cwd = match env::current_dir() {
+                Ok(cwd) => cwd,
+                Err(error) => {
+                    eprintln!("{error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match solstone_core_distribution::produce::windows_parakeet_arm64::run_cli(&cwd, &rest)
+            {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("onnx-windows-arm64") => {
+            let rest = args.collect::<Vec<_>>();
+            let cwd = match env::current_dir() {
+                Ok(cwd) => cwd,
+                Err(error) => {
+                    eprintln!("{error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match solstone_core_distribution::produce::windows_onnx_arm64::run_cli(&cwd, &rest) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("rfdetr-windows-arm64") => {
+            let rest = args.collect::<Vec<_>>();
+            let cwd = match env::current_dir() {
+                Ok(cwd) => cwd,
+                Err(error) => {
+                    eprintln!("{error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match solstone_core_distribution::produce::windows_rfdetr_arm64::run_cli(&cwd, &rest) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Some("ced-windows") => {
             let rest = args.collect::<Vec<_>>();
             match ced_windows_source::run_cli(&rest) {
@@ -173,6 +314,27 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("llama-windows-arm64") => {
+            let args = args.collect::<Vec<_>>();
+            let result = if args.first().is_some_and(|arg| arg == "inspect-artifacts") {
+                produce::windows_llama_arm64::run_cli(&args)
+            } else {
+                match env::current_dir() {
+                    Ok(start) => produce::windows_llama_arm64_controlled::run_cli(&start, &args),
+                    Err(error) => Err(format!("Llama product directory unavailable: {error}")),
+                }
+            };
+            match result {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Some("llama-windows") => match llama_windows_source::run_cli(&args.collect::<Vec<_>>()) {
             Ok(line) => {
                 println!("{line}");
@@ -195,6 +357,29 @@ fn main() -> ExitCode {
         },
         Some("nvattest-windows") => {
             match nvattest_windows_source::run_cli(&args.collect::<Vec<_>>()) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("nvattest-windows-arm64") => {
+            let args = args.collect::<Vec<_>>();
+            let result = if args.first().is_some_and(|arg| arg == "inspect-artifacts") {
+                solstone_core_distribution::nvattest_windows_arm64::run_cli(&args)
+            } else {
+                match env::current_dir() {
+                    Ok(start) => produce::windows_nvattest_arm64::run_cli(&start, &args),
+                    Err(error) => Err(format!(
+                        "ARM nvattest product directory unavailable: {error}"
+                    )),
+                }
+            };
+            match result {
                 Ok(line) => {
                     println!("{line}");
                     ExitCode::SUCCESS
@@ -252,9 +437,16 @@ fn main() -> ExitCode {
         },
         Some("produce") => {
             let target = args.next();
-            if target.as_deref() == Some("windows-x86_64") {
+            if let Some(architecture) = target
+                .as_deref()
+                .and_then(solstone_core_installed_payload::WindowsArchitecture::from_target_id)
+            {
                 let start = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                return match produce::windows_cli::run_cli(&start, &args.collect::<Vec<_>>()) {
+                return match produce::windows_cli::run_cli(
+                    &start,
+                    &args.collect::<Vec<_>>(),
+                    architecture,
+                ) {
                     Ok(report) => {
                         println!("{report}");
                         ExitCode::SUCCESS

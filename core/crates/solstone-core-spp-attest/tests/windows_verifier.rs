@@ -22,7 +22,10 @@ use std::{
     time::Duration,
 };
 
+#[cfg(not(target_arch = "aarch64"))]
 const RUNTIME: [&str; 3] = ["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"];
+#[cfg(target_arch = "aarch64")]
+const RUNTIME: [&str; 2] = ["msvcp140.dll", "vcruntime140.dll"];
 
 fn key() -> &'static KeyPair {
     static KEY: std::sync::OnceLock<KeyPair> = std::sync::OnceLock::new();
@@ -46,14 +49,22 @@ fn fixture() -> tempfile::TempDir {
         root.join("lib/solstone-nvattest/nvattest.exe"),
     )
     .unwrap();
-    let system =
+    #[cfg(not(target_arch = "aarch64"))]
+    let runtime =
         PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot")).join("System32");
+    // The ARM qualification kit carries its admitted CRT beside the test runner.
+    #[cfg(target_arch = "aarch64")]
+    let runtime = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .expect("test runner directory")
+        .to_path_buf();
     for name in RUNTIME {
         fs::copy(
-            system.join(name),
+            runtime.join(name),
             root.join("lib/solstone-nvattest").join(name),
         )
-        .expect("VC runtime in System32");
+        .expect("VC runtime for signed fixture");
     }
     fs::write(root.join("share/ca/ca-bundle.pem"), b"fixture CA").unwrap();
     sign(&root);
@@ -90,13 +101,16 @@ fn signed_layout_refuses_missing_or_changed_executable_ca_and_runtime() {
     let dir = fixture();
     let root = dir.path().join("signed ü payload");
     assert!(locate_nvattest(&root).is_ok());
-    for path in [
+    let mut members = vec![
         "lib/solstone-nvattest/nvattest.exe",
         "share/ca/ca-bundle.pem",
-        "lib/solstone-nvattest/msvcp140.dll",
-        "lib/solstone-nvattest/vcruntime140.dll",
-        "lib/solstone-nvattest/vcruntime140_1.dll",
-    ] {
+    ];
+    let runtime_members: Vec<_> = RUNTIME
+        .iter()
+        .map(|name| format!("lib/solstone-nvattest/{name}"))
+        .collect();
+    members.extend(runtime_members.iter().map(String::as_str));
+    for path in members {
         let path = root.join(path);
         let original = fs::read(&path).unwrap();
         fs::remove_file(&path).unwrap();

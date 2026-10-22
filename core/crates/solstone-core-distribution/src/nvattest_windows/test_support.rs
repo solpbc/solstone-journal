@@ -11,6 +11,7 @@
 //! bytes. The fixture pins differ from production only where a synthesized
 //! byte stands in for a real one.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::path::{Path, PathBuf};
 
 use super::*;
@@ -456,10 +457,11 @@ impl Fixture {
     /// Present a different executable everywhere the recorder would: the
     /// receipt output, the report outputs and imports, and the dumpbin text.
     pub(crate) fn set_exe(&mut self, exe: Vec<u8>) {
-        let imports: Vec<String> = match crate::pe_dependencies::inspect_dependencies(&exe) {
-            Ok(pe) => pe.imports.into_iter().chain(pe.delay_imports).collect(),
-            Err(_) => vec![],
-        };
+        let imports: Vec<String> =
+            match crate::pe_dependencies::inspect_dependencies(&exe, WindowsArchitecture::X86_64) {
+                Ok(pe) => pe.imports.into_iter().chain(pe.delay_imports).collect(),
+                Err(_) => vec![],
+            };
         self.receipt.outputs[0].pre_signing_sha256 = sha256_hex(&exe);
         self.receipt.outputs[0].size = exe.len() as u64;
         if let Ok(census) = pe::parse_pe(&exe) {

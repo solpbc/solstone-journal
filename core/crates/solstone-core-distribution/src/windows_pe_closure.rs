@@ -10,6 +10,7 @@
 //! package basename.
 //! https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::inventory::is_allowed_msvc_repetition;
@@ -90,11 +91,20 @@ pub struct RuntimeEdge {
     pub member: Option<String>,
 }
 
+/// Preserve the existing x64 operator-helper API. New target-aware builders
+/// must supply the trusted architecture to [`inspect_runtime_closure_for_arch`].
+pub fn inspect_runtime_closure<'a>(
+    members: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+) -> Result<Vec<RuntimeEdge>, String> {
+    inspect_runtime_closure_for_arch(members, WindowsArchitecture::X86_64)
+}
+
 /// Inspect every declared PE, including DLLs that no other member imports.
 /// The caller supplies the same retained bytes used to write the staging tree.
 /// Inventory membership, source admission, and non-PE files remain its concern.
-pub fn inspect_runtime_closure<'a>(
+pub fn inspect_runtime_closure_for_arch<'a>(
     members: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+    expected: WindowsArchitecture,
 ) -> Result<Vec<RuntimeEdge>, String> {
     let mut images = BTreeMap::new();
     let mut basenames: BTreeMap<String, Vec<(&str, &[u8])>> = BTreeMap::new();
@@ -114,7 +124,7 @@ pub fn inspect_runtime_closure<'a>(
         let (_, basename) = lower
             .rsplit_once('/')
             .ok_or_else(|| format!("PE must have a declared directory: {path}"))?;
-        if SYSTEM_DLLS.contains(&basename) {
+        if is_system_dll(basename, expected) {
             return Err(format!("package PE shadows a system contract: {path}"));
         }
         let seen = basenames.entry(basename.to_owned()).or_default();
@@ -138,7 +148,7 @@ pub fn inspect_runtime_closure<'a>(
                 return Err(format!("case-colliding PE basenames: {prior_path}, {path}"));
             }
         }
-        let info = inspect_dependencies(bytes).map_err(|e| format!("{path}: {e}"))?;
+        let info = inspect_dependencies(bytes, expected).map_err(|e| format!("{path}: {e}"))?;
         if (basename.ends_with(".dll") && !info.is_dll)
             || (basename.ends_with(".exe") && info.is_dll)
             || !(basename.ends_with(".dll") || basename.ends_with(".exe"))
@@ -147,7 +157,7 @@ pub fn inspect_runtime_closure<'a>(
         }
         images.insert(lower, info);
     }
-    inspect_edges(&images)
+    inspect_edges_for_arch(&images, expected)
 }
 
 fn search_directory(path: &str, is_dll: bool) -> Result<&str, String> {
@@ -167,7 +177,19 @@ fn search_directory(path: &str, is_dll: bool) -> Result<&str, String> {
     ))
 }
 
+fn is_system_dll(name: &str, expected: WindowsArchitecture) -> bool {
+    SYSTEM_DLLS.contains(&name) || (expected == WindowsArchitecture::Aarch64 && name == "psapi.dll")
+}
+
+#[cfg(test)]
 fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<RuntimeEdge>, String> {
+    inspect_edges_for_arch(images, WindowsArchitecture::X86_64)
+}
+
+fn inspect_edges_for_arch(
+    images: &BTreeMap<String, PeDependencies>,
+    expected: WindowsArchitecture,
+) -> Result<Vec<RuntimeEdge>, String> {
     if images.is_empty() {
         return Err("Windows payload has no declared PE images".into());
     }
@@ -194,7 +216,7 @@ fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<Runtim
         let directory = search_directory(&path, info.is_dll)?;
         for name in &info.imports {
             let library = crate::pe_dependencies::dll_name(name)?;
-            if !SYSTEM_DLLS.contains(&library.as_str()) {
+            if !is_system_dll(&library, expected) {
                 let member = format!("{directory}/{library}");
                 if images.get(&member).is_some_and(|image| image.is_dll) {
                     pending.push(member);
@@ -215,13 +237,13 @@ fn inspect_edges(images: &BTreeMap<String, PeDependencies>) -> Result<Vec<Runtim
                 let library = crate::pe_dependencies::dll_name(name)?;
                 if hosted.contains(path)
                     && (kind == "delay-import" || kind == "forwarder")
-                    && !SYSTEM_DLLS.contains(&library.as_str())
+                    && !is_system_dll(&library, expected)
                 {
                     return Err(format!(
                         "{path}: unsupported {kind} {library} under DllLoadDir"
                     ));
                 }
-                let member = if SYSTEM_DLLS.contains(&library.as_str()) {
+                let member = if is_system_dll(&library, expected) {
                     None
                 } else {
                     let member = format!("{directory}/{library}");
@@ -257,15 +279,111 @@ mod tests {
     }
 
     #[test]
+    fn legacy_operator_api_preserves_the_x64_architecture_boundary() {
+        let mut bytes = crate::pe_dependencies::tests::image();
+        let legacy = inspect_runtime_closure([("bin/library.dll", bytes.as_slice())]).unwrap();
+        assert_eq!(
+            legacy,
+            inspect_runtime_closure_for_arch(
+                [("bin/library.dll", bytes.as_slice())],
+                WindowsArchitecture::X86_64,
+            )
+            .unwrap()
+        );
+        bytes[0x84..0x86].copy_from_slice(&0xaa64u16.to_le_bytes());
+        assert!(inspect_runtime_closure([("bin/library.dll", bytes.as_slice())]).is_err());
+        assert!(
+            inspect_runtime_closure_for_arch(
+                [("bin/library.dll", bytes.as_slice())],
+                WindowsArchitecture::Aarch64,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn arm_openmp_psapi_contract_does_not_change_the_x64_boundary() {
+        for delayed in [false, true] {
+            let mut runtime = pe_import("PSAPI.dll", delayed);
+            let path = "lib/solstone-native/libomp.dll";
+            assert!(
+                inspect_runtime_closure([(path, runtime.as_slice())])
+                    .unwrap_err()
+                    .contains("unresolved")
+            );
+            runtime[0x84..0x86].copy_from_slice(&0xaa64u16.to_le_bytes());
+            let edges = inspect_runtime_closure_for_arch(
+                [(path, runtime.as_slice())],
+                WindowsArchitecture::Aarch64,
+            )
+            .unwrap();
+            assert_eq!(edges.len(), 1);
+            assert_eq!(edges[0].library, "psapi.dll");
+            assert_eq!(edges[0].member, None);
+            assert!(
+                inspect_runtime_closure_for_arch(
+                    [("lib/solstone-native/psapi.dll", runtime.as_slice())],
+                    WindowsArchitecture::Aarch64,
+                )
+                .unwrap_err()
+                .contains("shadows a system contract")
+            );
+        }
+    }
+
+    #[test]
+    fn native_closure_checks_unreferenced_members_for_both_architectures() {
+        for (expected, machine, foreign) in [
+            (WindowsArchitecture::X86_64, 0x8664u16, 0xaa64u16),
+            (WindowsArchitecture::Aarch64, 0xaa64u16, 0x8664u16),
+        ] {
+            let mut root = pe_import("worker.dll", false);
+            root[0x96..0x98].copy_from_slice(&0x22u16.to_le_bytes());
+            let mut worker = crate::pe_dependencies::tests::image();
+            let mut unused = worker.clone();
+            for bytes in [&mut root, &mut worker, &mut unused] {
+                bytes[0x84..0x86].copy_from_slice(&machine.to_le_bytes());
+            }
+            let edges = inspect_runtime_closure_for_arch(
+                [
+                    ("bin/app.exe", root.as_slice()),
+                    ("bin/worker.dll", worker.as_slice()),
+                    ("bin/unused.dll", unused.as_slice()),
+                ],
+                expected,
+            )
+            .unwrap();
+            assert!(edges.iter().any(|edge| edge.importer == "bin/app.exe"
+                && edge.member.as_deref() == Some("bin/worker.dll")));
+            unused[0x84..0x86].copy_from_slice(&foreign.to_le_bytes());
+            assert!(
+                inspect_runtime_closure_for_arch(
+                    [
+                        ("bin/app.exe", root.as_slice()),
+                        ("bin/worker.dll", worker.as_slice()),
+                        ("bin/unused.dll", unused.as_slice())
+                    ],
+                    expected
+                )
+                .unwrap_err()
+                .contains("bin/unused.dll")
+            );
+        }
+    }
+
+    #[test]
     fn hosted_dependency_cannot_delay_load_an_independently_declared_root() {
         let root = pe_import("bridge.dll", false);
         let bridge = pe_import("onnxruntime.dll", true);
         let target = crate::pe_dependencies::tests::image();
-        let err = inspect_runtime_closure([
-            (WINDOWS_CED_LIBRARY, root.as_slice()),
-            ("lib/solstone-native/bridge.dll", bridge.as_slice()),
-            (WINDOWS_ONNXRUNTIME_LIBRARY, target.as_slice()),
-        ])
+        let err = inspect_runtime_closure_for_arch(
+            [
+                (WINDOWS_CED_LIBRARY, root.as_slice()),
+                ("lib/solstone-native/bridge.dll", bridge.as_slice()),
+                (WINDOWS_ONNXRUNTIME_LIBRARY, target.as_slice()),
+            ],
+            WindowsArchitecture::X86_64,
+        )
         .unwrap_err();
         assert_eq!(
             err,
@@ -339,7 +457,7 @@ mod tests {
             ("lib/solstone-native/bridge.dll", bridge.as_slice()),
             ("lib/solstone-native/sibling.dll", sibling.as_slice()),
         ];
-        let edges = inspect_runtime_closure(members).unwrap();
+        let edges = inspect_runtime_closure_for_arch(members, WindowsArchitecture::X86_64).unwrap();
         assert!(
             edges
                 .iter()
@@ -354,7 +472,7 @@ mod tests {
         let mut shared = members;
         shared[0].1 = root.as_slice();
         assert!(
-            inspect_runtime_closure(shared)
+            inspect_runtime_closure_for_arch(shared, WindowsArchitecture::X86_64)
                 .unwrap_err()
                 .contains("unsupported delay-import")
         );
@@ -551,26 +669,47 @@ mod tests {
 
     #[test]
     fn malformed_image_os_shadow_and_duplicate_basename_refuse() {
-        assert!(inspect_runtime_closure([("bin/app.exe", b"MZ".as_slice())]).is_err());
         assert!(
-            inspect_runtime_closure([("bin/kernel32.dll", b"MZ".as_slice())])
-                .unwrap_err()
-                .contains("shadows")
+            inspect_runtime_closure_for_arch(
+                [("bin/app.exe", b"MZ".as_slice())],
+                WindowsArchitecture::X86_64
+            )
+            .is_err()
+        );
+        assert!(
+            inspect_runtime_closure_for_arch(
+                [("bin/kernel32.dll", b"MZ".as_slice())],
+                WindowsArchitecture::X86_64
+            )
+            .unwrap_err()
+            .contains("shadows")
         );
         let bytes = crate::pe_dependencies::tests::image();
         assert!(
-            inspect_runtime_closure([
-                ("bin/worker.dll", bytes.as_slice()),
-                ("lib/elsewhere/WORKER.DLL", bytes.as_slice())
-            ])
+            inspect_runtime_closure_for_arch(
+                [
+                    ("bin/worker.dll", bytes.as_slice()),
+                    ("lib/elsewhere/WORKER.DLL", bytes.as_slice())
+                ],
+                WindowsArchitecture::X86_64
+            )
             .unwrap_err()
             .contains("case-colliding")
         );
-        assert!(inspect_runtime_closure([("bin/worker.dll", bytes.as_slice())]).is_ok());
         assert!(
-            inspect_runtime_closure([("bin/worker.exe", bytes.as_slice())])
-                .unwrap_err()
-                .contains("kind")
+            inspect_runtime_closure_for_arch(
+                [("bin/worker.dll", bytes.as_slice())],
+                WindowsArchitecture::X86_64
+            )
+            .is_ok()
+        );
+        assert!(
+            inspect_runtime_closure_for_arch(
+                [("bin/worker.exe", bytes.as_slice())],
+                WindowsArchitecture::X86_64
+            )
+            .unwrap_err()
+            .contains("kind")
         );
     }
 
@@ -587,10 +726,13 @@ mod tests {
     #[test]
     fn identical_byte_crt_pair_and_edge_resolution() {
         let bytes = crate::pe_dependencies::tests::image();
-        let closure = inspect_runtime_closure([
-            ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
-            ("lib/solstone-nvattest/vcruntime140.dll", bytes.as_slice()),
-        ])
+        let closure = inspect_runtime_closure_for_arch(
+            [
+                ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
+                ("lib/solstone-nvattest/vcruntime140.dll", bytes.as_slice()),
+            ],
+            WindowsArchitecture::X86_64,
+        )
         .unwrap();
         assert!(closure.is_empty());
 
@@ -620,13 +762,16 @@ mod tests {
         let bytes = crate::pe_dependencies::tests::image();
         let mut diff_bytes = bytes.clone();
         diff_bytes.push(0);
-        let err = inspect_runtime_closure([
-            ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
-            (
-                "lib/solstone-nvattest/vcruntime140.dll",
-                diff_bytes.as_slice(),
-            ),
-        ])
+        let err = inspect_runtime_closure_for_arch(
+            [
+                ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
+                (
+                    "lib/solstone-nvattest/vcruntime140.dll",
+                    diff_bytes.as_slice(),
+                ),
+            ],
+            WindowsArchitecture::X86_64,
+        )
         .unwrap_err();
         assert_eq!(
             err,
@@ -637,10 +782,13 @@ mod tests {
     #[test]
     fn duplicate_basename_in_other_private_directory_refuses() {
         let bytes = crate::pe_dependencies::tests::image();
-        let err = inspect_runtime_closure([
-            ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
-            ("lib/solstone-other/vcruntime140.dll", bytes.as_slice()),
-        ])
+        let err = inspect_runtime_closure_for_arch(
+            [
+                ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
+                ("lib/solstone-other/vcruntime140.dll", bytes.as_slice()),
+            ],
+            WindowsArchitecture::X86_64,
+        )
         .unwrap_err();
         assert_eq!(
             err,
@@ -651,11 +799,14 @@ mod tests {
     #[test]
     fn third_path_crt_collision_refuses() {
         let bytes = crate::pe_dependencies::tests::image();
-        let err = inspect_runtime_closure([
-            ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
-            ("lib/solstone-nvattest/vcruntime140.dll", bytes.as_slice()),
-            ("lib/solstone-other/vcruntime140.dll", bytes.as_slice()),
-        ])
+        let err = inspect_runtime_closure_for_arch(
+            [
+                ("lib/solstone-native/vcruntime140.dll", bytes.as_slice()),
+                ("lib/solstone-nvattest/vcruntime140.dll", bytes.as_slice()),
+                ("lib/solstone-other/vcruntime140.dll", bytes.as_slice()),
+            ],
+            WindowsArchitecture::X86_64,
+        )
         .unwrap_err();
         assert_eq!(
             err,

@@ -279,9 +279,12 @@ fn pinned_windows_restic(directory: &Path) -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../distribution/licenses/restic/LICENSE"),
     )
     .expect("canonical restic license path");
-    let admitted =
-        solstone_core_distribution::produce::windows_archives::admit_restic(&archive, &license)
-            .expect("producer pins admit restic fixture");
+    let admitted = solstone_core_distribution::produce::windows_archives::admit_restic(
+        &archive,
+        &license,
+        solstone_core_installed_payload::WindowsArchitecture::X86_64,
+    )
+    .expect("producer pins admit restic fixture");
     let executable = directory.join("restic.exe");
     fs::write(&executable, &admitted.outputs()["restic.exe"]).unwrap();
     executable

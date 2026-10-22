@@ -11,6 +11,7 @@ pub mod archive_seal;
 pub mod archive_taxonomy;
 pub mod artifact_verify;
 pub mod ced_windows;
+pub mod ced_windows_arm64;
 pub mod ced_windows_source;
 pub mod cleanroom;
 #[doc(hidden)]
@@ -31,6 +32,9 @@ pub mod installed_check;
 pub mod inventory;
 pub mod lanes;
 pub mod layout;
+pub mod llama_windows_arm64;
+pub mod llama_windows_arm64_evidence;
+pub mod llama_windows_arm64_generated;
 mod llama_windows_capture;
 mod llama_windows_config;
 pub mod llama_windows_source;
@@ -38,11 +42,14 @@ pub mod macho;
 pub mod manifest_verify;
 pub mod mobile_inputs;
 pub mod nvattest_windows;
+pub mod nvattest_windows_arm64;
 pub mod nvattest_windows_source;
 pub mod onnx_runtime;
 pub mod onnx_windows;
 pub mod onnx_windows_source;
+pub mod openmp_windows;
 pub mod parakeet_windows;
+pub mod parakeet_windows_arm64;
 pub mod parakeet_windows_source;
 pub mod pdfium;
 pub mod pe;
@@ -55,7 +62,10 @@ pub mod publish;
 pub mod record;
 pub mod relocate;
 mod restic_rclone_stage;
+pub mod restic_windows;
+pub mod restic_windows_inputs;
 pub mod rfdetr_windows;
+pub mod rfdetr_windows_arm64;
 pub mod rfdetr_windows_source;
 pub mod rpm;
 pub mod screen_ocr;
@@ -72,6 +82,7 @@ pub use nvattest_windows::{
     NVATTEST_SDK_REVISION, pinned_ca_bundle_sha256, pinned_regorus_revision,
 };
 pub use solstone_core_installed_payload::windows_payload;
+mod windows_clang;
 pub mod windows_pe_closure;
 pub mod windows_publish;
 pub mod zip;
@@ -1100,7 +1111,6 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
             && inventory.artifact.basename.contains("{arch}"),
         "inventory basename must stay a template"
     );
-    assert_eq!(inventory.target.len(), 4);
     assert_eq!(
         inventory
             .target

@@ -344,7 +344,7 @@ fn verify_bundle_commit(path: &Path, expected: &str) -> Result<Vec<u8>, RfdetrWi
     outcome.map(|()| bytes)
 }
 
-fn git_checked(root: &Path, args: &[&str]) -> Result<String, RfdetrWindowsSourceError> {
+pub(crate) fn git_checked(root: &Path, args: &[&str]) -> Result<String, RfdetrWindowsSourceError> {
     let mut command = Command::new("git");
     command
         .arg("--no-replace-objects")

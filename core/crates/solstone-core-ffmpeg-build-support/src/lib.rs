@@ -243,6 +243,169 @@ pub fn validate_controlled_component_args(args: &[String]) -> Result<(), String>
     Ok(())
 }
 
+pub const WINDOWS_ARM64_TARGET: &str = "aarch64-pc-windows-msvc";
+
+/// Host tools for the controlled Intel-to-ARM Windows build. The host compiler
+/// restores its own x64 SDK environment; target linker proxies restore ARM64.
+/// These tools are builder inputs and are never installed with the journal.
+pub struct WindowsArm64Tools<'a> {
+    pub compiler: &'a str,
+    pub assembler: &'a str,
+    pub linker: &'a str,
+    pub librarian: &'a str,
+    pub dumpbin: &'a str,
+    pub host_compiler: &'a str,
+}
+
+fn windows_arm64_tool_path(value: &str) -> Result<String, String> {
+    let value = value.replace('\\', "/");
+    let bytes = value.as_bytes();
+    let drive =
+        bytes.len() > 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/';
+    let msys =
+        bytes.len() > 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b'/';
+    if !(drive || msys)
+        || !value.ends_with(".exe")
+        || !bytes.iter().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(*byte, b'/' | b':' | b'.' | b'_' | b'-' | b'+')
+        })
+        || value[3..].contains(':')
+        || value[3..]
+            .split('/')
+            .any(|part| matches!(part, "" | "." | ".."))
+    {
+        return Err("unexpected:\n  FFmpeg Windows ARM tool path".into());
+    }
+    Ok(value)
+}
+
+pub fn windows_arm64_configure_args(tools: &WindowsArm64Tools<'_>) -> Result<Vec<String>, String> {
+    let compiler = windows_arm64_tool_path(tools.compiler)?;
+    let assembler = windows_arm64_tool_path(tools.assembler)?;
+    if !compiler.ends_with("/clang-cl.exe") || !assembler.ends_with("/arm-as.exe") {
+        return Err("unexpected:\n  FFmpeg Windows ARM clang tool roles".into());
+    }
+    let linker = windows_arm64_tool_path(tools.linker)?;
+    let librarian = windows_arm64_tool_path(tools.librarian)?;
+    let dumpbin = windows_arm64_tool_path(tools.dumpbin)?;
+    let host_compiler = windows_arm64_tool_path(tools.host_compiler)?;
+    for (path, role) in [
+        (&linker, "/arm-link.exe"),
+        (&librarian, "/arm-lib.exe"),
+        (&dumpbin, "/arm-nm.exe"),
+        (&host_compiler, "/host-cc.exe"),
+    ] {
+        if !path.ends_with(role) {
+            return Err("unexpected:\n  FFmpeg Windows ARM environment proxy role".into());
+        }
+    }
+    Ok(vec![
+        "--enable-cross-compile".into(),
+        "--arch=aarch64".into(),
+        "--target-os=win32".into(),
+        format!("--cc={compiler} --target={WINDOWS_ARM64_TARGET}"),
+        format!("--cxx={compiler} --target={WINDOWS_ARM64_TARGET}"),
+        format!("--as={assembler} --target={WINDOWS_ARM64_TARGET}"),
+        format!("--ld={linker}"),
+        format!("--ar={librarian}"),
+        format!("--nm={dumpbin} -symbols"),
+        "--host-os=win32".into(),
+        format!("--host-cc={host_compiler}"),
+        format!("--host-ld={host_compiler}"),
+        "--host-cflags=/O2 /MT".into(),
+    ])
+}
+
+/// Target is supplied by the caller's trusted build tuple. The legacy entry
+/// point keeps its original argument boundary, including for x64 receipts.
+pub fn validate_controlled_component_args_for_target(
+    args: &[String],
+    target: &str,
+) -> Result<(), String> {
+    if target != WINDOWS_ARM64_TARGET {
+        return validate_controlled_component_args(args);
+    }
+    let value = |key: &str| -> Result<&str, String> {
+        let values = args
+            .iter()
+            .filter_map(|arg| arg.strip_prefix(key))
+            .collect::<Vec<_>>();
+        if let [value] = values.as_slice() {
+            Ok(*value)
+        } else {
+            Err(format!("unexpected:\n  FFmpeg Windows ARM singleton {key}"))
+        }
+    };
+    let target_suffix = format!(" --target={WINDOWS_ARM64_TARGET}");
+    let compiler = value("--cc=")?
+        .strip_suffix(&target_suffix)
+        .ok_or("unexpected:\n  FFmpeg Windows ARM compiler target")?;
+    let assembler = value("--as=")?
+        .strip_suffix(&target_suffix)
+        .ok_or("unexpected:\n  FFmpeg Windows ARM assembler target")?;
+    let dumpbin = value("--nm=")?
+        .strip_suffix(" -symbols")
+        .ok_or("unexpected:\n  FFmpeg Windows ARM symbol tool")?;
+    let required = windows_arm64_configure_args(&WindowsArm64Tools {
+        compiler,
+        assembler,
+        linker: value("--ld=")?,
+        librarian: value("--ar=")?,
+        dumpbin,
+        host_compiler: value("--host-cc=")?,
+    })?;
+    for required in required
+        .iter()
+        .map(String::as_str)
+        .chain(["--toolchain=msvc", "--extra-cflags=/MT"])
+    {
+        if args.iter().filter(|arg| arg.as_str() == required).count() != 1 {
+            return Err(format!(
+                "unexpected:\n  FFmpeg Windows ARM required argument {required}"
+            ));
+        }
+    }
+    let components = [AUDIO_REMUX_COMPONENT_ARGS, VIDEO_DECODE_COMPONENT_ARGS]
+        .into_iter()
+        .find(|candidate| {
+            candidate
+                .iter()
+                .all(|required| args.iter().filter(|arg| arg.as_str() == *required).count() == 1)
+        })
+        .ok_or("unexpected:\n  controlled FFmpeg Windows ARM component set")?;
+    for arg in args {
+        if components.contains(&arg.as_str())
+            || required.contains(arg)
+            || matches!(
+                arg.as_str(),
+                "--toolchain=msvc"
+                    | "--extra-cflags=/MT"
+                    | "--extra-cflags=/O2"
+                    | "--extra-cflags=-w"
+                    | "--enable-debug"
+                    | "--disable-debug"
+                    | "--enable-stripping"
+                    | "--disable-stripping"
+                    | "--disable-gpl"
+                    | "--disable-version3"
+                    | "--disable-nonfree"
+            )
+        {
+            continue;
+        }
+        if arg
+            .strip_prefix("--prefix=")
+            .is_some_and(|prefix| windows_arm64_tool_path(&format!("{prefix}/prefix.exe")).is_ok())
+        {
+            continue;
+        }
+        return Err(format!(
+            "unexpected:\n  unapproved FFmpeg Windows ARM configure argument {arg}"
+        ));
+    }
+    Ok(())
+}
+
 fn is_allowed_build_arg(arg: &str) -> bool {
     matches!(
         arg,
@@ -1411,6 +1574,115 @@ sha256 = "digest"
             .collect::<Vec<_>>();
         disabled.push("--disable-decoder=h264".to_owned());
         assert!(validate_controlled_component_args(&disabled).is_err());
+    }
+
+    #[test]
+    fn windows_arm64_policy_preserves_components_and_separates_legacy_admission() {
+        let tool_args = windows_arm64_configure_args(&WindowsArm64Tools {
+            compiler: "C:/tools/llvm/clang-cl.exe",
+            assembler: "C:/tools/proxies/arm-as.exe",
+            linker: "C:/tools/proxies/arm-link.exe",
+            librarian: "C:/tools/proxies/arm-lib.exe",
+            dumpbin: "C:/tools/proxies/arm-nm.exe",
+            host_compiler: "C:/tools/proxies/host-cc.exe",
+        })
+        .unwrap();
+        for audio_remux in [false, true] {
+            let mut args = controlled_component_args_for_audio_remux(audio_remux)
+                .iter()
+                .map(|arg| (*arg).to_owned())
+                .collect::<Vec<_>>();
+            args.extend(tool_args.clone());
+            args.extend(
+                [
+                    "--toolchain=msvc",
+                    "--extra-cflags=/MT",
+                    "--extra-cflags=/O2",
+                    "--disable-debug",
+                ]
+                .map(str::to_owned),
+            );
+            assert!(
+                validate_controlled_component_args_for_target(&args, WINDOWS_ARM64_TARGET).is_ok()
+            );
+            assert!(validate_controlled_component_args(&args).is_err());
+            assert!(
+                validate_controlled_component_args_for_target(&args, "x86_64-pc-windows-msvc")
+                    .is_err()
+            );
+            for extra in [
+                "--disable-asm",
+                "--disable-inline-asm",
+                "--disable-neon",
+                "--disable-x86asm",
+                "--extra-cflags=/MD",
+                "--extra-cflags=--target=x86_64-pc-windows-msvc",
+                "--cross-prefix=clang-",
+                "--arch=x86_64",
+                "--host-ld=C:/foreign/cc.exe",
+                "--enable-network",
+                "--enable-decoder=hevc",
+            ] {
+                let mut changed = args.clone();
+                changed.push(extra.into());
+                assert!(
+                    validate_controlled_component_args_for_target(&changed, WINDOWS_ARM64_TARGET)
+                        .is_err(),
+                    "accepted {extra}"
+                );
+            }
+            for key in ["--cc=", "--as=", "--host-cc="] {
+                let mut changed = args.clone();
+                let arg = changed.iter_mut().find(|arg| arg.starts_with(key)).unwrap();
+                *arg = if key == "--host-cc=" {
+                    "--host-cc=C:/tools/../foreign.exe".into()
+                } else {
+                    arg.replace("aarch64-pc-windows-msvc", "arm64ec-pc-windows-msvc")
+                };
+                assert!(
+                    validate_controlled_component_args_for_target(&changed, WINDOWS_ARM64_TARGET)
+                        .is_err()
+                );
+            }
+            for (from, to) in [
+                ("/arm-as.exe", "/clang.exe"),
+                ("/arm-link.exe", "/host-cc.exe"),
+                ("/arm-lib.exe", "/arm-link.exe"),
+                ("/arm-nm.exe", "/arm-lib.exe"),
+                ("/host-cc.exe", "/clang-cl.exe"),
+            ] {
+                let changed = args
+                    .iter()
+                    .map(|arg| arg.replace(from, to))
+                    .collect::<Vec<_>>();
+                assert!(
+                    validate_controlled_component_args_for_target(&changed, WINDOWS_ARM64_TARGET)
+                        .is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn windows_arm64_tool_commands_reject_shell_and_relative_paths() {
+        assert_eq!(
+            windows_arm64_tool_path("C:\\tools\\clang.exe").unwrap(),
+            "C:/tools/clang.exe"
+        );
+        assert!(windows_arm64_tool_path("/c/tools/clang.exe").is_ok());
+        for bad in [
+            "clang.exe",
+            "/usr/bin/clang.exe",
+            "C:/tools/../clang.exe",
+            "C:/Program Files/clang.exe",
+            "C:/tools/clang.exe;foreign",
+            "C:/tools/$(foreign).exe",
+            "C:/tools/clang.exe --target=x86_64",
+            "C:/tools//clang.exe",
+            "C:/tools/a:stream.exe",
+        ] {
+            assert!(windows_arm64_tool_path(bad).is_err(), "accepted {bad}");
+        }
     }
 
     #[test]

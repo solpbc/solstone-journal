@@ -1,0 +1,657 @@
+[
+  {
+    "label": "cmake/bin/cmake-gui.exe",
+    "size": 27486280,
+    "sha256": "29cbb89b91bb9bf3a382ecc4d45bdb46d611ac3c77db4931790859dda2c13a94"
+  },
+  {
+    "label": "cmake/bin/cmake.exe",
+    "size": 12114504,
+    "sha256": "f3a124ad60459b56b2a5b4e312b0cd5de56d5b1fcf2921f8f602fb531b0da10d"
+  },
+  {
+    "label": "cmake/bin/cmcldeps.exe",
+    "size": 1808464,
+    "sha256": "cfcf73a0ead9706e47f7457dd4333d1bb8cb6fbe333e95d70ca5646b4e8bd3cc"
+  },
+  {
+    "label": "cmake/bin/cpack.exe",
+    "size": 12202576,
+    "sha256": "d5ef2ccb2dfbdb1f1c50a32e79231a1c874a78773205491ef511180eda73d0ba"
+  },
+  {
+    "label": "cmake/bin/ctest.exe",
+    "size": 13037136,
+    "sha256": "3c15bc788bb6921748d3983648b3742ba3b925413052d872048fbe087499feea"
+  },
+  {
+    "label": "llvm/bin/amdgpu-arch.exe",
+    "size": 562688,
+    "sha256": "f384efd43a859d703b8cac3ce2b5531683608d028216b1da639ea23057de7922"
+  },
+  {
+    "label": "llvm/bin/bugpoint.exe",
+    "size": 57174528,
+    "sha256": "e59e15545a083e7c74af2471827fd9495a7a0116da9121f8e43dd391efe0ec1b"
+  },
+  {
+    "label": "llvm/bin/c-index-test.exe",
+    "size": 32534528,
+    "sha256": "3438f50856cdf74b96b32ac9dbc370aeacb41ec446d169bbdaa5566925dad209"
+  },
+  {
+    "label": "llvm/bin/clang++.exe",
+    "size": 108432896,
+    "sha256": "9aa58bef37a6bc9767693c9e14a2ee38a32bf4b96782a482ab4caa924712a492"
+  },
+  {
+    "label": "llvm/bin/clang-apply-replacements.exe",
+    "size": 3734528,
+    "sha256": "f122d8d5a27280a19acd00952281e4866e64f993a50995b65071add3031494aa"
+  },
+  {
+    "label": "llvm/bin/clang-change-namespace.exe",
+    "size": 33467392,
+    "sha256": "bc5f7f7b8c9b6bf857ff9faba202acba70e6c6ab5699668fc2295e03191fb7b2"
+  },
+  {
+    "label": "llvm/bin/clang-check.exe",
+    "size": 89229312,
+    "sha256": "af429b3c65de1c2a26137b77f3a4ea3aa35f274b1a9964c41e59babd65ddb1a4"
+  },
+  {
+    "label": "llvm/bin/clang-cl.exe",
+    "size": 108432896,
+    "sha256": "9aa58bef37a6bc9767693c9e14a2ee38a32bf4b96782a482ab4caa924712a492"
+  },
+  {
+    "label": "llvm/bin/clang-cpp.exe",
+    "size": 108432896,
+    "sha256": "9aa58bef37a6bc9767693c9e14a2ee38a32bf4b96782a482ab4caa924712a492"
+  },
+  {
+    "label": "llvm/bin/clang-doc.exe",
+    "size": 33208320,
+    "sha256": "9c3e1b1b06c1692ea497d79b6828b1b5892d63bf6917b34fd0b0c9db1d33eee4"
+  },
+  {
+    "label": "llvm/bin/clang-extdef-mapping.exe",
+    "size": 46341632,
+    "sha256": "72cc3ae80f5c6f607e3ee064301deba798df3551657ad864ea3ed638487128ad"
+  },
+  {
+    "label": "llvm/bin/clang-format.exe",
+    "size": 3799040,
+    "sha256": "d154319414108137a798b16eee8235b790d58d517962d8f9fb37d89e3692a306"
+  },
+  {
+    "label": "llvm/bin/clang-include-cleaner.exe",
+    "size": 33436672,
+    "sha256": "2327b1cab283b4baf5233eb94d873850a6c602072e0cba68b2bdd4cbf8f2ea92"
+  },
+  {
+    "label": "llvm/bin/clang-include-fixer.exe",
+    "size": 33081344,
+    "sha256": "5c652a336d98f29c36dec7d065e82ac3eab96f0d54637a568b86745f40bc659f"
+  },
+  {
+    "label": "llvm/bin/clang-installapi.exe",
+    "size": 35380224,
+    "sha256": "530779834a6b01f269317c883248d0aceee273c66fffea7a5642f1f2b6450d76"
+  },
+  {
+    "label": "llvm/bin/clang-linker-wrapper.exe",
+    "size": 55275008,
+    "sha256": "e67c3a25834e6f8c8f4cd0b0802a27d72d83d44d6218e1dc269982617f8fc3ef"
+  },
+  {
+    "label": "llvm/bin/clang-move.exe",
+    "size": 33462272,
+    "sha256": "e4c586f2917d5be7204e95d85ede6e467ba76293f1952f7b09a6709fe9333604"
+  },
+  {
+    "label": "llvm/bin/clang-nvlink-wrapper.exe",
+    "size": 66448384,
+    "sha256": "62047682812cc45f84ba42d5d3489bd28b7da4b9f6957ca78ffb9fee34a24d07"
+  },
+  {
+    "label": "llvm/bin/clang-offload-bundler.exe",
+    "size": 4327424,
+    "sha256": "461ba76ab9bcf2d021001be51d39bcc259da4b4b759815640d8cea790bd719b8"
+  },
+  {
+    "label": "llvm/bin/clang-offload-packager.exe",
+    "size": 4425216,
+    "sha256": "584ea240e57731e1a2a299d2b7e3c1ab0847f03bc9a593ac64ae8eb4a7779522"
+  },
+  {
+    "label": "llvm/bin/clang-query.exe",
+    "size": 34158592,
+    "sha256": "8bc27f3d119b204c94dd57d2d52710f446c27d82bb390d06b23f025fa97269c4"
+  },
+  {
+    "label": "llvm/bin/clang-refactor.exe",
+    "size": 33800192,
+    "sha256": "6d3818bbb1700af60981fe89f08c0b8dd2a8c60ff119678aa4598d1a80688908"
+  },
+  {
+    "label": "llvm/bin/clang-reorder-fields.exe",
+    "size": 32745984,
+    "sha256": "f3c9dab7f119e886b0c60f46402e5ab83dcbd723ee0dd69a39ed7a9fcd90f4cd"
+  },
+  {
+    "label": "llvm/bin/clang-repl.exe",
+    "size": 109824000,
+    "sha256": "11150119c3901b04a4877a6ac3d75637e7196c036598940b63ebd99165b069a3"
+  },
+  {
+    "label": "llvm/bin/clang-scan-deps.exe",
+    "size": 32595456,
+    "sha256": "0ca4c63f6728153a7dd199a490b9666572f6b4fd0c40ccb517769b764bd5d768"
+  },
+  {
+    "label": "llvm/bin/clang-sycl-linker.exe",
+    "size": 54430720,
+    "sha256": "7a09758678429689d57f9b64411fad789c4f81b691f128c165236854b48489c1"
+  },
+  {
+    "label": "llvm/bin/clang-tblgen.exe",
+    "size": 2331648,
+    "sha256": "3de1787e9312fee9d1b40972f442171990352c6f860013ad65cc312e9c9ab67b"
+  },
+  {
+    "label": "llvm/bin/clang-tidy.exe",
+    "size": 61431808,
+    "sha256": "de8e17204c0fe6820a1d3fe43bb336b39a8ac837de716276247765216c86a164"
+  },
+  {
+    "label": "llvm/bin/clang.exe",
+    "size": 108432896,
+    "sha256": "9aa58bef37a6bc9767693c9e14a2ee38a32bf4b96782a482ab4caa924712a492"
+  },
+  {
+    "label": "llvm/bin/clangd.exe",
+    "size": 49195008,
+    "sha256": "e7a72548f1649acdc377c5ce9baa9eceae149c2814855e979b77021af9995e6c"
+  },
+  {
+    "label": "llvm/bin/diagtool.exe",
+    "size": 8438784,
+    "sha256": "f3cdf52e1cac5690dd477e32e39b9633c292bd4776c2f3aa56f5e3573d078877"
+  },
+  {
+    "label": "llvm/bin/dsymutil.exe",
+    "size": 52528640,
+    "sha256": "aa9e1325bc14dc8a605297e10e3dd21ca25f774613e83ac9b36e1cf512655c53"
+  },
+  {
+    "label": "llvm/bin/find-all-symbols.exe",
+    "size": 32792064,
+    "sha256": "69faba5595fb4f95aceb3e26ecad25258e963762731e8e183d6baa4cfe74a556"
+  },
+  {
+    "label": "llvm/bin/ld.lld.exe",
+    "size": 72399872,
+    "sha256": "24e186e8990dd2bff38e8489e23e65c69fbee99baf99d9185365a6070faba98b"
+  },
+  {
+    "label": "llvm/bin/ld64.lld.exe",
+    "size": 72399872,
+    "sha256": "24e186e8990dd2bff38e8489e23e65c69fbee99baf99d9185365a6070faba98b"
+  },
+  {
+    "label": "llvm/bin/llc.exe",
+    "size": 65879552,
+    "sha256": "55f047b3675a5eaf610b7078b8db2cb3c61afab34db019abbb602bf1975d1687"
+  },
+  {
+    "label": "llvm/bin/lld-link.exe",
+    "size": 72399872,
+    "sha256": "24e186e8990dd2bff38e8489e23e65c69fbee99baf99d9185365a6070faba98b"
+  },
+  {
+    "label": "llvm/bin/lld.exe",
+    "size": 72399872,
+    "sha256": "24e186e8990dd2bff38e8489e23e65c69fbee99baf99d9185365a6070faba98b"
+  },
+  {
+    "label": "llvm/bin/lli.exe",
+    "size": 30241792,
+    "sha256": "70e545b59c6584ddee0854b4e058b29c5bfea65efb506f007a257983d7988a17"
+  },
+  {
+    "label": "llvm/bin/llvm-addr2line.exe",
+    "size": 5639168,
+    "sha256": "e41ecb1c3d4aa204f8050d59e0fc3a17cc45168c7aa2adb314d0d98ead6d6472"
+  },
+  {
+    "label": "llvm/bin/llvm-ar.exe",
+    "size": 18496512,
+    "sha256": "91795c608a05d691dd45e2caf13c8d096d53b4726eb8418cec9a831fe7ce1609"
+  },
+  {
+    "label": "llvm/bin/llvm-as.exe",
+    "size": 4197888,
+    "sha256": "0406305f566d7c5ce857283e228e5ee8212f87b6df0d4807e7718283c455fb87"
+  },
+  {
+    "label": "llvm/bin/llvm-bcanalyzer.exe",
+    "size": 637440,
+    "sha256": "481ef4eae1865dd559f75da1cb2af318c89fa0a12e83ed797a66881be951aa5a"
+  },
+  {
+    "label": "llvm/bin/llvm-bitcode-strip.exe",
+    "size": 4840448,
+    "sha256": "81998dae647e92abcc46f6a1b23a7cdc3a07b7e37558095467ff83204e64090a"
+  },
+  {
+    "label": "llvm/bin/llvm-c-test.exe",
+    "size": 53933056,
+    "sha256": "60500962c7d02112db4172a863886cab83b04bc52d0243f8f28818b0c3192964"
+  },
+  {
+    "label": "llvm/bin/llvm-cas.exe",
+    "size": 729088,
+    "sha256": "ee3fe201f56561efec4d88a96718d623497ac0cc06bdfe8705ff873f5cf5b441"
+  },
+  {
+    "label": "llvm/bin/llvm-cat.exe",
+    "size": 3756032,
+    "sha256": "d195b2da65429295a87678d1993d5cc2dfba0f10e2c3dc7945ef1e917d2d1260"
+  },
+  {
+    "label": "llvm/bin/llvm-cfi-verify.exe",
+    "size": 23362560,
+    "sha256": "02821c74c52b8c019f3a017cdfda8737b7aaa50299aacde6d2d594a52189069b"
+  },
+  {
+    "label": "llvm/bin/llvm-cgdata.exe",
+    "size": 4460544,
+    "sha256": "555e2be29849259d6d77a3244aa744047fbb9b0ebced6228a1d83e3edc262d0d"
+  },
+  {
+    "label": "llvm/bin/llvm-config.exe",
+    "size": 567808,
+    "sha256": "04b36a736034b474efbaec96c8b2fdfdc8af2b5a57adbd102be8a4c6fbe965c5"
+  },
+  {
+    "label": "llvm/bin/llvm-cov.exe",
+    "size": 5116928,
+    "sha256": "512087aaf3d9bfe8269b87ae0e07afcfab27daad02e3eb524b56dfd75d6c9603"
+  },
+  {
+    "label": "llvm/bin/llvm-ctxprof-util.exe",
+    "size": 741888,
+    "sha256": "9e635e7bc037bd5b3156c7440bb02b581611247cacd87429a1711f9ef81e7487"
+  },
+  {
+    "label": "llvm/bin/llvm-cvtres.exe",
+    "size": 641536,
+    "sha256": "5a7add60eeb4984b71a511ef80656a1b076475af6b4dd462548fbb0a6752efb8"
+  },
+  {
+    "label": "llvm/bin/llvm-cxxdump.exe",
+    "size": 4203520,
+    "sha256": "28f2dc6b7f7a519f70b1c7387bce051eb499cf9bd0a1e40b28a2cfa71b3b37a8"
+  },
+  {
+    "label": "llvm/bin/llvm-cxxfilt.exe",
+    "size": 706560,
+    "sha256": "f06ab67468b7febe6c806413ed9bcfae3541a66ee00b6f4aa83916f5f2bbf1d5"
+  },
+  {
+    "label": "llvm/bin/llvm-cxxmap.exe",
+    "size": 747008,
+    "sha256": "98e13f8f9851b071267f7244b1c2f2bbd6765b7e3a3c1ed6465f5074f3cc8a0a"
+  },
+  {
+    "label": "llvm/bin/llvm-debuginfo-analyzer.exe",
+    "size": 20511744,
+    "sha256": "1950f4ec118f4974bb2eb8ce6b948c9a2095f09141e2e6a9d9da6c34990cfb6a"
+  },
+  {
+    "label": "llvm/bin/llvm-debuginfod-find.exe",
+    "size": 663040,
+    "sha256": "e5475babbd8c4328954d66b2847b40208cd6de0ff29b14ef78895faf6299d9c5"
+  },
+  {
+    "label": "llvm/bin/llvm-debuginfod.exe",
+    "size": 4262912,
+    "sha256": "3806b3470fef4c4501e842c1a98247eb0b32c1f7f5edcde797ca3ee790aa381c"
+  },
+  {
+    "label": "llvm/bin/llvm-diff.exe",
+    "size": 3337216,
+    "sha256": "26ebc06a7f8d90b7e7b16433ad429f61ac4a308a1172baaa5d41c5ffe9815025"
+  },
+  {
+    "label": "llvm/bin/llvm-dis.exe",
+    "size": 3063296,
+    "sha256": "c4f8b6940b44b9f6a165e4766881fb71837a28bf03659e05a38b29f6b1cfd144"
+  },
+  {
+    "label": "llvm/bin/llvm-dlltool.exe",
+    "size": 18496512,
+    "sha256": "91795c608a05d691dd45e2caf13c8d096d53b4726eb8418cec9a831fe7ce1609"
+  },
+  {
+    "label": "llvm/bin/llvm-dwarfdump.exe",
+    "size": 15730688,
+    "sha256": "b86b16f33d47d3571b32993ff44363bb2186a2b36e8781c2f442bc635fe8503c"
+  },
+  {
+    "label": "llvm/bin/llvm-dwarfutil.exe",
+    "size": 52657152,
+    "sha256": "46bf40af7652dc61a118f3c5e44ac011380c419a329d811efac46adc38d08cc7"
+  },
+  {
+    "label": "llvm/bin/llvm-dwp.exe",
+    "size": 51269632,
+    "sha256": "f1f496d6659fc3db6201c764f8017508a7044e132882ad5da8ac3ad26f6d13bc"
+  },
+  {
+    "label": "llvm/bin/llvm-exegesis.exe",
+    "size": 51984896,
+    "sha256": "a18bb078eef50b56fb6d1248fc5a4bf960adac0e605dc6b3ffdb10a2fc5ad74f"
+  },
+  {
+    "label": "llvm/bin/llvm-extract.exe",
+    "size": 9345536,
+    "sha256": "38eaecf08a7c0044b911d77fb24671297b8917da73961473596aefa7fc721bd1"
+  },
+  {
+    "label": "llvm/bin/llvm-gsymutil.exe",
+    "size": 48567296,
+    "sha256": "d921dbcf6caec00ceef20906e5110c59783befc153e4d8eb265220f223b52c70"
+  },
+  {
+    "label": "llvm/bin/llvm-ifs.exe",
+    "size": 4382720,
+    "sha256": "79bb1cd3977f56196eef6a830c1f0dc5b452e0250fe532b2dc55f2ab56f4b844"
+  },
+  {
+    "label": "llvm/bin/llvm-install-name-tool.exe",
+    "size": 4840448,
+    "sha256": "81998dae647e92abcc46f6a1b23a7cdc3a07b7e37558095467ff83204e64090a"
+  },
+  {
+    "label": "llvm/bin/llvm-ir2vec.exe",
+    "size": 54393344,
+    "sha256": "81e126b7bf4e3de7e0cfa5ff8ed27a7f9395b8eaea49cfb5661cced0a3385cfc"
+  },
+  {
+    "label": "llvm/bin/llvm-jitlink.exe",
+    "size": 21099008,
+    "sha256": "3b9e4a4a79f7efd7025691bf7f9f1d1aaf3f60a1e69f0778a20356fb3d73ecd9"
+  },
+  {
+    "label": "llvm/bin/llvm-lib.exe",
+    "size": 18496512,
+    "sha256": "91795c608a05d691dd45e2caf13c8d096d53b4726eb8418cec9a831fe7ce1609"
+  },
+  {
+    "label": "llvm/bin/llvm-libtool-darwin.exe",
+    "size": 18390016,
+    "sha256": "4b9efb7068688c1d8a93ff69a076f67eba2d6bea64cb61ee3c4a9958939c5ac8"
+  },
+  {
+    "label": "llvm/bin/llvm-link.exe",
+    "size": 4879360,
+    "sha256": "4881d1f89af582a13bc2a2823a96e50dce5404911fb097c89c4b0e53f7243a77"
+  },
+  {
+    "label": "llvm/bin/llvm-lipo.exe",
+    "size": 18330624,
+    "sha256": "5c2d7094abbd0cb2274b3fcf1c4fe3724b1cf40963448e096fefb27ca0aad565"
+  },
+  {
+    "label": "llvm/bin/llvm-lto.exe",
+    "size": 66276864,
+    "sha256": "ac78b7784e03cb6a2a26623adf6c7324cae9dacb78700229db5481461208d139"
+  },
+  {
+    "label": "llvm/bin/llvm-lto2.exe",
+    "size": 66435584,
+    "sha256": "c9e21bd3f164b0d8898eb9fe25b9d476a4f230a67ded3d3293b72db0f5b0938d"
+  },
+  {
+    "label": "llvm/bin/llvm-mc.exe",
+    "size": 19484160,
+    "sha256": "e705a29419a35c503754e4a188ef6fc34a016913422f122853fae77814527679"
+  },
+  {
+    "label": "llvm/bin/llvm-mca.exe",
+    "size": 15677440,
+    "sha256": "9eb6bec27438a6dfb49c111a8f3903545542a4fb6063b780467a1c895f1b6b4d"
+  },
+  {
+    "label": "llvm/bin/llvm-ml.exe",
+    "size": 19310592,
+    "sha256": "0cf0203932ba74a07b3c70fac418a4175f76d23fb41ea323f7470178b7ed803a"
+  },
+  {
+    "label": "llvm/bin/llvm-ml64.exe",
+    "size": 19310592,
+    "sha256": "0cf0203932ba74a07b3c70fac418a4175f76d23fb41ea323f7470178b7ed803a"
+  },
+  {
+    "label": "llvm/bin/llvm-modextract.exe",
+    "size": 4000256,
+    "sha256": "ccae00813479929bef3674c2bdb57c05cb7b4763a55195a4df248ee98d6a5c18"
+  },
+  {
+    "label": "llvm/bin/llvm-mt.exe",
+    "size": 953344,
+    "sha256": "1f815295be49dcbcbeaaf9130b8f8894a74030b7314c9b110bf3a8ee65596783"
+  },
+  {
+    "label": "llvm/bin/llvm-nm.exe",
+    "size": 19329536,
+    "sha256": "3d4967ceeec803dd2e53e70ed265eb24c0a8e83671d9de84400e406d26427ac5"
+  },
+  {
+    "label": "llvm/bin/llvm-objcopy.exe",
+    "size": 4840448,
+    "sha256": "81998dae647e92abcc46f6a1b23a7cdc3a07b7e37558095467ff83204e64090a"
+  },
+  {
+    "label": "llvm/bin/llvm-objdump.exe",
+    "size": 21137408,
+    "sha256": "79369e89ffc04b3650af6812d9078551d8f6666074b63fa155f112b043cc3d19"
+  },
+  {
+    "label": "llvm/bin/llvm-offload-binary.exe",
+    "size": 4425216,
+    "sha256": "584ea240e57731e1a2a299d2b7e3c1ab0847f03bc9a593ac64ae8eb4a7779522"
+  },
+  {
+    "label": "llvm/bin/llvm-offload-wrapper.exe",
+    "size": 5000192,
+    "sha256": "973982f8c690b8a2aaa2030442f429e9bd788193ab81f64d9119ad83a4f4b231"
+  },
+  {
+    "label": "llvm/bin/llvm-opt-report.exe",
+    "size": 802304,
+    "sha256": "27e96a340d898b0f41b124858d34debf85782e5e7a36bb08f40ac6d2056637d2"
+  },
+  {
+    "label": "llvm/bin/llvm-otool.exe",
+    "size": 21137408,
+    "sha256": "79369e89ffc04b3650af6812d9078551d8f6666074b63fa155f112b043cc3d19"
+  },
+  {
+    "label": "llvm/bin/llvm-pdbutil.exe",
+    "size": 5815296,
+    "sha256": "62f100709ffb676445bdb760a3ff4d62bc3f941a071c47a2486b3e3555b3334c"
+  },
+  {
+    "label": "llvm/bin/llvm-profdata.exe",
+    "size": 5861376,
+    "sha256": "b2768df345c896d6567db2ce31f5f8ae01d89c2d194a879ddf5f7ffa26c5791d"
+  },
+  {
+    "label": "llvm/bin/llvm-profgen.exe",
+    "size": 20934144,
+    "sha256": "759953ae7648fc4254fb8b9eca2bbf9311e449505e01587c5061e21c5b1155cc"
+  },
+  {
+    "label": "llvm/bin/llvm-ranlib.exe",
+    "size": 18496512,
+    "sha256": "91795c608a05d691dd45e2caf13c8d096d53b4726eb8418cec9a831fe7ce1609"
+  },
+  {
+    "label": "llvm/bin/llvm-rc.exe",
+    "size": 825856,
+    "sha256": "cbc282eba1531c7af9d0d71430dd9f34140d27593b7313f81a50faf2590c5c12"
+  },
+  {
+    "label": "llvm/bin/llvm-readelf.exe",
+    "size": 7390208,
+    "sha256": "7041e5efb343a7fd17b26b88d414fba457ac67beb0ed9f8c38cf919502e12963"
+  },
+  {
+    "label": "llvm/bin/llvm-readobj.exe",
+    "size": 7390208,
+    "sha256": "7041e5efb343a7fd17b26b88d414fba457ac67beb0ed9f8c38cf919502e12963"
+  },
+  {
+    "label": "llvm/bin/llvm-readtapi.exe",
+    "size": 4349440,
+    "sha256": "f60636a637027c8edee3161d4b106600979ba3d0d543d39809504ad6d9edc964"
+  },
+  {
+    "label": "llvm/bin/llvm-reduce.exe",
+    "size": 65709568,
+    "sha256": "16f06e810cec0fb8b9c175322667f5647f14c49f418d713642b4ec30c41315d1"
+  },
+  {
+    "label": "llvm/bin/llvm-remarkutil.exe",
+    "size": 903168,
+    "sha256": "5f96d2cf30abb3e801a5d8f00f4e4ee5ecb1b67d690a3ff92b19629f721f6d3e"
+  },
+  {
+    "label": "llvm/bin/llvm-rtdyld.exe",
+    "size": 16813056,
+    "sha256": "6a397427bfaa5595b7139e2c00ac282e7e6fc37710aa25f7b1dbe9b849b1a8fa"
+  },
+  {
+    "label": "llvm/bin/llvm-sim.exe",
+    "size": 3449856,
+    "sha256": "8d6a78ed0edd5d55cbe8387e6299aa9bedeafaf7f48e910362a7db56327b357c"
+  },
+  {
+    "label": "llvm/bin/llvm-size.exe",
+    "size": 4198400,
+    "sha256": "02095cf051631615edb15e2aede62a7203a41bf04acddee5c0084068d5fe62df"
+  },
+  {
+    "label": "llvm/bin/llvm-split.exe",
+    "size": 50183680,
+    "sha256": "d743abcf612b80e8717ad2311d4204469d97dbe8ad30834639bae42f512774c3"
+  },
+  {
+    "label": "llvm/bin/llvm-stress.exe",
+    "size": 2366976,
+    "sha256": "36fb7297ce5c05eabeadb47f0f4ee5d054b3c56744015dbed23b3254dfc658fe"
+  },
+  {
+    "label": "llvm/bin/llvm-strings.exe",
+    "size": 526848,
+    "sha256": "2b6cc0181cb0084c40f0cc04c48a15d0f8f24f4e1f163041af2d068d0679d262"
+  },
+  {
+    "label": "llvm/bin/llvm-strip.exe",
+    "size": 4840448,
+    "sha256": "81998dae647e92abcc46f6a1b23a7cdc3a07b7e37558095467ff83204e64090a"
+  },
+  {
+    "label": "llvm/bin/llvm-symbolizer.exe",
+    "size": 5639168,
+    "sha256": "e41ecb1c3d4aa204f8050d59e0fc3a17cc45168c7aa2adb314d0d98ead6d6472"
+  },
+  {
+    "label": "llvm/bin/llvm-tblgen.exe",
+    "size": 4270080,
+    "sha256": "048e89d8733208264861ba3879fdd774bb0f0abe283a5687a82be6469d84f445"
+  },
+  {
+    "label": "llvm/bin/llvm-tli-checker.exe",
+    "size": 4457472,
+    "sha256": "3093ac7a9f825bc6e5db29f56770d10eb1c3f15ffff5592a20d2e46d1d1d3162"
+  },
+  {
+    "label": "llvm/bin/llvm-undname.exe",
+    "size": 694784,
+    "sha256": "ea225f61a6c2e1fade518fc6cebee6247218d2ebb366e211a9feac5aabac1c6b"
+  },
+  {
+    "label": "llvm/bin/llvm-windres.exe",
+    "size": 825856,
+    "sha256": "cbc282eba1531c7af9d0d71430dd9f34140d27593b7313f81a50faf2590c5c12"
+  },
+  {
+    "label": "llvm/bin/llvm-xray.exe",
+    "size": 5798912,
+    "sha256": "443b26d9b7380529e26b8f8a62272242cf9f4cda82962e18769a0dae7cd32385"
+  },
+  {
+    "label": "llvm/bin/modularize.exe",
+    "size": 32405504,
+    "sha256": "748e3ebe8b5d747c1b586dbeab53986411ea38ab04daaa30e2787576b59e8917"
+  },
+  {
+    "label": "llvm/bin/nvptx-arch.exe",
+    "size": 562688,
+    "sha256": "f384efd43a859d703b8cac3ce2b5531683608d028216b1da639ea23057de7922"
+  },
+  {
+    "label": "llvm/bin/offload-arch.exe",
+    "size": 562688,
+    "sha256": "f384efd43a859d703b8cac3ce2b5531683608d028216b1da639ea23057de7922"
+  },
+  {
+    "label": "llvm/bin/opt.exe",
+    "size": 65806848,
+    "sha256": "c9ed7258019f778d2f172acb9dd98ba0bd5432c39a203c0e27af6c995d3d289d"
+  },
+  {
+    "label": "llvm/bin/pp-trace.exe",
+    "size": 32296960,
+    "sha256": "ed14912e8fbd6656b2f8a3d5cce1ce2d8a9e7f1af5496b1057aafedcce1516a9"
+  },
+  {
+    "label": "llvm/bin/reduce-chunk-list.exe",
+    "size": 535552,
+    "sha256": "342977fad2a33da4983d142d8e520a39cc3fff6b01bca6d6c618230378928102"
+  },
+  {
+    "label": "llvm/bin/sancov.exe",
+    "size": 20191744,
+    "sha256": "df7a04de1ceec2825c6372b39c0fb6f13c3d348f512c790f7b0ca9d7c554ad55"
+  },
+  {
+    "label": "llvm/bin/sanstats.exe",
+    "size": 5444096,
+    "sha256": "2f1bdd9df34d6fe4d74d217904ba35fa566dca3fab98c3c2ba3c4671bb51c295"
+  },
+  {
+    "label": "llvm/bin/verify-uselistorder.exe",
+    "size": 4443136,
+    "sha256": "d5e221363ac36b0443988816440e26c145a56587adf4c6112d236cb1b1735381"
+  },
+  {
+    "label": "llvm/bin/wasm-ld.exe",
+    "size": 72399872,
+    "sha256": "24e186e8990dd2bff38e8489e23e65c69fbee99baf99d9185365a6070faba98b"
+  },
+  {
+    "label": "python/python.exe",
+    "size": 104952,
+    "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+  },
+  {
+    "label": "python/pythonw.exe",
+    "size": 104304,
+    "sha256": "d72294fb338bc2fc8896d25a7395a4db466425427e1559e77185d5135a830681"
+  }
+]

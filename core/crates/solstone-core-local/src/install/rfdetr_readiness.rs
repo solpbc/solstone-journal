@@ -171,7 +171,7 @@ mod tests {
     fn unsupported_platform_is_unsupported() {
         let journal = tempfile::tempdir().unwrap();
         assert!(matches!(
-            evaluate_rfdetr_readiness(journal.path(), "windows", "arm64"),
+            evaluate_rfdetr_readiness(journal.path(), "linux", "mips"),
             RfdetrReadiness::Unsupported { .. }
         ));
     }

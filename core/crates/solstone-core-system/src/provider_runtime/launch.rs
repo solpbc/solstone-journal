@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 use solstone_core_brain::bundled_runtime_desired_fingerprint;
+use solstone_core_installed_payload::WindowsArchitecture;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::{
     metal_candidate, pins,
@@ -563,7 +564,7 @@ fn observe_truth(
         "local/qwen3.5-4b".to_owned()
     };
     if config.platform == LocalHost::Windows {
-        if config.arch != "x86_64" {
+        if WindowsArchitecture::from_architecture(config.arch).is_none() {
             return truth(
                 super::model::RuntimePhase::HostBlocked,
                 "platform-unsupported",
@@ -635,6 +636,15 @@ fn observe_truth(
                 );
             }
         };
+        if pkg.architecture.architecture() != config.arch {
+            return truth(
+                super::model::RuntimePhase::HostBlocked,
+                "package-invalid",
+                None,
+                false,
+                false,
+            );
+        }
         let readiness_input = Map::from_iter([
             (
                 "journal".into(),
@@ -644,7 +654,7 @@ fn observe_truth(
             ("backend".into(), Value::String("vulkan".into())),
             (
                 "artifact_key".into(),
-                Value::String("x86_64-windows".into()),
+                Value::String(pkg.architecture.runtime_key().into()),
             ),
         ]);
         let readiness = if let Some(pkg) = config.windows_package.clone() {
@@ -1249,10 +1259,6 @@ fn verify_launch_artifacts_windows(
         ),
         ("model_id".into(), Value::String(plan.model_id.clone())),
         ("backend".into(), Value::String("vulkan".into())),
-        (
-            "artifact_key".into(),
-            Value::String("x86_64-windows".into()),
-        ),
     ]);
     let readiness = inspect_local(input);
     readiness["ready"] == true
@@ -2744,25 +2750,35 @@ mod tests {
             Some("gpu-memory-insufficient")
         );
 
-        // aarch64 platform unsupported
-        let shared = LocalRuntimeShared::default();
-        let config = LocalTruthConfig {
-            journal_path: root.path().to_path_buf(),
-            platform: LocalHost::Windows,
-            arch: "aarch64",
-            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
-            vulkan: crate::vulkan_observe::VulkanObservation {
-                devices: vec![hardware],
-                succeeded: true,
-            },
-            windows_package: None,
-        };
-        let observation = observe_truth(&shared, &config, None);
-        assert_eq!(observation.phase, RuntimePhase::HostBlocked);
-        assert_eq!(
-            observation.reason_code.as_ref().map(ReasonCode::as_str),
-            Some("platform-unsupported")
-        );
+        for (arch, reason) in [
+            ("aarch64", "package-invalid"),
+            ("riscv64", "platform-unsupported"),
+        ] {
+            let shared = LocalRuntimeShared::default();
+            let config = LocalTruthConfig {
+                journal_path: root.path().to_path_buf(),
+                platform: LocalHost::Windows,
+                arch,
+                nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+                vulkan: crate::vulkan_observe::VulkanObservation {
+                    devices: vec![hardware.clone()],
+                    succeeded: true,
+                },
+                windows_package: None,
+            };
+            let observation = observe_truth(&shared, &config, None);
+            assert_eq!(observation.phase, RuntimePhase::HostBlocked);
+            assert_eq!(
+                observation.reason_code.as_ref().map(ReasonCode::as_str),
+                Some(reason),
+                "{arch}"
+            );
+            assert!(
+                shared
+                    .launch_request_for(&observation.desired_fingerprint)
+                    .is_none()
+            );
+        }
     }
 
     #[test]

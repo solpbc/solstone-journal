@@ -40,7 +40,7 @@ const PARAKEET_CPP_REPOSITORY: &str = "https://github.com/mudler/parakeet.cpp.gi
 const PARAKEET_GGML_REPOSITORY: &str = "https://github.com/ggml-org/ggml";
 const PARAKEET_WINDOWS_SOURCE_ARCHIVE_SCHEMA_V1: &str =
     "solstone.parakeet-windows-source-archive.v1";
-const PARAKEET_WINDOWS_BUILD_EVIDENCE_SCHEMA_V1: &str =
+pub(crate) const PARAKEET_WINDOWS_BUILD_EVIDENCE_SCHEMA_V1: &str =
     "solstone.parakeet-windows-build-evidence.v1";
 const PARAKEET_WINDOWS_SOURCE_ARCHIVE_MANIFEST: &str = "parakeet-windows-source.json";
 const PARAKEET_WINDOWS_SOURCE_ARCHIVE_LABEL: &str = "sources/parakeet.cpp-patched-source.tar.gz";

@@ -9,6 +9,7 @@
 //! bound to committed pins and inventory configuration. The pins value is
 //! crate-private: production builds it only from the constants below.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read};
 
@@ -683,7 +684,7 @@ pub(crate) fn admit(
     require_archive("bundle-archive", input.bundle_archive, &pins.bundle_archive)?;
 
     // 3. The executable's own dependencies, from the admitted bytes.
-    let pe = inspect_dependencies(input.output_exe)?;
+    let pe = inspect_dependencies(input.output_exe, WindowsArchitecture::X86_64)?;
     if pe.is_dll {
         return Err("pe-kind: nvattest.exe must be an executable, not a DLL".into());
     }
@@ -823,7 +824,43 @@ fn require_file_pin(label: &str, bytes: &[u8], pin: &FilePin) -> Result<(), Stri
     Ok(())
 }
 
-fn validate_notices_index(pins: &Pins, index: &NoticesIndex) -> Result<(), String> {
+/// Shared source material checks; target-specific receipt/report admission is
+/// kept at each caller. All archive identities are checked before parsing.
+pub(crate) fn admitted_archive_material(
+    pins: &Pins,
+    source_bytes: &[u8],
+    bundle_bytes: &[u8],
+) -> Result<std::collections::BTreeMap<String, Vec<u8>>, String> {
+    require_archive("source-archive", source_bytes, &pins.source_archive)?;
+    require_archive("bundle-archive", bundle_bytes, &pins.bundle_archive)?;
+    let source = extract_source_tar_members(source_bytes, pins)?;
+    if source.pax_comment.as_deref() != Some(pins.sdk_revision) {
+        return Err("source-revision: source archive pax comment differs from pin".into());
+    }
+    require_file_pin("source-archive", &source.license, &pins.license)?;
+    require_file_pin(
+        "source-archive",
+        &source.regorus_lock,
+        &pins.regorus_cargo_lock,
+    )?;
+    let bundle = extract_bundle_tar_members(bundle_bytes, pins)?;
+    if sha256_hex(&bundle.manifest) != pins.manifest_sha256 {
+        return Err("bundle-archive: bundle offline-manifest.json differs from pin".into());
+    }
+    let manifest: BundleManifest =
+        serde_json::from_slice(&bundle.manifest).map_err(|e| e.to_string())?;
+    if manifest.schema != 1 {
+        return Err("bundle-archive: offline manifest schema differs".into());
+    }
+    validate_bundle_manifest(pins, &manifest)?;
+    require_file_pin("bundle-archive", &bundle.ca, &pins.ca_bundle)?;
+    Ok(std::collections::BTreeMap::from([
+        (NVATTEST_LICENSE_LABEL.into(), source.license),
+        (NVATTEST_CA_BUNDLE_LABEL.into(), bundle.ca),
+    ]))
+}
+
+pub(crate) fn validate_notices_index(pins: &Pins, index: &NoticesIndex) -> Result<(), String> {
     if index.schema != NVATTEST_NOTICES_INDEX_SCHEMA_V1 {
         return Err("notices-index: schema mismatch".into());
     }
@@ -944,7 +981,10 @@ fn validate_receipt(pins: &Pins, receipt: &ControlledBuildReceipt) -> Result<(),
     Ok(())
 }
 
-fn validate_invocation(pins: &Pins, invocation: &NvattestInvocation) -> Result<(), String> {
+pub(crate) fn validate_invocation(
+    pins: &Pins,
+    invocation: &NvattestInvocation,
+) -> Result<(), String> {
     if !invocation.offline {
         return Err("invocation: evidence invocation must declare offline=true".into());
     }
@@ -992,7 +1032,7 @@ fn validate_invocation(pins: &Pins, invocation: &NvattestInvocation) -> Result<(
     Ok(())
 }
 
-fn validate_refusals(refusals: &NvattestRefusals) -> Result<(), String> {
+pub(crate) fn validate_refusals(refusals: &NvattestRefusals) -> Result<(), String> {
     for (name, entry, boundary) in [
         (
             "manifest_digest",
@@ -1019,7 +1059,7 @@ fn validate_refusals(refusals: &NvattestRefusals) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_network(network: &NvattestNetworkEvidence) -> Result<(), String> {
+pub(crate) fn validate_network(network: &NvattestNetworkEvidence) -> Result<(), String> {
     for (family, probe) in [("ipv4", &network.ipv4), ("ipv6", &network.ipv6)] {
         let positive_admitted = probe.positive_control == NVATTEST_NETWORK_CONNECTED
             || (family == "ipv6" && probe.positive_control == NVATTEST_NETWORK_UNREACHABLE);
@@ -1189,6 +1229,14 @@ fn validate_census(
     census: &NvattestToolCensus,
     report: &NvattestBuildReport,
 ) -> Result<(), String> {
+    validate_census_tools(pins, census, &report.tools)
+}
+
+pub(crate) fn validate_census_tools(
+    pins: &Pins,
+    census: &NvattestToolCensus,
+    tools: &NvattestReportTools,
+) -> Result<(), String> {
     if census.schema != NVATTEST_TOOL_CENSUS_SCHEMA_V1 {
         return Err("census-version: tool census schema mismatch".into());
     }
@@ -1199,19 +1247,19 @@ fn validate_census(
             "rustc",
             &census.rustc,
             toolchain.rustc_exe_sha256,
-            &report.tools.rustc,
+            &tools.rustc,
         ),
         (
             "cargo",
             &census.cargo,
             toolchain.cargo_exe_sha256,
-            &report.tools.cargo,
+            &tools.cargo,
         ),
         (
             "cmake",
             &census.cmake,
             toolchain.cmake_exe_sha256,
-            &report.tools.cmake,
+            &tools.cmake,
         ),
     ] {
         let version = census_tool(name, tool)?;
@@ -1263,7 +1311,7 @@ fn validate_census(
             toolchain.msvc_toolset
         ));
     }
-    if msvc != report.tools.msvc {
+    if msvc != tools.msvc {
         return Err("tool-census: census msvc version differs from report".into());
     }
 
@@ -1286,7 +1334,7 @@ fn validate_census(
             toolchain.windows_sdk
         ));
     }
-    if sdk != report.tools.windows_sdk {
+    if sdk != tools.windows_sdk {
         return Err("tool-census: census windows_sdk version differs from report".into());
     }
     Ok(())
@@ -1338,7 +1386,15 @@ fn require_version_tokens(
 }
 
 fn validate_report_sources(pins: &Pins, report: &NvattestBuildReport) -> Result<(), String> {
-    compare_source_list("report-sources", "report", &report.sources, pins)?;
+    validate_report_source_lists(pins, &report.sources, &report.build_tools)
+}
+
+pub(crate) fn validate_report_source_lists(
+    pins: &Pins,
+    sources: &[NvattestReportSourceEntry],
+    build_tools: &[NvattestReportBuildToolEntry],
+) -> Result<(), String> {
+    compare_source_list("report-sources", "report", sources, pins)?;
     let expected: Vec<NvattestReportBuildToolEntry> = pins
         .build_tools
         .iter()
@@ -1348,7 +1404,7 @@ fn validate_report_sources(pins: &Pins, report: &NvattestBuildReport) -> Result<
             sha256: tool.sha256.into(),
         })
         .collect();
-    if report.build_tools != expected {
+    if build_tools != expected {
         return Err("report-tools: report build tools differ from the committed list".into());
     }
     Ok(())

@@ -10,7 +10,10 @@
 pub mod pin;
 pub mod posix;
 pub mod screen_ocr_layout;
+pub mod windows_architecture;
 pub mod windows_payload;
+
+pub use windows_architecture::{WindowsArchitecture, compiled_windows_architecture};
 
 #[cfg(any(windows, test))]
 pub mod windows_adapter;
@@ -38,6 +41,7 @@ pub use screen_ocr_layout::{
 };
 
 pub use windows_payload::WINDOWS_PAYLOAD_TARGET as TARGET_WINDOWS_X86_64;
+pub const TARGET_WINDOWS_AARCH64: &str = WindowsArchitecture::Aarch64.target_id();
 
 pub mod code {
     pub const MANIFEST_MISSING: &str = "manifest-missing";
@@ -95,6 +99,12 @@ pub fn compiled_target() -> &'static str {
     TARGET_WINDOWS_X86_64
 }
 
+#[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+#[must_use]
+pub fn compiled_target() -> &'static str {
+    TARGET_WINDOWS_AARCH64
+}
+
 /// The iOS build is compile-only (`make check-rust-ios`): no package ships for
 /// it, so this id is not canonical and every package admission refuses it.
 #[cfg(all(target_os = "ios", target_arch = "aarch64"))]
@@ -119,7 +129,10 @@ pub fn compiled_target() -> &'static str {
         any(target_arch = "x86_64", target_arch = "aarch64")
     ),
     all(target_os = "macos", target_arch = "aarch64"),
-    all(target_os = "windows", target_arch = "x86_64"),
+    all(
+        target_os = "windows",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ),
     all(target_os = "ios", target_arch = "aarch64"),
     all(target_os = "android", target_arch = "aarch64"),
 )))]

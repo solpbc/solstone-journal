@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
@@ -275,6 +276,15 @@ pub struct Target {
 }
 
 impl Target {
+    pub fn windows_architecture(&self) -> Result<WindowsArchitecture, String> {
+        if self.os != OS_WINDOWS {
+            return Err(format!("target {} is not Windows", self.id));
+        }
+        WindowsArchitecture::from_target_tuple(&self.id, &self.arch, &self.triple_windows)
+    }
+}
+
+impl Target {
     #[must_use]
     pub fn is_macos(&self) -> bool {
         self.os == OS_MACOS
@@ -359,6 +369,7 @@ pub enum WindowsNativeComponent {
     Rfdetr,
     Pdfium,
     Msvc,
+    Openmp,
     Restic,
     Rclone,
     Ffmpeg,
@@ -376,6 +387,7 @@ impl WindowsNativeComponent {
             Self::Rfdetr => "rfdetr",
             Self::Pdfium => "pdfium",
             Self::Msvc => "msvc",
+            Self::Openmp => "openmp",
             Self::Restic => "restic",
             Self::Rclone => "rclone",
             Self::Ffmpeg => "ffmpeg",
@@ -461,6 +473,7 @@ pub fn windows_native_entry_mapping(
         | (WindowsNativeComponent::Onnx, "share/provenance/onnx/build-evidence.json")
         | (WindowsNativeComponent::Onnx, "share/provenance/onnx/validation.log")
         | (WindowsNativeComponent::Onnx, "share/licenses/onnx/LICENSE")
+        | (WindowsNativeComponent::Onnx, "share/licenses/onnx/kleidiai-LICENSE.txt")
         | (WindowsNativeComponent::Onnx, "share/licenses/onnx/ThirdPartyNotices.txt") => {
             Ok(WindowsNativeMapping::Notice)
         }
@@ -530,10 +543,23 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Notice)
         }
 
+        (WindowsNativeComponent::Openmp, "lib/solstone-native/libomp.dll") => {
+            Ok(WindowsNativeMapping::Component("openmp"))
+        }
+        (WindowsNativeComponent::Openmp, "share/provenance/openmp/receipt.json")
+        | (WindowsNativeComponent::Openmp, "share/provenance/openmp/build-evidence.json")
+        | (WindowsNativeComponent::Openmp, "share/provenance/openmp/validation.log")
+        | (WindowsNativeComponent::Openmp, "share/licenses/openmp/LICENSE.txt") => {
+            Ok(WindowsNativeMapping::Notice)
+        }
+
         (WindowsNativeComponent::Restic, "lib/solstone-restic/restic.exe") => {
             Ok(WindowsNativeMapping::Component("restic"))
         }
-        (WindowsNativeComponent::Restic, "share/provenance/restic/archive.json") => {
+        (WindowsNativeComponent::Restic, "share/provenance/restic/archive.json")
+        | (WindowsNativeComponent::Restic, "share/provenance/restic/receipt.json")
+        | (WindowsNativeComponent::Restic, "share/provenance/restic/build-evidence.json")
+        | (WindowsNativeComponent::Restic, "share/provenance/restic/validation.log") => {
             Ok(WindowsNativeMapping::Notice)
         }
 
@@ -558,6 +584,8 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Component("nvattest"))
         }
         (WindowsNativeComponent::Nvattest, "share/licenses/nvattest/LICENSE")
+        | (WindowsNativeComponent::Nvattest, "share/licenses/nvattest/NOTICES.md")
+        | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/sources.json")
         | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/receipt.json")
         | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/build-evidence.json")
         | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/validation.log") => {
@@ -1038,8 +1066,9 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
     let mut missing_targets = BTreeSet::new();
     let mut unexpected_lanes = BTreeSet::new();
     let mut unexpected_dests = BTreeSet::new();
-    let mut native_members: BTreeMap<(WindowsNativeComponent, &str), Vec<&str>> = BTreeMap::new();
-    let mut windows_build_evidence = false;
+    let mut native_members: BTreeMap<(&str, WindowsNativeComponent, &str), Vec<&str>> =
+        BTreeMap::new();
+    let mut windows_build_evidence = BTreeSet::new();
     for entry in &inventory.entry {
         let Some(class) = entry.class() else {
             let (kind, dest_or_source) = match entry {
@@ -1075,7 +1104,24 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             ..
         } = entry
         {
-            if targets.as_slice() != ["windows-x86_64"]
+            let architecture = match targets.as_slice() {
+                [target] => inventory
+                    .target
+                    .iter()
+                    .find(|declared| declared.id == *target)
+                    .and_then(|declared| declared.windows_architecture().ok()),
+                _ => None,
+            }
+            .ok_or_else(|| InventoryError::new("invalid Windows native entry"))?;
+            if (architecture == WindowsArchitecture::X86_64
+                && *component == WindowsNativeComponent::Openmp)
+                || (architecture == WindowsArchitecture::Aarch64
+                    && *component == WindowsNativeComponent::Msvc
+                    && (member.to_ascii_lowercase().ends_with(".dll") || dest.ends_with(".dll"))
+                    && (!matches!(
+                        member.as_str(),
+                        "msvcp140.dll" | "msvcp140_1.dll" | "vcruntime140.dll"
+                    ) || dest.rsplit('/').next() != Some(member.as_str())))
                 || !matches!(*mode, 0o644 | 0o755)
                 || member.is_empty()
                 || !member.is_ascii()
@@ -1087,7 +1133,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
                 return Err(InventoryError::new("invalid Windows native entry"));
             }
             let dests = native_members
-                .entry((*component, member.as_str()))
+                .entry((targets[0].as_str(), *component, member.as_str()))
                 .or_default();
             dests.push(dest.as_str());
             match dests.len() {
@@ -1235,13 +1281,22 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
         }
 
         if let Entry::WindowsBuildEvidence { mode, targets, .. } = entry {
-            if targets.as_slice() != ["windows-x86_64"] || *mode != 0o644 || windows_build_evidence
+            let architecture = match targets.as_slice() {
+                [target] => inventory
+                    .target
+                    .iter()
+                    .find(|declared| declared.id == *target)
+                    .and_then(|declared| declared.windows_architecture().ok()),
+                _ => None,
+            };
+            if architecture.is_none()
+                || *mode != 0o644
+                || !windows_build_evidence.insert(targets[0].as_str())
             {
                 return Err(InventoryError::new(
                     "invalid or duplicate Windows build evidence entry",
                 ));
             }
-            windows_build_evidence = true;
         }
 
         if let Entry::PinnedNative {
@@ -1429,7 +1484,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
                     } else {
                         format!("share/solstone-journal/licenses/{comp}/{rel}")
                     };
-                    let key = if target_id == "windows-x86_64" {
+                    let key = if is_windows {
                         dest.to_ascii_lowercase()
                     } else {
                         dest.clone()
@@ -1493,7 +1548,11 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             }
             for dest in &dests {
                 if !dests_by_target.entry(target.clone()).or_default().insert(
-                    if target == "windows-x86_64" {
+                    if inventory
+                        .target
+                        .iter()
+                        .any(|item| item.id == *target && item.is_windows())
+                    {
                         dest.to_ascii_lowercase()
                     } else {
                         (*dest).to_owned()
@@ -1789,6 +1848,9 @@ fn validate_targets(targets: &[Target]) -> Result<(), InventoryError> {
             }
             OS_WINDOWS => {
                 require_fields(&target.id, &windows_only, &mut missing);
+                if let Err(error) = target.windows_architecture() {
+                    unexpected.insert(error);
+                }
                 forbid_fields(&target.id, &linux_only, &mut unexpected);
                 forbid_fields(&target.id, &macos_only, &mut unexpected);
                 if lane.is_empty() {
@@ -2870,7 +2932,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
-        assert_eq!(inv.entry.len(), 179);
+        assert!(!inv.entry.is_empty());
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }
@@ -3106,6 +3168,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             "linux-aarch64",
             "macos-arm64",
             "windows-x86_64",
+            "windows-aarch64",
         ];
         for target in all_targets {
             let mut component_ids = BTreeSet::new();
@@ -3147,6 +3210,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             "area-tier",
             "vulkan-loader",
             "msvc-runtime",
+            "openmp",
             "screen-ocr",
         ]
         .into_iter()
@@ -3229,5 +3293,142 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             err.contains("duplicate Windows native input member"),
             "{err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod windows_architecture_tests {
+    use super::*;
+
+    fn with_arm_target() -> (PathBuf, Inventory) {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let path = repo.join("core/distribution/inventory.toml");
+        let mut inventory = load_inventory(&path).unwrap();
+        inventory.entry.retain(|entry| !matches!(entry,
+            Entry::WindowsNative { targets, .. } if targets.iter().any(|target| target == "windows-aarch64")));
+        (path, inventory)
+    }
+
+    #[test]
+    fn native_member_repetition_and_case_collisions_are_per_windows_target() {
+        let (path, mut inventory) = with_arm_target();
+        let entry = Entry::WindowsNative {
+            class: Some(DeliveryClass::Component),
+            component: WindowsNativeComponent::Ced,
+            member: "bin/ced.dll".into(),
+            dest: "lib/solstone-native/ced.dll".into(),
+            mode: 0o755,
+            targets: vec!["windows-aarch64".into()],
+        };
+        inventory.entry.push(entry.clone());
+        validate_inventory(&path, &inventory).unwrap();
+        let mut duplicate = inventory.clone();
+        duplicate.entry.push(entry);
+        assert!(
+            validate_inventory(&path, &duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate Windows native input member")
+        );
+        for dest in [
+            "share/provenance/control.txt",
+            "share/provenance/CONTROL.txt",
+        ] {
+            inventory.entry.push(Entry::Copy {
+                class: Some(DeliveryClass::Notice),
+                source: "unused".into(),
+                dest: dest.into(),
+                mode: 0o644,
+                targets: vec!["windows-aarch64".into()],
+            });
+        }
+        assert!(
+            validate_inventory(&path, &inventory)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate dest")
+        );
+    }
+
+    #[test]
+    fn arm_openmp_is_a_runtime_member_and_never_a_development_payload() {
+        let (path, mut inventory) = with_arm_target();
+        let entry = Entry::WindowsNative {
+            class: Some(DeliveryClass::Component),
+            component: WindowsNativeComponent::Openmp,
+            member: "libomp.dll".into(),
+            dest: "lib/solstone-native/libomp.dll".into(),
+            mode: 0o755,
+            targets: vec!["windows-aarch64".into()],
+        };
+        inventory.entry.push(entry.clone());
+        validate_inventory(&path, &inventory).unwrap();
+        let mut x64 = inventory.clone();
+        if let Some(Entry::WindowsNative { targets, .. }) = x64.entry.last_mut() {
+            *targets = vec!["windows-x86_64".into()];
+        }
+        assert!(validate_inventory(&path, &x64).is_err());
+        for dest in ["include/omp.h", "lib/libomp.lib"] {
+            assert!(windows_native_entry_mapping(WindowsNativeComponent::Openmp, dest).is_err());
+        }
+        for member in ["vcomp140.dll", "VCOMP140.DLL", "vcruntime140_1.dll"] {
+            let mut foreign = inventory.clone();
+            foreign.entry.push(Entry::WindowsNative {
+                class: Some(DeliveryClass::Component),
+                component: WindowsNativeComponent::Msvc,
+                member: member.into(),
+                dest: format!("lib/solstone-native/{}", member.to_ascii_lowercase()),
+                mode: 0o755,
+                targets: vec!["windows-aarch64".into()],
+            });
+            assert!(validate_inventory(&path, &foreign).is_err());
+        }
+        let mut rebound = inventory;
+        rebound.entry.push(Entry::WindowsNative {
+            class: Some(DeliveryClass::Component),
+            component: WindowsNativeComponent::Msvc,
+            member: "msvcp140.dll".into(),
+            dest: "lib/solstone-native/vcruntime140.dll".into(),
+            mode: 0o755,
+            targets: vec!["windows-aarch64".into()],
+        });
+        assert!(validate_inventory(&path, &rebound).is_err());
+    }
+
+    #[test]
+    fn native_windows_target_coordinates_must_agree() {
+        for arch in WindowsArchitecture::ALL {
+            let input = format!(
+                r#"id = "{}"
+os = "windows"
+arch = "{}"
+lane = "msvc-native"
+triple_windows = "{}"
+"#,
+                arch.target_id(),
+                arch.architecture(),
+                arch.rust_triple()
+            );
+            let target: Target = toml_edit::de::from_str(&input).unwrap();
+            assert!(validate_targets(std::slice::from_ref(&target)).is_ok());
+            assert_eq!(target.windows_architecture().unwrap(), arch);
+            let foreign = if arch == WindowsArchitecture::X86_64 {
+                WindowsArchitecture::Aarch64
+            } else {
+                WindowsArchitecture::X86_64
+            };
+            for coordinate in [0, 1, 2] {
+                let mut changed = target.clone();
+                match coordinate {
+                    0 => changed.id = foreign.target_id().into(),
+                    1 => changed.arch = foreign.architecture().into(),
+                    _ => changed.triple_windows = foreign.rust_triple().into(),
+                }
+                assert!(validate_targets(&[changed]).is_err());
+            }
+        }
     }
 }

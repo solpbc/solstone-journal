@@ -1,0 +1,42 @@
+[
+  {
+    "label": "cmake/bin/cmake-gui.exe",
+    "size": 27486280,
+    "sha256": "29cbb89b91bb9bf3a382ecc4d45bdb46d611ac3c77db4931790859dda2c13a94"
+  },
+  {
+    "label": "cmake/bin/cmake.exe",
+    "size": 12114504,
+    "sha256": "f3a124ad60459b56b2a5b4e312b0cd5de56d5b1fcf2921f8f602fb531b0da10d"
+  },
+  {
+    "label": "cmake/bin/cmcldeps.exe",
+    "size": 1808464,
+    "sha256": "cfcf73a0ead9706e47f7457dd4333d1bb8cb6fbe333e95d70ca5646b4e8bd3cc"
+  },
+  {
+    "label": "cmake/bin/cpack.exe",
+    "size": 12202576,
+    "sha256": "d5ef2ccb2dfbdb1f1c50a32e79231a1c874a78773205491ef511180eda73d0ba"
+  },
+  {
+    "label": "cmake/bin/ctest.exe",
+    "size": 13037136,
+    "sha256": "3c15bc788bb6921748d3983648b3742ba3b925413052d872048fbe087499feea"
+  },
+  {
+    "label": "protoc/bin/protoc.exe",
+    "size": 8156748,
+    "sha256": "6edb2a02f51f65b3e2e8086a643aac5254b11d71d7d9f55387b475af696c76e5"
+  },
+  {
+    "label": "python/python.exe",
+    "size": 104952,
+    "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+  },
+  {
+    "label": "python/pythonw.exe",
+    "size": 104304,
+    "sha256": "d72294fb338bc2fc8896d25a7395a4db466425427e1559e77185d5135a830681"
+  }
+]

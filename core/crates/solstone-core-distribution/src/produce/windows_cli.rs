@@ -4,6 +4,7 @@
 //! Local Windows production from fixed, typed input paths. Input files provide
 //! no digests, output destinations, trust overrides or new admission authority.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -13,7 +14,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::windows_archives::{admit_msvc, admit_pdfium, admit_rclone, admit_restic};
-use super::windows_build::{build_windows_product, capture_source, read_bounded};
+use super::windows_build::{build_windows_product_for_architecture, capture_source, read_bounded};
 use super::windows_inputs::{
     ControlledInputPaths, LlamaInputPaths, NvattestInputPaths, OnnxInputPaths, RfdetrInputPaths,
     admit_ced, admit_ffmpeg_notices, admit_llama, admit_nvattest, admit_onnx, admit_parakeet,
@@ -21,7 +22,9 @@ use super::windows_inputs::{
 };
 use super::windows_stage::{AdmittedWindowsNativeInputs, stage_windows_payload};
 
-const USAGE: &str = "produce windows-x86_64 DEST --inputs LOCAL_JSON --logs FRESH_DIRECTORY (absolute paths required)";
+mod arm64;
+
+const USAGE: &str = "produce WINDOWS_TARGET DEST --inputs LOCAL_JSON --logs FRESH_DIRECTORY (absolute paths required)";
 
 #[derive(Debug, Deserialize)]
 struct LockPackage {
@@ -342,6 +345,30 @@ fn validate_rust_notices(
     Ok(())
 }
 
+fn validate_arm_rust_notices(
+    index: &[u8],
+    notices: &[u8],
+    lock: &[u8],
+    repo: &Path,
+) -> Result<(), String> {
+    let index: serde_json::Value = serde_json::from_slice(index).map_err(|e| e.to_string())?;
+    let expected = WindowsArchitecture::Aarch64;
+    let tree = patched_velopack_tree_sha256(&repo.join("core/vendor/velopack"))?;
+    if index["schema"] != "solstone.rust-notices.v1"
+        || index["target"] != expected.target_id()
+        || index["filter_platform"] != expected.rust_triple()
+        || index["shipped_feature_arguments"]
+            != serde_json::json!(super::shipped_core_feature_args())
+        || index["cargo_lock_sha256"] != crate::digest::sha256_hex(lock)
+        || index["notices_sha256"] != crate::digest::sha256_hex(notices)
+        || index["path_dependency_trees"]
+            != serde_json::json!({"velopack@1.2.0 (path+core/vendor/velopack)": tree})
+    {
+        return Err("Windows ARM Rust notices do not match the target, lock, shipped features, notice bytes and patched Velopack tree".into());
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 struct InputPath(PathBuf);
 
@@ -483,8 +510,12 @@ struct LocalInputs {
 }
 
 impl LocalInputs {
-    fn admit(&self, repo: &Path) -> Result<AdmittedWindowsNativeInputs, String> {
-        let msvc_input = admit_msvc(&self.msvc.archive.0, &self.msvc.runtime_license.0)?;
+    fn admit(
+        &self,
+        repo: &Path,
+        expected: WindowsArchitecture,
+    ) -> Result<AdmittedWindowsNativeInputs, String> {
+        let msvc_input = admit_msvc(&self.msvc.archive.0, &self.msvc.runtime_license.0, expected)?;
         let msvcp140 = msvc_input
             .outputs()
             .get("msvcp140.dll")
@@ -544,14 +575,93 @@ impl LocalInputs {
                 },
             )?,
         ];
-        AdmittedWindowsNativeInputs::from_controlled(controlled)?.with_archives(vec![
-            admit_restic(&self.restic.archive.0, &self.restic.license.0)?,
-            admit_rclone(&self.rclone.archive.0, &self.rclone.license.0)?,
+        AdmittedWindowsNativeInputs::from_controlled(controlled, expected)?.with_archives(vec![
+            admit_restic(&self.restic.archive.0, &self.restic.license.0, expected)?,
+            admit_rclone(&self.rclone.archive.0, &self.rclone.license.0, expected)?,
             msvc_input,
-            admit_pdfium(&self.pdfium_archive.0)?,
+            admit_pdfium(&self.pdfium_archive.0, expected)?,
             admit_ffmpeg_notices(repo, &self.ffmpeg_archive.0)?,
         ])
     }
+}
+
+enum LocalWindowsInputs {
+    X64(Box<LocalInputs>),
+    Arm64(Box<arm64::LocalInputs>),
+}
+
+impl LocalWindowsInputs {
+    fn decode(bytes: &[u8], expected: WindowsArchitecture) -> Result<Self, String> {
+        match expected {
+            WindowsArchitecture::X86_64 => serde_json::from_slice(bytes).map(Self::X64),
+            WindowsArchitecture::Aarch64 => serde_json::from_slice(bytes).map(Self::Arm64),
+        }
+        .map_err(|error| error.to_string())
+    }
+
+    fn admit(&self, repo: &Path) -> Result<AdmittedWindowsNativeInputs, String> {
+        match self {
+            Self::X64(inputs) => inputs.admit(repo, WindowsArchitecture::X86_64),
+            Self::Arm64(inputs) => inputs.admit(repo),
+        }
+    }
+
+    fn ffmpeg_archive(&self) -> &Path {
+        match self {
+            Self::X64(inputs) => &inputs.ffmpeg_archive.0,
+            Self::Arm64(inputs) => inputs.ffmpeg_archive(),
+        }
+    }
+}
+
+const VERIFY_USAGE: &str = "windows-native-inputs verify WINDOWS_TARGET --inputs ABSOLUTE_JSON";
+
+fn parse_verify_args(args: &[String]) -> Result<(WindowsArchitecture, PathBuf), String> {
+    let [operation, target, flag, path] = args else {
+        return Err(VERIFY_USAGE.into());
+    };
+    if operation != "verify" || flag != "--inputs" {
+        return Err(VERIFY_USAGE.into());
+    }
+    let expected = WindowsArchitecture::from_target_id(target).ok_or(VERIFY_USAGE)?;
+    let path = PathBuf::from(path);
+    require_absolute(&path)?;
+    Ok((expected, path))
+}
+
+/// Reuse the producer's complete native-input admission without launching a
+/// builder, staging a package, or replacing any historical receipt.
+pub fn run_verify_cli(start: &Path, args: &[String]) -> Result<String, String> {
+    let (expected, input_path) = parse_verify_args(args)?;
+    let inventory_path = crate::inventory::repository_inventory_path(start)
+        .ok_or("could not locate canonical distribution inventory")?;
+    let inventory =
+        crate::validate_distribution_inventory(&inventory_path).map_err(|e| e.to_string())?;
+    let target = inventory
+        .target
+        .iter()
+        .find(|target| target.id == expected.target_id())
+        .ok_or("requested Windows target is not in the committed inventory")?;
+    if target.windows_architecture()? != expected {
+        return Err("Windows input target differs from the committed inventory".into());
+    }
+    let repo = inventory_path
+        .ancestors()
+        .nth(3)
+        .ok_or("missing repository root")?;
+    let before = capture_source(repo)?;
+    let input_bytes = read_bounded(&input_path, 1024 * 1024)?;
+    let inputs = LocalWindowsInputs::decode(&input_bytes, expected)?;
+    let _admitted = inputs.admit(repo)?;
+    if capture_source(repo)? != before {
+        return Err("product source changed during native input admission".into());
+    }
+    serde_json::to_string(&serde_json::json!({
+        "target": expected.target_id(), "source": before,
+        "input_paths_sha256": crate::digest::sha256_hex(&input_bytes),
+        "admitted": true, "produced": false, "signed": false,
+    }))
+    .map_err(|e| e.to_string())
 }
 
 #[derive(Debug)]
@@ -597,7 +707,11 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
 /// The reviewed native wrapper owns the existing host fence, finite wait,
 /// isolated tool environment and cleanup evidence. Build tools remain Unowned.
 /// This command produces an unsigned local tree; it cannot sign or promote it.
-pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
+pub fn run_cli(
+    start: &Path,
+    args: &[String],
+    expected: WindowsArchitecture,
+) -> Result<String, String> {
     let args = parse_args(args)?;
     if !cfg!(windows) {
         return Err("Windows production requires its native MSVC host".into());
@@ -633,13 +747,41 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
         &lock_bytes,
         repo,
     )?;
+    if expected == WindowsArchitecture::Aarch64 {
+        validate_arm_rust_notices(
+            &read_bounded(
+                &super::windows_stage::join_components(
+                    repo,
+                    "core/distribution/windows-aarch64-rust-sources.json",
+                ),
+                4 * 1024 * 1024,
+            )?,
+            &read_bounded(
+                &super::windows_stage::join_components(
+                    repo,
+                    "core/distribution/windows-aarch64-rust-NOTICES.txt",
+                ),
+                16 * 1024 * 1024,
+            )?,
+            &lock_bytes,
+            repo,
+        )?;
+    }
     assert_no_source_population_is_accounted_for(
         &lock_bytes,
         &workspace_owned_crate_names(repo)?,
         repo,
     )?;
     let input_bytes = read_bounded(&args.inputs, 1024 * 1024)?;
-    let inputs: LocalInputs = serde_json::from_slice(&input_bytes).map_err(|e| e.to_string())?;
+    let inputs = LocalWindowsInputs::decode(&input_bytes, expected)?;
+    let target = inventory
+        .target
+        .iter()
+        .find(|target| target.id == expected.target_id())
+        .ok_or("missing Windows producer target")?;
+    if target.windows_architecture()? != expected {
+        return Err("Windows production target differs from the committed inventory".into());
+    }
     let native = inputs.admit(repo)?;
     if capture_source(repo)? != before {
         return Err("product source changed during native input admission".into());
@@ -647,7 +789,13 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
     let candidate_version =
         super::workspace_version(&repo.join("core/Cargo.toml")).map_err(|e| e.to_string())?;
     super::windows_stage::refuse_unupdated_windows_predecessor(&candidate_version)?;
-    let product = build_windows_product(repo, &inventory, &args.logs, &inputs.ffmpeg_archive.0)?;
+    let product = build_windows_product_for_architecture(
+        repo,
+        &inventory,
+        &args.logs,
+        inputs.ffmpeg_archive(),
+        expected,
+    )?;
     // Retain the actual operator file, including original spelling, independently
     // of the inventory and original dependency receipts. No input file is a grant.
     let mut retained_inputs = OpenOptions::new()
@@ -664,7 +812,7 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
     // Informational command output. The existing unsigned manifest remains the
     // payload identity; this summary never admits a replacement tree or bytes.
     serde_json::to_string(&serde_json::json!({
-        "target": "windows-x86_64",
+        "target": expected.target_id(),
         "source": product.evidence().source,
         "destination": published.destination,
         "unsigned_manifest_sha256": staged.unsigned_manifest_sha256,
@@ -682,6 +830,86 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arm_rust_notices_refuse_foreign_or_stale_bindings() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let index = include_bytes!("../../../../distribution/windows-aarch64-rust-sources.json");
+        let notices = include_bytes!("../../../../distribution/windows-aarch64-rust-NOTICES.txt");
+        let lock = include_bytes!("../../../../Cargo.lock");
+        validate_arm_rust_notices(index, notices, lock, repo).unwrap();
+        for (field, value) in [
+            (
+                "schema",
+                serde_json::json!("solstone.windows-rust-notices.v2"),
+            ),
+            ("target", serde_json::json!("windows-x86_64")),
+            (
+                "filter_platform",
+                serde_json::json!("x86_64-pc-windows-msvc"),
+            ),
+            ("shipped_feature_arguments", serde_json::json!([])),
+            ("cargo_lock_sha256", serde_json::json!("0".repeat(64))),
+            ("path_dependency_trees", serde_json::json!({})),
+        ] {
+            let mut changed: serde_json::Value = serde_json::from_slice(index).unwrap();
+            changed[field] = value;
+            assert!(
+                validate_arm_rust_notices(
+                    &serde_json::to_vec(&changed).unwrap(),
+                    notices,
+                    lock,
+                    repo
+                )
+                .is_err(),
+                "{field}"
+            );
+        }
+        assert!(validate_arm_rust_notices(index, b"changed", lock, repo).is_err());
+        assert!(validate_arm_rust_notices(index, notices, b"changed", repo).is_err());
+    }
+
+    #[test]
+    fn admission_only_cli_has_a_closed_target_and_path_contract() {
+        let path = std::env::current_dir().unwrap().join("inputs.json");
+        let valid = vec![
+            "verify".into(),
+            "windows-x86_64".into(),
+            "--inputs".into(),
+            path.to_string_lossy().into_owned(),
+        ];
+        let (arch, parsed) = parse_verify_args(&valid).unwrap();
+        assert_eq!(arch, WindowsArchitecture::X86_64);
+        assert_eq!(parsed, path);
+        for changed in [
+            vec!["verify", "windows-x86_64", "--inputs", "relative.json"],
+            vec![
+                "verify",
+                "windows-x86_64",
+                "--inputs",
+                "/tmp/../inputs.json",
+            ],
+            vec!["verify", "linux-x86_64", "--inputs", "/tmp/inputs.json"],
+            vec!["record", "windows-x86_64", "--inputs", "/tmp/inputs.json"],
+            vec!["verify", "windows-x86_64", "--trust", "/tmp/inputs.json"],
+            vec!["verify", "windows-x86_64", "--inputs"],
+            vec![
+                "verify",
+                "windows-x86_64",
+                "--inputs",
+                "/tmp/inputs.json",
+                "extra",
+            ],
+        ] {
+            assert!(
+                parse_verify_args(&changed.into_iter().map(str::to_owned).collect::<Vec<_>>())
+                    .is_err()
+            );
+        }
+    }
 
     // If this test is red, the external (non-workspace) Cargo.lock package
     // population moved and the Windows Rust notices no longer describe it.
@@ -1198,11 +1426,13 @@ version = "1.2.0"
     #[test]
     fn non_native_run_refuses_before_input_read_or_output_creation() {
         let root = tempfile::tempdir().unwrap();
-        assert!(
-            run_cli(root.path(), &arguments(root.path()))
-                .unwrap_err()
-                .contains("native MSVC host")
-        );
+        for architecture in WindowsArchitecture::ALL {
+            assert!(
+                run_cli(root.path(), &arguments(root.path()), architecture)
+                    .unwrap_err()
+                    .contains("native MSVC host")
+            );
+        }
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
 }
