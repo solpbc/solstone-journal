@@ -1662,6 +1662,7 @@ mod tests {
 
             let bin_meta =
                 std::fs::metadata(tmp.path().join("lib/solstone-nvattest/bin/nvattest")).unwrap();
+            assert!(bin_meta.is_file());
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;

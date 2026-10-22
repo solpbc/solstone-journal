@@ -386,7 +386,7 @@ pub enum ControlledBuildReceiptPersistenceError {
     },
     Publish {
         destination: PathBuf,
-        source: DetailedAtomicError,
+        source: Box<DetailedAtomicError>,
     },
     Read {
         path: PathBuf,
@@ -435,7 +435,7 @@ impl std::error::Error for ControlledBuildReceiptPersistenceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Encode { source, .. } | Self::Decode { source, .. } => Some(source),
-            Self::Publish { source, .. } => Some(source),
+            Self::Publish { source, .. } => Some(source.as_ref()),
             Self::Read { source, .. } => Some(source),
         }
     }
@@ -461,7 +461,7 @@ pub fn write_controlled_build_receipt_exclusive(
         write_bytes_exclusive_detailed(&destination, &bytes, AtomicWriteOptions::default())
             .map_err(|source| ControlledBuildReceiptPersistenceError::Publish {
                 destination: destination.clone(),
-                source,
+                source: Box::new(source),
             })?;
     Ok(classify_receipt_publication(
         destination,
@@ -973,18 +973,32 @@ mod tests {
 
     #[test]
     fn controlled_build_receipt_writer_refuses_existing_final_without_changing_bytes() {
+        use std::error::Error;
+
         let temporary = tempfile::tempdir().expect("temporary directory");
         let path = temporary.path().join("receipt.json");
         let existing = b"other writer owns this final";
         fs::write(&path, existing).expect("existing receipt");
         let error = write_controlled_build_receipt_exclusive(&path, &receipt_with_real_pe_census())
             .expect_err("existing final must refuse");
-        match error {
+        assert!(error.to_string().contains("publication failed"));
+        match &error {
             ControlledBuildReceiptPersistenceError::Publish { source, .. } => {
                 assert_eq!(source.source.kind(), io::ErrorKind::AlreadyExists);
             }
             other => panic!("expected publication refusal, got {other:?}"),
         }
+        let detailed = error
+            .source()
+            .expect("DetailedAtomicError present in source chain")
+            .downcast_ref::<DetailedAtomicError>()
+            .expect("source is DetailedAtomicError");
+        let io_err = detailed
+            .source()
+            .expect("io::Error present in source chain")
+            .downcast_ref::<io::Error>()
+            .expect("inner source is io::Error");
+        assert_eq!(io_err.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(fs::read(&path).expect("existing bytes"), existing);
     }
 
