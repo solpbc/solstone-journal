@@ -1225,7 +1225,7 @@ pub fn judge(
     coverage: &WindowsCoverageReport,
     owner_evidence: Option<&OwnerEvidenceSnapshot>,
     binding: &SourceBinding,
-) -> Result<(), String> {
+) -> Result<BTreeSet<String>, String> {
     if plan.items.is_empty() {
         return Err("plan is empty".to_owned());
     }
@@ -1396,7 +1396,14 @@ pub fn judge(
         ));
     }
 
-    Ok(())
+    // Acknowledgements may cover several suites. Return them only after the
+    // complete report is admitted, once per shared acknowledgement.
+    Ok(plan
+        .items
+        .iter()
+        .filter(|item| item.status == PlanStatus::Ready)
+        .filter_map(|item| item.policy.as_ref()?.acknowledgement.clone())
+        .collect())
 }
 
 #[cfg(test)]
@@ -2028,6 +2035,27 @@ mod tests {
 
         // 1. Valid passes
         assert!(judge(&plan, &valid_coverage, None, &binding).is_ok());
+
+        let mut shared_plan = plan.clone();
+        shared_plan.items[0].policy = Some(
+            serde_json::from_str(
+                r#"{"satisfaction":"cargo","acknowledgement":"SHARED_RUNTIME=executed/pass"}"#,
+            )
+            .unwrap(),
+        );
+        let mut second = shared_plan.items[0].clone();
+        second.id = "pkg-b::test_win".to_owned();
+        shared_plan.items.push(second);
+        let mut shared_coverage = valid_coverage.clone();
+        let mut second_row = shared_coverage.rows[0].clone();
+        second_row.suite_id = "pkg-b::test_win".to_owned();
+        shared_coverage.rows.push(second_row);
+        assert_eq!(
+            judge(&shared_plan, &shared_coverage, None, &binding).unwrap(),
+            BTreeSet::from(["SHARED_RUNTIME=executed/pass".to_owned()])
+        );
+        shared_coverage.rows[1].disposition = WindowsDisposition::Failed;
+        assert!(judge(&shared_plan, &shared_coverage, None, &binding).is_err());
 
         // 2. Empty plan fails
         let empty_plan = WindowsPlan { items: vec![] };

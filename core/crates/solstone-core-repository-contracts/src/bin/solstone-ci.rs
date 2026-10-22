@@ -598,11 +598,6 @@ fn execute_windows_run(
                         };
                         println!("WIN_SUITE {} disposition={disp_str}", item.id);
                     } else {
-                        if let Some(ref policy) = item.policy
-                            && let Some(ref ack) = policy.acknowledgement
-                        {
-                            println!("{ack}");
-                        }
                         println!("WIN_SUITE {} disposition=passed", item.id);
                     }
 
@@ -655,7 +650,7 @@ fn execute_windows_run(
         )
     })?;
 
-    judge(plan, &report, owner_evidence.as_ref(), &binding)?;
+    let acknowledgements = judge(plan, &report, owner_evidence.as_ref(), &binding)?;
 
     if let Some(vars_path) = evidence_vars_path {
         let backup = report
@@ -683,7 +678,14 @@ fn execute_windows_run(
         })?;
     }
 
-    if any_failed { Ok(1) } else { Ok(0) }
+    if any_failed {
+        Ok(1)
+    } else {
+        for acknowledgement in acknowledgements {
+            println!("{acknowledgement}");
+        }
+        Ok(0)
+    }
 }
 
 fn validate_all(repo: &Path, registry_path: &Path) -> Result<(), String> {
