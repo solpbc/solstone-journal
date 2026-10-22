@@ -168,7 +168,7 @@ mod service_legacy_tests {
 
     #[test]
     fn exact_legacy_writer_units_are_selected_for_republish_and_dropins_are_rejected() {
-        let temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let temp = tempfile::tempdir().unwrap();
         let home = temp.path();
         let legacy_launcher = home.join(".local/bin/journal");
 

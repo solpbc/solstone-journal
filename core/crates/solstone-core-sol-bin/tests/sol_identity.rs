@@ -261,14 +261,8 @@ fn run_program(program: &Path, args: &[&str], path: &Path, journal: Option<&Path
     command.output().expect("solstone-core should execute")
 }
 
-fn assert_same_output(alias: &Output, canonical: &Output, invocation: &str) {
-    assert_eq!(alias.status.code(), canonical.status.code(), "{invocation}");
-    assert_eq!(alias.stdout, canonical.stdout, "{invocation}");
-    assert_eq!(alias.stderr, canonical.stderr, "{invocation}");
-}
-
 #[test]
-fn journal_alias() {
+fn public_journal_alias_is_a_notice() {
     let temp = TempDir::new("journal-namespace");
     let (path, sentinel) = poison_path(&temp);
     let alias = journal_alias(&temp);
