@@ -236,6 +236,10 @@ The macos journal's speech helper (`bin/parakeet-helper`) compiles in
 FluidAudio 0.17.7 by FluidInference
 (https://github.com/FluidInference/FluidAudio/tree/v0.17.7, commit
 `503b4bd1bbf7220882de39fe8ae6716aae4132da`), under the Apache License 2.0.
+The helper uses sol pbc's leading-gap repair backport, version `0.17.7+sol.1`,
+pinned at `03e48b07ab136062987f157b6ed84ebc8f5eb204` in
+https://github.com/quartzjer/FluidAudio. The patch retries missing opening speech;
+it does not change the model files or license texts.
 FluidAudio includes code adapted from fastcluster (BSD-2-Clause), VBx
 (Apache-2.0) and a Japanese text frontend drawn from MIT, Apache-2.0 and BSD
 sources. The helper is built without FluidAudio's optional NeMo

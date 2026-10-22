@@ -9,8 +9,8 @@ let package = Package(
     ],
     dependencies: [
         .package(
-            url: "https://github.com/FluidInference/FluidAudio.git",
-            exact: "0.17.7",
+            url: "https://github.com/quartzjer/FluidAudio.git",
+            revision: "03e48b07ab136062987f157b6ed84ebc8f5eb204",
             traits: []
         )
     ],

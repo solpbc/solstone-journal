@@ -2,6 +2,10 @@
 
 Swift helper for the Parakeet v3 STT backend in solstone.
 
+The helper pins FluidAudio 0.17.7 with a small patch that retries missing speech
+before the first surviving word in a long recording. The patch is pinned by
+commit in `Package.swift`; the installed models are unchanged.
+
 The helper loads installed model files through Core ML. Model installation and
 repair belong to `solstone journal install-models`; to replace damaged files, use
 `solstone journal install-models --force --variant coreml`. A load failure leaves
@@ -56,7 +60,7 @@ Success emits one UTF-8 JSON object followed by `\n`:
     }
   ],
   "model_version": "parakeet-tdt-0.6b-v3",
-  "fluidaudio_version": "0.17.7",
+  "fluidaudio_version": "0.17.7+sol.1",
   "hardware": "MacBookPro18,3 / Apple M4 Max",
   "macos_version": "26.4.1",
   "swift_version": "Apple Swift version 6.3.1"
@@ -67,7 +71,7 @@ Success emits one UTF-8 JSON object followed by `\n`:
 
 ```json
 {
-  "fluidaudio_version": "0.17.7",
+  "fluidaudio_version": "0.17.7+sol.1",
   "model_version_default": "v3",
   "swift_version": "Apple Swift version 6.3.1",
   "hardware": "MacBookPro18,3 / Apple M4 Max",

@@ -12,6 +12,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on mac, local transcription now recovers opening words that it could silently leave out of a long recording. existing transcripts keep the words they have.
+
 - in your connections, plans inferred by older versions of your journal no longer count as events attended together.
 - in your connections, people linked only by a calendar invite no longer show as "events together" or "often around". they're now labeled "calendar only".
 - an entity you delete no longer shows up in connections, for you or for agents reading your journal. before, it could stay listed, and asking for its connections found no match.
