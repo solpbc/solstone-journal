@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! The two early segment skips whose applicability can be established again.
+//! Early segment skips whose applicability can be established again.
 //! Recovery also requires exact use receipts and the current segment
 //! publication/input guards. A prior output has no implicit retirement owner.
 
@@ -12,6 +12,8 @@ use crate::{
 };
 use serde_json::{Map, Value};
 use solstone_core_journal_io::paths::Segment;
+
+pub(crate) const DETECTION_INPUT_KEY: &str = "_empty_detection_input";
 
 fn request_stream(request: &Map<String, Value>) -> Result<&str, String> {
     match request.get("stream") {
@@ -42,6 +44,16 @@ pub fn skip_is_applicable(
             if talent == "screen" && reason == "missing_required_percepts" =>
         {
             "screen"
+        }
+        RuntimeOutcome::Skipped {
+            stage,
+            talent,
+            reason,
+        } if stage == "entities:detection"
+            && talent == "entities:detection"
+            && reason == "no_candidates" =>
+        {
+            "entities:detection"
         }
         _ => return Ok(false),
     };
@@ -90,17 +102,32 @@ pub fn skip_is_applicable(
     let segment = Segment::resolve_exact(&context.journal, day, stream, key)
         .map_err(|e| e.to_string())?
         .ok_or("conditional skip segment disappeared")?;
+    let output_name = if name == "entities:detection" {
+        "_entities_detection"
+    } else {
+        name
+    };
+    if name == "entities:detection"
+        && (request.get("output").and_then(Value::as_str) != Some("json")
+            || !request.contains_key("output_path"))
+    {
+        return Ok(false);
+    }
     if let Some(value) = request.get("output_path") {
         let path =
             std::path::Path::new(value.as_str().ok_or("conditional output path is invalid")?);
         if path.parent() != Some(segment.path().join("talents").as_path())
-            || path.file_stem().and_then(|v| v.to_str()) != Some(name)
+            || path.file_stem().and_then(|v| v.to_str()) != Some(output_name)
             || !matches!(
                 path.extension().and_then(|v| v.to_str()),
                 Some("json" | "md")
             )
         {
             return Err("conditional output target changed".into());
+        }
+        if name == "entities:detection" && path.extension().and_then(|v| v.to_str()) != Some("json")
+        {
+            return Err("conditional detection output format changed".into());
         }
     }
     if !output_absent(&context.journal, &segment, name)? {
@@ -117,6 +144,14 @@ pub fn skip_is_applicable(
         return Ok(prepared.config.get("skip_reason").is_none()
             && crate::documents::gate(&prepared, context).map_err(|e| e.to_string())?
                 == GateDecision::Skip("not a document import segment".into()));
+    }
+    if name == "entities:detection" {
+        let expected = request.get(DETECTION_INPUT_KEY).and_then(Value::as_str);
+        return Ok(prepared.config.get("skip_reason").is_none()
+            && expected.is_some()
+            && crate::entities::detection::no_candidates_input_binding(&prepared, context)?
+                .as_deref()
+                == expected);
     }
     Ok(prepared.config.get("skip_reason").and_then(Value::as_str)
         == Some("missing_required_percepts")
@@ -150,6 +185,16 @@ pub(crate) fn validate_skip(
             if talent == "screen" && reason == "missing_required_percepts" =>
         {
             "screen"
+        }
+        RuntimeOutcome::Skipped {
+            stage,
+            talent,
+            reason,
+        } if stage == "entities:detection"
+            && talent == "entities:detection"
+            && reason == "no_candidates" =>
+        {
+            "entities:detection"
         }
         _ => return outcome,
     };
@@ -249,8 +294,19 @@ fn output_absent(journal: &std::path::Path, segment: &Segment, name: &str) -> Re
                 .ok_or("conditional output name is not UTF-8")?;
             // A differently cased leaf can still be this output on Windows.
             let folded = file.to_uppercase();
-            let owner = name.to_ascii_uppercase();
-            if folded == owner || folded.starts_with(&format!("{owner}.")) {
+            let owners = if name == "entities:detection" {
+                vec![
+                    "_entities_detection",
+                    "detection_outcome",
+                    "entities:detection",
+                ]
+            } else {
+                vec![name]
+            };
+            if owners.into_iter().any(|name| {
+                let owner = name.to_ascii_uppercase();
+                folded == owner || folded.starts_with(&format!("{owner}."))
+            }) {
                 absent = false;
             }
         }
@@ -326,7 +382,16 @@ pub fn receipt_is_applicable(
         },
         _ => return Ok(false),
     };
-    skip_is_applicable(request, paths, context, &outcome)
+    if name == "entities:detection" {
+        let Some(binding) = start.get(DETECTION_INPUT_KEY).and_then(Value::as_str) else {
+            return Ok(false);
+        };
+        let mut request = request.clone();
+        request.insert(DETECTION_INPUT_KEY.into(), Value::from(binding));
+        skip_is_applicable(&request, paths, context, &outcome)
+    } else {
+        skip_is_applicable(request, paths, context, &outcome)
+    }
 }
 
 #[cfg(test)]
@@ -359,12 +424,20 @@ mod tests {
         for path in [&paths.talent_root, &paths.apps_root, &paths.templates_dir] {
             fs::create_dir_all(path).unwrap();
         }
-        let extra = if name == "documents" {
+        let extra = if name == "entities:detection" {
+            r#", "hook":{"pre":"entities:detection"}, "load":{"transcripts":true,"percepts":false,"talents":false}"#
+        } else if name == "documents" {
             r#", "hook":{"pre":"documents"}, "load":{"transcripts":true,"percepts":false,"talents":false}"#
         } else {
             r#", "load":{"transcripts":true,"percepts":"required","talents":false}"#
         };
-        fs::write(paths.talent_root.join(format!("{name}.md")), format!("{{\n\"type\":\"generate\",\"schedule\":\"segment\",\"output\":\"json\",\"max_output_tokens\":1024{extra}\n}}\nSegment record")).unwrap();
+        let talent_file = if name == "entities:detection" {
+            paths.apps_root.join("entities/talent/detection.md")
+        } else {
+            paths.talent_root.join(format!("{name}.md"))
+        };
+        fs::create_dir_all(talent_file.parent().unwrap()).unwrap();
+        fs::write(talent_file, format!("{{\n\"type\":\"generate\",\"schedule\":\"segment\",\"output\":\"json\",\"max_output_tokens\":1024{extra}\n}}\nSegment record")).unwrap();
         let context = ExecutionContext {
             journal: root.path().join("journal"),
         };
@@ -384,7 +457,9 @@ mod tests {
         fs::create_dir_all(directory.join("talents")).unwrap();
         fs::write(
             directory.join("talents/sense.json"),
-            r#"{"density":"active","content_type":"work"}"#,
+            if name == "entities:detection" {
+                r#"{"density":"active","content_type":"work","entities":[],"facets":[{"facet":"home"}]}"#
+            } else { r#"{"density":"active","content_type":"work"}"# },
         )
         .unwrap();
         fs::write(directory.join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"A sufficiently detailed synthetic meeting about the garden project.\"}\n").unwrap();
@@ -395,7 +470,12 @@ mod tests {
             talent: name.into(),
             direct: stream == solstone_core_journal_io::DEFAULT_STREAM,
         };
-        let mut request = json!({"name":name,"use_id":"conditional-use","day":"20260101","stream":stream,"segment":"090000_60","output_path":directory.join("talents").join(format!("{name}.json")),"_work_unit":unit}).as_object().unwrap().clone();
+        let output_name = if name == "entities:detection" {
+            "_entities_detection"
+        } else {
+            name
+        };
+        let mut request = json!({"name":name,"use_id":"conditional-use","day":"20260101","stream":stream,"segment":"090000_60","output":"json","output_path":directory.join("talents").join(format!("{output_name}.json")),"_work_unit":unit}).as_object().unwrap().clone();
         if stream == solstone_core_journal_io::DEFAULT_STREAM {
             request.remove("stream");
         }
@@ -447,6 +527,11 @@ mod tests {
     #[test]
     fn actual_conditional_skips_have_receipts_and_do_not_accumulate_retry_failures() {
         for (name, stream) in [
+            ("entities:detection", "notes"),
+            (
+                "entities:detection",
+                solstone_core_journal_io::DEFAULT_STREAM,
+            ),
             ("documents", "notes"),
             ("screen", "notes"),
             ("documents", solstone_core_journal_io::DEFAULT_STREAM),
@@ -456,8 +541,15 @@ mod tests {
             for _ in 0..6 {
                 let (outcome, events, calls) = run(&request, &paths, &context);
                 assert_eq!(calls, 0);
+                let mut validated = request.clone();
+                if name == "entities:detection" {
+                    validated.insert(
+                        DETECTION_INPUT_KEY.into(),
+                        events[1][DETECTION_INPUT_KEY].clone(),
+                    );
+                }
                 assert_eq!(
-                    skip_is_applicable(&request, &paths, &context, &outcome),
+                    skip_is_applicable(&validated, &paths, &context, &outcome),
                     Ok(true),
                     "{outcome:?}"
                 );
@@ -503,6 +595,361 @@ mod tests {
                     .held
             );
         }
+    }
+
+    #[test]
+    fn empty_detection_receipt_requires_exact_use_and_early_terminal() {
+        let (_root, paths, context, request) = fixture("entities:detection", "notes");
+        let (_, events, calls) = run(&request, &paths, &context);
+        assert_eq!(calls, 0);
+        let accept = |events: &[Value]| {
+            receipt_is_applicable(
+                events,
+                "conditional-use",
+                "entities:detection",
+                "20260101",
+                "notes",
+                "090000_60",
+                &paths,
+                &context,
+            )
+            .unwrap_or(false)
+        };
+        assert!(accept(&events));
+        for field in [
+            "use_id",
+            "name",
+            "day",
+            "stream",
+            "segment",
+            "output",
+            "output_path",
+        ] {
+            let mut changed = events.clone();
+            changed[0][field] = json!("changed");
+            assert!(!accept(&changed), "{field}");
+        }
+        for field in ["skip_reason", "stage", "name"] {
+            let mut changed = events.clone();
+            changed[2][field] = json!("unknown");
+            assert!(!accept(&changed), "{field}");
+        }
+        for reason in ["no_sense", "no_facets", "cancelled"] {
+            let mut changed = events.clone();
+            changed[2]["skip_reason"] = json!(reason);
+            assert!(!accept(&changed), "{reason}");
+        }
+        for field in ["output_path", "output"] {
+            let mut changed = events.clone();
+            changed[0].as_object_mut().unwrap().remove(field);
+            assert!(!accept(&changed), "missing {field}");
+        }
+        for field in ["SOL_DAY", "SOL_STREAM", "SOL_SEGMENT"] {
+            let mut changed = events.clone();
+            changed[0]["env"] =
+                json!({"SOL_DAY":"20260101","SOL_STREAM":"notes","SOL_SEGMENT":"090000_60"});
+            changed[0]["env"][field] = json!("changed");
+            assert!(!accept(&changed), "{field}");
+        }
+        let mut changed = events.clone();
+        changed[0]["_work_unit"]["day"] = json!("20260102");
+        assert!(!accept(&changed));
+        for event in ["generate_input", "generate", "error", "cancelled", "finish"] {
+            let mut changed = events.clone();
+            changed.insert(2, json!({"event":event}));
+            assert!(!accept(&changed), "{event}");
+        }
+        let mut changed = events.clone();
+        changed[2]["output"] = json!("unexpected");
+        assert!(!accept(&changed));
+        let mut changed = events.clone();
+        changed[1]["name"] = json!("wrong");
+        assert!(!accept(&changed));
+        for value in [Value::Null, json!("forged"), json!(123), json!({})] {
+            let mut changed = events.clone();
+            changed[1][DETECTION_INPUT_KEY] = value;
+            assert!(!accept(&changed));
+        }
+        let mut changed = events.clone();
+        changed[1]
+            .as_object_mut()
+            .unwrap()
+            .remove(DETECTION_INPUT_KEY);
+        assert!(!accept(&changed));
+    }
+
+    #[test]
+    fn empty_detection_internal_stamp_rechecks_start_boundary_and_discards_caller_value() {
+        struct AfterStart<F> {
+            bytes: Vec<u8>,
+            callback: Option<F>,
+        }
+        impl<F: FnOnce()> std::io::Write for AfterStart<F> {
+            fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+                self.bytes.extend_from_slice(data);
+                if self.callback.is_some()
+                    && self.bytes.last() == Some(&b'\n')
+                    && serde_json::from_slice::<Value>(&self.bytes)
+                        .is_ok_and(|v| v["event"] == "start")
+                {
+                    self.callback.take().unwrap()();
+                }
+                Ok(data.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        for change in ["unchanged", "sense", "raw", "cancel"] {
+            let (_root, paths, context, mut request) = fixture("entities:detection", "notes");
+            request.remove("_work_unit");
+            request.insert(DETECTION_INPUT_KEY.into(), json!("caller-forged-or-stale"));
+            let talents = std::path::Path::new(request["output_path"].as_str().unwrap())
+                .parent()
+                .unwrap();
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            let mut writer = AfterStart {
+                bytes: vec![],
+                callback: Some(|| {
+                    match change {
+                "sense" => fs::write(talents.join("sense.json"),r#"{"density":"active","content_type":"changed","entities":[],"facets":[{"facet":"home"}]}"#).unwrap(),
+                "raw" => fs::write(talents.parent().unwrap().join("audio.jsonl"),"{\"start\":\"00:00:01\",\"text\":\"Changed source during an empty detection.\"}\n").unwrap(),
+                "cancel" => cancel.store(true,Ordering::SeqCst),
+                _ => {},
+            }
+                }),
+            };
+            let outcome=crate::execute_request(request.clone(),&paths,&context,&|_: &GenerateRequest| -> Result<GenerateResponse,solstone_core_generate::ClientError> { panic!("empty detection must not Generate") },&mut writer,&Cancellation::from_fn(&||cancel.load(Ordering::SeqCst)));
+            assert!(writer.callback.is_none());
+            let start: Value = serde_json::from_slice(&writer.bytes).unwrap();
+            assert!(
+                start[DETECTION_INPUT_KEY]
+                    .as_str()
+                    .is_some_and(|s| s.len() == 64)
+            );
+            assert_ne!(start[DETECTION_INPUT_KEY], request[DETECTION_INPUT_KEY]);
+            if change == "unchanged" {
+                assert!(
+                    matches!(outcome,RuntimeOutcome::Skipped { ref reason,.. } if reason=="no_candidates")
+                );
+                crate::emit_outcome(&mut writer, outcome);
+                let mut events = vec![Value::Object(request.clone())];
+                events.extend(
+                    std::str::from_utf8(&writer.bytes)
+                        .unwrap()
+                        .lines()
+                        .map(|s| serde_json::from_str::<Value>(s).unwrap()),
+                );
+                assert!(
+                    receipt_is_applicable(
+                        &events,
+                        "conditional-use",
+                        "entities:detection",
+                        "20260101",
+                        "notes",
+                        "090000_60",
+                        &paths,
+                        &context
+                    )
+                    .unwrap()
+                );
+            } else if change == "cancel" {
+                assert!(matches!(outcome, RuntimeOutcome::Cancelled));
+            } else {
+                assert!(
+                    matches!(outcome, RuntimeOutcome::StageFailed(_)),
+                    "{change}: {outcome:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn empty_detection_receipt_does_not_rebind_changed_empty_sense_or_raw_source() {
+        let (_root, paths, context, request) = fixture("entities:detection", "notes");
+        let (_, events, _) = run(&request, &paths, &context);
+        let accept = || {
+            receipt_is_applicable(
+                &events,
+                "conditional-use",
+                "entities:detection",
+                "20260101",
+                "notes",
+                "090000_60",
+                &paths,
+                &context,
+            )
+            .unwrap_or(false)
+        };
+        assert!(accept());
+        let talents = std::path::Path::new(request["output_path"].as_str().unwrap())
+            .parent()
+            .unwrap();
+        let sense = talents.join("sense.json");
+        fs::write(&sense, r#"{"density":"active","content_type":"changed","entities":[],"facets":[{"facet":"home"}]}"#).unwrap();
+        assert!(
+            !accept(),
+            "an old no_candidates receipt cannot bind changed empty Sense"
+        );
+        let (_, current, _) = run(&request, &paths, &context);
+        assert!(
+            receipt_is_applicable(
+                &current,
+                "conditional-use",
+                "entities:detection",
+                "20260101",
+                "notes",
+                "090000_60",
+                &paths,
+                &context
+            )
+            .unwrap()
+        );
+        fs::write(talents.parent().unwrap().join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"A changed source with no newly identified person.\"}\n").unwrap();
+        assert!(
+            !receipt_is_applicable(
+                &current,
+                "conditional-use",
+                "entities:detection",
+                "20260101",
+                "notes",
+                "090000_60",
+                &paths,
+                &context
+            )
+            .unwrap_or(false)
+        );
+    }
+
+    #[test]
+    fn empty_detection_refuses_malformed_or_changed_sense_and_prior_outputs() {
+        let (_root, paths, context, request) = fixture("entities:detection", "notes");
+        let (_, events, _) = run(&request, &paths, &context);
+        let accept = || {
+            receipt_is_applicable(
+                &events,
+                "conditional-use",
+                "entities:detection",
+                "20260101",
+                "notes",
+                "090000_60",
+                &paths,
+                &context,
+            )
+            .unwrap_or(false)
+        };
+        let talents = std::path::Path::new(request["output_path"].as_str().unwrap())
+            .parent()
+            .unwrap();
+        let sense = talents.join("sense.json");
+        let original = fs::read(&sense).unwrap();
+        for invalid in [
+            json!(null),
+            json!({}),
+            json!({"entities":null,"facets":[{"facet":"home"}]}),
+            json!({"entities":{},"facets":[{"facet":"home"}]}),
+            json!({"entities":[1],"facets":[{"facet":"home"}]}),
+            json!({"entities":[{"name":"Person"}],"facets":[{"facet":"home"}]}),
+            json!({"entities":[],"facets":[]}),
+            json!({"entities":[],"facets":[{"facet":"home"},null]}),
+            json!({"entities":[],"facets":[{"facet":"home"},{}]}),
+            json!({"entities":[],"facets":[{"facet":" "}]}),
+        ] {
+            fs::write(&sense, invalid.to_string()).unwrap();
+            assert!(!accept(), "{invalid}");
+        }
+        fs::write(&sense, b"malformed").unwrap();
+        assert!(!accept());
+        fs::remove_file(&sense).unwrap();
+        assert!(!accept());
+        fs::create_dir(&sense).unwrap();
+        assert!(!accept());
+        fs::remove_dir(&sense).unwrap();
+        fs::write(&sense, vec![b' '; 4 * 1024 * 1024 + 1]).unwrap();
+        assert!(!accept());
+        fs::write(&sense, &original).unwrap();
+        assert!(
+            !accept(),
+            "restoring bytes does not restore the original input identity"
+        );
+        let (_, fresh, _) = run(&request, &paths, &context);
+        let accept = || {
+            receipt_is_applicable(
+                &fresh,
+                "conditional-use",
+                "entities:detection",
+                "20260101",
+                "notes",
+                "090000_60",
+                &paths,
+                &context,
+            )
+            .unwrap_or(false)
+        };
+        assert!(accept());
+        for leaf in [
+            "_entities_detection.json",
+            "_ENTITIES_DETECTION.JSON",
+            "detection_outcome.json",
+            "DETECTION_OUTCOME.JSON",
+            "detection_outcome.json.sources.json",
+        ] {
+            let path = talents.join(leaf);
+            let old = b"prior owner bytes";
+            fs::write(&path, old).unwrap();
+            assert!(!accept(), "{leaf}");
+            let (outcome, _, calls) = run(&request, &paths, &context);
+            assert!(matches!(outcome, RuntimeOutcome::StageFailed(_)));
+            assert_eq!(calls, 0);
+            assert_eq!(fs::read(&path).unwrap(), old);
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn empty_detection_refuses_linked_sense_parent_and_fifo_without_mutation() {
+        use std::os::unix::fs::symlink;
+        let (_root, paths, context, request) = fixture("entities:detection", "notes");
+        let (_, events, _) = run(&request, &paths, &context);
+        let accept = || {
+            receipt_is_applicable(
+                &events,
+                "conditional-use",
+                "entities:detection",
+                "20260101",
+                "notes",
+                "090000_60",
+                &paths,
+                &context,
+            )
+            .unwrap_or(false)
+        };
+        assert!(accept());
+        let talents = std::path::Path::new(request["output_path"].as_str().unwrap())
+            .parent()
+            .unwrap();
+        let sense = talents.join("sense.json");
+        let original = fs::read(&sense).unwrap();
+        let backup = talents.join("sense-backup");
+        fs::rename(&sense, &backup).unwrap();
+        symlink(&backup, &sense).unwrap();
+        assert!(!accept());
+        assert_eq!(fs::read(&backup).unwrap(), original);
+        fs::remove_file(&sense).unwrap();
+        nix::unistd::mkfifo(
+            &sense,
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        )
+        .unwrap();
+        assert!(!accept());
+        fs::remove_file(&sense).unwrap();
+        fs::rename(&backup, &sense).unwrap();
+        let parent = talents.with_file_name("talents-backup");
+        fs::rename(talents, &parent).unwrap();
+        symlink(&parent, talents).unwrap();
+        assert!(!accept());
+        assert_eq!(fs::read(parent.join("sense.json")).unwrap(), original);
     }
 
     #[test]
