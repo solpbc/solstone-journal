@@ -5,6 +5,7 @@
 //! UTC/SNP/G23 execution and authority activation remain separate release gates.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 
 use super::windows_build::{capture_source, read_bounded};
@@ -25,7 +26,9 @@ const HELPERS: [&str; 3] = [
     "core/distribution/windows-rust-toolchain.ps1",
     "core/distribution/windows-git-programs.ps1",
 ];
-const STEPS: [&str; 22] = [
+const STEPS: [&str; 26] = [
+    "product-head-before",
+    "product-status-before",
     "vswhere",
     "rust-installed-targets",
     "rust-installed-components",
@@ -48,6 +51,8 @@ const STEPS: [&str; 22] = [
     "dumpbin-nvattest-exe",
     "dumpbin-msvcp140-dll",
     "dumpbin-vcruntime140-dll",
+    "product-head-after",
+    "product-status-after",
 ];
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -92,6 +97,13 @@ struct Terminal {
     captured_processes: Vec<NativeProcess>,
     product_commit: String,
     cargo_lock_sha256: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FirewallDocument {
+    name: String,
+    rule: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -402,6 +414,109 @@ fn validate_terminal(
     Ok(())
 }
 
+fn remote_deny_ranges(peer: &str) -> Result<Vec<(IpAddr, IpAddr)>, String> {
+    let mut ranges = Vec::new();
+    match peer.parse::<IpAddr>().map_err(|e| e.to_string())? {
+        IpAddr::V4(peer) => {
+            let value = u32::from(peer);
+            if value != 0 {
+                ranges.push((
+                    Ipv4Addr::UNSPECIFIED.into(),
+                    Ipv4Addr::from(value - 1).into(),
+                ));
+            }
+            if value != u32::MAX {
+                ranges.push((Ipv4Addr::from(value + 1).into(), Ipv4Addr::BROADCAST.into()));
+            }
+            ranges.push((
+                Ipv6Addr::UNSPECIFIED.into(),
+                Ipv6Addr::from(u128::MAX).into(),
+            ));
+        }
+        IpAddr::V6(peer) => {
+            let value = u128::from(peer);
+            if value != 0 {
+                ranges.push((
+                    Ipv6Addr::UNSPECIFIED.into(),
+                    Ipv6Addr::from(value - 1).into(),
+                ));
+            }
+            if value != u128::MAX {
+                ranges.push((
+                    Ipv6Addr::from(value + 1).into(),
+                    Ipv6Addr::from(u128::MAX).into(),
+                ));
+            }
+            ranges.push((Ipv4Addr::UNSPECIFIED.into(), Ipv4Addr::BROADCAST.into()));
+        }
+    }
+    Ok(ranges)
+}
+
+fn validate_firewall_documents(
+    files: &BTreeMap<String, Vec<u8>>,
+    header: &CaptureHeader,
+    controls: &DriverControls,
+    terminal: &Terminal,
+) -> Result<BTreeSet<String>, String> {
+    let ranges = remote_deny_ranges(&controls.network.transport_peer)?;
+    if terminal.firewall_rules.len() != ranges.len() + 1 {
+        return Err("ARM nvattest firewall document population differs".into());
+    }
+    let prefix = terminal.firewall_rules[0]
+        .strip_suffix("-0")
+        .ok_or("ARM nvattest firewall rule sequence differs")?;
+    let token = prefix
+        .strip_prefix("solstone-nvattest-build-")
+        .ok_or("ARM nvattest firewall rule prefix differs")?;
+    if token.len() != 32
+        || !token
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err("ARM nvattest firewall capture token differs".into());
+    }
+    let mut members = BTreeSet::new();
+    for (index, name) in terminal.firewall_rules.iter().enumerate() {
+        if name != &format!("{prefix}-{index}") {
+            return Err("ARM nvattest firewall rule sequence differs".into());
+        }
+        let label = format!("{name}.json");
+        let document: FirewallDocument = decode(files, &label)?;
+        if document.name != *name || document.rule.len() != 1 {
+            return Err("ARM nvattest firewall rule identity differs".into());
+        }
+        if index == 0 {
+            let rustup = header
+                .tool_paths
+                .get("windows/rustup.exe")
+                .ok_or("ARM nvattest rustup program identity missing")?;
+            if document.rule.get("Program") != Some(rustup) {
+                return Err("ARM nvattest rustup program denial differs".into());
+            }
+        } else {
+            let address = document
+                .rule
+                .get("RemoteAddress")
+                .ok_or("ARM nvattest global address denial missing")?;
+            let (low, high) = address
+                .split_once('-')
+                .ok_or("ARM nvattest address denial range malformed")?;
+            let actual = (
+                low.parse::<IpAddr>().map_err(|e| e.to_string())?,
+                high.parse::<IpAddr>().map_err(|e| e.to_string())?,
+            );
+            if actual != ranges[index - 1] {
+                return Err(
+                    "ARM nvattest global denial does not exclude only its transport peer".into(),
+                );
+            }
+        }
+        members.insert(label);
+    }
+    Ok(members)
+}
+
 fn inspect_capture(
     repo: &Path,
     files: &BTreeMap<String, Vec<u8>>,
@@ -469,6 +584,9 @@ fn inspect_capture(
     .into_iter()
     .map(str::to_owned)
     .collect();
+    expected_members.extend(validate_firewall_documents(
+        files, &header, &controls, &terminal,
+    )?);
     for (label, terminal_process) in STEPS.iter().zip(&terminal.captured_processes) {
         let step: NativeStep = decode(files, &format!("logs/{label}.execution.json"))?;
         for suffix in ["stdout", "stderr", "execution.json"] {
@@ -558,6 +676,7 @@ fn inspect_capture(
             if step.exit_code != 0 {
                 return Err(format!("ARM nvattest command failed: {label}"));
             }
+            validate_product_probe(&header, label, stdout)?;
             if *label == "sdk-build" {
                 if controls.invocation.argv != step.argv {
                     return Err(
@@ -607,6 +726,31 @@ fn inspect_capture(
     })
 }
 
+fn validate_product_probe(
+    header: &CaptureHeader,
+    label: &str,
+    stdout: &[u8],
+) -> Result<(), String> {
+    match label {
+        "product-head-before" | "product-head-after" => {
+            if std::str::from_utf8(stdout).map(str::trim).ok()
+                != Some(header.product.commit.as_str())
+            {
+                return Err(format!(
+                    "ARM nvattest original product commit differs: {label}"
+                ));
+            }
+        }
+        "product-status-before" | "product-status-after" if !stdout.is_empty() => {
+            return Err(format!(
+                "ARM nvattest original product checkout is dirty: {label}"
+            ));
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn expected_step(
     header: &CaptureHeader,
     label: &str,
@@ -623,6 +767,20 @@ fn expected_step(
     let mut cwd = work.clone();
     let mut raw = String::new();
     let argv: Vec<String> = match label {
+        "product-head-before" | "product-head-after" => {
+            cwd = header.repository_root.clone();
+            vec![tool("windows/git.exe")?, "rev-parse".into(), "HEAD".into()]
+        }
+        "product-status-before" | "product-status-after" => {
+            cwd = header.repository_root.clone();
+            vec![
+                tool("windows/git.exe")?,
+                "status".into(),
+                "--porcelain=v1".into(),
+                "--untracked-files=all".into(),
+                "--ignore-submodules=none".into(),
+            ]
+        }
         "vswhere" => [
             tool("windows/vswhere.exe")?,
             "-latest".into(),
@@ -971,18 +1129,166 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn successful_sdk_exit_cannot_hide_failed_cleanup_or_restamped_product() {
-        let header:CaptureHeader=serde_json::from_value(serde_json::json!({
+    fn header() -> CaptureHeader {
+        serde_json::from_value(serde_json::json!({
             "schema":CAPTURE_SCHEMA,"product":{"commit":"a".repeat(40),"lock_sha256":"b".repeat(64)},
             "driver_sha256":"c".repeat(64),"helpers":{},"recorder_sha256":"d".repeat(64),
             "work_root":"C:/work","repository_root":"C:/source","report_root":"C:/report","output_root":"C:/output",
-            "source_archive":"C:/source.tar","bundle_archive":"C:/bundle.tar","system_before":[],"system_after":[],"tool_paths":{}
-        })).unwrap();
-        let controls:DriverControls=serde_json::from_value(serde_json::json!({
+            "source_archive":"C:/source.tar","bundle_archive":"C:/bundle.tar","system_before":[],"system_after":[],
+            "tool_paths":{"windows/git.exe":"C:/Program Files/Git/cmd/git.exe"}
+        })).unwrap()
+    }
+
+    fn controls() -> DriverControls {
+        serde_json::from_value(serde_json::json!({
             "schema":CAPTURE_SCHEMA,"invocation":{"offline":true,"bundle_path":"C:/bundle","manifest_sha256":"a".repeat(64),"source_commit":arm::SDK_REVISION,"environment":[],"argv":[]},"refusals":{},
             "network":{"transport_peer":"192.0.2.1","ipv4":{"target":"1.1.1.1:443","positive_control":"connected","negative_control":"refused"},"ipv6":{"target":"[2606:4700:4700::1111]:443","positive_control":"unreachable","negative_control":"refused"},"rules_added":2,"rules_remaining":0}
-        })).unwrap();
+        })).unwrap()
+    }
+
+    #[test]
+    fn firewall_documents_require_global_denial_complement_and_the_original_rustup() {
+        let mut header = header();
+        header.tool_paths.insert(
+            "windows/rustup.exe".into(),
+            "C:/cargo/bin/rustup.exe".into(),
+        );
+        let mut controls = controls();
+        controls.network.rules_added = 4;
+        let names: Vec<String> = (0..4)
+            .map(|i| format!("solstone-nvattest-build-{}-{i}", "a".repeat(32)))
+            .collect();
+        let terminal = Terminal {
+            exit_code: 0,
+            failures: vec![],
+            firewall_rules_added: 4,
+            firewall_rules_remaining: 0,
+            children_stopped_before_lifting_denial: 0,
+            firewall_rules: names.clone(),
+            captured_processes: vec![],
+            product_commit: header.product.commit.clone(),
+            cargo_lock_sha256: header.product.lock_sha256.clone(),
+        };
+        let scopes = [
+            serde_json::json!({"Program":"C:/cargo/bin/rustup.exe"}),
+            serde_json::json!({"RemoteAddress":"0.0.0.0-192.0.2.0"}),
+            serde_json::json!({"RemoteAddress":"192.0.2.2-255.255.255.255"}),
+            serde_json::json!({"RemoteAddress":"::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"}),
+        ];
+        let files: BTreeMap<String, Vec<u8>> = names
+            .iter()
+            .zip(scopes)
+            .map(|(name, rule)| {
+                (
+                    format!("{name}.json"),
+                    serde_json::to_vec(&serde_json::json!({"name":name,"rule":rule})).unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            validate_firewall_documents(&files, &header, &controls, &terminal).unwrap(),
+            files.keys().cloned().collect()
+        );
+        for rule in [
+            serde_json::json!({"RemoteAddress":"0.0.0.0-192.0.1.255"}),
+            serde_json::json!({"Program":"C:/other.exe"}),
+            serde_json::json!({"RemoteAddress":"0.0.0.0-192.0.2.0","Program":"C:/other.exe"}),
+        ] {
+            let mut changed = files.clone();
+            changed.insert(
+                format!("{}.json", names[1]),
+                serde_json::to_vec(&serde_json::json!({"name":names[1],"rule":rule})).unwrap(),
+            );
+            assert!(validate_firewall_documents(&changed, &header, &controls, &terminal).is_err());
+        }
+        let mut changed = header.clone();
+        changed
+            .tool_paths
+            .insert("windows/rustup.exe".into(), "C:/other.exe".into());
+        assert!(validate_firewall_documents(&files, &changed, &controls, &terminal).is_err());
+        let mut missing = files;
+        missing.remove(&format!("{}.json", names[3]));
+        assert!(validate_firewall_documents(&missing, &header, &controls, &terminal).is_err());
+    }
+
+    #[test]
+    fn firewall_complement_handles_both_families_and_address_boundaries() {
+        let addresses = |peer| {
+            remote_deny_ranges(peer)
+                .unwrap()
+                .into_iter()
+                .map(|(low, high)| format!("{low}-{high}"))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            addresses("2001:db8::1"),
+            [
+                "::-2001:db8::",
+                "2001:db8::2-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+                "0.0.0.0-255.255.255.255"
+            ]
+        );
+        for peer in [
+            "0.0.0.0",
+            "255.255.255.255",
+            "::",
+            "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+        ] {
+            assert_eq!(remote_deny_ranges(peer).unwrap().len(), 2);
+        }
+        assert!(remote_deny_ranges("operator.example").is_err());
+    }
+
+    #[test]
+    fn product_probes_bind_both_original_source_checks_and_refuse_dirty_or_foreign_output() {
+        let header = header();
+        for phase in ["before", "after"] {
+            let head = format!("product-head-{phase}");
+            let status = format!("product-status-{phase}");
+            let (argv, cwd, raw) = expected_step(&header, &head).unwrap();
+            assert_eq!(
+                argv,
+                ["C:/Program Files/Git/cmd/git.exe", "rev-parse", "HEAD"]
+            );
+            assert_eq!(cwd, "C:/source");
+            assert!(raw.is_empty());
+            let (argv, cwd, raw) = expected_step(&header, &status).unwrap();
+            assert_eq!(
+                argv,
+                [
+                    "C:/Program Files/Git/cmd/git.exe",
+                    "status",
+                    "--porcelain=v1",
+                    "--untracked-files=all",
+                    "--ignore-submodules=none"
+                ]
+            );
+            assert_eq!(cwd, "C:/source");
+            assert!(raw.is_empty());
+            validate_product_probe(
+                &header,
+                &head,
+                format!("{}\r\n", header.product.commit).as_bytes(),
+            )
+            .unwrap();
+            validate_product_probe(&header, &status, b"").unwrap();
+            for stdout in [b"".as_slice(), b"foreign revision\r\n", b"\xff"] {
+                assert!(validate_product_probe(&header, &head, stdout).is_err());
+            }
+            for stdout in [
+                b" M core/Cargo.lock\r\n".as_slice(),
+                b"?? replacement.exe\r\n",
+                b"\r\n",
+            ] {
+                assert!(validate_product_probe(&header, &status, stdout).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn successful_sdk_exit_cannot_hide_failed_cleanup_or_restamped_product() {
+        let header = header();
+        let controls = controls();
         let terminal = Terminal {
             exit_code: 0,
             failures: vec![],
@@ -1005,6 +1311,13 @@ mod tests {
             cargo_lock_sha256: header.product.lock_sha256.clone(),
         };
         validate_terminal(&header, &controls, &terminal).unwrap();
+        for count in [22, 27] {
+            let mut changed = terminal.clone();
+            changed
+                .captured_processes
+                .resize(count, terminal.captured_processes[0].clone());
+            assert!(validate_terminal(&header, &controls, &changed).is_err());
+        }
         for field in [
             "exit",
             "failure",
