@@ -17,6 +17,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.0.55] - 2026-10-22
 
+2.0.55 isn't available on windows. on windows, your journal stays on 2.0.54 and gets these changes, including the windows ones below, in a later version.
+
 ### Added
 
 - your journal now keeps each word's timing and the speech model's confidence, when available, with new audio transcripts. existing transcripts stay as they are.
