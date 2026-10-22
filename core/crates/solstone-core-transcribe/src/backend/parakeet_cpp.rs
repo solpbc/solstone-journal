@@ -54,7 +54,8 @@ pub(crate) struct TranscriptionWord {
     pub(crate) word: String,
     pub(crate) start: f64,
     pub(crate) end: f64,
-    pub(crate) probability: f64,
+    /// None when the engine supplied no measured confidence.
+    pub(crate) probability: Option<f64>,
 }
 
 /// Parsed parakeet.cpp transcription response.
@@ -63,9 +64,6 @@ pub(crate) struct TranscriptionResponse {
     pub(crate) words: Vec<TranscriptionWord>,
     pub(crate) text: String,
 }
-
-/// Confidence assumed when a word carries none.
-const DEFAULT_WORD_PROBABILITY: f64 = 1.0;
 
 /// Violations of the shared OpenAI-compatible verbose JSON word contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -293,7 +291,7 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, WordContractError> {
     let end = finite_word_number(object, "end")?;
     // 🔴 An ABSENT `conf` and an explicit `conf: null` carry the same information --
     // no confidence available for this word -- so they must not have opposite
-    // outcomes. Absent already defaulted; null used to reject the WHOLE response.
+    // outcomes. Neither is a measured probability of 1.0.
     //
     // Measured on an owner's journal 2026-09-01: the confidential ASR shim returns
     // `conf: null` for some words, and one such word threw away the entire transcript
@@ -303,13 +301,13 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, WordContractError> {
     // boolean -- is still a contract violation, and `start`/`end` stay strict, because
     // word timings are load-bearing for the timeline.
     let probability = match object.get("conf") {
-        None | Some(Value::Null) => DEFAULT_WORD_PROBABILITY,
-        Some(value) => value.as_f64().filter(|value| value.is_finite()).ok_or(
+        None | Some(Value::Null) => None,
+        Some(value) => Some(value.as_f64().filter(|value| value.is_finite()).ok_or(
             WordContractError::InvalidNumber {
                 key: "conf",
                 found: json_type_name(value),
             },
-        )?,
+        )?),
     };
     Ok(TranscriptionWord {
         word: format!(" {token}"),
@@ -495,6 +493,45 @@ mod tests {
     use crate::TranscribeError;
     use crate::config::{parakeet_cpp_device, read_transcribe_config};
 
+    #[test]
+    fn cpp_words_and_unavailable_confidence_survive_native_publication() {
+        let response = parse_verbose_json(r#"{"text":"A test is ready.","words":[{"word":"A","start":0.125,"end":0.25},{"word":"test","start":0.3,"end":0.5,"conf":null},{"word":"is","start":0.75,"end":1.0,"conf":1.0},{"word":"ready.","start":1.125,"end":1.5,"conf":0.625}]}"#).unwrap();
+        crate::transcript::tests::assert_word_persistence(
+            &response,
+            json!([
+                {"word":" A","start":0.125,"end":0.25,"probability":null},
+                {"word":" test","start":0.3,"end":0.5,"probability":null},
+                {"word":" is","start":0.75,"end":1.0,"probability":1.0},
+                {"word":" ready.","start":1.125,"end":1.5,"probability":0.625}
+            ]),
+            json!({"start":0.125,"end":1.5}),
+            None,
+            "23:59:59",
+        );
+        let reduction = solstone_core_observe_audio::AudioReduction {
+            segments: vec![solstone_core_observe_audio::SpeechSegment {
+                original_start_s: 10.0,
+                original_end_s: 14.0,
+                reduced_start_s: 0.0,
+                reduced_end_s: 4.0,
+            }],
+            original_duration_s: 20.0,
+            reduced_duration_s: 4.0,
+        };
+        crate::transcript::tests::assert_word_persistence(
+            &response,
+            json!([
+                {"word":" A","start":10.125,"end":10.25,"probability":null},
+                {"word":" test","start":10.3,"end":10.5,"probability":null},
+                {"word":" is","start":10.75,"end":11.0,"probability":1.0},
+                {"word":" ready.","start":11.125,"end":11.5,"probability":0.625}
+            ]),
+            json!({"start":10.125,"end":11.5}),
+            Some(&reduction),
+            "00:00:09",
+        );
+    }
+
     /// `conf: null` must behave exactly like an absent `conf`.
     ///
     /// Measured on an owner's journal: the confidential ASR shim emits
@@ -507,11 +544,9 @@ mod tests {
             parse_verbose_json(r#"{"words":[{"word":"hi","start":0.0,"end":0.5,"conf":null}]}"#)
                 .expect("a null confidence must not discard the transcript");
         let absent = parse_verbose_json(r#"{"words":[{"word":"hi","start":0.0,"end":0.5}]}"#)
-            .expect("an absent confidence already defaulted");
+            .expect("an absent confidence is valid");
         assert_eq!(with_null, absent);
-        assert!(
-            (with_null.words[0].probability - super::DEFAULT_WORD_PROBABILITY).abs() < f64::EPSILON
-        );
+        assert_eq!(with_null.words[0].probability, None);
     }
 
     /// 🔒 Negative twins: only `null` is forgiven, and only for `conf`.

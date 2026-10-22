@@ -77,6 +77,11 @@ const SKIP_BLOCKED: &str = "blocked";
 const SKIP_NOTHING_CHANGED: &str = "nothing_changed";
 const SENSE_PHASE_TIMEOUT: Duration = Duration::from_secs(1_800);
 const INDEXER_PHASE_TIMEOUT: Duration = Duration::from_secs(3_600);
+/// `solstone-core` arguments for the bounded search-input drain before daily thinking.
+pub const INDEXER_INPUTS_ARGS: &[&str] =
+    &["indexer", "drain", "--force", "--budget-seconds", "600"];
+/// `solstone-core` arguments for the whole-journal indexer phase.
+pub const INDEXER_ARGS: &[&str] = &["indexer", "drain"];
 const STATS_PHASE_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Clone, Copy)]
@@ -358,13 +363,7 @@ fn run_with_phase_process(
                     segment_outcome.borrow().result.clone()
                 }
                 "daily" => {
-                    let command = journal_command(&[
-                        "indexer",
-                        "drain",
-                        "--force",
-                        "--budget-seconds",
-                        "600",
-                    ]);
+                    let command = journal_command(INDEXER_INPUTS_ARGS);
                     let _ = run_process_phase(
                         phase_process,
                         "indexer_inputs",
@@ -410,7 +409,7 @@ fn run_with_phase_process(
                         halted.set(true);
                         return failed_phase("indexer", "thinking cancelled");
                     }
-                    let command = journal_command(&["indexer", "drain"]);
+                    let command = journal_command(INDEXER_ARGS);
                     let result = run_process_phase(
                         phase_process,
                         "indexer",
@@ -1452,6 +1451,16 @@ mod tests {
             _day: &str,
             _timeout: Duration,
         ) -> PhaseProcessOutcome {
+            // The desktop runner spawns `command` as `solstone-core`; an argv it
+            // cannot parse fails every daily run while this stub reports success.
+            let argv = command[1..]
+                .iter()
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>();
+            assert!(
+                solstone_core_cli::evaluate_args(&argv).is_ok(),
+                "{phase} spawns an argv solstone-core does not parse: {command:?}"
+            );
             if phase == "indexer_inputs" {
                 return PhaseProcessOutcome::Exited(0);
             }

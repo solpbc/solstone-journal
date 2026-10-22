@@ -335,6 +335,10 @@ impl UpdateManager {
     }
 
     fn create_delta_update_strategy(&self, velopack_asset_feed: &[VelopackAsset], latest_remote: (&VelopackAsset, Version)) -> UpdateInfo {
+        // Full-only sources must not open unauthenticated cached bundles to plan deltas.
+        if self.inner.options.MaximumDeltasBeforeFallback < 0 {
+            return UpdateInfo::new_full(latest_remote.0.clone(), false);
+        }
         let packages_dir = self.inner.locator.get_packages_dir();
         let latest_local = locator::find_latest_full_package(&packages_dir);
 
@@ -397,6 +401,7 @@ impl UpdateManager {
         let partial_file = final_target_file.with_extension("partial");
 
         if final_target_file.exists() {
+            let _package_guard = self.inner.source.open_admitted_release_entry(&update.TargetFullRelease, &final_target_file)?;
             info!("Package already exists on disk, skipping download: '{:?}'", final_target_file);
             return Ok(());
         }
@@ -442,6 +447,8 @@ impl UpdateManager {
 
         info!("Renaming partial file to final target: '{:?}'", final_target_file);
         fs::rename(&partial_file, &final_target_file)?;
+        // Reauthenticate the final file and keep its read guard through helper extraction.
+        let _package_guard = self.inner.source.open_admitted_release_entry(&update.TargetFullRelease, &final_target_file)?;
 
         find_files_to_delete(&delta_pattern, &mut to_delete);
 

@@ -19,7 +19,7 @@ macro_rules! speaker_resolve_usage {
 }
 
 pub const USAGE: &str = concat!(
-    "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core setup-copy [-h] [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core indexer path-lookup [--journal PATH] [--json] [--apply]\n  solstone-core indexer classifications [--journal PATH] [--json] [--apply] [--drain]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
+    "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core setup-copy [-h] [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core indexer path-lookup [--journal PATH] [--json] [--apply]\n  solstone-core indexer classifications [--journal PATH] [--json] [--apply] [--drain]\n  solstone-core indexer drain [--journal PATH] [--json] [--force] [--budget-seconds N]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone journal convey --port PORT [--journal PATH]\n  solstone journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule]\n",
     "  solstone journal top [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
@@ -1370,6 +1370,16 @@ pub enum IndexerCommand {
     FoldEntityEdges(IndexerFoldEntityEdgesOptions),
     EdgeFingerprint(IndexerReadOptions),
     RebuildEdgesFingerprint(IndexerReadOptions),
+    Drain(IndexerDrainOptions),
+}
+
+/// Applies queued search updates; daily thinking spawns this through its own executable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerDrainOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+    pub force: bool,
+    pub budget_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5119,6 +5129,9 @@ fn parse_indexer(args: &[OsString]) -> Result<IndexerCommand, UsageError> {
         [verb, rest @ ..] if verb == OsStr::new("rebuild-edges-fingerprint") => {
             parse_indexer_read(rest).map(IndexerCommand::RebuildEdgesFingerprint)
         }
+        [verb, rest @ ..] if verb == OsStr::new("drain") => {
+            parse_indexer_drain(rest).map(IndexerCommand::Drain)
+        }
         _ => parse_indexer_maintenance(args).map(IndexerCommand::Maintenance),
     }
 }
@@ -5451,6 +5464,66 @@ fn parse_indexer_classifications(
         json,
         apply,
         drain,
+    })
+}
+
+fn parse_indexer_drain(args: &[OsString]) -> Result<IndexerDrainOptions, UsageError> {
+    let mut journal_override = None;
+    let mut json = false;
+    let mut force = false;
+    let mut budget_seconds = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--force") {
+            if force {
+                return Err(UsageError);
+            }
+            force = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--budget-seconds") {
+            if budget_seconds.is_some() {
+                return Err(UsageError);
+            }
+            let seconds = args
+                .get(index + 1)
+                .and_then(|value| value.to_str())
+                .and_then(|value| value.parse::<u64>().ok())
+                .filter(|seconds| *seconds > 0)
+                .ok_or(UsageError)?;
+            budget_seconds = Some(seconds);
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if is_query_flag(value.as_os_str()) {
+                return Err(UsageError);
+            }
+            journal_override = Some(value.clone());
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    Ok(IndexerDrainOptions {
+        journal_override,
+        json,
+        force,
+        budget_seconds,
     })
 }
 
@@ -7119,6 +7192,29 @@ mod tests {
                 }
             )))
         );
+    }
+
+    #[test]
+    fn indexer_drain_cli_parser_contracts() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "indexer",
+                "drain",
+                "--force",
+                "--budget-seconds",
+                "600"
+            ])),
+            Ok(indexer(IndexerCommand::Drain(IndexerDrainOptions {
+                journal_override: None,
+                json: false,
+                force: true,
+                budget_seconds: Some(600),
+            })))
+        );
+        assert!(evaluate_args(&args(&["indexer", "drain", "--budget-seconds", "0"])).is_err());
+        assert!(evaluate_args(&args(&["indexer", "drain", "--budget-seconds"])).is_err());
+        assert!(evaluate_args(&args(&["indexer", "drain", "--force", "--force"])).is_err());
+        assert!(evaluate_args(&args(&["indexer", "drain", "--rescan"])).is_err());
     }
 
     #[test]

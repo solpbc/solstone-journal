@@ -37,13 +37,7 @@ use crate::content::JsonObject;
 use crate::paths::CHRONICLE_DIR;
 use crate::segment::is_date_key;
 
-const REQUIRED_ROOT_KEYS: [&str; 5] = [
-    "metadata",
-    "your_day",
-    "yesterday",
-    "needs_attention",
-    "forward_look",
-];
+const REQUIRED_ROOT_KEYS: [&str; 3] = ["metadata", "yesterday", "needs_attention"];
 
 /// Load one day's morning briefing when it has the required root shape.
 pub fn load_morning_briefing(journal: &Path, day: &str) -> Option<JsonObject> {
@@ -98,8 +92,7 @@ mod tests {
     use crate::content::render_morning_briefing_text;
     use crate::test_support::reserve_temp_path;
 
-    const COMPLETE_BRIEFING: &str =
-        r#"{"metadata":{},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[]}"#;
+    const COMPLETE_BRIEFING: &str = r#"{"metadata":{},"yesterday":[],"needs_attention":[]}"#;
 
     struct TempDir {
         path: PathBuf,
@@ -144,7 +137,7 @@ mod tests {
         );
         let briefing =
             load_morning_briefing(&canonical.path, "20260717").expect("canonical briefing loads");
-        assert!(render_morning_briefing_text(&briefing).contains("## Your Day"));
+        assert!(render_morning_briefing_text(&briefing).contains("## Yesterday"));
 
         let noncanonical = TempDir::new("briefing-noncanonical");
         write(
@@ -212,21 +205,21 @@ mod tests {
     }
 
     #[test]
-    fn load_gate_accepts_reading_and_extra_keys() {
-        let temporary = TempDir::new("briefing-reading-optional");
+    fn load_gate_accepts_retired_sections_and_extra_keys() {
+        let temporary = TempDir::new("briefing-retired-sections");
         let path = briefing_path(&temporary.path, "20260717");
 
-        // Stored object that still has reading loads
+        // A stored briefing that still carries retired sections loads.
         write(
             &path,
             r#"{"metadata":{},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[],"extra":"accepted"}"#,
         );
         assert!(load_morning_briefing(&temporary.path, "20260717").is_some());
 
-        // New object without reading loads
+        // A current briefing without them loads.
         write(
             &path,
-            r#"{"metadata":{},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"extra":"accepted"}"#,
+            r#"{"metadata":{},"yesterday":[],"needs_attention":[],"extra":"accepted"}"#,
         );
         assert!(load_morning_briefing(&temporary.path, "20260717").is_some());
     }
@@ -236,12 +229,12 @@ mod tests {
         let temporary = TempDir::new("briefing-key-presence");
         write(
             &briefing_path(&temporary.path, "20260717"),
-            r#"{"metadata":null,"your_day":"nope","yesterday":[],"needs_attention":[],"forward_look":[]}"#,
+            r#"{"metadata":null,"yesterday":"nope","needs_attention":[]}"#,
         );
         let briefing = load_morning_briefing(&temporary.path, "20260717")
             .expect("all root keys load regardless of value shape");
         let rendered = render_morning_briefing_text(&briefing);
-        assert_eq!(rendered.matches("Nothing to report.").count(), 4);
+        assert_eq!(rendered.matches("Nothing to report.").count(), 2);
     }
 
     #[test]
@@ -259,12 +252,12 @@ mod tests {
     #[test]
     fn preamble_leading_blank_lines_are_trimmed_before_quoting() {
         let briefing: JsonObject = serde_json::from_str(
-            r#"{"metadata":{"coverage_preamble":"\n\nFirst line\n\nSecond line\n\n"},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[]}"#,
+            r#"{"metadata":{"coverage_preamble":"\n\nFirst line\n\nSecond line\n\n"},"yesterday":[],"needs_attention":[]}"#,
         )
         .expect("briefing object parses");
         let rendered = render_morning_briefing_text(&briefing);
         let (preamble, _) = rendered
-            .split_once("\n\n## Your Day")
+            .split_once("\n\n## Yesterday")
             .expect("preamble precedes first section");
         assert_eq!(preamble.lines().next(), Some("> First line"));
         assert_ne!(preamble.lines().last(), Some(">"));
@@ -279,7 +272,7 @@ mod tests {
         );
         write(
             &briefing_path(&temporary.path, "20260718"),
-            r#"{"metadata":{},"your_day":[],"yesterday":[],"needs_attention":[]}"#,
+            r#"{"metadata":{},"yesterday":[]}"#,
         );
         assert_eq!(
             most_recent_morning_briefing_day(&temporary.path),

@@ -229,10 +229,15 @@ fn native_statement(statement: &Map<String, Value>) -> Result<Value, TranscribeE
         .get("id")
         .and_then(Value::as_i64)
         .ok_or_else(|| invalid_statement("id"))?;
-    let start_s = statement
+    let start_s = match statement
         .get("start")
         .and_then(Value::as_f64)
-        .unwrap_or(0.0);
+        .filter(|value| value.is_finite())
+    {
+        Some(value) => value,
+        None if !statement.contains_key("end") => 0.0,
+        None => return Err(invalid_statement("start")),
+    };
     let text = statement
         .get("text")
         .and_then(Value::as_str)
@@ -245,6 +250,14 @@ fn native_statement(statement: &Map<String, Value>) -> Result<Value, TranscribeE
         ),
         ("text".to_owned(), Value::String(text.to_owned())),
     ]);
+    if let Some(end) = statement.get("end") {
+        // Evidence stays in the original audio's seconds, independent of the
+        // clock used for the existing displayed start.
+        native.insert("timing".to_owned(), json!({"start":start_s,"end":end}));
+    }
+    if let Some(words) = statement.get("words") {
+        native.insert("words".to_owned(), words.clone());
+    }
     if let Some(speaker) = statement.get("speaker") {
         native.insert("speaker".to_owned(), speaker.clone());
     }
@@ -373,7 +386,7 @@ fn build_header(request: &FullTranscriptWrite<'_>) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fs;
 
     use serde_json::{Map, Value, json};
@@ -386,6 +399,54 @@ mod tests {
     };
     use solstone_core_speakers::SPEAKER_TURN_EVIDENCE_VERSION;
 
+    pub(crate) fn assert_word_persistence(
+        response: &crate::backend::parakeet_cpp::TranscriptionResponse,
+        expected_words: Value,
+        expected_timing: Value,
+        reduction: Option<&AudioReduction>,
+        expected_clock: &str,
+    ) {
+        let statements = crate::stage::statements_from_words(&response.words);
+        let restored = reduction.map_or_else(
+            || statements.clone(),
+            |mapping| restore_statement_timestamps(&statements, mapping),
+        );
+        let temporary = tempfile::tempdir().unwrap();
+        let raw = temporary.path().join("clip.wav");
+        let jsonl = temporary.path().join("clip.jsonl");
+        let npz = temporary.path().join("clip.npz");
+        let payload = temporary.path().join("payload.f32le");
+        fs::write(&raw, b"audio").unwrap();
+        fs::write(&payload, []).unwrap();
+        let helper = helper_response(&payload, None);
+        let speaker_result = accepted_result_from_response(
+            &raw,
+            &helper,
+            &payload,
+            &restored,
+            &[],
+            &[],
+            16_000,
+            20.0,
+        )
+        .unwrap();
+        let processing = analyzed_record(5);
+        let mut request = write_request(&raw, &jsonl, &npz, &speaker_result, &processing);
+        request.base_time_us_of_day = 86_399_000_000;
+        write_full_transcript(request).unwrap();
+        let content = fs::read_to_string(jsonl).unwrap();
+        let rows: Vec<Value> = content
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[1]["start"], expected_clock);
+        assert_eq!(rows[1]["text"], response.text);
+        assert_eq!(rows[1]["timing"], expected_timing);
+        assert_eq!(rows[1]["words"], expected_words);
+        assert_eq!(rows[1]["sentence_id"], 1);
+    }
+
     fn result(statements: Vec<Map<String, Value>>) -> SpeakerAnalyzeResult {
         SpeakerAnalyzeResult {
             statements,
@@ -397,6 +458,24 @@ mod tests {
             turn_ranges: None,
             overlap_ranges: None,
         }
+    }
+
+    #[test]
+    fn precise_statement_bounds_require_a_supplied_numeric_start() {
+        for start in [None, Some(Value::Null), Some(json!("00:00:00"))] {
+            let mut statement = json!({"id":1,"text":"hello","end":1.25});
+            if let Some(start) = start {
+                statement["start"] = start;
+            }
+            assert!(super::native_statement(statement.as_object().unwrap()).is_err());
+        }
+        let zero = json!({"id":1,"text":"hello","start":0.0,"end":1.25});
+        let native = super::native_statement(zero.as_object().unwrap()).unwrap();
+        assert_eq!(native["timing"], json!({"start":0.0,"end":1.25}));
+        let untimed = json!({"id":1,"text":"hello"});
+        let native = super::native_statement(untimed.as_object().unwrap()).unwrap();
+        assert_eq!(native["start_offset_us"], 0);
+        assert!(native.get("timing").is_none());
     }
 
     fn write_request<'a>(
@@ -458,7 +537,7 @@ mod tests {
                 ("text".to_owned(), Value::String("hello".to_owned())),
                 (
                     "words".to_owned(),
-                    json!([{"start": 3.0, "end": 3.5, "word": "hello"}]),
+                    json!([{"start": 3.0, "end": 3.5, "word": "hello", "probability":null}]),
                 ),
             ])],
             &reduction,
@@ -491,6 +570,11 @@ mod tests {
         let lines = fs::read_to_string(jsonl).unwrap();
         let statement: Value = serde_json::from_str(lines.lines().nth(1).unwrap()).unwrap();
         assert_eq!(statement["start"], "00:00:08");
+        assert_eq!(statement["timing"], json!({"start":8.0,"end":8.5}));
+        assert_eq!(
+            statement["words"],
+            json!([{"start":8.0,"end":8.5,"word":"hello","probability":null}])
+        );
     }
 
     #[test]
@@ -675,6 +759,7 @@ mod tests {
                 "text",
                 "speaker",
                 "sentence_id",
+                "timing",
                 "speaker_turn_evidence",
                 "turn_boundary_suspect",
             ]

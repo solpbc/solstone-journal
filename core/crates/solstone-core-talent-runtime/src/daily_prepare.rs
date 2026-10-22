@@ -275,22 +275,16 @@ fn attach_daily_location(
 
                     if is_story_drop {
                         include_stories[drop_idx] = false;
-                        let id = &activities[drop_idx].id;
-                        let story_gap = format!("story for {id}");
-                        if !gaps.contains(&story_gap) {
-                            gaps.push(story_gap);
-                        }
                     } else {
                         include_activities[drop_idx] = false;
                         include_stories[drop_idx] = false;
-                        let id = &activities[drop_idx].id;
-                        let story_gap = format!("story for {id}");
-                        gaps.retain(|g| g != &story_gap);
-                        let act_gap = format!("activity {id}");
-                        if !gaps.contains(&act_gap) {
-                            gaps.push(act_gap);
-                        }
                     }
+                    gaps.retain(|gap| !crate::morning_briefing::is_omission_gap(gap, &activities));
+                    gaps.extend(crate::morning_briefing::omission_gaps(
+                        &activities,
+                        &include_activities,
+                        &include_stories,
+                    ));
 
                     let new_digest = crate::morning_briefing::render_digest_activities(
                         &activities,
@@ -1530,7 +1524,7 @@ mod tests {
         assert!(
             gaps.iter().any(|g| {
                 let s = g.as_str().unwrap_or("");
-                s == "activity act-1" || s == "story for act-1"
+                s.starts_with("activities omitted: ") || s.starts_with("activity stories omitted: ")
             }),
             "gaps must contain activity/story omission gap: {gaps:?}"
         );
@@ -1609,7 +1603,7 @@ mod tests {
             .collect();
 
         let mut story_dropped_gaps = base_gaps.clone();
-        story_dropped_gaps.push("story for act-1".into());
+        story_dropped_gaps.push("activity stories omitted: 1.".into());
         let story_dropped_preamble =
             crate::morning_briefing::coverage_preamble(&story_dropped_gaps);
         let mut story_dropped_meta_val = orig_meta_val.clone();
@@ -1777,7 +1771,7 @@ mod tests {
         assert!(
             gaps.iter().any(|g| {
                 let s = g.as_str().unwrap_or("");
-                s == "activity act-1" || s == "story for act-1"
+                s.starts_with("activities omitted: ") || s.starts_with("activity stories omitted: ")
             }),
             "gaps must contain activity/story omission gap from padding: {gaps:?}"
         );
@@ -1870,8 +1864,9 @@ mod tests {
             serde_json::from_str(raw_metadata).expect("valid briefing_metadata JSON");
         let gaps = metadata["gaps"].as_array().expect("gaps array");
         assert!(
-            gaps.iter().any(|g| g.as_str() == Some("activity act-1")),
-            "gaps must include activity act-1: {gaps:?}"
+            gaps.iter()
+                .any(|g| g.as_str() == Some("activities omitted: 1.")),
+            "gaps must count the omitted activity: {gaps:?}"
         );
         assert!(
             gaps.iter().any(|g| g.as_str() == Some("the latest pulse")),
@@ -1938,7 +1933,7 @@ mod tests {
         solstone_core_facets::create_facet(root.path(), "a", "A", "", "", "", None).unwrap();
         solstone_core_facets::create_facet(root.path(), "b", "B", "", "", "", None).unwrap();
 
-        let desc_a = "A".repeat(43182);
+        let desc_a = "A".repeat(43194);
         let story_s = "S".repeat(1500);
         let story_t = "T".repeat(1500);
 
@@ -2012,8 +2007,8 @@ mod tests {
         };
         let unclipped_total = unclipped_text_tokens + unclipped_schema_tokens;
         assert_eq!(
-            unclipped_total, 15581,
-            "unclipped model_text_parts + schema tokens ({unclipped_total}) must be 15581"
+            unclipped_total, 15585,
+            "unclipped model_text_parts + schema tokens ({unclipped_total}) must be 15585"
         );
 
         (stage.prompt_override.unwrap())(&mut probe_talent, &state).unwrap();
@@ -2141,9 +2136,10 @@ mod tests {
         let gaps = metadata["gaps"].as_array().expect("gaps array");
 
         assert!(
-            gaps.iter()
-                .any(|g| g.as_str() == Some("story for anticipated_meeting_090000_1001")),
-            "gaps must include 'story for anticipated_meeting_090000_1001': {gaps:?}"
+            gaps.iter().any(|g| g
+                .as_str()
+                .is_some_and(|g| g.starts_with("activity stories omitted: "))),
+            "gaps must count the omitted story: {gaps:?}"
         );
         assert!(
             gaps.iter().any(|g| g.as_str() == Some("the latest pulse")),

@@ -8,7 +8,74 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- your journal now keeps each word's timing and the speech model's confidence, when available, with new audio transcripts. existing transcripts stay as they are.
+- a month view in the map app shows visits and stays as areas shaded by how many days had one there, with a calendar and each trip away listed on its own. open it from "this month" on a day or week.
+- when an activity ran while your calendar had a meeting scheduled, the activity now shows the meeting beside it, with the people on the invite already in your journal. the activity keeps its own title. the meeting shows what was planned, not who came. agents you've let read your whole journal's transcripts see it too, and your morning briefing can call yesterday's activity by the meeting's name.
+- people on a calendar invite who are already in your journal, by their email or a name your journal already has for them, written the same way, are now linked to you as scheduled with you.
 - events in calendar files you import from now on can also be found by the day each one happens, not only the day it was added or last changed. repeating events are listed up to a year after you import them. calendars you imported before aren't listed this way.
+
+### Changed
+
+- your morning briefing no longer has sections about the day ahead. new briefings were already leaving them empty, and older briefings no longer show them.
+- people on a calendar that was on a screen you shared are now linked only by their email or a name your journal already has for them, written the same way. a partial name no longer links anyone.
+
+### Fixed
+
+- security fix on windows: someone impersonating the update server could supply altered journal software as an update; updates now require a valid sol pbc signature on the complete package.
+- on a day with hundreds of activities, your morning briefing now arrives, leaving out what doesn't fit, instead of not at all.
+
+## [2.0.54] - 2026-10-21
+
+on linux and mac, this version fixes two problems that came with 2.0.53, listed under fixed right after the security fix, and everything else below came in 2.0.52 and 2.0.53. on windows, this is your journal's first update since 2.0.51, so it brings the changes from 2.0.52 and 2.0.53, listed below. recognizing text from your screens, new in 2.0.53, isn't part of your journal on windows.
+
+### Added
+
+- a new setting in transcription settings, "leave out other voices", keeps your words in your journal and leaves out stretches where only other people speak. it's off until you turn it on. while it's on, your journal deletes the original audio of each recording it processes once its words are saved, and tries again each day for recent recordings it couldn't delete right away. other voices may remain, and some of your words may be missed. audio processed before you turned it on, imported audio and existing backups are unchanged. it needs your saved voice.
+- `solstone journal doctor` now shows recorded backup problems and the last successful copy, with dates, and says when that history is incomplete or belongs to an older setup.
+- on windows, setup stays in the journal window through choosing your mark and where thinking runs, then opens on the window's home screen. its steps share the solstone app's look, with progress dots and a step count and every thinking choice shown at once. thinking download progress stays available there, and you can try again there if a model doesn't install.
+- when you first set up your journal on windows, you can choose whether it starts when you sign in. it's on unless you turn it off, and setting up your journal again keeps the choice you made.
+- after setup on windows, the journal window can continue in the solstone app. if that app is missing or too old, the window offers the download page for the solstone app for windows, and you can try again after installing it.
+- the day now lists a segment that only has desktop activity notes, and you can read and search those notes.
+- agents you've let see facets can now list your activities, and those you've also let see transcripts can read the passages each one draws on.
+
+### Changed
+
+- your journal no longer guesses your upcoming plans from what you share. plans it already wrote stay in your journal's folder, but nothing shows them anymore: not activities, home, your morning briefing or connected agents. your morning briefing no longer lists what's ahead today or in the coming week.
+- when something your journal writes covers only part of what it was given because the rest didn't fit, it now says so, and health shows it apart from runs that failed.
+- saving or importing something no longer waits for search to finish updating. search catches up in the background, and health shows pending updates and removals that need another try.
+- when your agent reads what was said in a recording your journal transcribed, it now sees a speaker's name only when your journal recognized the voice or you named the speaker, and lines your journal recognized as yours carry your name with "(owner)". a name your journal guessed from what was said no longer appears as who spoke.
+- when an activity's whole source is short recorded speech you didn't import, its story now quotes it word for word, crediting a line to you or to someone by name only when your journal recognized the voice or you named the speaker. stories already written stay as they are.
+- on windows, setup in the journal window now has the sun behind it, moving with the time of day, as it does on mac.
+- when your journal works through an older day's recordings again, it now remakes that day's daily outputs right after them, instead of after all older history. its entity review still waits until older history is done. until the rest are remade, health's line about older history counts that day as still to do.
+- connected agents are now told that an activity shows up once it has ended, and that the last one from a device that stops sending shows up about an hour later.
+- facet newsletters are retired. your morning briefing now draws on activities and their stories. existing newsletters stay in your journal's folder, but the journal no longer shows them.
+
+### Fixed
+
+- security fix: your journal no longer accepts certificates issued through emSign certificate authorities whose private keys are now public. this includes its connections to the relay, to solstone.me, to the services portal and to a thinking provider you connect with your own key or sign-in, and its update checks and downloads. before, someone between your computer and one of these services could have used one of the exposed keys to pose as that service. posing as that thinking provider, they could have read what your journal sent it, and the key or sign-in your journal uses there. what your journal sends to confidential processing or local thinking wasn't exposed this way.
+- on linux and mac, your journal now brings search up to date before its daily thinking starts, and its daily thinking no longer shows as failed. on 2.0.53 it showed as failed even when its thinking was done.
+- on linux and mac, when you reach your journal's folder through a symbolic link, what you save reaches search soon after you save it, instead of up to a day later.
+- when your morning briefing leaves something out to keep within its size limit, its note now says how many activities, stories or location entries it left out, instead of listing internal names.
+- health shows processing progress sooner when you open it.
+- on windows, home in the journal window shows download progress in sizes like 1.2 GB of 4.8 GB, instead of two bare numbers.
+- long morning briefings and entity reviews no longer lose part of their instructions to fit your model. when one can't fit with its instructions whole, it stops.
+- if your thinking provider refuses an activity because it's too long, your journal sets it aside instead of trying the same request every hour. you can try it again after changing your thinking choice.
+- the health page's backup spot-check now says it checked 1 of 52 parts of your backup, as the backup page does, instead of a bare 42/52, which read as 42 parts checked.
+- health's line about older history no longer stops at a day whose recordings are finished but not yet searchable. those recordings now become searchable on their own.
+- in the agents app, the "what it did" filter now includes `list_activities` and `get_activity_sources`.
+- when a local thinking model download is interrupted, your journal picks it up where it stopped instead of starting over.
+- on windows, when your journal can't check whether its computer can run local thinking, the thinking page says it couldn't check and won't set up local, and setup doesn't offer it, instead of letting you pick it and then refusing.
+- pairing the solstone app on the journal's own computer now shows the steps for that computer, without the phone steps or the QR code, and on windows without the linux commands.
+- on a computer that can't run local thinking, home and the thinking page say so, and no longer offer to install the local model.
+- while the local thinking model downloads after setup, home says local thinking is being set up instead of saying something needs your attention, and the thinking page no longer says its status is unavailable or that local thinking isn't set up.
+- on a computer that can't run local thinking, setup no longer shows local as a choice you can't pick. it says to choose thinking when you're ready, and that your journal keeps everything until then.
+- setup in your browser shows each download as a progress bar with its size, and links to support if you get stuck.
+- home puts the getting started card first, right under the status line, every time it loads.
+- after you save a thinking choice in setup, the thinking page no longer says "nothing chosen yet" under it.
+- if your iphone loses its connection while it is starting an import in your journal, it can send it again without the import running twice, failing, or being left marked "needs attention" on your iphone.
+- an import started more than an hour after it was saved no longer shows "import never completed" while it runs.
+- when an import can't start, on the import page and on your iphone, its message now says what happened in plain words, without the importer's internal output.
+- if the connection drops while the local thinking model downloads, your journal tries again twice before saying the download didn't finish.
 
 ## [2.0.53] - 2026-10-21
 

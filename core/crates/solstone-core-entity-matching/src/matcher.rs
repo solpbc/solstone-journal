@@ -99,6 +99,121 @@ pub fn find_matching_entity(
 }
 
 /// Find one entity name match, retaining collisions at deciding tiers.
+/// The high-confidence tiers of [`find_matching_entity_detailed`]: as
+/// written, ignoring case, by email, and by entity id or name slug. Its
+/// lookups are built once, so many names can be matched against the same
+/// candidates.
+pub struct ConfidentMatcher {
+    exact_case: BTreeMap<String, BTreeSet<usize>>,
+    lower: BTreeMap<String, BTreeSet<usize>>,
+    email: BTreeMap<String, BTreeSet<usize>>,
+    id: BTreeMap<String, BTreeSet<usize>>,
+}
+
+impl ConfidentMatcher {
+    pub fn new(candidates: &[EntityNameCandidate]) -> Self {
+        let mut matcher = Self {
+            exact_case: BTreeMap::new(),
+            lower: BTreeMap::new(),
+            email: BTreeMap::new(),
+            id: BTreeMap::new(),
+        };
+        for (candidate_index, candidate) in candidates.iter().enumerate() {
+            let name = candidate.name.as_str();
+            let entity_id = candidate.id.as_deref().unwrap_or("");
+            if name.is_empty() {
+                continue;
+            }
+
+            insert_candidate(&mut matcher.exact_case, name.to_string(), candidate_index);
+            insert_candidate(
+                &mut matcher.lower,
+                normalize_resolution_query(name),
+                candidate_index,
+            );
+
+            if entity_id.is_empty() {
+                let name_slug = entity_slug(name);
+                if !name_slug.is_empty() {
+                    insert_candidate(&mut matcher.id, name_slug, candidate_index);
+                }
+            } else {
+                insert_candidate(
+                    &mut matcher.exact_case,
+                    entity_id.to_string(),
+                    candidate_index,
+                );
+                insert_candidate(
+                    &mut matcher.lower,
+                    normalize_resolution_query(entity_id),
+                    candidate_index,
+                );
+                insert_candidate(&mut matcher.id, entity_id.to_string(), candidate_index);
+            }
+
+            for aka in &candidate.aka {
+                if !aka.is_empty() {
+                    insert_candidate(&mut matcher.exact_case, aka.clone(), candidate_index);
+                    insert_candidate(
+                        &mut matcher.lower,
+                        normalize_resolution_query(aka),
+                        candidate_index,
+                    );
+                }
+            }
+
+            for email in &candidate.emails {
+                if !email.is_empty() {
+                    insert_candidate(
+                        &mut matcher.email,
+                        normalize_resolution_query(email),
+                        candidate_index,
+                    );
+                }
+            }
+        }
+        matcher
+    }
+
+    /// The first high-confidence tier that knows the name, matched or tied;
+    /// None when none does.
+    pub fn outcome(&self, detected_name: &str) -> Option<EntityNameMatchOutcome> {
+        if detected_name.is_empty() {
+            return None;
+        }
+        if let Some(outcome) = map_outcome(&self.exact_case, detected_name, MatchTier::Exact) {
+            return Some(outcome);
+        }
+        let detected_lower = normalize_resolution_query(detected_name);
+        if let Some(outcome) = map_outcome(&self.lower, &detected_lower, MatchTier::CaseInsensitive)
+        {
+            return Some(outcome);
+        }
+        if detected_name.contains('@')
+            && let Some(outcome) = map_outcome(&self.email, &detected_lower, MatchTier::Email)
+        {
+            return Some(outcome);
+        }
+        let detected_slug = entity_slug(detected_name);
+        if !detected_slug.is_empty()
+            && let Some(outcome) = map_outcome(&self.id, &detected_slug, MatchTier::Slug)
+        {
+            return Some(outcome);
+        }
+        None
+    }
+
+    /// The one candidate a name names with high confidence; a tie is no match.
+    pub fn find(&self, detected_name: &str) -> Option<usize> {
+        match self.outcome(detected_name)? {
+            EntityNameMatchOutcome::Matched {
+                candidate_index, ..
+            } => Some(candidate_index),
+            _ => None,
+        }
+    }
+}
+
 pub fn find_matching_entity_detailed(
     detected_name: &str,
     candidates: &[EntityNameCandidate],
@@ -109,65 +224,17 @@ pub fn find_matching_entity_detailed(
     }
 
     let detected_lower = normalize_resolution_query(detected_name);
-    let detected_slug = entity_slug(detected_name);
+    if let Some(outcome) = ConfidentMatcher::new(candidates).outcome(detected_name) {
+        return outcome;
+    }
 
-    let mut exact_case_map: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
-    let mut lower_map: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
-    let mut id_map: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     let mut first_word_map: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     let mut fuzzy_candidates = OrderedFuzzyCandidates::default();
-    let mut email_map: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
-
     for (candidate_index, candidate) in candidates.iter().enumerate() {
         let name = candidate.name.as_str();
-        let entity_id = candidate.id.as_deref().unwrap_or("");
         if name.is_empty() {
             continue;
         }
-
-        insert_candidate(&mut exact_case_map, name.to_string(), candidate_index);
-        insert_candidate(
-            &mut lower_map,
-            normalize_resolution_query(name),
-            candidate_index,
-        );
-
-        if entity_id.is_empty() {
-            let name_slug = entity_slug(name);
-            if !name_slug.is_empty() {
-                insert_candidate(&mut id_map, name_slug, candidate_index);
-            }
-        } else {
-            insert_candidate(&mut exact_case_map, entity_id.to_string(), candidate_index);
-            insert_candidate(
-                &mut lower_map,
-                normalize_resolution_query(entity_id),
-                candidate_index,
-            );
-            insert_candidate(&mut id_map, entity_id.to_string(), candidate_index);
-        }
-
-        for aka in &candidate.aka {
-            if !aka.is_empty() {
-                insert_candidate(&mut exact_case_map, aka.clone(), candidate_index);
-                insert_candidate(
-                    &mut lower_map,
-                    normalize_resolution_query(aka),
-                    candidate_index,
-                );
-            }
-        }
-
-        for email in &candidate.emails {
-            if !email.is_empty() {
-                insert_candidate(
-                    &mut email_map,
-                    normalize_resolution_query(email),
-                    candidate_index,
-                );
-            }
-        }
-
         if let Some(first_word) = first_word_key(name) {
             first_word_map
                 .entry(first_word)
@@ -181,26 +248,6 @@ pub fn find_matching_entity_detailed(
                 fuzzy_candidates.insert(aka, candidate_index);
             }
         }
-    }
-
-    if let Some(outcome) = map_outcome(&exact_case_map, detected_name, MatchTier::Exact) {
-        return outcome;
-    }
-
-    if let Some(outcome) = map_outcome(&lower_map, &detected_lower, MatchTier::CaseInsensitive) {
-        return outcome;
-    }
-
-    if detected_name.contains('@')
-        && let Some(outcome) = map_outcome(&email_map, &detected_lower, MatchTier::Email)
-    {
-        return outcome;
-    }
-
-    if !detected_slug.is_empty()
-        && let Some(outcome) = map_outcome(&id_map, &detected_slug, MatchTier::Slug)
-    {
-        return outcome;
     }
 
     if char_len(detected_name) >= 3 {

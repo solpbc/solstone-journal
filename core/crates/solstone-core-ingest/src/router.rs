@@ -5279,11 +5279,22 @@ mod tests {
         use super::*;
         use solstone_core_callosum::{CallosumConnectionPhase, CallosumReceiveEvent};
 
-        async fn listening_peer(root: &Path) -> (CallosumSocketServer, CallosumSocketConnection) {
+        /// The last value keeps the Windows pipe registration for `socket`
+        /// alive; it ends when dropped, so callers hold it for the whole test.
+        async fn listening_peer(
+            root: &Path,
+        ) -> (
+            CallosumSocketServer,
+            CallosumSocketConnection,
+            Box<dyn std::any::Any>,
+        ) {
             let socket = root.join("health/callosum.sock");
             #[cfg(windows)]
-            let _namespace =
-                solstone_core_callosum::test_fixture::WindowsPipeNamespace::register(&socket);
+            let namespace: Box<dyn std::any::Any> = Box::new(
+                solstone_core_callosum::test_fixture::WindowsPipeNamespace::register(&socket),
+            );
+            #[cfg(not(windows))]
+            let namespace: Box<dyn std::any::Any> = Box::new(());
             let server = CallosumSocketServer::bind(&socket).await.unwrap();
             let mut peer = CallosumSocketConnection::new(&socket, Map::new());
             peer.start();
@@ -5302,7 +5313,7 @@ mod tests {
             })
             .await
             .expect("peer connected");
-            (server, peer)
+            (server, peer, namespace)
         }
 
         async fn no_processing_event(peer: &mut CallosumSocketConnection) {
@@ -5325,7 +5336,15 @@ mod tests {
                     if path.is_dir() {
                         walk(&path, base, out);
                     } else {
-                        out.push(path.strip_prefix(base).unwrap().display().to_string());
+                        // Journal keys use '/' on every platform.
+                        let relative = path.strip_prefix(base).unwrap();
+                        out.push(
+                            relative
+                                .iter()
+                                .map(|part| part.to_str().unwrap())
+                                .collect::<Vec<_>>()
+                                .join("/"),
+                        );
                     }
                 }
             }
@@ -5339,7 +5358,7 @@ mod tests {
         async fn a_calendar_file_is_kept_as_sent_and_queued_for_search_with_no_processing_event() {
             let dir = root();
             let root = dir.path();
-            let (server, mut peer) = listening_peer(root).await;
+            let (server, mut peer, _namespace) = listening_peer(root).await;
             let app = api_router(root);
             let (name, bytes) = calendar_file(&[golden(0)]);
             let (status, body) = call_upload(
@@ -5380,14 +5399,14 @@ mod tests {
 
             // The twin: a capture upload on the same day still asks for
             // processing and marks the day.
-            let (status, _) = call_upload(
+            let (status, body) = call_upload(
                 &app,
                 upload("20261019", "100000_300", "audio", "audio.flac"),
                 "audio.flac",
                 b"sound",
             )
             .await;
-            assert_eq!(status, StatusCode::OK);
+            assert_eq!(status, StatusCode::OK, "{body}");
             let observed = next_observing(&mut peer).await;
             assert_eq!(observed.extra["source"], "audio");
             assert_eq!(stream_marker_generation(root, "20261019"), 1);

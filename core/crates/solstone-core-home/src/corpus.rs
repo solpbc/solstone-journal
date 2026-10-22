@@ -141,19 +141,11 @@ fn replay_convey_home_corpus() {
             &case["needs_items"],
             "briefing needs",
         );
-        eq(
-            &briefing::meeting_count(&case["input"]["briefing"]),
-            &case["meeting_count"],
-            "briefing meetings",
-        );
-        asserted += 3;
+        asserted += 2;
     }
     for case in groups["briefing_summary"].as_array().unwrap() {
         eq(
             &briefing::summary(
-                case["input"]["briefing"]
-                    .as_object()
-                    .map(|_| &case["input"]["briefing"]),
                 &case["input"]["sections"],
                 case["input"]["needs_count"].as_i64().unwrap(),
             ),
@@ -296,7 +288,7 @@ fn replay_convey_home_corpus() {
         );
         asserted += 1;
     }
-    assert_eq!(asserted, 1231);
+    assert_eq!(asserted, 1226);
 }
 
 fn rewrite_sol_urls_in_value(value: &mut Value) {

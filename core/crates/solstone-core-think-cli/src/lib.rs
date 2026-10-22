@@ -17,6 +17,7 @@ mod context;
 pub use context::{CortexBoundary, DispatchFailure, IndexBoundary, ThinkContext};
 mod daily;
 mod daily_lifecycle;
+pub use daily_lifecycle::{INDEXER_ARGS, INDEXER_INPUTS_ARGS};
 mod daily_rebuild;
 mod day;
 mod dispatch;

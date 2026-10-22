@@ -2812,7 +2812,12 @@ mod tests {
     #[test]
     fn native_publication_queues_exact_path_replaces_stale_text_and_checks_other_sources() {
         let journal = tempfile::tempdir().unwrap();
-        let segment = journal.path().join("chronicle/20261020/desktop/090000_300");
+        let segment = journal
+            .path()
+            .join("chronicle")
+            .join("20261020")
+            .join("desktop")
+            .join("090000_300");
         fs::create_dir_all(&segment).unwrap();
         let source_path = segment.join("a_screen.webm");
         fs::write(&source_path, "authored source").unwrap();
@@ -2887,7 +2892,12 @@ mod tests {
     #[test]
     fn failed_invalidation_withdraws_the_previous_public_projection_first() {
         let journal = tempfile::tempdir().unwrap();
-        let segment = journal.path().join("chronicle/20261020/desktop/090000_300");
+        let segment = journal
+            .path()
+            .join("chronicle")
+            .join("20261020")
+            .join("desktop")
+            .join("090000_300");
         fs::create_dir_all(segment.join("talents")).unwrap();
         let source = segment.join("a_screen.webm");
         fs::write(&source, "authored video").unwrap();
@@ -2919,7 +2929,12 @@ mod tests {
     #[test]
     fn current_policy_withdraws_other_displays_and_old_attempts_cannot_restore_ignored_text() {
         let journal = tempfile::tempdir().unwrap();
-        let segment = journal.path().join("chronicle/20261020/desktop/090000_300");
+        let segment = journal
+            .path()
+            .join("chronicle")
+            .join("20261020")
+            .join("desktop")
+            .join("090000_300");
         fs::create_dir_all(&segment).unwrap();
         let videos = [segment.join("a_screen.webm"), segment.join("b_screen.webm")];
         for (index, path) in videos.iter().enumerate() {

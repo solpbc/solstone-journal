@@ -445,62 +445,28 @@ pub fn morning_briefing_path(context: &HomeContext, day: &str) -> Option<std::pa
 pub fn load_briefing(context: &HomeContext, day: &str) -> Option<Value> {
     let briefing = read_json_value(&morning_briefing_path(context, day)?)?;
     let object = briefing.as_object()?;
-    [
-        "metadata",
-        "your_day",
-        "yesterday",
-        "needs_attention",
-        "forward_look",
-    ]
-    .iter()
-    .all(|key| object.contains_key(*key))
-    .then_some(briefing)
+    ["metadata", "yesterday", "needs_attention"]
+        .iter()
+        .all(|key| object.contains_key(*key))
+        .then_some(briefing)
 }
 
 /// Render the non-empty briefing sections without reading the filesystem.
 pub fn render_briefing_sections(briefing: &Value) -> BTreeMap<String, String> {
     let mut sections = BTreeMap::new();
-    let strings = |key: &str| {
-        briefing
-            .get(key)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .map(|text| format!("- {text}"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    for key in ["yesterday", "forward_look"] {
-        let text = strings(key);
-        if !text.is_empty() {
-            sections.insert(key.to_owned(), text);
-        }
-    }
-    let your_day = briefing
-        .get("your_day")
+    let yesterday = briefing
+        .get("yesterday")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(Value::as_object)
-        .filter_map(|row| {
-            let text = row.get("text").and_then(Value::as_str).unwrap_or("").trim();
-            let label = your_day_time_label(row);
-            (!label.is_empty() || !text.is_empty()).then(|| {
-                match (label.is_empty(), text.is_empty()) {
-                    (false, false) => format!("- **{label}**: {text}"),
-                    (false, true) => format!("- **{label}**"),
-                    (true, false) => format!("- {text}"),
-                    _ => String::new(),
-                }
-            })
-        })
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(|text| format!("- {text}"))
         .collect::<Vec<_>>()
         .join("\n");
-    if !your_day.is_empty() {
-        sections.insert("your_day".to_owned(), your_day);
+    if !yesterday.is_empty() {
+        sections.insert("yesterday".to_owned(), yesterday);
     }
     let needs = briefing_needs_items(briefing)
         .into_iter()
@@ -529,36 +495,6 @@ pub fn briefing_needs_items(briefing: &Value) -> Vec<Value> {
         .cloned()
         .collect()
 }
-/// A `your_day` item's clock label, mirroring `solstone-core-format`'s
-/// `content::morning_briefing::time_label` and this crate's own
-/// `briefing::your_day_time_label` (three call sites, three crates/modules;
-/// duplicated rather than shared -- each renders a different surface).
-/// `start == end` (or either one blank) collapses to a single point; `end`
-/// alone with no `start` still reads as a point-in-time at `end`.
-fn your_day_time_label(row: &serde_json::Map<String, Value>) -> String {
-    let field = |key: &str| row.get(key).and_then(Value::as_str).unwrap_or("").trim();
-    let start = field("start");
-    let end = field("end");
-    match (start.is_empty(), end.is_empty()) {
-        (true, true) => String::new(),
-        (false, true) => start.to_owned(),
-        (true, false) => end.to_owned(),
-        (false, false) if start == end => start.to_owned(),
-        (false, false) => format!("{start}–{end}"),
-    }
-}
-
-pub fn briefing_meeting_count(briefing: &Value) -> usize {
-    briefing
-        .get("your_day")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_object)
-        .filter(|item| !your_day_time_label(item).is_empty())
-        .count()
-}
-
 /// Report briefing existence, validity, and optional generated label.
 pub fn briefing_freshness(context: &HomeContext, day: &str) -> Value {
     if !morning_briefing_path(context, day).is_some_and(|path| path.is_file()) {
@@ -1826,7 +1762,7 @@ mod tests {
         write(
             root.path(),
             "chronicle/20260531/talents/morning_briefing.json",
-            r#"{"metadata":{},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}"#,
+            r#"{"metadata":{},"yesterday":[],"needs_attention":[]}"#,
         );
         assert!(
             load_briefing(&context, "20260602").is_none(),
@@ -1861,21 +1797,15 @@ mod tests {
         write(
             root.path(),
             "chronicle/20260601/talents/morning_briefing.json",
-            r#"{"metadata":{"generated":"without_reading"},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[]}"#,
+            r#"{"metadata":{"generated":"current_shape"},"yesterday":[],"needs_attention":[]}"#,
         );
         assert_eq!(
             load_briefing(&context, "20260602").unwrap()["metadata"]["generated"],
-            "without_reading"
+            "current_shape"
         );
         assert_eq!(
             briefing_freshness(&context, "20260602"),
             json!({"exists":true,"valid":true,"generated_label":null})
-        );
-        assert_eq!(
-            briefing_meeting_count(
-                &json!({"your_day":[{"start":"","end":""},{"start":"10:00","end":"10:00"}]})
-            ),
-            1
         );
         assert_eq!(
             briefing_needs_items(&json!({"needs_attention":[{},"bad"]})),
@@ -2369,27 +2299,13 @@ mod tests {
     }
 
     #[test]
-    fn briefing_renderer_omits_empty_sections_and_formats_all_section_kinds() {
+    fn briefing_renderer_omits_empty_and_retired_sections() {
         let rendered = render_briefing_sections(
             &json!({"yesterday":[""],"forward_look":["next"],"your_day":[{"start":"9:00","end":"9:00","text":"meeting"}],"reading":[{"facet":"work","summary":"read"}],"needs_attention":[{"text":"act"}]}),
         );
-        assert!(!rendered.contains_key("yesterday"));
-        assert_eq!(rendered["forward_look"], "- next");
-        assert_eq!(rendered["your_day"], "- **9:00**: meeting");
-        assert!(!rendered.contains_key("reading"));
-        assert_eq!(rendered["needs_attention"], "- act");
-    }
-
-    #[test]
-    fn your_day_renders_a_window_and_treats_end_only_as_a_point() {
-        let rendered = render_briefing_sections(&json!({"your_day":[
-            {"start":"13:00","end":"13:30","text":"Team sync."},
-            {"start":"","end":"14:00","text":"Odd shape."},
-            {"start":"","end":"","text":"No fixed time."}
-        ]}));
         assert_eq!(
-            rendered["your_day"],
-            "- **13:00–13:30**: Team sync.\n- **14:00**: Odd shape.\n- No fixed time."
+            rendered.into_iter().collect::<Vec<_>>(),
+            vec![("needs_attention".to_owned(), "- act".to_owned())]
         );
     }
 

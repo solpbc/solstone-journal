@@ -3553,6 +3553,7 @@ fn screen_text_schema_absence_preserves_ordinary_search() {
         )
         .unwrap();
     assert!(!recreated, "reader must not upgrade the schema");
+    drop(connection);
     fs::remove_dir_all(root).unwrap();
 }
 

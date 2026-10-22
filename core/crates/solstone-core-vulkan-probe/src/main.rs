@@ -287,7 +287,8 @@ fn enumerate_devices_bounded<Q: VulkanQuery>(
             let name_bytes = properties
                 .device_name
                 .iter()
-                .map(|byte| *byte as u8)
+                // c_char is i8 on x86_64 and u8 on aarch64 Linux; keep the raw byte on both.
+                .map(|byte| byte.to_ne_bytes()[0])
                 .take_while(|byte| *byte != 0)
                 .collect::<Vec<_>>();
             let mut memory = VkPhysicalDeviceMemoryProperties {
@@ -527,7 +528,7 @@ mod tests {
             _tail: [0; 8192],
         };
         for (slot, byte) in props.device_name.iter_mut().zip(name.bytes()) {
-            *slot = byte as c_char;
+            *slot = c_char::from_ne_bytes([byte]);
         }
         props
     }

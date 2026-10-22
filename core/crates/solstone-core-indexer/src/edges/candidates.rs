@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
-use solstone_core_entity_matching::{EntityNameCandidate, find_matching_entity};
+use solstone_core_entity_matching::{ConfidentMatcher, EntityNameCandidate, find_matching_entity};
 
 use crate::edges::speaker::SpeakerEntityIndex;
 use crate::edges::{EdgeContext, EdgeError};
@@ -37,6 +37,7 @@ impl EdgeDropCounter {
 pub struct EdgeResolver {
     journal: PathBuf,
     cache: BTreeMap<String, Vec<EntityNameCandidate>>,
+    confident: BTreeMap<String, ConfidentMatcher>,
     drops: EdgeDropCounter,
     owner_timezone: Option<Result<Tz, EdgeError>>,
     speaker_entities: Option<SpeakerEntityIndex>,
@@ -47,6 +48,7 @@ impl EdgeResolver {
         Self {
             journal: journal.to_path_buf(),
             cache: BTreeMap::new(),
+            confident: BTreeMap::new(),
             drops: EdgeDropCounter::default(),
             owner_timezone: None,
             speaker_entities: None,
@@ -70,6 +72,26 @@ impl EdgeResolver {
         context: &EdgeContext,
         name: &str,
     ) -> Result<Option<String>, EdgeError> {
+        self.resolve_with(context, name, false)
+    }
+
+    /// Resolve a name only to an entity it names with high confidence: as
+    /// written, ignoring case, by email or by the entity's id. A looser match,
+    /// such as a first name alone, resolves to no one.
+    pub fn resolve_confident(
+        &mut self,
+        context: &EdgeContext,
+        name: &str,
+    ) -> Result<Option<String>, EdgeError> {
+        self.resolve_with(context, name, true)
+    }
+
+    fn resolve_with(
+        &mut self,
+        context: &EdgeContext,
+        name: &str,
+        confident: bool,
+    ) -> Result<Option<String>, EdgeError> {
         if name.trim().is_empty() {
             self.record_drop();
             return Ok(None);
@@ -86,8 +108,19 @@ impl EdgeResolver {
         let candidates = self.cache.get(&context.facet).ok_or_else(|| {
             EdgeError::Io(format!("candidate cache missing for {:?}", context.facet))
         })?;
-        let matched = find_matching_entity(name, candidates, 90.0);
-        let candidate = matched.and_then(|result| candidates.get(result.candidate_index));
+        let candidate = if confident {
+            let matcher = self
+                .confident
+                .entry(context.facet.clone())
+                .or_insert_with(|| ConfidentMatcher::new(candidates));
+            matcher
+                .find(name)
+                .and_then(|index| candidates.get(index))
+                .filter(|candidate| candidate.id.as_deref().is_some_and(|id| !id.is_empty()))
+        } else {
+            find_matching_entity(name, candidates, 90.0)
+                .and_then(|result| candidates.get(result.candidate_index))
+        };
         let entity_id = candidate.and_then(|candidate| candidate.id.as_deref());
         Ok(match entity_id {
             Some(entity_id) if !entity_id.is_empty() => Some(entity_id.to_string()),
@@ -124,6 +157,48 @@ impl EdgeResolver {
             Some(candidates) => Ok(candidates),
             None => Err(EdgeError::Io("speaker entity cache missing".to_string())),
         }
+    }
+}
+
+/// The journal's unblocked entities, ready to match the people on an invite.
+pub struct KnownPeople {
+    candidates: Vec<EntityNameCandidate>,
+    matcher: ConfidentMatcher,
+}
+
+impl KnownPeople {
+    pub fn load(journal: &Path) -> io::Result<Self> {
+        Ok(Self::new(load_journal_candidates(journal)?))
+    }
+
+    pub fn new(candidates: Vec<EntityNameCandidate>) -> Self {
+        let matcher = ConfidentMatcher::new(&candidates);
+        Self {
+            candidates,
+            matcher,
+        }
+    }
+
+    /// The known person an invitee is: by their email first, then by the name
+    /// on the invite, each only with high confidence (as written, ignoring
+    /// case, by email, or by the entity's id). A first name alone, or a name
+    /// two people share, is no one.
+    pub fn invitee(&self, name: Option<&str>, email: Option<&str>) -> Option<&EntityNameCandidate> {
+        let find = |text: &str| {
+            self.matcher
+                .find(text)
+                .and_then(|index| self.candidates.get(index))
+                .filter(|candidate| candidate.id.as_deref().is_some_and(|id| !id.is_empty()))
+        };
+        email
+            .map(str::trim)
+            .filter(|email| email.contains('@'))
+            .and_then(find)
+            .or_else(|| {
+                name.map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .and_then(find)
+            })
     }
 }
 

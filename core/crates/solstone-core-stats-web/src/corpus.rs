@@ -135,7 +135,7 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
     replace_text(
         &mut wanted,
         "synthesizes all daily agent outputs into a structured five-section morning briefing",
-        "synthesizes all daily agent outputs into a structured four-section morning briefing",
+        "synthesizes all daily agent outputs into a structured morning briefing",
     );
     // The schedule talent was retired after the corpus was recorded.
     if let Some(generators) = wanted
