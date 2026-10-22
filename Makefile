@@ -650,15 +650,18 @@ check-rust-clippy:
 	cargo clippy --manifest-path $(RUST_MANIFEST) $(RUST_NATIVE_ROUTINE_PACKAGES) --lib --bins --locked --offline -- -D warnings
 	cargo clippy --manifest-path $(RUST_MANIFEST) $(RUST_NATIVE_ROUTINE_PACKAGES) --no-default-features --lib --locked --offline -- -D warnings
 
+# Every classified package's suite features are linted in one workspace pass
+# (package/feature pairs). One Cargo run per package re-checked the shared
+# dependency graph each time and took most of the leg's time; each package's
+# registry suite still builds it alone with exactly its own features.
 check-rust-clippy-full:
 	@$(REQUIRE_CARGO)
 	@status=0; \
 	if cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --all-targets --locked -- -D warnings; then :; else status=$$?; fi; \
 	classified=$$(mktemp); trap 'rm -f "$$classified"' 0; \
 	$(SOLSTONE_CI_RUNNER) classified > "$$classified" || exit $$?; \
-	while read -r package features runtime; do \
-		if cargo clippy --manifest-path $(RUST_MANIFEST) -p "$$package" --features "$$features" --all-targets --locked -- -D warnings; then :; else child_status=$$?; [ "$$status" -ne 0 ] || status=$$child_status; fi; \
-	done < "$$classified"; \
+	features=$$(awk '{ n = split($$2, f, ","); for (i = 1; i <= n; i++) printf "%s/%s ", $$1, f[i] }' "$$classified"); \
+	if cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --features "$$features" --all-targets --locked -- -D warnings; then :; else child_status=$$?; [ "$$status" -ne 0 ] || status=$$child_status; fi; \
 	if make --no-print-directory check-rust-classified-full-clippy-onnx; then :; else child_status=$$?; [ "$$status" -ne 0 ] || status=$$child_status; fi; \
 	exit "$$status"
 
