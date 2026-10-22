@@ -3066,6 +3066,73 @@ mod tests {
         assert!(work.history.owed > 0);
     }
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn old_parakeet_availability_failure_discovers_ordinary_segment_work() {
+        for (reason, previous_hold) in [
+            ("server_not_ready", false),
+            ("no_port", false),
+            ("server_not_ready", true),
+            ("no_port", true),
+        ] {
+            let root = fixture("local");
+            let day = daily_coverage::local_day(root.path(), chrono::Utc::now());
+            let directory = root
+                .path()
+                .join("chronicle")
+                .join(&day)
+                .join("notes/120000_60");
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("audio.wav"), b"retained audio").unwrap();
+            let header = serde_json::json!({"raw":"audio.wav","_solstone_processing":{
+                "schema":"solstone.processing.v1","handler":"transcribe","state":"failed",
+                "reason_code":reason,"attempts":3,"input_size":14
+            }});
+            std::fs::write(directory.join("audio.jsonl"), format!("{header}\n")).unwrap();
+            if previous_hold {
+                let unit = work_retry::raw::unit_for_output(
+                    root.path(),
+                    &directory.join("audio.jsonl"),
+                    "transcribe",
+                )
+                .unwrap();
+                let fingerprint =
+                    work_retry::file_fingerprint(&directory.join("audio.wav")).unwrap();
+                work_retry::observe_held(root.path(), &unit, reason, &fingerprint).unwrap();
+            }
+            let queue = queue(root.path());
+            let mut report = WorkInventory::default();
+            let work = inspect_day(
+                root.path(),
+                &day,
+                &queue,
+                None,
+                DaySources {
+                    imports: &[],
+                    archive_coordinates: &BTreeSet::new(),
+                    roots: None,
+                },
+                WorkPolicy::read(root.path()).unwrap(),
+                &mut report,
+                &|| Ok(()),
+            )
+            .unwrap();
+            assert!(
+                work.candidates.iter().any(|task| task.request.reference
+                    == format!("supervisor-work-{day}-notes-120000_60"))
+            );
+            assert_eq!(work.history.set_aside, 0);
+            assert_eq!(
+                root.path().join("health/work-retry").exists(),
+                previous_hold
+            );
+            assert_eq!(
+                std::fs::read(directory.join("audio.wav")).unwrap(),
+                b"retained audio"
+            );
+        }
+    }
+
     #[test]
     fn native_readmissions_keep_today_owner_and_background_priority_and_spend() {
         use solstone_core_system::work_policy::ThinkingLane;

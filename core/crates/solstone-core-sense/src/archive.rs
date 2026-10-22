@@ -191,4 +191,26 @@ mod tests {
         .unwrap();
         assert_eq!(transcription_state(&raw), ArchiveTranscription::Complete);
     }
+
+    #[test]
+    fn old_parakeet_availability_failures_remain_owed_in_archive_admission() {
+        let root = tempfile::tempdir().unwrap();
+        let raw = root.path().join("part.ogg");
+        std::fs::write(&raw, b"audio").unwrap();
+        for reason in ["server_not_ready", "no_port"] {
+            for attempts in [3, 1000] {
+                let header = json!({"_solstone_processing":{
+                    "schema":vocab::SCHEMA,"state":"failed","handler":"transcribe",
+                    "reason_code":reason,"attempts":attempts,"input_size":5
+                }});
+                std::fs::write(
+                    raw.with_extension("jsonl"),
+                    format!("{header}\n{{\"start\":\"12:00:01\",\"text\":\"stray row\"}}\n"),
+                )
+                .unwrap();
+                assert_eq!(transcription_state(&raw), ArchiveTranscription::Owed);
+                assert_eq!(std::fs::read(&raw).unwrap(), b"audio");
+            }
+        }
+    }
 }
