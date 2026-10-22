@@ -6954,6 +6954,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-journal-io",
  "solstone-core-memory-original",
+ "solstone-core-processing-record",
  "tempfile",
 ]
 

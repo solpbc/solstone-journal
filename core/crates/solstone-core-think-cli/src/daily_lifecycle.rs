@@ -548,6 +548,15 @@ pub(crate) fn rebuild_segment_receipts(
         if !p.capped_by_skip.is_empty() || !p.dispatched.is_subset(&p.completed) {
             return Err("segment work has an unresolved disposition".into());
         }
+        let segment = solstone_core_system_health::find_segment_dir(
+            &context.journal,
+            &context.day,
+            &target.key,
+            Some(&target.stream),
+        )
+        .ok_or("requested segment disappeared")?;
+        let mut outputs = BTreeMap::new();
+        rebuild_saved_outputs(&context.journal, &segment, &mut outputs)?;
         let mut uses = BTreeMap::new();
         for name in p
             .dispatched
@@ -561,13 +570,26 @@ pub(crate) fn rebuild_segment_receipts(
             if prior.is_some_and(|old| old.contains(id)) {
                 return Err("forced segment target retained an earlier use".into());
             }
-            let events = solstone_core_cortex_client::read_use_events(&context.journal, id)
-                .map_err(|e| e.to_string())?;
-            if !events.last().is_some_and(|event| {
+            let events =
+                solstone_core_cortex_client::read_completed_use_events(&context.journal, name, id)
+                    .map_err(|e| e.to_string())?;
+            let written = events.last().is_some_and(|event| {
                 event["event"] == "finish"
                     && event.get("skip_reason").is_none()
                     && event.get("output").is_some()
-            }) {
+            });
+            if !written
+                && !rebuild_conditional_receipt(
+                    context,
+                    &target.stream,
+                    &target.key,
+                    &segment,
+                    name,
+                    id,
+                    &events,
+                    &outputs,
+                )?
+            {
                 return Err("segment use has no accepted terminal outcome".into());
             }
             uses.insert(
@@ -578,15 +600,6 @@ pub(crate) fn rebuild_segment_receipts(
                 ),
             );
         }
-        let segment = solstone_core_system_health::find_segment_dir(
-            &context.journal,
-            &context.day,
-            &target.key,
-            Some(&target.stream),
-        )
-        .ok_or("requested segment disappeared")?;
-        let mut outputs = BTreeMap::new();
-        rebuild_saved_outputs(&context.journal, &segment, &mut outputs)?;
         let publication = segment
             .strip_prefix(&context.journal)
             .map_err(|e| e.to_string())?
@@ -608,6 +621,57 @@ pub(crate) fn rebuild_segment_receipts(
         "{:x}",
         Sha256::digest(serde_json::to_vec(&(proof, activity_proof)).map_err(|e| e.to_string())?)
     ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rebuild_conditional_receipt(
+    context: &ThinkContext,
+    stream: &str,
+    key: &str,
+    segment: &std::path::Path,
+    name: &str,
+    id: &str,
+    events: &[Value],
+    outputs: &BTreeMap<String, String>,
+) -> Result<bool, String> {
+    // No-output must not certify a prior saved artifact as this use's result.
+    // Keep those bytes intact for their existing owner to reconcile.
+    let relative = segment
+        .strip_prefix(&context.journal)
+        .map_err(|e| e.to_string())?
+        .join("talents");
+    for path in outputs.keys() {
+        let path = std::path::Path::new(path);
+        if path.parent() == Some(relative.as_path())
+            && path
+                .file_name()
+                .and_then(|v| v.to_str())
+                .is_some_and(|file| file == name || file.starts_with(&format!("{name}.")))
+        {
+            return Ok(false);
+        }
+    }
+    let paths = solstone_core_talent_runtime::prepare::RuntimePaths {
+        talent_root: context.talent_root.clone(),
+        apps_root: context.apps_root.clone(),
+        templates_dir: context
+            .talent_root
+            .parent()
+            .ok_or("talent root has no package parent")?
+            .join("think/templates"),
+    };
+    solstone_core_talent_runtime::conditional_segment::receipt_is_applicable(
+        events,
+        id,
+        name,
+        &context.day,
+        stream,
+        key,
+        &paths,
+        &solstone_core_talent_runtime::ExecutionContext {
+            journal: context.journal.clone(),
+        },
+    )
 }
 
 // Bind saved owner outputs even in the direct-under-day layout, whose legacy
@@ -3150,6 +3214,413 @@ mod tests {
             }
         }
         assert!(rebuild_segment_receipts(&context, None).is_ok());
+    }
+
+    fn conditional_segment_fixture(
+        journal: &std::path::Path,
+        stream: Option<&str>,
+    ) -> (ThinkContext, std::path::PathBuf) {
+        use solstone_core_talent_runtime::{ExecutionContext, prepare::RuntimePaths};
+        let context = context(journal);
+        let stream_name = stream.unwrap_or(solstone_core_journal_io::DEFAULT_STREAM);
+        let segment = stream
+            .map(|s| context.day_dir.join(s))
+            .unwrap_or(context.day_dir.clone())
+            .join("090000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"A sufficiently detailed synthetic meeting about the garden project.\"}\n").unwrap();
+        fs::write(segment.join("090000_300_screen.wav"), b"synthetic media").unwrap();
+        fs::write(
+            segment.join("talents/sense.json"),
+            r#"{"density":"idle","content_type":"work"}"#,
+        )
+        .unwrap();
+        let paths = RuntimePaths {
+            talent_root: context.talent_root.clone(),
+            apps_root: context.apps_root.clone(),
+            templates_dir: context
+                .talent_root
+                .parent()
+                .unwrap()
+                .join("think/templates"),
+        };
+        fs::create_dir_all(&paths.templates_dir).unwrap();
+        let mut log = RunLogWriter::open(journal, DAY, "segment");
+        let now = Utc::now().timestamp_millis() + 3_600_000;
+        let coordinates =
+            serde_json::json!({"mode":"segment", "stream":stream_name,"segment":"090000_300"})
+                .as_object()
+                .unwrap()
+                .clone();
+        let mut sensed = coordinates.clone();
+        sensed.insert("density".into(), Value::from("idle"));
+        log.log("sense.complete", now, sensed);
+        for (ordinal, name) in ["documents", "screen"].into_iter().enumerate() {
+            let extra = if name == "documents" {
+                r#", "hook":{"pre":"documents"}, "load":{"transcripts":true,"percepts":false,"talents":false}"#
+            } else {
+                r#", "load":{"transcripts":true,"percepts":"required","talents":false}"#
+            };
+            fs::write(paths.talent_root.join(format!("{name}.md")), format!("{{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":10,\"output\":\"json\",\"max_output_tokens\":1024{extra}\n}}\nSegment record")).unwrap();
+            let id = format!("conditional-{name}");
+            let mut request = serde_json::json!({"name":name,"use_id":id,"day":DAY,"segment":"090000_300","output_path":segment.join("talents").join(format!("{name}.json"))}).as_object().unwrap().clone();
+            if let Some(stream) = stream {
+                request.insert("stream".into(), Value::from(stream));
+            }
+            let mut bytes = serde_json::to_vec(&request).unwrap();
+            bytes.push(b'\n');
+            let outcome = solstone_core_talent_runtime::execute_request(
+                request,
+                &paths,
+                &ExecutionContext {
+                    journal: journal.into(),
+                },
+                &|_: &solstone_core_generate::GenerateRequest| -> Result<
+                    solstone_core_generate::GenerateResponse,
+                    solstone_core_generate::ClientError,
+                > { panic!("an inapplicable talent must not Generate") },
+                &mut bytes,
+                &solstone_core_generate::Cancellation::never(),
+            );
+            assert!(
+                matches!(
+                    outcome,
+                    solstone_core_talent_runtime::RuntimeOutcome::Skipped { .. }
+                        | solstone_core_talent_runtime::RuntimeOutcome::PrepareSkipped { .. }
+                ),
+                "{outcome:?}"
+            );
+            solstone_core_talent_runtime::emit_outcome_for_test(&mut bytes, outcome);
+            let uses = journal.join("talents").join(name);
+            fs::create_dir_all(&uses).unwrap();
+            fs::write(uses.join(format!("{id}.jsonl")), bytes).unwrap();
+            let mut fields = coordinates.clone();
+            fields.insert("name".into(), Value::from(name));
+            fields.insert("use_id".into(), Value::from(id));
+            log.log(
+                "talent.dispatch",
+                now + ordinal as i64 * 2 + 1,
+                fields.clone(),
+            );
+            fields.insert("state".into(), Value::from("finish"));
+            log.log("talent.complete", now + ordinal as i64 * 2 + 2, fields);
+        }
+        segment::publish_saved_outputs(&context, &segment).unwrap();
+        (context, segment)
+    }
+
+    #[test]
+    fn rebuild_seals_real_conditional_skips_and_rechecks_new_projection() {
+        for stream in [None, Some("notes")] {
+            let journal = tempdir().unwrap();
+            let (mut context, segment) = conditional_segment_fixture(journal.path(), stream);
+            let sealed = rebuild_segment_receipts(&context, None).unwrap();
+            assert!(
+                rebuild_segment_receipts(
+                    &context,
+                    Some(&BTreeSet::from(["conditional-screen".into()]))
+                )
+                .is_err()
+            );
+            let generation = stream_generation(&context).unwrap();
+            let raw = read_raw_input_fingerprint(journal.path(), DAY).unwrap();
+            let request =
+                solstone_core_system::work_intent::register(journal.path(), DAY, true).unwrap();
+            let root = solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap();
+            let lease = solstone_core_system::work_intent::begin_rebuild(
+                journal.path(),
+                DAY,
+                &request.id,
+                &root.identity().observation_id(),
+            )
+            .unwrap();
+            solstone_core_system::work_intent::update_rebuild(
+                journal.path(),
+                DAY,
+                &request.id,
+                &|| Ok(()),
+                |p| {
+                    p.segments = Some(solstone_core_system::work_intent::SegmentSeal {
+                        generation,
+                        raw_fingerprint: raw.clone(),
+                        receipts_digest: sealed.clone(),
+                    });
+                    Ok(())
+                },
+            )
+            .unwrap();
+            context.rebuild = Some(Arc::new(lease));
+            context.rebuild_admission_checkpoint().unwrap();
+            // A derived media projection can appear without a new raw generation.
+            fs::write(segment.join("090000_300_screen.jsonl"), "{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":15}}\n{\"start\":\"00:00:01\",\"text\":\"derived\"}\n").unwrap();
+            assert_eq!(stream_generation(&context).unwrap(), generation);
+            assert_eq!(
+                read_raw_input_fingerprint(journal.path(), DAY).unwrap(),
+                raw
+            );
+            assert!(context.rebuild_admission_checkpoint().is_err());
+            assert!(rebuild_segment_receipts(&context, None).is_err());
+        }
+    }
+
+    #[test]
+    fn conditional_seal_holds_prior_output_without_changing_or_certifying_it() {
+        for name in ["documents", "screen"] {
+            let journal = tempdir().unwrap();
+            let (context, segment) = conditional_segment_fixture(journal.path(), Some("notes"));
+            assert!(rebuild_segment_receipts(&context, None).is_ok());
+            let path = segment.join("talents").join(format!("{name}.json"));
+            let prior = br#"{"summary":"prior real output, now inapplicable"}"#;
+            fs::write(&path, prior).unwrap();
+            // Existing publication may still include old bytes; that never
+            // substitutes for this request's no-output disposition.
+            segment::publish_saved_outputs(&context, &segment).unwrap();
+            assert!(rebuild_segment_receipts(&context, None).is_err());
+            assert_eq!(fs::read(path).unwrap(), prior);
+        }
+    }
+
+    #[test]
+    fn conditional_seal_refuses_malformed_or_unterminated_durable_receipts() {
+        for kind in ["malformed", "unterminated", "wrong_request"] {
+            let journal = tempdir().unwrap();
+            let (context, _) = conditional_segment_fixture(journal.path(), Some("notes"));
+            assert!(rebuild_segment_receipts(&context, None).is_ok());
+            let path = journal
+                .path()
+                .join("talents/screen/conditional-screen.jsonl");
+            let mut bytes = fs::read(&path).unwrap();
+            match kind {
+                "malformed" => bytes.extend_from_slice(b"unreadable interrupted row\n"),
+                "unterminated" => {
+                    bytes.pop();
+                }
+                "wrong_request" => {
+                    bytes = String::from_utf8(bytes)
+                        .unwrap()
+                        .replace("conditional-screen", "different-use")
+                        .into_bytes();
+                }
+                _ => unreachable!(),
+            }
+            fs::write(path, bytes).unwrap();
+            assert!(rebuild_segment_receipts(&context, None).is_err(), "{kind}");
+        }
+    }
+
+    struct ActualSegmentCortex {
+        journal: std::path::PathBuf,
+        paths: solstone_core_talent_runtime::prepare::RuntimePaths,
+        completed: Mutex<BTreeMap<String, UseCompletion>>,
+    }
+
+    impl crate::context::CortexBoundary for ActualSegmentCortex {
+        fn dispatch(
+            &self,
+            runtime: &tokio::runtime::Runtime,
+            request: &CortexRequest,
+        ) -> Result<String, crate::context::DispatchFailure> {
+            self.dispatch_prepared(runtime, request, None, &mut |_| Ok(()))
+        }
+        fn dispatch_prepared(
+            &self,
+            _: &tokio::runtime::Runtime,
+            request: &CortexRequest,
+            reserved: Option<&str>,
+            prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+        ) -> Result<String, crate::context::DispatchFailure> {
+            let id = reserved.map(str::to_owned).unwrap_or_else(|| {
+                solstone_core_journal_io::cortex_use::allocate_cortex_use_id(
+                    &self.journal,
+                    Utc::now().timestamp_millis(),
+                )
+                .unwrap()
+                .to_string()
+            });
+            prepare(&id).map_err(|_| crate::context::DispatchFailure::Unavailable)?;
+            let mut config = request.config.clone();
+            config.insert("name".into(), Value::from(request.name.clone()));
+            config.insert("use_id".into(), Value::from(id.clone()));
+            let mut bytes = serde_json::to_vec(&config).unwrap();
+            bytes.push(b'\n');
+            let generated = if request.name == "sense" {
+                r#"{"density":"active","content_type":"work","activity_summary":"A new synthetic garden meeting.","facets":[],"recommend":{"screen_record":true}}"#
+            } else {
+                r#"{"summary":"A prior synthetic saved result."}"#
+            };
+            let generate = |_: &solstone_core_generate::GenerateRequest| {
+                Ok(solstone_core_generate::GenerateResponse::Generated(
+                    Box::new(solstone_core_generate::GeneratedResponse {
+                        id: None,
+                        text: generated.into(),
+                        model: "test-model".into(),
+                        finish_reason: "stop".into(),
+                        usage: serde_json::json!({}),
+                        thinking: None,
+                        schema_validation: None,
+                        input_budget: None,
+                        request_budget: None,
+                        inference: None,
+                        hints_applied: vec![],
+                    }),
+                ))
+            };
+            let outcome = solstone_core_talent_runtime::execute_request(
+                config,
+                &self.paths,
+                &solstone_core_talent_runtime::ExecutionContext {
+                    journal: self.journal.clone(),
+                },
+                &generate,
+                &mut bytes,
+                &solstone_core_generate::Cancellation::never(),
+            );
+            let end_state = if matches!(
+                outcome,
+                solstone_core_talent_runtime::RuntimeOutcome::Finished { .. }
+                    | solstone_core_talent_runtime::RuntimeOutcome::Skipped { .. }
+                    | solstone_core_talent_runtime::RuntimeOutcome::PrepareSkipped { .. }
+            ) {
+                UseEndState::Finish
+            } else {
+                UseEndState::Error
+            };
+            solstone_core_talent_runtime::emit_outcome_for_test(&mut bytes, outcome);
+            let last: Value = serde_json::from_slice(
+                bytes
+                    .split(|byte| *byte == b'\n')
+                    .rfind(|row| !row.is_empty())
+                    .unwrap(),
+            )
+            .unwrap();
+            let dir = self.journal.join("talents").join(
+                solstone_core_journal_io::cortex_use::talent_directory_name(&request.name),
+            );
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(format!("{id}.jsonl")), bytes).unwrap();
+            self.completed.lock().unwrap().insert(
+                id.clone(),
+                UseCompletion {
+                    end_state,
+                    finish_fields: solstone_core_cortex_client::FinishFields {
+                        output_changed: last.get("output_changed").and_then(Value::as_bool),
+                    },
+                },
+            );
+            Ok(id)
+        }
+        fn wait(
+            &self,
+            _: &tokio::runtime::Runtime,
+            ids: &[String],
+            _: Option<Duration>,
+        ) -> Result<WaitForUsesReport, String> {
+            Ok(WaitForUsesReport {
+                completed: ids
+                    .iter()
+                    .map(|id| (id.clone(), self.completed.lock().unwrap()[id]))
+                    .collect(),
+                timed_out: vec![],
+            })
+        }
+    }
+
+    #[test]
+    fn forced_segment_refuses_stale_conditional_output_and_publishes_applicable_converse() {
+        for (name, stale) in [
+            ("documents", true),
+            ("screen", true),
+            ("documents", false),
+            ("screen", false),
+        ] {
+            let journal = tempdir().unwrap();
+            let mut context = context(journal.path())
+                .with_event_clock(Arc::new(|| Utc::now().timestamp_millis() + 3_600_000));
+            let stream = if name == "documents" && !stale {
+                "import.document"
+            } else {
+                "notes"
+            };
+            let segment = context.day_dir.join(stream).join("090000_300");
+            fs::create_dir_all(segment.join("talents")).unwrap();
+            fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"A sufficiently detailed synthetic garden meeting.\"}\n").unwrap();
+            fs::write(
+                segment.join("talents/sense.json"),
+                r#"{"density":"idle","content_type":"work"}"#,
+            )
+            .unwrap();
+            let old = br#"{"summary":"prior saved output"}"#;
+            let output = segment.join("talents").join(format!("{name}.json"));
+            if stale {
+                fs::write(&output, old).unwrap();
+            }
+            if name == "screen" && !stale {
+                fs::write(segment.join("x_desktop_activity.jsonl"), "{\"v\":1,\"t\":\"desktop_activity\",\"kind\":\"foreground\",\"method\":\"ax\",\"ts\":1000,\"end_ts\":2000,\"app\":\"Synthetic garden planning\"}\n").unwrap();
+            }
+            segment::publish_saved_outputs(&context, &segment).unwrap();
+            let publication = fs::read(segment.join("talents/publication.json")).unwrap();
+            for talent in ["sense", "documents", "screen"] {
+                let extra = match talent {
+                    "documents" => {
+                        r#", "hook":{"pre":"documents"}, "load":{"transcripts":true,"percepts":false,"talents":false}"#
+                    }
+                    "screen" => {
+                        r#", "load":{"transcripts":true,"percepts":"required","talents":false}"#
+                    }
+                    _ => r#", "load":{"transcripts":true,"percepts":false,"talents":false}"#,
+                };
+                let priority = if talent == "sense" { 1 } else { 10 };
+                fs::write(context.talent_root.join(format!("{talent}.md")), format!("{{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":{priority},\"output\":\"json\",\"max_output_tokens\":1024{extra}\n}}\nSegment record")).unwrap();
+            }
+            let paths = solstone_core_talent_runtime::prepare::RuntimePaths {
+                talent_root: context.talent_root.clone(),
+                apps_root: context.apps_root.clone(),
+                templates_dir: context
+                    .talent_root
+                    .parent()
+                    .unwrap()
+                    .join("think/templates"),
+            };
+            fs::create_dir_all(&paths.templates_dir).unwrap();
+            context = context.with_boundary(Arc::new(ActualSegmentCortex {
+                journal: journal.path().into(),
+                paths,
+                completed: Mutex::new(BTreeMap::new()),
+            }));
+            let result = segment::run(
+                &context,
+                &mut log(journal.path()),
+                "090000_300",
+                true,
+                Some(stream),
+                2,
+                Some(Duration::from_secs(10)),
+                false,
+                &[],
+            )
+            .unwrap();
+            if stale {
+                assert!(result.failed > 0, "{name}: {result:?}");
+                assert_eq!(fs::read(output).unwrap(), old);
+                assert_eq!(
+                    fs::read(segment.join("talents/publication.json")).unwrap(),
+                    publication
+                );
+                assert!(
+                    !solstone_core_system::segment_publication::is_current(
+                        journal.path(),
+                        &segment,
+                        solstone_core_system_health::newest_segment_input_ms(&segment).unwrap()
+                    )
+                    .unwrap()
+                );
+            } else {
+                assert_eq!(result.failed, 0, "{name}: {result:?}");
+                assert!(output.is_file());
+                rebuild_segment_receipts(&context, None)
+                    .unwrap_or_else(|error| panic!("{name}: {error}"));
+            }
+        }
     }
 
     #[test]

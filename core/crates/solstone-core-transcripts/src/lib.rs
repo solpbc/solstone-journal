@@ -17,8 +17,12 @@ use solstone_core_format::segment::segment_parse;
 use solstone_core_journal_io::paths::{PathOrDay, StreamLocation, iter_segments};
 use solstone_core_memory_original::{OriginalRead, read_original};
 
+mod percept_absence;
 mod segment_page;
 mod speaker_coordinates;
+
+use percept_absence::PerceptFamily;
+pub use percept_absence::screen_inputs_absent;
 
 pub use speaker_coordinates::{next_statement_ordinal, speaker_label_source};
 
@@ -797,7 +801,7 @@ fn process_segment(
         for path in files.iter().filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with("screen.jsonl"))
+                .is_some_and(|name| PerceptFamily::Screen.matches(name))
         }) {
             if let Some(content) =
                 raw_content(path, segment, day, RawPerceptFamily::RawScreen, projection)
@@ -822,7 +826,7 @@ fn process_segment(
             .filter(|path| {
                 path.file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.starts_with("browser_") && name.ends_with(".jsonl"))
+                    .is_some_and(|name| PerceptFamily::Browser.matches(name))
             })
             .collect::<Vec<_>>();
         browser.sort();
@@ -863,7 +867,7 @@ fn process_segment(
             .filter(|path| {
                 path.file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.ends_with("_protected_video.jsonl"))
+                    .is_some_and(|name| PerceptFamily::ProtectedVideo.matches(name))
             })
             .collect::<Vec<_>>();
         protected_video.sort();
@@ -902,7 +906,7 @@ fn process_segment(
             .filter(|path| {
                 path.file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.ends_with("_desktop_activity.jsonl"))
+                    .is_some_and(|name| PerceptFamily::DesktopActivity.matches(name))
             })
             .collect::<Vec<_>>();
         desktop_activity.sort();
