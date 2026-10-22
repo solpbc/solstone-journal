@@ -6679,8 +6679,8 @@ async fn refusal_sites_batch_1_unexpected_store_failures_are_exact() {
             json!({}),
         )
         .await,
-        "entity_operation_failed",
-        500,
+        "entity_record_damaged",
+        409,
     );
 
     let bad_scan = Journal::new();
