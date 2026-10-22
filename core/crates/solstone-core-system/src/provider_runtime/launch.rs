@@ -2750,25 +2750,35 @@ mod tests {
             Some("gpu-memory-insufficient")
         );
 
-        // aarch64 platform unsupported
-        let shared = LocalRuntimeShared::default();
-        let config = LocalTruthConfig {
-            journal_path: root.path().to_path_buf(),
-            platform: LocalHost::Windows,
-            arch: "aarch64",
-            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
-            vulkan: crate::vulkan_observe::VulkanObservation {
-                devices: vec![hardware],
-                succeeded: true,
-            },
-            windows_package: None,
-        };
-        let observation = observe_truth(&shared, &config, None);
-        assert_eq!(observation.phase, RuntimePhase::HostBlocked);
-        assert_eq!(
-            observation.reason_code.as_ref().map(ReasonCode::as_str),
-            Some("platform-unsupported")
-        );
+        for (arch, reason) in [
+            ("aarch64", "package-invalid"),
+            ("riscv64", "platform-unsupported"),
+        ] {
+            let shared = LocalRuntimeShared::default();
+            let config = LocalTruthConfig {
+                journal_path: root.path().to_path_buf(),
+                platform: LocalHost::Windows,
+                arch,
+                nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+                vulkan: crate::vulkan_observe::VulkanObservation {
+                    devices: vec![hardware.clone()],
+                    succeeded: true,
+                },
+                windows_package: None,
+            };
+            let observation = observe_truth(&shared, &config, None);
+            assert_eq!(observation.phase, RuntimePhase::HostBlocked);
+            assert_eq!(
+                observation.reason_code.as_ref().map(ReasonCode::as_str),
+                Some(reason),
+                "{arch}"
+            );
+            assert!(
+                shared
+                    .launch_request_for(&observation.desired_fingerprint)
+                    .is_none()
+            );
+        }
     }
 
     #[test]

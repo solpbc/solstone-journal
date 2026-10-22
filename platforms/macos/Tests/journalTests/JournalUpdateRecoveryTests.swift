@@ -4,6 +4,7 @@
 import Foundation
 import JournalRuntime
 import JournalRuntimeTestSupport
+import ServiceManagement
 import Testing
 @testable import journal
 
@@ -120,6 +121,9 @@ private struct RecoveryFixture {
 
 @MainActor
 private final class RecoveryFakeLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+
     func register() throws {}
     func unregister() throws {}
+    func unregisterAwaitingCompletion() async throws {}
 }
