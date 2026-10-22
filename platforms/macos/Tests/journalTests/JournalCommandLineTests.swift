@@ -80,6 +80,7 @@ struct JournalCommandLineTests {
         let action = JournalCommandLine.dispatch(arguments: arguments, loginItems: loginItems)
 
         #expect(loginItems.unregisterCalls == 1)
+        #expect(loginItems.unregisterAwaitingCompletionCalls == 0)
         guard case .execAfterWatchdogUnregister(let forwardedArguments) = action else {
             Issue.record("Expected clean uninstall to unregister the watchdog before forwarding.")
             return
@@ -197,13 +198,22 @@ struct JournalCommandLineTests {
 
 @MainActor
 private final class DispatchFakeLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
     private(set) var unregisterCalls = 0
+    private(set) var unregisterAwaitingCompletionCalls = 0
     var errorToThrow: Error?
 
     func register() throws {}
 
     func unregister() throws {
         unregisterCalls += 1
+        if let errorToThrow {
+            throw errorToThrow
+        }
+    }
+
+    func unregisterAwaitingCompletion() async throws {
+        unregisterAwaitingCompletionCalls += 1
         if let errorToThrow {
             throw errorToThrow
         }

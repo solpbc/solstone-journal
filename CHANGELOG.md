@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- setup logs now keep more detail when your journal fails to start.
 - on windows, long continuous recordings and some queued recordings now transcribe. your journal tries the recordings that were waiting for local transcription again after you update.
 - on linux, local transcription uses less memory when it runs on the cpu.
 - security fix on windows: someone impersonating the update server could supply altered journal software as an update; updates now require a valid sol pbc signature on the complete package.

@@ -7,6 +7,7 @@ import JournalMarkKit
 import JournalRuntime
 import JournalRuntimeTestSupport
 import os
+import ServiceManagement
 import SwiftUI
 import Testing
 import SetupChrome
@@ -556,8 +557,11 @@ private struct SnapshotFixture {
 
 @MainActor
 private final class SnapshotFakeLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+
     func register() throws {}
     func unregister() throws {}
+    func unregisterAwaitingCompletion() async throws {}
 }
 
 @MainActor
