@@ -1328,7 +1328,7 @@ MLX_HELPER_DIR := core/crates/solstone-core-local/mlx-helper
 .PHONY: mlx-helper mlx-helper-clean
 mlx-helper:
 	@test "$$(uname -s)/$$(uname -m)" = Darwin/arm64 || { echo "mlx-helper requires macOS on arm64" >&2; exit 1; }
-	cd $(MLX_HELPER_DIR) && xcodebuild -scheme mlx-helper -destination 'platform=macOS,arch=arm64' -configuration Release -derivedDataPath DerivedData -skipPackagePluginValidation -skipMacroValidation build
+	cd $(MLX_HELPER_DIR) && xcodebuild -scheme mlx-helper -destination 'platform=macOS,arch=arm64' -configuration Release -derivedDataPath DerivedData -skipPackagePluginValidation -skipMacroValidation ENABLE_CODE_COVERAGE=NO CLANG_COVERAGE_MAPPING=NO build
 	@test -x $(MLX_HELPER_DIR)/DerivedData/Build/Products/Release/mlx-helper
 	@test -d $(MLX_HELPER_DIR)/DerivedData/Build/Products/Release/mlx-swift_Cmlx.bundle
 	@echo "binary: $$(pwd)/$(MLX_HELPER_DIR)/DerivedData/Build/Products/Release/mlx-helper"

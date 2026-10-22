@@ -17,7 +17,7 @@ private enum GenerationFailure: Error {
 struct MLXBackend: InferenceBackend {
     let container: ModelContainer
     let options: Options
-    let structuredGenerator = StructuredGenerator()
+    let structuredGenerator: StructuredGenerator
 
     static func load(options: Options) async throws -> Self {
         let url = URL(fileURLWithPath: options.model, isDirectory: true)
@@ -27,7 +27,12 @@ struct MLXBackend: InferenceBackend {
         }
         Memory.cacheLimit = options.cacheLimitMB * 1_048_576
         let container = try await loadModelContainer(from: url, using: #huggingFaceTokenizerLoader())
-        return Self(container: container, options: options)
+        let generator = try await container.perform { context in
+            let generator = StructuredGenerator()
+            try generator.prepare(context: context)
+            return generator
+        }
+        return Self(container: container, options: options, structuredGenerator: generator)
     }
 
     func tokenize(_ content: String) async throws -> [Int] {

@@ -13,6 +13,21 @@ public final class StructuredGenerator: @unchecked Sendable {
 
     public init() {}
 
+    /// Initialize model-specific vocabulary before the server becomes ready.
+    public func prepare(context: ModelContext) throws {
+        guard tokenizer == nil else { return }
+        let vocab = MLXGuidedGeneration.TokenizerVocabExtractor.extractForGrammar(from: context.tokenizer)
+        let type: VocabType
+        switch vocab.vocabType {
+        case .raw: type = .raw
+        case .byteFallback: type = .byteFallback
+        case .byteLevel: type = .byteLevel
+        }
+        tokenizer = try GrammarTokenizer(
+            vocab: vocab.vocab, vocabType: type,
+            eosTokenId: Int32(context.tokenizer.eosTokenId ?? 0))
+    }
+
     public struct Result {
         public let text: String
         public let tokens: Int
@@ -51,21 +66,8 @@ public final class StructuredGenerator: @unchecked Sendable {
     }
 
     private func matcher(schema: String, context: ModelContext) throws -> (GrammarConstraint, Int) {
-        let tokenizer: GrammarTokenizer
-        if let existing = self.tokenizer { tokenizer = existing }
-        else {
-            let vocab = MLXGuidedGeneration.TokenizerVocabExtractor.extractForGrammar(from: context.tokenizer)
-            let type: VocabType
-            switch vocab.vocabType {
-            case .raw: type = .raw
-            case .byteFallback: type = .byteFallback
-            case .byteLevel: type = .byteLevel
-            }
-            tokenizer = try GrammarTokenizer(
-                vocab: vocab.vocab, vocabType: type,
-                eosTokenId: Int32(context.tokenizer.eosTokenId ?? 0))
-            self.tokenizer = tokenizer
-        }
+        try prepare(context: context)
+        let tokenizer = tokenizer!
         // String equality merges canonically equivalent Unicode spellings.
         let key = Data(schema.utf8)
         if let grammar = compiled[key] {
