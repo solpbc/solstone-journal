@@ -620,12 +620,21 @@ mod tests {
             .parent()
             .unwrap()
             .parent()
+            .unwrap()
+            .parent()
             .unwrap();
         let launcher = repo_root.join("scripts/root-launchers/journal");
         let temp = tempfile::tempdir().expect("tempdir");
         let cwd = temp.path();
 
-        let expected_args = ["think", "--weekly", "special 'arg'"];
+        let expected_args = [
+            "think",
+            "--weekly",
+            "",
+            "special 'arg'",
+            "first\nsecond",
+            "$`;&|<>()*?\"",
+        ];
         let output = std::process::Command::new("sh")
             .arg(&launcher)
             .args(expected_args)
@@ -639,10 +648,10 @@ mod tests {
         assert!(output.stdout.is_empty());
 
         let stderr = String::from_utf8(output.stderr).expect("utf-8 stderr");
-        let second_line = stderr.lines().nth(1).expect("second line of stderr notice");
-        let prefix = "  solstone journal";
-        assert!(second_line.starts_with(prefix));
-        let argv_str = second_line[prefix.len()..].trim();
+        let argv_str = stderr
+            .strip_prefix("the 'journal' command has moved. run:\n  solstone journal ")
+            .and_then(|tail| tail.strip_suffix('\n'))
+            .expect("notice command arguments");
 
         let sh_parse = std::process::Command::new("sh")
             .arg("-c")
@@ -654,8 +663,9 @@ mod tests {
         assert!(sh_parse.status.success());
         let recovered: Vec<String> = sh_parse
             .stdout
+            .strip_suffix(&[0])
+            .expect("NUL-terminated shell arguments")
             .split(|&b| b == 0)
-            .filter(|chunk| !chunk.is_empty())
             .map(|chunk| String::from_utf8_lossy(chunk).to_string())
             .collect();
 
