@@ -1024,8 +1024,9 @@ areas = ["system", "support"]
 platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests", "test-fixture-pin"]
 
 [[package_suites]]
 id = "package::solstone-core-journal-cli"

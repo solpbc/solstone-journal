@@ -52,8 +52,8 @@ by the time base is added to the segment start. A nonzero first retained PTS is
 preserved. Current capture and ingest records provide no additional per-video
 origin; the journal does not guess one or infer typing from a text change.
 
-The installed resolver currently admits linux x86_64 and macos arm64. windows
-x86_64 and linux AArch64 remain unavailable until native qualification. A
+The installed resolver admits linux x86_64, GNU linux AArch64, macOS arm64,
+and windows x86_64. A
 missing or failing helper records an OCR gap and leaves model-based screen
 processing unchanged. OCR words remain outside ordinary model context and
 daily evidence. The private sidecar retains occurrences and geometry; the

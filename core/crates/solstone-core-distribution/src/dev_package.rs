@@ -231,6 +231,9 @@ fn copy_pdfium(
 }
 
 fn link_or_copy(from: &Path, to: &Path) -> io::Result<()> {
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
     if fs::hard_link(from, to).is_err() {
         fs::copy(from, to)?;
     }

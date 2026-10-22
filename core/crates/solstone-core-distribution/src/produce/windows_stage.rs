@@ -318,20 +318,20 @@ fn collect_plan_with_screen_ocr<'a>(
                 evidence_selected = true;
                 add_file(&mut plan, dest, *mode, Cow::Borrowed(build_evidence))?;
             }
-            Entry::ScreenOcr {
-                dest_dir, targets, ..
-            } if targets.iter().any(|t| t == native.architecture.target_id()) => {
+            Entry::ScreenOcr { targets, .. }
+                if targets.iter().any(|t| t == native.architecture.target_id()) =>
+            {
                 let bundle = screen_ocr.ok_or("missing prepared ScreenOcr bundle")?;
                 if bundle.target != target.id {
                     return Err("ScreenOcr bundle target mismatch".into());
                 }
-                let prefix = format!("{dest_dir}/");
-                if bundle.files.is_empty()
-                    || bundle
-                        .files
-                        .iter()
-                        .any(|file| !file.dest.starts_with(&prefix))
-                {
+                if bundle.files.is_empty() {
+                    return Err("ScreenOcr bundle escaped its inventory destination".into());
+                }
+                let expected = crate::screen_ocr::exact_staged_dests(&target.id)?;
+                let actual: BTreeSet<String> =
+                    bundle.files.iter().map(|f| f.dest.clone()).collect();
+                if actual != expected {
                     return Err("ScreenOcr bundle escaped its inventory destination".into());
                 }
                 for file in &bundle.files {
@@ -349,6 +349,13 @@ fn collect_plan_with_screen_ocr<'a>(
             } if targets.iter().any(|t| t == native.architecture.target_id()) => {
                 if inventory.forbidden_bins().contains(bin) {
                     return Err(format!("forbidden Windows binary: {bin}"));
+                }
+                if package == crate::screen_ocr::HELPER_PACKAGE {
+                    let layout = solstone_core_installed_payload::screen_ocr_layout(&target.id)
+                        .ok_or("missing screen OCR layout")?;
+                    if dest != layout.helper {
+                        return Err(format!("unexpected screen OCR helper dest: {dest}"));
+                    }
                 }
                 let id = ArtifactId {
                     package: package.clone(),
@@ -502,6 +509,23 @@ fn collect_plan_with_screen_ocr<'a>(
     let screen_ocr_selected = inventory.entry.iter().any(|entry| {
         matches!(entry, Entry::ScreenOcr { targets, .. } if targets.iter().any(|t| t == native.architecture.target_id()))
     });
+    if screen_ocr_selected {
+        let layout =
+            solstone_core_installed_payload::screen_ocr_layout(native.architecture.target_id())
+                .ok_or("missing screen OCR layout")?;
+        let has_helper_bin = inventory.entry.iter().any(|entry| {
+            matches!(
+                entry,
+                Entry::Bin { package, dest, targets, .. }
+                    if package == crate::screen_ocr::HELPER_PACKAGE
+                        && dest == layout.helper
+                        && targets.iter().any(|t| t == native.architecture.target_id())
+            )
+        });
+        if !has_helper_bin {
+            return Err("missing screen OCR helper binary entry for Windows".into());
+        }
+    }
     if binaries.len() != products.len()
         || native_members.len() != native.members.len()
         || (!build_evidence.is_empty() && !evidence_selected)
@@ -687,17 +711,23 @@ mod tests {
         let native =
             AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
                 .unwrap();
+
+        let exact_dests = crate::screen_ocr::exact_staged_dests(WINDOWS_PAYLOAD_TARGET).unwrap();
+        assert_eq!(exact_dests.len(), 15);
+        let files = exact_dests
+            .iter()
+            .map(|dest| crate::screen_ocr::StagedFile {
+                dest: dest.clone(),
+                mode: 0o644,
+                bytes: b"fixture content".to_vec(),
+            })
+            .collect::<Vec<_>>();
         let bundle = crate::screen_ocr::StagedBundle {
             target: WINDOWS_PAYLOAD_TARGET.into(),
-            files: vec![crate::screen_ocr::StagedFile {
-                dest: "lib/solstone-screen-ocr/runtime/onnxruntime.dll".into(),
-                mode: 0o755,
-                bytes: b"fixture runtime".to_vec(),
-            }],
+            files,
         };
 
-        // The committed inventory does not ship the bundle on Windows, so a
-        // prepared bundle is an undeclared input and its absence is complete.
+        // When ScreenOcr is selected on Windows but helper bin is absent, collect_plan_with_screen_ocr refuses.
         assert!(
             collect_plan_with_screen_ocr(
                 repo,
@@ -710,41 +740,32 @@ mod tests {
             )
             .is_err()
         );
-        assert!(
-            collect_plan_with_screen_ocr(
-                repo,
-                &fixture_inventory,
-                &inventory,
-                &products,
-                &native,
-                &[],
-                None,
-            )
-            .unwrap()
-            .is_empty()
-        );
 
-        for entry in &mut inventory.entry {
-            if let Entry::ScreenOcr { targets, .. } = entry {
-                targets.push(WINDOWS_PAYLOAD_TARGET.into());
-            }
-        }
-        let plan = collect_plan_with_screen_ocr(
-            repo,
-            &fixture_inventory,
-            &inventory,
-            &products,
-            &native,
-            &[],
-            Some(&bundle),
-        )
-        .unwrap();
-        assert_eq!(
-            plan["lib/solstone-screen-ocr/runtime/onnxruntime.dll"]
-                .bytes
-                .as_ref(),
-            b"fixture runtime"
-        );
+        // Add the committed helper bin entry.
+        let committed_inventory = load_inventory(&inventory_path).unwrap();
+        let helper_bin_entry = committed_inventory
+            .entry
+            .into_iter()
+            .find(|entry| {
+                matches!(
+                    entry,
+                    Entry::Bin { package, targets, .. }
+                        if package == crate::screen_ocr::HELPER_PACKAGE
+                            && targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET)
+                )
+            })
+            .expect("helper bin entry in committed inventory");
+        inventory.entry.push(helper_bin_entry);
+
+        let helper_id = ArtifactId {
+            package: crate::screen_ocr::HELPER_PACKAGE.into(),
+            bin: crate::screen_ocr::HELPER_BIN.into(),
+            triple: "x86_64-pc-windows-msvc".into(),
+        };
+        let mut products = BTreeMap::new();
+        products.insert(helper_id, b"fixture helper exe".to_vec());
+
+        // When ScreenOcr is selected and helper bin is present, missing bundle refuses.
         assert!(
             collect_plan_with_screen_ocr(
                 repo,
@@ -758,6 +779,7 @@ mod tests {
             .is_err()
         );
 
+        // Target mismatch refuses.
         let wrong_target = crate::screen_ocr::StagedBundle {
             target: "linux-x86_64".into(),
             files: bundle.files.clone(),
@@ -775,13 +797,16 @@ mod tests {
             .is_err()
         );
 
+        // Extra dest outside the exact 15-file set refuses.
+        let mut extra_files = bundle.files.clone();
+        extra_files.push(crate::screen_ocr::StagedFile {
+            dest: "lib/other/runtime.dll".into(),
+            mode: 0o755,
+            bytes: b"fixture runtime".to_vec(),
+        });
         let escaped = crate::screen_ocr::StagedBundle {
             target: WINDOWS_PAYLOAD_TARGET.into(),
-            files: vec![crate::screen_ocr::StagedFile {
-                dest: "lib/other/runtime.dll".into(),
-                mode: 0o755,
-                bytes: b"fixture runtime".to_vec(),
-            }],
+            files: extra_files,
         };
         assert!(
             collect_plan_with_screen_ocr(
@@ -795,6 +820,184 @@ mod tests {
             )
             .is_err()
         );
+
+        // Missing dest from the exact 15-file set refuses.
+        let mut missing_files = bundle.files.clone();
+        missing_files.pop();
+        let incomplete = crate::screen_ocr::StagedBundle {
+            target: WINDOWS_PAYLOAD_TARGET.into(),
+            files: missing_files,
+        };
+        assert!(
+            collect_plan_with_screen_ocr(
+                repo,
+                &fixture_inventory,
+                &inventory,
+                &products,
+                &native,
+                &[],
+                Some(&incomplete),
+            )
+            .is_err()
+        );
+
+        // Exact 15-file bundle succeeds.
+        let plan = collect_plan_with_screen_ocr(
+            repo,
+            &fixture_inventory,
+            &inventory,
+            &products,
+            &native,
+            &[],
+            Some(&bundle),
+        )
+        .unwrap();
+        assert_eq!(
+            plan["lib/solstone-native/solstone-screen-ocr-onnxruntime.dll"]
+                .bytes
+                .as_ref(),
+            b"fixture content"
+        );
+        assert_eq!(
+            plan["lib/solstone-native/solstone-screen-ocr-helper.exe"]
+                .bytes
+                .as_ref(),
+            b"fixture helper exe"
+        );
+        for file in &bundle.files {
+            assert!(plan.contains_key(&file.dest));
+        }
+
+        // When ScreenOcr is unselected, bundle is an undeclared input and absence is empty.
+        for entry in &mut inventory.entry {
+            if let Entry::ScreenOcr { targets, .. } | Entry::Bin { targets, .. } = entry {
+                targets.retain(|t| t != WINDOWS_PAYLOAD_TARGET);
+            }
+        }
+        let empty_products = BTreeMap::new();
+        assert!(
+            collect_plan_with_screen_ocr(
+                repo,
+                &fixture_inventory,
+                &inventory,
+                &empty_products,
+                &native,
+                &[],
+                None,
+            )
+            .unwrap()
+            .is_empty()
+        );
+        assert!(
+            collect_plan_with_screen_ocr(
+                repo,
+                &fixture_inventory,
+                &inventory,
+                &empty_products,
+                &native,
+                &[],
+                Some(&bundle),
+            )
+            .is_err()
+        );
+    }
+
+    fn pe_with_imports(imports: &[&str], is_dll: bool) -> Vec<u8> {
+        const PE: usize = 0x80;
+        const OPT: usize = PE + 24;
+        const RAW: usize = 0x200;
+        const RVA: u32 = 0x1000;
+
+        let mut bytes = crate::pe_dependencies::tests::image();
+        if !is_dll {
+            let mut chars = u16::from_le_bytes(bytes[PE + 22..PE + 24].try_into().unwrap());
+            chars &= !0x2000;
+            bytes[PE + 22..PE + 24].copy_from_slice(&chars.to_le_bytes());
+        }
+
+        let n = imports.len();
+        let desc_size = (n + 1) * 20;
+        let thunk_offset = desc_size;
+        let names_start = thunk_offset + 16;
+        let mut cur_name_offset = names_start;
+
+        bytes[RAW + thunk_offset..RAW + thunk_offset + 8]
+            .copy_from_slice(&0x8000_0000_0000_0001u64.to_le_bytes());
+        bytes[RAW + thunk_offset + 8..RAW + thunk_offset + 16].fill(0);
+
+        for (i, name) in imports.iter().enumerate() {
+            let desc = RAW + i * 20;
+            bytes[desc..desc + 4].copy_from_slice(&(RVA + thunk_offset as u32).to_le_bytes());
+            bytes[desc + 12..desc + 16]
+                .copy_from_slice(&(RVA + cur_name_offset as u32).to_le_bytes());
+            bytes[desc + 16..desc + 20].copy_from_slice(&(RVA + thunk_offset as u32).to_le_bytes());
+
+            let name_bytes = name.as_bytes();
+            bytes[RAW + cur_name_offset..RAW + cur_name_offset + name_bytes.len()]
+                .copy_from_slice(name_bytes);
+            bytes[RAW + cur_name_offset + name_bytes.len()] = 0;
+            cur_name_offset += name_bytes.len() + 1;
+        }
+
+        let total_dir_size = cur_name_offset;
+        bytes[OPT + 112 + 8..OPT + 112 + 8 + 4].copy_from_slice(&RVA.to_le_bytes());
+        bytes[OPT + 116 + 8..OPT + 116 + 8 + 4]
+            .copy_from_slice(&(total_dir_size as u32).to_le_bytes());
+
+        bytes
+    }
+
+    #[test]
+    fn inspect_runtime_closure_admits_screen_ocr_and_native_dlls() {
+        let onnxruntime = pe_with_imports(&["kernel32.dll"], true);
+        let msvcp140 = pe_with_imports(&["kernel32.dll"], true);
+        let vcruntime140 = pe_with_imports(&["kernel32.dll"], true);
+        let vcruntime140_1 = pe_with_imports(&["kernel32.dll"], true);
+        let msvcp140_1 = pe_with_imports(&["kernel32.dll"], true);
+        let ocr_ort = pe_with_imports(
+            &[
+                "MSVCP140.dll",
+                "MSVCP140_1.dll",
+                "VCRUNTIME140.dll",
+                "VCRUNTIME140_1.dll",
+            ],
+            true,
+        );
+        let providers = pe_with_imports(&["VCRUNTIME140.dll", "kernel32.dll"], true);
+        let helper = pe_with_imports(&["kernel32.dll"], false);
+
+        let closure = inspect_runtime_closure_for_arch(
+            [
+                (
+                    "lib/solstone-native/onnxruntime.dll",
+                    onnxruntime.as_slice(),
+                ),
+                ("lib/solstone-native/msvcp140.dll", msvcp140.as_slice()),
+                (
+                    "lib/solstone-native/vcruntime140.dll",
+                    vcruntime140.as_slice(),
+                ),
+                (
+                    "lib/solstone-native/vcruntime140_1.dll",
+                    vcruntime140_1.as_slice(),
+                ),
+                ("lib/solstone-native/msvcp140_1.dll", msvcp140_1.as_slice()),
+                (
+                    "lib/solstone-native/solstone-screen-ocr-onnxruntime.dll",
+                    ocr_ort.as_slice(),
+                ),
+                (
+                    "lib/solstone-native/onnxruntime_providers_shared.dll",
+                    providers.as_slice(),
+                ),
+                (
+                    "lib/solstone-native/solstone-screen-ocr-helper.exe",
+                    helper.as_slice(),
+                ),
+            ],
+            WindowsArchitecture::X86_64,
+        );
+        assert!(closure.is_ok());
     }
 
     #[test]
