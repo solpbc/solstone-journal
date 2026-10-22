@@ -155,7 +155,7 @@ integration-native:
 			else echo "error: no native journal runtime: stage one, install journal.app, or set SOLSTONE_NATIVE_RUNTIME_DIR"; exit 1; fi; \
 		fi; \
 		test -x "$$RUNTIME/bin/journal" || { echo "error: no journal binary at $$RUNTIME/bin/journal"; exit 1; }; \
-		echo "integration-native: runtime $$("$$RUNTIME/bin/journal" --version) tree-sha256=$$(cd "$$RUNTIME" && find bin lib share -type f | sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1) at $$RUNTIME"; \
+		echo "integration-native: runtime $$("$$RUNTIME/bin/solstone" journal --version) tree-sha256=$$(cd "$$RUNTIME" && find bin lib share -type f | sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1) at $$RUNTIME"; \
 		SOLSTONE_NATIVE_INTEGRATION=1 SOLSTONE_NATIVE_RUNTIME_DIR="$$RUNTIME" swift test --no-parallel --filter NativeIntegration
 
 # The test-only fixture the capture app's door test starts (solstone-macos,
@@ -445,7 +445,7 @@ release-dmg-smoke-journal:
 	    test -x "$$MOUNT/journal.app/Contents/Resources/solstone-runtime/bin/solstone" || { echo "error: journal native runtime missing bin/solstone"; exit 1; }; \
 	    UNREADABLE="$$(find "$$MOUNT/journal.app" \( -type d ! -perm -005 \) -o \( -type f ! -perm -004 \))"; \
 	    test -z "$$UNREADABLE" || { echo "error: journal.app has entries other accounts on the Mac cannot read:"; echo "$$UNREADABLE"; exit 1; }; \
-	    "$$MOUNT/journal.app/Contents/Resources/solstone-runtime/bin/journal" --version; \
+	    "$$MOUNT/journal.app/Contents/Resources/solstone-runtime/bin/solstone" journal --version; \
 	    "$$MOUNT/journal.app/Contents/Resources/solstone-runtime/bin/solstone" --version; \
 	    echo "release-dmg-smoke-journal: ok"
 

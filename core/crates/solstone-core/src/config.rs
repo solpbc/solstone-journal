@@ -289,36 +289,19 @@ fn service_summary(c: &JournalChange, d: &Decision) -> &'static str {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ServiceCommand {
-    Stop,
-    Start,
-    RestartIfInstalled,
-}
 pub(crate) enum ServiceCommandResult {
     Exited { code: i32 },
     ExecutableMissing { error: io::Error },
     LaunchError { error: io::Error },
 }
 pub(crate) trait ServiceCommandRunner {
-    fn run(&self, executable: &Path, command: ServiceCommand) -> ServiceCommandResult;
+    fn run(&self, executable: &Path, args: &[&str]) -> ServiceCommandResult;
 }
 struct RealServiceRunner;
 impl ServiceCommandRunner for RealServiceRunner {
-    fn run(&self, executable: &Path, command: ServiceCommand) -> ServiceCommandResult {
+    fn run(&self, executable: &Path, args: &[&str]) -> ServiceCommandResult {
         let mut c = Command::new(executable);
-        c.arg("service");
-        match command {
-            ServiceCommand::Stop => {
-                c.arg("stop");
-            }
-            ServiceCommand::Start => {
-                c.arg("start");
-            }
-            ServiceCommand::RestartIfInstalled => {
-                c.args(["restart", "--if-installed"]);
-            }
-        };
+        c.args(args);
         match c.status() {
             Ok(s) => ServiceCommandResult::Exited {
                 code: s.code().unwrap_or(1),
@@ -610,7 +593,7 @@ fn rewrite_preflighted(
         ),
     ])
     .map_err(|error| RewriteError::Install(error.to_string()))?;
-    Ok(targets.journal.clone())
+    Ok(targets.solstone.clone())
 }
 
 #[cfg(test)]
@@ -713,7 +696,10 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         println!("service installed but not running; wrapper updated.");
         return 0;
     }
-    match service.run(&restart, ServiceCommand::RestartIfInstalled) {
+    match service.run(
+        &restart,
+        &["journal", "service", "restart", "--if-installed"],
+    ) {
         ServiceCommandResult::Exited { code: 0 } => {
             println!("wrapper updated; service restarted.");
             0
@@ -746,7 +732,7 @@ fn maybe_restart_current_service(c: &JournalChange, service: &dyn ServiceCommand
         return;
     }
     if let ServiceCommandResult::ExecutableMissing { error } =
-        service.run(&c.service_bin, ServiceCommand::Start)
+        service.run(&c.sol_bin, &["journal", "service", "start"])
     {
         eprintln!("solstone journal config: rollback warning: could not restart service ({error})");
     }
@@ -791,7 +777,7 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         }
     };
     if c.service_running {
-        match service.run(&c.service_bin, ServiceCommand::Stop) {
+        match service.run(&c.sol_bin, &["journal", "service", "stop"]) {
             ServiceCommandResult::Exited { code: 0 } => {}
             ServiceCommandResult::ExecutableMissing { error }
             | ServiceCommandResult::LaunchError { error } => {
@@ -837,7 +823,7 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         println!("service installed but not running; journal moved; wrapper updated.");
         return 0;
     }
-    match service.run(&restart, ServiceCommand::Start) {
+    match service.run(&restart, &["journal", "service", "start"]) {
         ServiceCommandResult::Exited { code: 0 } => {
             println!("journal moved; wrapper updated; service restarted.");
             0
@@ -1035,7 +1021,7 @@ mod tests {
 
     struct FakeServiceRunner {
         results: Mutex<VecDeque<ServiceCommandResult>>,
-        calls: Mutex<Vec<(PathBuf, ServiceCommand)>>,
+        calls: Mutex<Vec<(PathBuf, Vec<String>)>>,
     }
     impl FakeServiceRunner {
         fn new(results: impl IntoIterator<Item = ServiceCommandResult>) -> Self {
@@ -1046,11 +1032,11 @@ mod tests {
         }
     }
     impl ServiceCommandRunner for FakeServiceRunner {
-        fn run(&self, executable: &Path, command: ServiceCommand) -> ServiceCommandResult {
-            self.calls
-                .lock()
-                .unwrap()
-                .push((executable.to_path_buf(), command));
+        fn run(&self, executable: &Path, args: &[&str]) -> ServiceCommandResult {
+            self.calls.lock().unwrap().push((
+                executable.to_path_buf(),
+                args.iter().map(|s| (*s).to_owned()).collect(),
+            ));
             self.results
                 .lock()
                 .unwrap()
@@ -1384,8 +1370,14 @@ mod tests {
         assert_eq!(
             *service.calls.lock().unwrap(),
             vec![
-                (PathBuf::from("/service/journal"), ServiceCommand::Stop),
-                (PathBuf::from("/restart/journal"), ServiceCommand::Start),
+                (
+                    PathBuf::from("/service/solstone"),
+                    vec!["journal".into(), "service".into(), "stop".into()],
+                ),
+                (
+                    PathBuf::from("/service/solstone"),
+                    vec!["journal".into(), "service".into(), "start".into()],
+                ),
             ]
         );
     }
@@ -1417,8 +1409,14 @@ mod tests {
         assert_eq!(
             *service.calls.lock().unwrap(),
             vec![
-                (PathBuf::from("/service/journal"), ServiceCommand::Stop),
-                (PathBuf::from("/service/journal"), ServiceCommand::Start),
+                (
+                    PathBuf::from("/service/solstone"),
+                    vec!["journal".into(), "service".into(), "stop".into()],
+                ),
+                (
+                    PathBuf::from("/service/solstone"),
+                    vec!["journal".into(), "service".into(), "start".into()],
+                ),
             ]
         );
 
@@ -1434,6 +1432,86 @@ mod tests {
         assert!(service.calls.lock().unwrap().is_empty());
         assert!(c.current_path.exists());
         assert!(!c.target_path.exists());
+    }
+
+    #[test]
+    fn config_switch_and_move_invoke_solstone_executable_with_journal_service_argv() {
+        // switch restart
+        {
+            let root = test_root("switch-restart-argv");
+            let mut c = move_change(&root);
+            c.action = Some(RequestedAction::Switch);
+            c.service_installed = true;
+            c.service_running = true;
+            let service = FakeServiceRunner::new([ServiceCommandResult::Exited { code: 0 }]);
+            assert_eq!(run_switch(&c, &service), 0);
+            assert_eq!(
+                *service.calls.lock().unwrap(),
+                vec![(
+                    PathBuf::from("/service/solstone"),
+                    vec![
+                        "journal".into(),
+                        "service".into(),
+                        "restart".into(),
+                        "--if-installed".into(),
+                    ],
+                )]
+            );
+        }
+
+        // move stop and move start
+        {
+            let root = test_root("move-stop-start-argv");
+            let mut c = move_change(&root);
+            c.service_installed = true;
+            c.service_running = true;
+            let service = FakeServiceRunner::new([
+                ServiceCommandResult::Exited { code: 0 },
+                ServiceCommandResult::Exited { code: 0 },
+            ]);
+            assert_eq!(run_move(&c, &service), 0);
+            assert_eq!(
+                *service.calls.lock().unwrap(),
+                vec![
+                    (
+                        PathBuf::from("/service/solstone"),
+                        vec!["journal".into(), "service".into(), "stop".into()],
+                    ),
+                    (
+                        PathBuf::from("/service/solstone"),
+                        vec!["journal".into(), "service".into(), "start".into()],
+                    ),
+                ]
+            );
+        }
+
+        // rollback start in maybe_restart_current_service
+        {
+            let root = test_root("move-rollback-argv");
+            let mut c = move_change(&root);
+            c.service_running = true;
+            let blocked_parent = root.join("not-a-directory");
+            fs::write(&blocked_parent, "file").unwrap();
+            c.target_path = blocked_parent.join("target");
+            let service = FakeServiceRunner::new([
+                ServiceCommandResult::Exited { code: 0 },
+                ServiceCommandResult::Exited { code: 0 },
+            ]);
+            assert_eq!(run_move(&c, &service), 1);
+            assert_eq!(
+                *service.calls.lock().unwrap(),
+                vec![
+                    (
+                        PathBuf::from("/service/solstone"),
+                        vec!["journal".into(), "service".into(), "stop".into()],
+                    ),
+                    (
+                        PathBuf::from("/service/solstone"),
+                        vec!["journal".into(), "service".into(), "start".into()],
+                    ),
+                ]
+            );
+        }
     }
 
     #[test]

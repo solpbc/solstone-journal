@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- breaking cli change: `journal` now prints the equivalent `solstone journal` command and exits without running it. `journal` will be removed in the next release. update scripts and any hand-written schedules or service commands that use it.
 - your morning briefing no longer has sections about the day ahead. new briefings were already leaving them empty, and older briefings no longer show them.
 - people on a calendar that was on a screen you shared are now linked only by their email or a name your journal already has for them, written the same way. a partial name no longer links anyone.
 

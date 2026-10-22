@@ -593,10 +593,64 @@ fn spawn_managed_queue_process(
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn resolve_windows_queue_argv(
+    bin_dir: &Path,
+    command: &[String],
+) -> Option<Vec<String>> {
+    let program = command.first()?;
+    let solstone_exe = bin_dir.join("solstone.exe");
+    let solstone_exe_str = solstone_exe.to_str()?;
+    let journal_exe = bin_dir.join("journal.exe");
+
+    let is_bare_journal =
+        program.eq_ignore_ascii_case("journal") || program.eq_ignore_ascii_case("journal.exe");
+
+    let matches_path = |actual: &str, expected: &Path| -> bool {
+        if Path::new(actual) == expected {
+            return true;
+        }
+        if let Some(expected_str) = expected.to_str() {
+            if actual.eq_ignore_ascii_case(expected_str) {
+                return true;
+            }
+            let actual_norm = actual.replace('\\', "/");
+            let expected_norm = expected_str.replace('\\', "/");
+            if actual_norm.eq_ignore_ascii_case(&expected_norm) {
+                return true;
+            }
+        }
+        false
+    };
+
+    let is_bin_journal = matches_path(program, &journal_exe);
+
+    if is_bare_journal || is_bin_journal {
+        let mut rewritten = vec![solstone_exe_str.to_owned(), "journal".to_owned()];
+        rewritten.extend(command.iter().skip(1).cloned());
+        return Some(rewritten);
+    }
+
+    let has_journal_next = command.get(1).is_some_and(|arg| arg == "journal");
+    if has_journal_next {
+        let is_bare_solstone = program.eq_ignore_ascii_case("solstone")
+            || program.eq_ignore_ascii_case("solstone.exe");
+        let is_bin_solstone = matches_path(program, &solstone_exe);
+
+        if is_bare_solstone || is_bin_solstone {
+            let mut rewritten = vec![solstone_exe_str.to_owned(), "journal".to_owned()];
+            rewritten.extend(command.iter().skip(2).cloned());
+            return Some(rewritten);
+        }
+    }
+
+    None
+}
+
 #[cfg(windows)]
 fn spawn_windows_queue_process(
     journal_root: PathBuf,
-    mut command: Vec<String>,
+    command: Vec<String>,
     mut options: SpawnOptions,
     timeout: Duration,
     grants: &[crate::process::ReadFileGrant],
@@ -608,9 +662,9 @@ fn spawn_windows_queue_process(
         None,
         &mut options.environment,
     );
-    let Some(program) = command.first() else {
+    if command.is_empty() {
         return Err(QueueSpawnFailure::Clean(SpawnError::EmptyCommand));
-    };
+    }
     let bin_dir = std::env::current_exe()
         .map_err(|e| QueueSpawnFailure::Clean(SpawnError::Spawn(e)))?
         .parent()
@@ -620,40 +674,15 @@ fn spawn_windows_queue_process(
             )))
         })?
         .to_path_buf();
-    let journal = bin_dir.join("journal.exe");
-    let solstone = bin_dir.join("solstone.exe");
-    let named_journal =
-        program.eq_ignore_ascii_case("journal") || program.eq_ignore_ascii_case("journal.exe");
-    let exact_journal = !named_journal
-        && std::fs::canonicalize(program)
-            .ok()
-            .zip(std::fs::canonicalize(&journal).ok())
-            .is_some_and(|(actual, expected)| actual == expected);
-    let canonical_journal = command.get(1).is_some_and(|argument| argument == "journal")
-        && (program.eq_ignore_ascii_case("solstone")
-            || program.eq_ignore_ascii_case("solstone.exe")
-            || std::fs::canonicalize(program)
-                .ok()
-                .zip(std::fs::canonicalize(&solstone).ok())
-                .is_some_and(|(actual, expected)| actual == expected));
-    if grants.is_empty() || !(named_journal || exact_journal || canonical_journal) {
+
+    let resolved = resolve_windows_queue_argv(&bin_dir, &command);
+    let is_journal = resolved.is_some();
+    let command = resolved.unwrap_or(command);
+
+    if grants.is_empty() || !is_journal {
         // Third-party commands keep their existing no-protocol launch contract.
         return spawn_managed_queue_process(journal_root, command, options, timeout);
     }
-    // Bind the queue's closed journal command to this installation's binary,
-    // rather than letting a PATH override receive an installation capability.
-    command[0] = if canonical_journal {
-        &solstone
-    } else {
-        &journal
-    }
-    .to_str()
-    .ok_or_else(|| {
-        QueueSpawnFailure::Clean(SpawnError::Spawn(io::Error::other(
-            "journal command path is not Unicode",
-        )))
-    })?
-    .to_owned();
     if is_analysis_command(&command) {
         crate::provider_runtime::ParakeetRuntimeShared::prepare_queued_child_environment(
             parakeet_runtime,
@@ -4736,6 +4765,148 @@ mod tests {
         let result = exec_command(Some(binary), &submitted);
         assert_eq!(result, submitted);
         assert_eq!(result.iter().filter(|arg| *arg == "journal").count(), 1);
+    }
+
+    #[test]
+    fn windows_queue_argv_rewrites_bare_and_canonical_journal_commands_to_solstone_exe() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bin_dir = temp.path();
+        let expected_solstone = bin_dir.join("solstone.exe").to_str().unwrap().to_owned();
+
+        for journal_exe_present in [false, true] {
+            if journal_exe_present {
+                std::fs::write(bin_dir.join("journal.exe"), b"stub").unwrap();
+            } else {
+                let _ = std::fs::remove_file(bin_dir.join("journal.exe"));
+            }
+
+            let commands: Vec<Vec<String>> = vec![
+                vec!["journal".into(), "heartbeat".into()],
+                vec!["journal.exe".into(), "heartbeat".into()],
+                vec![
+                    bin_dir.join("journal.exe").to_str().unwrap().into(),
+                    "heartbeat".into(),
+                ],
+                vec!["solstone".into(), "journal".into(), "heartbeat".into()],
+                vec!["solstone.exe".into(), "journal".into(), "heartbeat".into()],
+                vec![
+                    bin_dir.join("solstone.exe").to_str().unwrap().into(),
+                    "journal".into(),
+                    "heartbeat".into(),
+                ],
+            ];
+
+            for cmd in commands {
+                let rewritten = resolve_windows_queue_argv(bin_dir, &cmd)
+                    .unwrap_or_else(|| panic!("failed to resolve for {cmd:?}"));
+                assert_eq!(rewritten[0], expected_solstone, "failed for {cmd:?}");
+                assert_eq!(rewritten[1], "journal", "failed for {cmd:?}");
+                assert_eq!(&rewritten[2..], &["heartbeat"], "failed for {cmd:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn windows_queue_argv_leaves_unrelated_command_untouched() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bin_dir = temp.path();
+
+        assert_eq!(
+            resolve_windows_queue_argv(bin_dir, &["/opt/tools/journal".into(), "backup".into()]),
+            None
+        );
+        assert_eq!(
+            resolve_windows_queue_argv(bin_dir, &["/bin/sleep".into(), "60".into()]),
+            None
+        );
+        assert_eq!(
+            resolve_windows_queue_argv(
+                bin_dir,
+                &["solstone".into(), "call".into(), "journal".into()]
+            ),
+            None
+        );
+        assert_eq!(
+            resolve_windows_queue_argv(
+                bin_dir,
+                &[
+                    "/install/bin/solstone.exe".into(),
+                    "journal".into(),
+                    "heartbeat".into()
+                ]
+            ),
+            None
+        );
+        assert_eq!(
+            resolve_windows_queue_argv(
+                bin_dir,
+                &[
+                    "C:\\install\\bin\\solstone.exe".into(),
+                    "journal".into(),
+                    "heartbeat".into()
+                ]
+            ),
+            None
+        );
+        assert_eq!(resolve_windows_queue_argv(bin_dir, &[]), None);
+    }
+
+    #[test]
+    fn exec_command_and_partition_preserve_historical_and_canonical_schedule_arrays() {
+        let unix_binary = Path::new("/opt/solstone/bin/solstone-core-journal");
+        let win_binary = Path::new("/install/bin/solstone.exe");
+
+        let test_cases: Vec<(&[&str], &[&str])> = vec![
+            (&["journal", "heartbeat"], &["heartbeat"]),
+            (
+                &["journal", "think", "--weekly", "-v"],
+                &["think", "--weekly", "-v"],
+            ),
+            (&["journal", "think", "--cadence"], &["think", "--cadence"]),
+            (&["journal", "brain", "refresh"], &["brain", "refresh"]),
+            (&["journal", "facet-candidates"], &["facet-candidates"]),
+            (
+                &["journal", "indexer", "--rebuild-edges"],
+                &["indexer", "--rebuild-edges"],
+            ),
+            (
+                &["journal", "maintenance", "run", "<id>"],
+                &["maintenance", "run", "<id>"],
+            ),
+        ];
+
+        for (historical_slice, tail) in test_cases {
+            let historical: Vec<String> =
+                historical_slice.iter().map(|s| (*s).to_owned()).collect();
+            let canonical = crate::partition::canonical_journal_command(tail.iter().copied());
+
+            assert_eq!(
+                crate::partition::partition_for(&historical),
+                crate::partition::partition_for(&canonical),
+                "partition mismatch for {historical:?}"
+            );
+
+            // Unix task binary: file name solstone-core-journal
+            let unix_launched_hist = exec_command(Some(unix_binary), &historical);
+            let unix_launched_canon = exec_command(Some(unix_binary), &canonical);
+            assert_eq!(
+                unix_launched_hist, unix_launched_canon,
+                "Unix argv mismatch for {historical:?}"
+            );
+            assert_eq!(unix_launched_hist[0], unix_binary.display().to_string());
+            assert_eq!(&unix_launched_hist[1..], tail);
+
+            // Windows task binary: file name solstone.exe
+            let win_launched_hist = exec_command(Some(win_binary), &historical);
+            let win_launched_canon = exec_command(Some(win_binary), &canonical);
+            assert_eq!(
+                win_launched_hist, win_launched_canon,
+                "Windows argv mismatch for {historical:?}"
+            );
+            assert_eq!(win_launched_hist[0], win_binary.display().to_string());
+            assert_eq!(win_launched_hist[1], "journal");
+            assert_eq!(&win_launched_hist[2..], tail);
+        }
     }
 
     struct FakeTreeObserver {

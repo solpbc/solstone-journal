@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 const SERVICE_START_TIMEOUT_SECONDS: u32 = 120;
 const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
@@ -45,6 +46,72 @@ pub fn systemd_unit_port(unit: &str) -> Option<String> {
         .map(str::trim)
         .find_map(|line| line.strip_prefix("ExecStart="))?;
     unquote_exec_token(exec.split_whitespace().next_back()?)
+}
+
+/// Returns true only if the unit's ExecStart command matches the historical
+/// launcher start command at d32d7dae6^.
+#[must_use]
+pub fn is_exact_legacy_systemd_unit(unit: &str, home: &Path) -> bool {
+    let Some(exec) = unit
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("ExecStart="))
+    else {
+        return false;
+    };
+    let Some(tokens) = tokenize_exec_line(exec) else {
+        return false;
+    };
+    let [launcher, start, port] = tokens.as_slice() else {
+        return false;
+    };
+    if Path::new(launcher) != home.join(".local/bin/journal") {
+        return false;
+    }
+    if start != "start" {
+        return false;
+    }
+    if port.is_empty() {
+        return false;
+    }
+    systemd_unit_port(unit).as_deref() == Some(port.as_str())
+}
+
+fn tokenize_exec_line(line: &str) -> Option<Vec<String>> {
+    let mut tokens = Vec::new();
+    let mut chars = line.trim().chars().peekable();
+    while chars.peek().is_some() {
+        while chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
+            chars.next();
+        }
+        if chars.peek().is_none() {
+            break;
+        }
+        if chars.peek() == Some(&'"') {
+            chars.next();
+            let mut val = String::new();
+            loop {
+                match chars.next() {
+                    Some('"') => break,
+                    Some('\\') => val.push(chars.next()?),
+                    Some(c) => val.push(c),
+                    None => return None,
+                }
+            }
+            tokens.push(val);
+        } else {
+            let mut val = String::new();
+            while let Some(&c) = chars.peek() {
+                if c.is_whitespace() {
+                    break;
+                }
+                chars.next();
+                val.push(c);
+            }
+            tokens.push(val);
+        }
+    }
+    Some(tokens)
 }
 
 /// Undo `render_exec_token` for one token.

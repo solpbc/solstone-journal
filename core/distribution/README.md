@@ -5,7 +5,7 @@ This file ships inside the installed tree, at `share/README.md`, next to `bin/` 
 ## Where things are on linux
 
 - `~/.local/bin/solstone`: the CLI. `solstone journal` runs and repairs the journal on this computer (setup, service, doctor); the other commands reach your journal through its API
-- `~/.local/bin/journal`: the same program under a shorter name; `journal <command>` is `solstone journal <command>`
+`journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name.
 - `~/.config/systemd/user/solstone.service`: the systemd user unit
 - `~/.local/solstone-journal/versions/<version>-<hash>/`: one immutable directory per installed version
 - `~/.local/solstone-journal/current`: symlink to the live version; `current/bin` is what is on PATH

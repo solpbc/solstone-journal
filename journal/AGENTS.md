@@ -1,6 +1,6 @@
 # this journal
 
-This directory is a journal: a folder, organized by day, that the solstone app on the owner's devices adds to. Work with it through the `solstone` and `journal` command-line tools rather than by editing files. On a mac, the journal app's admin terminal provides them.
+This directory is a journal: a folder, organized by day, that the solstone app on the owner's devices adds to. Work with it through the `solstone` command-line tool rather than by editing files. On a mac, the journal app's admin terminal provides it.
 
 - `solstone call ...` reads and changes what the journal holds. Start with `solstone help`, then `solstone call <app> --help`, and add `--help` to a command for its flags.
 - `solstone journal ...` runs and checks on the journal on this machine, for example `solstone journal health` and `solstone journal talent`.
