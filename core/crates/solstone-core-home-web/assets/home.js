@@ -1317,6 +1317,7 @@
   function connectionEvidenceHtml(neighbor, name) {
     const label = typeof neighbor.latest_label === 'string' ? neighbor.latest_label.trim() : '';
     if (!label || label.toLowerCase() === String(name || '').trim().toLowerCase()) return '';
+    if (neighbor.latest_kind !== 'mentioned') return '';
     return '<span class="pulse-connections-evidence">transcribed as “' + esc(label) + '”</span>';
   }
 

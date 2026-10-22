@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
+
+use serde_json::Value;
 
 use solstone_core_journal_io::{DirEntryKind, contained_path, list_dir_entries};
 
@@ -24,6 +26,13 @@ pub struct EntityIdentityMap {
 pub struct EntityIdentityGroupMap {
     pub groups: HashMap<String, Vec<String>>,
     pub losers: Vec<IdentityMapLoser>,
+}
+
+/// Effective-identity groups with non-empty display names keyed by folder and effective id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedIdentityGroups {
+    pub groups: EntityIdentityGroupMap,
+    pub names: BTreeMap<String, String>,
 }
 
 /// An entity omitted from the identity map with its visible reason.
@@ -82,6 +91,55 @@ pub fn read_identity_group_map(
             .collect(),
         losers,
     })
+}
+
+/// Build effective-identity groups with non-empty display names keyed by folder and effective id.
+pub fn read_named_identity_groups(
+    journal_root: &Path,
+) -> Result<NamedIdentityGroups, EntityStoreError> {
+    let (groups, losers) = identity_groups(journal_root)?;
+    let names = {
+        let all_folders: BTreeSet<&str> = groups
+            .values()
+            .flat_map(|members| members.iter().map(|(dir, _)| dir.as_str()))
+            .collect();
+        let mut names = BTreeMap::new();
+        for (effective_id, members) in &groups {
+            for (folder, snapshot) in members {
+                if let Some(name) = snapshot_name(snapshot) {
+                    names.insert(folder.clone(), name);
+                }
+            }
+            let Some((winner_folder, winner)) = members.first() else {
+                continue;
+            };
+            if let Some(name) = snapshot_name(winner)
+                && (winner_folder == effective_id || !all_folders.contains(effective_id.as_str()))
+            {
+                names.insert(effective_id.clone(), name);
+            }
+        }
+        names
+    };
+    Ok(NamedIdentityGroups {
+        groups: EntityIdentityGroupMap {
+            groups: groups
+                .into_iter()
+                .map(|(id, members)| (id, members.into_iter().map(|(dir, _)| dir).collect()))
+                .collect(),
+            losers,
+        },
+        names,
+    })
+}
+
+fn snapshot_name(identity: &IdentitySnapshot) -> Option<String> {
+    identity
+        .value()
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
 }
 
 /// Folders' identities grouped by effective id, each group with its folders.

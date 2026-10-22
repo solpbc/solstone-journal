@@ -23,13 +23,15 @@ pub fn edge_aliases(journal_root: &std::path::Path) -> solstone_core_indexer_que
     for alias in solstone_core_entity::entity_edge_aliases(journal_root) {
         aliases.insert(&alias.raw, &alias.canonical, alias.name);
     }
-    if let Ok(groups) = solstone_core_entity::read_identity_group_map(journal_root) {
+    if let Ok(named) = solstone_core_entity::read_named_identity_groups(journal_root) {
         aliases.set_live_entities(
-            groups
+            named
+                .groups
                 .groups
                 .into_iter()
                 .flat_map(|(id, dirs)| std::iter::once(id).chain(dirs)),
         );
+        aliases.set_entity_names(named.names);
     }
     aliases
 }

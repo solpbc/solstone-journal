@@ -182,3 +182,78 @@ const dee = { entity_id: 'dee', name: 'Dee Mention', evidence_class: 'semantic',
   assert(calendarShelf.includes('Cal8'), 'calendar shelf contains Cal8');
   assert(!calendarShelf.includes('Cal9'), 'calendar shelf does not contain Cal9 (capped at 8)');
 }
+
+// Case 7: Evidence line appears for latest_kind 'mentioned'
+{
+  const neighbor = {
+    entity_id: 'n_mention',
+    name: 'Nurse Angela',
+    count: 2,
+    last_seen: '20260501',
+    kinds: [{ kind: 'mentioned' }],
+    latest_kind: 'mentioned',
+    latest_label: 'Angela',
+    evidence_class: 'semantic',
+  };
+  const pulse = {
+    connections: {
+      state: 'ok',
+      total: 1,
+      neighbors: [neighbor],
+      kind_words: {},
+      attendance_kinds: ['attended-with', 'co-present', 'scheduled-with'],
+    },
+  };
+  const html = renderConnectionsHtml(pulse);
+  assert(html.includes('pulse-connections-evidence'), 'evidence class present for mentioned');
+}
+
+// Case 8: Evidence line absent for latest_kind 'attended-with'
+{
+  const neighbor = {
+    entity_id: 'n_attended',
+    name: 'Nurse Angela',
+    count: 2,
+    last_seen: '20260501',
+    kinds: [{ kind: 'attended-with' }],
+    latest_kind: 'attended-with',
+    latest_label: 'Angela',
+    evidence_class: 'semantic',
+  };
+  const pulse = {
+    connections: {
+      state: 'ok',
+      total: 1,
+      neighbors: [neighbor],
+      kind_words: {},
+      attendance_kinds: ['attended-with', 'co-present', 'scheduled-with'],
+    },
+  };
+  const html = renderConnectionsHtml(pulse);
+  assert(!html.includes('pulse-connections-evidence'), 'evidence class absent for attended-with');
+}
+
+// Case 9: Evidence line absent for latest_kind 'messaged-with'
+{
+  const neighbor = {
+    entity_id: 'n_messaged',
+    name: 'Nurse Angela',
+    count: 2,
+    last_seen: '20260501',
+    kinds: [{ kind: 'messaged-with' }],
+    latest_kind: 'messaged-with',
+    latest_label: 'Angela',
+    evidence_class: 'semantic',
+  };
+  const pulse = {
+    connections: {
+      state: 'ok',
+      total: 1,
+      neighbors: [neighbor],
+      kind_words: {},
+      attendance_kinds: ['attended-with', 'co-present', 'scheduled-with'],
+    },
+  };
+  const html = renderConnectionsHtml(pulse);
+  assert(!html.includes('pulse-connections-evidence'), 'evidence class absent for messaged-with');
+}

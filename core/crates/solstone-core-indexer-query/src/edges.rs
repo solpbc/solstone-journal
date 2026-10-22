@@ -69,6 +69,8 @@ pub type EntityTypeLookup<'a> = dyn Fn(&str) -> Option<String> + 'a;
 pub struct EdgeAliases {
     entries: BTreeMap<String, EdgeAlias>,
     live: Option<BTreeSet<String>>,
+    // Live entity names from the caller, not merge entries, ignored by is_empty.
+    entity_names: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -96,6 +98,17 @@ impl EdgeAliases {
     /// as entities. Without this call every stored id is.
     pub fn set_live_entities(&mut self, ids: impl IntoIterator<Item = String>) {
         self.live = Some(ids.into_iter().collect());
+    }
+
+    pub fn set_entity_names(&mut self, names: impl IntoIterator<Item = (String, String)>) {
+        self.entity_names = names
+            .into_iter()
+            .filter(|(_, name)| !name.is_empty())
+            .collect();
+    }
+
+    fn entity_name(&self, id: &str) -> Option<&str> {
+        self.entity_names.get(id).map(String::as_str)
     }
 
     /// Whether rows counted under `canonical` belong to a live entity.
@@ -145,6 +158,7 @@ impl EdgeAliases {
         Self {
             entries,
             live: None,
+            entity_names: BTreeMap::new(),
         }
     }
 
@@ -159,6 +173,17 @@ impl EdgeAliases {
         );
         members
     }
+}
+
+fn resolved_name(
+    survivor: Option<&str>,
+    stored: Option<String>,
+    registry: Option<&str>,
+) -> Option<String> {
+    survivor
+        .map(str::to_owned)
+        .or(stored)
+        .or_else(|| registry.map(str::to_owned))
 }
 
 /// The `WITH` head the pair queries start from: CTE `e` holds the stored
@@ -583,16 +608,17 @@ pub fn load_entity_network(
             &members,
             &peer_members,
         );
-        neighbor.name = match aliases.survivor_name(&neighbor.entity_id) {
-            Some(name) => Some(name.to_owned()),
-            None => load_peer_name(
+        neighbor.name = resolved_name(
+            aliases.survivor_name(&neighbor.entity_id),
+            load_peer_name(
                 &connection,
                 &source,
                 entity_id,
                 &neighbor.entity_id,
                 &ranking,
             )?,
-        };
+            aliases.entity_name(&neighbor.entity_id),
+        );
         // Network previews use the ranking cap; pair history below intentionally does not.
         neighbor.evidence = load_evidence_rows(
             &connection,
@@ -654,10 +680,11 @@ pub fn load_edge_evidence(
     Ok(EdgeEvidenceResponse {
         entity_id: requested_id.to_string(),
         peer_id: requested_peer.to_string(),
-        peer_name: match aliases.survivor_name(peer_id) {
-            Some(name) => Some(name.to_owned()),
-            None => load_peer_name(&connection, &source, entity_id, peer_id, &filter)?,
-        },
+        peer_name: resolved_name(
+            aliases.survivor_name(peer_id),
+            load_peer_name(&connection, &source, entity_id, peer_id, &filter)?,
+            aliases.entity_name(peer_id),
+        ),
         filters: EdgeFiltersPayload::from(&filter),
         total,
         limit: request.limit,
@@ -784,7 +811,11 @@ pub fn load_network_overview(
             .entry(row.entity_id.clone())
             .or_insert_with(|| OverviewEntity {
                 entity_id: row.entity_id.clone(),
-                name: names.get(&row.entity_id).cloned(),
+                name: resolved_name(
+                    aliases.survivor_name(&row.entity_id),
+                    names.get(&row.entity_id).cloned(),
+                    aliases.entity_name(&row.entity_id),
+                ),
                 r#type: None,
                 score: 0.0,
                 count: 0,

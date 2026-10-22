@@ -24,6 +24,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - in your connections, plans inferred by older versions of your journal no longer count as events attended together.
 - in your connections, people linked only by a calendar invite no longer show as "events together" or "often around". they're now labeled "calendar only".
 - on the page for someone linked to you only by a calendar invite, "with you" no longer counts moments together. it now says "on your calendar only" with the latest day.
+- in your connections, people linked to you only by a calendar invite now show by name. before, they could show as an id.
+- on home, a connection's row no longer shows its latest meeting or calendar title. before, it labeled it "transcribed as".
 - an entity you delete no longer shows up in connections, for you or for agents reading your journal. before, it could stay listed, and asking for its connections found no match.
 - on windows, the journal window no longer shows "setup stopped before it finished" when your journal takes a while to start for the first time. the window now waits longer for it, and setup goes on to the window's home screen.
 
