@@ -14,6 +14,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - fixed local models using a different GPU from the one you selected.
 
+- in the map's day and week views, a visit no longer shows a second time as "no departure reported" once your phone has reported when you left. if you left after midnight, the day you arrived now shows when you left.
+
 - on mac, local transcription now recovers opening words that it could silently leave out of a long recording. existing transcripts keep the words they have.
 - on linux, windows and mac, local transcription no longer cuts quiet stretches out of a recording, such as a conversation from your watch. it now transcribes the whole recording, so background tv or radio may show up in your transcripts too. existing transcripts keep the words they have.
 

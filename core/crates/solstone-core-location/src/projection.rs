@@ -41,13 +41,13 @@ pub const BUILD_RECORD: &str = "location.json";
 const RECORD_VERSION: u32 = 1;
 /// Bumped whenever [`render_day_document`] changes what it writes, so every
 /// day's document is rewritten once by the next pass.
-const DOCUMENT_VERSION: u32 = 3;
+const DOCUMENT_VERSION: u32 = 4;
 
 /// What a day's document was built from, and what it counted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BuildRecord {
     pub version: u32,
-    /// The day's stream marker when the build read its segments.
+    /// The day's stream marker and the next day's when the build read them.
     pub source: String,
     /// The area tier the names came from.
     pub area_tier: String,
@@ -68,11 +68,15 @@ pub struct BuildRecord {
     pub names: String,
 }
 
-/// The stays and visits a day contributes to places.
+/// The stays and visits a day contributes to places. A visit completed by a
+/// report on a later day is that day's to count, so it counts once.
 pub fn stay_records(view: &DayLocation) -> Vec<StayRecord> {
     let mut records = Vec::new();
     for entry in &view.entries {
         let (device, start, end, point, kind) = match entry {
+            Entry::Visit { sources, .. } if sources.iter().any(|source| source.day > view.day) => {
+                continue;
+            }
             Entry::Visit {
                 device,
                 arrival,
@@ -187,6 +191,17 @@ pub fn source_token(journal: &Path, day: &str) -> String {
         ),
         Err(error) => format!("unreadable:{error}"),
     }
+}
+
+/// What a day's build depends on: its own segments and the next day's, where
+/// a visit's complete report lands when the owner leaves after midnight.
+pub fn build_token(journal: &Path, day: &str) -> String {
+    let next = NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()
+        .and_then(|date| date.succ_opt())
+        .map(|date| source_token(journal, &date.format("%Y%m%d").to_string()))
+        .unwrap_or_default();
+    format!("{}+{next}", source_token(journal, day))
 }
 
 /// Read a day's build record, if it has a current one.
@@ -460,7 +475,7 @@ pub fn rebuild_day(
 ) -> Result<Rebuilt, ProjectionError> {
     // Read the marker before the segments: a removal that lands while this
     // build reads advances it, and the next pass rebuilds again.
-    let source = source_token(journal, day);
+    let source = build_token(journal, day);
     let view = read_day(journal, day, tier, packs, directory, owner);
     let document = document_path(journal, day);
     let record = record_path(journal, day);
@@ -566,7 +581,7 @@ impl Reconciler {
         self.seen.retain(|day, _| days.binary_search(day).is_ok());
         for day in days {
             report.checked += 1;
-            let token = source_token(journal, &day);
+            let token = build_token(journal, &day);
             if self.seen.get(&day) == Some(&token) {
                 continue;
             }
@@ -928,6 +943,62 @@ mod tests {
         }
         assert_eq!(pass().removed, 2);
         assert!(PlaceStore::read(root.path()).places.is_empty());
+    }
+
+    #[test]
+    fn a_visit_completed_the_next_day_rewrites_its_arrival_day_and_counts_once() {
+        let root = tempfile::tempdir().unwrap();
+        let header = iphone_header("full", "light");
+        let visit = |arrival: &str, departure: &str| {
+            format!(
+                "{header}\n{{\"arrival\":\"{arrival}\",\"departure\":{departure},\"h_acc\":20,\"lat\":39.7527,\"lon\":-105.0001,\"schema\":\"solstone.location.visit/1\"}}\n"
+            )
+        };
+        write(
+            root.path(),
+            "20261001",
+            "phone_mobile-segment",
+            "211000_300",
+            &visit("2026-10-02T03:10:00Z", "null"),
+        );
+        solstone_core_journal_io::bump_stream_marker(root.path(), "20261001").unwrap();
+        let mut reconciler = Reconciler::default();
+        let mut pass = || {
+            reconciler.reconcile(
+                root.path(),
+                tier(),
+                None,
+                &directory(),
+                chrono_tz::America::Denver,
+            )
+        };
+        assert_eq!(pass().written, 1);
+        let text = fs::read_to_string(document_path(root.path(), "20261001")).unwrap();
+        assert!(
+            text.contains("arrived 21:10, no departure reported."),
+            "{text}"
+        );
+        // The owner leaves after midnight: the complete report lands on the
+        // next day, and the arrival day is written again without the orphan.
+        write(
+            root.path(),
+            "20261002",
+            "phone_mobile-segment",
+            "080000_300",
+            &visit("2026-10-02T03:11:00Z", "\"2026-10-02T14:00:00Z\""),
+        );
+        solstone_core_journal_io::bump_stream_marker(root.path(), "20261002").unwrap();
+        assert_eq!(pass().written, 2);
+        let text = fs::read_to_string(document_path(root.path(), "20261001")).unwrap();
+        assert!(!text.contains("no departure reported"), "{text}");
+        assert!(
+            text.contains("arrived 21:11, left October 2 at 08:00."),
+            "{text}"
+        );
+        let stays = all_stays(root.path());
+        assert_eq!(stays.len(), 1, "{stays:?}");
+        assert_eq!(stays[0].day, "20261002");
+        assert_eq!(pass().written, 0);
     }
 
     #[test]

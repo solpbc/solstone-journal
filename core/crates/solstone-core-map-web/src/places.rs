@@ -216,15 +216,19 @@ pub(crate) async fn week(
         };
         let monday = date - Duration::days(i64::from(date.weekday().num_days_from_monday()));
         let store = PlaceStore::read(&journal_root);
+        let keys: Vec<String> = (0..7)
+            .map(|offset| {
+                (monday + Duration::days(offset))
+                    .format("%Y%m%d")
+                    .to_string()
+            })
+            .collect();
+        let views = match solstone_core_location::read_journal_days(&journal_root, &keys) {
+            Ok(views) => views,
+            Err(error) => return names_unavailable(error.to_string()),
+        };
         let mut days = Vec::new();
-        for offset in 0..7 {
-            let key = (monday + Duration::days(offset))
-                .format("%Y%m%d")
-                .to_string();
-            let view = match solstone_core_location::read_journal_day(&journal_root, &key) {
-                Ok(view) => view,
-                Err(error) => return names_unavailable(error.to_string()),
-            };
+        for (key, view) in keys.into_iter().zip(views) {
             let items: Vec<Value> = view
                 .entries
                 .iter()
@@ -330,18 +334,25 @@ pub(crate) async fn month(
         };
         let store = PlaceStore::read(&journal_root);
 
-        let before_view = match solstone_core_location::read_journal_day(&journal_root, &before_day)
-        {
-            Ok(v) => v,
+        // The day before, every day of the month, then the day after, in order,
+        // so each day is read once.
+        let mut keys = vec![before_day];
+        keys.extend((0..days_in_month).map(|offset| {
+            (first_date + Duration::days(offset))
+                .format("%Y%m%d")
+                .to_string()
+        }));
+        keys.push(after_day);
+        let mut views = match solstone_core_location::read_journal_days(&journal_root, &keys) {
+            Ok(views) => views,
             Err(e) => return names_unavailable(e.to_string()),
         };
+        let after_view = views.pop().unwrap_or_default();
+        let before_view = views.remove(0);
+        keys.pop();
+        keys.remove(0);
         let before_items = day_items(&before_view, &store);
         let before_devices = day_devices(&before_view);
-
-        let after_view = match solstone_core_location::read_journal_day(&journal_root, &after_day) {
-            Ok(v) => v,
-            Err(e) => return names_unavailable(e.to_string()),
-        };
         let after_items = day_items(&after_view, &store);
         let after_devices = day_devices(&after_view);
 
@@ -349,13 +360,7 @@ pub(crate) async fn month(
         let mut day_views = Vec::with_capacity(days_in_month as usize);
         let mut day_items_list = Vec::with_capacity(days_in_month as usize);
 
-        for offset in 0..days_in_month {
-            let date = first_date + Duration::days(offset);
-            let day_key = date.format("%Y%m%d").to_string();
-            let view = match solstone_core_location::read_journal_day(&journal_root, &day_key) {
-                Ok(v) => v,
-                Err(e) => return names_unavailable(e.to_string()),
-            };
+        for (day_key, view) in keys.into_iter().zip(views) {
             let items = day_items(&view, &store);
             let devices = day_devices(&view);
             let has_location = !view.entries.is_empty();
