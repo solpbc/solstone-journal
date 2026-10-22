@@ -5,7 +5,7 @@ use std::{
     collections::HashSet,
     fs,
     io::{self, Read, Write},
-    net::TcpListener,
+    net::{SocketAddr, TcpListener},
     path::{Path, PathBuf},
     sync::{
         Arc, Condvar, Mutex,
@@ -398,6 +398,7 @@ fn chat_response(content: &str) -> String {
 #[derive(Default)]
 struct ConnStats {
     app_requests: AtomicUsize,
+    client: Mutex<Option<SocketAddr>>,
 }
 
 #[derive(Default)]
@@ -465,6 +466,41 @@ impl Default for ConnScript {
     }
 }
 
+/// Whether the kernel holds input for the client's end of the loopback
+/// connection from `client` to `server_port`: an established connection with
+/// bytes queued, a peer close (any other state) or a reset (the connection is
+/// gone from the table). The table is read in pieces and can skip a row that
+/// changes meanwhile, so only two reads that agree count as input.
+#[cfg(target_os = "linux")]
+fn client_has_input(client: SocketAddr, server_port: u16) -> bool {
+    client_table_shows_input(client, server_port) && client_table_shows_input(client, server_port)
+}
+
+#[cfg(target_os = "linux")]
+fn client_table_shows_input(client: SocketAddr, server_port: u16) -> bool {
+    let SocketAddr::V4(client) = client else {
+        panic!("loopback fixture is IPv4");
+    };
+    // The kernel prints the address as its in-memory word, the port as a number.
+    let address = u32::from_ne_bytes(client.ip().octets());
+    let local = format!("{address:08X}:{:04X}", client.port());
+    let remote = format!("{address:08X}:{server_port:04X}");
+    let table = fs::read_to_string("/proc/net/tcp").expect("read the kernel TCP table");
+    // An earlier connection from the same local port can linger in TIME_WAIT.
+    let Some(row) = table
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>())
+        .find(|fields| fields.get(1..3) == Some(&[local.as_str(), remote.as_str()][..]))
+    else {
+        return true;
+    };
+    let established = row[3] == "01";
+    let queued = row[4]
+        .split_once(':')
+        .is_some_and(|(_, receive)| receive.bytes().any(|digit| digit != b'0'));
+    !established || queued
+}
+
 fn wait_until<F: Fn() -> bool>(cond: F) {
     let start = Instant::now();
     while !cond() {
@@ -526,6 +562,7 @@ struct TestServer {
     release_handshake: Arc<Gate>,
     release_app_response: Arc<Gate>,
     inject_idle_fault: Arc<Gate>,
+    idle_fault_sent: Arc<Gate>,
     handle: Option<thread::JoinHandle<()>>,
 }
 
@@ -553,6 +590,7 @@ impl TestServer {
         let release_handshake = Arc::new(Gate::new(false));
         let release_app_response = Arc::new(Gate::new(false));
         let inject_idle_fault = Arc::new(Gate::new(false));
+        let idle_fault_sent = Arc::new(Gate::new(false));
 
         let stats_clone = stats.clone();
         let connections_clone = connections.clone();
@@ -561,12 +599,13 @@ impl TestServer {
         let rel_handshake = release_handshake.clone();
         let rel_app = release_app_response.clone();
         let inj_fault = inject_idle_fault.clone();
+        let fault_sent = idle_fault_sent.clone();
 
         let handle = thread::spawn(move || {
             let plan = Arc::new(plan);
             let conn_index_counter = Arc::new(AtomicUsize::new(0));
             while !shutdown_clone.load(Ordering::Relaxed) {
-                let (mut tcp, _) = match listener.accept() {
+                let (mut tcp, client) = match listener.accept() {
                     Ok(conn) => conn,
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5));
@@ -576,6 +615,7 @@ impl TestServer {
                 };
 
                 let conn_stats = Arc::new(ConnStats::default());
+                *conn_stats.client.lock().unwrap() = Some(client);
                 connections_clone.lock().unwrap().push(conn_stats.clone());
                 stats_clone
                     .connections_accepted
@@ -588,6 +628,7 @@ impl TestServer {
                 let rel_handshake = rel_handshake.clone();
                 let rel_app = rel_app.clone();
                 let inj_fault = inj_fault.clone();
+                let fault_sent = fault_sent.clone();
                 let plan = plan.clone();
 
                 thread::spawn(move || {
@@ -918,6 +959,7 @@ impl TestServer {
                                 inj_fault.wait(&shutdown_clone);
                                 let _ = stream.sock.write_all(&[0x17, 0x03, 0x03]);
                                 let _ = stream.sock.flush();
+                                fault_sent.signal();
                                 break;
                             }
                             AppScript::IdleClose(IdleCloseKind::CloseNotify) => {
@@ -928,6 +970,7 @@ impl TestServer {
                                 stream.conn.send_close_notify();
                                 let _ = stream.conn.write_tls(&mut stream.sock);
                                 let _ = stream.sock.flush();
+                                fault_sent.signal();
                                 break;
                             }
                             AppScript::IdleClose(IdleCloseKind::Fin) => {
@@ -936,6 +979,7 @@ impl TestServer {
                                 let _ = stream.sock.flush();
                                 inj_fault.wait(&shutdown_clone);
                                 let _ = stream.sock.shutdown(std::net::Shutdown::Write);
+                                fault_sent.signal();
                                 break;
                             }
                             AppScript::IdleClose(IdleCloseKind::Reset) => {
@@ -946,6 +990,7 @@ impl TestServer {
                                 let _ = socket2::SockRef::from(&stream.sock)
                                     .set_linger(Some(Duration::ZERO));
                                 drop(stream);
+                                fault_sent.signal();
                                 break;
                             }
                         }
@@ -963,6 +1008,7 @@ impl TestServer {
             release_handshake,
             release_app_response,
             inject_idle_fault,
+            idle_fault_sent,
             handle: Some(handle),
         }
     }
@@ -975,8 +1021,32 @@ impl TestServer {
         self.release_app_response.signal();
     }
 
-    fn inject_idle_fault(&self) {
+    /// Releases the server's idle fault and returns once the client end of
+    /// connection `index` can see it, so the next call meets a channel whose
+    /// peer has already closed or corrupted it. A sent fault can sit
+    /// undelivered on a loaded loopback, so on Linux this waits for the
+    /// kernel to hold it for the client; elsewhere it allows 50ms for delivery.
+    fn inject_idle_fault(&self, index: usize) {
+        let client = self
+            .connection(index)
+            .client
+            .lock()
+            .unwrap()
+            .expect("accepted");
+        #[cfg(target_os = "linux")]
+        assert!(
+            !client_has_input(client, self.port),
+            "the client already held input before the fault"
+        );
         self.inject_idle_fault.signal();
+        self.idle_fault_sent.wait(&self.shutdown);
+        #[cfg(target_os = "linux")]
+        wait_until(|| client_has_input(client, self.port));
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = client;
+            thread::sleep(Duration::from_millis(50));
+        }
     }
 
     fn connection(&self, index: usize) -> Arc<ConnStats> {
@@ -2203,8 +2273,7 @@ fn oracle_8_framing_does_not_reuse() {
     );
     assert!(matches!(res_p1, ConfidentialResult::Generated(_)));
 
-    server_part.inject_idle_fault();
-    thread::sleep(Duration::from_millis(50));
+    server_part.inject_idle_fault(0);
 
     let res_p2 = confidential_generate_attested(
         &request("req-p2"),
@@ -2272,8 +2341,7 @@ fn oracle_9_close_before_and_after_the_request() {
         );
         assert!(matches!(res1, ConfidentialResult::Generated(_)));
 
-        server.inject_idle_fault();
-        thread::sleep(Duration::from_millis(50));
+        server.inject_idle_fault(0);
 
         let res2 = confidential_generate_attested(
             &request("req-2"),
