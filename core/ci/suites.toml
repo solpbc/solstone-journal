@@ -4795,7 +4795,7 @@ runtime = "none"
 
 [suites.windows]
 satisfaction = "cargo"
-acknowledgement = "JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed/pass"
+acknowledgement = "JOURNAL_WIN_CI_PROVIDER_RUNTIME=executed/pass"
 
 [[suites]]
 id = "solstone-core-system::system_schedule_queue"
