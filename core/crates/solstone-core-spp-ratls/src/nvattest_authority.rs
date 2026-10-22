@@ -68,6 +68,7 @@ pub(crate) fn nvattest_platform_key(os: &str, arch: &str) -> Option<&'static str
         ("linux", "aarch64") => Some("linux-aarch64"),
         ("macos", "aarch64") => Some("macos-arm64"),
         ("windows", "x86_64") => Some("windows-x86_64"),
+        ("windows", "aarch64") => Some("windows-aarch64"),
         _ => None,
     }
 }
@@ -94,6 +95,12 @@ mod tests {
             nvattest_platform_key("windows", "x86_64"),
             Some("windows-x86_64")
         );
+        assert_eq!(
+            nvattest_platform_key("windows", "aarch64"),
+            Some("windows-aarch64")
+        );
+        assert_eq!(nvattest_platform_key("windows", "arm64"), None);
+        assert_eq!(nvattest_platform_key("windows", "x86"), None);
         assert_eq!(nvattest_platform_key("macos", "x86_64"), None);
         assert_eq!(nvattest_platform_key("linux", "arm"), None);
     }
@@ -109,6 +116,7 @@ mod tests {
             ("linux", "aarch64"),
             ("macos", "aarch64"),
             ("windows", "x86_64"),
+            ("windows", "aarch64"),
         ] {
             assert!(super::verifier_on_platform(os, arch), "{os}-{arch}");
         }
@@ -144,6 +152,7 @@ mod tests {
             ("linux", "aarch64"),
             ("macos", "aarch64"),
             ("windows", "x86_64"),
+            ("windows", "aarch64"),
         ] {
             assert!(
                 super::confidential_verifier_offered(os, arch, false, false),

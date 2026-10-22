@@ -2398,6 +2398,7 @@ mod windows_payload {
             "share/ca/ca-bundle.pem",
             "lib/solstone-nvattest/msvcp140.dll",
             "lib/solstone-nvattest/vcruntime140.dll",
+            #[cfg(not(target_arch = "aarch64"))]
             "lib/solstone-nvattest/vcruntime140_1.dll",
         ] {
             let path = root.join(member);
