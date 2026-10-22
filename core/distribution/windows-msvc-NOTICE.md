@@ -1,6 +1,6 @@
 # Microsoft Visual C++ runtime components
 
-The files msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll and vcomp140.dll
+The files msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll, msvcp140_1.dll and vcomp140.dll
 in this installation's lib/solstone-native/ folder, and the copies of
 msvcp140.dll, vcruntime140.dll and vcruntime140_1.dll in its
 lib/solstone-nvattest/ folder, are unmodified Microsoft redistributable runtime
