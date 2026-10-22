@@ -698,6 +698,12 @@ fn departures(items: &Value) -> Vec<Option<String>> {
 #[tokio::test]
 async fn the_day_and_week_list_each_visit_once_when_its_complete_report_lands_the_next_day() {
     let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("config")).unwrap();
+    fs::write(
+        root.path().join("config/journal.json"),
+        r#"{"identity":{"timezone":"America/Denver"}}"#,
+    )
+    .unwrap();
     let report = |day: &str, segment: &str, line: String| {
         write(
             root.path(),

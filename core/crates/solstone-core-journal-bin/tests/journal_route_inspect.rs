@@ -76,8 +76,8 @@ impl Fixture {
         }
     }
 
-    fn journal_dispatcher(&self) -> PathBuf {
-        self.prefix.join("current/bin/journal")
+    fn solstone_dispatcher(&self) -> PathBuf {
+        self.prefix.join("current/bin/solstone")
     }
 
     fn service_path(&self) -> PathBuf {
@@ -151,13 +151,13 @@ impl Fixture {
     }
 
     fn run(&self) -> Output {
-        self.run_from(&self.journal_dispatcher(), None)
+        self.run_from(&self.solstone_dispatcher(), None)
     }
 
     fn run_from(&self, dispatcher: &Path, path: Option<&str>) -> Output {
         let mut command = Command::new(dispatcher);
         command
-            .arg("__journal-route-inspect")
+            .args(["journal", "__journal-route-inspect"])
             .env("HOME", &self.home)
             .env("SOLSTONE_JOURNAL", &self.journal);
         if let Some(path) = path {
@@ -377,14 +377,14 @@ fn inspection_uses_the_invoked_binary_not_path_or_argv_alias() {
     let baseline = assert_success(fixture.run());
 
     let poisoned = assert_success(fixture.run_from(
-        &fixture.journal_dispatcher(),
+        &fixture.solstone_dispatcher(),
         Some("/nonexistent:/also-nonexistent"),
     ));
 
     let alias_dir = fixture.root.join("argv-alias");
     fs::create_dir_all(&alias_dir).expect("create alias directory");
     let alias = alias_dir.join("journal-route-alias");
-    symlink(fixture.journal_dispatcher(), &alias).expect("create dispatcher argv alias");
+    symlink(fixture.solstone_dispatcher(), &alias).expect("create dispatcher argv alias");
     let aliased = assert_success(fixture.run_from(&alias, None));
 
     for key in ["prefix_hex", "current_bin_hex", "current_state"] {
