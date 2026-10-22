@@ -137,33 +137,29 @@ mod mcp_endpoint_public_surface_tests {
 mod service_legacy_tests {
     use std::collections::BTreeMap;
 
-    use solstone_core_installation_identity::{GuardFields, parse_service_guard_environment};
+    use solstone_core_installation_identity::{
+        Generation, GuardFields, InstallationId, NamespaceName, journal_token_from_path,
+    };
     use solstone_core_service_unit::{
         WindowsServiceAction, is_exact_legacy_launchd_plist, is_exact_legacy_systemd_unit,
         render_launchd_plist, render_systemd_unit,
     };
 
     fn test_guard() -> GuardFields {
-        parse_service_guard_environment(&BTreeMap::from([
-            (
-                "SOLSTONE_INSTALLATION_NAMESPACE".to_owned(),
-                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
-            ),
-            (
-                "SOLSTONE_INSTALLATION_ID".to_owned(),
-                "0123456789abcdef0123456789abcdef".to_owned(),
-            ),
-            (
-                "SOLSTONE_INSTALLATION_GENERATION".to_owned(),
-                "1".to_owned(),
-            ),
-            (
-                "SOLSTONE_INSTALLATION_JOURNAL_TOKEN".to_owned(),
-                "2f6a6f75726e616c".to_owned(),
-            ),
-        ]))
-        .unwrap()
-        .unwrap()
+        GuardFields {
+            namespace: NamespaceName::parse(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )
+            .unwrap(),
+            id: InstallationId::parse("0123456789abcdef0123456789abcdef").unwrap(),
+            generation: Generation::new(1).unwrap(),
+            journal_token: journal_token_from_path(std::path::Path::new(if cfg!(windows) {
+                "C:\\journal"
+            } else {
+                "/journal"
+            }))
+            .unwrap(),
+        }
     }
 
     #[test]
@@ -233,11 +229,20 @@ mod service_legacy_tests {
         );
 
         // A different binary
-        let diff_bin = historical_systemd.replace("/.local/bin/journal", "/.local/bin/sol");
+        let different_launcher = home.join(".local/bin/sol");
+        let diff_bin = historical_systemd.replace(
+            legacy_launcher.to_str().unwrap(),
+            different_launcher.to_str().unwrap(),
+        );
+        assert_ne!(diff_bin, historical_systemd);
         assert!(!is_exact_legacy_systemd_unit(&diff_bin, home));
         let diff_bin_plist = String::from_utf8(historical_plist.clone())
             .unwrap()
-            .replace("/.local/bin/journal", "/.local/bin/sol");
+            .replace(
+                legacy_launcher.to_str().unwrap(),
+                different_launcher.to_str().unwrap(),
+            );
+        assert_ne!(diff_bin_plist.as_bytes(), historical_plist.as_slice());
         assert!(!is_exact_legacy_launchd_plist(
             diff_bin_plist.as_bytes(),
             home
