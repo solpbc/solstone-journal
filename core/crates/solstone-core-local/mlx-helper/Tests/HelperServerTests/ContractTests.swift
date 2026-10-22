@@ -7,7 +7,7 @@ import Testing
 import HelperServer
 
 private func decode(_ body: String) throws -> ChatRequest {
-    try JSONDecoder().decode(ChatRequest.self, from: Data(body.utf8))
+    try ChatRequest.decode(Data(body.utf8))
 }
 
 private let productionBody = #"""
@@ -132,13 +132,13 @@ struct ContractTests {
         }
     }
 
-    @Test func responseFormatAlwaysRefusedBeforeInference() async throws {
+    @Test func invalidResponseFormatRefusedBeforeInference() async throws {
         let state = ModelState()
         let backend = StubBackend()
         await state.ready(backend)
         let app = makeApplication(options: try Options(arguments: ["--model", "/model"]), state: state)
         try await app.test(.router) { client in
-            for format in ["null", #"{"type":"json_object"}"#, #"{"type":"json_schema","json_schema":{"name":"example","schema":{"type":"object"}}}"#] {
+            for format in ["null", #"{"type":"text"}"#, #"{"type":"json_schema","json_schema":{"name":"example","schema":{"type":"object"}}}"#] {
                 let body = #"{"messages":[{"role":"user","content":"test"}],"response_format":\#(format)}"#
                 try await client.execute(uri: "/v1/chat/completions", method: .post, headers: [.contentType: "application/json"], body: .init(string: body)) { response in
                     #expect(response.status == .badRequest)
@@ -148,6 +148,16 @@ struct ContractTests {
             }
         }
         #expect(await backend.calls == 0)
+    }
+
+    @Test func exactSchemaBytesAndObjectFormat() throws {
+        let schema = #"{ "type": "object", "properties": {"z":{"type":"boolean"},"a":{"type":"boolean"}}, "required":["z","a"], "additionalProperties":false }"#
+        let body = #"{"messages":[{"role":"user","content":"a string with \"schema\":{} and } characters"}],"response_format":{"type":"json_schema","json_schema":{"strict":true,"schema":\#(schema)}}}"#
+        #expect(try decode(body).schemaText == schema)
+        #expect(try decode(#"{"messages":[{"role":"user","content":"test"}],"response_format":{"type":"json_object"}}"#).schemaText == #"{"type":"object"}"#)
+        #expect(throws: RequestError.self) {
+            try decode(#"{"messages":[{"role":"user","content":"test"}],"response_format":{"type":"json_schema","json_schema":{"strict":true,"schema":{},"schema":{}}}}"#)
+        }
     }
 
     @Test func slotReleasedAfterErrorAndCancellation() async throws {

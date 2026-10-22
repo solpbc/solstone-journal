@@ -3,6 +3,7 @@
 import CoreImage
 import Foundation
 import HelperServer
+import GuidedGeneration
 import MLX
 import MLXHuggingFace
 import MLXLMCommon
@@ -16,6 +17,7 @@ private enum GenerationFailure: Error {
 struct MLXBackend: InferenceBackend {
     let container: ModelContainer
     let options: Options
+    let structuredGenerator = StructuredGenerator()
 
     static func load(options: Options) async throws -> Self {
         let url = URL(fileURLWithPath: options.model, isDirectory: true)
@@ -37,6 +39,7 @@ struct MLXBackend: InferenceBackend {
     func complete(_ request: ChatRequest) async throws -> Completion {
         let prepared = PreparedMessages(request.messages)
         let options = self.options
+        let structuredGenerator = self.structuredGenerator
         return try await container.perform { context in
             let images: [UserInput.Image] = try prepared.images.map { data in
                 guard let image = CIImage(data: data) else { throw RequestError("invalid image data") }
@@ -54,6 +57,16 @@ struct MLXBackend: InferenceBackend {
             parameters.minP = request.min_p ?? 0
             parameters.presencePenalty = request.presence_penalty ?? 1.5
             parameters.presenceContextSize = 64
+            if let schema = request.schemaText {
+                let result = try structuredGenerator.complete(
+                    input: lmInput, context: context, schema: schema, maxTokens: limit,
+                    processor: parameters.processor(), sampler: parameters.sampler())
+                try Task.checkCancellation()
+                return Completion(model: options.alias, text: result.text,
+                                  finish: result.reachedLimit ? .length : .stop,
+                                  promptTokens: lmInput.text.tokens.size, completionTokens: result.tokens,
+                                  promptSeconds: result.promptSeconds, decodeSeconds: result.decodeSeconds)
+            }
             // TokenIterator seeds the processor with the complete prepared prompt.
             let iterator = try TokenIterator(input: lmInput, model: context.model, parameters: parameters)
             let (stream, generationTask) = MLXLMCommon.generateTask(

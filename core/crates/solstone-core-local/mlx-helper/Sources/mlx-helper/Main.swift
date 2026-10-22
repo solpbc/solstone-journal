@@ -22,7 +22,7 @@ struct Main {
             print("""
             mlx-helper --model <local-directory> [--host 127.0.0.1|::1] [--port 8080]
                        [--alias local/qwen3.5-4b] [--ctx 16384] [--cache-limit-mb 1024]
-            Non-streaming, loopback-only MLX inference. Structured output is not supported.
+            Non-streaming, loopback-only MLX inference.
             The positive allocator cache limit is in MiB. Completion tokens are capped at
             the context space remaining after the prepared prompt.
             """)
