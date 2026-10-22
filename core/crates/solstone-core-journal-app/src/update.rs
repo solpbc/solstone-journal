@@ -30,7 +30,33 @@ mod package_admission;
 
 /// The journal's Windows release feed on sol pbc's own update origin.
 pub const FEED_URL: &str = "https://updates.solstone.app/solstone-journal/release/windows";
-const CHANNEL: &str = "win";
+const CHANNEL: &str =
+    package_identity(solstone_core_installed_payload::compiled_windows_architecture()).channel;
+
+#[derive(Clone, Copy)]
+struct PackageIdentity {
+    channel: &'static str,
+    rid: &'static str,
+    machine_architecture: &'static str,
+}
+
+const fn package_identity(
+    architecture: solstone_core_installed_payload::WindowsArchitecture,
+) -> PackageIdentity {
+    use solstone_core_installed_payload::WindowsArchitecture;
+    match architecture {
+        WindowsArchitecture::X86_64 => PackageIdentity {
+            channel: "win",
+            rid: "win-x64",
+            machine_architecture: "x64",
+        },
+        WindowsArchitecture::Aarch64 => PackageIdentity {
+            channel: "win-arm64",
+            rid: "win-arm64",
+            machine_architecture: "arm64",
+        },
+    }
+}
 
 /// The first-party feed: one GET for the release list, then the package file
 /// by name from the same place. Nothing else is sent.
@@ -766,13 +792,14 @@ mod tests {
         use std::sync::OnceLock;
         use std::time::{Duration, Instant};
 
-        use velopack::VelopackAsset;
         use velopack::sources::UpdateSource;
+        use velopack::{UpdateManager, VelopackAsset};
         use zip::ZipWriter;
         use zip::write::SimpleFileOptions;
 
         use super::super::{
-            FeedStore, FirstPartyFeed, Phase, SignedFeed, Updater, spawn_verified_helper,
+            CHANNEL, FeedStore, FirstPartyFeed, PackageIdentity, Phase, SignedFeed, Updater,
+            package_identity, spawn_verified_helper,
         };
 
         struct TestKeys {
@@ -813,16 +840,35 @@ mod tests {
         }
 
         fn make_valid_nupkg(id: &str, version: &str, main_exe: &str) -> Vec<u8> {
+            make_nupkg_for_architecture(
+                id,
+                version,
+                main_exe,
+                solstone_core_installed_payload::compiled_windows_architecture(),
+            )
+        }
+
+        fn make_nupkg_for_architecture(
+            id: &str,
+            version: &str,
+            main_exe: &str,
+            architecture: solstone_core_installed_payload::WindowsArchitecture,
+        ) -> Vec<u8> {
+            let PackageIdentity {
+                channel,
+                rid,
+                machine_architecture,
+            } = package_identity(architecture);
             let nuspec = format!(
                 r#"<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
 <metadata>
   <id>{id}</id>
   <version>{version}</version>
-  <channel>win</channel>
+  <channel>{channel}</channel>
   <os>win</os>
-  <rid>win-x64</rid>
-  <machineArchitecture>x64</machineArchitecture>
+  <rid>{rid}</rid>
+  <machineArchitecture>{machine_architecture}</machineArchitecture>
   <mainExe>{main_exe}</mainExe>
 </metadata>
 </package>"#
@@ -832,6 +878,11 @@ mod tests {
             zip.start_file(format!("{id}.nuspec"), SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(nuspec.as_bytes()).unwrap();
+            if architecture != solstone_core_installed_payload::compiled_windows_architecture() {
+                zip.start_file("lib/net45/Squirrel.exe", SimpleFileOptions::default())
+                    .unwrap();
+                zip.write_all(b"synthetic foreign update helper").unwrap();
+            }
             zip.finish().unwrap();
             buf
         }
@@ -923,6 +974,75 @@ fn main() {
                 ManifestPath: manifest_path,
                 CurrentBinaryDir: current_dir,
                 IsPortable: true,
+            }
+        }
+
+        #[test]
+        fn signed_foreign_packages_cannot_replace_the_update_helper() {
+            use solstone_core_installed_payload::{
+                WindowsArchitecture, compiled_windows_architecture,
+            };
+            let keys = get_test_keys();
+            let foreign = WindowsArchitecture::ALL
+                .into_iter()
+                .find(|architecture| *architecture != compiled_windows_architecture())
+                .unwrap();
+            for architecture in [compiled_windows_architecture(), foreign] {
+                let bytes = make_nupkg_for_architecture(
+                    "SolstoneJournal",
+                    "2.0.28",
+                    "bin/journal-app.exe",
+                    architecture,
+                );
+                let signature = sign_with_key(&keys.primary_sec, &bytes);
+                for cached in [false, true] {
+                    let root = tempfile::tempdir().unwrap();
+                    let feed_dir = root.path().join("feed");
+                    std::fs::create_dir(&feed_dir).unwrap();
+                    let name = "foreign-full.nupkg";
+                    std::fs::write(feed_dir.join(name), &bytes).unwrap();
+                    std::fs::write(feed_dir.join(format!("{name}.minisig")), &signature).unwrap();
+                    let locator = create_test_locator(root.path());
+                    let helper_before = std::fs::read(&locator.UpdateExePath).unwrap();
+                    if cached {
+                        std::fs::write(locator.PackagesDir.join(name), &bytes).unwrap();
+                        std::fs::write(
+                            locator.PackagesDir.join(format!("{name}.minisig")),
+                            &signature,
+                        )
+                        .unwrap();
+                    }
+                    let info = velopack::UpdateInfo {
+                        TargetFullRelease: VelopackAsset {
+                            PackageId: "SolstoneJournal".into(),
+                            Version: "2.0.28".into(),
+                            Type: "Full".into(),
+                            FileName: name.into(),
+                            SHA256: sha256_hex(&bytes),
+                            Size: bytes.len() as u64,
+                            ..Default::default()
+                        },
+                        BaseRelease: None,
+                        DeltasToTarget: vec![],
+                        IsDowngrade: false,
+                    };
+                    let manager = UpdateManager::new(
+                        SignedFeed {
+                            store: FeedStore::Dir(feed_dir),
+                        },
+                        None,
+                        Some(locator.clone()),
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        manager.download_updates(&info, None).is_ok(),
+                        architecture == compiled_windows_architecture()
+                    );
+                    assert_eq!(
+                        std::fs::read(&locator.UpdateExePath).unwrap(),
+                        helper_before
+                    );
+                }
             }
         }
 
@@ -1304,7 +1424,7 @@ fn main() {
                 ..full.clone()
             };
             std::fs::write(
-                dir.join("releases.win.json"),
+                dir.join(format!("releases.{CHANNEL}.json")),
                 serde_json::to_vec(&serde_json::json!({"Assets": [full, delta]})).unwrap(),
             )
             .unwrap();
@@ -1314,7 +1434,7 @@ fn main() {
             let manager = velopack::UpdateManager::new(
                 source,
                 Some(velopack::UpdateOptions {
-                    ExplicitChannel: Some("win".into()),
+                    ExplicitChannel: Some(CHANNEL.into()),
                     MaximumDeltasBeforeFallback: -1,
                     ..Default::default()
                 }),
@@ -1545,7 +1665,7 @@ fn main() {
                 "Assets": [asset]
             });
             std::fs::write(
-                feed_dir.join("releases.win.json"),
+                feed_dir.join(format!("releases.{CHANNEL}.json")),
                 serde_json::to_string(&release_feed).unwrap(),
             )
             .unwrap();
@@ -1636,7 +1756,7 @@ fn main() {
                 "Assets": [full_asset, delta_asset]
             });
             std::fs::write(
-                feed_dir.join("releases.win.json"),
+                feed_dir.join(format!("releases.{CHANNEL}.json")),
                 serde_json::to_string(&release_feed).unwrap(),
             )
             .unwrap();

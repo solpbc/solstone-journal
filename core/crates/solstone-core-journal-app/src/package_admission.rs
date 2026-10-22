@@ -149,11 +149,24 @@ pub fn check_sidecar_format(signature_path: &Path, bytes: &[u8]) -> Result<(), v
 /// Verify that the zip package contains exactly one .nuspec manifest,
 /// and that the manifest contains the 7 required identity elements exactly once.
 pub fn parse_and_validate_nuspec<R: Read + Seek>(
+    reader: R,
+    expected_version: &str,
+) -> Result<(), velopack::Error> {
+    parse_and_validate_nuspec_for_architecture(
+        reader,
+        expected_version,
+        solstone_core_installed_payload::compiled_windows_architecture(),
+    )
+}
+
+fn parse_and_validate_nuspec_for_architecture<R: Read + Seek>(
     mut reader: R,
     expected_version: &str,
+    architecture: solstone_core_installed_payload::WindowsArchitecture,
 ) -> Result<(), velopack::Error> {
     use quick_xml::events::Event;
 
+    let identity = super::package_identity(architecture);
     let mut archive = zip::ZipArchive::new(&mut reader).map_err(|e| {
         log::warn!("could not read package zip archive: {e}");
         velopack::Error::Other(format!("could not read package zip archive: {e}"))
@@ -264,7 +277,13 @@ pub fn parse_and_validate_nuspec<R: Read + Seek>(
             }
             Ok(Event::End(_)) => {
                 if let Some(tag) = current_tag.take() {
-                    process_nuspec_tag(&tag, value.trim(), expected_version, &mut counts)?;
+                    process_nuspec_tag(
+                        &tag,
+                        value.trim(),
+                        expected_version,
+                        identity,
+                        &mut counts,
+                    )?;
                 }
                 path.pop();
             }
@@ -334,6 +353,7 @@ fn process_nuspec_tag(
     tag: &str,
     val_trimmed: &str,
     expected_version: &str,
+    identity: super::PackageIdentity,
     counts: &mut NuspecCounts,
 ) -> Result<(), velopack::Error> {
     match tag {
@@ -357,7 +377,7 @@ fn process_nuspec_tag(
         }
         "channel" => {
             counts.channel += 1;
-            if counts.channel > 1 || val_trimmed != "win" {
+            if counts.channel > 1 || val_trimmed != identity.channel {
                 log::warn!("invalid or duplicate channel: {val_trimmed}");
                 return Err(velopack::Error::Other(
                     "invalid or duplicate channel".into(),
@@ -373,14 +393,14 @@ fn process_nuspec_tag(
         }
         "rid" => {
             counts.rid += 1;
-            if counts.rid > 1 || val_trimmed != "win-x64" {
+            if counts.rid > 1 || val_trimmed != identity.rid {
                 log::warn!("invalid or duplicate rid: {val_trimmed}");
                 return Err(velopack::Error::Other("invalid or duplicate rid".into()));
             }
         }
         "machineArchitecture" => {
             counts.machine_arch += 1;
-            if counts.machine_arch > 1 || val_trimmed != "x64" {
+            if counts.machine_arch > 1 || val_trimmed != identity.machine_architecture {
                 log::warn!("invalid or duplicate machineArchitecture: {val_trimmed}");
                 return Err(velopack::Error::Other(
                     "invalid or duplicate machineArchitecture".into(),
@@ -744,7 +764,69 @@ mod tests {
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
 
-    use super::{asset_name_is_plain, check_sidecar_format, parse_and_validate_nuspec};
+    use super::{
+        asset_name_is_plain, check_sidecar_format, parse_and_validate_nuspec_for_architecture,
+    };
+
+    // These pre-existing fixtures deliberately describe the historical x64
+    // package. Test both trusted expectations independently below.
+    fn parse_and_validate_nuspec<R: std::io::Read + std::io::Seek>(
+        reader: R,
+        version: &str,
+    ) -> Result<(), velopack::Error> {
+        parse_and_validate_nuspec_for_architecture(
+            reader,
+            version,
+            solstone_core_installed_payload::WindowsArchitecture::X86_64,
+        )
+    }
+
+    #[test]
+    fn architecture_is_selected_by_the_caller_and_cannot_be_mixed() {
+        use solstone_core_installed_payload::{WindowsArchitecture, compiled_windows_architecture};
+        for architecture in WindowsArchitecture::ALL {
+            let identity = super::super::package_identity(architecture);
+            let nuspec = format!(
+                "<package><metadata><id>SolstoneJournal</id><version>2.0.28</version><channel>{}</channel><os>win</os><rid>{}</rid><machineArchitecture>{}</machineArchitecture><mainExe>bin/journal-app.exe</mainExe></metadata></package>",
+                identity.channel, identity.rid, identity.machine_architecture
+            );
+            let bytes = make_test_zip(&[("SolstoneJournal.nuspec", &nuspec)]);
+            parse_and_validate_nuspec_for_architecture(Cursor::new(&bytes), "2.0.28", architecture)
+                .unwrap();
+            assert_eq!(
+                super::parse_and_validate_nuspec(Cursor::new(&bytes), "2.0.28").is_ok(),
+                architecture == compiled_windows_architecture()
+            );
+            let foreign = WindowsArchitecture::ALL
+                .into_iter()
+                .find(|other| *other != architecture)
+                .unwrap();
+            assert!(
+                parse_and_validate_nuspec_for_architecture(Cursor::new(&bytes), "2.0.28", foreign)
+                    .is_err()
+            );
+            let foreign_identity = super::super::package_identity(foreign);
+            for (tag, foreign_value) in [
+                ("channel", foreign_identity.channel),
+                ("rid", foreign_identity.rid),
+                ("machineArchitecture", foreign_identity.machine_architecture),
+            ] {
+                let start = nuspec.find(&format!("<{tag}>")).unwrap() + tag.len() + 2;
+                let end = nuspec.find(&format!("</{tag}>")).unwrap();
+                let changed = format!("{}{}{}", &nuspec[..start], foreign_value, &nuspec[end..]);
+                let bytes = make_test_zip(&[("SolstoneJournal.nuspec", &changed)]);
+                assert!(
+                    parse_and_validate_nuspec_for_architecture(
+                        Cursor::new(bytes),
+                        "2.0.28",
+                        architecture
+                    )
+                    .is_err(),
+                    "{tag}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn production_metadata_and_namespace_duplicates() {
