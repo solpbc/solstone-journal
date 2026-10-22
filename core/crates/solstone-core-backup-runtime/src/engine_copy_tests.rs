@@ -57,6 +57,11 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "chronicle/20260101/health/talent-provenance/run.json",
         "config/journal.json",
         "chronicle/20260102/indexer/indexer.sqlite/original.key",
+        "chronicle/20261003/health/daily-units/u-entities.f-personal.json",
+        "chronicle/20261003/import.audio/120001_7/owner.execution.lock",
+        "chronicle/notes/health/daily-units/owner.execution.lock",
+        "chronicle/2026a003/health/daily-units/owner.execution.lock",
+        "chronicle/20261003/health/daily-units-original/owner.execution.lock",
     ];
     let omitted = [
         "indexer/journal.sqlite",
@@ -79,6 +84,8 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "health/callosum.pipe-secret",
         "health/local.port",
         "health/locks/backup-activity.lock",
+        "chronicle/20261003/health/daily-units/u-entities.f-personal.execution.lock",
+        "chronicle/20261003/health/daily-units/u-entities.f-personal.json.lock",
         "health/sync/state",
         "health/scheduler.json",
         "mcp-endpoint/pop.ed25519.pk8",
@@ -153,7 +160,13 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
     let current_prepared = prepare_backup_args(&root).unwrap();
     let mut current = current_prepared.args.clone();
     current.push("--json".into());
+    let daily_execution = solstone_core_journal_io::locking::hold_lock(
+        root.join("chronicle/20261003/health/daily-units/u-entities.f-personal.execution"),
+        solstone_core_journal_io::locking::LockOptions::default(),
+    )
+    .unwrap();
     let new_snapshot = snapshot_id(run(&current));
+    drop(daily_execution);
     assert_ne!(old_snapshot, new_snapshot);
     run(&["check".into()]);
     let previously_missing = [
@@ -169,6 +182,10 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "imports/health-dedupe.sqlite-notes/original.key",
         "imports/health-dedupe.sqlite-wal/original.key",
         "chronicle/20260101/indexer/120001_60.sqlite/original.key",
+        "chronicle/20261003/import.audio/120001_7/owner.execution.lock",
+        "chronicle/notes/health/daily-units/owner.execution.lock",
+        "chronicle/2026a003/health/daily-units/owner.execution.lock",
+        "chronicle/20261003/health/daily-units-original/owner.execution.lock",
     ];
     for (snapshot, previous) in [(old_snapshot, true), (new_snapshot, false)] {
         let restore = temp.path().join(format!("restored-{snapshot}"));

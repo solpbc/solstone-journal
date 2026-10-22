@@ -3897,6 +3897,8 @@ mod tests {
         }
     }
 
+    const TEST_DAILY_KEY: &str = "synthetic-daily-backup-key";
+
     struct Script {
         outputs: RefCell<VecDeque<ToolOutput>>,
         commands: RefCell<Vec<Vec<String>>>,
@@ -4280,7 +4282,7 @@ mod tests {
         json!({
             "enabled": true,
             "mode": "byo",
-            "daily_key": "daily",
+            "daily_key": TEST_DAILY_KEY,
             "recovery_key": "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ",
             "destination": destination,
         })
@@ -4565,7 +4567,7 @@ mod tests {
                 let password = if replace_password {
                     "replacement"
                 } else {
-                    "daily"
+                    TEST_DAILY_KEY
                 };
                 let env = value_env(&destination).unwrap();
                 let input = original.bind_archive_creator(capture_archive_predecessor(
