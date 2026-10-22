@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when an activity ran while your calendar had a meeting scheduled, the activity now shows the meeting beside it, with the people on the invite already in your journal. the activity keeps its own title. the meeting shows what was planned, not who came. agents you've let read your whole journal's transcripts see it too, and your morning briefing can call yesterday's activity by the meeting's name.
 - people on a calendar invite who are already in your journal, by their email or a name your journal already has for them, written the same way, are now linked to you as scheduled with you.
 - events in calendar files you import from now on can also be found by the day each one happens, not only the day it was added or last changed. repeating events are listed up to a year after you import them. calendars you imported before aren't listed this way.
+- your journal now recognizes text from your screens on windows computers with intel or amd processors and linux computers with 64-bit arm processors. find it in search, including commands, errors and reference numbers. connected agents can read it when you enable screen text in their permissions; existing connections keep their current permissions. masking passwords and other secrets is best effort; your written redaction rules do not apply to screen text.
 
 ### Changed
 

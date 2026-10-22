@@ -9,6 +9,7 @@
 
 pub mod pin;
 pub mod posix;
+pub mod screen_ocr_layout;
 pub mod windows_payload;
 
 #[cfg(any(windows, test))]
@@ -28,8 +29,12 @@ pub use posix::{
     TARGET_MACOS_ARM64, bin_parent_root, canonical_target, digest_matches,
     host_executable_platform, locate_installed_package, package_root_from_executable_path,
     read_member, render_installed_payload, resolve_current_member,
-    resolve_current_screen_ocr_bundle, resolve_member, sha256_hex, validate_relative,
-    verify_installed_package,
+    resolve_current_screen_ocr_bundle, resolve_member, resolve_screen_ocr_bundle_from_executable,
+    sha256_hex, validate_relative, verify_installed_package,
+};
+
+pub use screen_ocr_layout::{
+    SCREEN_OCR_BUNDLE_DIR, ScreenOcrLayout, admit_screen_ocr, screen_ocr_layout,
 };
 
 pub use windows_payload::WINDOWS_PAYLOAD_TARGET as TARGET_WINDOWS_X86_64;

@@ -3,7 +3,7 @@
 
 //! Acquisition and staging for the independent screen OCR helper closure.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,7 +17,7 @@ use crate::stage;
 
 pub const HELPER_PACKAGE: &str = "solstone-screen-ocr-helper";
 pub const HELPER_BIN: &str = "solstone-screen-ocr-helper";
-pub const BUNDLE_DEST: &str = "lib/solstone-screen-ocr";
+pub use solstone_core_installed_payload::SCREEN_OCR_BUNDLE_DIR as BUNDLE_DEST;
 pub const CACHE_ROOT: &str = "target/screen-ocr-cache";
 pub const HELPER_MANIFEST: &str = "core/screen-ocr-helper/Cargo.toml";
 pub const HELPER_LOCK: &str = "core/screen-ocr-helper/Cargo.lock";
@@ -175,6 +175,8 @@ struct CargoLock {
 #[derive(Deserialize)]
 struct CargoLockPackage {
     name: String,
+    #[allow(dead_code)]
+    version: Option<String>,
     source: Option<String>,
 }
 
@@ -438,17 +440,14 @@ pub fn stage_bundle(
         rust_notices,
         &recipe,
     )?;
+    let layout = solstone_core_installed_payload::screen_ocr_layout(target)
+        .ok_or_else(|| format!("unsupported screen OCR target {target}"))?;
     let mut files = vec![
         file(bundle_dest, "recipe.toml", 0o644, recipe_bytes),
         file(bundle_dest, "models/detector.onnx", 0o644, detector),
         file(bundle_dest, "models/recognizer.onnx", 0o644, recognizer),
         file(bundle_dest, "models/dictionary.txt", 0o644, &dictionary),
-        file(
-            bundle_dest,
-            &format!("runtime/{}", spec.runtime_name),
-            0o755,
-            runtime,
-        ),
+        file_at(layout.runtime_library, 0o755, runtime),
         file(bundle_dest, "runtime/LICENSE", 0o644, license),
         file(
             bundle_dest,
@@ -488,8 +487,8 @@ pub fn stage_bundle(
             rust_source_index,
         ),
     ];
-    if let (Some(name), Some(bytes)) = (spec.dependency_name, dependency) {
-        files.push(file(bundle_dest, &format!("runtime/{name}"), 0o755, bytes));
+    if let (Some(dep_dest), Some(bytes)) = (layout.runtime_dependency, dependency) {
+        files.push(file_at(dep_dest, 0o755, bytes));
     }
     let provenance = json!({
         "schema": "solstone.screen-ocr-bundle.v1",
@@ -573,6 +572,42 @@ fn file(base: &str, relative: &str, mode: u32, bytes: &[u8]) -> StagedFile {
         mode,
         bytes: bytes.to_vec(),
     }
+}
+
+fn file_at(dest: &str, mode: u32, bytes: &[u8]) -> StagedFile {
+    StagedFile {
+        dest: dest.to_owned(),
+        mode,
+        bytes: bytes.to_vec(),
+    }
+}
+
+pub fn exact_staged_dests(target: &str) -> Result<BTreeSet<String>, String> {
+    let layout = solstone_core_installed_payload::screen_ocr_layout(target)
+        .ok_or_else(|| format!("unsupported screen OCR target {target}"))?;
+    let mut dests = BTreeSet::new();
+    dests.insert(layout.recipe.to_owned());
+    dests.insert(layout.detector.to_owned());
+    dests.insert(layout.recognizer.to_owned());
+    dests.insert(layout.dictionary.to_owned());
+    dests.insert(layout.runtime_library.to_owned());
+    if let Some(dep) = layout.runtime_dependency {
+        dests.insert(dep.to_owned());
+    }
+    for sub in [
+        "runtime/LICENSE",
+        "runtime/ThirdPartyNotices.txt",
+        "licenses/AGPL-3.0-only.txt",
+        "licenses/Apache-2.0.txt",
+        "licenses/SOURCE-DIRECTIONS.md",
+        "licenses/NOTICE",
+        "licenses/rust-NOTICES.txt",
+        "provenance/rust-sources.json",
+        "provenance/bundle.json",
+    ] {
+        dests.insert(format!("{BUNDLE_DEST}/{sub}"));
+    }
+    Ok(dests)
 }
 
 pub fn prepare_from_cache(
@@ -979,9 +1014,12 @@ mod tests {
             .iter()
             .map(|(path, _, _)| path.as_str())
             .collect::<Vec<_>>();
-        assert!(paths.contains(&"lib/solstone-screen-ocr/runtime/onnxruntime.dll"));
+        assert!(paths.contains(&"lib/solstone-native/solstone-screen-ocr-onnxruntime.dll"));
+        assert!(paths.contains(&"lib/solstone-native/onnxruntime_providers_shared.dll"));
         assert!(
-            paths.contains(&"lib/solstone-screen-ocr/runtime/onnxruntime_providers_shared.dll")
+            !paths
+                .iter()
+                .any(|p| p.starts_with("lib/solstone-screen-ocr/runtime/") && p.ends_with(".dll"))
         );
         assert!(paths.contains(&"lib/solstone-screen-ocr/runtime/LICENSE"));
         assert!(paths.contains(&"lib/solstone-screen-ocr/runtime/ThirdPartyNotices.txt"));
@@ -1120,5 +1158,197 @@ mod tests {
             std::fs::read(destination.path().join("libonnxruntime.so.1")).unwrap(),
             b"fixture-runtime-bytes"
         );
+    }
+
+    #[test]
+    fn four_targets_match_layout_and_constants() {
+        let inventory_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap()
+            .join("core/distribution/inventory.toml");
+        let inventory = crate::inventory::load_inventory(&inventory_path).unwrap();
+
+        let targets = [
+            ("linux-x86_64", "x86_64-unknown-linux-gnu"),
+            ("linux-aarch64", "aarch64-unknown-linux-gnu"),
+            ("macos-arm64", "aarch64-apple-darwin"),
+            ("windows-x86_64", "x86_64-pc-windows-msvc"),
+        ];
+
+        for (target_id, expected_triple) in targets {
+            let spec = target_spec(target_id).expect("target spec");
+            assert_eq!(spec.triple, expected_triple);
+
+            let layout = solstone_core_installed_payload::screen_ocr_layout(target_id)
+                .expect("screen OCR layout");
+            let dests = exact_staged_dests(target_id).expect("exact staged dests");
+
+            assert!(dests.contains(layout.recipe));
+            assert!(dests.contains(layout.detector));
+            assert!(dests.contains(layout.recognizer));
+            assert!(dests.contains(layout.dictionary));
+            assert!(dests.contains(layout.runtime_library));
+            if let Some(dep) = layout.runtime_dependency {
+                assert!(dests.contains(dep));
+            }
+
+            let bin_entry = inventory
+                .entry
+                .iter()
+                .find(|entry| match entry {
+                    Entry::Bin {
+                        package, targets, ..
+                    } => package == HELPER_PACKAGE && targets.iter().any(|t| t == target_id),
+                    _ => false,
+                })
+                .expect("helper bin entry in committed inventory");
+            let Entry::Bin { dest, .. } = bin_entry else {
+                unreachable!()
+            };
+            assert_eq!(dest, layout.helper);
+
+            if target_id == "windows-x86_64" {
+                assert!(!dests.contains(layout.helper));
+                assert!(
+                    !dests
+                        .iter()
+                        .any(|p| p.starts_with("lib/solstone-screen-ocr/runtime/")
+                            && p.ends_with(".dll"))
+                );
+            } else {
+                assert_eq!(layout.helper, "bin/solstone-screen-ocr-helper");
+                assert!(
+                    layout
+                        .runtime_library
+                        .starts_with("lib/solstone-screen-ocr/runtime/")
+                );
+            }
+        }
+
+        assert_eq!(HELPER_PACKAGE, "solstone-screen-ocr-helper");
+        assert_eq!(HELPER_BIN, "solstone-screen-ocr-helper");
+
+        let recipe =
+            Recipe::load(include_bytes!("../../../screen-ocr-helper/recipe.toml")).unwrap();
+        assert_eq!(recipe.runtime.version, "1.31.0");
+        assert_eq!(recipe.source.ort_version, "2.0.0-rc.13");
+
+        let journal_lock: CargoLock =
+            toml_edit::de::from_str(include_str!("../../../Cargo.lock")).unwrap();
+        let journal_ort = journal_lock
+            .package
+            .iter()
+            .find(|pkg| pkg.name == "ort")
+            .and_then(|pkg| pkg.version.as_deref())
+            .expect("ort in journal Cargo.lock");
+        assert_eq!(journal_ort, "2.0.0-rc.12");
+    }
+
+    #[test]
+    fn committed_inventory_selects_helper_for_all_targets() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let inventory =
+            crate::inventory::load_inventory(&repo.join("core/distribution/inventory.toml"))
+                .unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let mock_artifacts = |target_id: &str| -> BTreeMap<ArtifactId, PathBuf> {
+            let target = inventory.target.iter().find(|t| t.id == target_id).unwrap();
+            let mut artifacts = BTreeMap::new();
+            for entry in &inventory.entry {
+                if let Entry::Bin {
+                    package,
+                    bin,
+                    lane,
+                    targets,
+                    ..
+                } = entry
+                    && targets.iter().any(|t| t == target_id)
+                {
+                    let lane = target.lane_for(lane);
+                    let triple = target.triple_for_lane(lane);
+                    let file_path = tmp.path().join(format!("{target_id}-{bin}"));
+                    fs::write(&file_path, b"mock").unwrap();
+                    artifacts.insert(
+                        ArtifactId {
+                            package: package.clone(),
+                            bin: bin.clone(),
+                            triple: triple.to_owned(),
+                        },
+                        file_path,
+                    );
+                }
+            }
+            artifacts
+        };
+
+        // Windows:
+        let win_id = ArtifactId {
+            package: HELPER_PACKAGE.into(),
+            bin: HELPER_BIN.into(),
+            triple: "x86_64-pc-windows-msvc".into(),
+        };
+        let mut missing_helper = mock_artifacts("windows-x86_64");
+        missing_helper.remove(&win_id);
+        let err = crate::select::select_artifacts(&inventory, "windows-x86_64", &missing_helper)
+            .expect_err("helper artifact is required");
+        assert!(err.missing_required.contains(HELPER_BIN));
+
+        let helper_exe = tmp.path().join("solstone-screen-ocr-helper.exe");
+        let mut artifacts = mock_artifacts("windows-x86_64");
+        artifacts.insert(win_id.clone(), helper_exe);
+
+        // prepare_for_inventory refuses when file is absent on disk
+        let prep_err = prepare_for_inventory(
+            repo,
+            &tmp.path().join("cache"),
+            &inventory,
+            "windows-x86_64",
+            &artifacts,
+        )
+        .expect_err("refuses when helper artifact file is absent");
+        assert!(prep_err.contains("screen OCR helper artifact missing"));
+
+        // When present, select_artifacts selects at lib/solstone-native/solstone-screen-ocr-helper.exe
+        fs::write(artifacts.get(&win_id).unwrap(), b"helper").unwrap();
+        let sel =
+            crate::select::select_artifacts(&inventory, "windows-x86_64", &artifacts).unwrap();
+        let selected_dest = sel
+            .bins
+            .iter()
+            .find(|b| {
+                b.package == win_id.package && b.bin == win_id.bin && b.triple == win_id.triple
+            })
+            .map(|b| b.dest.as_str());
+        assert_eq!(
+            selected_dest,
+            Some("lib/solstone-native/solstone-screen-ocr-helper.exe")
+        );
+
+        // Linux and macOS stay on bin/solstone-screen-ocr-helper:
+        for (target, triple) in [
+            ("linux-x86_64", "x86_64-unknown-linux-gnu"),
+            ("linux-aarch64", "aarch64-unknown-linux-gnu"),
+            ("macos-arm64", "aarch64-apple-darwin"),
+        ] {
+            let id = ArtifactId {
+                package: HELPER_PACKAGE.into(),
+                bin: HELPER_BIN.into(),
+                triple: triple.into(),
+            };
+            let target_artifacts = mock_artifacts(target);
+            let sel =
+                crate::select::select_artifacts(&inventory, target, &target_artifacts).unwrap();
+            let selected_dest = sel
+                .bins
+                .iter()
+                .find(|b| b.package == id.package && b.bin == id.bin && b.triple == id.triple)
+                .map(|b| b.dest.as_str());
+            assert_eq!(selected_dest, Some("bin/solstone-screen-ocr-helper"));
+        }
     }
 }

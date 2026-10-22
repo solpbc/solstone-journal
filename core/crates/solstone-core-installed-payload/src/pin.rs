@@ -262,6 +262,12 @@ pub fn resolve_pin() -> Result<PublicKey, PinnedSignatureError> {
 }
 
 #[cfg(feature = "test-fixture-pin")]
+pub fn test_fixture_keypair() -> &'static minisign::KeyPair {
+    static KEYPAIR: std::sync::OnceLock<minisign::KeyPair> = std::sync::OnceLock::new();
+    KEYPAIR.get_or_init(|| minisign::KeyPair::generate_unencrypted_keypair().expect("keypair"))
+}
+
+#[cfg(feature = "test-fixture-pin")]
 pub fn install_test_fixture_pin(path: &Path) -> Result<(), PinnedSignatureError> {
     let text = fs::read_to_string(path).map_err(|error| {
         PinnedSignatureError::new(
