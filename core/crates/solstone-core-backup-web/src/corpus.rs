@@ -1475,7 +1475,7 @@ async fn get_status_json(deps: &crate::BackupWebDeps) -> (u16, Value) {
 async fn wait_terminal(deps: &crate::BackupWebDeps) -> Value {
     let deadline = tokio::time::Instant::now() + FIXTURE_WAIT;
     loop {
-        let (_, body) = tokio::time::timeout_at(deadline, get_status_json(deps))
+        let (status, body) = tokio::time::timeout_at(deadline, get_status_json(deps))
             .await
             .expect("operation status timed out");
         let phase = body["operation"]["phase"].as_str().unwrap_or("");
@@ -1484,7 +1484,10 @@ async fn wait_terminal(deps: &crate::BackupWebDeps) -> Value {
             Err(TryLockError::WouldBlock) => false,
             Err(TryLockError::Poisoned(_)) => panic!("operation slot poisoned"),
         };
-        if settled && (crate::operation::is_terminal(phase) || body["operation"].is_null()) {
+        if status == 200
+            && settled
+            && (crate::operation::is_terminal(phase) || body["operation"].is_null())
+        {
             return body;
         }
         fixture_tick(deadline)
@@ -5757,7 +5760,12 @@ async fn hosted_poll_needs_subscription_matches_local_needs_subscription_contrac
         }
         let done = wait_terminal(&deps).await;
         assert!(solstone_core_backup::load_hosted_binding(root.path()).is_none());
-        assert!(!crate::operation::is_busy(&deps.operations));
+        let deadline = tokio::time::Instant::now() + FIXTURE_WAIT;
+        while crate::operation::is_busy(&deps.operations) {
+            fixture_tick(deadline)
+                .await
+                .expect("terminal operation stayed busy");
+        }
         done
     }
 
