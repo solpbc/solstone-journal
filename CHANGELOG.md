@@ -32,6 +32,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - when the only sign that someone was in a conversation is a name two people in your journal share, such as a first name, the activity no longer lists one of them as attending. that person is listed as mentioned instead, unless their voice or their full name shows which one it was. activities already in your journal keep their people as they are.
 - agents reading your journal now see who attended an activity apart from who was only mentioned in it. before, both were listed as participants.
+- your morning briefing is no longer told that people an activity only mentions, such as someone named in an email you read, were there. it's now less likely to say you met or talked with someone you only read about.
 
 ## [2.0.55] - 2026-10-22
 
