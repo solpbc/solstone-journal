@@ -44,6 +44,7 @@
   "ENT_CONN_WITH_YOU_EYEBROW": "with you",
   "ENT_CONN_WITH_YOU_SUMMARY": "{n} moments together · latest {kind} ({day})",
   "ENT_CONN_WITH_YOU_SUMMARY_ONE": "1 moment together · latest {kind} ({day})",
+  "ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED": "on your calendar only · latest {day}",
   "ENT_CONN_WITH_YOU_TOGGLE": "the moments behind this ›",
   "ENT_CONN_WITH_YOU_FAILED": "couldn't check your own history with this entity just now.",
   "ENT_CONN_SUMMARY": "{s} with direct evidence · {a} from shared events only",

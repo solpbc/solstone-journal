@@ -47,6 +47,7 @@ fn load_edge_evidence(
         entity_id,
         peer_id,
         request,
+        ATTENDANCE,
         &EdgeAliases::default(),
     )
 }
@@ -237,6 +238,7 @@ fn history_has_exact_shape_boolean_direction_and_keeps_future_rows() {
             [
                 "entity_id",
                 "evidence",
+                "evidence_class",
                 "filters",
                 "limit",
                 "offset",
@@ -604,6 +606,73 @@ fn evidence_class_scheduled_only_is_scheduled() {
 }
 
 #[test]
+fn history_evidence_class_reads_every_matching_row_not_the_page() {
+    let root = seed(
+        "history_classes",
+        &[
+            SeedEdge::new("self", "sch", "scheduled-with", Some("20260501"), "p_sch"),
+            // Later day ensures scheduled-with appears on the page ahead of mentioned.
+            SeedEdge::new("self", "mixed", "scheduled-with", Some("20260502"), "p_m1"),
+            SeedEdge::new("self", "mixed", "mentioned", Some("20260401"), "p_m2"),
+            SeedEdge::new("self", "sem", "mentioned", Some("20260501"), "p_sem"),
+        ],
+    );
+    let sch = crate::load_edge_evidence(
+        &root,
+        "self",
+        "sch",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &EdgeAliases::default(),
+    )
+    .unwrap();
+    assert_eq!(sch.evidence_class.as_deref(), Some("scheduled"));
+
+    let mixed_request = EdgeEvidenceRequest {
+        limit: 1,
+        ..EdgeEvidenceRequest::default()
+    };
+    let mixed = crate::load_edge_evidence(
+        &root,
+        "self",
+        "mixed",
+        &mixed_request,
+        ATTENDANCE,
+        &EdgeAliases::default(),
+    )
+    .unwrap();
+    assert_eq!(mixed.total, 2);
+    assert_eq!(mixed.evidence.len(), 1);
+    assert_eq!(mixed.evidence[0].kind, "scheduled-with");
+    assert_eq!(mixed.evidence_class.as_deref(), Some("mixed"));
+
+    let sem = crate::load_edge_evidence(
+        &root,
+        "self",
+        "sem",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &EdgeAliases::default(),
+    )
+    .unwrap();
+    assert_eq!(sem.evidence_class.as_deref(), Some("semantic"));
+
+    let empty = crate::load_edge_evidence(
+        &root,
+        "self",
+        "absent",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &EdgeAliases::default(),
+    )
+    .unwrap();
+    assert_eq!(empty.total, 0);
+    assert_eq!(empty.evidence_class, None);
+
+    cleanup(root);
+}
+
+#[test]
 fn filters_and_negative_pagination_are_invalid_before_query() {
     let root = seed(
         "filters",
@@ -705,6 +774,7 @@ fn empty_partial_and_absent_indexes_have_distinct_results_without_writes() {
             [
                 "entity_id",
                 "evidence",
+                "evidence_class",
                 "filters",
                 "limit",
                 "offset",
@@ -1345,6 +1415,7 @@ fn merged_evidence_carries_survivor_ids_and_names_as_seen() {
         "solstone",
         "alice",
         &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
         &aliases,
     )
     .unwrap();
@@ -1376,6 +1447,7 @@ fn merged_evidence_carries_survivor_ids_and_names_as_seen() {
         "alice",
         "sunstone",
         &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
         &aliases,
     )
     .unwrap();
@@ -1389,6 +1461,7 @@ fn merged_evidence_carries_survivor_ids_and_names_as_seen() {
         "solstone",
         "sunstone",
         &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
         &aliases,
     )
     .unwrap();
@@ -1532,6 +1605,7 @@ fn thousands_of_merges_leave_every_read_working_and_unchanged() {
             "solstone",
             "alice",
             &EdgeEvidenceRequest::default(),
+            ATTENDANCE,
             &many
         )
         .unwrap(),
@@ -1540,6 +1614,7 @@ fn thousands_of_merges_leave_every_read_working_and_unchanged() {
             "solstone",
             "alice",
             &EdgeEvidenceRequest::default(),
+            ATTENDANCE,
             &few
         )
         .unwrap()
@@ -1646,9 +1721,15 @@ fn several_merged_ids_on_both_sides_of_a_pair_combine() {
     for (raw, canonical) in [("a1", "a"), ("a2", "a"), ("b1", "b"), ("b2", "b")] {
         aliases.insert(raw, canonical, Some(canonical.to_uppercase()));
     }
-    let history =
-        crate::load_edge_evidence(&root, "a", "b", &EdgeEvidenceRequest::default(), &aliases)
-            .unwrap();
+    let history = crate::load_edge_evidence(
+        &root,
+        "a",
+        "b",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
     assert_eq!(history.total, 3);
     assert_eq!(history.peer_name.as_deref(), Some("B"));
     let network = crate::load_entity_network(

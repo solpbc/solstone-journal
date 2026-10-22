@@ -869,6 +869,32 @@ async fn index_plate_history_returns_pair_evidence() {
     assert_eq!(body["peer_id"], "person-bob");
     assert_eq!(body["evidence"][0]["kind"], "mentioned");
     assert_eq!(body["evidence"][0]["day"], "20260501");
+    assert_eq!(body["evidence_class"], "semantic");
+}
+
+#[tokio::test]
+async fn index_plate_history_scheduled_with_only_is_scheduled() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    save_person(journal.path(), "person-bob", "Bob");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "person-ada",
+            "person-bob",
+            "scheduled-with",
+            Some("20260501"),
+            "a",
+        )],
+    );
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=person-ada&peer=person-bob",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["evidence"][0]["kind"], "scheduled-with");
+    assert_eq!(body["evidence_class"], "scheduled");
 }
 
 #[tokio::test]
@@ -1645,6 +1671,7 @@ async fn state_has_copy_and_attendance() {
         "ENT_CONN_ROW_META_SCHEDULED",
         "ENT_CONN_CALENDAR_ONLY",
         "ENT_CONN_SUMMARY_CALENDAR",
+        "ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED",
     ] {
         let value = v["entities_copy"][key].as_str();
         assert!(

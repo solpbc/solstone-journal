@@ -3215,9 +3215,11 @@ function renderWithYouBlock(container, entityId, history, referenceDay) {
   const latest = rows[0];
   const summary = document.createElement('div');
   summary.className = 'entity-conn-with-you-summary';
-  const summaryTemplate = total === 1
-    ? ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY_ONE
-    : ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY;
+  const summaryTemplate = history?.evidence_class === 'scheduled'
+    ? ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED
+    : (total === 1
+      ? ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY_ONE
+      : ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY);
   summary.textContent = (summaryTemplate || '')
     .replace('{n}', String(total))
     .replace('{kind}', entityConnKindWord(latest.kind))

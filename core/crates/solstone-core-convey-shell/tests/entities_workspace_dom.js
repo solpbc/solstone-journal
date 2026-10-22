@@ -437,6 +437,10 @@ async function main() {
       ENT_CONN_ROW_META_ONE_ATTENDANCE: 'ENT_CONN_ROW_META_ONE_ATTENDANCE:{day}',
       ENT_CONN_ROW_META: 'ENT_CONN_ROW_META:{n}:{day}',
       ENT_CONN_ROW_META_ONE: 'ENT_CONN_ROW_META_ONE:{day}',
+      ENT_CONN_WITH_YOU_SUMMARY: 'ENT_CONN_WITH_YOU_SUMMARY:{n}:{kind}:{day}',
+      ENT_CONN_WITH_YOU_SUMMARY_ONE: 'ENT_CONN_WITH_YOU_SUMMARY_ONE:{kind}:{day}',
+      ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED: 'ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:{day}',
+      ENT_CONN_WITH_YOU_TOGGLE: 'ENT_CONN_WITH_YOU_TOGGLE',
     },
     ATTENDANCE_KINDS: new Set(['attended-with', 'co-present', 'scheduled-with']),
   };
@@ -499,6 +503,123 @@ async function main() {
   check(
     summary2 && summary2.textContent === 'ENT_CONN_SUMMARY:1:1' && !summary2.textContent.includes('ENT_CONN_SUMMARY_CALENDAR'),
     'summary without scheduled neighbours omits calendar clause',
+  );
+
+  function checkWithYou(history, label) {
+    const container = new Element(connDoc);
+    const rendered = connContext.renderWithYouBlock(container, 'alice', history, '20260530');
+    check(rendered, `${label} rendered with-you block`);
+    const summaryNode = allDescendants(container).find(n => n.className === 'entity-conn-with-you-summary');
+    const text = summaryNode ? summaryNode.textContent : '';
+    const toggleNode = allDescendants(container).find(n => n.className === 'entity-conn-with-you-toggle');
+    const paneNode = allDescendants(container).find(n => n.className === 'entity-conn-evidence');
+    return { container, text, toggleNode, paneNode };
+  }
+
+  const resScheduled1 = checkWithYou(
+    { evidence_class: 'scheduled', total: 1, evidence: [{ kind: 'scheduled-with', day: '20260501' }] },
+    'scheduled single',
+  );
+  check(
+    resScheduled1.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:')
+      && !resScheduled1.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+      && !resScheduled1.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE'),
+    'scheduled total 1 uses scheduled copy and neither one- nor many-moments copy',
+  );
+
+  const resScheduledMany = checkWithYou(
+    {
+      evidence_class: 'scheduled',
+      total: 3,
+      evidence: [
+        { kind: 'scheduled-with', day: '20260501' },
+        { kind: 'scheduled-with', day: '20260501' },
+      ],
+    },
+    'scheduled multiple',
+  );
+  check(
+    resScheduledMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:')
+      && !resScheduledMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+      && !resScheduledMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE'),
+    'scheduled total > 1 uses scheduled copy and neither one- nor many-moments copy',
+  );
+
+  const otherClasses = ['semantic', 'mixed', 'attendance', undefined];
+  for (const cls of otherClasses) {
+    const historyOne = { total: 1, evidence: [{ kind: 'works-with', day: '20260501' }] };
+    if (cls !== undefined) historyOne.evidence_class = cls;
+    const resOne = checkWithYou(historyOne, `${cls ?? 'undefined'} total 1`);
+    check(
+      resOne.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE')
+        && !resOne.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+        && !resOne.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:'),
+      `${cls ?? 'undefined'} total 1 uses one-moment copy and neither many nor scheduled copy`,
+    );
+
+    const historyMany = {
+      total: 4,
+      evidence: [
+        { kind: 'works-with', day: '20260501' },
+        { kind: 'works-with', day: '20260501' },
+      ],
+    };
+    if (cls !== undefined) historyMany.evidence_class = cls;
+    const resMany = checkWithYou(historyMany, `${cls ?? 'undefined'} total > 1`);
+    check(
+      resMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+        && !resMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE')
+        && !resMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:'),
+      `${cls ?? 'undefined'} total > 1 uses many-moments copy and neither one nor scheduled copy`,
+    );
+  }
+
+  const resNull = checkWithYou(
+    {
+      evidence_class: null,
+      total: 2,
+      evidence: [
+        { kind: 'works-with', day: '20260501' },
+        { kind: 'works-with', day: '20260501' },
+      ],
+    },
+    'null class multiple',
+  );
+  check(
+    resNull.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+      && !resNull.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE')
+      && !resNull.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:'),
+    'null evidence_class total > 1 uses many-moments copy and not scheduled copy',
+  );
+
+  check(
+    resScheduled1.toggleNode
+      && resScheduled1.toggleNode.textContent === 'ENT_CONN_WITH_YOU_TOGGLE'
+      && resScheduled1.toggleNode.getAttribute('aria-expanded') === 'false',
+    'scheduled body toggle has expected text and aria-expanded false',
+  );
+  check(
+    resScheduled1.paneNode
+      && resScheduled1.paneNode.className === 'entity-conn-evidence'
+      && resScheduled1.paneNode.hidden === true,
+    'scheduled body pane has entity-conn-evidence class and is hidden',
+  );
+
+  const resSemantic = checkWithYou(
+    { evidence_class: 'semantic', total: 1, evidence: [{ kind: 'mentioned', day: '20260501' }] },
+    'semantic toggle check',
+  );
+  check(
+    resSemantic.toggleNode
+      && resSemantic.toggleNode.textContent === 'ENT_CONN_WITH_YOU_TOGGLE'
+      && resSemantic.toggleNode.getAttribute('aria-expanded') === 'false',
+    'semantic body toggle has expected text and aria-expanded false',
+  );
+  check(
+    resSemantic.paneNode
+      && resSemantic.paneNode.className === 'entity-conn-evidence'
+      && resSemantic.paneNode.hidden === true,
+    'semantic body pane has entity-conn-evidence class and is hidden',
   );
 
   console.log(`DOM CASES: ${cases} passed`);

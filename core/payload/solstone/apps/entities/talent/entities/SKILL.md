@@ -308,6 +308,7 @@ Behavior notes:
 
 - Evidence rows include day, edge kind, available label/anchor, source, and path.
 - History is the full honest pair record, including future-dated evidence rows.
+- Each response carries the pair's `evidence_class` (`attendance`, `scheduled`, `semantic`, or `mixed`), computed over every matching row, not just the returned page. It is null when no row matches.
 - If no principal entity exists and `PEER` is omitted, the command fails and asks for `PEER`.
 
 Examples:

@@ -406,6 +406,7 @@ pub struct EdgeEvidenceResponse {
     pub limit: i64,
     pub offset: i64,
     pub evidence: Vec<EvidenceRow>,
+    pub evidence_class: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct OverviewTotals {
@@ -620,6 +621,7 @@ pub fn load_edge_evidence(
     entity_id: &str,
     peer_id: &str,
     request: &EdgeEvidenceRequest,
+    attendance_kinds: &[&str],
     aliases: &EdgeAliases,
 ) -> Result<EdgeEvidenceResponse, EdgeQueryError> {
     let (requested_id, requested_peer) = (entity_id, peer_id);
@@ -668,6 +670,14 @@ pub fn load_edge_evidence(
             &filter,
             request.limit,
             request.offset,
+        )?,
+        evidence_class: load_evidence_class(
+            &connection,
+            &source,
+            entity_id,
+            peer_id,
+            &filter,
+            attendance_kinds,
         )?,
     })
 }
@@ -1320,6 +1330,50 @@ fn evidence_row_from_sql(row: &Row<'_>) -> rusqlite::Result<EvidenceRow> {
         ts: row.get(12)?,
         weight: row.get(13)?,
     })
+}
+fn load_evidence_class(
+    connection: &Connection,
+    source: &EdgeSource,
+    entity_id: &str,
+    peer_id: &str,
+    filter: &FilterSql,
+    attendance_kinds: &[&str],
+) -> Result<Option<String>, EdgeQueryError> {
+    let sql = format!(
+        "{} SELECT DISTINCT kind FROM e {} {}",
+        source.sql,
+        pair_where(),
+        filter.sql
+    );
+    let mut params = source.params.clone();
+    params.extend(pair_params(entity_id, peer_id));
+    params.extend(filter.params.clone());
+    let mut statement = connection
+        .prepare_cached(&sql)
+        .map_err(|error| unavailable_db(connection, error))?;
+    let kinds: BTreeMap<String, KindSummary> = statement
+        .query_map(params_from_iter(params.iter()), |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|error| unavailable_db(connection, error))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| unavailable_db(connection, error))?
+        .into_iter()
+        .map(|kind| {
+            (
+                kind,
+                KindSummary {
+                    count: 0,
+                    weighted: 0.0,
+                },
+            )
+        })
+        .collect();
+    if kinds.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(evidence_class(&kinds, attendance_kinds)))
+    }
 }
 fn load_peer_name(
     connection: &Connection,
