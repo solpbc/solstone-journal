@@ -1334,9 +1334,12 @@ fn reconcile_edges(
             let activity_file = rel.starts_with("facets/")
                 && rel.contains("/activities/")
                 && rel.ends_with(".jsonl");
-            if activity_file
+            let event_file =
+                rel.starts_with("facets/") && rel.contains("/events/") && rel.ends_with(".jsonl");
+            if (event_file
+                || (activity_file
+                    && fs::read_to_string(path).is_ok_and(|text| text.contains("\"anticipated\""))))
                 && !to_index.iter().any(|(queued, _, _)| queued == rel)
-                && fs::read_to_string(path).is_ok_and(|text| text.contains("\"anticipated\""))
                 && let Ok(mtime) = file_mtime_secs(path)
             {
                 to_index.push((rel.clone(), path.clone(), mtime));
@@ -1421,8 +1424,8 @@ fn reconcile_edges(
     }
     if !plans_rechecked && report.failures.is_empty() {
         conn.execute(
-            "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
-            [RETIRED_PLAN_EDGES_PATH],
+            "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
+            params![RETIRED_PLAN_EDGES_PATH, RETIRED_PLAN_EDGES_VERSION],
         )?;
     }
     Ok(report)
@@ -1430,6 +1433,8 @@ fn reconcile_edges(
 
 /// Marks that files holding retired plan records had their edges re-extracted.
 const RETIRED_PLAN_EDGES_PATH: &str = "edges:retired-plans";
+// Version 1 covered activity plans; version 2 also covers legacy schedule events.
+const RETIRED_PLAN_EDGES_VERSION: i64 = 2;
 
 /// Marks that the people on every listed calendar event have been linked.
 /// Calendar notes indexed before people links existed get theirs once.
@@ -1449,8 +1454,8 @@ fn calendar_people_linked(conn: &Connection) -> Result<bool, StoreError> {
 fn retired_plan_edges_rechecked(conn: &Connection) -> Result<bool, StoreError> {
     Ok(conn
         .query_row(
-            "SELECT 1 FROM edge_files WHERE path = ?",
-            [RETIRED_PLAN_EDGES_PATH],
+            "SELECT 1 FROM edge_files WHERE path = ? AND mtime >= ?",
+            params![RETIRED_PLAN_EDGES_PATH, RETIRED_PLAN_EDGES_VERSION],
             |_| Ok(()),
         )
         .optional()?
@@ -7827,6 +7832,120 @@ not json
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn legacy_plan_edge_upgrade_retries_unchanged_files_and_preserves_history() {
+        let root = temp_root("legacy-plan-upgrade");
+        write_owner_zone(&root);
+        seed_edge_entity(&root, "alice", "Alice Edge");
+        seed_edge_entity(&root, "bob", "Bob Edge");
+        let legacy = "facets/work/events/20260416.jsonl";
+        let source = concat!(
+            "{\"title\":\"planned\",\"agent\":\"schedule\",\"occurred\":false,\"participants\":[\"Alice Edge\",\"Bob Edge\"]}\n",
+            "{\"title\":\"history\",\"agent\":\"timeline\",\"occurred\":false,\"participants\":[\"Alice Edge\",\"Bob Edge\"]}\n"
+        );
+        write(&root, legacy, source);
+        let activity = "facets/work/activities/20260416.jsonl";
+        let activity_source = "{\"id\":\"meeting\",\"activity\":\"review\",\"participation\":[{\"entity_id\":\"alice\",\"role\":\"attendee\"},{\"entity_id\":\"bob\",\"role\":\"attendee\"}]}\n";
+        write(&root, activity, activity_source);
+        let mut conn = open_index(&root).unwrap();
+        let initial = reconcile_edges(&mut conn, &root, false, &|| Ok(())).unwrap();
+        assert!(initial.failures.is_empty());
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM edges WHERE source='participation'"
+            ),
+            1
+        );
+        let mtime = file_mtime_secs(&root.join(legacy)).unwrap();
+        // Model an index built before plans were excluded from legacy events.
+        conn.execute("DELETE FROM edges WHERE path=?", [legacy])
+            .unwrap();
+        for label in ["planned", "history"] {
+            conn.execute(
+                "INSERT INTO edges(src, dst, kind, directed, source, path, label, anchor, weight) VALUES ('alice', 'bob', 'attended-with', 0, 'event-legacy', ?, ?, '', 1)",
+                params![legacy, label],
+            ).unwrap();
+        }
+        conn.execute(
+            "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
+            [RETIRED_PLAN_EDGES_PATH],
+        )
+        .unwrap();
+        let activity_edges = edge_rows(&conn)
+            .into_iter()
+            .filter(|row| row.4 == activity)
+            .collect::<Vec<_>>();
+        conn.execute_batch(
+            "CREATE TRIGGER reject_legacy_edge BEFORE INSERT ON edges
+             WHEN NEW.source='event-legacy'
+             BEGIN SELECT RAISE(FAIL, 'legacy edge write refused'); END;",
+        )
+        .unwrap();
+
+        let failed = reconcile_edges(&mut conn, &root, false, &|| Ok(())).unwrap();
+        assert_eq!(failed.failures.len(), 1);
+        assert_eq!(failed.failures[0].path.as_deref(), Some(legacy));
+        assert!(
+            failed
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("legacy edge write refused"))
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM edges WHERE source='event-legacy'"
+            ),
+            2
+        );
+        let marker = |conn: &Connection| {
+            conn.query_row(
+                "SELECT mtime FROM edge_files WHERE path=?",
+                [RETIRED_PLAN_EDGES_PATH],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(marker(&conn), 1);
+        assert_eq!(edge_file_mtimes(&conn).unwrap()[legacy], mtime);
+        conn.execute_batch("DROP TRIGGER reject_legacy_edge")
+            .unwrap();
+
+        // Removing the failure changes neither source bytes nor source mtime.
+        let upgraded = reconcile_edges(&mut conn, &root, false, &|| Ok(())).unwrap();
+        assert!(upgraded.failures.is_empty());
+        assert_eq!(upgraded.indexed, 1);
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM edges WHERE label='planned'"),
+            0
+        );
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM edges WHERE label='history'"),
+            1
+        );
+        assert!(marker(&conn) >= 2);
+        assert_eq!(
+            edge_rows(&conn)
+                .into_iter()
+                .filter(|row| row.4 == activity)
+                .collect::<Vec<_>>(),
+            activity_edges
+        );
+        assert_eq!(fs::read_to_string(root.join(legacy)).unwrap(), source);
+        assert_eq!(file_mtime_secs(&root.join(legacy)).unwrap(), mtime);
+        assert_eq!(
+            fs::read_to_string(root.join(activity)).unwrap(),
+            activity_source
+        );
+        let repeated = reconcile_edges(&mut conn, &root, false, &|| Ok(())).unwrap();
+        assert!(repeated.failures.is_empty());
+        assert_eq!(repeated.indexed, 0);
+        assert_eq!(repeated.removed, 0);
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
