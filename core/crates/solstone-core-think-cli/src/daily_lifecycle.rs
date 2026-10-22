@@ -603,7 +603,8 @@ pub(crate) fn rebuild_segment_receipts(
         let publication = segment
             .strip_prefix(&context.journal)
             .map_err(|e| e.to_string())?
-            .join("talents/publication.json");
+            .join("talents")
+            .join("publication.json");
         if !outputs.contains_key(
             publication
                 .to_str()
