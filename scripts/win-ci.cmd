@@ -161,7 +161,6 @@ call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child
 call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_paths_refuse_network_paths_and_count_utf16_units" || exit /b 1
 call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "signed_layout_refuses_missing_or_changed_executable_ca_and_runtime" "test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "production_spawn_clears_hostile_environment_and_uses_the_verified_directory" "test-hooks" || exit /b 1
-echo JOURNAL_WIN_CI_WINDOWS_VERIFIER=executed/pass
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "fixture_seam_refuses_every_non_loopback_endpoint_before_resolution" "full-tests,test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_evidence_nonce_spki_criticality_and_presence_are_enforced" "full-tests,test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exporter_mismatch_rejects_after_a_verified_certificate" "full-tests,test-hooks" || exit /b 1
