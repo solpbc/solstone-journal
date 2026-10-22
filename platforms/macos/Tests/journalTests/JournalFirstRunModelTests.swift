@@ -6,6 +6,7 @@ import JournalMarkKit
 import JournalRuntime
 import JournalRuntimeTestSupport
 import Observation
+import ServiceManagement
 import SolstoneCore
 import Testing
 @testable import journal
@@ -934,8 +935,11 @@ enum FakeHandoffLoadError: Error {
 
 @MainActor
 private final class FirstRunFakeLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+
     func register() throws {}
     func unregister() throws {}
+    func unregisterAwaitingCompletion() async throws {}
 }
 
 private actor CancellationAwareSetupRunner: JournalSetupRunning {

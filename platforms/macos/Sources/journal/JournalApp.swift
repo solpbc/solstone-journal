@@ -57,8 +57,11 @@ final class JournalAppModel {
         }
         JournalMarkFont.register()
         iconManager.start()
-        _ = config.applyLaunchAtLoginPreference()
-        windowModel.noteLaunchAtLoginApplied()
+        Task { @MainActor in
+            await config.applyLaunchAtLoginPreference()
+            windowModel.noteLaunchAtLoginApplied()
+            firstRunModel.loginFailure = config.launchAtLoginFailureSentence
+        }
         windowModel.prepareForWindowOpen()
         startActivation()
     }

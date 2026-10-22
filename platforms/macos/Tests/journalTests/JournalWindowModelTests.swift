@@ -6,6 +6,7 @@ import JournalMarkKit
 import JournalRuntime
 import JournalRuntimeTestSupport
 import MacTestSupport
+import ServiceManagement
 import Testing
 @testable import journal
 
@@ -481,6 +482,54 @@ struct JournalWindowModelTests {
         #expect(appModel.windowModel.unconfiguredMessage == "nothing here yet. creating your journal comes next.")
     }
 
+    @Test func launchDoesNotBlockOnAwaitedUnregister() async throws {
+        let suiteName = "app.solstone.journal.window-model.launch.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let fake = LaunchSuspendingLoginItemManager()
+        let config = JournalAppConfig(
+            defaults: defaults,
+            loginItemManager: fake,
+            loginItemEligibility: { true },
+            loginItemBundleIdentity: { (URL(fileURLWithPath: "/Applications/Journal.app"), "2") }
+        )
+
+        let gate = MockSingleSupervisorGate()
+        let supervisor = JournalSupervisor(
+            gate: gate,
+            materializer: MockRuntimeMaterializer(result: .success(try makeRuntime())),
+            runner: MockSupervisedChildRunner(),
+            readinessGate: MockJournalReadinessGate(result: .ready)
+        )
+        let appModel = JournalAppModel(config: config, supervisor: supervisor)
+
+        appModel.launch()
+
+        await withCheckedContinuation { cont in
+            fake.onUnregisterStarted = cont
+        }
+
+        #expect(fake.registerCalls == 0)
+        #expect(appModel.windowModel.launchAtLoginFailure == nil)
+
+        fake.shouldThrowOnRegister = true
+        await withCheckedContinuation { cont in
+            fake.onRegisterFinished = cont
+            let hold = fake.unregisterHoldContinuation
+            fake.unregisterHoldContinuation = nil
+            hold?.resume()
+        }
+
+        await Task.yield()
+
+        #expect(appModel.windowModel.launchAtLoginFailure == config.launchAtLoginFailureSentence)
+        #expect(appModel.firstRunModel.loginFailure == config.launchAtLoginFailureSentence)
+        #expect(config.launchAtLoginIssue == .failed)
+        #expect(appModel.windowModel.launchAtLoginEnabled)
+    }
+
     @Test func launchAtLoginToggleUsesConfig() {
         let fixture = makeUnconfiguredFixture()
         defer { fixture.clear() }
@@ -651,6 +700,40 @@ private final class IdentityMarkCapture {
 
 @MainActor
 private final class WindowModelFakeLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+
     func register() throws {}
     func unregister() throws {}
+    func unregisterAwaitingCompletion() async throws {}
+}
+
+@MainActor
+private final class LaunchSuspendingLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .enabled
+    var registerCalls = 0
+    var shouldThrowOnRegister = false
+    var onUnregisterStarted: CheckedContinuation<Void, Never>?
+    var unregisterHoldContinuation: CheckedContinuation<Void, Never>?
+    var onRegisterFinished: CheckedContinuation<Void, Never>?
+
+    func register() throws {
+        registerCalls += 1
+        if shouldThrowOnRegister {
+            let finished = onRegisterFinished
+            onRegisterFinished = nil
+            finished?.resume()
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+
+    func unregister() throws {}
+
+    func unregisterAwaitingCompletion() async throws {
+        await withCheckedContinuation { cont in
+            unregisterHoldContinuation = cont
+            let started = onUnregisterStarted
+            onUnregisterStarted = nil
+            started?.resume()
+        }
+    }
 }
