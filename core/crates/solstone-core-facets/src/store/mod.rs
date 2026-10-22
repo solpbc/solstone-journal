@@ -89,8 +89,9 @@ pub use facet_id::{
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
 pub use lifecycle::{
     EntityBlockReport, EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference,
-    EntityUnblockReport, FacetEntityLifecycleError, block_journal_entity,
-    delete_created_entity_if_unreferenced, delete_journal_entity, delete_journal_entity_after,
+    EntityUnblockReport, FacetEntityLifecycleError, FacetRelationshipPlan,
+    PlannedFacetRelationship, block_journal_entity, delete_created_entity_if_unreferenced,
+    delete_journal_entity, delete_journal_entity_after, plan_facet_entity_relationships,
     unblock_journal_entity,
 };
 #[cfg(any(test, feature = "test-hooks"))]

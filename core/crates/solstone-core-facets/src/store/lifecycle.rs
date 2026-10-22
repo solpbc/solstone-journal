@@ -156,6 +156,109 @@ impl From<FacetWriteError> for FacetEntityLifecycleError {
     }
 }
 
+/// One facet relationship discovered during a journal-wide entity plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedFacetRelationship {
+    pub entity_id: String,
+    pub facet_dir: String,
+    pub relationship_dir: String,
+    pub is_detached: bool,
+}
+
+/// Discovered facet relationships and any damaged paths encountered during traversal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FacetRelationshipPlan {
+    pub relationships: Vec<PlannedFacetRelationship>,
+    pub damaged_paths: Vec<String>,
+}
+
+/// Plan facet relationships across every facet in the journal.
+///
+/// Encounters unreadable directories or malformed links without halting,
+/// collecting them into `damaged_paths` while preserving traversal order.
+pub fn plan_facet_entity_relationships(
+    journal_root: &Path,
+) -> Result<FacetRelationshipPlan, FacetStoreError> {
+    let mut relationships = Vec::new();
+    let mut damaged_paths = Vec::new();
+    let facet_entries =
+        list_dir_entries(&facets_dir(journal_root)?).map_err(FacetStoreError::from)?;
+    for entry in facet_entries
+        .into_iter()
+        .filter(|entry| entry.kind == DirEntryKind::Directory)
+    {
+        let facet_dir = entry.name.to_string_lossy().into_owned();
+        let entities_rel = format!("facets/{facet_dir}/entities");
+        let entities_path = match contained_path(journal_root, &entities_rel) {
+            Ok(p) => p,
+            Err(_) => {
+                damaged_paths.push(entities_rel);
+                continue;
+            }
+        };
+        let entities_exists = match path_lexists(&entities_path) {
+            Ok(exists) => exists,
+            Err(_) => {
+                damaged_paths.push(entities_rel);
+                continue;
+            }
+        };
+        if !entities_exists {
+            continue;
+        }
+        let rel_entries = match list_dir_entries(&entities_path) {
+            Ok(entries) => entries,
+            Err(_) => {
+                damaged_paths.push(entities_rel);
+                continue;
+            }
+        };
+        for rel_entry in rel_entries
+            .into_iter()
+            .filter(|e| e.kind == DirEntryKind::Directory)
+        {
+            let relationship_dir = rel_entry.name.to_string_lossy().into_owned();
+            let link_rel = format!("facets/{facet_dir}/entities/{relationship_dir}/entity.json");
+            let link_path = match contained_path(journal_root, &link_rel) {
+                Ok(p) => p,
+                Err(_) => {
+                    damaged_paths.push(link_rel);
+                    continue;
+                }
+            };
+            let link_exists = match path_lexists(&link_path) {
+                Ok(exists) => exists,
+                Err(_) => {
+                    damaged_paths.push(link_rel);
+                    continue;
+                }
+            };
+            if !link_exists {
+                continue;
+            }
+            let link = match read_facet_entity_link(journal_root, &facet_dir, &relationship_dir) {
+                Ok(Some(link)) => link,
+                Ok(None) => continue,
+                Err(_) => {
+                    damaged_paths.push(link_rel);
+                    continue;
+                }
+            };
+            let is_detached = link.value().get("detached") == Some(&Value::Bool(true));
+            relationships.push(PlannedFacetRelationship {
+                entity_id: link.entity_id().to_owned(),
+                facet_dir: facet_dir.clone(),
+                relationship_dir,
+                is_detached,
+            });
+        }
+    }
+    Ok(FacetRelationshipPlan {
+        relationships,
+        damaged_paths,
+    })
+}
+
 /// Block an entity and detach every facet relationship that names its effective id.
 ///
 /// The outer facet guard is acquired before the entity guard, matching the only
@@ -202,103 +305,23 @@ fn block_journal_entity_inner(
         .expect("resolved identity-map directory contains an identity");
     // A flag at rest that names no one still protects the entity from being
     // blocked or deleted.
-    if identity
-        .value()
-        .get("is_principal")
-        .is_some_and(value_is_truthy)
-        || identity.had_stray_principal_flag()
-    {
+    if solstone_core_entity::entity_is_hide_protected(&identity) {
         return Err(FacetEntityLifecycleError::PrincipalEntityProtected {
             entity_id: entity_id.to_owned(),
         });
     }
 
-    struct PlannedRelationship {
-        facet_dir: String,
-        relationship_dir: String,
-        is_detached: bool,
+    let plan = plan_facet_entity_relationships(journal_root)?;
+    if !plan.damaged_paths.is_empty() {
+        return Err(FacetEntityLifecycleError::RelationshipsUnreadable {
+            path: plan.damaged_paths[0].clone(),
+        });
     }
-
-    let mut planned = Vec::new();
-    let facet_entries =
-        list_dir_entries(&facets_dir(journal_root)?).map_err(FacetStoreError::from)?;
-    for entry in facet_entries
+    let planned: Vec<PlannedFacetRelationship> = plan
+        .relationships
         .into_iter()
-        .filter(|entry| entry.kind == DirEntryKind::Directory)
-    {
-        let facet_dir = entry.name.to_string_lossy().into_owned();
-        let entities_rel = format!("facets/{facet_dir}/entities");
-        let entities_path = match contained_path(journal_root, &entities_rel) {
-            Ok(p) => p,
-            Err(_) => {
-                return Err(FacetEntityLifecycleError::RelationshipsUnreadable {
-                    path: entities_rel,
-                });
-            }
-        };
-        let entities_exists = match path_lexists(&entities_path) {
-            Ok(exists) => exists,
-            Err(_) => {
-                return Err(FacetEntityLifecycleError::RelationshipsUnreadable {
-                    path: entities_rel,
-                });
-            }
-        };
-        if !entities_exists {
-            continue;
-        }
-        let rel_entries = match list_dir_entries(&entities_path) {
-            Ok(entries) => entries,
-            Err(_) => {
-                return Err(FacetEntityLifecycleError::RelationshipsUnreadable {
-                    path: entities_rel,
-                });
-            }
-        };
-        for rel_entry in rel_entries
-            .into_iter()
-            .filter(|e| e.kind == DirEntryKind::Directory)
-        {
-            let relationship_dir = rel_entry.name.to_string_lossy().into_owned();
-            let link_rel = format!("facets/{facet_dir}/entities/{relationship_dir}/entity.json");
-            let link_path = match contained_path(journal_root, &link_rel) {
-                Ok(p) => p,
-                Err(_) => {
-                    return Err(FacetEntityLifecycleError::RelationshipsUnreadable {
-                        path: link_rel,
-                    });
-                }
-            };
-            let link_exists = match path_lexists(&link_path) {
-                Ok(exists) => exists,
-                Err(_) => {
-                    return Err(FacetEntityLifecycleError::RelationshipsUnreadable {
-                        path: link_rel,
-                    });
-                }
-            };
-            if !link_exists {
-                continue;
-            }
-            let link = match read_facet_entity_link(journal_root, &facet_dir, &relationship_dir) {
-                Ok(Some(link)) => link,
-                Ok(None) => continue,
-                Err(_) => {
-                    return Err(FacetEntityLifecycleError::RelationshipsUnreadable {
-                        path: link_rel,
-                    });
-                }
-            };
-            if link.entity_id() == entity_id {
-                let is_detached = link.value().get("detached") == Some(&Value::Bool(true));
-                planned.push(PlannedRelationship {
-                    facet_dir: facet_dir.clone(),
-                    relationship_dir,
-                    is_detached,
-                });
-            }
-        }
-    }
+        .filter(|rel| rel.entity_id == entity_id)
+        .collect();
 
     let was_hidden = solstone_core_entity::entity_is_hidden(identity.value());
     if !was_hidden {

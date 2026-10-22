@@ -183,6 +183,10 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             get(journal_summary_route),
         )
         .route(
+            "/app/entities/api/journal/tidy-up",
+            get(journal_tidy_up_route),
+        )
+        .route(
             "/app/entities/api/journal/entity/{entity_id}",
             get(journal_entity_route)
                 .put(update_journal_entity_route)
@@ -2055,7 +2059,7 @@ async fn dismiss_facet_candidate_route(
     }
 }
 
-fn assemble_journal_entity_records(
+pub(crate) fn assemble_journal_entity_records(
     root: &Path,
     only: Option<&str>,
 ) -> Result<Vec<Value>, solstone_core_facets::FacetEntityWriteError> {
@@ -2254,7 +2258,7 @@ const JOURNAL_SUMMARY_MAX_LIMIT: usize = 100;
 const JOURNAL_TYPE_BUCKETS: [&str; 4] = ["person", "company", "project", "tool"];
 const JOURNAL_OTHER_BUCKET: &str = "other";
 
-fn journal_type_bucket(stored: &str) -> &'static str {
+pub(crate) fn journal_type_bucket(stored: &str) -> &'static str {
     let normalized = stored.trim().to_lowercase();
     JOURNAL_TYPE_BUCKETS
         .into_iter()
@@ -2262,7 +2266,7 @@ fn journal_type_bucket(stored: &str) -> &'static str {
         .unwrap_or(JOURNAL_OTHER_BUCKET)
 }
 
-fn journal_bucket_rank(bucket: &str) -> usize {
+pub(crate) fn journal_bucket_rank(bucket: &str) -> usize {
     JOURNAL_TYPE_BUCKETS
         .iter()
         .position(|candidate| *candidate == bucket)
@@ -2487,6 +2491,56 @@ async fn journal_summary_route(
     .await
     {
         Ok(Ok(summary)) => Json(summary).into_response(),
+        _ => refusal(ReasonCode::EntityOperationFailed, "journal read failed"),
+    }
+}
+
+#[derive(Deserialize)]
+struct JournalTidyUpQuery {
+    offset: Option<String>,
+    limit: Option<String>,
+}
+
+async fn journal_tidy_up_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    Query(query): Query<JournalTidyUpQuery>,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let offset = match index_plate_integer(query.offset.as_deref(), "offset", 0) {
+        Ok(v) => v,
+        Err(resp) => return *resp,
+    };
+    let limit = match index_plate_integer(
+        query.limit.as_deref(),
+        "limit",
+        JOURNAL_SUMMARY_DEFAULT_LIMIT as i64,
+    ) {
+        Ok(v) => v,
+        Err(resp) => return *resp,
+    };
+    if offset < 0 {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "offset must not be negative",
+        );
+    }
+    if limit < 0 || limit > JOURNAL_SUMMARY_MAX_LIMIT as i64 {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("limit must be between 0 and {JOURNAL_SUMMARY_MAX_LIMIT}"),
+        );
+    }
+    let offset = usize::try_from(offset).unwrap_or_default();
+    let limit = usize::try_from(limit).unwrap_or_default();
+    match solstone_core_serving::seam::run_blocking(move || {
+        crate::tidy::build_tidy_up_response(&root, offset, limit)
+    })
+    .await
+    {
+        Ok(Ok(response)) => Json(response).into_response(),
         _ => refusal(ReasonCode::EntityOperationFailed, "journal read failed"),
     }
 }

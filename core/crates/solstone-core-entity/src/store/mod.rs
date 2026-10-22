@@ -58,8 +58,9 @@ pub use journal_entities::{
 };
 pub use lifecycle::{
     EntityLifecycleError, adopt_configured_principal, delete_entity_directory, entity_is_hidden,
-    has_journal_principal, identity_is_principal, journal_principal_entry, read_journal_principal,
-    restore_journal_entity_version, unblock_journal_entity,
+    entity_is_hide_protected, has_journal_principal, identity_is_principal,
+    journal_principal_entry, read_journal_principal, restore_journal_entity_version,
+    unblock_journal_entity,
 };
 pub use map::{
     EntityIdentityGroupMap, EntityIdentityMap, IdentityMapLoser, IdentityMapLoserReason,
@@ -97,10 +98,11 @@ pub use retired::{
     retired_record_hold, retired_state,
 };
 pub use review_candidates::{
-    EntityReviewCandidateError, PreparedMergeProposals, accept_merge_candidate,
-    dismiss_merge_candidate, find_active_recorded_merge, load_merge_candidates,
-    prepare_merge_proposals, publish_merge_proposals, record_merge_candidate,
-    record_merge_candidate_checked, standing_merge_for_suggestion,
+    EntityMergeOpenClass, EntityReviewCandidateError, PreparedMergeProposals,
+    accept_merge_candidate, cmp_composite_then_key, dismiss_merge_candidate,
+    entity_merge_open_class, entity_merge_row_key, find_active_recorded_merge, json_i64,
+    load_merge_candidates, prepare_merge_proposals, publish_merge_proposals,
+    record_merge_candidate, record_merge_candidate_checked, standing_merge_for_suggestion,
 };
 pub use review_policy::{
     AmbiguityGroupResolveRequest, ENTITY_REVIEW_POLICY_VERSION, PREFIX_CUTOFF,

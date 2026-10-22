@@ -8860,3 +8860,792 @@ async fn collision_loser_folder_with_own_name_returns_its_own_name_not_winner_na
     assert_eq!(body["peer_id"], "shared_id");
     assert_eq!(body["peer_name"], "Loser Name");
 }
+
+#[tokio::test]
+async fn tidy_up_members_follow_the_id_rules() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+
+    // 1. notes_v2.md - Person, notes_v2.md, last_seen 20260102, zero notes
+    write(
+        j.path(),
+        "entities/notes_v2.md/entity.json",
+        json!({"id": "notes_v2.md", "name": "notes_v2.md", "type": "Person", "last_seen": "20260102"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_notes/entity.json",
+        json!({"entity_id": "notes_v2.md", "last_seen": "20260102"}),
+    );
+
+    // 2. plan.pdf - Person, plan.pdf, last_seen 20260102, zero notes
+    write(
+        j.path(),
+        "entities/plan.pdf/entity.json",
+        json!({"id": "plan.pdf", "name": "plan.pdf", "type": "Person", "last_seen": "20260102"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_plan/entity.json",
+        json!({"entity_id": "plan.pdf", "last_seen": "20260102"}),
+    );
+
+    // Two entities sharing one ID-shaped name, same type, same day -> tiebroken by effective id
+    write(
+        j.path(),
+        "entities/aaa_tie.md/entity.json",
+        json!({"id": "aaa_tie.md", "name": "tkt_x7k2p9qa", "type": "Person", "last_seen": "20260101"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_aaa/entity.json",
+        json!({"entity_id": "aaa_tie.md", "last_seen": "20260101"}),
+    );
+
+    write(
+        j.path(),
+        "entities/zzz_tie.md/entity.json",
+        json!({"id": "zzz_tie.md", "name": "tkt_x7k2p9qa", "type": "Person", "last_seen": "20260101"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_zzz/entity.json",
+        json!({"entity_id": "zzz_tie.md", "last_seen": "20260101"}),
+    );
+
+    // 3. brief.toml - Person, name brief.toml, no last_seen, zero notes
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_brief/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\",\"retired\":{\"at\":1,\"by\":\"owner\"}}\n",
+    );
+
+    // 4. docs/plan - folder folder-ada, name docs/plan, Person, zero notes
+    write(
+        j.path(),
+        "entities/folder-ada/entity.json",
+        json!({"id": "docs/plan", "name": "docs/plan", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_docs/entity.json",
+        json!({"entity_id": "docs/plan"}),
+    );
+
+    // 5. a3f9c2e1 - Tool, name a3f9c2e1, last_seen 20260103, zero notes
+    write(
+        j.path(),
+        "entities/a3f9c2e1/entity.json",
+        json!({"id": "a3f9c2e1", "name": "a3f9c2e1", "type": "Tool"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_hex/entity.json",
+        json!({"entity_id": "a3f9c2e1", "last_seen": "20260103"}),
+    );
+
+    // Non-member: folder matches shape, name does not
+    write(
+        j.path(),
+        "entities/folder_shape.md/entity.json",
+        json!({"id": "real-person", "name": "Ada Lovelace", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_folder_shape/entity.json",
+        json!({"entity_id": "real-person"}),
+    );
+
+    // --- Excluded cases ---
+    // Attached kept note
+    write(
+        j.path(),
+        "entities/kept_attached.txt/entity.json",
+        json!({"id": "kept_attached.txt", "name": "kept_attached.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_kept_att/entity.json",
+        json!({"entity_id": "kept_attached.txt"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_kept_att/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    // Detached kept note
+    write(
+        j.path(),
+        "entities/kept_detached.txt/entity.json",
+        json!({"id": "kept_detached.txt", "name": "kept_detached.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_kept_det/entity.json",
+        json!({"entity_id": "kept_detached.txt", "detached": true}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_kept_det/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    // Kept note in facet directory with no facet.json
+    write(
+        j.path(),
+        "entities/nofacet_note.txt/entity.json",
+        json!({"id": "nofacet_note.txt", "name": "nofacet_note.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/nofacet/entities/rel_nofacet/entity.json",
+        json!({"entity_id": "nofacet_note.txt"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/nofacet/entities/rel_nofacet/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    // Unreadable notes (a directory at observations.jsonl) attached
+    write(
+        j.path(),
+        "entities/unreadable_att.txt/entity.json",
+        json!({"id": "unreadable_att.txt", "name": "unreadable_att.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_unreadable_att/entity.json",
+        json!({"entity_id": "unreadable_att.txt"}),
+    );
+    fs::create_dir_all(
+        j.path()
+            .join("facets/work/entities/rel_unreadable_att/observations.jsonl"),
+    )
+    .unwrap();
+
+    // Unreadable notes detached
+    write(
+        j.path(),
+        "entities/unreadable_det.txt/entity.json",
+        json!({"id": "unreadable_det.txt", "name": "unreadable_det.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_unreadable_det/entity.json",
+        json!({"entity_id": "unreadable_det.txt", "detached": true}),
+    );
+    fs::create_dir_all(
+        j.path()
+            .join("facets/work/entities/rel_unreadable_det/observations.jsonl"),
+    )
+    .unwrap();
+
+    // Unparseable notes
+    write(
+        j.path(),
+        "entities/unparseable.txt/entity.json",
+        json!({"id": "unparseable.txt", "name": "unparseable.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_unparseable/entity.json",
+        json!({"entity_id": "unparseable.txt"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_unparseable/observations.jsonl",
+        b"not json",
+    );
+
+    // blocked: true
+    write(
+        j.path(),
+        "entities/blocked_bool.txt/entity.json",
+        json!({"id": "blocked_bool.txt", "name": "blocked_bool.txt", "type": "Person", "blocked": true}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_blocked_bool/entity.json",
+        json!({"entity_id": "blocked_bool.txt"}),
+    );
+
+    // blocked: "true" raw
+    write_raw(
+        j.path(),
+        "entities/blocked_str.txt/entity.json",
+        br#"{"id":"blocked_str.txt","name":"blocked_str.txt","type":"Person","blocked":"true"}"#,
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_blocked_str/entity.json",
+        json!({"entity_id": "blocked_str.txt"}),
+    );
+
+    // is_principal: true Person
+    write(
+        j.path(),
+        "entities/princ_person.txt/entity.json",
+        json!({"id": "princ_person.txt", "name": "princ_person.txt", "type": "Person", "is_principal": true}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_princ_person/entity.json",
+        json!({"entity_id": "princ_person.txt"}),
+    );
+
+    // Stray principal written raw
+    write_raw(
+        j.path(),
+        "entities/stray_princ.txt/entity.json",
+        br#"{"id":"stray_princ.txt","name":"stray_princ.txt","type":"Person","is_principal":"yes"}"#,
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_stray_princ/entity.json",
+        json!({"entity_id": "stray_princ.txt"}),
+    );
+
+    // Collision: winner folder ada-folder, loser folder lost_id.md
+    write(
+        j.path(),
+        "entities/ada-folder/entity.json",
+        json!({"id": "lost_id.md", "name": "Ada Lovelace", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "entities/lost_id.md/entity.json",
+        json!({"name": "lost_id.md"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_lost/entity.json",
+        json!({"entity_id": "lost_id.md"}),
+    );
+
+    // Attributed note on tkt_x7k2p9qa via other-name
+    write(
+        j.path(),
+        "entities/tkt_x7k2p9qa/entity.json",
+        json!({"id": "tkt_x7k2p9qa", "name": "tkt_x7k2p9qa", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/other-name/entity.json",
+        json!({"entity_id": "tkt_x7k2p9qa"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/other-name/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    // Attributed note on ops:reimbur via relationship folder named ops:reimbur with {}
+    write(
+        j.path(),
+        "entities/ops:reimbur/entity.json",
+        json!({"id": "ops:reimbur", "name": "ops:reimbur", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/ops:reimbur/entity.json",
+        json!({}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/ops:reimbur/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    let members = resp["id_shaped"]["members"]
+        .as_array()
+        .expect("members is array");
+    let member_ids: Vec<&str> = members.iter().map(|m| m.as_str().unwrap()).collect();
+    assert_eq!(
+        member_ids,
+        vec![
+            "notes_v2.md",
+            "plan.pdf",
+            "aaa_tie.md",
+            "zzz_tie.md",
+            "brief.toml",
+            "docs/plan",
+            "a3f9c2e1",
+        ]
+    );
+
+    let items = resp["id_shaped"]["items"]
+        .as_array()
+        .expect("items is array");
+
+    let notes_item = items
+        .iter()
+        .find(|item| item["id"] == "notes_v2.md")
+        .expect("notes_v2.md item");
+    assert_eq!(notes_item["name"], "notes_v2.md");
+    assert_eq!(notes_item["last_active_day"], "20260102");
+
+    let plan_item = items
+        .iter()
+        .find(|item| item["id"] == "plan.pdf")
+        .expect("plan.pdf item");
+    assert_eq!(plan_item["name"], "plan.pdf");
+    assert_eq!(plan_item["last_active_day"], "20260102");
+
+    let aaa_item = items
+        .iter()
+        .find(|item| item["id"] == "aaa_tie.md")
+        .expect("aaa_tie.md item");
+    assert_eq!(aaa_item["name"], "tkt_x7k2p9qa");
+    assert_eq!(aaa_item["last_active_day"], "20260101");
+
+    let zzz_item = items
+        .iter()
+        .find(|item| item["id"] == "zzz_tie.md")
+        .expect("zzz_tie.md item");
+    assert_eq!(zzz_item["name"], "tkt_x7k2p9qa");
+    assert_eq!(zzz_item["last_active_day"], "20260101");
+
+    let brief_item = items
+        .iter()
+        .find(|item| item["id"] == "brief.toml")
+        .expect("brief.toml item");
+    assert_eq!(brief_item["kept_notes_count"], 0);
+
+    let docs_item = items
+        .iter()
+        .find(|item| item["id"] == "docs/plan")
+        .expect("docs/plan item");
+    assert_eq!(docs_item["name"], "docs/plan");
+    assert_eq!(docs_item["kept_notes_count"], 0);
+    let facets = docs_item["facets"].as_array().unwrap();
+    assert!(facets.iter().any(|f| f == "work"));
+
+    assert!(!member_ids.contains(&"folder-ada"));
+    assert!(!member_ids.contains(&"lost_id.md"));
+    assert!(!member_ids.contains(&"tkt_x7k2p9qa"));
+    assert!(!member_ids.contains(&"ops:reimbur"));
+    assert!(!member_ids.contains(&"blocked_bool.txt"));
+    assert!(!member_ids.contains(&"blocked_str.txt"));
+    assert!(!member_ids.contains(&"princ_person.txt"));
+    assert!(!member_ids.contains(&"stray_princ.txt"));
+    assert!(!member_ids.contains(&"real-person"));
+    assert!(!member_ids.contains(&"folder_shape.md"));
+}
+
+#[tokio::test]
+async fn tidy_up_pages_both_groups() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "facets/personal/facet.json",
+        json!({"title": "Personal"}),
+    );
+    write(j.path(), "facets/home/facet.json", json!({"title": "Home"}));
+
+    // ID group entities
+    for id in ["notes_v2.md", "plan.pdf", "brief.toml", "a3f9c2e1"] {
+        write(
+            j.path(),
+            &format!("entities/{id}/entity.json"),
+            json!({"id": id, "name": id, "type": "Person"}),
+        );
+        write(
+            j.path(),
+            &format!("facets/work/entities/rel_{id}/entity.json"),
+            json!({"entity_id": id}),
+        );
+    }
+
+    // Duplicates group fixture
+    let candidates = [
+        r#"{"facet":"work","source_slug":"echo","target_slug":"foxtrot","status":"open","evidence":{"detection_count":9}}"#,
+        r#"{"facet":"personal","source_slug":"carol","target_slug":"dora","evidence":{"detection_count":5}}"#,
+        r#"{"facet":"work","source_slug":"bravo","target_slug":"alpha","status":"open","evidence":{"detection_count":5}}"#,
+        r#"{"facet":"home","source_slug":"alpha","target_slug":"bravo","status":"open","evidence":{"detection_count":"3"}}"#,
+        r#"{"facet":"work","source_slug":"alpha","target_slug":"bravo","status":"open","evidence":{"detection_count":2}}"#,
+        r#"{"facet":"work","source_slug":"alpha","target_slug":"carol","status":"open","evidence":{"detection_count":1}}"#,
+        r#"{"facet":"work","source_slug":"golf","target_slug":"hotel","status":"open","evidence":{"detection_count":100},"review":{"suppression":{"reason":"stale","at":"2026-01-01T00:00:00Z","evidence_key":"work|golf|hotel"}}}"#,
+        r#"{"facet":"work","source_slug":"india","target_slug":"juliet","status":"dismissed","evidence":{"detection_count":100}}"#,
+    ]
+    .join("\n")
+        + "\n";
+    write_raw(
+        j.path(),
+        "entities/review-candidates.jsonl",
+        candidates.as_bytes(),
+    );
+    write_raw(
+        j.path(),
+        "entities/echo/entity.json",
+        br#"{"id":"echo","name":"Echo","blocked":"true"}"#,
+    );
+
+    let (status, full) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    // Duplicates assertions
+    assert_eq!(full["duplicates"]["count"], 4);
+    let dup_members = full["duplicates"]["members"].as_array().unwrap();
+    assert_eq!(dup_members.len(), 4);
+    assert_eq!(dup_members[0]["pair"], json!(["carol", "dora"]));
+    assert_eq!(dup_members[1]["pair"], json!(["bravo", "alpha"]));
+    assert_eq!(dup_members[2]["pair"], json!(["alpha", "bravo"]));
+    assert_eq!(dup_members[3]["pair"], json!(["alpha", "carol"]));
+
+    let dup_items = full["duplicates"]["items"].as_array().unwrap();
+    assert_eq!(dup_items.len(), 4);
+    assert_eq!(dup_items[0]["facets"], json!(["personal"]));
+    assert_eq!(dup_items[0]["keys"], json!(["personal|carol|dora"]));
+    assert_eq!(dup_items[1]["facets"], json!(["work"]));
+    assert_eq!(dup_items[1]["keys"], json!(["work|bravo|alpha"]));
+    assert_eq!(dup_items[2]["facets"], json!(["home", "work"]));
+    assert_eq!(
+        dup_items[2]["keys"],
+        json!(["home|alpha|bravo", "work|alpha|bravo"])
+    );
+    assert_eq!(dup_items[3]["facets"], json!(["work"]));
+    assert_eq!(dup_items[3]["keys"], json!(["work|alpha|carol"]));
+
+    // Pagination for duplicates: offset 1, limit 2
+    let (status, paged_dups) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=1&limit=2",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(paged_dups["duplicates"]["count"], 4);
+    let paged_dup_items = paged_dups["duplicates"]["items"].as_array().unwrap();
+    assert_eq!(paged_dup_items.len(), 2);
+    assert_eq!(paged_dup_items[0]["pair"], json!(["bravo", "alpha"]));
+    assert_eq!(paged_dup_items[1]["pair"], json!(["alpha", "bravo"]));
+
+    // Two successive limit-2 pages concatenate to members
+    let (_, p0) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=0&limit=2",
+    )
+    .await;
+    let (_, p1) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=2&limit=2",
+    )
+    .await;
+    let mut concatenated_pairs = Vec::new();
+    for item in p0["duplicates"]["items"].as_array().unwrap() {
+        concatenated_pairs.push(item["pair"].clone());
+    }
+    for item in p1["duplicates"]["items"].as_array().unwrap() {
+        concatenated_pairs.push(item["pair"].clone());
+    }
+    let all_member_pairs: Vec<Value> = dup_members.iter().map(|m| m["pair"].clone()).collect();
+    assert_eq!(concatenated_pairs, all_member_pairs);
+
+    // Two successive pages for ID group concatenate to members
+    let mut id_concat = Vec::new();
+    let (_, id_p0) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=0&limit=2",
+    )
+    .await;
+    let (_, id_p1) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=2&limit=2",
+    )
+    .await;
+    for item in id_p0["id_shaped"]["items"].as_array().unwrap() {
+        id_concat.push(item["id"].as_str().unwrap().to_owned());
+    }
+    for item in id_p1["id_shaped"]["items"].as_array().unwrap() {
+        id_concat.push(item["id"].as_str().unwrap().to_owned());
+    }
+    let id_members_all: Vec<String> = full["id_shaped"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(id_concat, id_members_all);
+
+    // Limit-100 pages concatenate to members for both groups
+    let (_, dup_100_p0) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=0&limit=100",
+    )
+    .await;
+    let (_, dup_100_p1) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=100&limit=100",
+    )
+    .await;
+    let mut dup_100_concat = Vec::new();
+    for item in dup_100_p0["duplicates"]["items"].as_array().unwrap() {
+        dup_100_concat.push(item["pair"].clone());
+    }
+    for item in dup_100_p1["duplicates"]["items"].as_array().unwrap() {
+        dup_100_concat.push(item["pair"].clone());
+    }
+    assert_eq!(dup_100_concat, all_member_pairs);
+
+    let (_, id_100_p0) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=0&limit=100",
+    )
+    .await;
+    let (_, id_100_p1) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=100&limit=100",
+    )
+    .await;
+    let mut id_100_concat = Vec::new();
+    for item in id_100_p0["id_shaped"]["items"].as_array().unwrap() {
+        id_100_concat.push(item["id"].as_str().unwrap().to_owned());
+    }
+    for item in id_100_p1["id_shaped"]["items"].as_array().unwrap() {
+        id_100_concat.push(item["id"].as_str().unwrap().to_owned());
+    }
+    assert_eq!(id_100_concat, id_members_all);
+}
+
+#[tokio::test]
+async fn tidy_up_refuses_bad_offset_and_limit() {
+    let j = Journal::new();
+    assert_oracle_refusal(
+        "tidy negative offset",
+        call(j.path(), "/app/entities/api/journal/tidy-up?offset=-1").await,
+        "invalid_request_value",
+        400,
+    );
+    assert_oracle_refusal(
+        "tidy negative limit",
+        call(j.path(), "/app/entities/api/journal/tidy-up?limit=-1").await,
+        "invalid_request_value",
+        400,
+    );
+    assert_oracle_refusal(
+        "tidy limit above 100",
+        call(j.path(), "/app/entities/api/journal/tidy-up?limit=101").await,
+        "invalid_request_value",
+        400,
+    );
+}
+
+#[tokio::test]
+async fn tidy_up_get_leaves_the_journal_unchanged() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+
+    fn collect_files(
+        root: &Path,
+        dir: &Path,
+        out: &mut std::collections::BTreeMap<String, Vec<u8>>,
+    ) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                collect_files(root, &path, out);
+            } else if path.is_file() {
+                let rel = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned();
+                let bytes = fs::read(&path).unwrap();
+                out.insert(rel, bytes);
+            }
+        }
+    }
+
+    let mut before = std::collections::BTreeMap::new();
+    collect_files(j.path(), j.path(), &mut before);
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp["id_shaped"]["count"], 1);
+
+    let mut after = std::collections::BTreeMap::new();
+    collect_files(j.path(), j.path(), &mut after);
+
+    assert_eq!(before, after);
+}
+
+#[tokio::test]
+async fn tidy_up_damage_withholds_the_id_list_and_hide_names_the_first_path() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+
+    // 1. dangling entity.json symlink
+    let dangling = j
+        .path()
+        .join("facets/work/entities/rel_dangling/entity.json");
+    fs::create_dir_all(dangling.parent().unwrap()).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(j.path().join("missing-target"), &dangling).unwrap();
+
+    // 2. unparseable JSON
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_unparseable/entity.json",
+        b"not valid json",
+    );
+
+    // 3. non-object []
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_nonobj/entity.json",
+        b"[]",
+    );
+
+    // 4. damage inside a facet with no facet.json
+    write_raw(
+        j.path(),
+        "facets/nofacet/entities/rel_bad/entity.json",
+        b"not valid json",
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    let damage = &resp["damage"];
+    assert_eq!(damage["count"], 4);
+    assert_eq!(
+        damage["paths"],
+        json!([
+            "facets/nofacet/entities/rel_bad/entity.json",
+            "facets/work/entities/rel_dangling/entity.json",
+            "facets/work/entities/rel_nonobj/entity.json",
+            "facets/work/entities/rel_unparseable/entity.json",
+        ])
+    );
+    let paths = damage["paths"].as_array().unwrap();
+    let first_damaged_path = paths[0].as_str().unwrap().to_owned();
+
+    assert_eq!(resp["id_shaped"]["actionable"], false);
+    assert_eq!(resp["id_shaped"]["count"], 1);
+    assert!(resp["id_shaped"]["items"].is_null());
+    assert!(resp["id_shaped"]["members"].is_null());
+
+    let hide_err = solstone_core_facets::block_journal_entity(j.path(), "brief.toml").unwrap_err();
+    assert!(matches!(
+        hide_err,
+        solstone_core_facets::FacetEntityLifecycleError::RelationshipsUnreadable { ref path }
+            if path == &first_damaged_path
+    ));
+
+    let (block_status, block_resp) = post(
+        j.path(),
+        "/app/entities/api/journal/entity/brief.toml/block",
+        json!({}),
+    )
+    .await;
+    assert_eq!(block_status, 409);
+    assert_eq!(block_resp["reason_code"], "entity_record_damaged");
+    assert_eq!(block_resp["detail"], first_damaged_path);
+}
+
+#[tokio::test]
+async fn tidy_up_empty_and_null_links_are_not_damage() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+
+    // Empty file
+    write_raw(j.path(), "facets/work/entities/rel_empty/entity.json", b"");
+
+    // JSON null
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_null/entity.json",
+        b"null",
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp["damage"]["count"], 0);
+    assert_eq!(resp["id_shaped"]["actionable"], true);
+    let members = resp["id_shaped"]["members"].as_array().unwrap();
+    assert_eq!(members, &vec![json!("brief.toml")]);
+
+    assert!(solstone_core_facets::block_journal_entity(j.path(), "brief.toml").is_ok());
+}
+
+#[tokio::test]
+async fn tidy_up_candidate_load_failure_keeps_the_id_group() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+
+    // Malformed review row where review.suppression is a string (fails validate_review_object)
+    write_raw(
+        j.path(),
+        "entities/review-candidates.jsonl",
+        b"{\"facet\":\"work\",\"source_slug\":\"a\",\"target_slug\":\"b\",\"status\":\"open\",\"review\":{\"suppression\":\"invalid string\"}}\n",
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    assert!(resp["duplicates"]["error"].is_string());
+    assert!(resp["duplicates"]["count"].is_null());
+    assert!(resp["duplicates"]["items"].is_null());
+    assert!(resp["duplicates"]["members"].is_null());
+
+    assert_eq!(resp["id_shaped"]["count"], 1);
+    assert_eq!(resp["id_shaped"]["actionable"], true);
+    assert_eq!(resp["damage"]["count"], 0);
+}

@@ -15,7 +15,7 @@ use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
 use super::error::EntityStoreError;
 use super::history::{guard_restore_does_not_cross_merge, read_visible_history};
-use super::identity::read_entity_identity;
+use super::identity::{IdentitySnapshot, read_entity_identity};
 use super::map::{read_identity_group_map, read_identity_map};
 use super::write::{
     EntityOperationContext, EntityOperationKind, EntityWriteError, rewrite_identity_map_cache,
@@ -456,6 +456,14 @@ fn now_iso() -> String {
 
 pub fn entity_is_hidden(identity: &Value) -> bool {
     identity.get("blocked").is_some_and(value_is_truthy)
+}
+
+pub fn entity_is_hide_protected(identity: &IdentitySnapshot) -> bool {
+    identity
+        .value()
+        .get("is_principal")
+        .is_some_and(value_is_truthy)
+        || identity.had_stray_principal_flag()
 }
 
 pub(crate) fn value_is_truthy(value: &Value) -> bool {

@@ -7,8 +7,10 @@
 
 mod action_log;
 mod deferred_delete;
+mod id_shape;
 mod model;
 mod router;
+mod tidy;
 
 pub use model::{ATTENDANCE_KINDS, ENTITIES_COPY, compose_connections_horizon_note, edge_aliases};
 #[cfg(test)]
