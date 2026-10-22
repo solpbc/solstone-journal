@@ -48,6 +48,8 @@ use super::model::{
     ProviderProbeOutcome, ProviderRuntimeState, ProviderStopCleanupOutcome,
     ProviderTruthObservation, ReasonCode, StopCleanupStatus,
 };
+#[cfg(windows)]
+use super::parakeet_truth_seam::parakeet_cpu_environment;
 use super::seams::{LifecycleSeam, ProbeSeam};
 use super::store::{
     CurrentProcessResolution, FenceKey, ReadyChild, ReadyChildIdentity, ReadyProcess,
@@ -256,7 +258,7 @@ impl ParakeetRuntimeShared {
         }
     }
 
-    /// Return the secret environment that only the Sense child tree inherits,
+    /// Return the secret environment for Sense and installation-bound analysis,
     /// paired with its rotation revision. Neither the public provider record
     /// nor the port file carries these values.
     #[cfg(windows)]
@@ -281,6 +283,29 @@ impl ParakeetRuntimeShared {
             ])
         });
         Some((current.revision, environment))
+    }
+
+    /// Only the queue's installation-bound analysis launch may supply a runtime.
+    /// Empty canonical overrides also suppress inherited, case-insensitive keys.
+    #[cfg(windows)]
+    pub(crate) fn prepare_queued_child_environment(
+        runtime: Option<&Self>,
+        environment: &mut BTreeMap<OsString, OsString>,
+    ) {
+        const KEYS: [&str; 3] = [
+            "SOLSTONE_PARAKEET_AUTH_TOKEN",
+            "SOLSTONE_PARAKEET_AUTH_NONCE",
+            "SOLSTONE_PARAKEET_AUTH_PORT",
+        ];
+        environment.retain(|key, _| {
+            !KEYS
+                .iter()
+                .any(|name| key.to_string_lossy().eq_ignore_ascii_case(name))
+        });
+        environment.extend(KEYS.map(|name| (name.into(), OsString::new())));
+        if let Some((_, Some(credentials))) = runtime.and_then(Self::sense_child_environment) {
+            environment.extend(credentials);
+        }
     }
 
     #[cfg(windows)]
@@ -953,10 +978,6 @@ const REQUEST_DEADLINE: Duration = Duration::from_secs(300);
 const PROVIDER_CPU_RATE_PER_10_000: u32 = 5_000;
 #[cfg(windows)]
 const PROVIDER_COMMITTED_MEMORY_BYTES: usize = 3 * 1024 * 1024 * 1024;
-#[cfg(windows)]
-const PARAKEET_ATT_CONTEXT_ENV: &str = "PARAKEET_ATT_CONTEXT";
-#[cfg(windows)]
-const PARAKEET_ATT_CONTEXT: &str = "128";
 
 #[cfg(windows)]
 fn fresh_parakeet_credentials() -> Option<ParakeetCredentials> {
@@ -989,11 +1010,7 @@ fn controlled_windows_environment(
     if launch.binary_backend != "cpu"
         || launch.gpu_index.is_some()
         || launch.placement != ParakeetPlacement::Cpu
-        || launch.env_updates
-            != BTreeMap::from([(
-                PARAKEET_ATT_CONTEXT_ENV.to_owned(),
-                PARAKEET_ATT_CONTEXT.to_owned(),
-            )])
+        || launch.env_updates != parakeet_cpu_environment()
     {
         return None;
     }
@@ -1001,12 +1018,12 @@ fn controlled_windows_environment(
     if system_root.is_empty() {
         return None;
     }
-    Some(BTreeMap::from([
+    let mut environment = parakeet_cpu_environment()
+        .into_iter()
+        .map(|(key, value)| (OsString::from(key), OsString::from(value)))
+        .collect::<BTreeMap<_, _>>();
+    environment.extend([
         (OsString::from("SystemRoot"), system_root),
-        (
-            OsString::from(PARAKEET_ATT_CONTEXT_ENV),
-            OsString::from(PARAKEET_ATT_CONTEXT),
-        ),
         (
             OsString::from("SOLSTONE_PARAKEET_AUTH_TOKEN"),
             OsString::from(&credentials.token),
@@ -1015,7 +1032,8 @@ fn controlled_windows_environment(
             OsString::from("SOLSTONE_PARAKEET_AUTH_NONCE"),
             OsString::from(&credentials.nonce),
         ),
-    ]))
+    ]);
+    Some(environment)
 }
 
 #[cfg(windows)]
@@ -1451,6 +1469,60 @@ mod tests {
     use super::*;
     use crate::process::ProcessObservation;
     use crate::provider_runtime::model::{ProviderStopCleanupRequest, RuntimePhase};
+
+    #[cfg(windows)]
+    #[test]
+    fn queued_credentials_resolve_current_rotation_and_shadow_stale_keys() {
+        let runtime = ParakeetRuntimeShared::default();
+        let mut environment = BTreeMap::from([
+            ("solstone_parakeet_auth_token".into(), "stale".into()),
+            ("SOLSTONE_PARAKEET_AUTH_NONCE".into(), "stale".into()),
+            ("SOLSTONE_PARAKEET_AUTH_PORT".into(), "5015".into()),
+            ("KEEP".into(), "value".into()),
+        ]);
+        for (port, token) in [(5016, "first"), (5017, "second")] {
+            runtime.activate_launch_credentials(
+                port,
+                ParakeetCredentials {
+                    token: token.into(),
+                    nonce: format!("{token}-nonce"),
+                },
+            );
+            ParakeetRuntimeShared::prepare_queued_child_environment(
+                Some(&runtime),
+                &mut environment,
+            );
+            assert_eq!(environment.len(), 4);
+            assert_eq!(environment[std::ffi::OsStr::new("KEEP")], "value");
+            assert_eq!(
+                environment[std::ffi::OsStr::new("SOLSTONE_PARAKEET_AUTH_TOKEN")],
+                token
+            );
+            assert_eq!(
+                environment[std::ffi::OsStr::new("SOLSTONE_PARAKEET_AUTH_NONCE")],
+                std::ffi::OsString::from(format!("{token}-nonce"))
+            );
+            assert_eq!(
+                environment[std::ffi::OsStr::new("SOLSTONE_PARAKEET_AUTH_PORT")],
+                std::ffi::OsString::from(port.to_string())
+            );
+        }
+        runtime.revoke_launch_credentials(5017);
+        ParakeetRuntimeShared::prepare_queued_child_environment(Some(&runtime), &mut environment);
+        assert!(
+            environment
+                .iter()
+                .filter(|(key, _)| key.to_string_lossy().starts_with("SOLSTONE_PARAKEET_AUTH_"))
+                .all(|(_, value)| value.is_empty())
+        );
+        environment.insert("Solstone_Parakeet_Auth_Token".into(), "stale".into());
+        ParakeetRuntimeShared::prepare_queued_child_environment(None, &mut environment);
+        assert_eq!(environment.len(), 4);
+        assert_eq!(
+            environment[std::ffi::OsStr::new("SOLSTONE_PARAKEET_AUTH_TOKEN")],
+            ""
+        );
+    }
 
     #[cfg(windows)]
     #[test]
