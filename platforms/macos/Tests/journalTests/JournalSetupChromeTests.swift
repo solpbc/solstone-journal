@@ -4,13 +4,18 @@
 import AppKit
 import Foundation
 @testable import JournalRuntime
+import ServiceManagement
 import SwiftUI
 import Testing
 @testable import journal
 
+@MainActor
 private final class ThrowingLoginItems: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+
     func register() throws { throw CocoaError(.fileWriteUnknown) }
     func unregister() throws { throw CocoaError(.fileWriteUnknown) }
+    func unregisterAwaitingCompletion() async throws {}
 }
 
 @Suite("JournalSetupChrome")

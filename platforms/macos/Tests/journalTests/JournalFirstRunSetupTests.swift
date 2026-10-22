@@ -5,6 +5,7 @@ import AppKit
 import Foundation
 import JournalMarkKit
 import JournalRuntime
+import ServiceManagement
 import SolstoneCore
 import SwiftUI
 import Testing
@@ -2330,8 +2331,11 @@ private final class Flag: @unchecked Sendable {
 
 @MainActor
 private final class ThrowingLoginItems: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+
     func register() throws { throw CocoaError(.fileWriteUnknown) }
     func unregister() throws { throw CocoaError(.fileWriteUnknown) }
+    func unregisterAwaitingCompletion() async throws {}
 }
 
 private actor HeldCompletionProbe: JournalInitClienting {

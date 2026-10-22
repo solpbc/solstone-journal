@@ -7,14 +7,18 @@ import Foundation
 import Observation
 @testable import JournalRuntime
 import SetupChrome
+import ServiceManagement
 import SwiftUI
 import Testing
 @testable import journal
 
 @MainActor
 private final class AcceptingLoginItems: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+
     func register() throws {}
     func unregister() throws {}
+    func unregisterAwaitingCompletion() async throws {}
 }
 
 private final class ChangeFlag: @unchecked Sendable {

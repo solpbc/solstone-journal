@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 import Foundation
+import ServiceManagement
 import Testing
 @testable import journal
 
@@ -106,6 +107,9 @@ private func makeDefaults() -> DefaultsFixture {
 
 @MainActor
 private final class DiskFakeLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+
     func register() throws {}
     func unregister() throws {}
+    func unregisterAwaitingCompletion() async throws {}
 }

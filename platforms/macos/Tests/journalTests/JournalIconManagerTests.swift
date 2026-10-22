@@ -4,6 +4,7 @@
 import AppKit
 import Foundation
 import JournalMarkKit
+import ServiceManagement
 import Testing
 @testable import journal
 
@@ -277,6 +278,9 @@ private final class FakeIconLogger: JournalIconLogging {
 
 @MainActor
 private final class IconFakeLoginItemManager: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+
     func register() throws {}
     func unregister() throws {}
+    func unregisterAwaitingCompletion() async throws {}
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- after an update, the helper that reopens the journal app if it quits unexpectedly now restarts on the new version, instead of running the old one until you next sign in.
+
 ## [2.0.54 (build 102)] - 2026-10-21
 
 ### Changed

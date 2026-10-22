@@ -22,8 +22,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- local transcription uses less memory on windows and on linux when it runs on the cpu. this fixes a windows failure on five-minute recordings.
-- on windows, your journal can transcribe recordings that were stuck waiting for local transcription to become ready.
+- setup logs now keep more detail when your journal fails to start.
+- on windows, long continuous recordings and some queued recordings now transcribe. your journal tries the recordings that were waiting for local transcription again after you update.
+- on linux, local transcription uses less memory when it runs on the cpu.
 - security fix on windows: someone impersonating the update server could supply altered journal software as an update; updates now require a valid sol pbc signature on the complete package.
 - on a day with hundreds of activities, your morning briefing now arrives, leaving out what doesn't fit, instead of not at all.
 - on mac, local transcription now leaves out long stretches of speech much less often. a transcript could miss a sentence or more, sometimes more than ten seconds of speech. now and then a short recording's transcript was empty. neither showed an error. recordings your journal already transcribed keep the transcripts they have.

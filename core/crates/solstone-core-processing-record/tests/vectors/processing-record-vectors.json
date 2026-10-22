@@ -1,5 +1,6 @@
 {
   "_provenance": {
+    "native_availability_vectors": "Added for the Rust retry policy; legacy vectors retain their original Python provenance.",
     "generated_from_commit": "87b9b426a5077b8bd3a91824d551b256d27bd1c3",
     "equivalence_proof": "Verdicts are read from the Python reference and encoded here; tests never execute Python. Non-synthetic producer/reason pairings preserve describe for analysis_failed and no_decodable_frames, and transcribe for no_decodable_audio and corrupt_input."
   },
@@ -257,6 +258,12 @@
       "expected_exhausted": true,
       "provenance_tag": "constructed",
       "citation": "solstone/crates/solstone-core-processing-record/src/predicate.rs"
-    }
+    },
+    {"name": "transcribe_server_not_ready_3_remains_owed", "record": {"state": "failed", "handler": "transcribe", "reason_code": "server_not_ready", "attempts": 3}, "expected_exhausted": false, "provenance_tag": "native-regression", "citation": "Rust Parakeet availability retry policy, 2026-10-21"},
+    {"name": "transcribe_server_not_ready_1000_remains_owed", "record": {"state": "failed", "handler": "transcribe", "reason_code": "server_not_ready", "attempts": 1000}, "expected_exhausted": false, "provenance_tag": "native-regression", "citation": "Rust Parakeet availability retry policy, 2026-10-21"},
+    {"name": "wrong_handler_server_not_ready_keeps_bound", "record": {"state": "failed", "handler": "describe", "reason_code": "server_not_ready", "attempts": 3}, "expected_exhausted": true, "provenance_tag": "native-regression", "citation": "Availability exception is transcribe-only"},
+    {"name": "transcribe_no_port_3_remains_owed", "record": {"state": "failed", "handler": "transcribe", "reason_code": "no_port", "attempts": 3}, "expected_exhausted": false, "provenance_tag": "native-regression", "citation": "Rust Parakeet availability retry policy, 2026-10-21"},
+    {"name": "transcribe_no_port_1000_remains_owed", "record": {"state": "failed", "handler": "transcribe", "reason_code": "no_port", "attempts": 1000}, "expected_exhausted": false, "provenance_tag": "native-regression", "citation": "Rust Parakeet availability retry policy, 2026-10-21"},
+    {"name": "wrong_handler_no_port_keeps_bound", "record": {"state": "failed", "handler": "describe", "reason_code": "no_port", "attempts": 3}, "expected_exhausted": true, "provenance_tag": "native-regression", "citation": "Availability exception is transcribe-only"}
   ]
 }
