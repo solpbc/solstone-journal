@@ -93,6 +93,7 @@ fn thinking_failed_installs_dom_from_persisted_status() {
         }
     } else {
         LocalHardwareAdmission::GpuHost {
+            backend: solstone_core_local::Backend::Vulkan,
             nvidia_detected: false,
             nvidia_memory_bytes: None,
             probe_ok: true,
@@ -122,6 +123,7 @@ fn thinking_failed_installs_dom_from_persisted_status() {
         }
     } else {
         LocalHardwareAdmission::GpuHost {
+            backend: solstone_core_local::Backend::Vulkan,
             nvidia_detected: false,
             nvidia_memory_bytes: None,
             probe_ok: true,
@@ -186,6 +188,7 @@ fn thinking_failed_installs_dom_from_persisted_status() {
             LocalHardwareAdmission::AppleSilicon { total_bytes: None }
         } else {
             LocalHardwareAdmission::GpuHost {
+                backend: solstone_core_local::Backend::Vulkan,
                 nvidia_detected: false,
                 nvidia_memory_bytes: None,
                 probe_ok: true,

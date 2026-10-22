@@ -14,6 +14,7 @@ log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-assets.workspace = true
+solstone-core-journal-config.workspace = true
 solstone-core-local.workspace = true
 solstone-core-system.workspace = true
 
@@ -27,6 +28,7 @@ solstone-core-distribution.workspace = true
 
 [dev-dependencies]
 solstone-core-installed-payload.workspace = true
+tempfile = "3.24.0"
 
 [features]
 full-tests = []

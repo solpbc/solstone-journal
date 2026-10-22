@@ -4508,6 +4508,7 @@ dependencies = [
  "serde_json",
  "solstone-core-assets",
  "solstone-core-distribution",
+ "solstone-core-journal-config",
  "solstone-core-local",
  "solstone-core-system",
 ]

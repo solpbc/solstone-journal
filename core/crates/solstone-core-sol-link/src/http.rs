@@ -1721,6 +1721,8 @@ mod local_capability_tests {
             version: "x".into(),
             ced: None,
             rfdetr: RfdetrCheckInput::Omit,
+            vulkan_device_index: None,
+            local_backend: None,
         }
     }
 

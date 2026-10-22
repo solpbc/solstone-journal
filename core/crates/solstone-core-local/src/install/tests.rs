@@ -4837,6 +4837,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
     // 3. Linux NVIDIA memory just below GPU_DEVICE_LOCAL_MIN_BYTES refuses. Exactly that many bytes proceeds.
     TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
     let nvd_below = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Cuda,
         nvidia_detected: true,
         nvidia_memory_bytes: Some(crate::vulkan::GPU_DEVICE_LOCAL_MIN_BYTES - 1),
         probe_ok: true,
@@ -4854,6 +4855,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
     );
 
     let nvd_exact = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Cuda,
         nvidia_detected: true,
         nvidia_memory_bytes: Some(crate::vulkan::GPU_DEVICE_LOCAL_MIN_BYTES),
         probe_ok: true,
@@ -4866,6 +4868,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
     // 4. Vulkan hardware 6144 MiB vs 6143
     TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
     let vk_6143 = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Vulkan,
         nvidia_detected: false,
         nvidia_memory_bytes: None,
         probe_ok: true,
@@ -4888,6 +4891,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
     );
 
     let vk_6144 = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Vulkan,
         nvidia_detected: false,
         nvidia_memory_bytes: None,
         probe_ok: true,
@@ -4905,6 +4909,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
     // 5. No hardware and CPU-only (device_type 4) refuse gpu_unavailable
     TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
     let no_hw = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Vulkan,
         nvidia_detected: false,
         nvidia_memory_bytes: None,
         probe_ok: true,
@@ -4922,6 +4927,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
     );
 
     let cpu_only = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Vulkan,
         nvidia_detected: false,
         nvidia_memory_bytes: None,
         probe_ok: true,
@@ -4946,6 +4952,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
     // 6. Failed probe, NVIDIA detected with vram_mib and unified_memory_mib both None, and selected vram_mib == 0 proceed with a warning
     TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
     let failed_vk = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Vulkan,
         nvidia_detected: false,
         nvidia_memory_bytes: None,
         probe_ok: false,
@@ -4963,6 +4970,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
 
     TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
     let nvd_unreadable = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Cuda,
         nvidia_detected: true,
         nvidia_memory_bytes: None,
         probe_ok: true,
@@ -4980,6 +4988,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
 
     TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
     let vk_zero = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Vulkan,
         nvidia_detected: false,
         nvidia_memory_bytes: None,
         probe_ok: true,
@@ -5003,6 +5012,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
     // 7. Override: device 0 below bar, device 1 at 6144, override_index: Some(1) proceeds. override_index that misses refuses gpu_unavailable.
     TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
     let dev_override = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Vulkan,
         nvidia_detected: false,
         nvidia_memory_bytes: None,
         probe_ok: true,
@@ -5027,6 +5037,7 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
 
     TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(0));
     let dev_miss = LocalHardwareAdmission::GpuHost {
+        backend: crate::Backend::Vulkan,
         nvidia_detected: false,
         nvidia_memory_bytes: None,
         probe_ok: true,
@@ -5317,6 +5328,7 @@ fn dispatch_run_local_forwards_injected_hardware_admission() {
     {
         let trace = AcquisitionTestGuard::new(true);
         let _override = LocalHardwareAdmissionTestGuard::new(LocalHardwareAdmission::GpuHost {
+            backend: crate::Backend::Vulkan,
             nvidia_detected: false,
             nvidia_memory_bytes: None,
             probe_ok: false,
@@ -5333,6 +5345,7 @@ fn dispatch_run_local_forwards_injected_hardware_admission() {
 
         // A following eligible dispatch clears it
         let _eligible = LocalHardwareAdmissionTestGuard::new(LocalHardwareAdmission::GpuHost {
+            backend: crate::Backend::Cuda,
             nvidia_detected: true,
             nvidia_memory_bytes: Some(6 * 1024 * 1024 * 1024),
             probe_ok: true,
@@ -5368,6 +5381,7 @@ fn dispatch_run_local_preserves_configured_gpu_selection() {
         .unwrap();
         let trace = AcquisitionTestGuard::new(true);
         let _observation = LocalHardwareAdmissionTestGuard::new(LocalHardwareAdmission::GpuHost {
+            backend: crate::Backend::Vulkan,
             nvidia_detected: false,
             nvidia_memory_bytes: None,
             probe_ok: true,
