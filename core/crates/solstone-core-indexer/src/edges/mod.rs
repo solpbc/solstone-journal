@@ -1547,6 +1547,47 @@ mod tests {
     }
 
     #[test]
+    fn a_screen_calendar_guest_links_only_to_a_person_named_in_full() {
+        let root = temp_root("screen-calendar-first-name");
+        write_json(
+            &root,
+            "config/journal.json",
+            json!({"identity":{"timezone":"UTC"}}),
+        );
+        seed_entity(&root, "edge_ada", "Ada Edge");
+        seed_entity(&root, "edge_sam", "Sam Rivera");
+        let rel = "20260430/default/093000_300/screen.jsonl";
+        write_jsonl(
+            &root,
+            &format!("chronicle/{rel}"),
+            &[json!({"content":{"calendar":{"app":"Calendar","events":[
+                {"title":"Planning","start":"2026-05-01T09:00:00","end":"2026-05-01T10:00:00","calendar":"Work","guests":["Ada Edge","Sam"]},
+                {"title":"Review","start":"2026-05-01T11:00:00","end":"2026-05-01T12:00:00","calendar":"Work","guests":["ada edge","Sam Rivera"]}
+            ]}}})],
+        );
+
+        let mut resolver = EdgeResolver::new(&root);
+        resolver.begin_file();
+        let extracted =
+            extract_file_edges(&root, rel, &root.join("chronicle").join(rel), &mut resolver)
+                .expect("extract screen edges");
+        let linked = extracted
+            .rows
+            .iter()
+            .map(|row| (row.src.as_str(), row.dst.as_str(), &row.label))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            linked,
+            [(
+                "edge_ada",
+                "edge_sam",
+                &EdgeValue::Text("Review".to_string())
+            )]
+        );
+        fs::remove_dir_all(root).expect("cleanup screen root");
+    }
+
+    #[test]
     fn screen_messaging_timestamp_key_matches_python_numeric_equality() {
         let root = temp_root("screen-timestamp-key");
         seed_entity(&root, "edge_ada", "Ada Edge");

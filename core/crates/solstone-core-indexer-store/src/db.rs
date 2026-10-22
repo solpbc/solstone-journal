@@ -75,6 +75,8 @@ ts INTEGER,
 weight INTEGER NOT NULL
 )";
 const CREATE_EDGES_PATH_INDEX: &str = "CREATE INDEX IF NOT EXISTS edges_path ON edges(path)";
+const CREATE_EDGES_SOURCE_ANCHOR_INDEX: &str =
+    "CREATE INDEX IF NOT EXISTS edges_source_anchor ON edges(source, anchor)";
 const CREATE_EDGES_SRC_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src, kind, day)";
 const CREATE_EDGES_DST_INDEX: &str =
@@ -298,6 +300,7 @@ pub(crate) fn reset_index_admitted(
     tx.execute("DROP TABLE IF EXISTS activity_membership", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_source_readiness", [])?;
     tx.execute("DROP INDEX IF EXISTS edges_path", [])?;
+    tx.execute("DROP INDEX IF EXISTS edges_source_anchor", [])?;
     tx.execute("DROP INDEX IF EXISTS idx_edges_src", [])?;
     tx.execute("DROP INDEX IF EXISTS idx_edges_dst", [])?;
     tx.execute("DROP TABLE IF EXISTS edges", [])?;
@@ -311,6 +314,7 @@ pub(crate) fn reset_index_admitted(
     tx.execute("DROP TABLE IF EXISTS screen_text_source", [])?;
     tx.execute("DROP TABLE IF EXISTS calendar_notes", [])?;
     tx.execute("DROP TABLE IF EXISTS calendar_hits", [])?;
+    tx.execute("DROP TABLE IF EXISTS calendar_people", [])?;
     // A reset builds a new index: it carries this writer's stamp, not one the
     // gate let through because it could not be read.
     tx.execute("DROP TABLE IF EXISTS index_meta", [])?;
@@ -725,6 +729,7 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_EDGE_FILES, [])?;
     conn.execute(CREATE_EDGES, [])?;
     conn.execute(CREATE_EDGES_PATH_INDEX, [])?;
+    conn.execute(CREATE_EDGES_SOURCE_ANCHOR_INDEX, [])?;
     conn.execute(CREATE_EDGES_SRC_INDEX, [])?;
     conn.execute(CREATE_EDGES_DST_INDEX, [])?;
     conn.execute(CREATE_INDEX_BUILD_STATE, [])?;
@@ -743,6 +748,7 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_CALENDAR_HITS, [])?;
     conn.execute(CREATE_CALENDAR_HITS_PATH, [])?;
     conn.execute(CREATE_CALENDAR_HITS_IDENTITY, [])?;
+    conn.execute(crate::calendar_schedule::CREATE_CALENDAR_PEOPLE, [])?;
     conn.execute(CREATE_ACTIVITY_PROVENANCE, [])?;
     conn.execute(CREATE_ACTIVITY_MEMBERSHIP, [])?;
     conn.execute(

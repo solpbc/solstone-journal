@@ -2291,8 +2291,8 @@ mod tests {
     /// -- the model returned `{"time":"$"}`). Explicit `[0-9]`/`[^ )]` classes
     /// measured clean, 8/8 and 3/3 samples respectively, including against an
     /// adversarial "meeting from 1:00pm to 1:30pm" prompt that had been
-    /// reliably producing a time RANGE in production (`morning_briefing`'s
-    /// `your_day` items, found in live triage 2026-09-21).
+    /// reliably producing a time RANGE in production (a morning briefing time
+    /// field since removed, found in live triage 2026-09-21).
     ///
     /// A second deployed grammar family, SGLang 0.5.14 with xgrammar 0.2.1,
     /// rejects `^(|X)$` while compiling its EBNF (`Expect element, but got |`).
@@ -2443,27 +2443,15 @@ mod tests {
         )
         .expect("read morning briefing schema");
         let schema: Value = serde_json::from_str(&contents).expect("schema is valid JSON");
-        let cases = [
-            (
-                "/properties/your_day/items/properties/start/pattern",
-                &["", "00:00", "23:59"][..],
-                &["24:00", "9:00", "12:60", " 12:00"][..],
-            ),
-            (
-                "/properties/your_day/items/properties/end/pattern",
-                &["", "00:00", "23:59"][..],
-                &["24:00", "9:00", "12:60", "12:00 "][..],
-            ),
-            (
-                "/properties/needs_attention/items/properties/source_id/pattern",
-                &["", "sol://facet/day/item"][..],
-                &[
-                    "http://facet/day/item",
-                    "sol://has space",
-                    "sol://ends)here",
-                ][..],
-            ),
-        ];
+        let cases = [(
+            "/properties/needs_attention/items/properties/source_id/pattern",
+            &["", "sol://facet/day/item"][..],
+            &[
+                "http://facet/day/item",
+                "sol://has space",
+                "sol://ends)here",
+            ][..],
+        )];
         for (pointer, accepted, rejected) in &cases {
             let pattern = schema
                 .pointer(pointer)

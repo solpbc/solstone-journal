@@ -52,6 +52,18 @@ use super::seams::{RuntimeStoreError, TruthObservationSeam};
 const PARAKEET_ATT_CONTEXT_ENV: &str = "PARAKEET_ATT_CONTEXT";
 const PARAKEET_ATT_CONTEXT: &str = "128";
 
+/// Bound the CPU subsampling convolution buffers without splitting decoding.
+/// Both pinned engines support overlapped tiles of 256 subsampled frames.
+pub(super) fn parakeet_cpu_environment() -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (
+            PARAKEET_ATT_CONTEXT_ENV.to_owned(),
+            PARAKEET_ATT_CONTEXT.to_owned(),
+        ),
+        ("PARAKEET_SUBSAMPLING_TILE".to_owned(), "256".to_owned()),
+    ])
+}
+
 #[derive(Clone)]
 pub struct ParakeetTruthConfig {
     pub journal_path: PathBuf,
@@ -159,10 +171,10 @@ pub fn resolve_parakeet_backend(
         PARAKEET_ATT_CONTEXT.to_owned(),
     )]);
     if config_device == "cpu" {
-        return ("cpu".to_owned(), env_updates, None);
+        return ("cpu".to_owned(), parakeet_cpu_environment(), None);
     }
     let Some(gpu) = selected_gpu else {
-        return ("cpu".to_owned(), env_updates, None);
+        return ("cpu".to_owned(), parakeet_cpu_environment(), None);
     };
     env_updates.insert("GGML_VK_VISIBLE_DEVICES".to_owned(), gpu.index.to_string());
     ("vulkan".to_owned(), env_updates, Some(gpu.index))
@@ -472,6 +484,7 @@ fn parakeet_target_fingerprint(
         "model_pin": pins::parakeet_model_identity(),
         "cache_root": pins::parakeet_cache_root(journal_path).display().to_string(),
         "launch_env": {PARAKEET_ATT_CONTEXT_ENV: PARAKEET_ATT_CONTEXT},
+        "cpu_launch_env": parakeet_cpu_environment(),
     });
     let input_json = canonical_json(&CanonicalInput::Json(target)).ok()?;
     let input_sha256 = fingerprint_sha256(&input_json);
@@ -529,7 +542,7 @@ fn observe_windows_parakeet_truth(
         "package_root": paths.package_root.as_ref().map(|path| path.display().to_string()),
         "server": paths.binary_path.display().to_string(),
         "model": paths.model_path.display().to_string(),
-        "launch_env": {PARAKEET_ATT_CONTEXT_ENV: PARAKEET_ATT_CONTEXT},
+        "launch_env": parakeet_cpu_environment(),
     });
     let Some((fingerprint_json, fingerprint_sha256)) =
         canonical_json(&CanonicalInput::Json(target))
@@ -544,10 +557,7 @@ fn observe_windows_parakeet_truth(
     let (backend, placement) = windows_parakeet_placement();
     let launch = build_parakeet_launch_config(
         backend.to_owned(),
-        BTreeMap::from([(
-            PARAKEET_ATT_CONTEXT_ENV.to_owned(),
-            PARAKEET_ATT_CONTEXT.to_owned(),
-        )]),
+        parakeet_cpu_environment(),
         None,
         paths,
         ParakeetLaunchMetadata {
@@ -739,10 +749,10 @@ mod tests {
         assert_eq!(backend, "cpu");
         assert_eq!(
             env,
-            BTreeMap::from([(
-                PARAKEET_ATT_CONTEXT_ENV.to_owned(),
-                PARAKEET_ATT_CONTEXT.to_owned(),
-            )])
+            BTreeMap::from([
+                ("PARAKEET_ATT_CONTEXT".to_owned(), "128".to_owned()),
+                ("PARAKEET_SUBSAMPLING_TILE".to_owned(), "256".to_owned()),
+            ])
         );
         assert_eq!(index, None);
     }
@@ -771,10 +781,10 @@ mod tests {
         assert_eq!(backend, "cpu");
         assert_eq!(
             env,
-            BTreeMap::from([(
-                PARAKEET_ATT_CONTEXT_ENV.to_owned(),
-                PARAKEET_ATT_CONTEXT.to_owned(),
-            )])
+            BTreeMap::from([
+                ("PARAKEET_ATT_CONTEXT".to_owned(), "128".to_owned()),
+                ("PARAKEET_SUBSAMPLING_TILE".to_owned(), "256".to_owned()),
+            ])
         );
         assert_eq!(index, None);
     }
@@ -788,6 +798,15 @@ mod tests {
         assert_eq!(
             fingerprint["launch_env"][PARAKEET_ATT_CONTEXT_ENV].as_str(),
             Some(PARAKEET_ATT_CONTEXT)
+        );
+        assert_eq!(
+            fingerprint["cpu_launch_env"]["PARAKEET_SUBSAMPLING_TILE"],
+            "256"
+        );
+        assert!(
+            fingerprint["launch_env"]
+                .get("PARAKEET_SUBSAMPLING_TILE")
+                .is_none()
         );
     }
 

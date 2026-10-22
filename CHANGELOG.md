@@ -8,12 +8,24 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- your journal now keeps each word's timing and the speech model's confidence, when available, with new audio transcripts. existing transcripts stay as they are.
+- a month view in the map app shows visits and stays as areas shaded by how many days had one there, with a calendar and each trip away listed on its own. open it from "this month" on a day or week.
+- when an activity ran while your calendar had a meeting scheduled, the activity now shows the meeting beside it, with the people on the invite already in your journal. the activity keeps its own title. the meeting shows what was planned, not who came. agents you've let read your whole journal's transcripts see it too, and your morning briefing can call yesterday's activity by the meeting's name.
+- people on a calendar invite who are already in your journal, by their email or a name your journal already has for them, written the same way, are now linked to you as scheduled with you.
 - events in calendar files you import from now on can also be found by the day each one happens, not only the day it was added or last changed. repeating events are listed up to a year after you import them. calendars you imported before aren't listed this way.
+
+### Changed
+
+- your morning briefing no longer has sections about the day ahead. new briefings were already leaving them empty, and older briefings no longer show them.
+- people on a calendar that was on a screen you shared are now linked only by their email or a name your journal already has for them, written the same way. a partial name no longer links anyone.
 
 ### Fixed
 
+- local transcription uses less memory on windows and on linux when it runs on the cpu. this fixes a windows failure on five-minute recordings.
+- on windows, your journal can transcribe recordings that were stuck waiting for local transcription to become ready.
 - security fix on windows: someone impersonating the update server could supply altered journal software as an update; updates now require a valid sol pbc signature on the complete package.
 - on a day with hundreds of activities, your morning briefing now arrives, leaving out what doesn't fit, instead of not at all.
+- on mac, local transcription now leaves out long stretches of speech much less often. a transcript could miss a sentence or more, sometimes more than ten seconds of speech. now and then a short recording's transcript was empty. neither showed an error. recordings your journal already transcribed keep the transcripts they have.
 
 ## [2.0.54] - 2026-10-21
 

@@ -1181,7 +1181,9 @@ fn backend_error_reason(error: &TranscribeError) -> &str {
     }
 }
 
-fn statements_from_words(words: &[parakeet_cpp::TranscriptionWord]) -> Vec<Map<String, Value>> {
+pub(crate) fn statements_from_words(
+    words: &[parakeet_cpp::TranscriptionWord],
+) -> Vec<Map<String, Value>> {
     let mut statements = Vec::new();
     let mut current = Vec::new();
     for word in words {

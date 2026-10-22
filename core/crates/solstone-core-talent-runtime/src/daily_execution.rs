@@ -1353,7 +1353,7 @@ mod tests {
         let model_output = json!({"needs_attention":[
             {"text":"Prepare for today's meeting","source_id":"sol://calendar/meeting"},
             {"text":"Yesterday's audio is still processing","source_id":"sol://chronicle/20251231/audio"}
-        ],"your_day":[]});
+        ]});
         let stub = crate::test_support::one_shot_stub(root.path(), &model_output.to_string());
         let outcome = execute(
             request,

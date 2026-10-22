@@ -571,6 +571,40 @@ dest = "bin/parakeet-helper"
 mode = 0o755
 targets = ["macos-arm64"]
 
+# FluidAudio is compiled into parakeet-helper; its licence and the texts for
+# the code it adapts travel with the macOS package.
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/fluidaudio/LICENSE"
+dest = "share/licenses/fluidaudio/LICENSE"
+mode = 420
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/fluidaudio/fastcluster-LICENSE.md"
+dest = "share/licenses/fluidaudio/fastcluster-LICENSE.md"
+mode = 420
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/fluidaudio/vbx-LICENSE.md"
+dest = "share/licenses/fluidaudio/vbx-LICENSE.md"
+mode = 420
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/fluidaudio/JapaneseG2P-LICENSE.md"
+dest = "share/licenses/fluidaudio/JapaneseG2P-LICENSE.md"
+mode = 420
+targets = ["macos-arm64"]
+
 [[deny]]
 bin = "solstone-transcribe"
 reason = "product-ish helper; not in the admitted eleven; inventory allow-list decides"

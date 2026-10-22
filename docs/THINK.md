@@ -30,9 +30,8 @@ solstone journal talent passages <name> --day YYYYMMDD --facet NAME --activity I
 
 `--day` selects the analysis day. Daily artifacts, including `morning_briefing.json`,
 remain under that day. A morning briefing presents the following local calendar
-morning: its retrospective sources use the analysis day, its agenda uses the
-presentation day, and its forward look starts after the presentation day. Home
-reads exactly the preceding analysis day's briefing and links that generating run.
+morning: its sources use the analysis day, and it does not forecast the
+presentation day or anything after it. Home reads exactly the preceding analysis day's briefing and links that generating run.
 Late execution and retries do not change either coordinate.
 
 Terminal work identity includes the source day from its event payload. The local

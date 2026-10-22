@@ -219,13 +219,8 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             }
         )
     });
-    let briefing_summary = (briefing_phase == "active").then(|| {
-        briefing::summary(
-            briefing.as_ref(),
-            &briefing_sections,
-            briefing_needs_deduped.len() as i64,
-        )
-    });
+    let briefing_summary = (briefing_phase == "active")
+        .then(|| briefing::summary(&briefing_sections, briefing_needs_deduped.len() as i64));
 
     let brain = crate::readers::build_brain_snapshot(context);
     let transcription_issue = solstone_core_thinking::read_config(context.journal_root())

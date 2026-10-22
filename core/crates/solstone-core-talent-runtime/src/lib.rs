@@ -4313,7 +4313,9 @@ mod tests {
             {"text":"Prepare for today's meeting","source_id":"sol://calendar/meeting"},
             {"text":"Yesterday's audio is still processing","source_id":"sol://chronicle/20251231/audio"}
         ]);
-        let model_output = json!({"metadata":{},"your_day":[],"yesterday":[],"needs_attention":attention,"forward_look":[],"reading":[]}).to_string();
+        let model_output =
+            json!({"metadata":{},"yesterday":[],"needs_attention":attention,"reading":[]})
+                .to_string();
         let client =
             OneShotClient::at_path(test_support::one_shot_stub(root.path(), &model_output));
         let output_path = context.journal.join("briefing.json");

@@ -307,3 +307,95 @@ fn calendar_segments_are_not_listed_as_transcripts_of_the_day() {
         .collect::<Vec<_>>();
     assert_eq!(times, ["10:00-10:05"], "{listed}");
 }
+
+fn grant_categories(journal: &Path, categories: &[&str], scope: ReadScope) {
+    PermissionStore::open(journal)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: categories
+                    .iter()
+                    .map(|category| (*category).to_owned())
+                    .collect(),
+                scope,
+            },
+        )
+        .unwrap();
+}
+
+fn scheduled_beside_activities(journal: &Path) -> Vec<Value> {
+    let listed =
+        run_mcp_probe(journal, CONNECTION, "list_activities", &json!({"day": DAY})).unwrap();
+    listed["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|activity| activity.get("scheduled").cloned().unwrap_or(Value::Null))
+        .collect()
+}
+
+#[test]
+fn an_activity_lists_the_meeting_it_ran_during_only_to_a_connection_that_reads_the_calendar() {
+    let journal = journal();
+    let root = journal.path();
+    // Golden line 0: "design review", 10:00–11:00 Denver, organized by Alex.
+    calendar_file(root, "20261019", "094000_300", &[golden(0)]);
+    let alex = root.join("entities/alex_rivera");
+    fs::create_dir_all(&alex).unwrap();
+    fs::write(
+        alex.join("entity.json"),
+        json!({"id": "alex_rivera", "name": "Alex Rivera", "type": "Person", "emails": ["alex@example.com"]})
+            .to_string(),
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("facets/work/activities")).unwrap();
+    let during = json!({"id": "meeting_100200_300", "activity": "meeting", "segments": ["100200_1800", "103200_540"], "description": "talked through the mocks", "created_at": 1});
+    let after = json!({"id": "coding_120000_300", "activity": "coding", "segments": ["120000_1800"], "description": "wrote code", "created_at": 2});
+    fs::write(
+        root.join(format!("facets/work/activities/{DAY}.jsonl")),
+        format!("{during}\n{after}\n"),
+    )
+    .unwrap();
+    index(root);
+
+    grant_categories(
+        root,
+        &["facets", "transcripts", "entities"],
+        ReadScope::WholeJournal,
+    );
+    assert_eq!(
+        scheduled_beside_activities(root),
+        [
+            json!([{"title": "design review", "start": "10:00", "end": "11:00", "people": ["Alex Rivera"]}]),
+            Value::Null,
+        ]
+    );
+    // Without the people grant, the meeting comes without names.
+    grant_categories(root, &["facets", "transcripts"], ReadScope::WholeJournal);
+    assert_eq!(
+        scheduled_beside_activities(root),
+        [
+            json!([{"title": "design review", "start": "10:00", "end": "11:00"}]),
+            Value::Null,
+        ]
+    );
+
+    // The calendar belongs to no facet, and without transcripts a connection
+    // doesn't read it at all.
+    grant_categories(
+        root,
+        &["facets", "transcripts"],
+        ReadScope::Facets {
+            ids: vec![FACET.to_owned()],
+        },
+    );
+    assert_eq!(
+        scheduled_beside_activities(root),
+        [Value::Null, Value::Null]
+    );
+    grant_categories(root, &["facets"], ReadScope::WholeJournal);
+    assert_eq!(
+        scheduled_beside_activities(root),
+        [Value::Null, Value::Null]
+    );
+}

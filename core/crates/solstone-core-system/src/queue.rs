@@ -597,10 +597,17 @@ fn spawn_managed_queue_process(
 fn spawn_windows_queue_process(
     journal_root: PathBuf,
     mut command: Vec<String>,
-    options: SpawnOptions,
+    mut options: SpawnOptions,
     timeout: Duration,
     grants: &[crate::process::ReadFileGrant],
+    parakeet_runtime: Option<&crate::provider_runtime::ParakeetRuntimeShared>,
 ) -> Result<QueueProcessHandle, QueueSpawnFailure> {
+    // Empty overrides shadow ambient capabilities too: the Windows launcher
+    // otherwise merges the parent's environment into every queued process.
+    crate::provider_runtime::ParakeetRuntimeShared::prepare_queued_child_environment(
+        None,
+        &mut options.environment,
+    );
     let Some(program) = command.first() else {
         return Err(QueueSpawnFailure::Clean(SpawnError::EmptyCommand));
     };
@@ -647,6 +654,12 @@ fn spawn_windows_queue_process(
         )))
     })?
     .to_owned();
+    if is_analysis_command(&command) {
+        crate::provider_runtime::ParakeetRuntimeShared::prepare_queued_child_environment(
+            parakeet_runtime,
+            &mut options.environment,
+        );
+    }
     // launch_managed_request with grants either fails before a process exists
     // or, after launch_windows_job_process, moves the owner into
     // independent_failure or retain_cleanup. Those hard-stop and return a
@@ -1061,11 +1074,35 @@ fn insert_loaded_record(
 
 impl TaskQueue {
     pub fn new(options: TaskQueueOptions) -> Self {
-        Self::construct(options, None, None, None)
+        Self::construct(
+            options,
+            None,
+            None,
+            None,
+            #[cfg(windows)]
+            None,
+        )
+    }
+
+    /// Bind the supervisor's private runtime before any queue worker can start.
+    /// The Windows launcher reads its current capability at each admitted spawn.
+    #[cfg(windows)]
+    pub fn with_parakeet_runtime(
+        options: TaskQueueOptions,
+        runtime: Arc<crate::provider_runtime::ParakeetRuntimeShared>,
+    ) -> Self {
+        Self::construct(options, None, None, None, Some(runtime))
     }
 
     pub fn with_callable_worker(options: TaskQueueOptions, worker: CallableQueueWorker) -> Self {
-        Self::construct(options, Some(worker), None, None)
+        Self::construct(
+            options,
+            Some(worker),
+            None,
+            None,
+            #[cfg(windows)]
+            None,
+        )
     }
 
     pub fn with_callable_worker_and_admission(
@@ -1074,7 +1111,14 @@ impl TaskQueue {
         admission: CallableAdmission,
         daily_talent_roots: Option<(PathBuf, PathBuf)>,
     ) -> Self {
-        Self::construct(options, Some(worker), Some(admission), daily_talent_roots)
+        Self::construct(
+            options,
+            Some(worker),
+            Some(admission),
+            daily_talent_roots,
+            #[cfg(windows)]
+            None,
+        )
     }
 
     fn construct(
@@ -1082,6 +1126,9 @@ impl TaskQueue {
         callable_worker: Option<CallableQueueWorker>,
         callable_admission: Option<CallableAdmission>,
         daily_talent_roots: Option<(PathBuf, PathBuf)>,
+        #[cfg(windows)] parakeet_runtime: Option<
+            Arc<crate::provider_runtime::ParakeetRuntimeShared>,
+        >,
     ) -> Self {
         #[cfg(windows)]
         let spawner: QueueProcessSpawner = {
@@ -1094,6 +1141,7 @@ impl TaskQueue {
                     options,
                     timeout,
                     &grants,
+                    parakeet_runtime.as_deref(),
                 )
             })
         };

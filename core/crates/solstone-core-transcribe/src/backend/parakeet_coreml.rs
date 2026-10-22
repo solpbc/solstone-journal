@@ -628,7 +628,7 @@ fn collapse_subwords_to_words(tokens: &[TokenTiming]) -> Vec<TranscriptionWord> 
                 word: format!(" {}", current_parts.concat().trim_start()),
                 start: word_start,
                 end: word_end,
-                probability: confidences.iter().copied().fold(f64::INFINITY, f64::min),
+                probability: Some(confidences.iter().copied().fold(f64::INFINITY, f64::min)),
             });
         }
         current_parts.clear();
@@ -869,9 +869,9 @@ mod tests {
         assert_eq!(response.text, "hello world!");
         assert_eq!(response.words.len(), 2);
         assert_eq!(response.words[0].word, " hello");
-        assert_eq!(response.words[0].probability, 0.6);
+        assert_eq!(response.words[0].probability, Some(0.6));
         assert_eq!(response.words[1].word, " world!");
-        assert_eq!(response.words[1].probability, 0.7);
+        assert_eq!(response.words[1].probability, Some(0.7));
 
         let padded = parse_coreml_response(
             r#"{"transcript":"","audio_sec":1.0,"transcribe_ms":2,"rtfx":3.0,"token_timings":[],"padding":"xxx"}"#,
@@ -879,6 +879,41 @@ mod tests {
         .unwrap();
         assert!(padded.words.is_empty());
         assert!(padded.text.is_empty());
+    }
+
+    #[test]
+    fn coreml_word_timings_and_confidence_survive_native_publication() {
+        let response = parse_coreml_response(SUCCESS).unwrap();
+        crate::transcript::tests::assert_word_persistence(
+            &response,
+            serde_json::json!([
+                {"word":" hello","start":0.0,"end":0.2,"probability":0.6},
+                {"word":" world!","start":0.2,"end":0.4,"probability":0.7}
+            ]),
+            serde_json::json!({"start":0.0,"end":0.4}),
+            None,
+            "23:59:59",
+        );
+        let reduction = solstone_core_observe_audio::AudioReduction {
+            segments: vec![solstone_core_observe_audio::SpeechSegment {
+                original_start_s: 10.0,
+                original_end_s: 14.0,
+                reduced_start_s: 0.0,
+                reduced_end_s: 4.0,
+            }],
+            original_duration_s: 20.0,
+            reduced_duration_s: 4.0,
+        };
+        crate::transcript::tests::assert_word_persistence(
+            &response,
+            serde_json::json!([
+                {"word":" hello","start":10.0,"end":10.2,"probability":0.6},
+                {"word":" world!","start":10.2,"end":10.4,"probability":0.7}
+            ]),
+            serde_json::json!({"start":10.0,"end":10.4}),
+            Some(&reduction),
+            "00:00:09",
+        );
     }
 
     #[test]

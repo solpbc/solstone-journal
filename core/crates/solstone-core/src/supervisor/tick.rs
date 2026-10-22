@@ -866,8 +866,9 @@ fn local_ready_task(effect: LocalReadySideEffect) -> (Vec<String>, String) {
 }
 
 /// A Windows Parakeet launch rotates its in-memory loopback credential. Sense
-/// is the sole managed service that can spawn native transcription children,
-/// so replace that one process tree before reconciling a ready provider result.
+/// can spawn native transcription children, so replace its process tree before
+/// reconciling a ready provider result. Queued analysis resolves the same private
+/// capability at each installation-bound spawn through its bound runtime.
 /// The port/runtime record never becomes readable as a credential source.
 #[cfg(windows)]
 fn synchronize_parakeet_sense_credentials(state: &mut SupervisorState) -> bool {
