@@ -145,6 +145,12 @@ impl FlatDirectory {
         self.identity
     }
 
+    /// Compare this retained directory with its prior flat-listing identity.
+    pub fn matches_entry(&self, entry: &FlatDirectoryEntry) -> bool {
+        entry.kind == JournalEntryKind::Directory
+            && self.identity == ObjectIdentity::from_device_inode(entry.device, entry.inode)
+    }
+
     /// Confirm the retained descriptor still names the acquired directory identity.
     pub fn revalidate(&self) -> Result<(), FlatDirectoryError> {
         let stat = fstat(self).map_err(|error| {

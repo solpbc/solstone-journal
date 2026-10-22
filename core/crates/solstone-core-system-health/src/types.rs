@@ -96,6 +96,8 @@ pub struct SegmentIdentity {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SegmentProgress {
+    /// Exact qualifying terminal uses; readers must still consult their receipts.
+    pub completed_uses: BTreeMap<String, String>,
     pub sensed: bool,
     pub density: Option<String>,
     pub change_class: Option<String>,

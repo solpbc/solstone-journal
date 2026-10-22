@@ -18,6 +18,7 @@ pub use context::{CortexBoundary, DispatchFailure, IndexBoundary, ThinkContext};
 mod daily;
 mod daily_lifecycle;
 pub use daily_lifecycle::{INDEXER_ARGS, INDEXER_INPUTS_ARGS};
+mod daily_rebuild;
 mod day;
 mod dispatch;
 mod dry_run;
@@ -687,15 +688,37 @@ fn execute_parsed_command(
         return logged_mode_outcome(log, run, result);
     }
     let (mut log, run) = open_run_log(parsed, &context.journal, context.now_ms, &context.day);
-    if let Some(id) = &parsed.work_intent
-        && let Err(error) = solstone_core_system::work_intent::claim_from_scratch(
-            &context.journal,
-            &context.day,
-            id,
-        )
-    {
-        return logged_mode_outcome(log, run, Err(error));
+    let mut rebuild_context = context.clone();
+    let mut rebuild_args = parsed.clone();
+    if let Some(id) = &parsed.work_intent {
+        let claimed = if context.rebuild_recovery {
+            solstone_core_journal_io::JournalRoot::open(&context.journal)
+                .map_err(|e| e.to_string())
+                .and_then(|root| {
+                    solstone_core_system::work_intent::begin_rebuild(
+                        &context.journal,
+                        &context.day,
+                        id,
+                        &root.identity().observation_id(),
+                    )
+                })
+                .map(|lease| {
+                    rebuild_args.daily_only = lease.resumed;
+                    rebuild_context.rebuild = Some(std::sync::Arc::new(lease));
+                })
+        } else {
+            solstone_core_system::work_intent::claim_from_scratch(
+                &context.journal,
+                &context.day,
+                id,
+            )
+        };
+        if let Err(error) = claimed {
+            return logged_mode_outcome(log, run, Err(error));
+        }
     }
+    let context = &rebuild_context;
+    let parsed = &rebuild_args;
     let result = if parsed.weekly {
         weekly::run(
             context,
@@ -714,6 +737,13 @@ fn execute_parsed_command(
             sense_child_environment,
         )
     };
+    let result = result.and_then(|result| {
+        if context.rebuild.is_some() && result.failed == 0 {
+            daily_lifecycle::validate_rebuild(context)?;
+            daily_rebuild::require_complete(context)?;
+        }
+        Ok(result)
+    });
     let outcome = logged_mode_outcome(log, run, result);
     if let Some(id) = &parsed.work_intent {
         if let Err(error) = context.checkpoint() {

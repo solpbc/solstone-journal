@@ -59,6 +59,9 @@ impl ServingInstance {
 static SERVING: Mutex<Option<ServingInstance>> = Mutex::new(None);
 static SERVING_STOP: Mutex<Option<journal_mobile_serving::MobileServingStop>> = Mutex::new(None);
 static PROCESSING_STOP: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+// Independent of the serial serving/provider mutex: owner Stop must be durable
+// even while a provider call is being cancelled.
+static STOP_ROOT: Mutex<Option<Arc<JournalRoot>>> = Mutex::new(None);
 // Low bit closes admission; a queued operation keeps its ingress lifetime.
 static PROCESSING_GENERATION: AtomicU64 = AtomicU64::new(1);
 
@@ -107,6 +110,17 @@ pub extern "C" fn journal_ios_processing_request_stop() {
     {
         stop.request_stop();
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn journal_ios_processing_request_owner_stop() -> bool {
+    journal_ios_processing_request_stop();
+    let root = STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    persist_owner_stop(root.as_deref())
+}
+
+fn persist_owner_stop(root: Option<&JournalRoot>) -> bool {
+    root.is_some_and(|root| journal_mobile_serving::foreground::persist_owner_stop(root).is_ok())
 }
 static PAYLOAD: Mutex<Option<PathBuf>> = Mutex::new(None);
 #[cfg(target_os = "ios")]
@@ -284,8 +298,8 @@ fn wifi_address() -> Result<std::net::Ipv4Addr, String> {
 }
 fn run(v: Value) -> Result<Value, String> {
     let op = v["op"].as_str().ok_or("missing operation")?;
-    if op == "serve-stop" {
-        journal_ios_processing_request_stop();
+    if op == "serve-stop" && !journal_ios_processing_request_owner_stop() {
+        return Err("owner Stop could not be saved; journal retained".into());
     }
     let generation = if matches!(
         op,
@@ -331,6 +345,9 @@ fn run(v: Value) -> Result<Value, String> {
     let root = guard.as_ref().ok_or("open the journal first")?;
     root.revalidate_canonical_binding()
         .map_err(|e| e.to_string())?;
+    if op == "open" {
+        *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
+    }
     let p = root.canonical_path();
     match op {
         "serve-start" => {
@@ -414,7 +431,8 @@ fn run(v: Value) -> Result<Value, String> {
                 serving: runtime,
                 processing: None,
             });
-            let host = journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_cancellation(
+            *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
+            let host = journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_rebuild_recovery(
                 Arc::clone(root), &payload,
                 Arc::new(move || PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
                 processing_stop, backup,
@@ -483,6 +501,11 @@ fn run(v: Value) -> Result<Value, String> {
             let mut serving = SERVING.lock().map_err(|e| e.to_string())?;
             if let Some(current) = serving.as_ref() {
                 current.drain()?;
+            }
+            // An already admitted owner request may have reached storage while
+            // the first cancellation was draining. Cover it before acknowledgement.
+            if !journal_ios_processing_request_owner_stop() {
+                return Err("owner Stop could not be saved after drain; journal retained".into());
             }
             serving.take();
             *SERVING_STOP.lock().unwrap_or_else(|p| p.into_inner()) = None;
@@ -1344,6 +1367,11 @@ fn retire_active_before_transport(
 #[cfg(test)]
 mod processing_admission_tests {
     use super::*;
+
+    #[test]
+    fn stop_without_a_bound_journal_cannot_acknowledge_persistence() {
+        assert!(!persist_owner_stop(None));
+    }
 
     #[test]
     fn stop_during_startup_cannot_reopen_the_previous_lifetime() {
