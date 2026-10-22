@@ -1929,6 +1929,65 @@ async fn restore_journal_entity_version_requires_version_id() {
 }
 
 #[tokio::test]
+async fn restore_journal_entity_version_refuses_hidden_entity() {
+    let j = Journal::new();
+    let version = solstone_core_entity::save_entity_identity(
+        j.path(),
+        "a",
+        &json!({"id":"a","name":"Before","type":"Person"}),
+        Some(&solstone_core_entity::EntityOperationContext {
+            kind: solstone_core_entity::EntityOperationKind::Create,
+            caller: Value::Null,
+            actor: Value::Null,
+            metadata: json!({}),
+        }),
+    )
+    .unwrap()
+    .event
+    .unwrap()["version_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    post(
+        j.path(),
+        "/app/entities/api/journal/entity/a/block",
+        json!({}),
+    )
+    .await;
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/entity/a/restore",
+        json!({"version_id": version}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "entity_blocked");
+}
+
+#[tokio::test]
+async fn block_journal_entity_fails_with_record_damaged_on_corrupt_relationship() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    seed_facet_entity(j.path(), "work", "a");
+    let bad_file = j.path().join("facets/work/entities/a/entity.json");
+    fs::write(&bad_file, b"not valid json").unwrap();
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/entity/a/block",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(response["reason_code"], "entity_record_damaged");
+    let detail = response["detail"].as_str().unwrap();
+    assert_eq!(detail, "facets/work/entities/a/entity.json");
+    assert!(!detail.contains(j.path().to_str().unwrap()));
+}
+
+#[tokio::test]
 async fn block_journal_entity_blocks_and_detaches_facet_links() {
     let j = Journal::new();
     seed_entity(j.path(), "a", "Alice");
@@ -4688,7 +4747,7 @@ async fn accept_merge_candidate_commits_and_marks_candidate_accepted() {
     assert_eq!(response["kind"], "entity_merge");
     assert_eq!(response["candidate"]["status"], "accepted");
     assert_eq!(response["candidate"]["merge_id"], response["merge_id"]);
-    assert_eq!(response["undo"]["available"], false);
+    assert!(response.get("undo").is_none());
     assert_eq!(
         call(j.path(), "/app/entities/api/journal/entity/source")
             .await
@@ -5055,7 +5114,7 @@ async fn merge_commit_merges_entities_and_reports_it_is_permanent() {
     .await;
     assert_eq!(status, 200);
     assert!(response["merge_id"].as_str().is_some());
-    assert_eq!(response["undo"]["available"], false);
+    assert!(response.get("undo").is_none());
     assert_eq!(
         post(
             j.path(),
@@ -5154,15 +5213,6 @@ async fn merge_classifier_precedence_handles_not_found_and_busy() {
 
 #[tokio::test]
 async fn classifier_refusal_sites_cover_remaining_message_branches() {
-    let already_undone =
-        solstone_core_entity::EntityMergeError::Refused("merge m1 was already undone".to_owned());
-    assert_oracle_refusal(
-        "_entity_operation_error:280",
-        response_value(crate::router::classify_merge_error(&already_undone)).await,
-        "operation_no_longer_available",
-        410,
-    );
-
     let blocked =
         solstone_core_entity::EntityMergeError::Refused("target entity is hidden".to_owned());
     assert_oracle_refusal(

@@ -53,7 +53,7 @@ pub use store::{
     becomes_journal_principal, classify_prepared_history, commit_entity_merge, count_observations,
     create_journal_entity, damaged_record_detail, delete_entity_directory, dismiss_ambiguity,
     dismiss_merge_candidate, entity_edge_aliases, entity_identity_destination_occupied,
-    entity_identity_path, entity_last_active_day, entity_last_active_ts,
+    entity_identity_path, entity_is_hidden, entity_last_active_day, entity_last_active_ts,
     entity_matches_identity_name, entity_memory_path, entity_merge_recovery_pending, entity_path,
     entity_voiceprints_path, every_journal_entity, facet_entity_observations_path,
     find_active_recorded_merge, fresh_entity_id, guard_restore_does_not_cross_merge,

@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - breaking cli change: `journal` now prints the equivalent `solstone journal` command and exits without running it. `journal` will be removed in the next release. update scripts and any hand-written schedules or service commands that use it.
+- unhiding an entity now puts it back in the facets it was in when you hid it. a facet you removed it from yourself before hiding stays removed. this works for entities you hide from now on.
 
 ### Fixed
 

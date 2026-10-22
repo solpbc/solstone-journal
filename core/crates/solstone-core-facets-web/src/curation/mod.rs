@@ -766,7 +766,7 @@ fn entity_transition_value(
     if accept && status == "accepted" {
         let merge_id = merge_id(&candidate);
         return Ok(
-            json!({"status":"already_accepted","kind":"entity_merge","key":key,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(merge_id)}),
+            json!({"status":"already_accepted","kind":"entity_merge","key":key,"candidate":candidate,"merge_id":merge_id}),
         );
     }
     if !accept && status == "dismissed" {
@@ -788,7 +788,7 @@ fn entity_transition_value(
         if let Some(merge_id) = standing_merge_for(root, source, target)? {
             return match accept_merge_candidate(root, facet, source, target, &merge_id) {
                 Ok(Some(candidate)) => Ok(
-                    json!({"status":"accepted","kind":"entity_merge","key":key,"merge":Value::Null,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
+                    json!({"status":"accepted","kind":"entity_merge","key":key,"merge":Value::Null,"candidate":candidate,"merge_id":merge_id}),
                 ),
                 Ok(None) => Ok(result_error_value(
                     "entity_merge",
@@ -813,7 +813,7 @@ fn entity_transition_value(
         let merge_id = report.merge_id.clone();
         return match accept_merge_candidate(root, facet, source, target, &merge_id) {
             Ok(Some(candidate)) => Ok(
-                json!({"status":"accepted","kind":"entity_merge","key":key,"merge":merge_report_value(&report),"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
+                json!({"status":"accepted","kind":"entity_merge","key":key,"merge":merge_report_value(&report),"candidate":candidate,"merge_id":merge_id}),
             ),
             Ok(None) => Ok(result_error_value(
                 "entity_merge",
@@ -1007,7 +1007,7 @@ fn speaker_transition_value(
     if accept && status == "accepted" {
         let merge_id = merge_id(&candidate);
         return Ok(
-            json!({"status":"already_accepted","kind":"speaker_name_variant","key":key,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(merge_id)}),
+            json!({"status":"already_accepted","kind":"speaker_name_variant","key":key,"candidate":candidate,"merge_id":merge_id}),
         );
     }
     if !accept && status == "dismissed" {
@@ -1049,7 +1049,7 @@ fn speaker_transition_value(
                 return match speaker_store::accept_candidate(root, source, target, Some(&merge_id))
                 {
                     Ok(Some(candidate)) => Ok(
-                        json!({"status":"accepted","kind":"speaker_name_variant","key":key,"merge":Value::Null,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
+                        json!({"status":"accepted","kind":"speaker_name_variant","key":key,"merge":Value::Null,"candidate":candidate,"merge_id":merge_id}),
                     ),
                     Ok(None) => Ok(result_error_value(
                         "speaker_name_variant",
@@ -1083,7 +1083,7 @@ fn speaker_transition_value(
         let merge_id = report.merge_id.clone();
         return match speaker_store::accept_candidate(root, source, target, Some(&merge_id)) {
             Ok(Some(candidate)) => Ok(
-                json!({"status":"accepted","kind":"speaker_name_variant","key":key,"merge":merge_report_value(&report),"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
+                json!({"status":"accepted","kind":"speaker_name_variant","key":key,"merge":merge_report_value(&report),"candidate":candidate,"merge_id":merge_id}),
             ),
             Ok(None) => Ok(result_error_value(
                 "speaker_name_variant",
@@ -1135,7 +1135,7 @@ fn pair_transition(root: &Path, body: Value, accept: bool) -> Response {
     };
     let status = string(&candidate, "status");
     if accept && status == "accepted" {
-        return Json(json!({"status":"already_accepted","kind":"speaker_candidate_pair","key":key,"candidate":candidate,"undo":{"available":false,"merge_id":null,"reason":"Speaker candidate-pair merges cannot be undone."}})).into_response();
+        return Json(json!({"status":"already_accepted","kind":"speaker_candidate_pair","key":key,"candidate":candidate})).into_response();
     }
     if !accept && status == "dismissed" {
         return Json(json!({"status":"already_dismissed","kind":"speaker_candidate_pair","key":key,"candidate":candidate})).into_response();
@@ -1165,7 +1165,11 @@ fn pair_transition(root: &Path, body: Value, accept: bool) -> Response {
                     .unwrap_or("candidate pair is already merged"),
             );
         }
-        match pair_store::accept_candidate(root,&a,&b){Ok(Some(row))=>Json(json!({"status":"accepted","kind":"speaker_candidate_pair","key":key,"merge":merged,"candidate":row,"undo":{"available":false,"merge_id":null,"reason":"Speaker candidate-pair merges cannot be undone."}})).into_response(),Ok(None)=>result_error("speaker_candidate_pair",key,"candidate not found"),Err(error)=>internal(error.to_string())}
+        match pair_store::accept_candidate(root, &a, &b) {
+            Ok(Some(row)) => Json(json!({"status":"accepted","kind":"speaker_candidate_pair","key":key,"merge":merged,"candidate":row})).into_response(),
+            Ok(None) => result_error("speaker_candidate_pair", key, "candidate not found"),
+            Err(error) => internal(error.to_string()),
+        }
     } else {
         match pair_store::dismiss_candidate(root,&a,&b){Ok(Some(row))=>Json(json!({"status":"dismissed","kind":"speaker_candidate_pair","key":key,"candidate":row})).into_response(),Ok(None)=>result_error("speaker_candidate_pair",key,"candidate not found"),Err(error)=>internal(error.to_string())}
     }
@@ -1274,16 +1278,6 @@ fn merge_id(candidate: &Value) -> Option<&str> {
         .filter(|merge_id| !merge_id.is_empty())
 }
 
-/// Merges are permanent. The field keeps its shape so clients render the
-/// outcome as a finished merge.
-fn entity_merge_undo(merge_id: Option<&str>) -> Value {
-    json!({
-        "available": false,
-        "merge_id": merge_id,
-        "reason": "Merges are permanent and can't be undone.",
-    })
-}
-
 fn merge_busy(error: &EntityMergeError) -> bool {
     matches!(
         error,
@@ -1335,7 +1329,7 @@ fn batch_item_result(
     source: &str,
     target: &str,
     result: Value,
-    accept: bool,
+    _accept: bool,
 ) -> Value {
     let status = result
         .get("status")
@@ -1351,12 +1345,10 @@ fn batch_item_result(
             result.get("error").cloned().unwrap_or(Value::Null),
         ),
     ]);
-    if success_status(&result, accept) && result.get("undo").is_some() {
-        item.insert(
-            "merge_id".to_owned(),
-            result.get("merge_id").cloned().unwrap_or(Value::Null),
-        );
-        item.insert("undo".to_owned(), result["undo"].clone());
+    if (status == "accepted" || status == "already_accepted")
+        && let Some(merge_id) = result.get("merge_id")
+    {
+        item.insert("merge_id".to_owned(), merge_id.clone());
     }
     if result.get("operation_state").and_then(Value::as_str) == Some("repair_required") {
         for field in [
@@ -1726,7 +1718,7 @@ mod tests {
         assert_eq!(response["status"], "accepted");
         assert!(response["merge_id"].is_string());
         assert_eq!(response["candidate"]["merge_id"], response["merge_id"]);
-        assert_eq!(response["undo"]["available"], false);
+        assert!(response.get("undo").is_none());
         let target = solstone_core_entity::read_entity_identity(root.path(), "target")
             .expect("target identity")
             .expect("target exists");
@@ -1753,7 +1745,7 @@ mod tests {
         assert_eq!(accepted["failed"], 0);
         assert_eq!(accepted["results"][0]["status"], "accepted");
         assert!(accepted["results"][0]["merge_id"].is_string());
-        assert_eq!(accepted["results"][0]["undo"]["available"], false);
+        assert!(accepted["results"][0].get("undo").is_none());
 
         let already_accepted = post_json(
             routes(root.path().to_path_buf()),
@@ -1768,7 +1760,7 @@ mod tests {
             already_accepted["results"][0]["merge_id"],
             accepted["results"][0]["merge_id"]
         );
-        assert_eq!(already_accepted["results"][0]["undo"]["available"], false);
+        assert!(already_accepted["results"][0].get("undo").is_none());
     }
 
     /// G2-26: the same source/target pair, surfaced under two different
@@ -1821,7 +1813,7 @@ mod tests {
             response["results"][1]["merge_id"], first_merge_id,
             "the second facet row adopts the first merge rather than re-committing it"
         );
-        assert_eq!(response["results"][1]["undo"]["available"], false);
+        assert!(response["results"][1].get("undo").is_none());
 
         // The merge itself only ran once: the alias was added exactly once,
         // not duplicated by a second commit attempt.

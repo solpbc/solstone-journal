@@ -66,8 +66,8 @@ fn block_detaches_links_by_stored_entity_id_and_reports_only_new_detaches() {
     );
     assert_eq!(fs::read(&already_path).unwrap(), already_before);
 
-    // An interrupted block has no unique on-disk signature: detached relationships
-    // are also valid after a completed block. Retrying is deliberately idempotent.
+    // A finished detach carries detached_by, so an interrupted block is visible
+    // by its uncompleted relationships. Retrying is deliberately idempotent.
     assert!(
         block_journal_entity(temporary.path(), "target")
             .unwrap()
@@ -115,7 +115,9 @@ fn relationship_detach_and_delete_preserve_or_remove_the_expected_tree() {
         "legacy",
         json!({"entity_id": "target", "role": "owner"}),
     );
-    assert!(set_facet_entity_link_detached(temporary.path(), "work", "legacy", true).unwrap());
+    assert!(
+        set_facet_entity_link_detached(temporary.path(), "work", "legacy", true, None).unwrap()
+    );
     let changed = relationship_value(temporary.path(), "work", "legacy");
     assert_eq!(changed["entity_id"], "target");
     assert_eq!(changed["role"], "owner");
@@ -126,7 +128,9 @@ fn relationship_detach_and_delete_preserve_or_remove_the_expected_tree() {
             .join("facets/work/entities/legacy/entity.json"),
     )
     .unwrap();
-    assert!(!set_facet_entity_link_detached(temporary.path(), "work", "legacy", true).unwrap());
+    assert!(
+        !set_facet_entity_link_detached(temporary.path(), "work", "legacy", true, None).unwrap()
+    );
     assert_eq!(
         fs::read(
             temporary
@@ -136,7 +140,9 @@ fn relationship_detach_and_delete_preserve_or_remove_the_expected_tree() {
         .unwrap(),
         bytes
     );
-    assert!(!set_facet_entity_link_detached(temporary.path(), "work", "missing", true).unwrap());
+    assert!(
+        !set_facet_entity_link_detached(temporary.path(), "work", "missing", true, None).unwrap()
+    );
 
     let relationship_dir = temporary.path().join("facets/work/entities/legacy");
     fs::write(relationship_dir.join("observations.jsonl"), b"{}\n").unwrap();

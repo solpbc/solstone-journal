@@ -1006,7 +1006,8 @@ pub fn merge_link_fields(into: &mut Map<String, Value>, from: &Map<String, Value
         && from.get("detached") == Some(&Value::Bool(true));
     let mut kept = 0;
     for (key, value) in from {
-        if key == "entity_id" || key == "detached" || is_blank(Some(value)) {
+        if key == "entity_id" || key == "detached" || key == "detached_by" || is_blank(Some(value))
+        {
             continue;
         }
         let replace = match key.as_str() {
@@ -1031,8 +1032,18 @@ pub fn merge_link_fields(into: &mut Map<String, Value>, from: &Map<String, Value
     }
     if both_detached {
         into.insert("detached".to_owned(), Value::Bool(true));
+        let into_has = !is_blank(into.get("detached_by"));
+        let from_has = !is_blank(from.get("detached_by"));
+        if into_has && from_has {
+            if into.get("detached_by") != from.get("detached_by") {
+                kept += 1;
+            }
+        } else {
+            into.remove("detached_by");
+        }
     } else {
         into.remove("detached");
+        into.remove("detached_by");
     }
     kept
 }

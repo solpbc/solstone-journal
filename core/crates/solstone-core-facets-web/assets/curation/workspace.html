@@ -1063,12 +1063,12 @@ window.CUR_COPY = CUR_COPY;
     refreshToolbar();
   }
 
-  function appendMergeOutcome(merge, label) {
+  function appendMergeOutcome(mergeId, label) {
     const outcomes = root.querySelector('[data-curation-outcomes]');
     if (!outcomes) return;
     const row = document.createElement('div');
     row.className = 'curation-outcome';
-    if (merge?.merge_id) row.dataset.mergeId = merge.merge_id;
+    if (typeof mergeId === 'string' && mergeId.length > 0) row.dataset.mergeId = mergeId;
     const text = document.createElement('span');
     text.textContent = label || CUR_COPY.CUR_ENTITY_MERGE_ACTION;
     row.appendChild(text);
@@ -1429,7 +1429,7 @@ window.CUR_COPY = CUR_COPY;
       setBusy(button, true);
       postJson(path, payload)
         .then((data) => {
-          if (action === 'speaker-accept') appendMergeOutcome(data.undo, data.candidate?.target_label || data.key);
+          if (action === 'speaker-accept') appendMergeOutcome(data.merge_id, data.candidate?.target_label || data.key);
           removeItem(item);
         })
         .catch((err) => {
@@ -1451,7 +1451,7 @@ window.CUR_COPY = CUR_COPY;
       setBusy(button, true);
       postJson(path, payload)
         .then((data) => {
-          if (action === 'speaker-pair-accept') appendMergeOutcome(data.undo, data.key);
+          if (action === 'speaker-pair-accept') appendMergeOutcome(null, data.key);
           removeItem(item);
         })
         .catch((err) => {
@@ -1546,7 +1546,7 @@ window.CUR_COPY = CUR_COPY;
               successfulPairs.add(pairKey);
               if (mode === 'merge' && !undoShownForPair.has(pairKey)) {
                 undoShownForPair.add(pairKey);
-                appendMergeOutcome(result.undo, `${result.source_slug} → ${result.target_slug}`);
+                appendMergeOutcome(result.merge_id, `${result.source_slug} → ${result.target_slug}`);
               }
               removeItem(article);
               return;
@@ -1634,7 +1634,7 @@ window.CUR_COPY = CUR_COPY;
             return;
           }
           if (action === 'entity-accept-group' && firstOk) {
-            appendMergeOutcome(firstOk.undo, `${item.dataset.source} → ${item.dataset.target}`);
+            appendMergeOutcome(firstOk.merge_id, `${item.dataset.source} → ${item.dataset.target}`);
           }
           removeItem(item);
         })
@@ -1657,7 +1657,7 @@ window.CUR_COPY = CUR_COPY;
       setBusy(button, true);
       postJson(path, payload)
         .then((data) => {
-          if (action === 'entity-accept') appendMergeOutcome(data.undo, `${item.dataset.source} → ${item.dataset.target}`);
+          if (action === 'entity-accept') appendMergeOutcome(data.merge_id, `${item.dataset.source} → ${item.dataset.target}`);
           removeItem(item);
         })
         .catch((err) => {

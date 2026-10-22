@@ -32,11 +32,11 @@ pub use store::{
     AwarenessStoreError, BackfillReport, ConnectionsHorizon, DEFAULT_FACET, DeclaredFacetInventory,
     DestinationObservation, DetectedEntityInput, DetectedLinkRef, DetectionUpsertReport,
     EntityBlockReport, EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference,
-    EntityReferenceBreakdown, EventTopicMigrationReport, FacetDeclarationSnapshot,
-    FacetEntityAttachResult, FacetEntityLifecycleError, FacetEntityLinkSnapshot,
-    FacetEntityMoveResult, FacetEntityWriteError, FacetIdError, FacetIdResolveError,
-    FacetIdentityError, FacetRelationshipRecord, FacetReviewCandidateError, FacetStoreError,
-    FacetWriteError, HistoryEntry, IncomingObservationRow, ObservationChange,
+    EntityReferenceBreakdown, EntityUnblockReport, EventTopicMigrationReport,
+    FacetDeclarationSnapshot, FacetEntityAttachResult, FacetEntityLifecycleError,
+    FacetEntityLinkSnapshot, FacetEntityMoveResult, FacetEntityWriteError, FacetIdError,
+    FacetIdResolveError, FacetIdentityError, FacetRelationshipRecord, FacetReviewCandidateError,
+    FacetStoreError, FacetWriteError, HistoryEntry, IncomingObservationRow, ObservationChange,
     ObservationEntityResolution, ObservationErrorSource, ObservationLookup, ObservationLookupError,
     ObservationOperationCounts, ObservationPage, ObservationPageItem, ObservationParseSource,
     ObservationReadOrder, ObservationReadQuery, ObservationRow, ObservationStoreError,
@@ -82,10 +82,10 @@ pub use store::{
     save_facet_entity_link, scan_facet_relationships, seed_entities, serialize_observation_rows,
     set_activity_hidden, set_activity_hidden_checked, set_facet_entity_link_detached,
     set_facet_muted, settle_imported_facet_id, snapshot_retired_files, strip_incoming_facet_id,
-    update_activity, update_activity_record, update_activity_record_checked,
-    update_activity_record_with, update_detected_entity, update_facet, upsert_detection_segment,
-    validate_observation_operations, write_activity_file, write_facet_entity_observations,
-    write_log_file,
+    unblock_journal_entity, update_activity, update_activity_record,
+    update_activity_record_checked, update_activity_record_with, update_detected_entity,
+    update_facet, upsert_detection_segment, validate_observation_operations, write_activity_file,
+    write_facet_entity_observations, write_log_file,
 };
 pub use store::{
     add_entity_aka, attach_or_reactivate_entity, attach_or_reactivate_entity_for_owner,
@@ -97,7 +97,7 @@ pub use store::{
 #[cfg(any(test, feature = "test-hooks"))]
 pub use store::{
     block_journal_entity_with_hook, delete_created_entity_if_unreferenced_with_hook,
-    delete_journal_entity_with_hook,
+    delete_journal_entity_with_hook, unblock_journal_entity_with_hook,
 };
 pub use trust_lock::{
     FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
@@ -119,6 +119,8 @@ mod facet_entity_move_tests;
 mod facet_entity_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod fixture_tests;
+#[cfg(test)]
+mod hide_unhide_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod lifecycle_tests;
 #[cfg(all(test, feature = "full-tests"))]
