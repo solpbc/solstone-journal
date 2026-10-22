@@ -224,6 +224,24 @@ fn needs_you_items_render_informational_without_affordances() {
 }
 
 #[test]
+fn connections_scheduled_shelf_is_names_only() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // without_executor empties PATH for the whole process; hold its lock so node resolves.
+    let _env = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let output = Command::new("node")
+        .arg(manifest_dir.join("tests/connections_scheduled_render.js"))
+        .arg(manifest_dir)
+        .output()
+        .expect("connections-scheduled render harness");
+    assert!(
+        output.status.success(),
+        "connections-scheduled render harness: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn vitals_render_calm_neutral_without_attention_chip() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // without_executor empties PATH for the whole process; hold its lock so node resolves.

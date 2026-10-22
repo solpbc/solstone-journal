@@ -14,7 +14,7 @@ use crate::edges::EVIDENCE_ORDER_SQL;
 use crate::test_support::reserve_temp_path;
 use crate::{
     EdgeAliases, EdgeEvidenceRequest, EdgeEvidenceResponse, EdgeFilters, EdgeQueryError,
-    EntityTypeLookup, NETWORK_EVIDENCE_LIMIT_MAX, NETWORK_NEIGHBOR_LIMIT_MAX,
+    EntityTypeLookup, NETWORK_EVIDENCE_LIMIT_MAX, NETWORK_NEIGHBOR_LIMIT_MAX, NetworkNeighbor,
     NetworkOverviewRequest, NetworkOverviewResponse, NetworkRequest, NetworkResponse,
     network_bound_detail, open_edges_reader,
 };
@@ -500,6 +500,106 @@ fn evidence_class_and_future_ranking_cap_match_reference() {
     assert!(classes.contains(&("mixed", "mixed")));
     assert!(classes.contains(&("sem", "semantic")));
     assert!(!classes.iter().any(|(id, _)| *id == "future"));
+    cleanup(root);
+}
+
+#[test]
+fn evidence_class_scheduled_only_is_scheduled() {
+    let root = seed(
+        "scheduled_classes",
+        &[
+            SeedEdge::new("self", "sch", "scheduled-with", Some("20260501"), "p_sch"),
+            SeedEdge::new("self", "att", "attended-with", Some("20260501"), "p_att"),
+            SeedEdge::new("self", "co_sch", "co-present", Some("20260501"), "p_co"),
+            SeedEdge::new(
+                "self",
+                "co_sch",
+                "scheduled-with",
+                Some("20260501"),
+                "p_co_sch",
+            ),
+            SeedEdge::new("self", "sem", "works-with", Some("20260501"), "p_sem"),
+            SeedEdge::new(
+                "self",
+                "sch_sem",
+                "scheduled-with",
+                Some("20260501"),
+                "p_sch_sem1",
+            ),
+            SeedEdge::new(
+                "self",
+                "sch_sem",
+                "mentioned",
+                Some("20260501"),
+                "p_sch_sem2",
+            ),
+            SeedEdge::new(
+                "self",
+                "att_sem",
+                "attended-with",
+                Some("20260501"),
+                "p_att_sem1",
+            ),
+            SeedEdge::new(
+                "self",
+                "att_sem",
+                "works-with",
+                Some("20260501"),
+                "p_att_sem2",
+            ),
+        ],
+    );
+    let response = load_entity_network(
+        &root,
+        "self",
+        &default_network("20260530"),
+        None,
+        ATTENDANCE,
+    )
+    .unwrap();
+    fn class_of<'a>(id: &str, neighbors: &'a [NetworkNeighbor]) -> Option<&'a str> {
+        neighbors
+            .iter()
+            .find(|n| n.entity_id == id)
+            .map(|n| n.evidence_class.as_str())
+    }
+    assert_eq!(class_of("sch", &response.neighbors), Some("scheduled"));
+    assert_eq!(class_of("att", &response.neighbors), Some("attendance"));
+    assert_eq!(class_of("co_sch", &response.neighbors), Some("attendance"));
+    assert_eq!(class_of("sem", &response.neighbors), Some("semantic"));
+    assert_eq!(class_of("sch_sem", &response.neighbors), Some("mixed"));
+    assert_eq!(class_of("att_sem", &response.neighbors), Some("mixed"));
+
+    let shorter_attendance: &[&str] = &["attended-with", "co-present"];
+    let response_shorter = load_entity_network(
+        &root,
+        "self",
+        &default_network("20260530"),
+        None,
+        shorter_attendance,
+    )
+    .unwrap();
+    assert_eq!(
+        class_of("sch", &response_shorter.neighbors),
+        Some("scheduled")
+    );
+    assert_eq!(
+        class_of("co_sch", &response_shorter.neighbors),
+        Some("attendance")
+    );
+    assert_eq!(
+        class_of("sch_sem", &response_shorter.neighbors),
+        Some("mixed")
+    );
+    assert_eq!(
+        class_of("sem", &response_shorter.neighbors),
+        Some("semantic")
+    );
+    assert_eq!(
+        class_of("att", &response_shorter.neighbors),
+        Some("attendance")
+    );
+
     cleanup(root);
 }
 

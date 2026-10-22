@@ -1103,12 +1103,15 @@ fn kind_weight(
     Ok(multiplier * weight_sum as f64 * decay_factor(day, reference)?)
 }
 fn evidence_class(kinds: &BTreeMap<String, KindSummary>, attendance_kinds: &[&str]) -> String {
+    if !kinds.is_empty() && kinds.keys().all(|kind| kind == "scheduled-with") {
+        return "scheduled".to_string();
+    }
     let attendance = kinds
         .keys()
-        .any(|kind| attendance_kinds.contains(&kind.as_str()));
+        .any(|kind| kind == "scheduled-with" || attendance_kinds.contains(&kind.as_str()));
     let semantic = kinds
         .keys()
-        .any(|kind| !attendance_kinds.contains(&kind.as_str()));
+        .any(|kind| kind != "scheduled-with" && !attendance_kinds.contains(&kind.as_str()));
     if attendance && semantic {
         "mixed"
     } else if attendance {

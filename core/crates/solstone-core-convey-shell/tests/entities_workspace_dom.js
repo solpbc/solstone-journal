@@ -65,6 +65,10 @@ class Element {
     this.type = '';
   }
 
+  get childNodes() {
+    return this.children;
+  }
+
   append(...children) {
     children.forEach((child) => this.appendChild(child));
   }
@@ -408,6 +412,94 @@ async function main() {
   entities.setJournal({facet_counts: {}});
   entities.render();
   check(document.getElementById('entities-scope-control') === null, 'scope control and popover are removed when the roster is empty');
+
+  const parseStart = workspace.indexOf('function parseYYYYMMDD(');
+  const parseEnd = workspace.indexOf('function formatDateShort(', parseStart);
+  const connMapStart = workspace.indexOf('function entityConnCopyMap(');
+  const connMapEnd = workspace.indexOf('async function fetchEntityConnJson(', connMapStart);
+  const netStart = workspace.indexOf('function renderConnectionsNetwork(');
+  const netEnd = workspace.indexOf('async function toggleConnectionEvidence(', netStart);
+  check(parseStart !== -1 && parseEnd !== -1 && connMapStart !== -1 && connMapEnd !== -1 && netStart !== -1 && netEnd !== -1, 'connections workspace slices exist');
+
+  const connDoc = {
+    createElement() { return new Element(connDoc); },
+  };
+  const connContext = {
+    document: connDoc,
+    console,
+    ENT_COPY: {
+      ENT_CONN_SUMMARY: 'ENT_CONN_SUMMARY:{s}:{a}',
+      ENT_CONN_SUMMARY_CALENDAR: 'ENT_CONN_SUMMARY_CALENDAR:{c}',
+      ENT_CONN_ROW_META_SCHEDULED: 'ENT_CONN_ROW_META_SCHEDULED:{day}',
+      ENT_CONN_CALENDAR_ONLY: 'ENT_CONN_CALENDAR_ONLY',
+      ENT_CONN_EVENTS_ONLY: 'ENT_CONN_EVENTS_ONLY',
+      ENT_CONN_ROW_META_ATTENDANCE: 'ENT_CONN_ROW_META_ATTENDANCE:{n}:{day}',
+      ENT_CONN_ROW_META_ONE_ATTENDANCE: 'ENT_CONN_ROW_META_ONE_ATTENDANCE:{day}',
+      ENT_CONN_ROW_META: 'ENT_CONN_ROW_META:{n}:{day}',
+      ENT_CONN_ROW_META_ONE: 'ENT_CONN_ROW_META_ONE:{day}',
+    },
+    ATTENDANCE_KINDS: new Set(['attended-with', 'co-present', 'scheduled-with']),
+  };
+  const connSource = [
+    workspace.slice(parseStart, parseEnd),
+    workspace.slice(connMapStart, connMapEnd),
+    workspace.slice(netStart, netEnd),
+  ].join('\n');
+  vm.runInNewContext(connSource, connContext, { filename: 'entities-connections.js' });
+
+  function allDescendants(node) {
+    const list = [node];
+    for (const child of node.children) {
+      list.push(...allDescendants(child));
+    }
+    return list;
+  }
+
+  const connContainer = new Element(connDoc, 'connections-container');
+  const testNeighbors = [
+    {entity_id:'sem', name:'Ada', evidence_class:'semantic', count:2, last_seen:'20260501', kinds:{'works-with':{weighted:1}}},
+    {entity_id:'att', name:'Bea', evidence_class:'attendance', count:3, last_seen:'20260502', kinds:{'attended-with':{weighted:1}}},
+    {entity_id:'sch', name:'Cal', evidence_class:'scheduled', count:4, last_seen:'20260503', kinds:{'scheduled-with':{weighted:1}}},
+  ];
+  connContext.renderConnectionsNetwork(connContainer, 'self', testNeighbors, '20260530', true);
+
+  const connRows = allDescendants(connContainer).filter(node => node.className === 'entity-conn-row');
+  const calRow = connRows.find(r => allDescendants(r).some(n => n.className === 'entity-conn-name' && n.textContent === 'Cal'));
+  check(calRow !== undefined, 'found scheduled row for Cal');
+  const calDescendants = allDescendants(calRow);
+  const calText = calDescendants.map(n => n.textContent).join(' ');
+
+  check(
+    calDescendants.some(n => n.textContent.includes('ENT_CONN_ROW_META_SCHEDULED')),
+    'scheduled row contains ENT_CONN_ROW_META_SCHEDULED',
+  );
+  check(
+    calDescendants.some(n => n.textContent === 'ENT_CONN_CALENDAR_ONLY' && n.className === 'entity-conn-chip entity-conn-chip-event-only'),
+    'scheduled row has calendar-only chip with expected classes',
+  );
+  check(
+    !calText.includes('ENT_CONN_EVENTS_ONLY')
+      && !calText.includes('ENT_CONN_ROW_META_ATTENDANCE')
+      && !calText.includes('ENT_CONN_ROW_META_ONE_ATTENDANCE'),
+    'scheduled row does not contain attendance copy keys',
+  );
+
+  const summary = allDescendants(connContainer).find(n => n.className === 'entity-conn-summary');
+  check(
+    summary && summary.textContent === 'ENT_CONN_SUMMARY:1:1 · ENT_CONN_SUMMARY_CALENDAR:1',
+    'summary includes direct, attendance, and scheduled counts',
+  );
+
+  const connContainer2 = new Element(connDoc, 'connections-container-2');
+  connContext.renderConnectionsNetwork(connContainer2, 'self', [
+    {entity_id:'sem', name:'Ada', evidence_class:'semantic', count:2, last_seen:'20260501', kinds:{'works-with':{weighted:1}}},
+    {entity_id:'att', name:'Bea', evidence_class:'attendance', count:3, last_seen:'20260502', kinds:{'attended-with':{weighted:1}}},
+  ], '20260530', true);
+  const summary2 = allDescendants(connContainer2).find(n => n.className === 'entity-conn-summary');
+  check(
+    summary2 && summary2.textContent === 'ENT_CONN_SUMMARY:1:1' && !summary2.textContent.includes('ENT_CONN_SUMMARY_CALENDAR'),
+    'summary without scheduled neighbours omits calendar clause',
+  );
 
   console.log(`DOM CASES: ${cases} passed`);
 }

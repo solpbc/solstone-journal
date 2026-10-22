@@ -10,6 +10,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - breaking cli change: `journal` now prints the equivalent `solstone journal` command and exits without running it. `journal` will be removed in the next release. update scripts and any hand-written schedules or service commands that use it.
 
+### Fixed
+
+- in your connections, people linked only by a calendar invite no longer show as "events together" or "often around". they're now labeled "calendar only".
+
 ## [2.0.55] - 2026-10-22
 
 ### Added

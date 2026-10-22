@@ -277,7 +277,7 @@ Show one-hop recorded connections for a journal entity.
 Behavior notes:
 
 - Empty output means the edge table exists but this entity has no recorded connections under the filters.
-- Ranking counts only evidence dated up to today; each item carries an `evidence_class` of attendance, semantic, or mixed.
+- Ranking counts only evidence dated up to today; each item carries an `evidence_class` of attendance, scheduled (linked by calendar entries only), semantic, or mixed.
 - If the edge index has not been built, the command tells the owner to run `solstone journal indexer --rescan`.
 
 Examples:
@@ -334,7 +334,7 @@ Show the global recorded-connections overview.
 Behavior notes:
 
 - Use this before `network` when you need to know which entities are most connected.
-- Ranking counts only evidence dated up to today; each item carries an `evidence_class` of attendance, semantic, or mixed.
+- Ranking counts only evidence dated up to today; each item carries an `evidence_class` of attendance, scheduled (linked by calendar entries only), semantic, or mixed.
 - The header reports total entities and whether the displayed list is truncated.
 
 Example:

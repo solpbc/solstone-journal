@@ -1597,6 +1597,17 @@ async fn state_has_copy_and_attendance() {
             "missing or empty scope copy key: {key}"
         );
     }
+    for key in [
+        "ENT_CONN_ROW_META_SCHEDULED",
+        "ENT_CONN_CALENDAR_ONLY",
+        "ENT_CONN_SUMMARY_CALENDAR",
+    ] {
+        let value = v["entities_copy"][key].as_str();
+        assert!(
+            value.is_some_and(|value| !value.is_empty()),
+            "missing or empty copy key: {key}"
+        );
+    }
 }
 #[tokio::test]
 async fn types_are_exact() {
