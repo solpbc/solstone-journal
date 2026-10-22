@@ -29,6 +29,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - an entity you delete no longer shows up in connections, for you or for agents reading your journal. before, it could stay listed, and asking for its connections found no match.
 - on windows, the journal window no longer shows "setup stopped before it finished" when your journal takes a while to start for the first time. the window now waits longer for it, and setup goes on to the window's home screen.
 
+- when the only sign that someone was in a conversation is a name two people in your journal share, such as a first name, the activity no longer lists one of them as attending. that person is listed as mentioned instead, unless their voice or their full name shows which one it was. activities already in your journal keep their people as they are.
+- agents reading your journal now see who attended an activity apart from who was only mentioned in it. before, both were listed as participants.
+
 ## [2.0.55] - 2026-10-22
 
 2.0.55 isn't available on windows. on windows, your journal stays on 2.0.54 and gets these changes, including the windows ones below, in a later version.
