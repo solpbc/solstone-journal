@@ -43,7 +43,8 @@ fn local_provider_val() -> Value {
 
 pub use crate::setup_progress::{
     SetupDownloadError, SetupDownloadTask, SetupDownloads, SetupProgress, SetupProgressError,
-    SetupProgressThinking, SetupRetryError, packaged_speech_retry, read_setup_progress,
+    SetupProgressThinking, SetupRetryError, packaged_speech_retry, read_setup_downloads,
+    read_setup_progress,
 };
 
 pub trait SetupHost: Send + Sync {
