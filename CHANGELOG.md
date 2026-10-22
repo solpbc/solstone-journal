@@ -12,6 +12,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed local models using a different GPU from the one you selected.
+
 - on mac, local transcription now recovers opening words that it could silently leave out of a long recording. existing transcripts keep the words they have.
 
 - in your connections, plans inferred by older versions of your journal no longer count as events attended together.

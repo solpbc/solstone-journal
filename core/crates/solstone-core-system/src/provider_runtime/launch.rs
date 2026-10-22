@@ -2787,6 +2787,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
     fn write_linux_runtime_tree_in_module(root: &Path) {
         use solstone_core_local::install::manifest;
         use solstone_core_local::install::pins;
@@ -2830,6 +2831,7 @@ mod tests {
             .unwrap();
     }
 
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
     fn write_linux_cuda_tree_in_module(root: &Path) {
         use solstone_core_local::install::manifest;
         use solstone_core_local::install::pins;
@@ -2919,7 +2921,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
     fn linux_vulkan_launch_honours_configured_vulkan_device_index() {
         let root = tempfile::tempdir().unwrap();
         write_linux_runtime_tree_in_module(root.path());
@@ -3013,7 +3015,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
     fn linux_vulkan_launch_fails_closed_on_unusable_overrides() {
         let root = tempfile::tempdir().unwrap();
         write_linux_runtime_tree_in_module(root.path());
@@ -3114,7 +3116,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
     fn linux_vulkan_launch_no_override_prefers_discrete_over_software() {
         let root = tempfile::tempdir().unwrap();
         write_linux_runtime_tree_in_module(root.path());
@@ -3179,7 +3181,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
     fn linux_cuda_launch_ignores_configured_vulkan_device_index() {
         let root = tempfile::tempdir().unwrap();
         write_linux_cuda_tree_in_module(root.path());
