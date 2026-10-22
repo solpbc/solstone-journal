@@ -89,13 +89,14 @@ pub use facet_id::{
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
 pub use lifecycle::{
     EntityBlockReport, EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference,
-    FacetEntityLifecycleError, block_journal_entity, delete_created_entity_if_unreferenced,
-    delete_journal_entity, delete_journal_entity_after,
+    EntityUnblockReport, FacetEntityLifecycleError, block_journal_entity,
+    delete_created_entity_if_unreferenced, delete_journal_entity, delete_journal_entity_after,
+    unblock_journal_entity,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use lifecycle::{
     block_journal_entity_with_hook, delete_created_entity_if_unreferenced_with_hook,
-    delete_journal_entity_with_hook,
+    delete_journal_entity_with_hook, unblock_journal_entity_with_hook,
 };
 pub use logs::{read_log_file, write_log_file};
 pub use map::{list_declared_facet_names, list_facet_directories, list_facet_entity_directories};

@@ -8865,7 +8865,7 @@ fn write_activity_line(
     activity: Option<&str>,
     segments: Option<&[&str]>,
     active_entities: Option<&[&str]>,
-    participation: Option<&[&str]>,
+    participation: Option<&[(&str, &str)]>,
     stream: Option<&str>,
     hidden: Option<bool>,
     story_body: Option<&str>,
@@ -8887,7 +8887,10 @@ fn write_activity_line(
         obj["active_entities"] = json!(ents);
     }
     if let Some(parts) = participation {
-        let parts_json: Vec<Value> = parts.iter().map(|p| json!({"name": p})).collect();
+        let parts_json: Vec<Value> = parts
+            .iter()
+            .map(|(name, role)| json!({"name": name, "role": role}))
+            .collect();
         obj["participation"] = json!(parts_json);
     }
     if let Some(st) = stream {
@@ -9172,7 +9175,10 @@ fn list_activities_fields_and_fetch() {
         None,
         Some(&["090000_300"]),
         Some(&["Entity One"]),
-        Some(&["Participant Alpha"]),
+        Some(&[
+            ("Participant Alpha", "attendee"),
+            ("Mentioned Beta", "mentioned"),
+        ]),
         None,
         None,
         None,
@@ -9192,6 +9198,8 @@ fn list_activities_fields_and_fetch() {
     let ents = acts[1]["entities"].as_array().unwrap();
     assert_eq!(parts.len(), 1);
     assert_eq!(parts[0], "Participant Alpha");
+    // A person only mentioned is not a participant.
+    assert_eq!(acts[1]["mentioned"], json!(["Mentioned Beta"]));
     assert_eq!(ents.len(), 1);
     assert_eq!(ents[0], "Entity One");
     assert_ne!(parts, ents);

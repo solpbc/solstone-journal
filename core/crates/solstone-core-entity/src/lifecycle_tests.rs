@@ -99,6 +99,69 @@ fn unblock_clears_blocked_and_refuses_missing_or_unblocked_without_writing() {
 }
 
 #[test]
+fn restore_of_hidden_entity_writes_nothing_even_if_version_id_also_missing() {
+    let temporary = TempDir::new();
+    let _event = save_entity_identity(
+        temporary.path(),
+        "hidden",
+        &json!({"id": "hidden", "name": "Hidden", "blocked": true}),
+        None,
+    )
+    .unwrap()
+    .event
+    .unwrap();
+    let identity_before = fs::read(temporary.path().join("entities/hidden/entity.json")).unwrap();
+    let history_path = temporary.path().join("entities/hidden/history.jsonl");
+    let history_before = fs::read(&history_path).ok();
+
+    let err = restore_journal_entity_version(temporary.path(), "hidden", "bogus_version_id", None)
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        EntityLifecycleError::RestoreWhileHidden { entity_id } if entity_id == "hidden"
+    ));
+    assert_eq!(
+        fs::read(temporary.path().join("entities/hidden/entity.json")).unwrap(),
+        identity_before
+    );
+    assert_eq!(fs::read(&history_path).ok(), history_before);
+}
+
+#[test]
+fn restore_of_visible_entity_drops_blocked_from_hidden_era_snapshot() {
+    let temporary = TempDir::new();
+    let hidden_snapshot = save_entity_identity(
+        temporary.path(),
+        "target",
+        &json!({"id": "target", "name": "Target Hidden", "type": "Person", "blocked": true}),
+        None,
+    )
+    .unwrap()
+    .event
+    .unwrap();
+    let hidden_version = hidden_snapshot["version_id"].as_str().unwrap();
+
+    save_entity_identity(
+        temporary.path(),
+        "target",
+        &json!({"id": "target", "name": "Target Visible", "type": "Person"}),
+        None,
+    )
+    .unwrap();
+
+    let restored_event =
+        restore_journal_entity_version(temporary.path(), "target", hidden_version, None).unwrap();
+
+    let disk_identity = read_entity_identity(temporary.path(), "target")
+        .unwrap()
+        .unwrap();
+    assert_eq!(disk_identity.value()["name"], "Target Hidden");
+    assert_eq!(restored_event["identity_after"]["name"], "Target Hidden");
+    assert_eq!(disk_identity.value().get("blocked"), None);
+    assert_eq!(restored_event["identity_after"].get("blocked"), None);
+}
+
+#[test]
 fn restore_refuses_target_merge_and_crossing_later_merge() {
     let target_merge = TempDir::new();
     let target_event = save_entity_identity(

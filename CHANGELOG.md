@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - breaking cli change: `journal` now prints the equivalent `solstone journal` command and exits without running it. `journal` will be removed in the next release. update scripts and any hand-written schedules or service commands that use it.
+- unhiding an entity now puts it back in the facets it was in when you hid it. a facet you removed it from yourself before hiding stays removed. this works for entities you hide from now on.
 
 ### Fixed
 
@@ -28,6 +29,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on home, a connection's row no longer shows its latest meeting or calendar title. before, it labeled it "transcribed as".
 - an entity you delete no longer shows up in connections, for you or for agents reading your journal. before, it could stay listed, and asking for its connections found no match.
 - on windows, the journal window no longer shows "setup stopped before it finished" when your journal takes a while to start for the first time. the window now waits longer for it, and setup goes on to the window's home screen.
+
+- when the only sign that someone was in a conversation is a name two people in your journal share, such as a first name, the activity no longer lists one of them as attending. that person is listed as mentioned instead, unless their voice or their full name shows which one it was. activities already in your journal keep their people as they are.
+- agents reading your journal now see who attended an activity apart from who was only mentioned in it. before, both were listed as participants.
 
 ## [2.0.55] - 2026-10-22
 

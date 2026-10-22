@@ -253,6 +253,7 @@ fn attach_or_reactivate(
         }
         let mut relationship = object_clone(&entity.relationship)?;
         relationship.remove("detached");
+        relationship.remove("detached_by");
         if !description.is_empty() {
             relationship.insert(
                 "description".to_owned(),
@@ -413,6 +414,7 @@ fn attach_existing_identity(
         let relationship_dir = link.dir;
         let mut relationship = object_clone(&link.value)?;
         relationship.remove("detached");
+        relationship.remove("detached_by");
         if !description.is_empty() {
             relationship.insert(
                 "description".to_owned(),
@@ -461,7 +463,7 @@ pub fn detach_facet_entity(
         });
     };
     for relationship_dir in &attached {
-        set_facet_entity_link_detached(journal_root, facet_dir, relationship_dir, true)?;
+        set_facet_entity_link_detached(journal_root, facet_dir, relationship_dir, true, None)?;
     }
     read_facet_entity_link(journal_root, facet_dir, &first)?
         .map(|link| link.value().clone())
@@ -751,6 +753,7 @@ pub fn prepare_review_promotion(
     if after_link.get("detached") == Some(&Value::Bool(true)) {
         let object = after_link.as_object_mut().ok_or("malformed relationship")?;
         object.remove("detached");
+        object.remove("detached_by");
         object.insert("description".into(), Value::String(description.into()));
         object.insert("updated_at".into(), Value::String(now.clone()));
     }

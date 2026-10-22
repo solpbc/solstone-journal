@@ -37,6 +37,9 @@ pub enum EntityLifecycleError {
     EntityNotBlocked {
         entity_id: String,
     },
+    RestoreWhileHidden {
+        entity_id: String,
+    },
     HistoryVersionNotFound {
         entity_id: String,
         version_id: String,
@@ -72,6 +75,9 @@ impl fmt::Display for EntityLifecycleError {
             }
             Self::EntityNotBlocked { entity_id } => {
                 write!(formatter, "entity is not hidden: {entity_id}")
+            }
+            Self::RestoreWhileHidden { entity_id } => {
+                write!(formatter, "entity is hidden: {entity_id}")
             }
             Self::HistoryVersionNotFound {
                 entity_id,
@@ -120,6 +126,7 @@ impl Error for EntityLifecycleError {
             Self::EntityNotFound { .. }
             | Self::EntityAlreadyExists { .. }
             | Self::EntityNotBlocked { .. }
+            | Self::RestoreWhileHidden { .. }
             | Self::HistoryVersionNotFound { .. }
             | Self::RestoreTargetsRecordedMerge
             | Self::RestoreCrossesRecordedMerge
@@ -289,7 +296,7 @@ pub fn unblock_journal_entity(
     let entity_dir = resolve_entity_dir(journal_root, entity_id)?;
     let identity = read_entity_identity(journal_root, &entity_dir)?
         .expect("resolved identity-map directory contains an identity");
-    if !identity.value().get("blocked").is_some_and(value_is_truthy) {
+    if !entity_is_hidden(identity.value()) {
         return Err(EntityLifecycleError::EntityNotBlocked {
             entity_id: entity_id.to_owned(),
         });
@@ -330,6 +337,13 @@ pub fn restore_journal_entity_version(
 ) -> Result<Value, EntityLifecycleError> {
     let _trust = hold_entity_trust_lock(journal_root)?;
     let entity_dir = resolve_entity_dir(journal_root, entity_id)?;
+    let current = read_entity_identity(journal_root, &entity_dir)?
+        .expect("resolved identity-map directory contains an identity");
+    if entity_is_hidden(current.value()) {
+        return Err(EntityLifecycleError::RestoreWhileHidden {
+            entity_id: entity_id.to_owned(),
+        });
+    }
     let events = read_visible_history(journal_root, &entity_dir)?;
     let target = events
         .iter()
@@ -361,6 +375,12 @@ pub fn restore_journal_entity_version(
     if identity_is_principal(&snapshot) {
         guard_restore_principal(journal_root, entity_id)?;
     }
+
+    let mut snapshot = snapshot;
+    snapshot
+        .as_object_mut()
+        .expect("identity reader returns an object")
+        .remove("blocked");
 
     let operation = EntityOperationContext {
         kind: EntityOperationKind::Restore,
@@ -432,6 +452,10 @@ fn update_operation() -> EntityOperationContext {
 
 fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
+}
+
+pub fn entity_is_hidden(identity: &Value) -> bool {
+    identity.get("blocked").is_some_and(value_is_truthy)
 }
 
 pub(crate) fn value_is_truthy(value: &Value) -> bool {

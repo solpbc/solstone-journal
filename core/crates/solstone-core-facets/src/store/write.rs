@@ -229,6 +229,7 @@ pub fn set_facet_entity_link_detached(
     facet_dir: &str,
     entity_dir: &str,
     detached: bool,
+    detached_by: Option<&str>,
 ) -> Result<bool, FacetWriteError> {
     let _trust = hold_facet_trust_lock(journal_root)?;
     let Some(snapshot) = read_facet_entity_link(journal_root, facet_dir, entity_dir)? else {
@@ -243,12 +244,41 @@ pub fn set_facet_entity_link_detached(
             false
         } else {
             object.insert("detached".to_owned(), Value::Bool(true));
+            if let Some(marker) = detached_by {
+                object.insert("detached_by".to_owned(), Value::String(marker.to_owned()));
+            } else {
+                object.remove("detached_by");
+            }
             true
         }
     } else {
-        object.remove("detached").is_some()
+        let detached_removed = object.remove("detached").is_some();
+        let marker_removed = object.remove("detached_by").is_some();
+        detached_removed || marker_removed
     };
     if !changed {
+        return Ok(false);
+    }
+    let path = facet_entity_link_path(journal_root, facet_dir, entity_dir)?;
+    write_json(&path, &relationship, json_options()).map_err(FacetWriteError::EntityLinkWrite)?;
+    Ok(true)
+}
+
+/// Strip only `detached_by` without touching `detached`, writing only when changed.
+pub(crate) fn strip_facet_entity_link_detached_by(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_dir: &str,
+) -> Result<bool, FacetWriteError> {
+    let _trust = hold_facet_trust_lock(journal_root)?;
+    let Some(snapshot) = read_facet_entity_link(journal_root, facet_dir, entity_dir)? else {
+        return Ok(false);
+    };
+    let mut relationship = snapshot.value().clone();
+    let object = relationship
+        .as_object_mut()
+        .expect("facet entity link reader returns an object");
+    if object.remove("detached_by").is_none() {
         return Ok(false);
     }
     let path = facet_entity_link_path(journal_root, facet_dir, entity_dir)?;

@@ -57,7 +57,7 @@ pub use journal_entities::{
     load_all_journal_entities,
 };
 pub use lifecycle::{
-    EntityLifecycleError, adopt_configured_principal, delete_entity_directory,
+    EntityLifecycleError, adopt_configured_principal, delete_entity_directory, entity_is_hidden,
     has_journal_principal, identity_is_principal, journal_principal_entry, read_journal_principal,
     restore_journal_entity_version, unblock_journal_entity,
 };

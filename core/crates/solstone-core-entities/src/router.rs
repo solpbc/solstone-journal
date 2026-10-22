@@ -1336,17 +1336,6 @@ pub(crate) fn entity_review_candidate_error_response(
     }
 }
 
-/// Merges are permanent. The field keeps its shape so clients render the
-/// outcome as a finished merge.
-fn entity_merge_undo(merge_id: Option<&str>) -> serde_json::Value {
-    let merge_id = merge_id.filter(|merge_id| !merge_id.is_empty());
-    json!({
-        "available": false,
-        "merge_id": merge_id,
-        "reason": "Merges are permanent and can't be undone.",
-    })
-}
-
 fn merge_report_value(report: &solstone_core_entity::EntityMergeReport) -> serde_json::Value {
     json!({
         "merge_id": report.merge_id,
@@ -1377,9 +1366,7 @@ fn merge_error_is_busy(error: &solstone_core_entity::EntityMergeError) -> bool {
 
 fn classified_operation_error(detail: String) -> Response {
     let lowered = detail.to_lowercase();
-    if lowered.contains("already undone") {
-        refusal(ReasonCode::OperationNoLongerAvailable, detail)
-    } else if lowered.contains("not found") {
+    if lowered.contains("not found") {
         refusal(ReasonCode::EntityNotFound, detail)
     } else if lowered.contains("hidden") {
         refusal(ReasonCode::EntityBlocked, detail)
@@ -1505,15 +1492,7 @@ async fn merge_route(
     })
     .await
     {
-        Ok(Ok(report)) => {
-            let merge_id = report.merge_id.clone();
-            let mut result = merge_report_value(&report);
-            result
-                .as_object_mut()
-                .expect("merge report is an object")
-                .insert("undo".to_owned(), entity_merge_undo(Some(&merge_id)));
-            Json(result).into_response()
-        }
+        Ok(Ok(report)) => Json(merge_report_value(&report)).into_response(),
         Ok(Err(error)) if merge_error_is_busy(&error) => {
             refusal(ReasonCode::EntityBusy, "entity busy")
         }
@@ -1634,7 +1613,6 @@ async fn accept_merge_candidate_route(
             "key": key,
             "candidate": candidate,
             "merge_id": merge_id,
-            "undo": entity_merge_undo(merge_id),
         }))
         .into_response();
     }
@@ -1696,7 +1674,6 @@ async fn accept_merge_candidate_route(
             "merge": report.as_ref().map(merge_report_value),
             "candidate": candidate,
             "merge_id": merge_id,
-            "undo": entity_merge_undo(Some(&merge_id)),
         }))
         .into_response(),
         Ok(Ok((_, None, _))) => entity_merge_candidate_error(&key, "candidate not found"),
@@ -3045,6 +3022,10 @@ async fn restore_journal_entity_version_route(
                 ..
             },
         )) => refusal(ReasonCode::InvalidRequestValue, "restore is not available"),
+        Ok(Err(solstone_core_entity::EntityLifecycleError::RestoreWhileHidden { .. })) => refusal(
+            ReasonCode::EntityBlocked,
+            "This entity is hidden. Unhide it in the entities app first.",
+        ),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity restore failed"),
     }
 }
@@ -3063,6 +3044,9 @@ async fn block_journal_entity_route(
     .await
     {
         Ok(Ok(report)) => Json(json!({"facets_detached":report.facets_detached})).into_response(),
+        Ok(Err(solstone_core_facets::FacetEntityLifecycleError::RelationshipsUnreadable {
+            path,
+        })) => refusal(ReasonCode::EntityRecordDamaged, path),
         Ok(Err(
             error @ solstone_core_facets::FacetEntityLifecycleError::PrincipalEntityProtected {
                 ..
@@ -3091,19 +3075,38 @@ async fn unblock_journal_entity_route(
         return r;
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_entity::unblock_journal_entity(&root, &entity_id)
+        solstone_core_facets::unblock_journal_entity(&root, &entity_id)
     })
     .await
     {
-        Ok(Ok(result)) => Json(result).into_response(),
-        Ok(Err(error @ solstone_core_entity::EntityLifecycleError::EntityNotFound { .. }))
-        | Ok(Err(error @ solstone_core_entity::EntityLifecycleError::EntityNotBlocked { .. })) => {
-            refusal_with_status(
-                ReasonCode::EntityOperationFailed,
-                error.to_string(),
-                axum::http::StatusCode::BAD_REQUEST,
-            )
+        Ok(Ok(report)) => {
+            let mut event = report.event;
+            if let Some(obj) = event.as_object_mut() {
+                obj.insert(
+                    "facets_reattached".to_owned(),
+                    json!(report.facets_reattached),
+                );
+                obj.insert(
+                    "relationships_unreadable".to_owned(),
+                    json!(report.relationships_unreadable),
+                );
+            }
+            Json(event).into_response()
         }
+        Ok(Err(
+            error @ solstone_core_facets::FacetEntityLifecycleError::Entity(
+                solstone_core_entity::EntityLifecycleError::EntityNotFound { .. },
+            ),
+        ))
+        | Ok(Err(
+            error @ solstone_core_facets::FacetEntityLifecycleError::Entity(
+                solstone_core_entity::EntityLifecycleError::EntityNotBlocked { .. },
+            ),
+        )) => refusal_with_status(
+            ReasonCode::EntityOperationFailed,
+            error.to_string(),
+            axum::http::StatusCode::BAD_REQUEST,
+        ),
         Ok(Err(error)) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
         Err(_) => refusal(ReasonCode::EntityOperationFailed, "couldn't unhide entity"),
     }

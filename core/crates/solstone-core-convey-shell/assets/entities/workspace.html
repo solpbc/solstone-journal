@@ -2051,7 +2051,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
         <button type="button" class="btn btn-primary" id="journal-detail-merge-btn"></button>
       </div>
       <div class="entity-trust-panel" id="journal-detail-merge-preview" hidden></div>
-      <div class="entity-trust-panel" id="journal-detail-undo-panel" hidden></div>
+      <div class="entity-trust-panel" id="journal-detail-merge-panel" hidden></div>
       <h4 id="journal-detail-suggestions-heading" style="margin-top: 1.5em;"></h4>
       <div id="journal-detail-suggestions"></div>
       <h4 id="journal-detail-history-heading" style="margin-top: 1.5em;"></h4>
@@ -4242,8 +4242,8 @@ function resetJournalTrustSurface() {
   closeJournalMergeResults();
   document.getElementById('journal-detail-merge-preview').hidden = true;
   document.getElementById('journal-detail-merge-preview').innerHTML = '';
-  document.getElementById('journal-detail-undo-panel').hidden = true;
-  document.getElementById('journal-detail-undo-panel').innerHTML = '';
+  document.getElementById('journal-detail-merge-panel').hidden = true;
+  document.getElementById('journal-detail-merge-panel').innerHTML = '';
   document.getElementById('journal-detail-suggestions').innerHTML = '<span class="observations-empty">loading…</span>';
   document.getElementById('journal-detail-history').innerHTML = '<span class="observations-empty">loading…</span>';
   hideInlineError('journal-detail-trust-error');
@@ -4571,7 +4571,7 @@ async function commitJournalEntityMerge(sourceId, targetId, targetName, button) 
 }
 
 function showJournalMergeDone(merge) {
-  const panel = document.getElementById('journal-detail-undo-panel');
+  const panel = document.getElementById('journal-detail-merge-panel');
   panel.innerHTML = '';
   pendingJournalMergeDone = null;
   if (!merge?.merge_id) return;

@@ -779,6 +779,48 @@ fn added_counts_only_notes_that_came_in() {
 }
 
 #[test]
+fn merge_link_fields_handles_detached_by_markers() {
+    // Case 1: both detached, equal markers, kept unchanged
+    let mut into_1: Map<String, Value> =
+        serde_json::from_value(json!({"detached": true, "detached_by": "hide"})).unwrap();
+    let from_1: Map<String, Value> =
+        serde_json::from_value(json!({"detached": true, "detached_by": "hide"})).unwrap();
+    let kept_1 = merge_link_fields(&mut into_1, &from_1);
+    assert_eq!(
+        into_1.get("detached_by"),
+        Some(&Value::String("hide".into()))
+    );
+    assert_eq!(kept_1, 0);
+
+    // Case 2: both detached, different markers, into's value stays and kept grows by one
+    let mut into_2: Map<String, Value> =
+        serde_json::from_value(json!({"detached": true, "detached_by": "hide"})).unwrap();
+    let from_2: Map<String, Value> =
+        serde_json::from_value(json!({"detached": true, "detached_by": "other"})).unwrap();
+    let kept_2 = merge_link_fields(&mut into_2, &from_2);
+    assert_eq!(
+        into_2.get("detached_by"),
+        Some(&Value::String("hide".into()))
+    );
+    assert_eq!(kept_2, 1);
+
+    // Case 3: both detached, only one side has a marker, result has no detached_by
+    let mut into_3: Map<String, Value> =
+        serde_json::from_value(json!({"detached": true, "detached_by": "hide"})).unwrap();
+    let from_3: Map<String, Value> = serde_json::from_value(json!({"detached": true})).unwrap();
+    let _ = merge_link_fields(&mut into_3, &from_3);
+    assert_eq!(into_3.get("detached_by"), None);
+
+    // Case 4: attached into does not gain detached_by from from, and detached is removed
+    let mut into_4: Map<String, Value> = serde_json::from_value(json!({"role": "member"})).unwrap();
+    let from_4: Map<String, Value> =
+        serde_json::from_value(json!({"detached": true, "detached_by": "hide"})).unwrap();
+    let _ = merge_link_fields(&mut into_4, &from_4);
+    assert_eq!(into_4.get("detached"), None);
+    assert_eq!(into_4.get("detached_by"), None);
+}
+
+#[test]
 fn a_fold_interrupted_after_writing_its_result_heals_on_the_next_run() {
     let journal = Journal::new();
     // The result was written and the old folder not yet removed; the notes

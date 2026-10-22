@@ -169,12 +169,19 @@ pub(crate) fn apply_result_cancellable(
             }
         }
     }
-    let admitted_entity_ids = solstone_core_entity::load_all_journal_entities(journal)
+    let admitted = solstone_core_entity::load_all_journal_entities(journal)
         .map_err(|error| error.to_string())?
         .into_iter()
         .filter(solstone_core_entity::is_admissible_person)
-        .map(|entity| entity.id)
+        .collect::<Vec<_>>();
+    let admitted_entity_ids = admitted
+        .iter()
+        .map(|entity| entity.id.clone())
         .collect::<BTreeSet<_>>();
+    let people = admitted
+        .iter()
+        .map(solstone_core_entity::JournalEntity::resolution_entity)
+        .collect::<Vec<_>>();
     let mut attributed = BTreeSet::new();
     let mut named_speakers = Vec::new();
     let mut sentences = Vec::new();
@@ -201,21 +208,25 @@ pub(crate) fn apply_result_cancellable(
             continue;
         }
         let entity_id = entry.get("entity_id").and_then(Value::as_str);
+        let introduction = entry
+            .get("name")
+            .and_then(Value::as_str)
+            .and_then(|name| introduced(&sentences, name));
+        // An introduction keeps an unresolved name, which names no one, and a
+        // resolved person only when no other admitted person answers to the
+        // name as introduced: "I'm Alex" does not tell two Alexes apart.
         let corroborated = entity_id.is_some_and(|id| attributed.contains(id))
-            || (entity_id.is_none_or(|id| admitted_entity_ids.contains(id))
-                && entry
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .is_some_and(|name| introduced(&sentences, name)))
+            || introduction.is_some_and(|spoken| {
+                entity_id.is_none_or(|id| only_person_answering(&people, &spoken) == Some(id))
+            })
             || name_resolves_to(
                 &SpeakerEvidence {
                     journal,
-                    entities: &entities,
+                    people: &people,
                     facet,
                     day,
                     record_id,
                     names: &named_speakers,
-                    admitted_entity_ids: &admitted_entity_ids,
                 },
                 entity_id,
             )?;
@@ -267,14 +278,16 @@ fn resolved_id(
     Value::Null
 }
 
+/// A segment's named speakers, resolved against every admitted person in the
+/// journal rather than the day's detected entities, so a name that two people
+/// answer to stays ambiguous even when only one of them was detected.
 struct SpeakerEvidence<'a> {
     journal: &'a std::path::Path,
-    entities: &'a [solstone_core_entity::EntityResolutionEntity],
+    people: &'a [solstone_core_entity::EntityResolutionEntity],
     facet: &'a str,
     day: &'a str,
     record_id: &'a str,
     names: &'a [String],
-    admitted_entity_ids: &'a BTreeSet<String>,
 }
 
 fn name_resolves_to(
@@ -285,7 +298,7 @@ fn name_resolves_to(
         let result = solstone_core_entity::record_entity_resolution(
             evidence.journal,
             name,
-            evidence.entities,
+            evidence.people,
             json!({"kind":"facet","facet":evidence.facet}),
             json!({"lane":"talent.participation","facet":evidence.facet,"day":evidence.day,"record_id":evidence.record_id,"field":"speaker.name"}),
             90.0,
@@ -295,12 +308,8 @@ fn name_resolves_to(
         if result.outcome == solstone_core_entity::EntityResolutionOutcome::Ambiguous {
             continue;
         }
-        let resolved_id = resolved_id(&result, evidence.entities);
-        if entity_id.is_some_and(|id| resolved_id.as_str() == Some(id))
-            && resolved_id
-                .as_str()
-                .is_some_and(|id| evidence.admitted_entity_ids.contains(id))
-        {
+        let resolved_id = resolved_id(&result, evidence.people);
+        if entity_id.is_some_and(|id| resolved_id.as_str() == Some(id)) {
             return Ok(true);
         }
     }
@@ -352,26 +361,59 @@ fn named_speakers_for_segment(
         .collect()
 }
 
-/// Whether a sentence introduces `name` explicitly: "I'm Dana", "I am Dana",
-/// "my name is Dana", "this is Dana" or "Dana here", matched on the first name.
-/// Someone who introduces themselves in the activity was there, which is what
-/// a speaker label would otherwise have to show.
-fn introduced(sentences: &[String], name: &str) -> bool {
-    let Some(first) = name
+/// The name as a sentence introduces it explicitly: "I'm Dana", "I am Dana",
+/// "my name is Dana", "this is Dana" or "Dana here". The full name when a
+/// sentence says it, otherwise the first name. Someone who introduces
+/// themselves in the activity was there, which is what a speaker label would
+/// otherwise have to show.
+fn introduced(sentences: &[String], name: &str) -> Option<String> {
+    let words = name
         .split_whitespace()
-        .next()
         .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric()))
-        .filter(|word| word.chars().count() >= 2)
-    else {
-        return false;
-    };
-    let Ok(pattern) = regex::Regex::new(&format!(
-        r"(?i)\b(?:i'?m|i am|my name is|my name's|this is)\s+{first}\b|\b{first}\s+here\b",
-        first = regex::escape(first)
-    )) else {
-        return false;
-    };
-    sentences.iter().any(|sentence| pattern.is_match(sentence))
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    let first = *words.first().filter(|word| word.chars().count() >= 2)?;
+    let full = words.join(" ");
+    [full.as_str(), first]
+        .into_iter()
+        .find(|spoken| {
+            let spoken = spoken
+                .split(' ')
+                .map(regex::escape)
+                .collect::<Vec<_>>()
+                .join(r"\s+");
+            regex::Regex::new(&format!(
+                r"(?i)\b(?:i'?m|i am|my name is|my name's|this is)\s+{spoken}\b|\b{spoken}\s+here\b"
+            ))
+            .is_ok_and(|pattern| sentences.iter().any(|sentence| pattern.is_match(sentence)))
+        })
+        .map(str::to_owned)
+}
+
+/// The one admitted person who answers to a spoken name, if only one does. A
+/// person answers to their name and aliases, and to the first word of each.
+fn only_person_answering<'a>(
+    people: &'a [solstone_core_entity::EntityResolutionEntity],
+    spoken: &str,
+) -> Option<&'a str> {
+    let spoken = spoken.to_lowercase();
+    let mut answering = people.iter().filter(|person| {
+        std::iter::once(&person.name)
+            .chain(&person.aka)
+            .map(|known| known.trim().to_lowercase())
+            .any(|known| {
+                known == spoken
+                    || known.split_whitespace().next().is_some_and(|word| {
+                        word.trim_matches(|c: char| !c.is_alphanumeric()) == spoken
+                    })
+            })
+    });
+    let person = answering.next()?;
+    answering
+        .next()
+        .is_none()
+        .then_some(person.id.as_deref())
+        .flatten()
 }
 
 /// The spoken sentences of a segment's audio transcripts.
@@ -661,6 +703,191 @@ mod tests {
             json!({"name":"Atlas","role":"attendee","source":"voice"}),
         );
         assert_eq!(project["role"], "mentioned");
+    }
+
+    /// Two admitted people answer to "Alex"; only `detected` reached the day's
+    /// detected entities.
+    fn write_alex_fixture(root: &Path, detected: &[&str], labels: Value, speakers: Value) {
+        write_participation_fixture(root, labels, speakers);
+        let people = [
+            json!({"id":"alex-stone","name":"Alex Stone","aka":["Alex"],"type":"Person"}),
+            json!({"id":"alex-reed","name":"Alex Reed","aka":["Alex"],"type":"Person"}),
+        ];
+        let detected_path = root.join(format!("facets/{FACET}/entities/{DAY}.jsonl"));
+        let mut rows = fs::read_to_string(&detected_path).expect("detected entities");
+        for person in people {
+            let id = person["id"].as_str().expect("fixture id");
+            write_json(
+                &root.join(format!("entities/{id}/entity.json")),
+                person.clone(),
+            );
+            if detected.contains(&id) {
+                rows.push_str(&format!("{person}\n"));
+            }
+        }
+        fs::write(detected_path, rows).expect("detected entities");
+    }
+
+    fn alex_stone() -> Value {
+        json!({"name":"Alex Stone","role":"attendee","source":"voice"})
+    }
+
+    #[test]
+    fn a_first_name_two_people_share_does_not_make_either_an_attendee() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_alex_fixture(
+            root.path(),
+            &["alex-stone", "alex-reed"],
+            json!({"labels":[]}),
+            json!(["Alex"]),
+        );
+        write_transcript(
+            root.path(),
+            &["I am Alex. My surname is not stated in this recording."],
+        );
+
+        let entry = apply(root.path(), alex_stone());
+
+        assert_eq!(entry["entity_id"], "alex-stone");
+        assert_eq!(entry["role"], "mentioned");
+    }
+
+    #[test]
+    fn a_shared_speaker_name_stays_ambiguous_when_only_one_was_detected() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_alex_fixture(
+            root.path(),
+            &["alex-stone"],
+            json!({"labels":[]}),
+            json!(["Alex"]),
+        );
+
+        let entry = apply(root.path(), alex_stone());
+
+        assert_eq!(entry["entity_id"], "alex-stone");
+        assert_eq!(entry["role"], "mentioned");
+    }
+
+    #[test]
+    fn evidence_that_tells_the_two_apart_keeps_the_attendee() {
+        let cases = [
+            // The full name, introduced.
+            (json!([]), json!([]), "Hi, I'm Alex Stone from the lab."),
+            // A voice bound to one of them.
+            (
+                json!([{"speaker":"alex-stone"}]),
+                json!(["Alex"]),
+                "I am Alex.",
+            ),
+            // A named speaker only one of them answers to.
+            (json!([]), json!(["Alex Stone"]), "I am Alex."),
+        ];
+        for (labels, speakers, sentence) in cases {
+            let root = tempfile::tempdir().expect("temporary journal");
+            write_alex_fixture(
+                root.path(),
+                &["alex-stone", "alex-reed"],
+                json!({"labels":labels}),
+                speakers,
+            );
+            write_transcript(root.path(), &[sentence]);
+
+            let entry = apply(root.path(), alex_stone());
+
+            assert_eq!(entry["entity_id"], "alex-stone", "{sentence}");
+            assert_eq!(entry["role"], "attendee", "{sentence}");
+        }
+    }
+
+    #[test]
+    fn an_unresolved_shared_name_keeps_its_introduction_and_names_no_one() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_alex_fixture(
+            root.path(),
+            &["alex-stone", "alex-reed"],
+            json!({"labels":[]}),
+            json!([]),
+        );
+        write_transcript(root.path(), &["I am Alex."]);
+
+        let entry = apply(
+            root.path(),
+            json!({"name":"Alex","role":"attendee","source":"voice"}),
+        );
+
+        assert_eq!(entry["entity_id"], Value::Null);
+        assert_eq!(entry["role"], "attendee");
+    }
+
+    #[test]
+    fn a_person_only_talked_about_is_mentioned() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+        write_transcript(
+            root.path(),
+            &["Ada Lovelace was only mentioned. Ada is absent and did not join this call."],
+        );
+
+        let entry = apply(
+            root.path(),
+            json!({"name":"Ada Lovelace","role":"attendee","source":"voice"}),
+        );
+
+        assert_eq!(entry["entity_id"], "person");
+        assert_eq!(entry["role"], "mentioned");
+    }
+
+    #[test]
+    fn a_person_named_in_an_imported_conversation_is_mentioned_and_you_is_dropped() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+        write_json(
+            &root.path().join("config/journal.json"),
+            json!({"identity":{"name":"Jordan Rivers","preferred":"Jordan"}}),
+        );
+        write_json(
+            &root
+                .path()
+                .join(format!("chronicle/{DAY}/{SEGMENT}/talents/sense.json")),
+            json!({"meeting_detected":false}),
+        );
+        write_transcript(
+            root.path(),
+            &[
+                "Please draft the patch.",
+                "I drafted it. Ada was only mentioned and did not join.",
+            ],
+        );
+
+        apply_result(
+            root.path(),
+            &json!({"participation":[
+                {"name":"You","role":"attendee","source":"voice"},
+                {"name":"Ada Lovelace","role":"attendee","source":"voice"},
+            ]})
+            .to_string(),
+            FACET,
+            &solstone_core_facets::observe_facet_write_identity(root.path(), FACET).unwrap(),
+            DAY,
+            &activity(),
+        )
+        .expect("participation applies");
+        let activity_path = root
+            .path()
+            .join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        let activity: Value = serde_json::from_str(
+            fs::read_to_string(activity_path)
+                .expect("activity reads")
+                .lines()
+                .next()
+                .expect("activity row"),
+        )
+        .expect("activity parses");
+
+        assert_eq!(
+            activity["participation"],
+            json!([{"name":"Ada Lovelace","role":"mentioned","source":"voice","entity_id":"person"}])
+        );
     }
 
     #[test]
