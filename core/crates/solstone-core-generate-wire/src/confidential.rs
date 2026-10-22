@@ -2489,11 +2489,16 @@ mod tests {
             assert!(written_str.contains("POST /v1/chat/completions"));
         }
 
-        // 3. No-time-left before the probe stays local_capacity_exhausted
+        // 3. No-time-left before the probe stays local_capacity_exhausted.
+        // The budget must be zero, not merely tiny: a 1ns budget can outlast
+        // the gap between two clock reads on a coarse clock, and then the
+        // probe is legitimately sent. 1e-12s rounds to a zero Duration; 0.0
+        // would mean no timeout was given and fall back to the default.
         {
             let written = Rc::new(RefCell::new(Vec::new()));
             let mut req = request();
-            req.timeout_s = Some(0.000000001);
+            req.timeout_s = Some(1e-12);
+            assert!(crate::transport::request_timeout(req.timeout_s, 0).is_zero());
             let result = confidential_generate_with(
                 ConfidentialCall {
                     request: &req,
