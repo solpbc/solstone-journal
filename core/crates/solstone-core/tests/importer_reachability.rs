@@ -805,9 +805,12 @@ fn text_sources_save_content_the_journal_can_find() {
             "{source}"
         );
 
+        // A calendar event is found on the day it was stored and again on
+        // the day it happens; every other source saves one passage.
+        let finds = if source == "ics" { 2 } else { 1 };
         assert_eq!(
             search_streams(&journal, "lighthouse"),
-            [format!("import.{source}")],
+            vec![format!("import.{source}"); finds],
             "{source}"
         );
     }

@@ -1978,12 +1978,12 @@ fn execute_reviewed_mode(
                         Ok(stage) => stage,
                         Err(failure) => {
                             let staged = failure.owned.as_ref().map(|stage| {
-                                stage
-                                    .diagnostic_path()
-                                    .strip_prefix(root.canonical_path())
-                                    .unwrap_or_else(|_| Path::new(""))
-                                    .to_string_lossy()
-                                    .into_owned()
+                                journal_rel(
+                                    stage
+                                        .diagnostic_path()
+                                        .strip_prefix(root.canonical_path())
+                                        .unwrap_or_else(|_| Path::new("")),
+                                )
                             });
                             let index = execution.stage_failures.len();
                             execution.stage_failures.push(failure);
@@ -2167,11 +2167,11 @@ fn execute_reviewed_mode(
                     .get(*index)
                     .and_then(|f| f.owned.as_ref())
                     .map(|s| {
-                        s.diagnostic_path()
-                            .strip_prefix(root.canonical_path())
-                            .unwrap_or_else(|_| Path::new(""))
-                            .to_string_lossy()
-                            .into_owned()
+                        journal_rel(
+                            s.diagnostic_path()
+                                .strip_prefix(root.canonical_path())
+                                .unwrap_or_else(|_| Path::new("")),
+                        )
                     });
             } else if group.scan.files().iter().any(|f| f.name.as_str() == name) {
                 complete = false;
@@ -2247,12 +2247,20 @@ fn reviewed_not_removed(
 #[cfg(any(unix, windows))]
 fn reviewed_stage_path(removal: &solstone_core_journal_io::media::MediaRemoval) -> Option<String> {
     let stage = removal.stage_observation()?;
-    let mut relative = std::path::PathBuf::new();
-    for part in &stage.parent_relative {
-        relative.push(part);
-    }
-    relative.push(&stage.directory_name);
-    Some(relative.to_string_lossy().into_owned())
+    let mut parts = stage.parent_relative.clone();
+    parts.push(stage.directory_name.clone());
+    Some(parts.join("/"))
+}
+
+// A staged path is a journal coordinate, `/`-separated on every platform as
+// the rest of the retention door writes it; Windows would otherwise spell it
+// with backslashes.
+#[cfg(any(unix, windows))]
+fn journal_rel(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 #[cfg(unix)]
@@ -2565,6 +2573,18 @@ mod tests {
     use crate::marks::{Proposal, RemovalClass, decline, preflight, reconcile};
     use crate::policy::policy_from_retention;
     use serde_json::json;
+
+    #[test]
+    #[cfg(any(unix, windows))]
+    fn staged_paths_are_slash_separated_on_every_platform() {
+        let native = Path::new("20260805")
+            .join("field.audio")
+            .join(".070000_17.removing");
+        assert_eq!(
+            journal_rel(&native),
+            "20260805/field.audio/.070000_17.removing"
+        );
+    }
 
     #[test]
     #[cfg(windows)]

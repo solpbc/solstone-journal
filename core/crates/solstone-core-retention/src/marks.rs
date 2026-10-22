@@ -979,6 +979,70 @@ mod tests {
     }
 
     #[test]
+    fn reconcile_recovered_reads_slash_and_native_staged_paths() {
+        let journal = tempfile::tempdir().unwrap();
+        let recorded = |dir: &str, staged: String| {
+            let target = target("20260805", "field.audio", dir);
+            record_failure(
+                journal.path(),
+                RemovalClass::PolicyRawRelease,
+                &target,
+                &proposal("current").names,
+                Failure {
+                    at: String::new(),
+                    reason: "the staged directory needs recovery".to_owned(),
+                    staged: Some(staged),
+                },
+                Utc::now(),
+            )
+            .unwrap();
+            MarkId::derive(
+                RemovalClass::PolicyRawRelease,
+                &target,
+                &proposal("current").names,
+            )
+        };
+        fs::create_dir_all(
+            journal
+                .path()
+                .join("20260805/field.audio/.present.removing"),
+        )
+        .unwrap();
+        let present = recorded(
+            "070000_17",
+            "20260805/field.audio/.present.removing".to_owned(),
+        );
+        let gone = recorded(
+            "070100_17",
+            "20260805/field.audio/.gone.removing".to_owned(),
+        );
+        // Registers written before staged paths were `/`-separated hold the
+        // host spelling; on Windows that is backslashes.
+        let native_present = recorded(
+            "070200_17",
+            Path::new("20260805")
+                .join("field.audio")
+                .join(".present.removing")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let native_gone = recorded(
+            "070300_17",
+            Path::new("20260805")
+                .join("field.audio")
+                .join(".gone.removing")
+                .to_string_lossy()
+                .into_owned(),
+        );
+
+        let after = reconcile_recovered(journal.path()).unwrap();
+        assert!(after.marks.contains_key(&present));
+        assert!(after.marks.contains_key(&native_present));
+        assert!(!after.marks.contains_key(&gone));
+        assert!(!after.marks.contains_key(&native_gone));
+    }
+
+    #[test]
     fn mark_id_matches_the_committed_golden_vector() {
         let actual = MarkId::derive(
             RemovalClass::PolicyRawRelease,
