@@ -129,7 +129,7 @@ fn install(binaries: &[&str]) -> Install {
     fs::create_dir_all(&bin).expect("create binary directory");
     fs::create_dir_all(root.join("journal")).expect("create journal directory");
     let install = Install {
-        journal: bin.join("journal.exe"),
+        journal: bin.join("solstone-core-journal.exe"),
         root,
         _directory: directory,
     };
