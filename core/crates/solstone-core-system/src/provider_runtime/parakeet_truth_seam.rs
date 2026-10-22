@@ -318,10 +318,34 @@ fn observe_parakeet_truth(
         if let Some(value) = invalid_device {
             eprintln!("{}", invalid_device_warning(&value));
         }
-        let (selected_gpu, auto_without_gpu) = selected_gpu(&config_device, &config.vulkan_devices);
-        if auto_without_gpu {
-            eprintln!("{}", auto_without_gpu_warning());
-        }
+        let override_index = journal_config
+            .get("providers")
+            .and_then(Value::as_object)
+            .and_then(|providers| providers.get("local"))
+            .and_then(Value::as_object)
+            .and_then(|local| local.get("vulkan_device_index"))
+            .and_then(solstone_core_local::vulkan::local_vulkan_device_index);
+
+        let selection = selected_gpu(&config_device, &config.vulkan_devices, override_index);
+        let selected_gpu = match selection {
+            ParakeetGpuSelection::OverrideUnusable => {
+                return attach_pin_follow(ProviderTruthObservation {
+                    provider: ProviderName::Parakeet,
+                    phase: RuntimePhase::HostBlocked,
+                    reason_code: Some(ReasonCode::known("gpu-unavailable")),
+                    desired_fingerprint: None,
+                    has_plan: false,
+                    boot_required: true,
+                    detail: None,
+                });
+            }
+            ParakeetGpuSelection::ExplicitCpu => None,
+            ParakeetGpuSelection::Selected(dev) => Some(dev),
+            ParakeetGpuSelection::AutoWithoutGpu => {
+                eprintln!("{}", auto_without_gpu_warning());
+                None
+            }
+        };
         let (mut backend, mut env_updates, mut gpu_index) =
             resolve_parakeet_backend(&config_device, selected_gpu);
         let mut paths = resolved_parakeet_paths(&config.journal_path, &artifact_key, &backend);
@@ -427,19 +451,39 @@ fn auto_without_gpu_warning() -> &'static str {
 }
 
 #[cfg(not(windows))]
+#[derive(Debug, PartialEq, Eq)]
+enum ParakeetGpuSelection<'a> {
+    ExplicitCpu,
+    Selected(&'a VulkanDevice),
+    AutoWithoutGpu,
+    OverrideUnusable,
+}
+
+#[cfg(not(windows))]
 fn selected_gpu<'a>(
     config_device: &str,
     vulkan_devices: &'a [VulkanDevice],
-) -> (Option<&'a VulkanDevice>, bool) {
+    override_index: Option<u32>,
+) -> ParakeetGpuSelection<'a> {
     if config_device != "auto" {
-        return (None, false);
+        return ParakeetGpuSelection::ExplicitCpu;
     }
-    let selected = select_device(vulkan_devices, None).and_then(|picked| {
-        vulkan_devices
-            .iter()
-            .find(|device| device.index == picked.index)
-    });
-    (selected, selected.is_none())
+    match select_device(vulkan_devices, override_index) {
+        Some(picked) => {
+            let found = vulkan_devices
+                .iter()
+                .find(|device| device.index == picked.index)
+                .expect("select_device picked device from slice");
+            ParakeetGpuSelection::Selected(found)
+        }
+        None => {
+            if override_index.is_some() {
+                ParakeetGpuSelection::OverrideUnusable
+            } else {
+                ParakeetGpuSelection::AutoWithoutGpu
+            }
+        }
+    }
 }
 
 fn build_parakeet_launch_config(
@@ -829,7 +873,10 @@ mod tests {
 
     #[test]
     fn auto_without_gpu_is_marked_for_warning() {
-        assert_eq!(selected_gpu("auto", &[]), (None, true));
+        assert_eq!(
+            selected_gpu("auto", &[], None),
+            ParakeetGpuSelection::AutoWithoutGpu
+        );
         assert_eq!(
             auto_without_gpu_warning(),
             "supervisor: WARN: transcribe.parakeet-cpp.device=\"auto\" has no Vulkan GPU available; falling back to \"cpu\""
@@ -852,10 +899,22 @@ mod tests {
                 vram_mib: 15_876,
             },
         ];
-        let (selected, auto_without) = selected_gpu("auto", &devices);
-        assert_eq!(selected.map(|device| device.index), Some(1));
-        assert!(!auto_without);
-        assert_eq!(selected_gpu("cpu", &devices), (None, false));
+        assert_eq!(
+            selected_gpu("auto", &devices, None),
+            ParakeetGpuSelection::Selected(&devices[1])
+        );
+        assert_eq!(
+            selected_gpu("cpu", &devices, Some(99)),
+            ParakeetGpuSelection::ExplicitCpu
+        );
+        assert_eq!(
+            selected_gpu("auto", &devices, Some(99)),
+            ParakeetGpuSelection::OverrideUnusable
+        );
+        assert_eq!(
+            selected_gpu("auto", &devices, Some(0)),
+            ParakeetGpuSelection::OverrideUnusable
+        );
     }
 
     #[test]
@@ -1011,6 +1070,122 @@ mod tests {
         assert_eq!(vulkan_called, 0);
         assert!(seam.config.vulkan_devices.is_empty());
         assert_eq!(windows_parakeet_placement(), ("cpu", "cpu"));
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn routine_parakeet_truth_observes_configured_gpu_override() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path();
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+
+        let discrete = VulkanDevice {
+            index: 1,
+            name: "RTX 4090".into(),
+            device_type: Some(2),
+            vram_mib: 24576,
+        };
+        let software = VulkanDevice {
+            index: 0,
+            name: "llvmpipe".into(),
+            device_type: Some(4),
+            vram_mib: 1024,
+        };
+
+        // 1. device: "auto", vulkan_device_index: 99, discrete in vulkan_devices
+        // -> HostBlocked / gpu-unavailable / has_plan: false / no launch request
+        std::fs::write(
+            journal.join("config/journal.json"),
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"local": {"vulkan_device_index": 99}}}"#,
+        )
+        .unwrap();
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let config = ParakeetTruthConfig {
+            journal_path: journal.to_path_buf(),
+            platform: "linux".into(),
+            machine: "x86_64".into(),
+            vulkan_devices: vec![discrete.clone()],
+        };
+        let obs = observe_parakeet_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-unavailable")
+        );
+        assert!(!obs.has_plan);
+        assert!(
+            shared
+                .launch_request_for(&obs.desired_fingerprint)
+                .is_none()
+        );
+
+        // 2. device: "auto", override index of an llvmpipe device while another device is discrete hardware
+        std::fs::write(
+            journal.join("config/journal.json"),
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"local": {"vulkan_device_index": 0}}}"#,
+        )
+        .unwrap();
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let config = ParakeetTruthConfig {
+            journal_path: journal.to_path_buf(),
+            platform: "linux".into(),
+            machine: "x86_64".into(),
+            vulkan_devices: vec![software.clone(), discrete.clone()],
+        };
+        let obs = observe_parakeet_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-unavailable")
+        );
+        assert!(!obs.has_plan);
+        assert!(
+            shared
+                .launch_request_for(&obs.desired_fingerprint)
+                .is_none()
+        );
+
+        // 3. device: "cpu" plus vulkan_device_index: 99 and a discrete device
+        // Explicit CPU ignores override; with no CPU binary this is artifact-missing (not gpu-unavailable)
+        std::fs::write(
+            journal.join("config/journal.json"),
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "cpu"}}, "providers": {"local": {"vulkan_device_index": 99}}}"#,
+        )
+        .unwrap();
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let config = ParakeetTruthConfig {
+            journal_path: journal.to_path_buf(),
+            platform: "linux".into(),
+            machine: "x86_64".into(),
+            vulkan_devices: vec![discrete.clone()],
+        };
+        let obs = observe_parakeet_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("artifact-missing")
+        );
+
+        // 4. device: "auto", no override, only llvmpipe
+        // Fallback to CPU ran, missing CPU binary is artifact-missing (not gpu-unavailable)
+        std::fs::write(
+            journal.join("config/journal.json"),
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}}"#,
+        )
+        .unwrap();
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let config = ParakeetTruthConfig {
+            journal_path: journal.to_path_buf(),
+            platform: "linux".into(),
+            machine: "x86_64".into(),
+            vulkan_devices: vec![software],
+        };
+        let obs = observe_parakeet_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("artifact-missing")
+        );
     }
 }
 
@@ -1592,5 +1767,173 @@ mod composition_tests {
             std::fs::read_to_string(status_dir.join("parakeet.json")).expect("read status");
         assert_eq!(read_back, status_content);
         assert!(!status_dir.join("parakeet.lease").exists());
+    }
+
+    fn write_parakeet_model_and_binaries(journal: &Path, write_cpu: bool, write_vulkan: bool) {
+        let key = "x86_64-unknown-linux-gnu";
+        let paths = pins::parakeet_paths(journal, key);
+        let (repo, filename, revision, ..) = pins::PARAKEET_MODEL;
+
+        let model_dir = pins::parakeet_cache_root(journal)
+            .join("models")
+            .join(repo.replace('/', "__"))
+            .join(revision);
+        write_manifest_and_member(
+            &model_dir,
+            "parakeet-model",
+            pins::parakeet_model_identity(),
+            filename,
+            b"model bytes",
+        );
+
+        if write_cpu {
+            let cpu_binary_path = PathBuf::from(paths["binary_path_cpu"].as_str().unwrap());
+            let (_, _, _, cpu_bin_name) = pins::parakeet_backend_pin(key, "cpu").unwrap();
+            write_manifest_and_member(
+                cpu_binary_path.parent().unwrap(),
+                "parakeet-server",
+                pins::parakeet_backend_identity(key, "cpu").unwrap(),
+                cpu_bin_name,
+                b"cpu binary bytes",
+            );
+        }
+
+        if write_vulkan {
+            let vulkan_binary_path = PathBuf::from(paths["binary_path_vulkan"].as_str().unwrap());
+            let (_, _, _, vulkan_bin_name) = pins::parakeet_backend_pin(key, "vulkan").unwrap();
+            write_manifest_and_member(
+                vulkan_binary_path.parent().unwrap(),
+                "parakeet-server",
+                pins::parakeet_backend_identity(key, "vulkan").unwrap(),
+                vulkan_bin_name,
+                b"vulkan binary bytes",
+            );
+        }
+    }
+
+    #[test]
+    fn parakeet_auto_records_configured_vulkan_device() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::write(
+            journal.join("config/journal.json"),
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"local": {"vulkan_device_index": 1}}}"#,
+        )
+        .unwrap();
+
+        write_parakeet_model_and_binaries(journal, true, true);
+
+        let devices = vec![
+            VulkanDevice {
+                index: 0,
+                name: "RTX 3060".into(),
+                device_type: Some(2),
+                vram_mib: 12288,
+            },
+            VulkanDevice {
+                index: 1,
+                name: "RTX 4090".into(),
+                device_type: Some(2),
+                vram_mib: 24576,
+            },
+        ];
+
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let config = ParakeetTruthConfig {
+            journal_path: journal.to_path_buf(),
+            platform: "linux".into(),
+            machine: "x86_64".into(),
+            vulkan_devices: devices,
+        };
+        let obs = observe_parakeet_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::Starting);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-requested")
+        );
+        let launch = shared
+            .launch_request_for(&obs.desired_fingerprint)
+            .expect("launch recorded");
+        assert_eq!(launch.gpu_index, Some(1));
+        assert_eq!(launch.binary_backend, "vulkan");
+        assert_eq!(
+            launch.env_updates.get("GGML_VK_VISIBLE_DEVICES"),
+            Some(&"1".to_string())
+        );
+    }
+
+    #[test]
+    fn parakeet_explicit_cpu_records_cpu_without_visible_devices() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::write(
+            journal.join("config/journal.json"),
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "cpu"}}, "providers": {"local": {"vulkan_device_index": 99}}}"#,
+        )
+        .unwrap();
+
+        write_parakeet_model_and_binaries(journal, true, false);
+
+        let devices = vec![VulkanDevice {
+            index: 0,
+            name: "RTX 4090".into(),
+            device_type: Some(2),
+            vram_mib: 24576,
+        }];
+
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let config = ParakeetTruthConfig {
+            journal_path: journal.to_path_buf(),
+            platform: "linux".into(),
+            machine: "x86_64".into(),
+            vulkan_devices: devices,
+        };
+        let obs = observe_parakeet_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::Starting);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-requested")
+        );
+        let launch = shared
+            .launch_request_for(&obs.desired_fingerprint)
+            .expect("launch recorded");
+        assert_eq!(launch.binary_backend, "cpu");
+        assert_eq!(launch.gpu_index, None);
+        assert!(!launch.env_updates.contains_key("GGML_VK_VISIBLE_DEVICES"));
+    }
+
+    #[test]
+    fn parakeet_auto_without_gpu_records_cpu() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::write(
+            journal.join("config/journal.json"),
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}}"#,
+        )
+        .unwrap();
+
+        write_parakeet_model_and_binaries(journal, true, false);
+
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let config = ParakeetTruthConfig {
+            journal_path: journal.to_path_buf(),
+            platform: "linux".into(),
+            machine: "x86_64".into(),
+            vulkan_devices: Vec::new(),
+        };
+        let obs = observe_parakeet_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::Starting);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-requested")
+        );
+        let launch = shared
+            .launch_request_for(&obs.desired_fingerprint)
+            .expect("launch recorded");
+        assert_eq!(launch.binary_backend, "cpu");
+        assert!(!launch.env_updates.contains_key("GGML_VK_VISIBLE_DEVICES"));
     }
 }

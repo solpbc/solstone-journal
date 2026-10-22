@@ -2366,6 +2366,33 @@ mod tests {
     }
 
     #[test]
+    fn the_connections_card_falls_back_to_entity_registry_name_for_unnamed_edges() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        for (dir, name) in [("me", "Me"), ("nurse_angela", "Nurse Angela")] {
+            write(
+                root.path(),
+                &format!("entities/{dir}/entity.json"),
+                &json!({"id": dir, "name": name}).to_string(),
+            );
+        }
+        let connection = solstone_core_indexer_store::db::open_index(root.path()).unwrap();
+        connection
+            .execute(
+                "INSERT INTO edges(src,dst,kind,directed,src_name,dst_name,day,facet,source,path,anchor,label,ts,weight) VALUES('me','nurse_angela','scheduled-with',0,NULL,NULL,'20260601','work','test','a',NULL,NULL,1,1)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+        let network = load_connections_network(&context, &json!({"id":"me"}))
+            .unwrap()
+            .unwrap();
+        assert_eq!(network.total_neighbors, 1);
+        assert_eq!(network.neighbors[0].entity_id, "nurse_angela");
+        assert_eq!(network.neighbors[0].name.as_deref(), Some("Nurse Angela"));
+    }
+
+    #[test]
     fn awareness_and_connections_readers_keep_absence_nonfatal() {
         let root = TempDir::new().unwrap();
         let context = context(root.path());

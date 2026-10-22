@@ -7,7 +7,7 @@ import FluidAudio
 import InstalledModels
 import Foundation
 
-private let fluidAudioVersion = "0.17.7"
+private let fluidAudioVersion = "0.17.7+sol.1"
 private let defaultModelVersion = "v3"
 
 private struct JSONTokenTiming: Encodable {

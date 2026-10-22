@@ -1179,6 +1179,57 @@ mod tests {
     }
 
     #[test]
+    fn legacy_event_edges_skip_only_unoccurred_schedule_rows() {
+        let root = temp_root("event-plans");
+        write_json(
+            &root,
+            "config/journal.json",
+            json!({"identity":{"timezone":"UTC"}}),
+        );
+        seed_entity(&root, "ada", "Ada Vale");
+        seed_entity(&root, "mina", "Mina Ray");
+        let context = edge_context("facets/work/events/20260416.jsonl", "20260416", "work");
+        let mut resolver = EdgeResolver::new(&root);
+        let entries = [
+            json!({"title":"retired plan","agent":"schedule","occurred":false,"start":"999999999999999999999"}),
+            json!({"title":"timeline history","agent":"timeline","occurred":false}),
+            json!({"title":"flow history","agent":"flow","occurred":false}),
+            json!({"title":"graph history","agent":"knowledge_graph","occurred":false}),
+            json!({"title":"unspecified agent","occurred":false}),
+            json!({"title":"occurred schedule","agent":"schedule","occurred":true}),
+            json!({"title":"unspecified occurrence","agent":"schedule"}),
+            json!({"title":"string occurrence","agent":"schedule","occurred":"false"}),
+        ]
+        .into_iter()
+        .map(|entry| {
+            let mut entry = entry.as_object().unwrap().clone();
+            entry.insert("participants".to_string(), json!(["Ada Vale", "Mina Ray"]));
+            entry
+        })
+        .collect::<Vec<_>>();
+
+        let rows = event::extract_event_edges(&entries, &context, &mut resolver).unwrap();
+        assert_eq!(
+            rows.iter().map(|row| row.label.clone()).collect::<Vec<_>>(),
+            [
+                "timeline history",
+                "flow history",
+                "graph history",
+                "unspecified agent",
+                "occurred schedule",
+                "unspecified occurrence",
+                "string occurrence",
+            ]
+            .map(|label| EdgeValue::Text(label.to_string()))
+        );
+        assert!(rows.iter().all(|row| row.kind == "attended-with"
+            && row.source == "event-legacy"
+            && row.src == "ada"
+            && row.dst == "mina"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn event_edges_use_shared_title_stringification_and_surface_errors() {
         let root = temp_root("event");
         write_json(

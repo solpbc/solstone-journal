@@ -413,6 +413,36 @@ fn native_authority_failure_preserves_the_previous_database_byte_for_byte() {
 }
 
 #[test]
+fn oversized_non_body_import_manifest_does_not_block_native_replay() {
+    let temporary = TempDir::new();
+    let case = native_case();
+    write_native_bundle(temporary.path(), &case);
+    let chat = temporary.path().join("imports/20260731_020241");
+    fs::create_dir_all(&chat).expect("chat import creates");
+    let mut manifest = br#"{"source_type":"chatgpt","files_created":[""#.to_vec();
+    manifest.resize(1_048_577, b'a');
+    manifest.extend_from_slice(br#""]}"#);
+    fs::write(chat.join("manifest.json"), &manifest).expect("oversized manifest writes");
+
+    let report = rebuild_body_store(temporary.path()).expect("rebuild succeeds");
+    assert_eq!(report.native_bundles(), 1);
+    assert_eq!(report.legacy_bundles(), 0);
+    assert_eq!(report.rows(), 1);
+    let rows = sqlite_rows(&temporary.path().join("imports/health-dedupe.sqlite"));
+    assert_eq!(rows[0][0].as_deref(), Some(DEDUPE_KEY));
+
+    let native_manifest = temporary
+        .path()
+        .join("imports")
+        .join(case["directory"].as_str().expect("directory"))
+        .join("manifest.json");
+    fs::write(&native_manifest, &manifest).expect("native manifest replaced");
+    let error = rebuild_body_store(temporary.path()).expect_err("damaged native bundle refuses");
+    assert_eq!(error.kind(), BodyRebuildErrorKind::Authority);
+    assert_eq!(error.stage(), "native_authority");
+}
+
+#[test]
 fn native_raw_retention_shape_is_fail_closed() {
     let retained = TempDir::new();
     let retained_case = native_case();

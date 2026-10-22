@@ -553,6 +553,13 @@ fn observe_truth(
         .filter(|model| !model.trim().is_empty())
         .unwrap_or("local/qwen3.5-4b")
         .to_owned();
+    let override_index = journal_config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("local"))
+        .and_then(Value::as_object)
+        .and_then(|local| local.get("vulkan_device_index"))
+        .and_then(solstone_core_local::vulkan::local_vulkan_device_index);
     // Bundled macOS inference has one shipped model. Read journals written by
     // the retired MLX runtime, but never let their old selection relabel the
     // native 4B artifacts or desired fingerprint.
@@ -576,7 +583,7 @@ fn observe_truth(
         match solstone_core_local::gpu_device_local_verdict(
             config.vulkan.succeeded,
             &config.vulkan.devices,
-            None,
+            override_index,
         ) {
             solstone_core_local::GpuDeviceLocalVerdict::Unknown => {
                 return truth(
@@ -607,7 +614,7 @@ fn observe_truth(
             }
             solstone_core_local::GpuDeviceLocalVerdict::Eligible { .. } => {}
         }
-        let device = solstone_core_local::select_device(&config.vulkan.devices, None)
+        let device = solstone_core_local::select_device(&config.vulkan.devices, override_index)
             .expect("eligible verdict guarantees selected hardware device");
         let pkg = match config.windows_package.clone().map(Ok).unwrap_or_else(
             solstone_core_local::install::windows_engine::verified_windows_llama_package,
@@ -951,7 +958,8 @@ fn observe_truth(
             cuda_persisted_installed_cuda_target: false,
         },
         (LocalHost::Linux, "vulkan") => {
-            let Some(device) = solstone_core_local::select_device(&config.vulkan.devices, None)
+            let Some(device) =
+                solstone_core_local::select_device(&config.vulkan.devices, override_index)
             else {
                 return truth(
                     super::model::RuntimePhase::HostBlocked,
@@ -1919,8 +1927,23 @@ fn warmup_health_probe(port: u16) -> WarmupHealth {
 mod tests {
     use super::*;
     use crate::process::{LaunchAuthority, ProcessObservation};
+    #[cfg(feature = "full-tests")]
+    use crate::provider_runtime::ProviderName;
     use crate::provider_runtime::model::{ProviderFence, ProviderStopCleanupRequest, RuntimePhase};
     use crate::provider_runtime::store::ReadyProcessLookup;
+    use std::path::Path;
+
+    fn make_file_executable(path: &Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o755);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
+    }
     #[cfg(all(test, feature = "full-tests"))]
     struct TestClock {
         now: std::sync::atomic::AtomicU64,
@@ -2764,7 +2787,7 @@ mod tests {
                     devices: vec![hardware.clone()],
                     succeeded: true,
                 },
-                windows_package: None,
+                windows_package: Some(windows_test_package_in_module(root.path())),
             };
             let observation = observe_truth(&shared, &config, None);
             assert_eq!(observation.phase, RuntimePhase::HostBlocked);
@@ -2779,6 +2802,681 @@ mod tests {
                     .is_none()
             );
         }
+    }
+
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    fn write_linux_runtime_tree_in_module(root: &Path) {
+        use solstone_core_local::install::manifest;
+        use solstone_core_local::install::pins;
+        let key = pins::platform_key();
+        let (release, _, _, _) = pins::vulkan_pin(&key).expect("vulkan pin for host platform");
+        let cache = pins::cache_root(root);
+        let runtime = cache.join("bin").join(&key).join(release);
+        let model = cache.join("models/local__qwen3.5-4b");
+        std::fs::create_dir_all(&runtime).expect("runtime directory");
+        std::fs::create_dir_all(&model).expect("model directory");
+        std::fs::write(runtime.join("llama-server"), b"#!/bin/sh\nexit 0\n").expect("runtime");
+        make_file_executable(&runtime.join("llama-server"));
+        std::fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").expect("model");
+        std::fs::write(model.join("mmproj-F16.gguf"), b"projector").expect("projector");
+        let runtime_manifest = manifest::build_manifest(
+            "local",
+            "llama-server-vulkan",
+            "test",
+            json!({"pin_identity": pins::vulkan_identity(&key).unwrap()}),
+            manifest::runtime_inventory(&runtime, &[]).unwrap(),
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(
+            &manifest::artifact_manifest_path(&runtime),
+            &runtime_manifest,
+        )
+        .unwrap();
+        let model_manifest = manifest::build_manifest(
+            "local",
+            "local-model",
+            "test",
+            json!({"pin_identity": pins::model_identity("local/qwen3.5-4b").unwrap()}),
+            manifest::inventory_for_tree(&model, "model").unwrap(),
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(&manifest::artifact_manifest_path(&model), &model_manifest)
+            .unwrap();
+    }
+
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    fn write_linux_cuda_tree_in_module(root: &Path) {
+        use solstone_core_local::install::manifest;
+        use solstone_core_local::install::pins;
+        let key = pins::platform_key();
+        let (_, digest, _) = pins::cuda_pin(&key).expect("cuda pin for host platform");
+        let cache = pins::cache_root(root);
+        let runtime = cache.join("cuda").join(&key).join(digest);
+        let model = cache.join("models/local__qwen3.5-4b");
+        std::fs::create_dir_all(&runtime).expect("cuda runtime directory");
+        std::fs::create_dir_all(&model).expect("model directory");
+        std::fs::write(runtime.join("llama-server"), b"#!/bin/sh\nexit 0\n").expect("runtime");
+        make_file_executable(&runtime.join("llama-server"));
+        std::fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").expect("model");
+        std::fs::write(model.join("mmproj-F16.gguf"), b"projector").expect("projector");
+        let runtime_manifest = manifest::build_manifest(
+            "local",
+            "llama-server-cuda",
+            "test",
+            json!({"pin_identity": pins::cuda_identity(&key).unwrap()}),
+            manifest::runtime_inventory(&runtime, &[]).unwrap(),
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(
+            &manifest::artifact_manifest_path(&runtime),
+            &runtime_manifest,
+        )
+        .unwrap();
+        let model_manifest = manifest::build_manifest(
+            "local",
+            "local-model",
+            "test",
+            json!({"pin_identity": pins::model_identity("local/qwen3.5-4b").unwrap()}),
+            manifest::inventory_for_tree(&model, "model").unwrap(),
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(&manifest::artifact_manifest_path(&model), &model_manifest)
+            .unwrap();
+    }
+
+    fn write_windows_model_tree_in_module(root: &Path) {
+        use solstone_core_local::install::manifest;
+        use solstone_core_local::install::pins;
+        let cache = pins::cache_root(root);
+        let model = cache.join("models/local__qwen3.5-4b");
+        std::fs::create_dir_all(&model).expect("model directory");
+        std::fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").expect("model");
+        std::fs::write(model.join("mmproj-F16.gguf"), b"projector").expect("projector");
+        let model_manifest = manifest::build_manifest(
+            "local",
+            "local-model",
+            "test",
+            json!({"pin_identity": pins::model_identity("local/qwen3.5-4b").unwrap()}),
+            manifest::inventory_for_tree(&model, "model").unwrap(),
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(&manifest::artifact_manifest_path(&model), &model_manifest)
+            .unwrap();
+    }
+
+    fn windows_test_package_in_module(
+        root: &Path,
+    ) -> solstone_core_local::install::windows_engine::WindowsLlamaPackage {
+        let pkg_dir = root.join("pkg");
+        let bin_dir = pkg_dir.join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let engine = bin_dir.join("llama-server.exe");
+        let loader = bin_dir.join("vulkan-1.dll");
+        let probe = bin_dir.join("solstone-vulkan-probe.exe");
+        std::fs::write(&engine, b"engine").unwrap();
+        std::fs::write(&loader, b"loader").unwrap();
+        std::fs::write(&probe, b"probe").unwrap();
+        solstone_core_local::install::windows_engine::WindowsLlamaPackage {
+            architecture: WindowsArchitecture::X86_64,
+            package_root: pkg_dir,
+            engine,
+            loader,
+            probe,
+            engine_sha256: "0".repeat(64),
+            loader_sha256: "1".repeat(64),
+            probe_sha256: "2".repeat(64),
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    fn linux_vulkan_launch_honours_configured_vulkan_device_index() {
+        let root = tempfile::tempdir().unwrap();
+        write_linux_runtime_tree_in_module(root.path());
+        std::fs::create_dir_all(root.path().join("config")).unwrap();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+        )
+        .unwrap();
+
+        let rejection_probe = solstone_core_local::nvidia::NvidiaProbe {
+            schema: "solstone-local-nvidia-probe-v1".into(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("Tesla V100".into()),
+            compute_cap: Some("7.0".into()),
+            arch: Some("sm_70".into()),
+            driver_cuda_major: Some(12),
+            vram_mib: Some(16384),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+
+        let devices = vec![
+            solstone_core_local::VulkanDevice {
+                index: 0,
+                name: "default-discrete".into(),
+                device_type: Some(2),
+                vram_mib: 8192,
+            },
+            solstone_core_local::VulkanDevice {
+                index: 1,
+                name: "configured-discrete".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+        ];
+
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Linux,
+            arch: "x86_64",
+            nvidia_probe: Some(rejection_probe),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices,
+                succeeded: true,
+            },
+            windows_package: None,
+        };
+
+        let obs = observe_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::Starting);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-requested")
+        );
+        assert!(obs.has_plan);
+
+        let launch = shared
+            .launch_request_for(&obs.desired_fingerprint)
+            .expect("launch requested");
+        match &launch {
+            LocalLaunchConfig::Vulkan {
+                selected_gpu_index,
+                selected_gpu_name,
+                selected_vram_mib,
+                ..
+            } => {
+                assert_eq!(*selected_gpu_index, 1);
+                assert_eq!(selected_gpu_name, "configured-discrete");
+                assert_eq!(*selected_vram_mib, 4096);
+            }
+            _ => panic!("expected vulkan launch config"),
+        }
+
+        let state = ProviderRuntimeState::new(ProviderName::Local);
+        let plan_input = launch.assemble_plan_input(&state, 8080);
+        let plan = match solstone_core_local::plan(plan_input) {
+            solstone_core_local::PlanOutcome::Launch(p) => p,
+            solstone_core_local::PlanOutcome::Rejected { reason } => {
+                panic!("plan rejected: {reason}")
+            }
+        };
+        assert_eq!(
+            plan.visible_devices_env_name.as_deref(),
+            Some("GGML_VK_VISIBLE_DEVICES")
+        );
+        assert_eq!(plan.visible_devices_env_value.as_deref(), Some("1"));
+        assert!(plan.argv.iter().any(|arg| arg.contains("Vulkan0")));
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    fn linux_vulkan_launch_fails_closed_on_unusable_overrides() {
+        let root = tempfile::tempdir().unwrap();
+        write_linux_runtime_tree_in_module(root.path());
+        std::fs::create_dir_all(root.path().join("config")).unwrap();
+
+        let rejection_probe = solstone_core_local::nvidia::NvidiaProbe {
+            schema: "solstone-local-nvidia-probe-v1".into(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("Tesla V100".into()),
+            compute_cap: Some("7.0".into()),
+            arch: Some("sm_70".into()),
+            driver_cuda_major: Some(12),
+            vram_mib: Some(16384),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+
+        // 1. vulkan_device_index: 99 (no such device), devices include eligible discrete
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 99}}}).to_string(),
+        )
+        .unwrap();
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Linux,
+            arch: "x86_64",
+            nvidia_probe: Some(rejection_probe.clone()),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "default-discrete".into(),
+                    device_type: Some(2),
+                    vram_mib: 8192,
+                }],
+                succeeded: true,
+            },
+            windows_package: None,
+        };
+        let obs = observe_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-unavailable")
+        );
+        assert!(!obs.has_plan);
+        assert!(
+            shared
+                .launch_request_for(&obs.desired_fingerprint)
+                .is_none()
+        );
+
+        // 2. vulkan_device_index: 0 where index 0 is llvmpipe and index 1 is discrete
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 0}}}).to_string(),
+        )
+        .unwrap();
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Linux,
+            arch: "x86_64",
+            nvidia_probe: Some(rejection_probe),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices: vec![
+                    solstone_core_local::VulkanDevice {
+                        index: 0,
+                        name: "llvmpipe (LLVM 19.1.7)".into(),
+                        device_type: Some(4),
+                        vram_mib: 1024,
+                    },
+                    solstone_core_local::VulkanDevice {
+                        index: 1,
+                        name: "default-discrete".into(),
+                        device_type: Some(2),
+                        vram_mib: 8192,
+                    },
+                ],
+                succeeded: true,
+            },
+            windows_package: None,
+        };
+        let obs = observe_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-unavailable")
+        );
+        assert!(!obs.has_plan);
+        assert!(
+            shared
+                .launch_request_for(&obs.desired_fingerprint)
+                .is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    fn linux_vulkan_launch_no_override_prefers_discrete_over_software() {
+        let root = tempfile::tempdir().unwrap();
+        write_linux_runtime_tree_in_module(root.path());
+        std::fs::create_dir_all(root.path().join("config")).unwrap();
+        std::fs::write(root.path().join("config/journal.json"), b"{}").unwrap();
+
+        let rejection_probe = solstone_core_local::nvidia::NvidiaProbe {
+            schema: "solstone-local-nvidia-probe-v1".into(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("Tesla V100".into()),
+            compute_cap: Some("7.0".into()),
+            arch: Some("sm_70".into()),
+            driver_cuda_major: Some(12),
+            vram_mib: Some(16384),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Linux,
+            arch: "x86_64",
+            nvidia_probe: Some(rejection_probe),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices: vec![
+                    solstone_core_local::VulkanDevice {
+                        index: 0,
+                        name: "llvmpipe (LLVM 19.1.7)".into(),
+                        device_type: Some(4),
+                        vram_mib: 1024,
+                    },
+                    solstone_core_local::VulkanDevice {
+                        index: 1,
+                        name: "configured-discrete".into(),
+                        device_type: Some(2),
+                        vram_mib: 8192,
+                    },
+                ],
+                succeeded: true,
+            },
+            windows_package: None,
+        };
+
+        let obs = observe_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::Starting);
+        let launch = shared
+            .launch_request_for(&obs.desired_fingerprint)
+            .expect("launch requested");
+        match &launch {
+            LocalLaunchConfig::Vulkan {
+                selected_gpu_index,
+                selected_gpu_name,
+                ..
+            } => {
+                assert_eq!(*selected_gpu_index, 1);
+                assert_eq!(selected_gpu_name, "configured-discrete");
+            }
+            _ => panic!("expected vulkan launch config"),
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    fn linux_cuda_launch_ignores_configured_vulkan_device_index() {
+        let root = tempfile::tempdir().unwrap();
+        write_linux_cuda_tree_in_module(root.path());
+        std::fs::create_dir_all(root.path().join("config")).unwrap();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+        )
+        .unwrap();
+
+        let qualifying_cuda_probe = solstone_core_local::nvidia::NvidiaProbe {
+            schema: "solstone-local-nvidia-probe-v1".into(),
+            detected: true,
+            gpu_index: Some(2),
+            gpu_name: Some("RTX 4090".into()),
+            compute_cap: Some("8.9".into()),
+            arch: Some("sm_89".into()),
+            driver_cuda_major: Some(13),
+            vram_mib: Some(8192),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Linux,
+            arch: "x86_64",
+            nvidia_probe: Some(qualifying_cuda_probe),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices: vec![
+                    solstone_core_local::VulkanDevice {
+                        index: 0,
+                        name: "default-discrete".into(),
+                        device_type: Some(2),
+                        vram_mib: 8192,
+                    },
+                    solstone_core_local::VulkanDevice {
+                        index: 1,
+                        name: "configured-discrete".into(),
+                        device_type: Some(2),
+                        vram_mib: 24576,
+                    },
+                ],
+                succeeded: true,
+            },
+            windows_package: None,
+        };
+
+        let obs = observe_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::Starting);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-requested")
+        );
+        assert!(obs.has_plan);
+
+        let launch = shared
+            .launch_request_for(&obs.desired_fingerprint)
+            .expect("launch requested");
+        match &launch {
+            LocalLaunchConfig::Cuda { .. } => {}
+            _ => panic!("expected cuda launch config, not vulkan"),
+        }
+
+        let state = ProviderRuntimeState::new(ProviderName::Local);
+        let plan_input = launch.assemble_plan_input(&state, 8080);
+        let plan = match solstone_core_local::plan(plan_input) {
+            solstone_core_local::PlanOutcome::Launch(p) => p,
+            solstone_core_local::PlanOutcome::Rejected { reason } => {
+                panic!("plan rejected: {reason}")
+            }
+        };
+        assert_eq!(
+            plan.visible_devices_env_name.as_deref(),
+            Some("CUDA_VISIBLE_DEVICES")
+        );
+        assert_eq!(plan.visible_devices_env_value.as_deref(), Some("2"));
+        assert_ne!(
+            plan.visible_devices_env_name.as_deref(),
+            Some("GGML_VK_VISIBLE_DEVICES")
+        );
+        assert!(plan.argv.iter().any(|arg| arg.contains("CUDA0")));
+        assert!(!plan.argv.iter().any(|arg| arg.contains("Vulkan0")));
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_launch_refusals_and_override() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("config")).unwrap();
+
+        // 1. vulkan.succeeded: false plus an override that would also be unusable -> gpu-probe-failed
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 99}}}).to_string(),
+        )
+        .unwrap();
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices: Vec::new(),
+                succeeded: false,
+            },
+            windows_package: None,
+        };
+        let obs = observe_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-probe-failed")
+        );
+        assert!(
+            shared
+                .launch_request_for(&obs.desired_fingerprint)
+                .is_none()
+        );
+
+        // 2. Eligible device at index 0 and vulkan_device_index: 99 -> gpu-unavailable
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX 4090".into(),
+                    device_type: Some(2),
+                    vram_mib: 24576,
+                }],
+                succeeded: true,
+            },
+            windows_package: None,
+        };
+        let obs = observe_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-unavailable")
+        );
+        assert!(
+            shared
+                .launch_request_for(&obs.desired_fingerprint)
+                .is_none()
+        );
+
+        // 3. Below-bar on the override device (4096) -> gpu-memory-insufficient
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+        )
+        .unwrap();
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices: vec![
+                    solstone_core_local::VulkanDevice {
+                        index: 0,
+                        name: "RTX 4090".into(),
+                        device_type: Some(2),
+                        vram_mib: 24576,
+                    },
+                    solstone_core_local::VulkanDevice {
+                        index: 1,
+                        name: "RTX 3050".into(),
+                        device_type: Some(2),
+                        vram_mib: 4096,
+                    },
+                ],
+                succeeded: true,
+            },
+            windows_package: None,
+        };
+        let obs = observe_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("gpu-memory-insufficient")
+        );
+        assert!(
+            shared
+                .launch_request_for(&obs.desired_fingerprint)
+                .is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_launch_records_configured_vulkan_device_index() {
+        let root = tempfile::tempdir().unwrap();
+        write_windows_model_tree_in_module(root.path());
+        std::fs::create_dir_all(root.path().join("config")).unwrap();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+        )
+        .unwrap();
+
+        let pkg = windows_test_package_in_module(root.path());
+
+        let devices = vec![
+            solstone_core_local::VulkanDevice {
+                index: 0,
+                name: "default-discrete".into(),
+                device_type: Some(2),
+                vram_mib: 8192,
+            },
+            solstone_core_local::VulkanDevice {
+                index: 1,
+                name: "configured-discrete".into(),
+                device_type: Some(2),
+                vram_mib: 8192,
+            },
+        ];
+
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Windows,
+            arch: "x86_64",
+            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices,
+                succeeded: true,
+            },
+            windows_package: Some(pkg),
+        };
+
+        let obs = observe_truth(&shared, &config, None);
+        assert_eq!(obs.phase, RuntimePhase::Starting);
+        assert_eq!(
+            obs.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-requested")
+        );
+        assert!(obs.has_plan);
+
+        let launch = shared
+            .launch_request_for(&obs.desired_fingerprint)
+            .expect("launch requested");
+        match &launch {
+            LocalLaunchConfig::Vulkan {
+                selected_gpu_index,
+                selected_gpu_name,
+                selected_vram_mib,
+                ..
+            } => {
+                assert_eq!(*selected_gpu_index, 1);
+                assert_eq!(selected_gpu_name, "configured-discrete");
+                assert_eq!(*selected_vram_mib, 8192);
+            }
+            _ => panic!("expected vulkan launch config"),
+        }
+
+        let state = ProviderRuntimeState::new(ProviderName::Local);
+        let plan_input = launch.assemble_plan_input(&state, 8080);
+        let plan = match solstone_core_local::plan(plan_input) {
+            solstone_core_local::PlanOutcome::Launch(p) => p,
+            solstone_core_local::PlanOutcome::Rejected { reason } => {
+                panic!("plan rejected: {reason}")
+            }
+        };
+        assert_eq!(
+            plan.visible_devices_env_name.as_deref(),
+            Some("GGML_VK_VISIBLE_DEVICES")
+        );
+        assert_eq!(plan.visible_devices_env_value.as_deref(), Some("1"));
+        assert!(plan.argv.iter().any(|arg| arg.contains("Vulkan0")));
     }
 
     #[test]
@@ -3098,5 +3796,135 @@ mod tests {
             );
             peer.join().unwrap();
         }
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn windows_prespawn_rejects_override_device_identity_change() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let (mut launch, fence, state) = sample_windows_launch_fixture(root.path());
+        if let LocalLaunchConfig::Vulkan {
+            ref mut selected_gpu_index,
+            ref mut selected_gpu_name,
+            ref mut selected_vram_mib,
+            ref mut devices,
+            ..
+        } = launch
+        {
+            *selected_gpu_index = 1;
+            *selected_gpu_name = "configured-discrete".into();
+            *selected_vram_mib = 8192;
+            *devices = vec![
+                solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "default-discrete".into(),
+                    device_type: Some(2),
+                    vram_mib: 8192,
+                },
+                solstone_core_local::VulkanDevice {
+                    index: 1,
+                    name: "configured-discrete".into(),
+                    device_type: Some(2),
+                    vram_mib: 8192,
+                },
+            ];
+        }
+        let shared = LocalRuntimeShared::default();
+        let clock = TestClock::default();
+
+        // 1. Re-observation changes the override device's name (index 0 stays eligible)
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![
+                    solstone_core_local::VulkanDevice {
+                        index: 0,
+                        name: "default-discrete".into(),
+                        device_type: Some(2),
+                        vram_mib: 8192,
+                    },
+                    solstone_core_local::VulkanDevice {
+                        index: 1,
+                        name: "changed-name".into(),
+                        device_type: Some(2),
+                        vram_mib: 8192,
+                    },
+                ],
+                succeeded: true,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(move |_| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(LaunchAuthority::scripted(
+                    9998,
+                    Box::new(|| Ok(Some(0))),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: Some(Box::new(|_, _| WarmupHealth::Loading)),
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // 2. Re-observation drops the override device's memory while index 0 stays eligible
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![
+                    solstone_core_local::VulkanDevice {
+                        index: 0,
+                        name: "default-discrete".into(),
+                        device_type: Some(2),
+                        vram_mib: 8192,
+                    },
+                    solstone_core_local::VulkanDevice {
+                        index: 1,
+                        name: "configured-discrete".into(),
+                        device_type: Some(2),
+                        vram_mib: 4096, // below floor
+                    },
+                ],
+                succeeded: true,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(move |_| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(LaunchAuthority::scripted(
+                    9998,
+                    Box::new(|| Ok(Some(0))),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: Some(Box::new(|_, _| WarmupHealth::Loading)),
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::HostBlocked);
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }

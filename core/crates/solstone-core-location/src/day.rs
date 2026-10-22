@@ -11,7 +11,9 @@
 //!   first and last reading; they are not a claim about time spent anywhere.
 //! - **visits** are the ones an iPhone reported. A visit the phone delivered
 //!   more than once counts once, and its ends stay unknown when the phone did
-//!   not know them.
+//!   not know them. The phone reports a visit first on arrival and again,
+//!   complete, when the owner leaves, and the complete report lands on the day
+//!   of leaving, so a day also looks at the next day for it.
 //! - **notes** say what could not be read.
 
 use std::collections::BTreeMap;
@@ -31,6 +33,11 @@ use crate::stay::{Sample, find_stays};
 pub const LOCATION_FILE: &str = "location.jsonl";
 /// Readings further apart than this start a new run even in the same area.
 const RUN_BREAK_SECONDS: i64 = 60 * 60;
+/// A complete report is the arrival-only one again when it comes from the same
+/// device, arrived no earlier and at most this much later, and within
+/// [`TWIN_DISTANCE_M`]: the phone refines both when it reports the departure.
+const TWIN_ARRIVAL_SECONDS: i64 = 3 * 60;
+const TWIN_DISTANCE_M: f64 = 300.0;
 
 /// Whether a stream directory is the direct layout or a named stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -378,6 +385,168 @@ pub fn read_day(
     directory: &dyn DeviceDirectory,
     owner: Tz,
 ) -> DayLocation {
+    read_days(journal, &[day.to_owned()], tier, packs, directory, owner)
+        .pop()
+        .unwrap_or_default()
+}
+
+/// Assemble several days, each read once. A day still holding an arrival-only
+/// visit is completed from the day after it: the one listed next when it is
+/// the following day, else that day read on its own.
+pub fn read_days(
+    journal: &Path,
+    days: &[String],
+    tier: &AreaTier,
+    packs: Option<&Packs>,
+    directory: &dyn DeviceDirectory,
+    owner: Tz,
+) -> Vec<DayLocation> {
+    let read = |day: &str| {
+        let (located_segments, files) = read_segments(journal, day, directory);
+        assemble(day, located_segments, files, tier, packs, directory, owner)
+    };
+    let mut views: Vec<DayLocation> = days.iter().map(|day| read(day)).collect();
+    for index in 0..views.len() {
+        if !views[index]
+            .entries
+            .iter()
+            .any(|entry| arrival_only(entry).is_some())
+        {
+            continue;
+        }
+        let Some(next) = chrono::NaiveDate::parse_from_str(&views[index].day, "%Y%m%d")
+            .ok()
+            .and_then(|date| date.succ_opt())
+            .map(|date| date.format("%Y%m%d").to_string())
+        else {
+            continue;
+        };
+        let (head, tail) = views.split_at_mut(index + 1);
+        match tail.first() {
+            Some(later) if later.day == next => complete_from(&mut head[index], later),
+            _ => complete_from(&mut head[index], &read(&next)),
+        }
+    }
+    views
+}
+
+/// The arrival and position of a visit the phone has reported only on arrival.
+fn arrival_only(entry: &Entry) -> Option<(usize, DateTime<Utc>, Point)> {
+    match entry {
+        Entry::Visit {
+            device,
+            arrival: Some(arrival),
+            departure: None,
+            point,
+            ..
+        } => Some((*device, arrival.utc, *point)),
+        _ => None,
+    }
+}
+
+/// Whether `entry` is the complete report of an arrival-only visit.
+fn completes(entry: &Entry, arrived: DateTime<Utc>, at: &Point) -> bool {
+    let Entry::Visit {
+        arrival: Some(arrival),
+        departure: Some(_),
+        point,
+        ..
+    } = entry
+    else {
+        return false;
+    };
+    let later = (arrival.utc - arrived).num_seconds();
+    (0..=TWIN_ARRIVAL_SECONDS).contains(&later)
+        && crate::pack::distance_m(at.latitude, at.longitude, point.latitude, point.longitude)
+            <= TWIN_DISTANCE_M
+}
+
+fn add_sources(into: &mut Vec<SourceRef>, from: &[SourceRef]) {
+    for source in from {
+        match into.iter_mut().find(|existing| {
+            existing.day == source.day
+                && existing.stream == source.stream
+                && existing.segment == source.segment
+                && existing.layout == source.layout
+        }) {
+            Some(existing) => {
+                for line in &source.lines {
+                    if !existing.lines.contains(line) {
+                        existing.lines.push(*line);
+                    }
+                }
+                existing.lines.sort_unstable();
+            }
+            None => into.push(source.clone()),
+        }
+    }
+    into.sort();
+}
+
+/// Replace each arrival-only visit whose complete report landed on the next
+/// day with that report. The complete report wins; the row keeps both sources,
+/// and a second arrival-only report of the same visit joins that row.
+fn complete_from(view: &mut DayLocation, later: &DayLocation) {
+    let mut taken: Vec<(usize, usize)> = Vec::new();
+    let mut index = 0;
+    while index < view.entries.len() {
+        let Some((device, arrived, at)) = arrival_only(&view.entries[index]) else {
+            index += 1;
+            continue;
+        };
+        let key = &view.devices[device].key;
+        let Some(found) = later.entries.iter().position(|entry| {
+            matches!(entry, Entry::Visit { device: other, .. } if &later.devices[*other].key == key)
+                && completes(entry, arrived, &at)
+        }) else {
+            index += 1;
+            continue;
+        };
+        if let Some(&(_, row)) = taken.iter().find(|(twin, _)| *twin == found) {
+            let orphan = view.entries.remove(index);
+            let row = if row > index { row - 1 } else { row };
+            if let Entry::Visit { sources, .. } = &mut view.entries[row] {
+                add_sources(sources, orphan.sources());
+            }
+            view.devices[device].visits = view.devices[device].visits.saturating_sub(1);
+            for (_, other) in &mut taken {
+                if *other > index {
+                    *other -= 1;
+                }
+            }
+            continue;
+        }
+        let mut twin = later.entries[found].clone();
+        if let Entry::Visit {
+            device: twin_device,
+            sources,
+            ..
+        } = &mut twin
+        {
+            *twin_device = device;
+            add_sources(sources, view.entries[index].sources());
+        }
+        view.entries[index] = twin;
+        taken.push((found, index));
+        index += 1;
+    }
+    sort_entries(&mut view.entries);
+}
+
+fn sort_entries(entries: &mut [Entry]) {
+    entries.sort_by(|a, b| match (a.sort_time(), b.sort_time()) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (Some(_), None) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+}
+
+fn read_segments(
+    journal: &Path,
+    day: &str,
+    directory: &dyn DeviceDirectory,
+) -> (Vec<LocatedSegment>, Vec<(SegmentFile, SegmentContext)>) {
     let segments = iter_segments(journal, PathOrDay::Day(day)).unwrap_or_default();
     let mut located_segments = Vec::new();
     let mut files = Vec::new();
@@ -394,7 +563,7 @@ pub fn read_day(
         located_segments.push(segment);
         files.push((file, context));
     }
-    assemble(day, located_segments, files, tier, packs, directory, owner)
+    (located_segments, files)
 }
 
 fn assemble(
@@ -615,10 +784,32 @@ fn assemble(
     }
     for key in order {
         if let Some(entry) = merged.remove(&key) {
-            if let Entry::Visit { device, .. } = &entry {
-                devices[*device].visits += 1;
-            }
             visit_entries.push(entry);
+        }
+    }
+    // The complete report usually differs a little from the arrival-only one:
+    // the phone refines the arrival and the position when it reports leaving.
+    // The complete report wins and keeps the arrival-only report's lines.
+    let mut index = 0;
+    while index < visit_entries.len() {
+        if let Some((device, arrived, at)) = arrival_only(&visit_entries[index])
+            && let Some(twin) = visit_entries.iter().position(|entry| {
+                matches!(entry, Entry::Visit { device: other, .. } if *other == device)
+                    && completes(entry, arrived, &at)
+            })
+        {
+            let orphan = visit_entries.remove(index);
+            let twin = if twin > index { twin - 1 } else { twin };
+            if let Entry::Visit { sources, .. } = &mut visit_entries[twin] {
+                add_sources(sources, orphan.sources());
+            }
+            continue;
+        }
+        index += 1;
+    }
+    for entry in &visit_entries {
+        if let Entry::Visit { device, .. } = entry {
+            devices[*device].visits += 1;
         }
     }
 
@@ -794,12 +985,7 @@ fn assemble(
     entries.extend(visit_entries);
     entries.extend(stay_entries);
     entries.extend(unreadable);
-    entries.sort_by(|a, b| match (a.sort_time(), b.sort_time()) {
-        (Some(left), Some(right)) => left.cmp(&right),
-        (None, Some(_)) => std::cmp::Ordering::Less,
-        (Some(_), None) => std::cmp::Ordering::Greater,
-        (None, None) => std::cmp::Ordering::Equal,
-    });
+    sort_entries(&mut entries);
     for entry in &mut entries {
         let (Entry::Readings { sources, .. }
         | Entry::Visit { sources, .. }
@@ -1039,6 +1225,246 @@ pub(crate) mod tests {
                 ..
             }
         )));
+    }
+
+    fn visit(arrival: &str, departure: Option<&str>, lat: f64, lon: f64) -> String {
+        let departure = departure.map_or_else(|| "null".to_owned(), |d| format!("\"{d}\""));
+        format!(
+            r#"{{"arrival":"{arrival}","departure":{departure},"h_acc":40,"lat":{lat},"lon":{lon},"schema":"solstone.location.visit/1"}}"#
+        )
+    }
+
+    fn visits_of(day: &DayLocation) -> Vec<(Option<String>, Option<String>, usize)> {
+        day.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                Entry::Visit {
+                    arrival,
+                    departure,
+                    sources,
+                    ..
+                } => Some((
+                    arrival.map(|time| time.clock()),
+                    departure.map(|time| time.clock()),
+                    sources.len(),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_complete_report_the_phone_refined_replaces_its_arrival_only_report() {
+        let root = tempfile::tempdir().unwrap();
+        let header = iphone_header("full", "light");
+        // Arrival-only at 08:58, then the complete report: arrival two minutes
+        // later and about 100 m away. A third arrival, in Golden, has no twin.
+        write(
+            root.path(),
+            "20261001",
+            "phone_mobile-segment",
+            "090000_300",
+            &format!(
+                "{header}\n{}\n",
+                visit("2026-10-01T14:58:00Z", None, 39.7527, -105.0001)
+            ),
+        );
+        write(
+            root.path(),
+            "20261001",
+            "phone_mobile-segment",
+            "120500_300",
+            &format!(
+                "{header}\n{}\n",
+                visit(
+                    "2026-10-01T15:00:00Z",
+                    Some("2026-10-01T18:06:00Z"),
+                    39.7536,
+                    -105.0001
+                )
+            ),
+        );
+        write(
+            root.path(),
+            "20261001",
+            "phone_mobile-segment",
+            "183000_300",
+            &format!(
+                "{header}\n{}\n",
+                visit("2026-10-02T00:30:00Z", None, 39.7555, -105.2211)
+            ),
+        );
+        let day = day_of(root.path());
+        assert_eq!(
+            visits_of(&day),
+            vec![
+                (Some("09:00".to_owned()), Some("12:06".to_owned()), 2),
+                (Some("18:30".to_owned()), None, 1),
+            ]
+        );
+        assert_eq!(day.visits(), 2);
+    }
+
+    #[test]
+    fn a_visit_completed_after_midnight_shows_once_with_its_departure() {
+        let root = tempfile::tempdir().unwrap();
+        let header = iphone_header("full", "light");
+        // Arrived 21:10 on October 1; the complete report lands on October 2,
+        // the day of leaving, with the arrival a minute later.
+        write(
+            root.path(),
+            "20261001",
+            "phone_mobile-segment",
+            "211000_300",
+            &format!(
+                "{header}\n{}\n",
+                visit("2026-10-02T03:10:00Z", None, 39.7527, -105.0001)
+            ),
+        );
+        write(
+            root.path(),
+            "20261002",
+            "phone_mobile-segment",
+            "080000_300",
+            &format!(
+                "{header}\n{}\n",
+                visit(
+                    "2026-10-02T03:11:00Z",
+                    Some("2026-10-02T14:00:00Z"),
+                    39.7528,
+                    -105.0002
+                )
+            ),
+        );
+        let first = day_of(root.path());
+        assert_eq!(
+            visits_of(&first),
+            vec![(Some("21:11".to_owned()), Some("08:00".to_owned()), 2)]
+        );
+        let Some(Entry::Visit {
+            departure: Some(departure),
+            sources,
+            ..
+        }) = first
+            .entries
+            .iter()
+            .find(|entry| matches!(entry, Entry::Visit { .. }))
+        else {
+            panic!("expected a visit");
+        };
+        assert_eq!(departure.day(), "20261002");
+        assert_eq!(
+            sources.iter().map(|s| s.day.as_str()).collect::<Vec<_>>(),
+            vec!["20261001", "20261002"]
+        );
+        let second = read_day(
+            root.path(),
+            "20261002",
+            tier(),
+            None,
+            &directory(),
+            chrono_tz::America::Denver,
+        );
+        assert_eq!(
+            visits_of(&second),
+            vec![(Some("21:11".to_owned()), Some("08:00".to_owned()), 1)]
+        );
+    }
+
+    #[test]
+    fn two_arrival_reports_completed_the_next_day_make_one_visit() {
+        let root = tempfile::tempdir().unwrap();
+        let header = iphone_header("full", "light");
+        write(
+            root.path(),
+            "20261001",
+            "phone_mobile-segment",
+            "211000_300",
+            &format!(
+                "{header}\n{}\n{}\n",
+                visit("2026-10-02T03:10:00Z", None, 39.7527, -105.0001),
+                visit("2026-10-02T03:12:00Z", None, 39.7529, -105.0001)
+            ),
+        );
+        write(
+            root.path(),
+            "20261002",
+            "phone_mobile-segment",
+            "080000_300",
+            &format!(
+                "{header}\n{}\n",
+                visit(
+                    "2026-10-02T03:12:00Z",
+                    Some("2026-10-02T14:00:00Z"),
+                    39.7528,
+                    -105.0002
+                )
+            ),
+        );
+        let day = day_of(root.path());
+        assert_eq!(
+            visits_of(&day),
+            vec![(Some("21:12".to_owned()), Some("08:00".to_owned()), 2)]
+        );
+        assert_eq!(day.visits(), 1);
+        let Some(Entry::Visit { sources, .. }) = day
+            .entries
+            .iter()
+            .find(|entry| matches!(entry, Entry::Visit { .. }))
+        else {
+            panic!("expected a visit");
+        };
+        assert_eq!(sources[0].lines, vec![1, 2]);
+    }
+
+    #[test]
+    fn another_devices_complete_report_is_not_a_twin() {
+        let root = tempfile::tempdir().unwrap();
+        let header = iphone_header("full", "light");
+        let directory = directory();
+        directory.contexts.borrow_mut().insert(
+            "ipad_mobile-segment".to_owned(),
+            SegmentContext {
+                cid: Some("sha256:ipad".to_owned()),
+                platform: Some("ios".to_owned()),
+                tz: Some("America/Denver".to_owned()),
+                utc_offset_seconds: Some(-6 * 3600),
+            },
+        );
+        write(
+            root.path(),
+            "20261001",
+            "phone_mobile-segment",
+            "090000_300",
+            &format!(
+                "{header}\n{}\n",
+                visit("2026-10-01T14:58:00Z", None, 39.7527, -105.0001)
+            ),
+        );
+        write(
+            root.path(),
+            "20261001",
+            "ipad_mobile-segment",
+            "120500_300",
+            &format!(
+                "{header}\n{}\n",
+                visit(
+                    "2026-10-01T14:59:00Z",
+                    Some("2026-10-01T18:06:00Z"),
+                    39.7527,
+                    -105.0001
+                )
+            ),
+        );
+        let day = read_day(
+            root.path(),
+            "20261001",
+            tier(),
+            None,
+            &directory,
+            chrono_tz::America::Denver,
+        );
+        assert_eq!(day.visits(), 2);
     }
 
     #[test]

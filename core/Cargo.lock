@@ -4739,8 +4739,10 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-distribution",
  "solstone-core-installed-payload",
+ "solstone-core-journal-config",
  "solstone-core-local",
  "solstone-core-system",
+ "tempfile",
 ]
 
 [[package]]

@@ -1317,6 +1317,7 @@
   function connectionEvidenceHtml(neighbor, name) {
     const label = typeof neighbor.latest_label === 'string' ? neighbor.latest_label.trim() : '';
     if (!label || label.toLowerCase() === String(name || '').trim().toLowerCase()) return '';
+    if (neighbor.latest_kind !== 'mentioned') return '';
     return '<span class="pulse-connections-evidence">transcribed as “' + esc(label) + '”</span>';
   }
 
@@ -1340,6 +1341,13 @@
     const eventCount = count === 1 ? '1 event' : String(count) + ' events';
     return '<a href="' + esc(connectionEntityHref(entityId)) + '">' + esc(name) + '</a>'
       + ' <span class="pulse-connections-cluster-count">' + esc(eventCount) + '</span>';
+  }
+
+  function connectionCalendarItemHtml(neighbor) {
+    const entityId = typeof neighbor.entity_id === 'string' ? neighbor.entity_id : '';
+    const name = typeof neighbor.name === 'string' && neighbor.name ? neighbor.name : entityId;
+    if (!entityId || !name) return '';
+    return '<a href="' + esc(connectionEntityHref(entityId)) + '">' + esc(name) + '</a>';
   }
 
   function renderConnectionsHtml(pulse) {
@@ -1373,30 +1381,34 @@
     const mentionOnly = neighbor => Array.isArray(neighbor.kinds) && neighbor.kinds.length > 0 && neighbor.kinds.every(item => item.kind === 'mentioned');
     const mentionRows = neighbors.filter(mentionOnly).slice(0, 6);
     const relationshipRows = neighbors
-      .filter(function (neighbor) { return neighbor.evidence_class !== 'attendance' && !mentionOnly(neighbor); })
+      .filter(function (neighbor) { return neighbor.evidence_class !== 'attendance' && neighbor.evidence_class !== 'scheduled' && !mentionOnly(neighbor); })
       .slice(0, 6);
     const attendanceRows = neighbors
       .filter(function (neighbor) { return neighbor.evidence_class === 'attendance'; })
+      .slice(0, 8);
+    const calendarRows = neighbors
+      .filter(function (neighbor) { return neighbor.evidence_class === 'scheduled'; })
       .slice(0, 8);
     const relationshipItems = relationshipRows.map(function (neighbor) {
       return connectionRowHtml(neighbor, connections);
     }).filter(Boolean);
     const attendanceItems = attendanceRows.map(connectionAttendanceItemHtml).filter(Boolean);
+    const calendarItems = calendarRows.map(connectionCalendarItemHtml).filter(Boolean);
     let html = '<div class="pulse-connections" data-home-surface="connections">'
       + '<h2 class="pulse-section-header">connections</h2>';
 
     if (relationshipItems.length) {
       // The shelf label only tells the owner anything when a second shelf is
       // there to tell it apart from. Alone it is the card heading again. G1-28.
-      const shelfLabel = attendanceItems.length
+      const shelfLabel = attendanceItems.length || calendarItems.length
         ? '<div class="pulse-connections-shelf-label">connections found in your journal</div>'
         : '';
-      html += '<div class="pulse-connections-shelf">'
+      html += '<div class="pulse-connections-shelf" data-shelf="journal">'
         + shelfLabel
         + '<div class="pulse-connections-list">'
         + relationshipItems.join('')
         + '</div></div>';
-    } else if (!attendanceItems.length && !mentionRows.length) {
+    } else if (!attendanceItems.length && !calendarItems.length && !mentionRows.length) {
       // Nothing to show is one line, not four blocks. The shelves below state
       // their own kind, so the note only earns its space when it is the only
       // thing the section has to say. G1-107, X-04.
@@ -1404,9 +1416,16 @@
     }
 
     if (attendanceItems.length) {
-      html += '<div class="pulse-connections-shelf">'
+      html += '<div class="pulse-connections-shelf" data-shelf="attendance">'
         + '<div class="pulse-connections-shelf-label">often around, events only</div>'
         + '<div class="pulse-connections-cluster">' + attendanceItems.join(' · ') + '</div>'
+        + '</div>';
+    }
+
+    if (calendarItems.length) {
+      html += '<div class="pulse-connections-shelf" data-shelf="calendar">'
+        + '<div class="pulse-connections-shelf-label">on your calendar only</div>'
+        + '<div class="pulse-connections-cluster">' + calendarItems.join(' · ') + '</div>'
         + '</div>';
     }
 
@@ -1419,7 +1438,7 @@
       html += '<details class="pulse-connections-shelf"><summary>' + esc(mentionSummary) + '</summary><div class="pulse-connections-list">'
         + mentionRows.map(neighbor => connectionRowHtml(neighbor, connections)).join('') + '</div></details>';
     }
-    const rendered = relationshipItems.length + attendanceItems.length + mentionRows.length;
+    const rendered = relationshipItems.length + attendanceItems.length + calendarItems.length + mentionRows.length;
     // The coverage note and the way out of the section are one block, not two.
     // G1-107.
     const moreLink = Number(connections.total || 0) > rendered

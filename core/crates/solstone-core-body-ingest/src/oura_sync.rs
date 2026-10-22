@@ -551,6 +551,17 @@ fn settings(journal: &Path) -> Result<OuraSettings, BodyIngestError> {
     })
 }
 
+/// OAuth token types are case-insensitive, but Oura's API accepts only the
+/// canonical `Bearer` scheme spelling, and its token endpoint may return `bearer`.
+fn authorization_header(settings: &OuraSettings) -> String {
+    let scheme = if settings.token_type.eq_ignore_ascii_case("bearer") {
+        "Bearer"
+    } else {
+        settings.token_type.as_str()
+    };
+    format!("{scheme} {}", settings.access_token)
+}
+
 fn request_with_retry(
     http: &mut dyn OuraHttp,
     endpoint: &str,
@@ -562,7 +573,7 @@ fn request_with_retry(
 ) -> Result<HttpResponse, BodyIngestError> {
     let mut retryable = 0_u32;
     loop {
-        let authorization = format!("{} {}", settings.token_type, settings.access_token);
+        let authorization = authorization_header(settings);
         let response = http.get(endpoint, query, &authorization)?;
         if response.status == 401 && !*refreshed {
             if !persist_refresh {
@@ -1215,6 +1226,35 @@ mod tests {
             fs::read(journal.0.join("config/journal.json")).expect("config after dry run"),
             original
         );
+    }
+
+    #[test]
+    fn lowercase_bearer_token_type_sends_the_canonical_scheme() {
+        let journal = journal();
+        approve(&journal.0);
+        let config_path = journal.0.join("config/journal.json");
+        let mut config: Value =
+            serde_json::from_slice(&fs::read(&config_path).expect("config")).expect("parse");
+        config["oura"]["tokens"]["token_type"] = json!("bearer");
+        fs::write(&config_path, serde_json::to_vec(&config).expect("config")).expect("write");
+        let mut gets = one_readiness_pages();
+        gets.push_front(response(401, json!({"error": "expired"})));
+        let mut http = FakeHttp {
+            gets,
+            posts: VecDeque::from([response(
+                200,
+                json!({
+                    "access_token": "refreshed-access",
+                    "refresh_token": "refreshed-refresh",
+                    "token_type": "bearer",
+                    "expires_in": 3600
+                }),
+            )]),
+            ..FakeHttp::default()
+        };
+        sync_with_http(&journal.0, &options(true), &mut http).expect("save after refresh");
+        assert_eq!(http.calls[0].2, "Bearer synthetic-access");
+        assert_eq!(http.calls[1].2, "Bearer refreshed-access");
     }
 
     #[test]

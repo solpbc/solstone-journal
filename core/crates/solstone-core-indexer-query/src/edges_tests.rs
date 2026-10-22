@@ -14,7 +14,7 @@ use crate::edges::EVIDENCE_ORDER_SQL;
 use crate::test_support::reserve_temp_path;
 use crate::{
     EdgeAliases, EdgeEvidenceRequest, EdgeEvidenceResponse, EdgeFilters, EdgeQueryError,
-    EntityTypeLookup, NETWORK_EVIDENCE_LIMIT_MAX, NETWORK_NEIGHBOR_LIMIT_MAX,
+    EntityTypeLookup, NETWORK_EVIDENCE_LIMIT_MAX, NETWORK_NEIGHBOR_LIMIT_MAX, NetworkNeighbor,
     NetworkOverviewRequest, NetworkOverviewResponse, NetworkRequest, NetworkResponse,
     network_bound_detail, open_edges_reader,
 };
@@ -47,6 +47,7 @@ fn load_edge_evidence(
         entity_id,
         peer_id,
         request,
+        ATTENDANCE,
         &EdgeAliases::default(),
     )
 }
@@ -237,6 +238,7 @@ fn history_has_exact_shape_boolean_direction_and_keeps_future_rows() {
             [
                 "entity_id",
                 "evidence",
+                "evidence_class",
                 "filters",
                 "limit",
                 "offset",
@@ -504,6 +506,173 @@ fn evidence_class_and_future_ranking_cap_match_reference() {
 }
 
 #[test]
+fn evidence_class_scheduled_only_is_scheduled() {
+    let root = seed(
+        "scheduled_classes",
+        &[
+            SeedEdge::new("self", "sch", "scheduled-with", Some("20260501"), "p_sch"),
+            SeedEdge::new("self", "att", "attended-with", Some("20260501"), "p_att"),
+            SeedEdge::new("self", "co_sch", "co-present", Some("20260501"), "p_co"),
+            SeedEdge::new(
+                "self",
+                "co_sch",
+                "scheduled-with",
+                Some("20260501"),
+                "p_co_sch",
+            ),
+            SeedEdge::new("self", "sem", "works-with", Some("20260501"), "p_sem"),
+            SeedEdge::new(
+                "self",
+                "sch_sem",
+                "scheduled-with",
+                Some("20260501"),
+                "p_sch_sem1",
+            ),
+            SeedEdge::new(
+                "self",
+                "sch_sem",
+                "mentioned",
+                Some("20260501"),
+                "p_sch_sem2",
+            ),
+            SeedEdge::new(
+                "self",
+                "att_sem",
+                "attended-with",
+                Some("20260501"),
+                "p_att_sem1",
+            ),
+            SeedEdge::new(
+                "self",
+                "att_sem",
+                "works-with",
+                Some("20260501"),
+                "p_att_sem2",
+            ),
+        ],
+    );
+    let response = load_entity_network(
+        &root,
+        "self",
+        &default_network("20260530"),
+        None,
+        ATTENDANCE,
+    )
+    .unwrap();
+    fn class_of<'a>(id: &str, neighbors: &'a [NetworkNeighbor]) -> Option<&'a str> {
+        neighbors
+            .iter()
+            .find(|n| n.entity_id == id)
+            .map(|n| n.evidence_class.as_str())
+    }
+    assert_eq!(class_of("sch", &response.neighbors), Some("scheduled"));
+    assert_eq!(class_of("att", &response.neighbors), Some("attendance"));
+    assert_eq!(class_of("co_sch", &response.neighbors), Some("attendance"));
+    assert_eq!(class_of("sem", &response.neighbors), Some("semantic"));
+    assert_eq!(class_of("sch_sem", &response.neighbors), Some("mixed"));
+    assert_eq!(class_of("att_sem", &response.neighbors), Some("mixed"));
+
+    let shorter_attendance: &[&str] = &["attended-with", "co-present"];
+    let response_shorter = load_entity_network(
+        &root,
+        "self",
+        &default_network("20260530"),
+        None,
+        shorter_attendance,
+    )
+    .unwrap();
+    assert_eq!(
+        class_of("sch", &response_shorter.neighbors),
+        Some("scheduled")
+    );
+    assert_eq!(
+        class_of("co_sch", &response_shorter.neighbors),
+        Some("attendance")
+    );
+    assert_eq!(
+        class_of("sch_sem", &response_shorter.neighbors),
+        Some("mixed")
+    );
+    assert_eq!(
+        class_of("sem", &response_shorter.neighbors),
+        Some("semantic")
+    );
+    assert_eq!(
+        class_of("att", &response_shorter.neighbors),
+        Some("attendance")
+    );
+
+    cleanup(root);
+}
+
+#[test]
+fn history_evidence_class_reads_every_matching_row_not_the_page() {
+    let root = seed(
+        "history_classes",
+        &[
+            SeedEdge::new("self", "sch", "scheduled-with", Some("20260501"), "p_sch"),
+            // Later day ensures scheduled-with appears on the page ahead of mentioned.
+            SeedEdge::new("self", "mixed", "scheduled-with", Some("20260502"), "p_m1"),
+            SeedEdge::new("self", "mixed", "mentioned", Some("20260401"), "p_m2"),
+            SeedEdge::new("self", "sem", "mentioned", Some("20260501"), "p_sem"),
+        ],
+    );
+    let sch = crate::load_edge_evidence(
+        &root,
+        "self",
+        "sch",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &EdgeAliases::default(),
+    )
+    .unwrap();
+    assert_eq!(sch.evidence_class.as_deref(), Some("scheduled"));
+
+    let mixed_request = EdgeEvidenceRequest {
+        limit: 1,
+        ..EdgeEvidenceRequest::default()
+    };
+    let mixed = crate::load_edge_evidence(
+        &root,
+        "self",
+        "mixed",
+        &mixed_request,
+        ATTENDANCE,
+        &EdgeAliases::default(),
+    )
+    .unwrap();
+    assert_eq!(mixed.total, 2);
+    assert_eq!(mixed.evidence.len(), 1);
+    assert_eq!(mixed.evidence[0].kind, "scheduled-with");
+    assert_eq!(mixed.evidence_class.as_deref(), Some("mixed"));
+
+    let sem = crate::load_edge_evidence(
+        &root,
+        "self",
+        "sem",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &EdgeAliases::default(),
+    )
+    .unwrap();
+    assert_eq!(sem.evidence_class.as_deref(), Some("semantic"));
+
+    let empty = crate::load_edge_evidence(
+        &root,
+        "self",
+        "absent",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &EdgeAliases::default(),
+    )
+    .unwrap();
+    assert_eq!(empty.total, 0);
+    assert_eq!(empty.evidence_class, None);
+
+    cleanup(root);
+}
+
+#[test]
 fn filters_and_negative_pagination_are_invalid_before_query() {
     let root = seed(
         "filters",
@@ -605,6 +774,7 @@ fn empty_partial_and_absent_indexes_have_distinct_results_without_writes() {
             [
                 "entity_id",
                 "evidence",
+                "evidence_class",
                 "filters",
                 "limit",
                 "offset",
@@ -1245,6 +1415,7 @@ fn merged_evidence_carries_survivor_ids_and_names_as_seen() {
         "solstone",
         "alice",
         &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
         &aliases,
     )
     .unwrap();
@@ -1276,6 +1447,7 @@ fn merged_evidence_carries_survivor_ids_and_names_as_seen() {
         "alice",
         "sunstone",
         &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
         &aliases,
     )
     .unwrap();
@@ -1289,6 +1461,7 @@ fn merged_evidence_carries_survivor_ids_and_names_as_seen() {
         "solstone",
         "sunstone",
         &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
         &aliases,
     )
     .unwrap();
@@ -1432,6 +1605,7 @@ fn thousands_of_merges_leave_every_read_working_and_unchanged() {
             "solstone",
             "alice",
             &EdgeEvidenceRequest::default(),
+            ATTENDANCE,
             &many
         )
         .unwrap(),
@@ -1440,6 +1614,7 @@ fn thousands_of_merges_leave_every_read_working_and_unchanged() {
             "solstone",
             "alice",
             &EdgeEvidenceRequest::default(),
+            ATTENDANCE,
             &few
         )
         .unwrap()
@@ -1546,9 +1721,15 @@ fn several_merged_ids_on_both_sides_of_a_pair_combine() {
     for (raw, canonical) in [("a1", "a"), ("a2", "a"), ("b1", "b"), ("b2", "b")] {
         aliases.insert(raw, canonical, Some(canonical.to_uppercase()));
     }
-    let history =
-        crate::load_edge_evidence(&root, "a", "b", &EdgeEvidenceRequest::default(), &aliases)
-            .unwrap();
+    let history = crate::load_edge_evidence(
+        &root,
+        "a",
+        "b",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
     assert_eq!(history.total, 3);
     assert_eq!(history.peer_name.as_deref(), Some("B"));
     let network = crate::load_entity_network(
@@ -1605,6 +1786,272 @@ fn retired_edge_kinds_survive_in_store_and_complete_reads() {
     let overview =
         load_network_overview(&root, &default_overview("20260530"), ATTENDANCE, &|_| None).unwrap();
     assert_eq!(overview.entities.len(), 2);
+
+    cleanup(root);
+}
+
+#[test]
+fn connections_fallback_to_registry_name_when_unmerged_and_edges_have_no_names() {
+    let root = seed(
+        "fallback-unmerged",
+        &[SeedEdge::new(
+            "me",
+            "angela",
+            "scheduled-with",
+            Some("20260105"),
+            "p1",
+        )],
+    );
+    let mut aliases = EdgeAliases::default();
+    aliases.set_entity_names([("angela".to_string(), "Nurse Angela".to_string())]);
+
+    let network = crate::load_entity_network(
+        &root,
+        "me",
+        &default_network("20260110"),
+        None,
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(network.neighbors[0].name.as_deref(), Some("Nurse Angela"));
+
+    let history = crate::load_edge_evidence(
+        &root,
+        "me",
+        "angela",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(history.peer_name.as_deref(), Some("Nurse Angela"));
+
+    let overview = crate::load_network_overview(
+        &root,
+        &default_overview("20260110"),
+        ATTENDANCE,
+        &|_| None,
+        &aliases,
+    )
+    .unwrap();
+    let peer = overview
+        .entities
+        .iter()
+        .find(|e| e.entity_id == "angela")
+        .expect("peer");
+    assert_eq!(peer.name.as_deref(), Some("Nurse Angela"));
+
+    cleanup(root);
+}
+
+#[test]
+fn connections_fallback_to_registry_name_when_other_merges_exist_but_peer_is_unmerged() {
+    let root = seed(
+        "fallback-other-merges",
+        &[SeedEdge::new(
+            "me",
+            "angela",
+            "scheduled-with",
+            Some("20260105"),
+            "p1",
+        )],
+    );
+    let mut aliases = EdgeAliases::default();
+    aliases.insert("other_raw", "other_canonical", Some("Other Person".into()));
+    aliases.set_entity_names([("angela".to_string(), "Nurse Angela".to_string())]);
+
+    let network = crate::load_entity_network(
+        &root,
+        "me",
+        &default_network("20260110"),
+        None,
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(network.neighbors[0].name.as_deref(), Some("Nurse Angela"));
+
+    let history = crate::load_edge_evidence(
+        &root,
+        "me",
+        "angela",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(history.peer_name.as_deref(), Some("Nurse Angela"));
+
+    let overview = crate::load_network_overview(
+        &root,
+        &default_overview("20260110"),
+        ATTENDANCE,
+        &|_| None,
+        &aliases,
+    )
+    .unwrap();
+    let peer = overview
+        .entities
+        .iter()
+        .find(|e| e.entity_id == "angela")
+        .expect("peer");
+    assert_eq!(peer.name.as_deref(), Some("Nurse Angela"));
+
+    cleanup(root);
+}
+
+#[test]
+fn stored_edge_name_overrides_registry_name() {
+    let mut edge = SeedEdge::new("me", "angela", "scheduled-with", Some("20260105"), "p1");
+    edge.dst_name = Some("Stored Name");
+    let root = seed("stored-overrides-registry", &[edge]);
+    let mut aliases = EdgeAliases::default();
+    aliases.set_entity_names([("angela".to_string(), "Registry Name".to_string())]);
+
+    let network = crate::load_entity_network(
+        &root,
+        "me",
+        &default_network("20260110"),
+        None,
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(network.neighbors[0].name.as_deref(), Some("Stored Name"));
+
+    let history = crate::load_edge_evidence(
+        &root,
+        "me",
+        "angela",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(history.peer_name.as_deref(), Some("Stored Name"));
+
+    let overview = crate::load_network_overview(
+        &root,
+        &default_overview("20260110"),
+        ATTENDANCE,
+        &|_| None,
+        &aliases,
+    )
+    .unwrap();
+    let peer = overview
+        .entities
+        .iter()
+        .find(|e| e.entity_id == "angela")
+        .expect("peer");
+    assert_eq!(peer.name.as_deref(), Some("Stored Name"));
+
+    cleanup(root);
+}
+
+#[test]
+fn no_names_configured_yields_none() {
+    let root = seed(
+        "no-names-none",
+        &[SeedEdge::new(
+            "me",
+            "angela",
+            "scheduled-with",
+            Some("20260105"),
+            "p1",
+        )],
+    );
+    let aliases = EdgeAliases::default();
+
+    let network = crate::load_entity_network(
+        &root,
+        "me",
+        &default_network("20260110"),
+        None,
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(network.neighbors[0].name, None);
+
+    let history = crate::load_edge_evidence(
+        &root,
+        "me",
+        "angela",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(history.peer_name, None);
+
+    let overview = crate::load_network_overview(
+        &root,
+        &default_overview("20260110"),
+        ATTENDANCE,
+        &|_| None,
+        &aliases,
+    )
+    .unwrap();
+    let peer = overview
+        .entities
+        .iter()
+        .find(|e| e.entity_id == "angela")
+        .expect("peer");
+    assert_eq!(peer.name, None);
+
+    cleanup(root);
+}
+
+#[test]
+fn survivor_name_overrides_both_stored_edge_name_and_registry_name() {
+    let mut edge = SeedEdge::new("me", "ada_old", "scheduled-with", Some("20260105"), "p1");
+    edge.dst_name = Some("Stored Name");
+    let root = seed("survivor-overrides-both", &[edge]);
+    let mut aliases = EdgeAliases::default();
+    aliases.insert("ada_old", "ada", Some("Survivor Name".into()));
+    aliases.set_entity_names([
+        ("ada".to_string(), "Registry Name".to_string()),
+        ("ada_old".to_string(), "Registry Name".to_string()),
+    ]);
+
+    let network = crate::load_entity_network(
+        &root,
+        "me",
+        &default_network("20260110"),
+        None,
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(network.neighbors[0].entity_id, "ada");
+    assert_eq!(network.neighbors[0].name.as_deref(), Some("Survivor Name"));
+
+    let history = crate::load_edge_evidence(
+        &root,
+        "me",
+        "ada_old",
+        &EdgeEvidenceRequest::default(),
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(history.peer_name.as_deref(), Some("Survivor Name"));
+
+    let overview = crate::load_network_overview(
+        &root,
+        &default_overview("20260110"),
+        ATTENDANCE,
+        &|_| None,
+        &aliases,
+    )
+    .unwrap();
+    let peer = overview
+        .entities
+        .iter()
+        .find(|e| e.entity_id == "ada")
+        .expect("peer");
+    assert_eq!(peer.name.as_deref(), Some("Survivor Name"));
 
     cleanup(root);
 }

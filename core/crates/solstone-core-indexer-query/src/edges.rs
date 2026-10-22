@@ -5,7 +5,7 @@
 
 //! Read-only derived entity-edge queries over the journal index.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -60,9 +60,17 @@ pub type EntityTypeLookup<'a> = dyn Fn(&str) -> Option<String> + 'a;
 /// Every edge query reads rows through this map: an aliased endpoint counts
 /// under its survivor and carries the survivor's name, and a merge needs no
 /// re-extraction. An empty map reads the index exactly as stored.
+///
+/// It can also carry the ids that are live entities. A row keeps a deleted
+/// entity's id too, and when the live ids are known, neither the overview
+/// nor a network lists an id that is not one: every id they list is one a
+/// network or history request resolves.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EdgeAliases {
     entries: BTreeMap<String, EdgeAlias>,
+    live: Option<BTreeSet<String>>,
+    // Live entity names from the caller, not merge entries, ignored by is_empty.
+    entity_names: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -86,6 +94,31 @@ impl EdgeAliases {
         }
     }
 
+    /// Only these ids, and the entities merges folded into them, are listed
+    /// as entities. Without this call every stored id is.
+    pub fn set_live_entities(&mut self, ids: impl IntoIterator<Item = String>) {
+        self.live = Some(ids.into_iter().collect());
+    }
+
+    pub fn set_entity_names(&mut self, names: impl IntoIterator<Item = (String, String)>) {
+        self.entity_names = names
+            .into_iter()
+            .filter(|(_, name)| !name.is_empty())
+            .collect();
+    }
+
+    fn entity_name(&self, id: &str) -> Option<&str> {
+        self.entity_names.get(id).map(String::as_str)
+    }
+
+    /// Whether rows counted under `canonical` belong to a live entity.
+    fn is_live(&self, canonical: &str) -> bool {
+        self.live
+            .as_ref()
+            .is_none_or(|live| live.contains(canonical))
+    }
+
+    /// Whether no merge changes how rows are read.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -122,7 +155,11 @@ impl EdgeAliases {
                     .map(|alias| (id.clone(), alias.clone()))
             })
             .collect();
-        Self { entries }
+        Self {
+            entries,
+            live: None,
+            entity_names: BTreeMap::new(),
+        }
     }
 
     /// Every stored key whose rows count under `canonical`, itself first.
@@ -136,6 +173,17 @@ impl EdgeAliases {
         );
         members
     }
+}
+
+fn resolved_name(
+    survivor: Option<&str>,
+    stored: Option<String>,
+    registry: Option<&str>,
+) -> Option<String> {
+    survivor
+        .map(str::to_owned)
+        .or(stored)
+        .or_else(|| registry.map(str::to_owned))
 }
 
 /// The `WITH` head the pair queries start from: CTE `e` holds the stored
@@ -383,6 +431,7 @@ pub struct EdgeEvidenceResponse {
     pub limit: i64,
     pub offset: i64,
     pub evidence: Vec<EvidenceRow>,
+    pub evidence_class: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct OverviewTotals {
@@ -516,7 +565,7 @@ pub fn load_entity_network(
         {
             return Ok(());
         }
-        if row.kind == "committed-to" || row.kind == "decided-with" {
+        if row.kind == "committed-to" || row.kind == "decided-with" || !aliases.is_live(&row.peer) {
             return Ok(());
         }
         let weighted = kind_weight(&row.kind, row.weight_sum, row.day.as_deref(), reference)?;
@@ -559,16 +608,17 @@ pub fn load_entity_network(
             &members,
             &peer_members,
         );
-        neighbor.name = match aliases.survivor_name(&neighbor.entity_id) {
-            Some(name) => Some(name.to_owned()),
-            None => load_peer_name(
+        neighbor.name = resolved_name(
+            aliases.survivor_name(&neighbor.entity_id),
+            load_peer_name(
                 &connection,
                 &source,
                 entity_id,
                 &neighbor.entity_id,
                 &ranking,
             )?,
-        };
+            aliases.entity_name(&neighbor.entity_id),
+        );
         // Network previews use the ranking cap; pair history below intentionally does not.
         neighbor.evidence = load_evidence_rows(
             &connection,
@@ -597,6 +647,7 @@ pub fn load_edge_evidence(
     entity_id: &str,
     peer_id: &str,
     request: &EdgeEvidenceRequest,
+    attendance_kinds: &[&str],
     aliases: &EdgeAliases,
 ) -> Result<EdgeEvidenceResponse, EdgeQueryError> {
     let (requested_id, requested_peer) = (entity_id, peer_id);
@@ -629,10 +680,11 @@ pub fn load_edge_evidence(
     Ok(EdgeEvidenceResponse {
         entity_id: requested_id.to_string(),
         peer_id: requested_peer.to_string(),
-        peer_name: match aliases.survivor_name(peer_id) {
-            Some(name) => Some(name.to_owned()),
-            None => load_peer_name(&connection, &source, entity_id, peer_id, &filter)?,
-        },
+        peer_name: resolved_name(
+            aliases.survivor_name(peer_id),
+            load_peer_name(&connection, &source, entity_id, peer_id, &filter)?,
+            aliases.entity_name(peer_id),
+        ),
         filters: EdgeFiltersPayload::from(&filter),
         total,
         limit: request.limit,
@@ -645,6 +697,14 @@ pub fn load_edge_evidence(
             &filter,
             request.limit,
             request.offset,
+        )?,
+        evidence_class: load_evidence_class(
+            &connection,
+            &source,
+            entity_id,
+            peer_id,
+            &filter,
+            attendance_kinds,
         )?,
     })
 }
@@ -741,14 +801,21 @@ pub fn load_network_overview(
     let rows = subtract_rows(rows, by_endpoint);
     let mut entities = BTreeMap::<String, OverviewEntity>::new();
     for row in fold_overview_rows(aliases, rows) {
-        if row.kind == "committed-to" || row.kind == "decided-with" {
+        if row.kind == "committed-to"
+            || row.kind == "decided-with"
+            || !aliases.is_live(&row.entity_id)
+        {
             continue;
         }
         let entity = entities
             .entry(row.entity_id.clone())
             .or_insert_with(|| OverviewEntity {
                 entity_id: row.entity_id.clone(),
-                name: names.get(&row.entity_id).cloned(),
+                name: resolved_name(
+                    aliases.survivor_name(&row.entity_id),
+                    names.get(&row.entity_id).cloned(),
+                    aliases.entity_name(&row.entity_id),
+                ),
                 r#type: None,
                 score: 0.0,
                 count: 0,
@@ -1103,12 +1170,15 @@ fn kind_weight(
     Ok(multiplier * weight_sum as f64 * decay_factor(day, reference)?)
 }
 fn evidence_class(kinds: &BTreeMap<String, KindSummary>, attendance_kinds: &[&str]) -> String {
+    if !kinds.is_empty() && kinds.keys().all(|kind| kind == "scheduled-with") {
+        return "scheduled".to_string();
+    }
     let attendance = kinds
         .keys()
-        .any(|kind| attendance_kinds.contains(&kind.as_str()));
+        .any(|kind| kind == "scheduled-with" || attendance_kinds.contains(&kind.as_str()));
     let semantic = kinds
         .keys()
-        .any(|kind| !attendance_kinds.contains(&kind.as_str()));
+        .any(|kind| kind != "scheduled-with" && !attendance_kinds.contains(&kind.as_str()));
     if attendance && semantic {
         "mixed"
     } else if attendance {
@@ -1291,6 +1361,50 @@ fn evidence_row_from_sql(row: &Row<'_>) -> rusqlite::Result<EvidenceRow> {
         ts: row.get(12)?,
         weight: row.get(13)?,
     })
+}
+fn load_evidence_class(
+    connection: &Connection,
+    source: &EdgeSource,
+    entity_id: &str,
+    peer_id: &str,
+    filter: &FilterSql,
+    attendance_kinds: &[&str],
+) -> Result<Option<String>, EdgeQueryError> {
+    let sql = format!(
+        "{} SELECT DISTINCT kind FROM e {} {}",
+        source.sql,
+        pair_where(),
+        filter.sql
+    );
+    let mut params = source.params.clone();
+    params.extend(pair_params(entity_id, peer_id));
+    params.extend(filter.params.clone());
+    let mut statement = connection
+        .prepare_cached(&sql)
+        .map_err(|error| unavailable_db(connection, error))?;
+    let kinds: BTreeMap<String, KindSummary> = statement
+        .query_map(params_from_iter(params.iter()), |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|error| unavailable_db(connection, error))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| unavailable_db(connection, error))?
+        .into_iter()
+        .map(|kind| {
+            (
+                kind,
+                KindSummary {
+                    count: 0,
+                    weighted: 0.0,
+                },
+            )
+        })
+        .collect();
+    if kinds.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(evidence_class(&kinds, attendance_kinds)))
+    }
 }
 fn load_peer_name(
     connection: &Connection,

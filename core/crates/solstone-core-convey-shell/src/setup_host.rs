@@ -7,7 +7,7 @@ use std::thread;
 
 use solstone_core_sol_link::http::{
     SetupDownloads, SetupHost, SetupProgressError, SetupRetryError, packaged_speech_retry,
-    read_setup_progress,
+    read_setup_downloads,
 };
 use solstone_core_thinking_copy::{
     DownloadMember, SetupCatalogFacts, current_setup_facts, sum_download_bytes,
@@ -44,7 +44,7 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn project_downloads(&self, journal_root: &Path) -> Result<SetupDownloads, SetupProgressError> {
-        Ok(read_setup_progress(journal_root)?.downloads)
+        read_setup_downloads(journal_root)
     }
 
     fn thinking_download_bytes(&self, journal: &Path) -> Option<u64> {

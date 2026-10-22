@@ -3177,9 +3177,14 @@ function renderConnectionsNetwork(container, entityId, neighbors, referenceDay, 
       neighbor.evidence_class === 'semantic' || neighbor.evidence_class === 'mixed'
     )).length;
     const attendanceCount = neighbors.filter(neighbor => neighbor.evidence_class === 'attendance').length;
-    summary.textContent = (ENT_COPY.ENT_CONN_SUMMARY || '')
+    const scheduledCount = neighbors.filter(neighbor => neighbor.evidence_class === 'scheduled').length;
+    let summaryText = (ENT_COPY.ENT_CONN_SUMMARY || '')
       .replace('{s}', String(directCount))
       .replace('{a}', String(attendanceCount));
+    if (scheduledCount > 0) {
+      summaryText += ' · ' + (ENT_COPY.ENT_CONN_SUMMARY_CALENDAR || '').replace('{c}', String(scheduledCount));
+    }
+    summary.textContent = summaryText;
     container.appendChild(summary);
 
     const list = document.createElement('div');
@@ -3210,9 +3215,11 @@ function renderWithYouBlock(container, entityId, history, referenceDay) {
   const latest = rows[0];
   const summary = document.createElement('div');
   summary.className = 'entity-conn-with-you-summary';
-  const summaryTemplate = total === 1
-    ? ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY_ONE
-    : ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY;
+  const summaryTemplate = history?.evidence_class === 'scheduled'
+    ? ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED
+    : (total === 1
+      ? ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY_ONE
+      : ENT_COPY.ENT_CONN_WITH_YOU_SUMMARY);
   summary.textContent = (summaryTemplate || '')
     .replace('{n}', String(total))
     .replace('{kind}', entityConnKindWord(latest.kind))
@@ -3299,6 +3306,14 @@ function renderConnectionKindChips(neighbor) {
     return wrap;
   }
 
+  if (neighbor.evidence_class === 'scheduled') {
+    const chip = document.createElement('span');
+    chip.className = 'entity-conn-chip entity-conn-chip-event-only';
+    chip.textContent = ENT_COPY.ENT_CONN_CALENDAR_ONLY || '';
+    wrap.appendChild(chip);
+    return wrap;
+  }
+
   const kinds = neighbor.kinds && typeof neighbor.kinds === 'object' ? neighbor.kinds : {};
   Object.keys(kinds)
     .filter(kind => !ATTENDANCE_KINDS.has(kind))
@@ -3321,6 +3336,10 @@ function renderConnectionKindChips(neighbor) {
 function entityConnRowMeta(neighbor, referenceDay) {
   const count = Number(neighbor.count || 0);
   const day = formatEntityConnDay(neighbor.last_seen, referenceDay);
+  if (neighbor.evidence_class === 'scheduled') {
+    return (ENT_COPY.ENT_CONN_ROW_META_SCHEDULED || '')
+      .replace('{day}', day);
+  }
   if (neighbor.evidence_class === 'attendance') {
     if (count === 1) {
       return (ENT_COPY.ENT_CONN_ROW_META_ONE_ATTENDANCE || '')

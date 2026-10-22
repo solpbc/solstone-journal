@@ -659,6 +659,7 @@ where
         }
     } else {
         solstone_core_local::LocalHardwareAdmission::GpuHost {
+            backend: choice.backend,
             nvidia_detected: nvidia_probe.detected,
             nvidia_memory_bytes: nvidia_probe
                 .vram_mib
@@ -1013,6 +1014,7 @@ mod tests {
             }
         } else {
             solstone_core_local::LocalHardwareAdmission::GpuHost {
+                backend: solstone_core_local::Backend::Vulkan,
                 nvidia_detected: false,
                 nvidia_memory_bytes: None,
                 probe_ok: true,
@@ -1607,6 +1609,7 @@ mod tests {
                 }],
             }),
             Some(solstone_core_local::LocalHardwareAdmission::GpuHost {
+                backend: solstone_core_local::Backend::Vulkan,
                 nvidia_detected: false,
                 nvidia_memory_bytes: None,
                 probe_ok: true,
@@ -1638,6 +1641,7 @@ mod tests {
     fn local_failure_reads_persisted_status_or_names_local_status_error() {
         let journal = tempfile::tempdir().unwrap();
         let eligible = solstone_core_local::LocalHardwareAdmission::GpuHost {
+            backend: solstone_core_local::Backend::Vulkan,
             nvidia_detected: false,
             nvidia_memory_bytes: None,
             probe_ok: true,
@@ -2051,6 +2055,7 @@ mod tests {
             |_| missing_readiness(),
             None,
             Some(solstone_core_local::LocalHardwareAdmission::GpuHost {
+                backend: solstone_core_local::Backend::Vulkan,
                 nvidia_detected: false,
                 nvidia_memory_bytes: None,
                 probe_ok: true,
@@ -2382,6 +2387,7 @@ mod tests {
         // Below-bar GpuHost on ("linux", "x86_64"):
         let journal = tempfile::tempdir().unwrap();
         let below_bar_gpu = solstone_core_local::LocalHardwareAdmission::GpuHost {
+            backend: solstone_core_local::Backend::Vulkan,
             nvidia_detected: false,
             nvidia_memory_bytes: None,
             probe_ok: true,
@@ -2451,6 +2457,7 @@ mod tests {
         let _g = AcquisitionTestGuard::new(true);
         let journal = tempfile::tempdir().unwrap();
         let eligible_gpu = solstone_core_local::LocalHardwareAdmission::GpuHost {
+            backend: solstone_core_local::Backend::Vulkan,
             nvidia_detected: false,
             nvidia_memory_bytes: None,
             probe_ok: true,
@@ -2692,5 +2699,287 @@ mod tests {
             TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
             0
         );
+
+        // 5. Unequal Vulkan cases through build_local_report_with:
+        // Case A: large NVIDIA memory, rejected arch (sm_70), dev0 eligible (8192), dev1 below-bar (4096), index 1
+        let _g = AcquisitionTestGuard::new(true);
+        TEST_ACQUIRE_MINT_COUNT.with(|c| c.set(0));
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|c| c.set(0));
+        let journal = tempfile::tempdir().unwrap();
+        let config_dir = journal.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+        )
+        .unwrap();
+        let devices = vec![
+            solstone_core_local::VulkanDevice {
+                index: 0,
+                name: "eligible-dev0".into(),
+                device_type: Some(2),
+                vram_mib: 8192,
+            },
+            solstone_core_local::VulkanDevice {
+                index: 1,
+                name: "below-bar-dev1".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+        ];
+        let probe_case_a = solstone_core_local::NvidiaProbe {
+            schema: "test".to_owned(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("Tesla V100".into()),
+            compute_cap: Some("7.0".into()),
+            arch: Some("sm_70".into()),
+            driver_cuda_major: Some(12),
+            vram_mib: Some(24576),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+        let (report_a, admission_a) = build_local_report_with(
+            journal.path(),
+            "linux",
+            "x86_64",
+            || probe_case_a.clone(),
+            || solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: devices.clone(),
+                succeeded: true,
+            },
+            || None,
+        )
+        .unwrap();
+        let gpu_check_a = report_a.checks.iter().find(|c| c.name == "gpu").unwrap();
+        assert_ne!(gpu_check_a.severity, fit_report::FitSeverity::Ok);
+        assert!(gpu_check_a.detail.contains("below-bar-dev1"));
+        let outcome_a = run_local_inner_with_platform(
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report_a),
+            Some(admission_a),
+            install_local,
+            "linux",
+            "x86_64",
+        );
+        assert_ne!(outcome_a.exit_code, 0);
+        assert!(
+            outcome_a
+                .stderr
+                .iter()
+                .any(|line| line == "gpu_memory_insufficient")
+        );
+        assert_eq!(TEST_ACQUIRE_MINT_COUNT.with(std::cell::Cell::get), 0);
+        assert_eq!(
+            TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
+            0
+        );
+
+        // Case B: small NVIDIA memory (2048), rejected arch (sm_70), dev0 below-bar (4096), dev1 eligible (8192), index 1
+        let _g = AcquisitionTestGuard::new(true);
+        let journal = tempfile::tempdir().unwrap();
+        let config_dir = journal.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+        )
+        .unwrap();
+        let devices_b = vec![
+            solstone_core_local::VulkanDevice {
+                index: 0,
+                name: "below-bar-dev0".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+            solstone_core_local::VulkanDevice {
+                index: 1,
+                name: "eligible-dev1".into(),
+                device_type: Some(2),
+                vram_mib: 8192,
+            },
+        ];
+        let probe_case_b = solstone_core_local::NvidiaProbe {
+            schema: "test".to_owned(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("Quadro P400".into()),
+            compute_cap: Some("7.0".into()),
+            arch: Some("sm_70".into()),
+            driver_cuda_major: Some(12),
+            vram_mib: Some(2048),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+        let (report_b, admission_b) = build_local_report_with(
+            journal.path(),
+            "linux",
+            "x86_64",
+            || probe_case_b.clone(),
+            || solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: devices_b.clone(),
+                succeeded: true,
+            },
+            || None,
+        )
+        .unwrap();
+        let gpu_check_b = report_b.checks.iter().find(|c| c.name == "gpu").unwrap();
+        assert_eq!(gpu_check_b.severity, fit_report::FitSeverity::Ok);
+        assert!(gpu_check_b.detail.contains("eligible-dev1"));
+        let _outcome_b = run_local_inner_with_platform(
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report_b),
+            Some(admission_b),
+            install_local,
+            "linux",
+            "x86_64",
+        );
+        assert!(TEST_ACQUIRE_MINT_COUNT.with(std::cell::Cell::get) > 0);
+        assert!(TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get) > 0);
+    }
+
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    #[test]
+    fn install_provider_cuda_admission_keeps_nvidia_capacity() {
+        use solstone_core_local::install::{AcquisitionTestGuard, TEST_FETCH_RUNTIME_MEMBER_COUNT};
+
+        // 6. CUDA proof: empty journal, qualifying probe (sm_89, cuda 13).
+        // Below-bar NVIDIA (4096) refuses even if Vulkan dev1 is large (8192). Refusal bytes is NVIDIA size (4294967296).
+        TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|c| c.set(0));
+        let _g = AcquisitionTestGuard::new(true);
+        let journal = tempfile::tempdir().unwrap();
+        let config_dir = journal.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+        )
+        .unwrap();
+        let devices_cuda = vec![
+            solstone_core_local::VulkanDevice {
+                index: 0,
+                name: "dev0".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+            solstone_core_local::VulkanDevice {
+                index: 1,
+                name: "large-vulkan-dev1".into(),
+                device_type: Some(2),
+                vram_mib: 8192,
+            },
+        ];
+        let probe_cuda_below = solstone_core_local::NvidiaProbe {
+            schema: "test".to_owned(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("RTX 4050".into()),
+            compute_cap: Some("8.9".into()),
+            arch: Some("sm_89".into()),
+            driver_cuda_major: Some(13),
+            vram_mib: Some(4096),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+        let (report_c1, admission_c1) = build_local_report_with(
+            journal.path(),
+            "linux",
+            "x86_64",
+            || probe_cuda_below.clone(),
+            || solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: devices_cuda.clone(),
+                succeeded: true,
+            },
+            || None,
+        )
+        .unwrap();
+        let outcome_c1 = run_local_inner_with_platform(
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report_c1),
+            Some(admission_c1),
+            install_local,
+            "linux",
+            "x86_64",
+        );
+        assert_ne!(outcome_c1.exit_code, 0);
+        assert!(
+            outcome_c1
+                .stderr
+                .iter()
+                .any(|line| line == "gpu_memory_insufficient")
+        );
+        assert!(
+            outcome_c1
+                .stdout
+                .iter()
+                .chain(outcome_c1.stderr.iter())
+                .any(|line| line.contains("4294967296 bytes"))
+        );
+        assert_eq!(
+            TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
+            0
+        );
+
+        // Eligible NVIDIA (8192) admits even if Vulkan dev1 is small (2048).
+        let _g = AcquisitionTestGuard::new(true);
+        let journal = tempfile::tempdir().unwrap();
+        let config_dir = journal.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+        )
+        .unwrap();
+        let devices_cuda_small = vec![
+            solstone_core_local::VulkanDevice {
+                index: 0,
+                name: "dev0".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+            solstone_core_local::VulkanDevice {
+                index: 1,
+                name: "small-vulkan-dev1".into(),
+                device_type: Some(2),
+                vram_mib: 2048,
+            },
+        ];
+        let probe_cuda_eligible = solstone_core_local::NvidiaProbe {
+            schema: "test".to_owned(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("RTX 4090".into()),
+            compute_cap: Some("8.9".into()),
+            arch: Some("sm_89".into()),
+            driver_cuda_major: Some(13),
+            vram_mib: Some(8192),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+        let (report_c2, admission_c2) = build_local_report_with(
+            journal.path(),
+            "linux",
+            "x86_64",
+            || probe_cuda_eligible.clone(),
+            || solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: devices_cuda_small.clone(),
+                succeeded: true,
+            },
+            || None,
+        )
+        .unwrap();
+        let _outcome_c2 = run_local_inner_with_platform(
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report_c2),
+            Some(admission_c2),
+            install_local,
+            "linux",
+            "x86_64",
+        );
+        assert!(TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get) > 0);
     }
 }

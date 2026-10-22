@@ -139,6 +139,7 @@ call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests:
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::apply_failure_and_spawn_verified_helper_argv_inspection" "full-tests" || exit /b 1
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::delta_rejections_and_plan_clearing" "full-tests" || exit /b 1
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::non_plain_filename_does_not_delete_outside_packages_dir" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "convey::tests::full_tests::a_slow_setup_answer_still_reaches_home" "full-tests" || exit /b 1
 echo === cargo test --locked (Windows local thinking runtime) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1
@@ -160,7 +161,6 @@ call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child
 call :run_exact_library "solstone-core-spp-attest" "nvgpu::windows::tests::child_paths_refuse_network_paths_and_count_utf16_units" || exit /b 1
 call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "signed_layout_refuses_missing_or_changed_executable_ca_and_runtime" "test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-attest" "windows_verifier" "production_spawn_clears_hostile_environment_and_uses_the_verified_directory" "test-hooks" || exit /b 1
-echo JOURNAL_WIN_CI_WINDOWS_VERIFIER=executed/pass
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "fixture_seam_refuses_every_non_loopback_endpoint_before_resolution" "full-tests,test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_evidence_nonce_spki_criticality_and_presence_are_enforced" "full-tests,test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exporter_mismatch_rejects_after_a_verified_certificate" "full-tests,test-hooks" || exit /b 1

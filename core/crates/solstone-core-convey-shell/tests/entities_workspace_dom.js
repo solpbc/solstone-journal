@@ -65,6 +65,10 @@ class Element {
     this.type = '';
   }
 
+  get childNodes() {
+    return this.children;
+  }
+
   append(...children) {
     children.forEach((child) => this.appendChild(child));
   }
@@ -408,6 +412,215 @@ async function main() {
   entities.setJournal({facet_counts: {}});
   entities.render();
   check(document.getElementById('entities-scope-control') === null, 'scope control and popover are removed when the roster is empty');
+
+  const parseStart = workspace.indexOf('function parseYYYYMMDD(');
+  const parseEnd = workspace.indexOf('function formatDateShort(', parseStart);
+  const connMapStart = workspace.indexOf('function entityConnCopyMap(');
+  const connMapEnd = workspace.indexOf('async function fetchEntityConnJson(', connMapStart);
+  const netStart = workspace.indexOf('function renderConnectionsNetwork(');
+  const netEnd = workspace.indexOf('async function toggleConnectionEvidence(', netStart);
+  check(parseStart !== -1 && parseEnd !== -1 && connMapStart !== -1 && connMapEnd !== -1 && netStart !== -1 && netEnd !== -1, 'connections workspace slices exist');
+
+  const connDoc = {
+    createElement() { return new Element(connDoc); },
+  };
+  const connContext = {
+    document: connDoc,
+    console,
+    ENT_COPY: {
+      ENT_CONN_SUMMARY: 'ENT_CONN_SUMMARY:{s}:{a}',
+      ENT_CONN_SUMMARY_CALENDAR: 'ENT_CONN_SUMMARY_CALENDAR:{c}',
+      ENT_CONN_ROW_META_SCHEDULED: 'ENT_CONN_ROW_META_SCHEDULED:{day}',
+      ENT_CONN_CALENDAR_ONLY: 'ENT_CONN_CALENDAR_ONLY',
+      ENT_CONN_EVENTS_ONLY: 'ENT_CONN_EVENTS_ONLY',
+      ENT_CONN_ROW_META_ATTENDANCE: 'ENT_CONN_ROW_META_ATTENDANCE:{n}:{day}',
+      ENT_CONN_ROW_META_ONE_ATTENDANCE: 'ENT_CONN_ROW_META_ONE_ATTENDANCE:{day}',
+      ENT_CONN_ROW_META: 'ENT_CONN_ROW_META:{n}:{day}',
+      ENT_CONN_ROW_META_ONE: 'ENT_CONN_ROW_META_ONE:{day}',
+      ENT_CONN_WITH_YOU_SUMMARY: 'ENT_CONN_WITH_YOU_SUMMARY:{n}:{kind}:{day}',
+      ENT_CONN_WITH_YOU_SUMMARY_ONE: 'ENT_CONN_WITH_YOU_SUMMARY_ONE:{kind}:{day}',
+      ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED: 'ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:{day}',
+      ENT_CONN_WITH_YOU_TOGGLE: 'ENT_CONN_WITH_YOU_TOGGLE',
+    },
+    ATTENDANCE_KINDS: new Set(['attended-with', 'co-present', 'scheduled-with']),
+  };
+  const connSource = [
+    workspace.slice(parseStart, parseEnd),
+    workspace.slice(connMapStart, connMapEnd),
+    workspace.slice(netStart, netEnd),
+  ].join('\n');
+  vm.runInNewContext(connSource, connContext, { filename: 'entities-connections.js' });
+
+  function allDescendants(node) {
+    const list = [node];
+    for (const child of node.children) {
+      list.push(...allDescendants(child));
+    }
+    return list;
+  }
+
+  const connContainer = new Element(connDoc, 'connections-container');
+  const testNeighbors = [
+    {entity_id:'sem', name:'Ada', evidence_class:'semantic', count:2, last_seen:'20260501', kinds:{'works-with':{weighted:1}}},
+    {entity_id:'att', name:'Bea', evidence_class:'attendance', count:3, last_seen:'20260502', kinds:{'attended-with':{weighted:1}}},
+    {entity_id:'sch', name:'Cal', evidence_class:'scheduled', count:4, last_seen:'20260503', kinds:{'scheduled-with':{weighted:1}}},
+  ];
+  connContext.renderConnectionsNetwork(connContainer, 'self', testNeighbors, '20260530', true);
+
+  const connRows = allDescendants(connContainer).filter(node => node.className === 'entity-conn-row');
+  const calRow = connRows.find(r => allDescendants(r).some(n => n.className === 'entity-conn-name' && n.textContent === 'Cal'));
+  check(calRow !== undefined, 'found scheduled row for Cal');
+  const calDescendants = allDescendants(calRow);
+  const calText = calDescendants.map(n => n.textContent).join(' ');
+
+  check(
+    calDescendants.some(n => n.textContent.includes('ENT_CONN_ROW_META_SCHEDULED')),
+    'scheduled row contains ENT_CONN_ROW_META_SCHEDULED',
+  );
+  check(
+    calDescendants.some(n => n.textContent === 'ENT_CONN_CALENDAR_ONLY' && n.className === 'entity-conn-chip entity-conn-chip-event-only'),
+    'scheduled row has calendar-only chip with expected classes',
+  );
+  check(
+    !calText.includes('ENT_CONN_EVENTS_ONLY')
+      && !calText.includes('ENT_CONN_ROW_META_ATTENDANCE')
+      && !calText.includes('ENT_CONN_ROW_META_ONE_ATTENDANCE'),
+    'scheduled row does not contain attendance copy keys',
+  );
+
+  const summary = allDescendants(connContainer).find(n => n.className === 'entity-conn-summary');
+  check(
+    summary && summary.textContent === 'ENT_CONN_SUMMARY:1:1 · ENT_CONN_SUMMARY_CALENDAR:1',
+    'summary includes direct, attendance, and scheduled counts',
+  );
+
+  const connContainer2 = new Element(connDoc, 'connections-container-2');
+  connContext.renderConnectionsNetwork(connContainer2, 'self', [
+    {entity_id:'sem', name:'Ada', evidence_class:'semantic', count:2, last_seen:'20260501', kinds:{'works-with':{weighted:1}}},
+    {entity_id:'att', name:'Bea', evidence_class:'attendance', count:3, last_seen:'20260502', kinds:{'attended-with':{weighted:1}}},
+  ], '20260530', true);
+  const summary2 = allDescendants(connContainer2).find(n => n.className === 'entity-conn-summary');
+  check(
+    summary2 && summary2.textContent === 'ENT_CONN_SUMMARY:1:1' && !summary2.textContent.includes('ENT_CONN_SUMMARY_CALENDAR'),
+    'summary without scheduled neighbours omits calendar clause',
+  );
+
+  function checkWithYou(history, label) {
+    const container = new Element(connDoc);
+    const rendered = connContext.renderWithYouBlock(container, 'alice', history, '20260530');
+    check(rendered, `${label} rendered with-you block`);
+    const summaryNode = allDescendants(container).find(n => n.className === 'entity-conn-with-you-summary');
+    const text = summaryNode ? summaryNode.textContent : '';
+    const toggleNode = allDescendants(container).find(n => n.className === 'entity-conn-with-you-toggle');
+    const paneNode = allDescendants(container).find(n => n.className === 'entity-conn-evidence');
+    return { container, text, toggleNode, paneNode };
+  }
+
+  const resScheduled1 = checkWithYou(
+    { evidence_class: 'scheduled', total: 1, evidence: [{ kind: 'scheduled-with', day: '20260501' }] },
+    'scheduled single',
+  );
+  check(
+    resScheduled1.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:')
+      && !resScheduled1.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+      && !resScheduled1.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE'),
+    'scheduled total 1 uses scheduled copy and neither one- nor many-moments copy',
+  );
+
+  const resScheduledMany = checkWithYou(
+    {
+      evidence_class: 'scheduled',
+      total: 3,
+      evidence: [
+        { kind: 'scheduled-with', day: '20260501' },
+        { kind: 'scheduled-with', day: '20260501' },
+      ],
+    },
+    'scheduled multiple',
+  );
+  check(
+    resScheduledMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:')
+      && !resScheduledMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+      && !resScheduledMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE'),
+    'scheduled total > 1 uses scheduled copy and neither one- nor many-moments copy',
+  );
+
+  const otherClasses = ['semantic', 'mixed', 'attendance', undefined];
+  for (const cls of otherClasses) {
+    const historyOne = { total: 1, evidence: [{ kind: 'works-with', day: '20260501' }] };
+    if (cls !== undefined) historyOne.evidence_class = cls;
+    const resOne = checkWithYou(historyOne, `${cls ?? 'undefined'} total 1`);
+    check(
+      resOne.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE')
+        && !resOne.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+        && !resOne.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:'),
+      `${cls ?? 'undefined'} total 1 uses one-moment copy and neither many nor scheduled copy`,
+    );
+
+    const historyMany = {
+      total: 4,
+      evidence: [
+        { kind: 'works-with', day: '20260501' },
+        { kind: 'works-with', day: '20260501' },
+      ],
+    };
+    if (cls !== undefined) historyMany.evidence_class = cls;
+    const resMany = checkWithYou(historyMany, `${cls ?? 'undefined'} total > 1`);
+    check(
+      resMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+        && !resMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE')
+        && !resMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:'),
+      `${cls ?? 'undefined'} total > 1 uses many-moments copy and neither one nor scheduled copy`,
+    );
+  }
+
+  const resNull = checkWithYou(
+    {
+      evidence_class: null,
+      total: 2,
+      evidence: [
+        { kind: 'works-with', day: '20260501' },
+        { kind: 'works-with', day: '20260501' },
+      ],
+    },
+    'null class multiple',
+  );
+  check(
+    resNull.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
+      && !resNull.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE')
+      && !resNull.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:'),
+    'null evidence_class total > 1 uses many-moments copy and not scheduled copy',
+  );
+
+  check(
+    resScheduled1.toggleNode
+      && resScheduled1.toggleNode.textContent === 'ENT_CONN_WITH_YOU_TOGGLE'
+      && resScheduled1.toggleNode.getAttribute('aria-expanded') === 'false',
+    'scheduled body toggle has expected text and aria-expanded false',
+  );
+  check(
+    resScheduled1.paneNode
+      && resScheduled1.paneNode.className === 'entity-conn-evidence'
+      && resScheduled1.paneNode.hidden === true,
+    'scheduled body pane has entity-conn-evidence class and is hidden',
+  );
+
+  const resSemantic = checkWithYou(
+    { evidence_class: 'semantic', total: 1, evidence: [{ kind: 'mentioned', day: '20260501' }] },
+    'semantic toggle check',
+  );
+  check(
+    resSemantic.toggleNode
+      && resSemantic.toggleNode.textContent === 'ENT_CONN_WITH_YOU_TOGGLE'
+      && resSemantic.toggleNode.getAttribute('aria-expanded') === 'false',
+    'semantic body toggle has expected text and aria-expanded false',
+  );
+  check(
+    resSemantic.paneNode
+      && resSemantic.paneNode.className === 'entity-conn-evidence'
+      && resSemantic.paneNode.hidden === true,
+    'semantic body pane has entity-conn-evidence class and is hidden',
+  );
 
   console.log(`DOM CASES: ${cases} passed`);
 }

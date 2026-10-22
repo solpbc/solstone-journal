@@ -40,6 +40,8 @@ fn inputs(probe_ok: bool) -> CheckInputs {
         version: "x".into(),
         ced: None,
         rfdetr: solstone_core_check::RfdetrCheckInput::Ready,
+        vulkan_device_index: None,
+        local_backend: None,
     }
 }
 #[test]

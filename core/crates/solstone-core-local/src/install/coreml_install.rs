@@ -247,7 +247,7 @@ fn recover_publication_locked(home: &Path) -> Result<(), CoremlInstallError> {
 }
 
 const UNIT: &str = "parakeet-coreml";
-const FLUIDAUDIO_VERSION: &str = "0.17.7";
+const FLUIDAUDIO_VERSION: &str = "0.17.7+sol.1";
 static COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Printed by `install-models` before it asks this installer to fetch assets.

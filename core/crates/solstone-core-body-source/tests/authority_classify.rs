@@ -31,7 +31,7 @@ fn classifies_directory_observation_cartesian_truth_table() {
             Some(br#"{"import_id":null}"#.as_slice()),
             false,
         ),
-        ("unreadable", Some(b"{".as_slice()), true),
+        ("unreadable", Some(b"{".as_slice()), false),
     ];
 
     for (name_label, name) in names {
@@ -96,10 +96,10 @@ fn classifier_matches_public_manifest_signal_for_existing_scan_edge_inputs() {
     ] {
         let signal = inspect_body_manifest_signal(Some(bytes));
         let expected = match signal {
-            ManifestKeySignal::BodyKeyPresent { .. } | ManifestKeySignal::Unreadable => {
-                BundleClass::NativeCandidate
+            ManifestKeySignal::BodyKeyPresent { .. } => BundleClass::NativeCandidate,
+            ManifestKeySignal::NoBodyKey | ManifestKeySignal::Unreadable => {
+                BundleClass::LegacyCandidate
             }
-            ManifestKeySignal::NoBodyKey => BundleClass::LegacyCandidate,
         };
         assert_eq!(
             classify_bundle_directory(DirectoryObservation {
@@ -115,25 +115,50 @@ fn classifier_matches_public_manifest_signal_for_existing_scan_edge_inputs() {
 }
 
 #[test]
-fn classifier_distinguishes_absent_manifest_from_present_unreadable_manifest() {
-    let absent = DirectoryObservation {
-        name: b"legacy-directory",
+fn unreadable_manifest_alone_is_not_a_native_signal() {
+    let mut oversized = br#"{"source_type":"chatgpt","files_created":[""#.to_vec();
+    oversized.resize(MAX_MANIFEST_BYTES + 1, b'a');
+    oversized.extend_from_slice(br#""]}"#);
+    let legacy = DirectoryObservation {
+        name: b"20260731_020241",
         envelope_present: false,
         ledger_present: false,
-        manifest: None,
-    };
-    let unreadable = DirectoryObservation {
-        manifest: Some(b"{"),
-        ..absent
+        manifest: Some(&oversized),
     };
     assert_eq!(
-        classify_bundle_directory(absent),
+        inspect_body_manifest_signal(Some(&oversized)),
+        ManifestKeySignal::Unreadable
+    );
+    assert_eq!(
+        classify_bundle_directory(legacy),
         BundleClass::LegacyCandidate
     );
     assert_eq!(
-        classify_bundle_directory(unreadable),
-        BundleClass::NativeCandidate
+        classify_bundle_directory(DirectoryObservation {
+            manifest: Some(b"{"),
+            ..legacy
+        }),
+        BundleClass::LegacyCandidate
     );
+    for native in [
+        DirectoryObservation {
+            name: VALID_BUNDLE,
+            ..legacy
+        },
+        DirectoryObservation {
+            envelope_present: true,
+            ..legacy
+        },
+        DirectoryObservation {
+            ledger_present: true,
+            ..legacy
+        },
+    ] {
+        assert_eq!(
+            classify_bundle_directory(native),
+            BundleClass::NativeCandidate
+        );
+    }
 }
 
 #[test]

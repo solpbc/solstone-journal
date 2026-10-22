@@ -10,7 +10,28 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - breaking cli change: `journal` now prints the equivalent `solstone journal` command and exits without running it. `journal` will be removed in the next release. update scripts and any hand-written schedules or service commands that use it.
 
+### Fixed
+
+- fixed local models using a different GPU from the one you selected.
+- fixed Apple Health and Oura imports stopping with an error after saving when your journal also holds a large import from another source, such as a long ChatGPT history. imports already saved are kept and show up on your next Oura sync or Apple Health import, with nothing to redo.
+- fixed Oura sync failing with an error from Oura on some connections, including ones carried over from an earlier version.
+
+- in the map's day and week views, a visit no longer shows a second time as "no departure reported" once your phone has reported when you left. if you left after midnight, the day you arrived now shows when you left.
+
+- on mac, local transcription now recovers opening words that it could silently leave out of a long recording. existing transcripts keep the words they have.
+- on linux, windows and mac, local transcription no longer cuts quiet stretches out of a recording, such as a conversation from your watch. it now transcribes the whole recording, so background tv or radio may show up in your transcripts too. existing transcripts keep the words they have.
+
+- in your connections, plans inferred by older versions of your journal no longer count as events attended together.
+- in your connections, people linked only by a calendar invite no longer show as "events together" or "often around". they're now labeled "calendar only".
+- on the page for someone linked to you only by a calendar invite, "with you" no longer counts moments together. it now says "on your calendar only" with the latest day.
+- in your connections, people linked to you only by a calendar invite now show by name. before, they could show as an id.
+- on home, a connection's row no longer shows its latest meeting or calendar title. before, it labeled it "transcribed as".
+- an entity you delete no longer shows up in connections, for you or for agents reading your journal. before, it could stay listed, and asking for its connections found no match.
+- on windows, the journal window no longer shows "setup stopped before it finished" when your journal takes a while to start for the first time. the window now waits longer for it, and setup goes on to the window's home screen.
+
 ## [2.0.55] - 2026-10-22
+
+2.0.55 isn't available on windows. on windows, your journal stays on 2.0.54 and gets these changes, including the windows ones below, in a later version.
 
 ### Added
 

@@ -20,7 +20,7 @@ mod status;
 
 #[cfg(windows)]
 mod app;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod convey;
 #[cfg(windows)]
 mod journal;

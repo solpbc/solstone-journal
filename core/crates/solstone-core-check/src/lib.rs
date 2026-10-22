@@ -48,6 +48,10 @@ pub struct CheckInputs {
     pub ced: Option<CapabilityStatus>,
     #[serde(default)]
     pub rfdetr: RfdetrCheckInput,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vulkan_device_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_backend: Option<solstone_core_local::Backend>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -295,6 +299,52 @@ fn render_nodes_present_but_inaccessible(root: &Path) -> bool {
         })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalCheckGpuSelection {
+    pub vulkan_device_index: Option<u32>,
+    pub local_backend: Option<solstone_core_local::Backend>,
+    pub gpu_evaluation_error: Option<String>,
+}
+
+#[must_use]
+pub fn local_check_gpu_selection(
+    journal: &Path,
+    nvidia: &solstone_core_local::NvidiaProbe,
+) -> LocalCheckGpuSelection {
+    let read = match solstone_core_journal_config::read_journal_config(journal) {
+        Ok(read) => read,
+        Err(error) => {
+            return LocalCheckGpuSelection {
+                vulkan_device_index: None,
+                local_backend: None,
+                gpu_evaluation_error: Some(error.to_string()),
+            };
+        }
+    };
+    let override_index = read
+        .config
+        .as_ref()
+        .and_then(|c| c.get("providers"))
+        .and_then(Value::as_object)
+        .and_then(|p| p.get("local"))
+        .and_then(Value::as_object)
+        .and_then(|l| l.get("vulkan_device_index"))
+        .and_then(solstone_core_local::vulkan::local_vulkan_device_index);
+
+    match solstone_core_local::install::local_backend_choice(journal, Some(nvidia.clone())) {
+        solstone_core_local::BackendSelection::Selected(choice) => LocalCheckGpuSelection {
+            vulkan_device_index: override_index,
+            local_backend: Some(choice.backend),
+            gpu_evaluation_error: None,
+        },
+        solstone_core_local::BackendSelection::IntegrityBlocked => LocalCheckGpuSelection {
+            vulkan_device_index: None,
+            local_backend: None,
+            gpu_evaluation_error: Some("CUDA runtime integrity failure".into()),
+        },
+    }
+}
+
 /// Gather the same real host state used by `journal check` for all native consumers.
 #[must_use]
 pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
@@ -332,6 +382,7 @@ where
         (None, "unavailable")
     };
     let vulkan_obs = vulkan_fn();
+    let selection = local_check_gpu_selection(journal, &nvidia);
     CheckInputs {
         platform: host_platform(),
         memory: memory(),
@@ -352,7 +403,7 @@ where
         render_nodes_present_but_inaccessible: render_nodes_present_but_inaccessible(Path::new(
             "/dev/dri",
         )),
-        gpu_evaluation_error: None,
+        gpu_evaluation_error: selection.gpu_evaluation_error,
         version: version.into(),
         ced: {
             let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
@@ -362,6 +413,8 @@ where
             let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
             rfdetr_input_from(evaluate_host_rfdetr(journal, os, arch))
         },
+        vulkan_device_index: selection.vulkan_device_index,
+        local_backend: selection.local_backend,
     }
 }
 pub fn evaluate_host_rfdetr(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness {
@@ -708,6 +761,59 @@ fn mac_memory(memory: &MemoryInput) -> Check {
         }
     }
 }
+fn windows_vulkan_verdict_check(
+    probe_ok: bool,
+    devices: &[VulkanDevice],
+    override_index: Option<u32>,
+    selected: Option<&VulkanDevice>,
+) -> Check {
+    match gpu_device_local_verdict(probe_ok, devices, override_index) {
+        GpuDeviceLocalVerdict::Eligible { available_bytes } => {
+            let selected = selected.expect("eligible verdict requires a selected device");
+            check(
+                "gpu",
+                Severity::Ok,
+                format!(
+                    "Vulkan GPU {} with {} GB{}",
+                    selected.name,
+                    label(available_bytes),
+                    placement_suffix(devices, Some(selected), Some(selected.vram_mib), false)
+                ),
+                Some(GPU_DEVICE_LOCAL_MIN_BYTES),
+                Some(available_bytes),
+            )
+        }
+        GpuDeviceLocalVerdict::BelowBar { available_bytes } => {
+            let selected = selected.expect("below-bar verdict requires a selected device");
+            check(
+                "gpu",
+                Severity::Blocked,
+                format!(
+                    "GPU {} has {} GB; the bundled local models need at least 6 GB",
+                    selected.name,
+                    label(available_bytes)
+                ),
+                Some(GPU_DEVICE_LOCAL_MIN_BYTES),
+                Some(available_bytes),
+            )
+        }
+        GpuDeviceLocalVerdict::Unknown => check(
+            "gpu",
+            Severity::Unknown,
+            "couldn't read GPU memory. local thinking needs at least 6 GB",
+            Some(GPU_DEVICE_LOCAL_MIN_BYTES),
+            None,
+        ),
+        GpuDeviceLocalVerdict::NoHardwareDevice => check(
+            "gpu",
+            Severity::Blocked,
+            "no usable GPU found — the bundled local models need a hardware GPU",
+            None,
+            None,
+        ),
+    }
+}
+
 fn gpu(inputs: &CheckInputs) -> Check {
     if let Some(error) = &inputs.gpu_evaluation_error {
         return check(
@@ -721,7 +827,7 @@ fn gpu(inputs: &CheckInputs) -> Check {
     let selected = inputs
         .vulkan
         .probe_ok
-        .then(|| select_device(&inputs.vulkan.devices, None))
+        .then(|| select_device(&inputs.vulkan.devices, inputs.vulkan_device_index))
         .flatten();
     if !inputs.nvidia.detected {
         if (!inputs.vulkan.probe_ok || selected.is_none())
@@ -744,60 +850,12 @@ fn gpu(inputs: &CheckInputs) -> Check {
             return check("gpu", Severity::Unknown, detail, expected, None);
         }
         if inputs.platform.os == "Windows" {
-            return match gpu_device_local_verdict(
+            return windows_vulkan_verdict_check(
                 inputs.vulkan.probe_ok,
                 &inputs.vulkan.devices,
-                None,
-            ) {
-                GpuDeviceLocalVerdict::Eligible { available_bytes } => {
-                    let selected = selected.expect("eligible verdict requires a selected device");
-                    check(
-                        "gpu",
-                        Severity::Ok,
-                        format!(
-                            "Vulkan GPU {} with {} GB{}",
-                            selected.name,
-                            label(available_bytes),
-                            placement_suffix(
-                                &inputs.vulkan.devices,
-                                Some(&selected),
-                                Some(selected.vram_mib),
-                                false,
-                            )
-                        ),
-                        Some(GPU_DEVICE_LOCAL_MIN_BYTES),
-                        Some(available_bytes),
-                    )
-                }
-                GpuDeviceLocalVerdict::BelowBar { available_bytes } => {
-                    let selected = selected.expect("below-bar verdict requires a selected device");
-                    check(
-                        "gpu",
-                        Severity::Blocked,
-                        format!(
-                            "GPU {} has {} GB; the bundled local models need at least 6 GB",
-                            selected.name,
-                            label(available_bytes)
-                        ),
-                        Some(GPU_DEVICE_LOCAL_MIN_BYTES),
-                        Some(available_bytes),
-                    )
-                }
-                GpuDeviceLocalVerdict::Unknown => check(
-                    "gpu",
-                    Severity::Unknown,
-                    "couldn't read GPU memory. local thinking needs at least 6 GB",
-                    Some(GPU_DEVICE_LOCAL_MIN_BYTES),
-                    None,
-                ),
-                GpuDeviceLocalVerdict::NoHardwareDevice => check(
-                    "gpu",
-                    Severity::Blocked,
-                    "no usable GPU found — the bundled local models need a hardware GPU",
-                    None,
-                    None,
-                ),
-            };
+                inputs.vulkan_device_index,
+                selected.as_ref(),
+            );
         }
         let Some(selected) = selected else {
             return check(
@@ -838,6 +896,14 @@ fn gpu(inputs: &CheckInputs) -> Check {
             ),
             Some(GPU_DEVICE_LOCAL_MIN_BYTES),
             Some(bytes),
+        );
+    }
+    if inputs.local_backend == Some(solstone_core_local::Backend::Vulkan) {
+        return windows_vulkan_verdict_check(
+            inputs.vulkan.probe_ok,
+            &inputs.vulkan.devices,
+            inputs.vulkan_device_index,
+            selected.as_ref(),
         );
     }
     let effective = inputs.nvidia.vram_mib.or(inputs.nvidia.tiering_memory_mib);
@@ -1055,6 +1121,8 @@ mod tests {
             version: "x".into(),
             ced,
             rfdetr,
+            vulkan_device_index: None,
+            local_backend: None,
         }
     }
 
@@ -1383,6 +1451,8 @@ mod tests {
             version: "x".into(),
             ced: None,
             rfdetr: RfdetrCheckInput::Ready,
+            vulkan_device_index: None,
+            local_backend: None,
         };
         let report = build_check_report(&inputs);
         assert_eq!(report.recommended_package, Some("solstone-journal"));
@@ -1420,6 +1490,8 @@ mod tests {
             version: "x".into(),
             ced: None,
             rfdetr: RfdetrCheckInput::Ready,
+            vulkan_device_index: None,
+            local_backend: None,
         };
         assert!(json_output(&build_check_report(&inputs)).contains("\"python\": null"));
     }
@@ -1468,6 +1540,8 @@ mod tests {
             version: "x".into(),
             ced: None,
             rfdetr: RfdetrCheckInput::Ready,
+            vulkan_device_index: None,
+            local_backend: None,
         };
         let report = build_check_report(&inputs);
         assert_eq!(
@@ -1672,5 +1746,206 @@ mod tests {
             .find(|c| c.name == "memory")
             .expect("memory check");
         assert_eq!(mem_unknown.severity, Severity::Unknown);
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn local_check_gpu_selection_contract() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path();
+
+        let probe = solstone_core_local::NvidiaProbe {
+            schema: "solstone-local-nvidia-probe-v1".into(),
+            detected: false,
+            gpu_index: None,
+            gpu_name: None,
+            compute_cap: None,
+            arch: None,
+            driver_cuda_major: None,
+            vram_mib: None,
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+
+        let test_devices = vec![
+            VulkanDevice {
+                index: 0,
+                name: "default-discrete".into(),
+                device_type: Some(2),
+                vram_mib: 24576,
+            },
+            VulkanDevice {
+                index: 1,
+                name: "configured-small".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+        ];
+
+        // Missing config file
+        let sel = local_check_gpu_selection(journal, &probe);
+        assert_eq!(sel.vulkan_device_index, None);
+        assert_eq!(
+            sel.local_backend,
+            Some(solstone_core_local::Backend::Vulkan)
+        );
+        assert_eq!(sel.gpu_evaluation_error, None);
+
+        let mut inputs = check_inputs(None, RfdetrCheckInput::Ready);
+        inputs.vulkan.devices = test_devices.clone();
+        inputs.vulkan_device_index = sel.vulkan_device_index;
+        inputs.local_backend = sel.local_backend;
+        inputs.gpu_evaluation_error = sel.gpu_evaluation_error;
+        let report = build_check_report(&inputs);
+        let gpu_chk = report.checks.iter().find(|c| c.name == "gpu").unwrap();
+        assert_eq!(gpu_chk.severity, Severity::Ok);
+        assert!(gpu_chk.detail.contains("default-discrete"));
+
+        // Corrupt config file
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::write(journal.join("config/journal.json"), b"invalid json").unwrap();
+        let sel = local_check_gpu_selection(journal, &probe);
+        assert_eq!(sel.vulkan_device_index, None);
+        assert_eq!(sel.local_backend, None);
+        assert!(sel.gpu_evaluation_error.is_some());
+
+        inputs.vulkan_device_index = sel.vulkan_device_index;
+        inputs.local_backend = sel.local_backend;
+        inputs.gpu_evaluation_error = sel.gpu_evaluation_error;
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Unknown);
+        assert!(!g.detail.contains("default-discrete"));
+
+        // Valid config with vulkan_device_index: 1
+        std::fs::write(
+            journal.join("config/journal.json"),
+            br#"{"providers": {"local": {"vulkan_device_index": 1}}}"#,
+        )
+        .unwrap();
+        let sel = local_check_gpu_selection(journal, &probe);
+        assert_eq!(sel.vulkan_device_index, Some(1));
+        assert_eq!(
+            sel.local_backend,
+            Some(solstone_core_local::Backend::Vulkan)
+        );
+        assert_eq!(sel.gpu_evaluation_error, None);
+
+        inputs.vulkan_device_index = sel.vulkan_device_index;
+        inputs.local_backend = sel.local_backend;
+        inputs.gpu_evaluation_error = sel.gpu_evaluation_error;
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Blocked);
+        assert!(g.detail.contains("configured-small"));
+    }
+
+    #[test]
+    fn check_gpu_respects_vulkan_override_and_backend() {
+        let pair_a = vec![
+            VulkanDevice {
+                index: 0,
+                name: "default-large".into(),
+                device_type: Some(2),
+                vram_mib: 24576,
+            },
+            VulkanDevice {
+                index: 1,
+                name: "configured-small".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+        ];
+
+        let pair_b = vec![
+            VulkanDevice {
+                index: 0,
+                name: "default-small".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+            VulkanDevice {
+                index: 1,
+                name: "configured-large".into(),
+                device_type: Some(2),
+                vram_mib: 24576,
+            },
+        ];
+
+        // 1. Linux !nvidia.detected with pair_a and override Some(1) -> Blocked, names configured-small
+        let mut inputs = check_inputs(None, RfdetrCheckInput::Ready);
+        inputs.platform.os = "Linux".into();
+        inputs.vulkan.probe_ok = true;
+        inputs.vulkan.devices = pair_a.clone();
+        inputs.vulkan_device_index = Some(1);
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Blocked);
+        assert!(g.detail.contains("configured-small"));
+
+        let report_a = build_check_report(&inputs);
+        let gpu_rep_a = report_a.checks.iter().find(|c| c.name == "gpu").unwrap();
+        assert_eq!(gpu_rep_a.severity, Severity::Blocked);
+        assert!(gpu_rep_a.detail.contains("configured-small"));
+
+        // Linux !nvidia.detected with pair_b and override Some(1) -> Ok, names configured-large
+        inputs.vulkan.devices = pair_b.clone();
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Ok);
+        assert!(g.detail.contains("configured-large"));
+
+        let report_b = build_check_report(&inputs);
+        let gpu_rep_b = report_b.checks.iter().find(|c| c.name == "gpu").unwrap();
+        assert_eq!(gpu_rep_b.severity, Severity::Ok);
+        assert!(gpu_rep_b.detail.contains("configured-large"));
+
+        // 2. Windows !nvidia.detected with pair_a and override Some(1) -> Blocked
+        inputs.platform.os = "Windows".into();
+        inputs.vulkan.devices = pair_a.clone();
+        inputs.vulkan_device_index = Some(1);
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Blocked);
+        assert!(g.detail.contains("configured-small"));
+
+        // Windows with pair_b and override Some(1) -> Ok
+        inputs.vulkan.devices = pair_b.clone();
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Ok);
+        assert!(g.detail.contains("configured-large"));
+
+        // 3. Linux with nvidia.detected: true and local_backend: Vulkan on pair_a
+        inputs.platform.os = "Linux".into();
+        inputs.nvidia.detected = true;
+        inputs.nvidia.vram_mib = Some(16384);
+        inputs.local_backend = Some(solstone_core_local::Backend::Vulkan);
+        inputs.vulkan.devices = pair_a.clone();
+        inputs.vulkan_device_index = Some(1);
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Blocked);
+        assert!(g.detail.contains("configured-small"));
+
+        // Small NVIDIA capacity must not block the eligible selected Vulkan device.
+        inputs.nvidia.vram_mib = Some(2048);
+        inputs.vulkan.devices = pair_b.clone();
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Ok);
+        assert!(g.detail.contains("configured-large"));
+
+        // 4. Linux with nvidia.detected: true and local_backend: Cuda
+        inputs.local_backend = Some(solstone_core_local::Backend::Cuda);
+        inputs.nvidia.vram_mib = Some(16384);
+        inputs.vulkan.devices = pair_a.clone();
+        inputs.vulkan_device_index = Some(1); // Vulkan device 1 is below bar
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Ok);
+        assert!(g.detail.contains("NVIDIA GPU with 16 GB"));
+
+        // NVIDIA capacity below bar: refuses on NVIDIA memory, ignoring eligible Vulkan device
+        inputs.nvidia.vram_mib = Some(4096);
+        inputs.vulkan.devices = pair_b.clone();
+        inputs.vulkan_device_index = Some(1); // Vulkan device 1 is 24 GB
+        let g = gpu(&inputs);
+        assert_eq!(g.severity, Severity::Blocked);
+        assert!(
+            g.detail
+                .contains("the NVIDIA GPU has 4 GB — the bundled local models need at least 6 GB")
+        );
     }
 }

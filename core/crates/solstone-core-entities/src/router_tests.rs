@@ -869,6 +869,32 @@ async fn index_plate_history_returns_pair_evidence() {
     assert_eq!(body["peer_id"], "person-bob");
     assert_eq!(body["evidence"][0]["kind"], "mentioned");
     assert_eq!(body["evidence"][0]["day"], "20260501");
+    assert_eq!(body["evidence_class"], "semantic");
+}
+
+#[tokio::test]
+async fn index_plate_history_scheduled_with_only_is_scheduled() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    save_person(journal.path(), "person-bob", "Bob");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "person-ada",
+            "person-bob",
+            "scheduled-with",
+            Some("20260501"),
+            "a",
+        )],
+    );
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=person-ada&peer=person-bob",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["evidence"][0]["kind"], "scheduled-with");
+    assert_eq!(body["evidence_class"], "scheduled");
 }
 
 #[tokio::test]
@@ -968,6 +994,50 @@ async fn index_plate_overview_returns_ranked_entities() {
         .find(|entity| entity["entity_id"] == "person-cara")
         .expect("cara is ranked");
     assert_eq!(cara["type"], Value::Null);
+}
+
+/// A deleted entity's connections stay indexed under its id. Overview and
+/// network leave that id out, so every id they list is one network resolves.
+#[tokio::test]
+async fn connections_list_only_ids_network_resolves_after_a_delete() {
+    let journal = Journal::new();
+    let root = journal.path();
+    save_person(root, "person-ada", "Ada Lovelace");
+    save_person(root, "person-bob", "Bob");
+    save_person(root, "kineviz", "Kineviz");
+    seed_edge_rows(
+        root,
+        &[
+            (
+                "person-ada",
+                "person-bob",
+                "works-with",
+                Some("20260501"),
+                "a",
+            ),
+            ("person-ada", "kineviz", "works-with", Some("20260502"), "b"),
+            ("person-bob", "kineviz", "mentioned", Some("20260503"), "c"),
+        ],
+    );
+    solstone_core_facets::delete_journal_entity(root, "kineviz").unwrap();
+
+    let (status, overview) = call(root, "/app/entities/api/overview").await;
+    assert_eq!(status, 200, "{overview}");
+    let ids: Vec<String> = overview["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entity| entity["entity_id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ids, vec!["person-ada", "person-bob"]);
+    assert_eq!(overview["totals"]["entities"], 2);
+    for id in &ids {
+        let (status, network) = call(root, &format!("/app/entities/api/network?entity={id}")).await;
+        assert_eq!(status, 200, "{network}");
+        assert_eq!(network["entity_id"], id.as_str(), "{network}");
+        assert_eq!(network["total_neighbors"], 1, "{network}");
+        assert_ne!(network["neighbors"][0]["entity_id"], "kineviz");
+    }
 }
 
 #[tokio::test]
@@ -1595,6 +1665,18 @@ async fn state_has_copy_and_attendance() {
         assert!(
             value.is_some_and(|value| !value.is_empty()),
             "missing or empty scope copy key: {key}"
+        );
+    }
+    for key in [
+        "ENT_CONN_ROW_META_SCHEDULED",
+        "ENT_CONN_CALENDAR_ONLY",
+        "ENT_CONN_SUMMARY_CALENDAR",
+        "ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED",
+    ] {
+        let value = v["entities_copy"][key].as_str();
+        assert!(
+            value.is_some_and(|value| !value.is_empty()),
+            "missing or empty copy key: {key}"
         );
     }
 }
@@ -8550,4 +8632,181 @@ fn entity_search_work_at_uses_owner_zone_today() {
         let ids = search_item_ids(&result);
         assert_eq!(ids, vec!["today_owner"]);
     }
+}
+
+#[tokio::test]
+async fn connections_network_and_history_show_registry_name_for_scheduled_edges_without_names() {
+    let journal = Journal::new();
+    save_person(journal.path(), "owner", "Owner");
+    save_person(journal.path(), "nurse_angela", "Nurse Angela");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "owner",
+            "nurse_angela",
+            "scheduled-with",
+            Some("20260501"),
+            "p1",
+        )],
+    );
+
+    let (status, body) = call(journal.path(), "/app/entities/api/network?entity=owner").await;
+    assert_eq!(status, 200);
+    assert_eq!(body["neighbors"][0]["entity_id"], "nurse_angela");
+    assert_eq!(body["neighbors"][0]["name"], "Nurse Angela");
+
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=owner&peer=nurse_angela",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["peer_id"], "nurse_angela");
+    assert_eq!(body["peer_name"], "Nurse Angela");
+}
+
+#[tokio::test]
+async fn connections_network_and_history_resolve_registry_name_when_written_id_differs_from_folder()
+{
+    let journal = Journal::new();
+    save_person(journal.path(), "owner", "Owner");
+    save_person(journal.path(), "nurse_angela", "Nurse Angela");
+    rewrite_written_id(journal.path(), "nurse_angela", "nurse-angela");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "owner",
+            "nurse_angela",
+            "scheduled-with",
+            Some("20260501"),
+            "p1",
+        )],
+    );
+
+    let (status, body) = call(journal.path(), "/app/entities/api/network?entity=owner").await;
+    assert_eq!(status, 200);
+    assert_eq!(body["neighbors"][0]["entity_id"], "nurse_angela");
+    assert_eq!(body["neighbors"][0]["name"], "Nurse Angela");
+
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=owner&peer=nurse_angela",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["peer_id"], "nurse_angela");
+    assert_eq!(body["peer_name"], "Nurse Angela");
+}
+
+#[tokio::test]
+async fn connections_network_and_history_return_null_when_registry_name_is_empty() {
+    let journal = Journal::new();
+    save_person(journal.path(), "owner", "Owner");
+    save_person(journal.path(), "nurse_angela", "");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "owner",
+            "nurse_angela",
+            "scheduled-with",
+            Some("20260501"),
+            "p1",
+        )],
+    );
+
+    let (status, body) = call(journal.path(), "/app/entities/api/network?entity=owner").await;
+    assert_eq!(status, 200);
+    assert_eq!(body["neighbors"][0]["entity_id"], "nurse_angela");
+    assert_eq!(body["neighbors"][0]["name"], Value::Null);
+    assert!(!body["neighbors"][0]["name"].is_string());
+
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=owner&peer=nurse_angela",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["peer_id"], "nurse_angela");
+    assert_eq!(body["peer_name"], Value::Null);
+    assert!(!body["peer_name"].is_string());
+}
+
+#[tokio::test]
+async fn collision_loser_folder_without_name_returns_null_and_does_not_inherit_winner_name() {
+    let journal = Journal::new();
+    save_person(journal.path(), "owner", "Owner");
+    save_person(journal.path(), "winner_dir", "Winner Name");
+    rewrite_written_id(journal.path(), "winner_dir", "shared_id");
+    let loser_dir = journal.path().join("entities/shared_id");
+    fs::create_dir_all(&loser_dir).unwrap();
+    fs::write(
+        loser_dir.join("entity.json"),
+        serde_json::to_vec(&json!({"type": "Person"})).unwrap(),
+    )
+    .unwrap();
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "owner",
+            "shared_id",
+            "scheduled-with",
+            Some("20260501"),
+            "p1",
+        )],
+    );
+
+    let (status, body) = call(journal.path(), "/app/entities/api/network?entity=owner").await;
+    assert_eq!(status, 200);
+    assert_eq!(body["neighbors"][0]["entity_id"], "shared_id");
+    assert_eq!(body["neighbors"][0]["name"], Value::Null);
+    assert!(!body["neighbors"][0]["name"].is_string());
+
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=owner&peer=shared_id",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["peer_id"], "shared_id");
+    assert_eq!(body["peer_name"], Value::Null);
+    assert!(!body["peer_name"].is_string());
+}
+
+#[tokio::test]
+async fn collision_loser_folder_with_own_name_returns_its_own_name_not_winner_name() {
+    let journal = Journal::new();
+    save_person(journal.path(), "owner", "Owner");
+    save_person(journal.path(), "winner_dir", "Winner Name");
+    rewrite_written_id(journal.path(), "winner_dir", "shared_id");
+    let loser_dir = journal.path().join("entities/shared_id");
+    fs::create_dir_all(&loser_dir).unwrap();
+    fs::write(
+        loser_dir.join("entity.json"),
+        serde_json::to_vec(&json!({"name": "Loser Name", "type": "Person"})).unwrap(),
+    )
+    .unwrap();
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "owner",
+            "shared_id",
+            "scheduled-with",
+            Some("20260501"),
+            "p1",
+        )],
+    );
+
+    let (status, body) = call(journal.path(), "/app/entities/api/network?entity=owner").await;
+    assert_eq!(status, 200);
+    assert_eq!(body["neighbors"][0]["entity_id"], "shared_id");
+    assert_eq!(body["neighbors"][0]["name"], "Loser Name");
+
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=owner&peer=shared_id",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["peer_id"], "shared_id");
+    assert_eq!(body["peer_name"], "Loser Name");
 }

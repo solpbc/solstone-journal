@@ -677,3 +677,91 @@ async fn an_empty_journal_returns_an_empty_month_successfully() {
     assert_eq!(month["days"].as_array().unwrap().len(), 31);
     assert_eq!(month["journal_has_location"], false);
 }
+
+fn visit(arrival: &str, departure: Option<&str>, lat: f64, lon: f64) -> String {
+    let departure = departure.map_or_else(|| "null".to_owned(), |d| format!("\"{d}\""));
+    format!(
+        r#"{{"arrival":"{arrival}","departure":{departure},"h_acc":40,"lat":{lat},"lon":{lon},"schema":"solstone.location.visit/1"}}"#
+    )
+}
+
+fn departures(items: &Value) -> Vec<Option<String>> {
+    items
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["kind"] == "visit")
+        .map(|item| item["departure"]["clock"].as_str().map(str::to_owned))
+        .collect()
+}
+
+#[tokio::test]
+async fn the_day_and_week_list_each_visit_once_when_its_complete_report_lands_the_next_day() {
+    let root = tempfile::tempdir().unwrap();
+    let report = |day: &str, segment: &str, line: String| {
+        write(
+            root.path(),
+            day,
+            "phone_location",
+            segment,
+            &format!("{IPHONE_HEADER}\n{line}\n"),
+        );
+    };
+    // A morning visit reported twice on its own day, the second time refined.
+    report(
+        "20261001",
+        "085800_300",
+        visit("2026-10-01T14:58:00Z", None, 39.7527, -105.0001),
+    );
+    report(
+        "20261001",
+        "120500_300",
+        visit(
+            "2026-10-01T15:00:00Z",
+            Some("2026-10-01T18:06:00Z"),
+            39.7530,
+            -105.0003,
+        ),
+    );
+    // An evening visit whose complete report lands on October 2.
+    report(
+        "20261001",
+        "211000_300",
+        visit("2026-10-02T03:10:00Z", None, 39.7555, -105.2211),
+    );
+    report(
+        "20261002",
+        "080000_300",
+        visit(
+            "2026-10-02T03:11:00Z",
+            Some("2026-10-02T14:00:00Z"),
+            39.7556,
+            -105.2212,
+        ),
+    );
+    // An arrival that never got a complete report stays open-ended.
+    report(
+        "20261002",
+        "190000_300",
+        visit("2026-10-03T01:00:00Z", None, 39.7527, -105.0001),
+    );
+
+    let (status, _, day) = get(root.path(), "/app/map/api/day/20261001").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        departures(&day["entries"]),
+        vec![Some("12:06".to_owned()), Some("08:00".to_owned())]
+    );
+    let (_, _, week) = get(root.path(), "/app/map/api/week/20261001").await;
+    let days = week["days"].as_array().unwrap();
+    assert_eq!(days[3]["day"], "20261001");
+    assert_eq!(
+        departures(&days[3]["items"]),
+        vec![Some("12:06".to_owned()), Some("08:00".to_owned())]
+    );
+    assert_eq!(days[4]["day"], "20261002");
+    assert_eq!(
+        departures(&days[4]["items"]),
+        vec![Some("08:00".to_owned()), None]
+    );
+}

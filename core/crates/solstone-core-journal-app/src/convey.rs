@@ -12,7 +12,27 @@ use std::time::Duration;
 use serde_json::Value;
 use ureq::Agent;
 
+use crate::setup_flow::{ActionErrorPayload, SetupAction, action_body};
+
 pub const DEFAULT_PORT: u16 = 5015;
+
+/// How long a quick read may take before the window treats the journal as not
+/// answering.
+const ANSWER_BOUND: Duration = Duration::from_secs(5);
+
+/// Setup's reads and actions run the journal's checks of this PC. On a small
+/// PC that is still starting the journal's services for the first time they
+/// can take several seconds, and a slow answer is not a stopped setup.
+const SETUP_ANSWER_BOUND: Duration = Duration::from_secs(30);
+
+/// The bound for one route: setup's own routes may answer slowly.
+fn answer_bound(path: &str) -> Duration {
+    if path.starts_with("/init/") {
+        SETUP_ANSWER_BOUND
+    } else {
+        ANSWER_BOUND
+    }
+}
 
 pub struct Convey {
     base: String,
@@ -48,7 +68,7 @@ pub enum InitProbe {
 impl Convey {
     pub fn new(port: Option<u16>) -> Self {
         let agent: Agent = Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(5)))
+            .timeout_global(Some(ANSWER_BOUND))
             .http_status_as_error(false)
             .max_redirects(0)
             .max_redirects_will_error(false)
@@ -85,6 +105,9 @@ impl Convey {
         self.json(
             self.agent
                 .get(format!("{}{path}", self.base))
+                .config()
+                .timeout_global(Some(answer_bound(path)))
+                .build()
                 .header("Accept", "application/json")
                 .call(),
         )
@@ -94,6 +117,9 @@ impl Convey {
         let request = self
             .agent
             .post(format!("{}{path}", self.base))
+            .config()
+            .timeout_global(Some(answer_bound(path)))
+            .build()
             .header("Accept", "application/json");
         self.json(match body {
             Some(body) => request
@@ -107,10 +133,29 @@ impl Convey {
         self.json(
             self.agent
                 .put(format!("{}{path}", self.base))
+                .config()
+                .timeout_global(Some(answer_bound(path)))
+                .build()
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .send(body.to_string()),
         )
+    }
+
+    /// The journal's setup state, as the setup window reads it.
+    pub fn setup_state(&self) -> Result<Value, String> {
+        self.get("/init/api/state")
+            .map_err(|refusal| refusal.message)
+    }
+
+    /// Apply one setup action; the journal answers with its setup state.
+    pub fn setup_action(&self, action: &SetupAction) -> Result<Value, ActionErrorPayload> {
+        self.post("/init/api/action", Some(&action_body(action)))
+            .map_err(|refusal| ActionErrorPayload {
+                reason_code: refusal.reason_code,
+                message: refusal.message,
+                is_transport: refusal.status.is_none(),
+            })
     }
 
     /// Whether a pairing link has been used, by the nonce pair-start returned.
@@ -217,5 +262,256 @@ mod tests {
         assert!(!is_nonce("a&nonce=b"));
         assert!(!is_nonce("a b"));
         assert!(!is_nonce(&"a".repeat(129)));
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_tests {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::net::{TcpListener, TcpStream};
+        use std::path::PathBuf;
+        use std::sync::{Arc, Mutex};
+        use std::time::{Duration, Instant};
+
+        use serde_json::{Value, json};
+
+        use super::super::Convey;
+        use crate::setup_flow::{Effect, Event, Phase, Session, SetupAction, Step, reduce, view};
+
+        /// Longer than a quick read is allowed, as the journal answered setup
+        /// on a two-core PC while its services were first starting.
+        const SLOW: Duration = Duration::from_secs(6);
+
+        fn download() -> Value {
+            json!({"state": "idle", "attempt_id": null, "bytes_done": 0,
+                   "bytes_total": null, "error": null})
+        }
+
+        /// A first-run journal that answers its setup routes, slowly for the
+        /// reads that run its checks of this PC.
+        struct SlowJournal {
+            mark: &'static str,
+            choice: Option<String>,
+            done: bool,
+            first_read: bool,
+        }
+
+        impl SlowJournal {
+            fn state(&self) -> Value {
+                let proposed = self.mark != "unavailable";
+                let mut remaining = Vec::new();
+                if self.mark != "locked" {
+                    remaining.push("mark");
+                }
+                if self.choice.is_none() {
+                    remaining.push("thinking");
+                }
+                if self.done {
+                    remaining.clear();
+                }
+                json!({
+                    "schema": "solstone.setup-state.v1",
+                    "journal_ready": true,
+                    "mark": {
+                        "state": self.mark,
+                        "proposal_id": if proposed { json!("first") } else { Value::Null },
+                        "render": if proposed { json!({
+                            "icon1": {"svg": "<path d=\"M0 0h10v10H0z\"/>", "rot": 0,
+                                      "color": {"name": "blue", "hex": "#0000ff"}},
+                            "icon2": {"svg": "<circle cx=\"5\" cy=\"5\" r=\"5\"/>", "rot": 45,
+                                      "color": {"name": "red", "hex": "#ff0000"}},
+                            "words": ["north", "stone"]
+                        }) } else { Value::Null },
+                    },
+                    "thinking": {
+                        "choice": self.choice,
+                        "saved": self.choice.is_some(),
+                        "capability": "unknown",
+                        "download_bytes": null
+                    },
+                    "downloads": {"speech": download(), "thinking": download()},
+                    "remaining_required_steps": remaining,
+                    "done": self.done,
+                    "redirect": "/app/home",
+                    "copy": {}
+                })
+            }
+
+            /// Apply one request and say whether its answer is a slow one.
+            fn answer(&mut self, method: &str, path: &str, body: &Value) -> (Value, bool) {
+                match (method, path, body["action"].as_str()) {
+                    ("GET", "/init/api/state", _) => {
+                        let slow = self.first_read;
+                        self.first_read = false;
+                        (self.state(), slow)
+                    }
+                    ("POST", "/init/api/action", Some("regenerate_mark")) => {
+                        self.mark = "proposed";
+                        (self.state(), false)
+                    }
+                    ("POST", "/init/api/action", Some("commit_mark")) => {
+                        self.mark = "locked";
+                        (self.state(), false)
+                    }
+                    ("POST", "/init/api/action", Some("save_thinking")) => {
+                        self.choice = body["choice"].as_str().map(str::to_owned);
+                        (self.state(), true)
+                    }
+                    ("POST", "/init/api/action", Some("finalize")) => {
+                        self.done = true;
+                        (self.state(), true)
+                    }
+                    other => panic!("the window asked an unexpected route: {other:?}"),
+                }
+            }
+        }
+
+        fn serve(journal: Arc<Mutex<SlowJournal>>, mut stream: TcpStream) {
+            let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).expect("request line");
+            let mut parts = request_line.split_whitespace();
+            let method = parts.next().unwrap_or_default().to_owned();
+            let path = parts.next().unwrap_or_default().to_owned();
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).expect("header");
+                if line.trim().is_empty() {
+                    break;
+                }
+                if let Some((name, value)) = line.split_once(':')
+                    && name.eq_ignore_ascii_case("content-length")
+                {
+                    length = value.trim().parse().expect("content length");
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).expect("body");
+            let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+            let (answer, slow) = journal.lock().unwrap().answer(&method, &path, &body);
+            if slow {
+                std::thread::sleep(SLOW);
+            }
+            let text = answer.to_string();
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n{text}",
+                text.len()
+            );
+        }
+
+        /// Run the window's journal effects the way the app does, until none
+        /// is left. Each reply is applied before the next effect runs.
+        fn settle(mut session: Session, mut effects: Vec<Effect>, port: u16) -> Session {
+            while !effects.is_empty() {
+                let effect = effects.remove(0);
+                let generation = session.inflight.unwrap_or(0);
+                let event = match effect {
+                    Effect::FetchState => Event::StateLoaded {
+                        generation,
+                        result: Convey::new(Some(port)).setup_state(),
+                    },
+                    Effect::PostAction(action) => Event::ActionCompleted {
+                        generation,
+                        result: Convey::new(Some(port)).setup_action(&action),
+                    },
+                    Effect::RecordPending {
+                        generation,
+                        timezone,
+                    } => Event::PendingRecorded {
+                        generation,
+                        timezone,
+                        result: Ok(()),
+                    },
+                    _ => continue,
+                };
+                let step: Step = reduce(&session, &event);
+                session = step.session;
+                assert!(
+                    view(&session)["error"].is_null(),
+                    "the owner saw an error: {}",
+                    view(&session)
+                );
+                effects.extend(step.effects);
+            }
+            session
+        }
+
+        #[test]
+        fn a_slow_setup_answer_still_reaches_home() {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+            let port = listener.local_addr().expect("address").port();
+            let journal = Arc::new(Mutex::new(SlowJournal {
+                mark: "unavailable",
+                choice: None,
+                done: false,
+                first_read: true,
+            }));
+            let served = journal.clone();
+            std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let journal = served.clone();
+                    let stream = stream.expect("accept");
+                    std::thread::spawn(move || serve(journal, stream));
+                }
+            });
+
+            let started = Instant::now();
+            let mut session = Session::default();
+            for event in [
+                Event::Boot {
+                    task_installed: false,
+                },
+                Event::CopyLoaded {
+                    generation: 1,
+                    result: Ok(json!({})),
+                },
+                Event::AcknowledgeWelcome,
+                Event::ContinueSignIn,
+                Event::ChooseFolder(PathBuf::from(r"C:\Users\owner\journal")),
+                Event::StartSetup,
+            ] {
+                session = reduce(&session, &event).session;
+            }
+            let finished = reduce(
+                &session,
+                &Event::SetupFinished {
+                    generation: session.inflight.expect("setup is running"),
+                    result: Ok(None),
+                },
+            );
+            session = settle(finished.session, finished.effects, port);
+            assert_eq!(session.phase, Phase::Mark, "{}", view(&session));
+
+            let commit = reduce(
+                &session,
+                &Event::CommitMarkClicked {
+                    proposal_id: "first".into(),
+                },
+            );
+            assert_eq!(
+                commit.effects,
+                vec![Effect::PostAction(SetupAction::CommitMark {
+                    proposal_id: "first".into()
+                })]
+            );
+            session = settle(commit.session, commit.effects, port);
+            assert_eq!(session.phase, Phase::Thinking, "{}", view(&session));
+
+            let continued = reduce(
+                &session,
+                &Event::ContinueThinking {
+                    choice: "later".into(),
+                    timezone: None,
+                },
+            );
+            session = settle(continued.session, continued.effects, port);
+            assert_eq!(session.phase, Phase::Home, "{}", view(&session));
+
+            // The first read, the save and the finish each answered slowly.
+            assert!(started.elapsed() >= SLOW * 3, "{:?}", started.elapsed());
+            assert!(journal.lock().unwrap().done);
+        }
     }
 }

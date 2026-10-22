@@ -589,6 +589,7 @@ pub enum LocalHardwareAdmission {
     },
     UnsupportedDarwin,
     GpuHost {
+        backend: crate::Backend,
         nvidia_detected: bool,
         nvidia_memory_bytes: Option<u64>,
         probe_ok: bool,
@@ -723,36 +724,40 @@ pub fn run_local_with_gpu_admission(
         }
         LocalHardwareAdmission::UnsupportedDarwin => (None, None),
         LocalHardwareAdmission::GpuHost {
+            backend,
             nvidia_detected,
             nvidia_memory_bytes,
             probe_ok,
             devices,
             override_index,
-        } => {
-            if nvidia_detected {
-                if let Some(bytes) = nvidia_memory_bytes {
-                    match crate::vulkan::device_local_capacity_verdict(bytes) {
-                        crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => (None, None),
-                        crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => (
-                            Some((
-                                "gpu_memory_insufficient",
-                                format!(
-                                    "device-local VRAM below 6 GiB minimum: {available_bytes} bytes"
-                                ),
-                            )),
-                            None,
-                        ),
-                        crate::vulkan::GpuDeviceLocalVerdict::Unknown => {
-                            (None, Some(UNREADABLE_MEMORY_ADMISSION_WARNING.to_owned()))
+        } => match backend {
+            crate::Backend::Cuda => {
+                if nvidia_detected {
+                    if let Some(bytes) = nvidia_memory_bytes {
+                        match crate::vulkan::device_local_capacity_verdict(bytes) {
+                            crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => (None, None),
+                            crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => (
+                                Some((
+                                    "gpu_memory_insufficient",
+                                    format!(
+                                        "device-local VRAM below 6 GiB minimum: {available_bytes} bytes"
+                                    ),
+                                )),
+                                None,
+                            ),
+                            crate::vulkan::GpuDeviceLocalVerdict::Unknown
+                            | crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => {
+                                (None, Some(UNREADABLE_MEMORY_ADMISSION_WARNING.to_owned()))
+                            }
                         }
-                        crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => {
-                            (None, Some(UNREADABLE_MEMORY_ADMISSION_WARNING.to_owned()))
-                        }
+                    } else {
+                        (None, Some(UNREADABLE_MEMORY_ADMISSION_WARNING.to_owned()))
                     }
                 } else {
                     (None, Some(UNREADABLE_MEMORY_ADMISSION_WARNING.to_owned()))
                 }
-            } else {
+            }
+            crate::Backend::Vulkan => {
                 match crate::vulkan::gpu_device_local_verdict(probe_ok, &devices, override_index) {
                     crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => (None, None),
                     crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => (
@@ -773,7 +778,7 @@ pub fn run_local_with_gpu_admission(
                     }
                 }
             }
-        }
+        },
     };
     if let Some((reason_code, message)) = refusal {
         status::record_terminal_refusal(&journal, "local", reason_code, &message)
@@ -804,9 +809,9 @@ pub fn run_local_with_gpu_admission(
 }
 
 fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
-    let mut admission = observe_local_hardware_admission();
+    let journal = journal(object)?;
+    let mut admission = observe_local_hardware_admission(&journal)?;
     if let LocalHardwareAdmission::GpuHost { override_index, .. } = &mut admission {
-        let journal = journal(object)?;
         let config = solstone_core_journal_config::read_journal_config(&journal)
             .map_err(|error| failure("state", "config_unreadable", error, 74))?
             .config
@@ -822,35 +827,49 @@ fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
     run_local_with_gpu_admission(object, admission)
 }
 
-fn observe_local_hardware_admission() -> LocalHardwareAdmission {
+fn observe_local_hardware_admission(
+    journal: &Path,
+) -> Result<LocalHardwareAdmission, DispatchError> {
     #[cfg(any(test, feature = "test-hooks"))]
     if let Some(admission) = TEST_LOCAL_HARDWARE_ADMISSION.with(|slot| slot.borrow().clone()) {
-        return admission;
+        return Ok(admission);
     }
 
     let key = pins::platform_key();
     if WindowsArchitecture::from_runtime_key(&key).is_some() {
-        LocalHardwareAdmission::WindowsUnobserved
+        Ok(LocalHardwareAdmission::WindowsUnobserved)
     } else if key == "aarch64-apple-darwin" {
-        LocalHardwareAdmission::AppleSilicon {
+        Ok(LocalHardwareAdmission::AppleSilicon {
             total_bytes: apple_memory::apple_physical_memory_bytes(),
-        }
+        })
     } else if key.ends_with("-apple-darwin") {
-        LocalHardwareAdmission::UnsupportedDarwin
+        Ok(LocalHardwareAdmission::UnsupportedDarwin)
     } else {
         let probe = crate::nvidia::probe_nvidia_gpu();
         let (devices, probe_ok) = crate::vulkan::vulkan_probe_snapshot();
+        let choice = match local_backend_choice(journal, Some(probe.clone())) {
+            crate::nvidia::BackendSelection::Selected(choice) => choice,
+            crate::nvidia::BackendSelection::IntegrityBlocked => {
+                return Err(failure(
+                    "verification",
+                    "cuda_runtime_integrity",
+                    "cuda runtime integrity failure",
+                    65,
+                ));
+            }
+        };
         let nvidia_memory_bytes = probe
             .vram_mib
             .or(probe.unified_memory_mib)
             .map(|mib| mib.saturating_mul(1024 * 1024));
-        LocalHardwareAdmission::GpuHost {
+        Ok(LocalHardwareAdmission::GpuHost {
+            backend: choice.backend,
             nvidia_detected: probe.detected,
             nvidia_memory_bytes,
             probe_ok,
             devices,
             override_index: None,
-        }
+        })
     }
 }
 fn run_parakeet(object: &Map<String, Value>) -> Result<Value, DispatchError> {

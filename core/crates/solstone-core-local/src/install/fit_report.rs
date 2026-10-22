@@ -518,14 +518,45 @@ fn local_gpu_check(
                 choice.reason
             ),
         },
-        Some(selected) => FitCheck {
-            name: "gpu",
-            severity: FitSeverity::Ok,
-            detail: format!(
-                "Vulkan GPU selected: {}; resolved backend is {backend}: {}{suffix}",
-                selected.name, choice.reason
-            ),
-        },
+        Some(selected) => {
+            match crate::vulkan::gpu_device_local_verdict(vulkan_probe_ok, devices, override_index)
+            {
+                crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => FitCheck {
+                    name: "gpu",
+                    severity: FitSeverity::Ok,
+                    detail: format!(
+                        "Vulkan GPU selected: {}; resolved backend is {backend}: {}{suffix}",
+                        selected.name, choice.reason
+                    ),
+                },
+                crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => FitCheck {
+                    name: "gpu",
+                    severity: FitSeverity::Blocked,
+                    detail: format!(
+                        "GPU {} has {} GB; the bundled local models need at least 6 GB; resolved backend is {backend}: {}{suffix}",
+                        selected.name,
+                        gb_label(available_bytes),
+                        choice.reason
+                    ),
+                },
+                crate::vulkan::GpuDeviceLocalVerdict::Unknown => FitCheck {
+                    name: "gpu",
+                    severity: FitSeverity::Unknown,
+                    detail: format!(
+                        "GPU memory could not be read; resolved backend is {backend}: {}",
+                        choice.reason
+                    ),
+                },
+                crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => FitCheck {
+                    name: "gpu",
+                    severity: FitSeverity::Blocked,
+                    detail: format!(
+                        "no hardware Vulkan GPU selected; resolved backend is {backend}: {}",
+                        choice.reason
+                    ),
+                },
+            }
+        }
     }
 }
 
@@ -1231,6 +1262,108 @@ mod tests {
             false,
         );
         assert_eq!(check_unknown.severity, FitSeverity::Unknown);
+    }
+
+    #[test]
+    fn linux_gpu_fit_verdicts() {
+        let probe = probe(false, None, None);
+        let choice = choice(Backend::Vulkan);
+
+        // 1. BelowBar (4096 MiB) -> Blocked
+        let dev_below = vec![VulkanDevice {
+            index: 0,
+            name: "RTX 3050".into(),
+            device_type: Some(2),
+            vram_mib: 4096,
+        }];
+        let check_below = local_gpu_check("linux", &probe, &choice, true, &dev_below, None, false);
+        assert_eq!(check_below.severity, FitSeverity::Blocked);
+
+        // 2. Eligible (6144 MiB) -> Ok
+        let dev_eligible = vec![VulkanDevice {
+            index: 0,
+            name: "RTX 4060".into(),
+            device_type: Some(2),
+            vram_mib: 6144,
+        }];
+        let check_eligible =
+            local_gpu_check("linux", &probe, &choice, true, &dev_eligible, None, false);
+        assert_eq!(check_eligible.severity, FitSeverity::Ok);
+
+        // 3. No hardware device -> Warning
+        let dev_none = vec![];
+        let check_none = local_gpu_check("linux", &probe, &choice, true, &dev_none, None, false);
+        assert_eq!(check_none.severity, FitSeverity::Warning);
+
+        // 4. Probe failure -> Unknown
+        let check_unknown =
+            local_gpu_check("linux", &probe, &choice, false, &dev_eligible, None, false);
+        assert_eq!(check_unknown.severity, FitSeverity::Unknown);
+
+        // 5. Unequal pair with override index 1:
+        // Case A: dev0 8192, dev1 4096 -> Override Some(1) selects small device -> Blocked
+        let dev_unequal_a = vec![
+            VulkanDevice {
+                index: 0,
+                name: "dev0-large".into(),
+                device_type: Some(2),
+                vram_mib: 8192,
+            },
+            VulkanDevice {
+                index: 1,
+                name: "dev1-small".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+        ];
+        let check_override_a = local_gpu_check(
+            "linux",
+            &probe,
+            &choice,
+            true,
+            &dev_unequal_a,
+            Some(1),
+            false,
+        );
+        assert_eq!(check_override_a.severity, FitSeverity::Blocked);
+        assert!(check_override_a.detail.contains("dev1-small"));
+
+        // Case B: dev0 4096, dev1 8192 -> Override Some(1) selects large device -> Ok
+        let dev_unequal_b = vec![
+            VulkanDevice {
+                index: 0,
+                name: "dev0-small".into(),
+                device_type: Some(2),
+                vram_mib: 4096,
+            },
+            VulkanDevice {
+                index: 1,
+                name: "dev1-large".into(),
+                device_type: Some(2),
+                vram_mib: 8192,
+            },
+        ];
+        let check_override_b = local_gpu_check(
+            "linux",
+            &probe,
+            &choice,
+            true,
+            &dev_unequal_b,
+            Some(1),
+            false,
+        );
+        assert_eq!(check_override_b.severity, FitSeverity::Ok);
+        assert!(check_override_b.detail.contains("dev1-large"));
+
+        // 6. 0-byte device local memory -> Unknown
+        let dev_zero = vec![VulkanDevice {
+            index: 0,
+            name: "zero".into(),
+            device_type: Some(2),
+            vram_mib: 0,
+        }];
+        let check_zero = local_gpu_check("linux", &probe, &choice, true, &dev_zero, None, false);
+        assert_eq!(check_zero.severity, FitSeverity::Unknown);
     }
 
     #[test]

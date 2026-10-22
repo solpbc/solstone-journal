@@ -240,7 +240,24 @@ fn project_download(
     }
 }
 
+/// Setup's download progress together with whether this computer can run local thinking.
 pub fn read_setup_progress(journal: &Path) -> Result<SetupProgress, SetupProgressError> {
+    let downloads = read_setup_downloads(journal)?;
+    let inputs = gather_host_inputs(journal, env!("CARGO_PKG_VERSION"));
+    let report = build_check_report(&inputs);
+    let capability = crate::http::local_capability(&report).overall;
+
+    Ok(SetupProgress {
+        downloads,
+        thinking: SetupProgressThinking {
+            capability: capability.to_string(),
+        },
+    })
+}
+
+/// Setup's speech and thinking download progress. It does not run this
+/// computer's capability checks.
+pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgressError> {
     #[cfg(not(target_os = "windows"))]
     let speech_status =
         status::read_observed_status(journal, "parakeet").map_err(|err| SetupProgressError {
@@ -359,16 +376,7 @@ pub fn read_setup_progress(journal: &Path) -> Result<SetupProgress, SetupProgres
         thinking_total,
     );
 
-    let inputs = gather_host_inputs(journal, env!("CARGO_PKG_VERSION"));
-    let report = build_check_report(&inputs);
-    let capability = crate::http::local_capability(&report).overall;
-
-    Ok(SetupProgress {
-        downloads: SetupDownloads { speech, thinking },
-        thinking: SetupProgressThinking {
-            capability: capability.to_string(),
-        },
-    })
+    Ok(SetupDownloads { speech, thinking })
 }
 
 #[cfg(test)]

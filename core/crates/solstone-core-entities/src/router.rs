@@ -5376,6 +5376,7 @@ fn history_plate_work(
         &entity_dir,
         &peer_dir,
         &request,
+        &ATTENDANCE_KINDS,
         &crate::edge_aliases(journal_root),
     )
     .map_err(IndexPlateError::Query)?;

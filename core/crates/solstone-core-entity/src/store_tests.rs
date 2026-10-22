@@ -191,6 +191,60 @@ fn identity_group_map_retains_every_collision_candidate_in_precedence_order() {
 }
 
 #[test]
+fn read_named_identity_groups_keys_winner_by_id_and_folder_and_isolates_loser_names() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/solo_dir/entity.json",
+        &json!({"id": "solo_id", "name": "Solo Name"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/written_a/entity.json",
+        &json!({"id": "shared", "name": "Winner Name"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/written_z/entity.json",
+        &json!({"id": "shared"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/shared/entity.json",
+        &json!({"name": "Loser Name"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/blank/entity.json",
+        &json!({"id": "blank", "name": ""}),
+    );
+
+    let named = crate::read_named_identity_groups(temporary.path()).unwrap();
+
+    assert_eq!(
+        named.names.get("solo_dir").map(String::as_str),
+        Some("Solo Name")
+    );
+    assert_eq!(
+        named.names.get("solo_id").map(String::as_str),
+        Some("Solo Name")
+    );
+
+    assert_eq!(
+        named.names.get("written_a").map(String::as_str),
+        Some("Winner Name")
+    );
+    assert_eq!(named.names.get("written_z"), None);
+    assert_eq!(
+        named.names.get("shared").map(String::as_str),
+        Some("Loser Name")
+    );
+
+    assert_eq!(named.names.get("blank"), None);
+    assert!(!named.names.values().any(|v| v.is_empty()));
+}
+
+#[test]
 fn prepared_history_is_discovered_from_staging_directory() {
     let fixture = fixture();
     let temporary = TempDir::new();

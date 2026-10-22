@@ -63,7 +63,7 @@ pub use lifecycle::{
 };
 pub use map::{
     EntityIdentityGroupMap, EntityIdentityMap, IdentityMapLoser, IdentityMapLoserReason,
-    read_identity_group_map, read_identity_map,
+    NamedIdentityGroups, read_identity_group_map, read_identity_map, read_named_identity_groups,
 };
 pub use merge::{
     EntityMergeError, EntityMergeOptions, EntityMergePreview, EntityMergeReport,

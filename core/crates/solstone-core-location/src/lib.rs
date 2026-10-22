@@ -33,7 +33,9 @@ use std::path::{Path, PathBuf};
 
 pub use area::{AreaName, AreaTier, Boundary, Bounds, TownPoint};
 pub use asset::area_tier;
-pub use day::{DayLocation, DeviceDirectory, Entry, SegmentContext, SourceRef, read_day};
+pub use day::{
+    DayLocation, DeviceDirectory, Entry, SegmentContext, SourceRef, read_day, read_days,
+};
 pub use projection::{Reconciler, rebuild_day};
 
 /// Device names from the journal itself: each segment's upload record, and the
@@ -99,6 +101,24 @@ pub fn read_journal_day(journal: &Path, day: &str) -> Result<DayLocation, area::
     Ok(read_day(
         journal,
         day,
+        tier,
+        packs.as_deref(),
+        &JournalDirectory::read(journal),
+        solstone_core_journal_config::owner_zone(journal),
+    ))
+}
+
+/// Read several days with the journal's own device names and the owner's zone,
+/// each day read once.
+pub fn read_journal_days(
+    journal: &Path,
+    days: &[String],
+) -> Result<Vec<DayLocation>, area::AreaTierError> {
+    let tier = area_tier()?;
+    let packs = accuracy::installed_packs(journal);
+    Ok(day::read_days(
+        journal,
+        days,
         tier,
         packs.as_deref(),
         &JournalDirectory::read(journal),
