@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.55 (build 103)] - 2026-10-22
+
+### Changed
+
+- updated the bundled journal to [2.0.55](https://solstone.app/releases#v2.0.55) →
+
 ### Fixed
 
-- after an update, the helper that reopens the journal app if it quits unexpectedly now restarts on the new version, instead of running the old one until you next sign in.
+- if your journal starts when you sign in, after an update the helper that reopens the journal app if it quits unexpectedly now restarts on the new version, instead of running the old one until you next sign in.
 
 ## [2.0.54 (build 102)] - 2026-10-21
 
