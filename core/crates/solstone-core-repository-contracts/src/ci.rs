@@ -219,6 +219,7 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
     }
     let mut ids = BTreeSet::new();
     let mut registered = BTreeMap::new();
+    let mut acknowledgement_owners: BTreeMap<&str, &str> = BTreeMap::new();
 
     for suite in &registry.suites {
         validate_entry(
@@ -290,6 +291,23 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
             && let Err(err) = crate::windows_suite::validate_windows_policy(suite, policy)
         {
             errors.push(err);
+        }
+        // The Windows host check requires each acknowledgement key exactly
+        // once, so two passing suites sharing one fail an otherwise green gate.
+        if let Some(acknowledgement) = suite
+            .windows
+            .as_ref()
+            .and_then(|policy| policy.acknowledgement.as_deref())
+        {
+            let key = acknowledgement
+                .split_once('=')
+                .map_or(acknowledgement, |(key, _)| key);
+            if let Some(owner) = acknowledgement_owners.insert(key, &suite.id) {
+                errors.push(format!(
+                    "suite {}: Windows acknowledgement {key} is already emitted by suite {owner}",
+                    suite.id
+                ));
+            }
         }
         validate_default_exclusion(&suite.id, &suite.set, suite.default_full, &mut errors);
     }
@@ -1660,6 +1678,50 @@ features = ["full-tests"]
                 .join("\n")
                 .contains("unregistered Cargo integration target")
         );
+    }
+
+    #[test]
+    fn registry_gives_each_windows_acknowledgement_one_suite() {
+        let (temp, mut registry) = fixture();
+        fs::write(
+            temp.path().join("core/crates/a/tests/second.rs"),
+            "fn main() {}\n",
+        )
+        .expect("second integration test");
+        registry.platforms.push("windows".to_owned());
+        registry.suites[0].platforms.push("windows".to_owned());
+        registry.suites[0].windows = Some(crate::windows_suite::WindowsPolicy {
+            satisfaction: "cargo".to_owned(),
+            opt_in: None,
+            args: Vec::new(),
+            markers: Vec::new(),
+            marker_patterns: Vec::new(),
+            body: false,
+            tests: Vec::new(),
+            unlaunched: Vec::new(),
+            acknowledgement: Some("FIXTURE_RECEIPT=executed/pass".to_owned()),
+        });
+        registry.suites.push(Suite {
+            id: "a::second".to_owned(),
+            target: "second".to_owned(),
+            ..registry.suites[0].clone()
+        });
+        let errors = validate_registry(temp.path(), &registry).expect_err("shared receipt");
+        assert_eq!(
+            errors,
+            vec![
+                "suite a::second: Windows acknowledgement FIXTURE_RECEIPT is already emitted by suite a::api"
+                    .to_owned()
+            ]
+        );
+
+        // The host check counts the key, so a different value still collides.
+        registry.suites[1].windows.as_mut().unwrap().acknowledgement =
+            Some("FIXTURE_RECEIPT=other".to_owned());
+        assert!(validate_registry(temp.path(), &registry).is_err());
+
+        registry.suites[1].windows = None;
+        assert_eq!(validate_registry(temp.path(), &registry), Ok(()));
     }
 
     #[test]

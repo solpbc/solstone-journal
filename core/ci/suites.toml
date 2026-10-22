@@ -4794,10 +4794,6 @@ default_full = true
 required_features = []
 runtime = "none"
 
-[suites.windows]
-satisfaction = "cargo"
-acknowledgement = "JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed/pass"
-
 [[suites]]
 id = "solstone-core-system::system_schedule_queue"
 package = "solstone-core-system"
