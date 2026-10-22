@@ -21,28 +21,11 @@ The CLI has two tiers with distinct purposes:
 
 ### One program, two names
 
-`solstone` and `journal` are the same program. Its entry,
-`solstone_core_sol::process_main`, reads the name it was invoked by: invoked as
-`journal` (or `journal.exe`, or the installed `solstone-core-journal`), it
-enters the `solstone journal` family with every argument, so `journal <args>`
-and `solstone journal <args>` run the same code. Invoked as `solstone`, it runs
-the `solstone` root, whose `journal` command hands the rest of the arguments to
-that same family. `journal` stays a working name while callers move to
-`solstone journal`.
+`solstone journal` is canonical. Public `journal` / `journal.exe` prints the notice and exits. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name. Unix managed work uses `solstone-core-journal`; Windows managed work uses `solstone.exe journal`.
 
-Both names ship as real files. On Linux and macOS, `bin/solstone` and
-`bin/journal` are launcher scripts that exec the native `solstone-core-sol` and
-`solstone-core-journal` binaries beside them; on Windows, `solstone.exe` and
-`journal.exe` are the binaries themselves. All four are built from the one
-entry. Process commands in the journal family (`think`, `service`,
-`supervisor`, and the rest) exec sibling native binaries such as
-`solstone-core`; local commands run in process. There is no CUDA package.
+Both files still ship. On Linux and macOS, `bin/solstone` still execs `solstone-core-sol`, while `bin/journal` is the notice and does not exec `solstone-core-journal`; on Windows, `solstone.exe` and `journal.exe` are the binaries themselves. Process commands in the journal family (`think`, `service`, `supervisor`, and the rest) exec sibling native binaries such as `solstone-core`; local commands run in process. There is no CUDA package.
 
-Managed work treats the two spellings as one operation. The supervisor's
-queue, schedule partitions and resource caps read a stored
-`solstone journal <args>` command as its `journal <args>` form
-(`solstone_core_system::partition::journal_alias_form`), and launch both
-through the installation's own journal binary.
+Managed work treats the two spellings as one operation. The supervisor's queue, partition, and caps still treat stored `journal <args>` and stored `solstone journal <args>` as one form via `journal_alias_form`, and launch uses the private or canonical entry.
 
 ## Top-Level Commands (`solstone <cmd>`)
 
@@ -485,7 +468,7 @@ not the codebase. See [APPS.md](APPS.md).
 
 ## Current Command Inventory
 
-### Top-level (`solstone <cmd>` / `journal <cmd>`)
+### Local journal (`solstone journal <cmd>`)
 
 | Group | Commands |
 |-------|----------|

@@ -16,7 +16,7 @@ Audience:
 Read, in order, when you enter the repo for a coding task:
 
 1. **This file through §8** — the invariants must be in working memory before your first edit.
-2. **`docs/SOLCLI.md`** — the CLI routing map. `solstone` is the unified native Rust CLI; `solstone journal` runs same-device operations and `journal` remains its functional alias.
+2. **`docs/SOLCLI.md`** — the CLI routing map. `solstone` is the unified native Rust CLI; `solstone journal` runs same-device operations.
 3. **For system orientation** — there is no single file or TUI that ties callosum, supervisor, and service status together in one read. The closest thing is `solstone journal top` (`core/crates/solstone-core-top/`), a live rendered view of supervised services. For the underlying wiring, read the callosum, supervisor, and system crates under `core/crates/` (`solstone-core-callosum`, the supervisor module in `solstone-core`, `solstone-core-system`).
 4. **The area you're about to touch:**
    - User-visible feature or `solstone call <app> <verb>` → `core/native-sol/apps/<name>/` + the matching `*-web` crate or `convey-shell/assets/<name>/`. See `docs/APPS.md`.
@@ -72,7 +72,7 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 Two surfaces:
 
 - **`solstone <command>`** — native access commands declared under `core/native-sol/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `solstone import`).
-- **`solstone journal <command>`** — same-device commands owned by `solstone-core-journal-cli`. `journal <command>` is the same program entered by its alias name; managed work treats both spellings as one operation (`docs/SOLCLI.md` § One program, two names). Local writers execute in Rust; service commands use the native closed process table (e.g., `solstone journal think`, `solstone journal supervisor`, `solstone journal heartbeat`). `solstone journal up/down` are fixed aliases for `solstone journal service up/down`.
+- **`solstone journal <command>`** — same-device commands owned by `solstone-core-journal-cli`. Public `journal` / `journal.exe` prints the notice and exits; `solstone journal` is canonical; Unix managed work uses `solstone-core-journal`; Windows managed work uses `solstone.exe journal` (`docs/SOLCLI.md` § One program, two names). Local writers execute in Rust; service commands use the native closed process table (e.g., `solstone journal think`, `solstone journal supervisor`, `solstone journal heartbeat`). `solstone journal up/down` are fixed aliases for `solstone journal service up/down`.
 - **`solstone call <app> <verb>`** — native app commands declared under `core/native-sol/apps/<app>/native/` or `core/native-sol/think/tools/native/` and implemented under `core/crates/solstone-core-sol-client/native/{apps,tools}/`. `solstone call journal` exposes its native 17-leaf journal group through this boundary.
 
 **Adding a top-level `solstone` command:** add a native authority under `core/native-sol/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `core/native-sol/think/native/import/authority.toml` with `core/crates/solstone-core-sol-client/native/think/import/command.rs` as the current pattern.
@@ -175,7 +175,7 @@ Use `cargo test --manifest-path core/Cargo.toml -p <package> --no-default-featur
 
 ### Linux service management (systemd)
 
-On Linux, `solstone journal setup` is the runtime install path once you have the `solstone` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal` let you use `solstone` and `journal` from anywhere. Use `solstone journal service <install|start|stop|restart|status|logs>` for manual service operations.
+On Linux, `solstone journal setup` is the runtime install path once you have the `solstone` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal` are still installed; `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name. Use `solstone journal service <install|start|stop|restart|status|logs>` for manual service operations.
 
 | Target | When to use |
 |--------|-------------|

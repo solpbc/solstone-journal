@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- breaking cli change: `journal` now prints the equivalent `solstone journal` command and exits without running it. `journal` will be removed in the next release. update scripts and any hand-written schedules or service commands that use it.
+
 ### Added
 
 - events in calendar files you import from now on can also be found by the day each one happens, not only the day it was added or last changed. repeating events are listed up to a year after you import them. calendars you imported before aren't listed this way.

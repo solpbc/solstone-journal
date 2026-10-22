@@ -15,10 +15,10 @@ mod windows_task_reason;
 mod windows_update;
 
 pub use env::build_service_environment;
-pub use plist::{launchd_plist_port, render_launchd_plist};
+pub use plist::{is_exact_legacy_launchd_plist, launchd_plist_port, render_launchd_plist};
 pub use systemd::{
-    LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS, SERVICE_STOP_TIMEOUT_SECONDS, render_systemd_unit,
-    systemd_unit_port,
+    LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS, SERVICE_STOP_TIMEOUT_SECONDS,
+    is_exact_legacy_systemd_unit, render_systemd_unit, systemd_unit_port,
 };
 pub use windows_task::{
     WINDOWS_TASK_RECOVERY_INTERVAL, WindowsRegistrationProfile, WindowsTaskInput,

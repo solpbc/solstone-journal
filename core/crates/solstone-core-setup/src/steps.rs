@@ -2135,6 +2135,52 @@ fn resume_service(
         #[cfg(not(windows))]
         return Ok(None);
     }
+    #[cfg(not(windows))]
+    {
+        if let Ok(Some(unit_path)) = service_artifact_path(&context.home_dir) {
+            let is_legacy = if cfg!(target_os = "linux") {
+                let unit_bytes = std::fs::read(&unit_path).unwrap_or_default();
+                let unit_str = String::from_utf8_lossy(&unit_bytes);
+                if solstone_core_service_unit::is_exact_legacy_systemd_unit(
+                    &unit_str,
+                    &context.home_dir,
+                ) {
+                    let unit_file_name = unit_path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("solstone.service");
+                    let drop_in_dir = unit_path.with_file_name(format!("{unit_file_name}.d"));
+                    if drop_in_dir.exists() {
+                        match std::fs::read_dir(&drop_in_dir) {
+                            Ok(entries) => {
+                                let has_conf = entries.filter_map(|e| e.ok()).any(|entry| {
+                                    entry.path().extension().is_some_and(|ext| ext == "conf")
+                                });
+                                !has_conf
+                            }
+                            Err(_) => false,
+                        }
+                    } else {
+                        true
+                    }
+                } else {
+                    false
+                }
+            } else if cfg!(target_os = "macos") {
+                let unit_bytes = std::fs::read(&unit_path).unwrap_or_default();
+                solstone_core_service_unit::is_exact_legacy_launchd_plist(
+                    &unit_bytes,
+                    &context.home_dir,
+                )
+            } else {
+                false
+            };
+
+            if is_legacy {
+                return Ok(None);
+            }
+        }
+    }
     let healthy = context
         .service_ops
         .health_check(context.runner, &context.journal_path)

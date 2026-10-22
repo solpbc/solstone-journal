@@ -113,7 +113,7 @@ On Fedora or RHEL:
 sudo dnf install ./solstone-journal-<version>-linux-<arch>.rpm
 ```
 
-Either one puts `solstone` and `journal` on PATH for every account on the machine and installs the OpenMP runtime dependency. Run `solstone journal setup`; that owner-scoped step writes `~/.local/share/solstone/package-install-receipt` because the packages intentionally have no maintainer scripts.
+Either one puts `solstone` and `journal` on PATH for every account on the machine and installs the OpenMP runtime dependency. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name. Run `solstone journal setup`; that owner-scoped step writes `~/.local/share/solstone/package-install-receipt` because the packages intentionally have no maintainer scripts.
 
 On linux, `solstone update` updates copies recorded by the solstone installer. `solstone update --check` reports whether an update is available. If the installation cannot be identified, use its original installer.
 
@@ -135,7 +135,7 @@ Use `--components all` to install both the journal app and the solstone app. The
 
 ### The journal command line on a mac
 
-The journal app doesn't put a `journal` or `solstone` command on your PATH. When you want the command line, choose **open admin terminal** from the journal app's journal menu. It opens a Terminal window in your own shell where `journal` and `solstone` run the app's own copies. In zsh (the mac default), bash or fish, that holds even if another `journal` is earlier on your PATH. Nothing is installed, and your shell files stay as they were.
+The journal app doesn't put a `journal` or `solstone` command on your PATH. When you want the command line, choose **open admin terminal** from the journal app's journal menu. It opens a Terminal window in your own shell where `solstone` runs the app's own copy. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name. In zsh (the mac default), bash or fish, that holds even if another `journal` is earlier on your PATH. Nothing is installed, and your shell files stay as they were.
 
 Scripts and agents that can't open that window can call the app's copy by its full path:
 

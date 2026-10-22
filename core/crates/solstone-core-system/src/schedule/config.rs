@@ -611,4 +611,46 @@ mod tests {
         std::fs::write(&config_path, r#"{"weekly_day":"Funday"}"#).unwrap();
         assert_eq!(configured_weekly_day_name(root.path()), "sunday");
     }
+
+    #[test]
+    fn schedule_load_path_preserves_on_disk_bytes_without_migration() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("schedules.json");
+
+        let fixture = serde_json::json!({
+            "daily_time": "00:15",
+            "weekly_time": "03:15",
+            "heartbeat": {
+                "cmd": ["journal", "heartbeat"],
+                "every": "hourly"
+            },
+            "disabled_think": {
+                "cmd": ["journal", "think", "--weekly", "-v"],
+                "every": "weekly",
+                "enabled": false
+            },
+            "edited_task": {
+                "cmd": ["journal", "custom", "--not-a-writer-emitted-form"],
+                "every": "30m"
+            },
+            "unknown_metadata_field": {
+                "custom_prop": 42
+            }
+        });
+
+        let mut bytes = serde_json::to_vec_pretty(&fixture).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(&path, &bytes).unwrap();
+
+        let loaded = load_runtime(&path).expect("load schedules");
+        assert!(loaded.config.entries.contains_key("heartbeat"));
+        assert!(loaded.config.entries.contains_key("edited_task"));
+        assert!(!loaded.config.entries.contains_key("disabled_think"));
+
+        let bytes_after = std::fs::read(&path).expect("read schedules after load");
+        assert_eq!(
+            bytes, bytes_after,
+            "schedules.json bytes were mutated by load_runtime"
+        );
+    }
 }

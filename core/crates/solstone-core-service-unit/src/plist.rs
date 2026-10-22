@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use plist::{Dictionary, Value};
 
@@ -29,6 +30,38 @@ pub fn launchd_plist_port(bytes: &[u8]) -> Option<String> {
         return None;
     }
     (!port.is_empty()).then(|| port.to_owned())
+}
+
+/// Returns true only when ProgramArguments is exactly three strings:
+/// home.join(".local/bin/journal"), "start", and a non-empty port.
+#[must_use]
+pub fn is_exact_legacy_launchd_plist(bytes: &[u8], home: &Path) -> bool {
+    let Ok(value) = Value::from_reader(std::io::Cursor::new(bytes)) else {
+        return false;
+    };
+    let Some(arguments) = value
+        .as_dictionary()
+        .and_then(|dict| dict.get("ProgramArguments"))
+        .and_then(Value::as_array)
+    else {
+        return false;
+    };
+    let [launcher, start, port] = arguments.as_slice() else {
+        return false;
+    };
+    let Some(launcher_str) = launcher.as_string() else {
+        return false;
+    };
+    if Path::new(launcher_str) != home.join(".local/bin/journal") {
+        return false;
+    }
+    if start.as_string() != Some("start") {
+        return false;
+    }
+    let Some(port_str) = port.as_string() else {
+        return false;
+    };
+    !port_str.is_empty()
 }
 
 /// Render the launchd plist for the Solstone supervisor.

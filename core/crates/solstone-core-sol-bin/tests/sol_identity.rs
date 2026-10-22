@@ -268,7 +268,7 @@ fn assert_same_output(alias: &Output, canonical: &Output, invocation: &str) {
 }
 
 #[test]
-fn journal_and_solstone_journal_are_one_command_family() {
+fn journal_alias() {
     let temp = TempDir::new("journal-namespace");
     let (path, sentinel) = poison_path(&temp);
     let alias = journal_alias(&temp);
@@ -291,12 +291,14 @@ fn journal_and_solstone_journal_are_one_command_family() {
         &["status", "extra"],
         &["a.dotted.module"],
     ] {
-        let canonical = std::iter::once("journal")
-            .chain(args.iter().copied())
-            .collect::<Vec<_>>();
         let through_alias = run_program(&alias, args, &path, Some(&journal));
-        let through_solstone = run_program(Path::new(bin()), &canonical, &path, Some(&journal));
-        assert_same_output(&through_alias, &through_solstone, &args.join(" "));
+        assert_eq!(through_alias.status.code(), Some(1), "{args:?}");
+        assert!(through_alias.stdout.is_empty(), "{args:?}");
+        let stderr = String::from_utf8(through_alias.stderr).expect("stderr should be utf-8");
+        assert!(
+            stderr.starts_with("the 'journal' command has moved. run:\n  solstone journal"),
+            "{args:?}"
+        );
     }
 
     let version = run_program(Path::new(bin()), &["journal", "--version"], &path, None);
@@ -318,16 +320,6 @@ fn journal_and_solstone_journal_are_one_command_family() {
             journal.display()
         )
     );
-    let unknown = run_program(&alias, &["no-such-command"], &path, None);
-    assert_eq!(unknown.status.code(), Some(64));
-    assert_eq!(
-        String::from_utf8(unknown.stderr).expect("usage should be utf-8"),
-        "Usage: solstone journal <command> [args...]\n"
-    );
-    // The alias name selects the whole family: solstone's own commands are
-    // not reachable through it.
-    let call = run_program(&alias, &["call", "--help"], &path, None);
-    assert_eq!(call.status.code(), Some(64));
     assert_sentinel_untouched(&sentinel);
 }
 

@@ -5,7 +5,7 @@ description: >
   on disk — original media, extracts, talent outputs, apps, facets, and the search
   index. Covers host commands such as `solstone journal setup`,
   `solstone journal doctor`, `solstone journal service`, `solstone journal
-  health`, and `solstone journal talent` (also run as `journal <command>`), plus
+  health`, and `solstone journal talent`, plus
   the `solstone call journal` CLI.
   TRIGGER: journal, solstone journal, journal setup, journal doctor, journal
   service, journal health, journal talent, journal layout, search journal,
@@ -54,8 +54,7 @@ solstone journal health
 solstone journal talent logs
 ```
 
-`journal <command>` is a shorter name for the same commands, so
-`journal doctor` and `solstone journal doctor` do the same thing. These
+'journal' has moved to 'solstone journal'; use that command for local journal operations. These
 commands always act on the journal on this computer, never on a paired one.
 
 Boundaries:
