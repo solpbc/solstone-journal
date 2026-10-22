@@ -2838,6 +2838,12 @@ mod tests {
         );
         assert!(TEST_ACQUIRE_MINT_COUNT.with(std::cell::Cell::get) > 0);
         assert!(TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get) > 0);
+    }
+
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    #[test]
+    fn install_provider_cuda_admission_keeps_nvidia_capacity() {
+        use solstone_core_local::install::{AcquisitionTestGuard, TEST_FETCH_RUNTIME_MEMBER_COUNT};
 
         // 6. CUDA proof: empty journal, qualifying probe (sm_89, cuda 13).
         // Below-bar NVIDIA (4096) refuses even if Vulkan dev1 is large (8192). Refusal bytes is NVIDIA size (4294967296).
