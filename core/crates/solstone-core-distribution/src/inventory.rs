@@ -2193,6 +2193,10 @@ mod tests {
             "lib/solstone-ced/libced.dylib",
             "lib/solstone-nvattest/lib/libnvat.1.dylib",
             "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+            "share/licenses/fluidaudio/LICENSE",
+            "share/licenses/fluidaudio/fastcluster-LICENSE.md",
+            "share/licenses/fluidaudio/vbx-LICENSE.md",
+            "share/licenses/fluidaudio/JapaneseG2P-LICENSE.md",
         ];
         const LINUX_ONLY: &[&str] = &[
             "lib/solstone-ced/libced.so",
@@ -2865,7 +2869,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
-        assert_eq!(inv.entry.len(), 173);
+        assert_eq!(inv.entry.len(), 177);
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }
