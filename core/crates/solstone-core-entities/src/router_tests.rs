@@ -970,6 +970,50 @@ async fn index_plate_overview_returns_ranked_entities() {
     assert_eq!(cara["type"], Value::Null);
 }
 
+/// A deleted entity's connections stay indexed under its id. Overview and
+/// network leave that id out, so every id they list is one network resolves.
+#[tokio::test]
+async fn connections_list_only_ids_network_resolves_after_a_delete() {
+    let journal = Journal::new();
+    let root = journal.path();
+    save_person(root, "person-ada", "Ada Lovelace");
+    save_person(root, "person-bob", "Bob");
+    save_person(root, "kineviz", "Kineviz");
+    seed_edge_rows(
+        root,
+        &[
+            (
+                "person-ada",
+                "person-bob",
+                "works-with",
+                Some("20260501"),
+                "a",
+            ),
+            ("person-ada", "kineviz", "works-with", Some("20260502"), "b"),
+            ("person-bob", "kineviz", "mentioned", Some("20260503"), "c"),
+        ],
+    );
+    solstone_core_facets::delete_journal_entity(root, "kineviz").unwrap();
+
+    let (status, overview) = call(root, "/app/entities/api/overview").await;
+    assert_eq!(status, 200, "{overview}");
+    let ids: Vec<String> = overview["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entity| entity["entity_id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ids, vec!["person-ada", "person-bob"]);
+    assert_eq!(overview["totals"]["entities"], 2);
+    for id in &ids {
+        let (status, network) = call(root, &format!("/app/entities/api/network?entity={id}")).await;
+        assert_eq!(status, 200, "{network}");
+        assert_eq!(network["entity_id"], id.as_str(), "{network}");
+        assert_eq!(network["total_neighbors"], 1, "{network}");
+        assert_ne!(network["neighbors"][0]["entity_id"], "kineviz");
+    }
+}
+
 #[tokio::test]
 async fn index_plate_unresolved_entity_returns_candidates() {
     let journal = Journal::new();

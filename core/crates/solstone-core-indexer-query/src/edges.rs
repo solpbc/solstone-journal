@@ -5,7 +5,7 @@
 
 //! Read-only derived entity-edge queries over the journal index.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -60,9 +60,15 @@ pub type EntityTypeLookup<'a> = dyn Fn(&str) -> Option<String> + 'a;
 /// Every edge query reads rows through this map: an aliased endpoint counts
 /// under its survivor and carries the survivor's name, and a merge needs no
 /// re-extraction. An empty map reads the index exactly as stored.
+///
+/// It can also carry the ids that are live entities. A row keeps a deleted
+/// entity's id too, and when the live ids are known, neither the overview
+/// nor a network lists an id that is not one: every id they list is one a
+/// network or history request resolves.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EdgeAliases {
     entries: BTreeMap<String, EdgeAlias>,
+    live: Option<BTreeSet<String>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -86,6 +92,20 @@ impl EdgeAliases {
         }
     }
 
+    /// Only these ids, and the entities merges folded into them, are listed
+    /// as entities. Without this call every stored id is.
+    pub fn set_live_entities(&mut self, ids: impl IntoIterator<Item = String>) {
+        self.live = Some(ids.into_iter().collect());
+    }
+
+    /// Whether rows counted under `canonical` belong to a live entity.
+    fn is_live(&self, canonical: &str) -> bool {
+        self.live
+            .as_ref()
+            .is_none_or(|live| live.contains(canonical))
+    }
+
+    /// Whether no merge changes how rows are read.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -122,7 +142,10 @@ impl EdgeAliases {
                     .map(|alias| (id.clone(), alias.clone()))
             })
             .collect();
-        Self { entries }
+        Self {
+            entries,
+            live: None,
+        }
     }
 
     /// Every stored key whose rows count under `canonical`, itself first.
@@ -516,7 +539,7 @@ pub fn load_entity_network(
         {
             return Ok(());
         }
-        if row.kind == "committed-to" || row.kind == "decided-with" {
+        if row.kind == "committed-to" || row.kind == "decided-with" || !aliases.is_live(&row.peer) {
             return Ok(());
         }
         let weighted = kind_weight(&row.kind, row.weight_sum, row.day.as_deref(), reference)?;
@@ -741,7 +764,10 @@ pub fn load_network_overview(
     let rows = subtract_rows(rows, by_endpoint);
     let mut entities = BTreeMap::<String, OverviewEntity>::new();
     for row in fold_overview_rows(aliases, rows) {
-        if row.kind == "committed-to" || row.kind == "decided-with" {
+        if row.kind == "committed-to"
+            || row.kind == "decided-with"
+            || !aliases.is_live(&row.entity_id)
+        {
             continue;
         }
         let entity = entities

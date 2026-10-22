@@ -13,12 +13,23 @@ pub static ENTITIES_COPY: LazyLock<serde_json::Value> = LazyLock::new(|| {
         .expect("entities_copy.json is valid JSON")
 });
 
-/// How connection reads see merged entities: each merged id's rows count
-/// under the live entity it joined.
+/// How connection reads see merged and deleted entities: each merged id's
+/// rows count under the live entity it joined, and an id no entity holds
+/// any more (a deleted one) is listed as no one. The live ids are the ones
+/// a network request resolves exactly: every entity directory and every
+/// identity's id. When they can't be read, every stored id is listed.
 pub fn edge_aliases(journal_root: &std::path::Path) -> solstone_core_indexer_query::EdgeAliases {
     let mut aliases = solstone_core_indexer_query::EdgeAliases::default();
     for alias in solstone_core_entity::entity_edge_aliases(journal_root) {
         aliases.insert(&alias.raw, &alias.canonical, alias.name);
+    }
+    if let Ok(groups) = solstone_core_entity::read_identity_group_map(journal_root) {
+        aliases.set_live_entities(
+            groups
+                .groups
+                .into_iter()
+                .flat_map(|(id, dirs)| std::iter::once(id).chain(dirs)),
+        );
     }
     aliases
 }
