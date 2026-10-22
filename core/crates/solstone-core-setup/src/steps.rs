@@ -2079,7 +2079,7 @@ fn step_service_with_guard(
         .service_ops
         .up(context.runner, &context.journal_path)
         .map_err(|message| StepExecutionError::Unhandled { message })?;
-    if up.exit_code != 0 || up.timed_out {
+    if up.exit_code != 0 {
         return Ok(StepResult::failed(
             StepName::Service,
             paths,

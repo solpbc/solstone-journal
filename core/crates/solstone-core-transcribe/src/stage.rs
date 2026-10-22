@@ -2472,7 +2472,12 @@ mod tests {
     #[test]
     fn automatic_retry_authority_reaches_full_and_empty_transcript_writers() {
         use solstone_core_segment::output_attempt::{InputObservation, OutputClaims};
-        for empty in [false, true] {
+        for (reason, attempts, empty) in [
+            ("hosted_transcribe_unreachable", 1, false),
+            ("hosted_transcribe_unreachable", 1, true),
+            ("server_not_ready", 3, false),
+            ("no_port", 1000, false),
+        ] {
             let temporary = tempfile::tempdir().unwrap();
             let facts = input(temporary.path());
             let original = fs::read(&facts.path).unwrap();
@@ -2480,8 +2485,8 @@ mod tests {
             let header = json!({
                 "raw": "clip.wav", "_solstone_processing": {
                     "schema": vocab::SCHEMA, "handler": vocab::HANDLER_TRANSCRIBE,
-                    "state": "failed", "reason_code": "hosted_transcribe_unreachable",
-                    "attempts": 1, "input_size": original.len()
+                    "state": "failed", "reason_code": reason,
+                    "attempts": attempts, "input_size": original.len()
                 }
             });
             fs::write(&jsonl, format!("{header}\n")).unwrap();
@@ -2544,6 +2549,53 @@ mod tests {
                 );
             }
             assert!(!super::automatic_retry_replaces_output(&jsonl));
+            assert_eq!(fs::read(&facts.path).unwrap(), original);
+        }
+    }
+
+    #[test]
+    fn parakeet_availability_failure_after_three_attempts_remains_ordinary_work() {
+        for reason in ["server_not_ready", "no_port"] {
+            let temporary = tempfile::tempdir().unwrap();
+            let facts = input(temporary.path());
+            let original = fs::read(&facts.path).unwrap();
+            let output = facts.path.with_extension("jsonl");
+            let old = json!({"raw":"clip.wav","_solstone_processing":{
+                "schema":vocab::SCHEMA,"handler":"transcribe","state":"failed",
+                "reason_code":reason,"attempts":3,"input_size":original.len()
+            }});
+            fs::write(&output, format!("{old}\n")).unwrap();
+            let replaces = super::automatic_retry_replaces_output(&output);
+            assert!(replaces);
+            assert!(!crate::args::should_skip_process_one_processed(
+                &facts.path,
+                false,
+                None,
+                None
+            ));
+            let error = TranscribeError::ParakeetCppDeferred {
+                reason: reason.into(),
+                detail: "provider is still warming".into(),
+            };
+            assert_eq!(
+                super::backend_failure(&facts, replaces, &error, None).unwrap(),
+                TerminalOutcome::Failed
+            );
+            let record = read_header(&output)["_solstone_processing"].clone();
+            assert_eq!(record["attempts"], 4);
+            assert_eq!(record["reason_code"], reason);
+            assert_eq!(record["state"], "failed");
+            assert!(!is_failure_exhausted(&record));
+            assert_eq!(
+                evaluate_terminal_proof(Some(&record), "transcribe", facts.input_size),
+                TerminalProofOutcome::Refused
+            );
+            assert!(!crate::args::should_skip_process_one_processed(
+                &facts.path,
+                false,
+                None,
+                None
+            ));
             assert_eq!(fs::read(&facts.path).unwrap(), original);
         }
     }

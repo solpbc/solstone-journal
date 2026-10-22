@@ -524,6 +524,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parakeet_availability_retries_never_prove_raw_release() {
+        for (reason, attempts, state) in [
+            ("server_not_ready", 3, "failed"),
+            ("no_port", 1000, "failed"),
+            ("ok", 0, "analyzed"),
+        ] {
+            let verdict = resolve_file(
+                &crate::content::ClosedHandlerSet,
+                "20260805",
+                "field.audio",
+                "070000_17",
+                &ContentName::new("audio.flac").unwrap(),
+                5,
+                &SidecarFacts {
+                    record: Some(serde_json::json!({
+                        "schema":vocab::SCHEMA,"state":state,"handler":"transcribe",
+                        "reason_code":reason,"attempts":attempts,"input_size":5
+                    })),
+                    has_analysis_row: true,
+                },
+            );
+            if state == "failed" {
+                assert!(matches!(verdict, FileVerdict::Held(Blocker::Failed { .. })));
+            } else {
+                assert!(matches!(verdict, FileVerdict::Releasable(_)));
+            }
+        }
+    }
+
     const STILL_PNG: &[u8] = &[
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
         0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
