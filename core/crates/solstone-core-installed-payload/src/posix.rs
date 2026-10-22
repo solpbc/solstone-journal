@@ -309,11 +309,13 @@ pub fn resolve_screen_ocr_bundle_from_executable(
         )
     })?;
 
-    if target == crate::windows_payload::WINDOWS_PAYLOAD_TARGET {
+    if let Some(architecture) = crate::WindowsArchitecture::from_target_id(target) {
         let root = windows_package_root(executable)?;
-        let verified = crate::windows_payload::verify_windows_payload(&root).map_err(|error| {
-            map_windows_payload_error(executable.to_str().unwrap_or_default(), error)
-        })?;
+        let verified =
+            crate::windows_payload::verify_windows_payload_for_architecture(&root, architecture)
+                .map_err(|error| {
+                    map_windows_payload_error(executable.to_str().unwrap_or_default(), error)
+                })?;
 
         let resolve_win_member =
             |relative: &'static str| -> Result<CurrentInstalledMember, InstalledPayloadRefusal> {
@@ -1236,6 +1238,12 @@ mod tests {
                 "lib/solstone-native/solstone-screen-ocr-helper.exe",
                 "lib/solstone-native/solstone-screen-ocr-onnxruntime.dll",
             ),
+            (
+                crate::TARGET_WINDOWS_AARCH64,
+                false,
+                "lib/solstone-native/solstone-screen-ocr-helper.exe",
+                "lib/solstone-native/solstone-screen-ocr-onnxruntime.dll",
+            ),
         ] {
             let layout = crate::screen_ocr_layout::admit_screen_ocr(target, target_uses_gnu)
                 .expect("qualified target must admit layout");
@@ -1377,7 +1385,8 @@ mod tests {
         use crate::pin::install_test_fixture_pin;
         use crate::sha256_hex;
         use crate::windows_payload::{
-            WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE, render_windows_payload_manifest,
+            WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE,
+            render_windows_payload_manifest_for_architecture,
         };
         use minisign::KeyPair;
         use std::io::Cursor;
@@ -1385,144 +1394,143 @@ mod tests {
         const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         const LOCK: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-        let root = tempfile::tempdir().expect("tempdir");
-        let write_p = |rel: &str, content: &[u8]| {
-            let p = root.path().join(rel);
-            fs::create_dir_all(p.parent().unwrap()).unwrap();
-            fs::write(p, content).unwrap();
-        };
+        for architecture in crate::WindowsArchitecture::ALL {
+            let target = architecture.target_id();
+            let root = tempfile::tempdir().expect("tempdir");
+            let write_p = |rel: &str, content: &[u8]| {
+                let p = root.path().join(rel);
+                fs::create_dir_all(p.parent().unwrap()).unwrap();
+                fs::write(p, content).unwrap();
+            };
 
-        let layout =
-            crate::screen_ocr_layout::screen_ocr_layout(crate::TARGET_WINDOWS_X86_64).unwrap();
-        write_p(layout.helper, b"fake helper");
-        write_p(layout.recipe, b"fake recipe");
-        write_p(layout.detector, b"fake detector");
-        write_p(layout.recognizer, b"fake recognizer");
-        write_p(layout.dictionary, b"fake dictionary");
-        write_p(layout.runtime_library, b"fake runtime");
-        write_p(layout.runtime_dependency.unwrap(), b"fake dependency");
-        write_p("bin/solstone-core.exe", b"fake core exe");
-
-        let manifest = render_windows_payload_manifest(root.path(), COMMIT, LOCK).expect("render");
-        let KeyPair { pk, sk } = crate::pin::test_fixture_keypair();
-        let pin_dir = tempfile::tempdir().expect("pin dir");
-        let pin = pin_dir.path().join("pin.pub");
-        fs::write(&pin, pk.to_box().expect("public box").to_bytes()).expect("pin");
-        install_test_fixture_pin(&pin).expect("install pin");
-        let signature = minisign::sign(
-            Some(pk),
-            sk,
-            Cursor::new(manifest.as_slice()),
-            None,
-            Some("fixture payload manifest"),
-        )
-        .expect("sign");
-        let manifest_path = root.path().join(WINDOWS_PAYLOAD_MANIFEST);
-        fs::create_dir_all(manifest_path.parent().expect("parent")).expect("provenance");
-        fs::write(&manifest_path, manifest).expect("manifest");
-        fs::write(
-            root.path().join(WINDOWS_PAYLOAD_SIGNATURE),
-            signature.into_string(),
-        )
-        .expect("signature");
-
-        // Executable path text must contain \bin\ so windows_package_root splits on backslash
-        let exe_str = format!("{}\\bin\\solstone-core.exe", root.path().display());
-        let exe_path = PathBuf::from(&exe_str);
-
-        // 1. Success case: resolves bundle
-        let bundle = super::resolve_screen_ocr_bundle_from_executable(
-            &exe_path,
-            crate::TARGET_WINDOWS_X86_64,
-            false,
-        )
-        .expect("resolve windows screen ocr bundle");
-        assert_eq!(bundle.helper.relative_path(), layout.helper);
-        assert_eq!(bundle.recipe.relative_path(), layout.recipe);
-        assert_eq!(bundle.detector.relative_path(), layout.detector);
-        assert_eq!(bundle.recognizer.relative_path(), layout.recognizer);
-        assert_eq!(bundle.dictionary.relative_path(), layout.dictionary);
-        assert_eq!(
-            bundle.runtime_library.relative_path(),
-            layout.runtime_library
-        );
-        assert_eq!(
-            bundle
-                .runtime_dependency
-                .as_ref()
-                .map(|d| d.relative_path()),
-            layout.runtime_dependency
-        );
-        assert_eq!(bundle.helper.sha256(), sha256_hex(b"fake helper"));
-        assert_eq!(bundle.runtime_library.sha256(), sha256_hex(b"fake runtime"));
-        bundle.helper.revalidate().expect("revalidate helper");
-
-        // 2. Changed bytes
-        fs::write(root.path().join(layout.recipe), b"tampered").unwrap();
-        let err = super::resolve_screen_ocr_bundle_from_executable(
-            &exe_path,
-            crate::TARGET_WINDOWS_X86_64,
-            false,
-        )
-        .expect_err("changed bytes");
-        assert_eq!(err.code, code::MEMBER_CHANGED);
-        fs::write(root.path().join(layout.recipe), b"fake recipe").unwrap();
-
-        // 3. Missing member
-        fs::remove_file(root.path().join(layout.detector)).unwrap();
-        let err = super::resolve_screen_ocr_bundle_from_executable(
-            &exe_path,
-            crate::TARGET_WINDOWS_X86_64,
-            false,
-        )
-        .expect_err("missing member");
-        assert_eq!(err.code, code::MEMBER_MISSING);
-        write_p(layout.detector, b"fake detector");
-
-        // 4. Invalid signature
-        let sig_path = root.path().join(WINDOWS_PAYLOAD_SIGNATURE);
-        let orig_sig = fs::read_to_string(&sig_path).unwrap();
-        fs::write(&sig_path, b"invalid signature").unwrap();
-        let err = super::resolve_screen_ocr_bundle_from_executable(
-            &exe_path,
-            crate::TARGET_WINDOWS_X86_64,
-            false,
-        )
-        .expect_err("invalid signature");
-        assert_eq!(err.code, code::MANIFEST_INVALID);
-        fs::write(&sig_path, orig_sig).unwrap();
-
-        // 5. Unsafe path (reparse or symlink on unix)
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::symlink;
-            fs::remove_file(root.path().join(layout.dictionary)).unwrap();
-            symlink(
-                root.path().join(layout.recipe),
-                root.path().join(layout.dictionary),
-            )
-            .unwrap();
-            let err = super::resolve_screen_ocr_bundle_from_executable(
-                &exe_path,
-                crate::TARGET_WINDOWS_X86_64,
-                false,
-            )
-            .expect_err("symlink / unsafe path");
-            assert_eq!(err.code, code::UNSAFE_PATH);
-            fs::remove_file(root.path().join(layout.dictionary)).unwrap();
+            let layout = crate::screen_ocr_layout::screen_ocr_layout(target).unwrap();
+            write_p(layout.helper, b"fake helper");
+            write_p(layout.recipe, b"fake recipe");
+            write_p(layout.detector, b"fake detector");
+            write_p(layout.recognizer, b"fake recognizer");
             write_p(layout.dictionary, b"fake dictionary");
-        }
+            write_p(layout.runtime_library, b"fake runtime");
+            write_p(layout.runtime_dependency.unwrap(), b"fake dependency");
+            write_p("bin/solstone-core.exe", b"fake core exe");
 
-        // 6. A file the signature did not verify (unexpected file)
-        write_p("lib/solstone-native/unmanifested.dll", b"untracked");
-        let err = super::resolve_screen_ocr_bundle_from_executable(
-            &exe_path,
-            crate::TARGET_WINDOWS_X86_64,
-            false,
-        )
-        .expect_err("unexpected member");
-        assert_eq!(err.code, code::UNEXPECTED_FILE);
-        fs::remove_file(root.path().join("lib/solstone-native/unmanifested.dll")).unwrap();
+            let manifest = render_windows_payload_manifest_for_architecture(
+                root.path(),
+                COMMIT,
+                LOCK,
+                architecture,
+            )
+            .expect("render");
+            let KeyPair { pk, sk } = crate::pin::test_fixture_keypair();
+            let pin_dir = tempfile::tempdir().expect("pin dir");
+            let pin = pin_dir.path().join("pin.pub");
+            fs::write(&pin, pk.to_box().expect("public box").to_bytes()).expect("pin");
+            install_test_fixture_pin(&pin).expect("install pin");
+            let signature = minisign::sign(
+                Some(pk),
+                sk,
+                Cursor::new(manifest.as_slice()),
+                None,
+                Some("fixture payload manifest"),
+            )
+            .expect("sign");
+            let manifest_path = root.path().join(WINDOWS_PAYLOAD_MANIFEST);
+            fs::create_dir_all(manifest_path.parent().expect("parent")).expect("provenance");
+            fs::write(&manifest_path, manifest).expect("manifest");
+            fs::write(
+                root.path().join(WINDOWS_PAYLOAD_SIGNATURE),
+                signature.into_string(),
+            )
+            .expect("signature");
+
+            // Executable path text must contain \bin\ so windows_package_root splits on backslash
+            let exe_str = format!("{}\\bin\\solstone-core.exe", root.path().display());
+            let exe_path = PathBuf::from(&exe_str);
+
+            // 1. Success case: resolves bundle
+            let bundle = super::resolve_screen_ocr_bundle_from_executable(&exe_path, target, false)
+                .expect("resolve windows screen ocr bundle");
+            let foreign = crate::WindowsArchitecture::ALL
+                .into_iter()
+                .find(|other| *other != architecture)
+                .unwrap();
+            assert_eq!(
+                super::resolve_screen_ocr_bundle_from_executable(
+                    &exe_path,
+                    foreign.target_id(),
+                    false
+                )
+                .unwrap_err()
+                .code,
+                code::MANIFEST_INVALID
+            );
+            assert_eq!(bundle.helper.relative_path(), layout.helper);
+            assert_eq!(bundle.recipe.relative_path(), layout.recipe);
+            assert_eq!(bundle.detector.relative_path(), layout.detector);
+            assert_eq!(bundle.recognizer.relative_path(), layout.recognizer);
+            assert_eq!(bundle.dictionary.relative_path(), layout.dictionary);
+            assert_eq!(
+                bundle.runtime_library.relative_path(),
+                layout.runtime_library
+            );
+            assert_eq!(
+                bundle
+                    .runtime_dependency
+                    .as_ref()
+                    .map(|d| d.relative_path()),
+                layout.runtime_dependency
+            );
+            assert_eq!(bundle.helper.sha256(), sha256_hex(b"fake helper"));
+            assert_eq!(bundle.runtime_library.sha256(), sha256_hex(b"fake runtime"));
+            bundle.helper.revalidate().expect("revalidate helper");
+
+            // 2. Changed bytes
+            fs::write(root.path().join(layout.recipe), b"tampered").unwrap();
+            let err = super::resolve_screen_ocr_bundle_from_executable(&exe_path, target, false)
+                .expect_err("changed bytes");
+            assert_eq!(err.code, code::MEMBER_CHANGED);
+            fs::write(root.path().join(layout.recipe), b"fake recipe").unwrap();
+
+            // 3. Missing member
+            fs::remove_file(root.path().join(layout.detector)).unwrap();
+            let err = super::resolve_screen_ocr_bundle_from_executable(&exe_path, target, false)
+                .expect_err("missing member");
+            assert_eq!(err.code, code::MEMBER_MISSING);
+            write_p(layout.detector, b"fake detector");
+
+            // 4. Invalid signature
+            let sig_path = root.path().join(WINDOWS_PAYLOAD_SIGNATURE);
+            let orig_sig = fs::read_to_string(&sig_path).unwrap();
+            fs::write(&sig_path, b"invalid signature").unwrap();
+            let err = super::resolve_screen_ocr_bundle_from_executable(&exe_path, target, false)
+                .expect_err("invalid signature");
+            assert_eq!(err.code, code::MANIFEST_INVALID);
+            fs::write(&sig_path, orig_sig).unwrap();
+
+            // 5. Unsafe path (reparse or symlink on unix)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::symlink;
+                fs::remove_file(root.path().join(layout.dictionary)).unwrap();
+                symlink(
+                    root.path().join(layout.recipe),
+                    root.path().join(layout.dictionary),
+                )
+                .unwrap();
+                let err =
+                    super::resolve_screen_ocr_bundle_from_executable(&exe_path, target, false)
+                        .expect_err("symlink / unsafe path");
+                assert_eq!(err.code, code::UNSAFE_PATH);
+                fs::remove_file(root.path().join(layout.dictionary)).unwrap();
+                write_p(layout.dictionary, b"fake dictionary");
+            }
+
+            // 6. A file the signature did not verify (unexpected file)
+            write_p("lib/solstone-native/unmanifested.dll", b"untracked");
+            let err = super::resolve_screen_ocr_bundle_from_executable(&exe_path, target, false)
+                .expect_err("unexpected member");
+            assert_eq!(err.code, code::UNEXPECTED_FILE);
+            fs::remove_file(root.path().join("lib/solstone-native/unmanifested.dll")).unwrap();
+        }
     }
 
     #[cfg(unix)]

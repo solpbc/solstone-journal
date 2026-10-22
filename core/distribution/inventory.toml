@@ -78,6 +78,13 @@ arch = "x86_64"
 lane = "msvc-native"
 triple_windows = "x86_64-pc-windows-msvc"
 
+[[target]]
+id = "windows-aarch64"
+os = "windows"
+arch = "aarch64"
+lane = "msvc-native"
+triple_windows = "aarch64-pc-windows-msvc"
+
 [[entry]]
 kind = "bin"
 class = "first-party"
@@ -86,7 +93,7 @@ bin = "solstone-core"
 dest = "bin/solstone-core.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -96,7 +103,7 @@ bin = "solstone-core-journal"
 dest = "bin/journal.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -106,7 +113,7 @@ bin = "journal-app"
 dest = "bin/journal-app.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -116,7 +123,7 @@ bin = "solstone-core-sol"
 dest = "bin/solstone.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -126,7 +133,7 @@ bin = "solstone-core-depict"
 dest = "bin/solstone-core-depict.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -136,7 +143,7 @@ bin = "solstone-retention"
 dest = "bin/solstone-retention.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -146,7 +153,7 @@ bin = "solstone-core-describe"
 dest = "bin/solstone-core-describe.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -156,7 +163,7 @@ bin = "solstone-core-speakers-analyze"
 dest = "bin/solstone-core-speakers-analyze.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -166,7 +173,7 @@ bin = "solstone-core-ced-analyze"
 dest = "bin/solstone-core-ced-analyze.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -176,7 +183,7 @@ bin = "solstone-core-vad-analyze"
 dest = "bin/solstone-core-vad-analyze.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -186,7 +193,7 @@ bin = "solstone-core-pdf"
 dest = "bin/solstone-core-pdf.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -364,7 +371,7 @@ input = { kind = "catalog-committed", unit = "ced-model", filename = "ced-tiny-q
 staged = [
   { relpath = "", dest = "lib/solstone_journal_models/assets/ced/ced-tiny-q8_0.gguf", mode = 0o644, extracted_sha256 = "48bee4e2fc3cc85d7806e03471db24e77fda6c2a2e81ffe9ef67caebaf2bd674" },
 ]
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "licence-tree"
@@ -397,7 +404,7 @@ dest = "lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx"
 mode = 0o644
 digest_const = "WESPEAKER_RESNET34_SHA256"
 digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "model-asset"
@@ -407,7 +414,7 @@ dest = "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx"
 mode = 0o644
 digest_const = "PYANNOTE_SEGMENTATION_SHA256"
 digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "model-asset"
@@ -417,7 +424,7 @@ dest = "lib/solstone_journal_models/assets/silero_vad_v6.onnx"
 mode = 0o644
 digest_const = "SILERO_VAD_V6_SHA256"
 digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "model-asset"
@@ -427,7 +434,7 @@ dest = "lib/solstone_journal_models/assets/geo/area-tier.bin"
 mode = 0o644
 digest_const = "AREA_TIER_SHA256"
 digest_source = "core/crates/solstone-core-location/src/asset.rs"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "model-asset"
@@ -476,7 +483,7 @@ dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf"
 mode = 0o644
 digest_const = "RFDETR_MODEL_SHA256"
 digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "onnx-runtime"
@@ -497,7 +504,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 kind = "screen-ocr"
 class = "component"
 dest_dir = "lib/solstone-screen-ocr"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "bin"
@@ -527,7 +534,7 @@ bin = "solstone-screen-ocr-helper"
 dest = "lib/solstone-native/solstone-screen-ocr-helper.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "pdfium"
@@ -546,7 +553,7 @@ class = "first-party"
 source = "LICENSE"
 dest = "share/LICENSE"
 mode = 0o644
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 # Agent-facing install/troubleshooting README, for a coding agent helping an
 # owner get the journal running or crossing over from a v1 (Python) install.
@@ -770,6 +777,16 @@ dest = "lib/solstone-native/ced.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "ced"
+member = "bin/ced.dll"
+dest = "lib/solstone-native/ced.dll"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "component"
@@ -778,6 +795,16 @@ member = "bin/onnxruntime.dll"
 dest = "lib/solstone-native/onnxruntime.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "onnx"
+member = "bin/onnxruntime.dll"
+dest = "lib/solstone-native/onnxruntime.dll"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -788,6 +815,16 @@ dest = "lib/solstone-native/parakeet-server.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "parakeet"
+member = "bin/parakeet-server.exe"
+dest = "lib/solstone-native/parakeet-server.exe"
+mode = 0o755
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "component"
@@ -796,6 +833,16 @@ member = "models/tdt-0.6b-v3-q8_0.gguf"
 dest = "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "parakeet"
+member = "models/tdt-0.6b-v3-q8_0.gguf"
+dest = "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -806,6 +853,16 @@ dest = "lib/solstone-native/rfdetr-cli.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "rfdetr"
+member = "bin/rfdetr-cli.exe"
+dest = "lib/solstone-native/rfdetr-cli.exe"
+mode = 0o755
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "component"
@@ -814,6 +871,16 @@ member = "pdfium.dll"
 dest = "lib/solstone-core-pdf/pdfium.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "pdfium"
+member = "pdfium.dll"
+dest = "lib/solstone-core-pdf/pdfium.dll"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -824,6 +891,16 @@ dest = "lib/solstone-restic/restic.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "restic"
+member = "restic.exe"
+dest = "lib/solstone-restic/restic.exe"
+mode = 0o755
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "component"
@@ -832,6 +909,16 @@ member = "rclone.exe"
 dest = "lib/solstone-rclone/rclone.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "rclone"
+member = "rclone.exe"
+dest = "lib/solstone-rclone/rclone.exe"
+mode = 0o755
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -842,6 +929,16 @@ dest = "lib/solstone-native/msvcp140.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "msvc"
+member = "msvcp140.dll"
+dest = "lib/solstone-native/msvcp140.dll"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "component"
@@ -850,6 +947,16 @@ member = "vcruntime140.dll"
 dest = "lib/solstone-native/vcruntime140.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "msvc"
+member = "vcruntime140.dll"
+dest = "lib/solstone-native/vcruntime140.dll"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -869,6 +976,16 @@ dest = "lib/solstone-native/msvcp140_1.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "msvc"
+member = "msvcp140_1.dll"
+dest = "lib/solstone-native/msvcp140_1.dll"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "component"
@@ -887,6 +1004,16 @@ dest = "lib/solstone-nvattest/msvcp140.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "msvc"
+member = "msvcp140.dll"
+dest = "lib/solstone-nvattest/msvcp140.dll"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "component"
@@ -895,6 +1022,16 @@ member = "vcruntime140.dll"
 dest = "lib/solstone-nvattest/vcruntime140.dll"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "msvc"
+member = "vcruntime140.dll"
+dest = "lib/solstone-nvattest/vcruntime140.dll"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -914,6 +1051,16 @@ dest = "share/provenance/ced/receipt.json"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ced"
+member = "receipt.json"
+dest = "share/provenance/ced/receipt.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -922,6 +1069,16 @@ member = "build-evidence.json"
 dest = "share/provenance/ced/build-evidence.json"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ced"
+member = "build-evidence.json"
+dest = "share/provenance/ced/build-evidence.json"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -932,6 +1089,16 @@ dest = "share/provenance/ced/validation.log"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ced"
+member = "validation.log"
+dest = "share/provenance/ced/validation.log"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -940,6 +1107,16 @@ member = "receipt.json"
 dest = "share/provenance/onnx/receipt.json"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "onnx"
+member = "receipt.json"
+dest = "share/provenance/onnx/receipt.json"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -950,6 +1127,16 @@ dest = "share/provenance/onnx/build-evidence.json"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "onnx"
+member = "build-evidence.json"
+dest = "share/provenance/onnx/build-evidence.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -958,6 +1145,16 @@ member = "validation.log"
 dest = "share/provenance/onnx/validation.log"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "onnx"
+member = "validation.log"
+dest = "share/provenance/onnx/validation.log"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -968,6 +1165,16 @@ dest = "share/provenance/parakeet/receipt.json"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "parakeet"
+member = "receipt.json"
+dest = "share/provenance/parakeet/receipt.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -976,6 +1183,16 @@ member = "build-evidence.json"
 dest = "share/provenance/parakeet/build-evidence.json"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "parakeet"
+member = "build-evidence.json"
+dest = "share/provenance/parakeet/build-evidence.json"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -986,6 +1203,16 @@ dest = "share/provenance/parakeet/validation.log"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "parakeet"
+member = "validation.log"
+dest = "share/provenance/parakeet/validation.log"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -994,6 +1221,16 @@ member = "receipt.json"
 dest = "share/provenance/rfdetr/receipt.json"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "rfdetr"
+member = "receipt.json"
+dest = "share/provenance/rfdetr/receipt.json"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1004,6 +1241,16 @@ dest = "share/provenance/rfdetr/build-evidence.json"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "rfdetr"
+member = "build-evidence.json"
+dest = "share/provenance/rfdetr/build-evidence.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1012,6 +1259,16 @@ member = "validation.log"
 dest = "share/provenance/rfdetr/validation.log"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "rfdetr"
+member = "validation.log"
+dest = "share/provenance/rfdetr/validation.log"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1031,6 +1288,16 @@ dest = "share/provenance/rclone/archive.json"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "rclone"
+member = "archive.json"
+dest = "share/provenance/rclone/archive.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1039,6 +1306,16 @@ member = "archive.json"
 dest = "share/provenance/msvc/archive.json"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "msvc"
+member = "archive.json"
+dest = "share/provenance/msvc/archive.json"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1049,6 +1326,16 @@ dest = "share/provenance/pdfium/archive.json"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "archive.json"
+dest = "share/provenance/pdfium/archive.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1057,6 +1344,16 @@ member = "abseil.txt"
 dest = "share/licenses/pdfium/abseil.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "abseil.txt"
+dest = "share/licenses/pdfium/abseil.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1067,6 +1364,16 @@ dest = "share/licenses/pdfium/agg23.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "agg23.txt"
+dest = "share/licenses/pdfium/agg23.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1075,6 +1382,16 @@ member = "fast_float.txt"
 dest = "share/licenses/pdfium/fast_float.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "fast_float.txt"
+dest = "share/licenses/pdfium/fast_float.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1085,6 +1402,16 @@ dest = "share/licenses/pdfium/freetype.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "freetype.txt"
+dest = "share/licenses/pdfium/freetype.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1093,6 +1420,16 @@ member = "icu.txt"
 dest = "share/licenses/pdfium/icu.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "icu.txt"
+dest = "share/licenses/pdfium/icu.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1103,6 +1440,16 @@ dest = "share/licenses/pdfium/lcms.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "lcms.txt"
+dest = "share/licenses/pdfium/lcms.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1111,6 +1458,16 @@ member = "libjpeg_turbo.ijg"
 dest = "share/licenses/pdfium/libjpeg_turbo.ijg"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "libjpeg_turbo.ijg"
+dest = "share/licenses/pdfium/libjpeg_turbo.ijg"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1121,6 +1478,16 @@ dest = "share/licenses/pdfium/libjpeg_turbo.md"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "libjpeg_turbo.md"
+dest = "share/licenses/pdfium/libjpeg_turbo.md"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1129,6 +1496,16 @@ member = "libopenjpeg.txt"
 dest = "share/licenses/pdfium/libopenjpeg.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "libopenjpeg.txt"
+dest = "share/licenses/pdfium/libopenjpeg.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1139,6 +1516,16 @@ dest = "share/licenses/pdfium/libpng.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "libpng.txt"
+dest = "share/licenses/pdfium/libpng.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1147,6 +1534,16 @@ member = "libtiff.txt"
 dest = "share/licenses/pdfium/libtiff.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "libtiff.txt"
+dest = "share/licenses/pdfium/libtiff.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1157,6 +1554,16 @@ dest = "share/licenses/pdfium/llvm-libc.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "llvm-libc.txt"
+dest = "share/licenses/pdfium/llvm-libc.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1165,6 +1572,16 @@ member = "pdfium.txt"
 dest = "share/licenses/pdfium/pdfium.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "pdfium.txt"
+dest = "share/licenses/pdfium/pdfium.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1175,6 +1592,16 @@ dest = "share/licenses/pdfium/simdutf.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "simdutf.txt"
+dest = "share/licenses/pdfium/simdutf.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1183,6 +1610,16 @@ member = "zlib.txt"
 dest = "share/licenses/pdfium/zlib.txt"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "pdfium"
+member = "zlib.txt"
+dest = "share/licenses/pdfium/zlib.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1193,6 +1630,16 @@ dest = "share/licenses/ced/LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ced"
+member = "LICENSE"
+dest = "share/licenses/ced/LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1202,13 +1649,23 @@ dest = "share/licenses/ced/ggml-LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ced"
+member = "third_party/ggml/LICENSE"
+dest = "share/licenses/ced/ggml-LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "copy"
 class = "notice"
 source = "core/distribution/licenses/ced/ced-tiny-model-LICENSE"
 dest = "share/licenses/ced/ced-tiny-model-LICENSE"
 mode = 0o644
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "copy"
@@ -1216,7 +1673,7 @@ class = "notice"
 source = "core/distribution/licenses/ced/ATTRIBUTION.md"
 dest = "share/licenses/ced/ATTRIBUTION.md"
 mode = 0o644
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1227,6 +1684,16 @@ dest = "share/licenses/parakeet/LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "parakeet"
+member = "LICENSE"
+dest = "share/licenses/parakeet/LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1236,13 +1703,23 @@ dest = "share/licenses/parakeet/ggml-LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "parakeet"
+member = "third_party/ggml/LICENSE"
+dest = "share/licenses/parakeet/ggml-LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "copy"
 class = "notice"
 source = "core/distribution/licenses/parakeet/YaRN-LICENSE.txt"
 dest = "share/licenses/parakeet/YaRN-LICENSE.txt"
 mode = 0o644
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "copy"
@@ -1250,7 +1727,7 @@ class = "notice"
 source = "core/distribution/licenses/parakeet/cpp-httplib-LICENSE.txt"
 dest = "share/licenses/parakeet/cpp-httplib-LICENSE.txt"
 mode = 0o644
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1261,6 +1738,16 @@ dest = "share/licenses/onnx/LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "onnx"
+member = "LICENSE"
+dest = "share/licenses/onnx/LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1270,12 +1757,29 @@ dest = "share/licenses/onnx/ThirdPartyNotices.txt"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "onnx"
+member = "ThirdPartyNotices.txt"
+dest = "share/licenses/onnx/ThirdPartyNotices.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-build-evidence"
 class = "notice"
 dest = "share/provenance/cargo-evidence.json"
 mode = 420
 targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-build-evidence"
+class = "notice"
+dest = "share/provenance/cargo-evidence.json"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1286,6 +1790,16 @@ dest = "share/licenses/rfdetr/LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "rfdetr"
+member = "LICENSE"
+dest = "share/licenses/rfdetr/LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1294,6 +1808,16 @@ member = "third_party/ggml/LICENSE"
 dest = "share/licenses/rfdetr/ggml-LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "rfdetr"
+member = "third_party/ggml/LICENSE"
+dest = "share/licenses/rfdetr/ggml-LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1304,6 +1828,16 @@ dest = "share/licenses/ffmpeg/COPYING.GPLv2"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ffmpeg"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv2"
+dest = "share/licenses/ffmpeg/COPYING.GPLv2"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1312,6 +1846,16 @@ member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv3"
 dest = "share/licenses/ffmpeg/COPYING.GPLv3"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ffmpeg"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv3"
+dest = "share/licenses/ffmpeg/COPYING.GPLv3"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1322,6 +1866,16 @@ dest = "share/licenses/ffmpeg/COPYING.LGPLv2.1"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ffmpeg"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv2.1"
+dest = "share/licenses/ffmpeg/COPYING.LGPLv2.1"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1330,6 +1884,16 @@ member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv3"
 dest = "share/licenses/ffmpeg/COPYING.LGPLv3"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ffmpeg"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv3"
+dest = "share/licenses/ffmpeg/COPYING.LGPLv3"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1340,6 +1904,16 @@ dest = "share/licenses/ffmpeg/LICENSE.md"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ffmpeg"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/LICENSE.md"
+dest = "share/licenses/ffmpeg/LICENSE.md"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1349,13 +1923,23 @@ dest = "share/provenance/ffmpeg/archive.json"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "ffmpeg"
+member = "archive.json"
+dest = "share/provenance/ffmpeg/archive.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "copy"
 class = "notice"
 source = "core/distribution/model-notices.md"
 dest = "share/licenses/models/NOTICE.md"
 mode = 420
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1366,13 +1950,23 @@ dest = "share/licenses/rfdetr/stb-LICENSE.txt"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "rfdetr"
+member = "notices/stb-LICENSE.txt"
+dest = "share/licenses/rfdetr/stb-LICENSE.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "copy"
 class = "first-party"
 source = "core/distribution/windows-README.md"
 dest = "share/README.md"
 mode = 420
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1383,6 +1977,16 @@ dest = "share/provenance/msvc/runtime-license.docx"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "msvc"
+member = "runtime-license.docx"
+dest = "share/provenance/msvc/runtime-license.docx"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1392,13 +1996,23 @@ dest = "share/provenance/msvc/runtime-license-source.json"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "msvc"
+member = "runtime-license-source.json"
+dest = "share/provenance/msvc/runtime-license-source.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "copy"
 class = "notice"
 source = "core/distribution/licenses/velopack/LICENSE"
 dest = "share/licenses/velopack/LICENSE"
 mode = 0o644
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "copy"
@@ -1411,10 +2025,26 @@ targets = ["windows-x86_64"]
 [[entry]]
 kind = "copy"
 class = "notice"
+source = "core/distribution/windows-aarch64-rust-NOTICES.txt"
+dest = "share/licenses/rust/NOTICES.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
 source = "core/distribution/windows-rust-sources.json"
 dest = "share/provenance/rust-sources.json"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/windows-aarch64-rust-sources.json"
+dest = "share/provenance/rust-sources.json"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "copy"
@@ -1427,6 +2057,14 @@ targets = ["windows-x86_64"]
 [[entry]]
 kind = "copy"
 class = "notice"
+source = "core/distribution/windows-aarch64-msvc-NOTICE.md"
+dest = "share/licenses/msvc/NOTICE.md"
+mode = 420
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
 source = "core/distribution/windows-webview2-loader-NOTICE.md"
 dest = "share/licenses/webview2-loader/NOTICE.md"
 mode = 420
@@ -1434,11 +2072,19 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
+class = "notice"
+source = "core/distribution/windows-aarch64-webview2-loader-NOTICE.md"
+dest = "share/licenses/webview2-loader/NOTICE.md"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "copy"
 class = "first-party"
 source = "THIRD_PARTY_NOTICES.md"
 dest = "share/THIRD_PARTY_NOTICES.md"
 mode = 420
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 # Release notices for each non-Windows Rust dependency closure. The release
 # gate checks these against Cargo metadata; routine make ci does not.
@@ -1559,7 +2205,7 @@ bin = "solstone-core-vulkan-probe"
 dest = "bin/solstone-core-vulkan-probe.exe"
 mode = 0o755
 lane = "msvc-native"
-targets = ["windows-x86_64"]
+targets = ["windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1570,6 +2216,16 @@ dest = "lib/solstone-native/llama-server.exe"
 mode = 493
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "llama"
+member = "bin/llama-server.exe"
+dest = "lib/solstone-native/llama-server.exe"
+mode = 0o755
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "component"
@@ -1578,6 +2234,16 @@ member = "bin/vulkan-1.dll"
 dest = "lib/solstone-native/vulkan-1.dll"
 mode = 493
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "llama"
+member = "bin/vulkan-1.dll"
+dest = "lib/solstone-native/vulkan-1.dll"
+mode = 0o755
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1588,6 +2254,16 @@ dest = "share/provenance/llama/receipt.json"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "receipt.json"
+dest = "share/provenance/llama/receipt.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1596,6 +2272,16 @@ member = "build-evidence.json"
 dest = "share/provenance/llama/build-evidence.json"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "build-evidence.json"
+dest = "share/provenance/llama/build-evidence.json"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1606,6 +2292,16 @@ dest = "share/provenance/llama/validation.log"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "validation.log"
+dest = "share/provenance/llama/validation.log"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1614,6 +2310,16 @@ member = "llama/LICENSE"
 dest = "share/licenses/llama/LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "llama/LICENSE"
+dest = "share/licenses/llama/LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1624,6 +2330,16 @@ dest = "share/licenses/llama/jsonhpp-LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "llama/licenses/LICENSE-jsonhpp"
+dest = "share/licenses/llama/jsonhpp-LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1632,6 +2348,16 @@ member = "llama/vendor/cpp-httplib/LICENSE"
 dest = "share/licenses/llama/cpp-httplib-LICENSE"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "llama/vendor/cpp-httplib/LICENSE"
+dest = "share/licenses/llama/cpp-httplib-LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1642,6 +2368,16 @@ dest = "share/licenses/llama/Vulkan-Loader-LICENSE.txt"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "loader/LICENSE.txt"
+dest = "share/licenses/llama/Vulkan-Loader-LICENSE.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1650,6 +2386,16 @@ member = "loader/LICENSES/Apache-2.0.txt"
 dest = "share/licenses/llama/Apache-2.0.txt"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "loader/LICENSES/Apache-2.0.txt"
+dest = "share/licenses/llama/Apache-2.0.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1660,6 +2406,16 @@ dest = "share/licenses/llama/MIT-Khronos-old.txt"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "loader/LICENSES/MIT-Khronos-old.txt"
+dest = "share/licenses/llama/MIT-Khronos-old.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1668,6 +2424,16 @@ member = "loader/LICENSES/MIT.txt"
 dest = "share/licenses/llama/MIT.txt"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "loader/LICENSES/MIT.txt"
+dest = "share/licenses/llama/MIT.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1678,6 +2444,16 @@ dest = "share/licenses/llama/cJSON-LICENSE.txt"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "notices/cJSON-LICENSE.txt"
+dest = "share/licenses/llama/cJSON-LICENSE.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1686,6 +2462,16 @@ member = "notices/dirent-LICENSE.txt"
 dest = "share/licenses/llama/dirent-LICENSE.txt"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "notices/dirent-LICENSE.txt"
+dest = "share/licenses/llama/dirent-LICENSE.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1696,6 +2482,16 @@ dest = "share/licenses/llama/stb-LICENSE.txt"
 mode = 420
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "notices/stb-LICENSE.txt"
+dest = "share/licenses/llama/stb-LICENSE.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1704,6 +2500,16 @@ member = "notices/miniaudio-LICENSE.txt"
 dest = "share/licenses/llama/miniaudio-LICENSE.txt"
 mode = 420
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "llama"
+member = "notices/miniaudio-LICENSE.txt"
+dest = "share/licenses/llama/miniaudio-LICENSE.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1714,6 +2520,16 @@ dest = "lib/solstone-nvattest/nvattest.exe"
 mode = 0o755
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "nvattest"
+member = "bin/nvattest.exe"
+dest = "lib/solstone-nvattest/nvattest.exe"
+mode = 0o755
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "component"
@@ -1722,6 +2538,16 @@ member = "share/ca/ca-bundle.pem"
 dest = "share/ca/ca-bundle.pem"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "nvattest"
+member = "share/ca/ca-bundle.pem"
+dest = "share/ca/ca-bundle.pem"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1732,6 +2558,16 @@ dest = "share/licenses/nvattest/LICENSE"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "nvattest"
+member = "LICENSE"
+dest = "share/licenses/nvattest/LICENSE"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1740,6 +2576,16 @@ member = "receipt.json"
 dest = "share/provenance/nvattest/receipt.json"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "nvattest"
+member = "receipt.json"
+dest = "share/provenance/nvattest/receipt.json"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1750,6 +2596,16 @@ dest = "share/provenance/nvattest/build-evidence.json"
 mode = 0o644
 targets = ["windows-x86_64"]
 
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "nvattest"
+member = "build-evidence.json"
+dest = "share/provenance/nvattest/build-evidence.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
 [[entry]]
 kind = "windows-native"
 class = "notice"
@@ -1758,6 +2614,16 @@ member = "validation.log"
 dest = "share/provenance/nvattest/validation.log"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "nvattest"
+member = "validation.log"
+dest = "share/provenance/nvattest/validation.log"
+mode = 0o644
+targets = ["windows-aarch64"]
 
 [[entry]]
 kind = "copy"
@@ -2045,11 +2911,110 @@ kind = "licence-tree"
 class = "notice"
 source = "core/distribution/licenses/restic"
 component = "restic"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
 
 [[entry]]
 kind = "licence-tree"
 class = "notice"
 source = "core/distribution/licenses/rclone"
 component = "rclone"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "onnx"
+member = "notices/kleidiai-LICENSE.txt"
+dest = "share/licenses/onnx/kleidiai-LICENSE.txt"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "nvattest"
+member = "notices/nvattest-NOTICES.md"
+dest = "share/licenses/nvattest/NOTICES.md"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "nvattest"
+member = "notices/nvattest-sources.json"
+dest = "share/provenance/nvattest/sources.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "restic"
+member = "receipt.json"
+dest = "share/provenance/restic/receipt.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "restic"
+member = "build-evidence.json"
+dest = "share/provenance/restic/build-evidence.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "restic"
+member = "validation.log"
+dest = "share/provenance/restic/validation.log"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "component"
+component = "openmp"
+member = "libomp.dll"
+dest = "lib/solstone-native/libomp.dll"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "openmp"
+member = "receipt.json"
+dest = "share/provenance/openmp/receipt.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "openmp"
+member = "build-evidence.json"
+dest = "share/provenance/openmp/build-evidence.json"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "openmp"
+member = "validation.log"
+dest = "share/provenance/openmp/validation.log"
+mode = 0o644
+targets = ["windows-aarch64"]
+
+[[entry]]
+kind = "windows-native"
+class = "notice"
+component = "openmp"
+member = "LICENSE.txt"
+dest = "share/licenses/openmp/LICENSE.txt"
+mode = 0o644
+targets = ["windows-aarch64"]

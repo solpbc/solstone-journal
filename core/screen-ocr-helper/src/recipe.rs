@@ -100,6 +100,7 @@ pub struct RuntimeRecipe {
     pub macos_arm64: RuntimeArchive,
     pub linux_aarch64: RuntimeArchive,
     pub windows_x86_64: RuntimeArchive,
+    pub windows_aarch64: RuntimeArchive,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -236,6 +237,14 @@ mod tests {
                 filename: "onnxruntime-1.31.0-cp313-cp313-win_amd64.whl".into(),
                 url: "https://files.pythonhosted.org/packages/c4/86/05ed2056f43b27aaf12ebc592ebd9037a26bed315958cf882f43425fd469/onnxruntime-1.31.0-cp313-cp313-win_amd64.whl".into(),
                 sha256: "73e0165d58ece068c2a8a1c477c90b38e5a8adbbd399fdfdfd4bd79cbc28ff8d".into(),
+            }
+        );
+        assert_eq!(
+            recipe.runtime.windows_aarch64,
+            RuntimeArchive {
+                filename: "onnxruntime-1.31.0-cp313-cp313-win_arm64.whl".into(),
+                url: "https://files.pythonhosted.org/packages/c9/93/d33bae7b1a78780c4946ce03989c59a67d42d7015ad62d2098975fc5a580/onnxruntime-1.31.0-cp313-cp313-win_arm64.whl".into(),
+                sha256: "e51d10d2e2e1e5bbf9b126a0cd9853d3e6c4e21424518dd50160b91471be33dc".into(),
             }
         );
     }

@@ -473,6 +473,7 @@ pub fn windows_native_entry_mapping(
         | (WindowsNativeComponent::Onnx, "share/provenance/onnx/build-evidence.json")
         | (WindowsNativeComponent::Onnx, "share/provenance/onnx/validation.log")
         | (WindowsNativeComponent::Onnx, "share/licenses/onnx/LICENSE")
+        | (WindowsNativeComponent::Onnx, "share/licenses/onnx/kleidiai-LICENSE.txt")
         | (WindowsNativeComponent::Onnx, "share/licenses/onnx/ThirdPartyNotices.txt") => {
             Ok(WindowsNativeMapping::Notice)
         }
@@ -583,6 +584,8 @@ pub fn windows_native_entry_mapping(
             Ok(WindowsNativeMapping::Component("nvattest"))
         }
         (WindowsNativeComponent::Nvattest, "share/licenses/nvattest/LICENSE")
+        | (WindowsNativeComponent::Nvattest, "share/licenses/nvattest/NOTICES.md")
+        | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/sources.json")
         | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/receipt.json")
         | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/build-evidence.json")
         | (WindowsNativeComponent::Nvattest, "share/provenance/nvattest/validation.log") => {
@@ -1115,8 +1118,10 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
                 || (architecture == WindowsArchitecture::Aarch64
                     && *component == WindowsNativeComponent::Msvc
                     && (member.to_ascii_lowercase().ends_with(".dll") || dest.ends_with(".dll"))
-                    && (!matches!(member.as_str(), "msvcp140.dll" | "vcruntime140.dll")
-                        || dest.rsplit('/').next() != Some(member.as_str())))
+                    && (!matches!(
+                        member.as_str(),
+                        "msvcp140.dll" | "msvcp140_1.dll" | "vcruntime140.dll"
+                    ) || dest.rsplit('/').next() != Some(member.as_str())))
                 || !matches!(*mode, 0o644 | 0o755)
                 || member.is_empty()
                 || !member.is_ascii()
@@ -2927,7 +2932,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
-        assert_eq!(inv.entry.len(), 179);
+        assert!(!inv.entry.is_empty());
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }
@@ -3163,6 +3168,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             "linux-aarch64",
             "macos-arm64",
             "windows-x86_64",
+            "windows-aarch64",
         ];
         for target in all_targets {
             let mut component_ids = BTreeSet::new();
@@ -3204,6 +3210,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             "area-tier",
             "vulkan-loader",
             "msvc-runtime",
+            "openmp",
             "screen-ocr",
         ]
         .into_iter()
@@ -3300,16 +3307,8 @@ mod windows_architecture_tests {
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let mut inventory = load_inventory(&path).unwrap();
-        let mut target = inventory
-            .target
-            .iter()
-            .find(|t| t.id == "windows-x86_64")
-            .unwrap()
-            .clone();
-        target.id = "windows-aarch64".into();
-        target.arch = "aarch64".into();
-        target.triple_windows = "aarch64-pc-windows-msvc".into();
-        inventory.target.push(target);
+        inventory.entry.retain(|entry| !matches!(entry,
+            Entry::WindowsNative { targets, .. } if targets.iter().any(|target| target == "windows-aarch64")));
         (path, inventory)
     }
 

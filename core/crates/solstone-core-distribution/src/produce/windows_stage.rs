@@ -662,7 +662,7 @@ mod tests {
         let mut inventory = load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
         inventory
             .entry
-            .retain(|entry| matches!(entry, Entry::WindowsBuildEvidence { .. }));
+            .retain(|entry| matches!(entry, Entry::WindowsBuildEvidence { targets, .. } if targets.iter().any(|target| target == WindowsArchitecture::X86_64.target_id())));
         assert_eq!(inventory.entry.len(), 1);
         let root = tempfile::tempdir().unwrap();
         inventory.payload = "empty.list".into();
@@ -1134,8 +1134,8 @@ mod tests {
         let mut inventory = load_inventory(&inventory_path).unwrap();
         inventory.entry.retain(|entry| {
             matches!(entry,
-            Entry::WindowsNative { component: WindowsNativeComponent::Ced, member, .. }
-            if member == "bin/ced.dll")
+            Entry::WindowsNative { component: WindowsNativeComponent::Ced, member, targets, .. }
+            if member == "bin/ced.dll" && targets.iter().any(|target| target == WINDOWS_PAYLOAD_TARGET))
         });
         assert_eq!(inventory.entry.len(), 1);
         let root = tempfile::tempdir().unwrap();
@@ -1479,8 +1479,14 @@ mod tests {
                     component: WindowsNativeComponent::Nvattest,
                     member,
                     dest,
+                    targets,
                     ..
-                } => Some((member.as_str(), dest.as_str())),
+                } if targets
+                    .iter()
+                    .any(|target| target == WINDOWS_PAYLOAD_TARGET) =>
+                {
+                    Some((member.as_str(), dest.as_str()))
+                }
                 _ => None,
             })
             .collect();
@@ -1545,8 +1551,9 @@ mod tests {
         let mut inventory = load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
         inventory.payload = "empty.list".into();
         inventory.entry.retain(|entry| {
-            matches!(entry, Entry::WindowsNative { component: WindowsNativeComponent::Msvc, member, .. }
-                if member == "msvcp140.dll" || member == "vcruntime140.dll" || member == "vcruntime140_1.dll")
+            matches!(entry, Entry::WindowsNative { component: WindowsNativeComponent::Msvc, member, targets, .. }
+                if targets.iter().any(|target| target == WINDOWS_PAYLOAD_TARGET)
+                    && (member == "msvcp140.dll" || member == "vcruntime140.dll" || member == "vcruntime140_1.dll"))
         });
         assert_eq!(inventory.entry.len(), 6);
         let products = BTreeMap::new();
@@ -1764,26 +1771,19 @@ mod architecture_tests {
             .nth(3)
             .unwrap();
         let mut inventory = load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
-        let mut arm = inventory
-            .target
-            .iter()
-            .find(|target| target.id == WindowsArchitecture::X86_64.target_id())
-            .unwrap()
-            .clone();
-        arm.id = WindowsArchitecture::Aarch64.target_id().into();
-        arm.arch = WindowsArchitecture::Aarch64.architecture().into();
-        arm.triple_windows = WindowsArchitecture::Aarch64.rust_triple().into();
-        inventory.target.push(arm);
         inventory
             .entry
             .retain(|entry| matches!(entry, Entry::WindowsBuildEvidence { .. }));
-        assert_eq!(inventory.entry.len(), 1);
-        let mut arm_entry = inventory.entry[0].clone();
-        if let Entry::WindowsBuildEvidence { dest, targets, .. } = &mut arm_entry {
-            *dest = "share/provenance/arm-cargo.json".into();
-            *targets = vec![WindowsArchitecture::Aarch64.target_id().into()];
+        assert_eq!(inventory.entry.len(), 2);
+        for entry in &mut inventory.entry {
+            if let Entry::WindowsBuildEvidence { dest, targets, .. } = entry
+                && targets
+                    .iter()
+                    .any(|target| target == WindowsArchitecture::Aarch64.target_id())
+            {
+                *dest = "share/provenance/arm-cargo.json".into();
+            }
         }
-        inventory.entry.push(arm_entry);
         let root = tempfile::tempdir().unwrap();
         inventory.payload = "empty.list".into();
         fs::write(root.path().join("empty.list"), b"").unwrap();

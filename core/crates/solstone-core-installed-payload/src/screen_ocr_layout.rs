@@ -6,6 +6,7 @@ pub const TARGET_LINUX_X86_64: &str = "linux-x86_64";
 pub const TARGET_LINUX_AARCH64: &str = "linux-aarch64";
 pub const TARGET_MACOS_ARM64: &str = "macos-arm64";
 pub const TARGET_WINDOWS_X86_64: &str = "windows-x86_64";
+pub const TARGET_WINDOWS_AARCH64: &str = "windows-aarch64";
 
 pub struct ScreenOcrLayout {
     pub helper: &'static str,
@@ -37,7 +38,7 @@ static MACOS_ARM64_LAYOUT: ScreenOcrLayout = ScreenOcrLayout {
     runtime_dependency: None,
 };
 
-static WINDOWS_X86_64_LAYOUT: ScreenOcrLayout = ScreenOcrLayout {
+static WINDOWS_LAYOUT: ScreenOcrLayout = ScreenOcrLayout {
     helper: "lib/solstone-native/solstone-screen-ocr-helper.exe",
     recipe: "lib/solstone-screen-ocr/recipe.toml",
     detector: "lib/solstone-screen-ocr/models/detector.onnx",
@@ -52,7 +53,7 @@ pub fn screen_ocr_layout(target: &str) -> Option<&'static ScreenOcrLayout> {
     match target {
         TARGET_LINUX_X86_64 | TARGET_LINUX_AARCH64 => Some(&LINUX_LAYOUT),
         TARGET_MACOS_ARM64 => Some(&MACOS_ARM64_LAYOUT),
-        TARGET_WINDOWS_X86_64 => Some(&WINDOWS_X86_64_LAYOUT),
+        TARGET_WINDOWS_X86_64 | TARGET_WINDOWS_AARCH64 => Some(&WINDOWS_LAYOUT),
         _ => None,
     }
 }
@@ -62,7 +63,7 @@ pub fn admit_screen_ocr(target: &str, gnu: bool) -> Option<&'static ScreenOcrLay
     match (target, gnu) {
         (TARGET_LINUX_X86_64, true) | (TARGET_LINUX_AARCH64, true) => Some(&LINUX_LAYOUT),
         (TARGET_MACOS_ARM64, false) => Some(&MACOS_ARM64_LAYOUT),
-        (TARGET_WINDOWS_X86_64, _) => Some(&WINDOWS_X86_64_LAYOUT),
+        (TARGET_WINDOWS_X86_64 | TARGET_WINDOWS_AARCH64, _) => Some(&WINDOWS_LAYOUT),
         _ => None,
     }
 }

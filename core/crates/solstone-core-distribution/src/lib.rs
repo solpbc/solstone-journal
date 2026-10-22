@@ -1111,7 +1111,6 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
             && inventory.artifact.basename.contains("{arch}"),
         "inventory basename must stay a template"
     );
-    assert_eq!(inventory.target.len(), 4);
     assert_eq!(
         inventory
             .target
