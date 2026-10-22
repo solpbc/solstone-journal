@@ -272,6 +272,93 @@ pub fn gate(
     }
     Ok(GateDecision::Proceed)
 }
+
+/// Recovery accepts only an explicit, current empty-candidate decision.
+/// The ordinary gate's permissive parsing is not proof for malformed Sense.
+pub(crate) fn no_candidates_input_binding(
+    prepared: &PreparedTalent,
+    context: &ExecutionContext,
+) -> Result<Option<String>, String> {
+    use sha2::{Digest, Sha256};
+    use solstone_core_journal_io::{JournalRoot, paths::Segment, read_relative_file_bounded};
+    let coordinate = |name| {
+        prepared
+            .config
+            .get(name)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("empty detection lacks {name}"))
+    };
+    let segment = Segment::resolve_exact(
+        &context.journal,
+        coordinate("day")?,
+        prepared
+            .config
+            .get("stream")
+            .and_then(Value::as_str)
+            .unwrap_or(solstone_core_journal_io::DEFAULT_STREAM),
+        coordinate("segment")?,
+    )
+    .map_err(|e| e.to_string())?
+    .ok_or("empty detection segment disappeared")?;
+    let root = JournalRoot::open(&context.journal).map_err(|e| e.to_string())?;
+    let relative = segment
+        .path()
+        .strip_prefix(&context.journal)
+        .map_err(|e| e.to_string())?
+        .join("talents/sense.json");
+    let Some(observed) =
+        read_relative_file_bounded(&root, &relative, 4 * 1024 * 1024).map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    let sense: Value = serde_json::from_slice(&observed.bytes).map_err(|e| e.to_string())?;
+    let empty = sense
+        .get("entities")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty);
+    let facets = sense
+        .get("facets")
+        .and_then(Value::as_array)
+        .is_some_and(|rows| {
+            !rows.is_empty()
+                && rows.iter().all(|row| {
+                    row.as_object().is_some_and(|row| {
+                        row.get("facet")
+                            .and_then(Value::as_str)
+                            .is_some_and(|facet| !facet.trim().is_empty())
+                    })
+                })
+        });
+    if !empty || !facets {
+        return Ok(None);
+    }
+    let source = solstone_core_system::catchup::read_segment_input_fingerprint(
+        &context.journal,
+        coordinate("day")?,
+        segment.path(),
+    )
+    .map_err(|e| e.to_string())?;
+    if read_relative_file_bounded(&root, &relative, 4 * 1024 * 1024)
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        != Some(&observed)
+    {
+        return Err("empty detection Sense changed".into());
+    }
+    root.revalidate().map_err(|e| e.to_string())?;
+    let binding = serde_json::json!({
+        "root":root.identity().observation_id(),
+        "day":coordinate("day")?,
+        "stream":prepared.config.get("stream").and_then(Value::as_str).unwrap_or(solstone_core_journal_io::DEFAULT_STREAM),
+        "segment":coordinate("segment")?,
+        "sense":{"sha256":format!("{:x}",Sha256::digest(&observed.bytes)),"device":observed.entry.device,"inode":observed.entry.inode,"size":observed.entry.size,"mtime_seconds":observed.entry.mtime.seconds,"mtime_nanoseconds":observed.entry.mtime.nanoseconds},
+        "source":source,
+    });
+    Ok(Some(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&binding).map_err(|e| e.to_string())?)
+    )))
+}
 pub fn build(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,

@@ -3221,6 +3221,14 @@ mod tests {
         journal: &std::path::Path,
         stream: Option<&str>,
     ) -> (ThinkContext, std::path::PathBuf) {
+        conditional_segment_fixture_with_detection(journal, stream, false)
+    }
+
+    fn conditional_segment_fixture_with_detection(
+        journal: &std::path::Path,
+        stream: Option<&str>,
+        detection: bool,
+    ) -> (ThinkContext, std::path::PathBuf) {
         use solstone_core_talent_runtime::{ExecutionContext, prepare::RuntimePaths};
         let context = context(journal);
         let stream_name = stream.unwrap_or(solstone_core_journal_io::DEFAULT_STREAM);
@@ -3233,7 +3241,7 @@ mod tests {
         fs::write(segment.join("090000_300_screen.wav"), b"synthetic media").unwrap();
         fs::write(
             segment.join("talents/sense.json"),
-            r#"{"density":"idle","content_type":"work"}"#,
+            r#"{"density":"idle","content_type":"work","entities":[],"facets":[{"facet":"home"}]}"#,
         )
         .unwrap();
         let paths = RuntimePaths {
@@ -3256,15 +3264,32 @@ mod tests {
         let mut sensed = coordinates.clone();
         sensed.insert("density".into(), Value::from("idle"));
         log.log("sense.complete", now, sensed);
-        for (ordinal, name) in ["documents", "screen"].into_iter().enumerate() {
-            let extra = if name == "documents" {
+        for (ordinal, name) in ["documents", "screen"]
+            .into_iter()
+            .chain(detection.then_some("entities:detection"))
+            .enumerate()
+        {
+            let extra = if name == "entities:detection" {
+                r#", "hook":{"pre":"entities:detection"}, "load":{"transcripts":true,"percepts":false,"talents":false}"#
+            } else if name == "documents" {
                 r#", "hook":{"pre":"documents"}, "load":{"transcripts":true,"percepts":false,"talents":false}"#
             } else {
                 r#", "load":{"transcripts":true,"percepts":"required","talents":false}"#
             };
-            fs::write(paths.talent_root.join(format!("{name}.md")), format!("{{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":10,\"output\":\"json\",\"max_output_tokens\":1024{extra}\n}}\nSegment record")).unwrap();
-            let id = format!("conditional-{name}");
-            let mut request = serde_json::json!({"name":name,"use_id":id,"day":DAY,"segment":"090000_300","output_path":segment.join("talents").join(format!("{name}.json"))}).as_object().unwrap().clone();
+            let talent_file = if name == "entities:detection" {
+                paths.apps_root.join("entities/talent/detection.md")
+            } else {
+                paths.talent_root.join(format!("{name}.md"))
+            };
+            fs::create_dir_all(talent_file.parent().unwrap()).unwrap();
+            fs::write(talent_file, format!("{{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":10,\"output\":\"json\",\"max_output_tokens\":1024{extra}\n}}\nSegment record")).unwrap();
+            let id = format!("conditional-{}", name.replace(':', "-"));
+            let output_name = if name == "entities:detection" {
+                "_entities_detection"
+            } else {
+                name
+            };
+            let mut request = serde_json::json!({"name":name,"use_id":id,"day":DAY,"segment":"090000_300","output":"json","output_path":segment.join("talents").join(format!("{output_name}.json"))}).as_object().unwrap().clone();
             if let Some(stream) = stream {
                 request.insert("stream".into(), Value::from(stream));
             }
@@ -3292,7 +3317,7 @@ mod tests {
                 "{outcome:?}"
             );
             solstone_core_talent_runtime::emit_outcome_for_test(&mut bytes, outcome);
-            let uses = journal.join("talents").join(name);
+            let uses = journal.join("talents").join(name.replace(':', "--"));
             fs::create_dir_all(&uses).unwrap();
             fs::write(uses.join(format!("{id}.jsonl")), bytes).unwrap();
             let mut fields = coordinates.clone();
@@ -3308,6 +3333,60 @@ mod tests {
         }
         segment::publish_saved_outputs(&context, &segment).unwrap();
         (context, segment)
+    }
+
+    #[test]
+    fn rebuild_seals_empty_detection_but_rechecks_current_sense_and_raw_source() {
+        for stream in [None, Some("notes")] {
+            for change in [
+                "sense",
+                "same_empty_sense",
+                "raw",
+                "republished_raw",
+                "prior_output",
+            ] {
+                let journal = tempdir().unwrap();
+                let (context, segment) =
+                    conditional_segment_fixture_with_detection(journal.path(), stream, true);
+                rebuild_segment_receipts(&context, None).unwrap();
+                assert!(
+                    rebuild_segment_receipts(
+                        &context,
+                        Some(&BTreeSet::from(["conditional-entities-detection".into()]))
+                    )
+                    .is_err()
+                );
+                let output = segment.join("talents/detection_outcome.json");
+                let old = b"prior owner output";
+                match change {
+                    "sense" => {
+                        fs::write(segment.join("talents/sense.json"), r#"{"density":"idle","content_type":"work","entities":[{"name":"Candidate"}],"facets":[{"facet":"home"}]}"#).unwrap();
+                        segment::publish_saved_outputs(&context, &segment).unwrap();
+                    }
+                    "same_empty_sense" => {
+                        fs::write(segment.join("talents/sense.json"), r#"{"density":"idle","content_type":"changed","entities":[],"facets":[{"facet":"home"}]}"#).unwrap();
+                        segment::publish_saved_outputs(&context, &segment).unwrap();
+                    }
+                    "raw" => fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"The original captured source has changed.\"}\n").unwrap(),
+                    "republished_raw" => {
+                        fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"Changed captured source with a new publication.\"}\n").unwrap();
+                        segment::publish_saved_outputs(&context, &segment).unwrap();
+                    }
+                    "prior_output" => {
+                        fs::write(&output, old).unwrap();
+                        segment::publish_saved_outputs(&context, &segment).unwrap();
+                    }
+                    _ => unreachable!(),
+                }
+                assert!(
+                    rebuild_segment_receipts(&context, None).is_err(),
+                    "{change}"
+                );
+                if change == "prior_output" {
+                    assert_eq!(fs::read(output).unwrap(), old);
+                }
+            }
+        }
     }
 
     #[test]
