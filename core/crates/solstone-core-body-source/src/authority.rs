@@ -128,11 +128,15 @@ pub fn classify_bundle_directory(observation: DirectoryObservation<'_>) -> Bundl
         return BundleClass::StagingExcluded;
     }
 
+    // An unreadable manifest says nothing about body content: any import may
+    // write a large or malformed one. A native bundle always carries its
+    // reserved name, envelope and ledger, so a damaged native manifest still
+    // classifies native here and fails authorization.
     let manifest_signals_native = match observation.manifest {
         None => false,
         Some(bytes) => matches!(
             inspect_body_manifest_signal(Some(bytes)),
-            ManifestKeySignal::BodyKeyPresent { .. } | ManifestKeySignal::Unreadable
+            ManifestKeySignal::BodyKeyPresent { .. }
         ),
     };
     let has_native_signal = observation.name.starts_with(NATIVE_PREFIX)

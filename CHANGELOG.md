@@ -13,6 +13,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - fixed local models using a different GPU from the one you selected.
+- fixed Apple Health and Oura imports stopping with an error after saving when your journal also holds a large import from another source, such as a long ChatGPT history. imports already saved are kept and show up on your next Oura sync or Apple Health import, with nothing to redo.
+- fixed Oura sync failing with an error from Oura on some connections, including ones carried over from an earlier version.
 
 - in the map's day and week views, a visit no longer shows a second time as "no departure reported" once your phone has reported when you left. if you left after midnight, the day you arrived now shows when you left.
 
