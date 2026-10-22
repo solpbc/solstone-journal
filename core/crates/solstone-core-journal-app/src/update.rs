@@ -864,7 +864,10 @@ fn main() {
     let args: Vec<String> = std::env::args_os().map(|a| a.to_string_lossy().into_owned()).collect();
     let current_exe = std::env::current_exe().unwrap();
     let argv_file = current_exe.with_extension("argv");
-    std::fs::write(&argv_file, args.join("\n")).unwrap();
+    let pending_file = current_exe.with_extension("argv.pending");
+    std::fs::write(&pending_file, args.join("\n")).unwrap();
+    // Existence is the parent's completion signal; publish only the closed file.
+    std::fs::rename(&pending_file, &argv_file).unwrap();
 }
 "#,
                 )
@@ -1585,7 +1588,7 @@ fn main() {
             let pkg_flag_idx = args
                 .iter()
                 .position(|&a| a == "--package")
-                .expect("--package flag");
+                .unwrap_or_else(|| panic!("--package flag missing from recorder argv: {args:?}"));
             let target_arg = args[pkg_flag_idx + 1];
             assert!(target_arg.ends_with("SolstoneJournal-2.0.28-full.nupkg"));
             assert!(!target_arg.contains("SolstoneJournal-3.0.0-full.nupkg"));
