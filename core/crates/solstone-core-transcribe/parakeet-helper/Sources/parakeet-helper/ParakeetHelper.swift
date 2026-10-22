@@ -7,7 +7,7 @@ import FluidAudio
 import InstalledModels
 import Foundation
 
-private let fluidAudioVersion = "0.14.0"
+private let fluidAudioVersion = "0.17.7"
 private let defaultModelVersion = "v3"
 
 private struct JSONTokenTiming: Encodable {
@@ -261,6 +261,11 @@ private func audioDurationSeconds(url: URL) throws -> Double {
 @main
 struct Main {
     static func main() async {
+        // FluidAudio 0.17 reports token times one encoder frame (80 ms) earlier by
+        // default, to line up with a rescorer this helper does not use. Pin the
+        // timing the journal's other speech engine reports. Re-measure on any
+        // FluidAudio bump: this is the library's own override, read per call.
+        setenv("TDT_EMISSION_DELAY_FRAMES", "0", 1)
         let hardware = hardwareString()
         let macosVersion = macosVersionString()
         let swiftVersion = swiftVersionString()

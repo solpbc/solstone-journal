@@ -230,6 +230,21 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## FluidAudio (macos speech helper)
+
+The macos journal's speech helper (`bin/parakeet-helper`) compiles in
+FluidAudio 0.17.7 by FluidInference
+(https://github.com/FluidInference/FluidAudio/tree/v0.17.7, commit
+`503b4bd1bbf7220882de39fe8ae6716aae4132da`), under the Apache License 2.0.
+FluidAudio includes code adapted from fastcluster (BSD-2-Clause), VBx
+(Apache-2.0) and a Japanese text frontend drawn from MIT, Apache-2.0 and BSD
+sources. The helper is built without FluidAudio's optional NeMo
+text-processing library.
+
+macos packages carry FluidAudio's `LICENSE` and its `fastcluster-LICENSE.md`,
+`vbx-LICENSE.md` and `JapaneseG2P-LICENSE.md`, unchanged from the tagged
+source, in `share/licenses/fluidaudio/`.
+
 ## provider artifacts (parakeet-cpp)
 
 On linux, sol pbc redistributes these artifacts from `updates.solstone.app` on
