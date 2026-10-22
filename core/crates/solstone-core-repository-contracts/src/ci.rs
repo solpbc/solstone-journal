@@ -311,6 +311,32 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
         }
         validate_default_exclusion(&suite.id, &suite.set, suite.default_full, &mut errors);
     }
+    // A key the gate script echoes itself would also reach the host check twice.
+    if !acknowledgement_owners.is_empty() {
+        match fs::read_to_string(repo.join("scripts/win-ci.cmd")) {
+            Ok(script) => {
+                for line in script.lines() {
+                    let line = line.trim_start().trim_start_matches('@');
+                    let Some(echoed) = line
+                        .get(..5)
+                        .filter(|word| word.eq_ignore_ascii_case("echo "))
+                        .and_then(|_| line[5..].trim_start().split_once('='))
+                    else {
+                        continue;
+                    };
+                    if let Some(owner) = acknowledgement_owners.get(echoed.0) {
+                        errors.push(format!(
+                            "scripts/win-ci.cmd echoes Windows acknowledgement {} that suite {owner} already emits",
+                            echoed.0
+                        ));
+                    }
+                }
+            }
+            Err(error) => errors.push(format!(
+                "read scripts/win-ci.cmd for Windows acknowledgements: {error}"
+            )),
+        }
+    }
 
     let mut registered_packages = BTreeSet::new();
     for package_suite in &registry.package_suites {
@@ -1688,6 +1714,9 @@ features = ["full-tests"]
             "fn main() {}\n",
         )
         .expect("second integration test");
+        fs::create_dir_all(temp.path().join("scripts")).expect("scripts dir");
+        let gate = temp.path().join("scripts/win-ci.cmd");
+        fs::write(&gate, "@echo off\r\necho JOURNAL_WIN_CI_HEAD=%HEAD%\r\n").expect("gate");
         registry.platforms.push("windows".to_owned());
         registry.suites[0].platforms.push("windows".to_owned());
         registry.suites[0].windows = Some(crate::windows_suite::WindowsPolicy {
@@ -1722,6 +1751,17 @@ features = ["full-tests"]
 
         registry.suites[1].windows = None;
         assert_eq!(validate_registry(temp.path(), &registry), Ok(()));
+
+        // The gate script echoing a suite's key prints it a second time too.
+        fs::write(&gate, "@echo off\r\necho FIXTURE_RECEIPT=executed/pass\r\n")
+            .expect("echoing gate");
+        assert_eq!(
+            validate_registry(temp.path(), &registry),
+            Err(vec![
+                "scripts/win-ci.cmd echoes Windows acknowledgement FIXTURE_RECEIPT that suite a::api already emits"
+                    .to_owned()
+            ])
+        );
     }
 
     #[test]
