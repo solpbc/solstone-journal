@@ -1037,6 +1037,12 @@ fn accept_content_request(listener: &TcpListener) -> (TcpStream, WireRequest) {
 }
 
 fn read_request(stream: &mut TcpStream) -> WireRequest {
+    // Windows hands an accepted socket the listener's non-blocking mode, so a
+    // read that beats the client's bytes fails with WouldBlock instead of
+    // waiting for them. Read blocking, bounded by the timeout below.
+    stream
+        .set_nonblocking(false)
+        .expect("blocking accepted stream");
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .expect("timeout");
