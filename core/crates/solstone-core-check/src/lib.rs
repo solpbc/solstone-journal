@@ -1921,7 +1921,8 @@ mod tests {
         assert_eq!(g.severity, Severity::Blocked);
         assert!(g.detail.contains("configured-small"));
 
-        // on pair_b
+        // Small NVIDIA capacity must not block the eligible selected Vulkan device.
+        inputs.nvidia.vram_mib = Some(2048);
         inputs.vulkan.devices = pair_b.clone();
         let g = gpu(&inputs);
         assert_eq!(g.severity, Severity::Ok);
@@ -1929,6 +1930,7 @@ mod tests {
 
         // 4. Linux with nvidia.detected: true and local_backend: Cuda
         inputs.local_backend = Some(solstone_core_local::Backend::Cuda);
+        inputs.nvidia.vram_mib = Some(16384);
         inputs.vulkan.devices = pair_a.clone();
         inputs.vulkan_device_index = Some(1); // Vulkan device 1 is below bar
         let g = gpu(&inputs);
