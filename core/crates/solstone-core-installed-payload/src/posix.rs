@@ -1004,7 +1004,9 @@ fn relative_path(root: &Path, path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::io::{self, Write};
+    #[cfg(unix)]
+    use std::io;
+    use std::io::Write;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
@@ -1027,6 +1029,7 @@ mod tests {
         fs::write(&path, bytes).expect("write");
     }
 
+    #[cfg(unix)]
     fn screen_ocr_tree(root: &Path, include_runtime_dependency: bool) -> PathBuf {
         write_file(root, "bin/solstone-core", &elf(b"probe"));
         write_file(root, "bin/solstone-screen-ocr-helper", b"helper executable");
