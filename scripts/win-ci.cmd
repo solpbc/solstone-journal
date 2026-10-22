@@ -139,6 +139,7 @@ call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests:
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::apply_failure_and_spawn_verified_helper_argv_inspection" "full-tests" || exit /b 1
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::delta_rejections_and_plan_clearing" "full-tests" || exit /b 1
 call :run_exact_binary "solstone-core-journal-app" "journal-app" "update::tests::full_tests::non_plain_filename_does_not_delete_outside_packages_dir" "full-tests" || exit /b 1
+call :run_exact_binary "solstone-core-journal-app" "journal-app" "convey::tests::full_tests::a_slow_setup_answer_still_reaches_home" "full-tests" || exit /b 1
 echo === cargo test --locked (Windows local thinking runtime) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1

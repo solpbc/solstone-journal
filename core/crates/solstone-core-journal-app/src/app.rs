@@ -172,9 +172,7 @@ fn dispatch_effect(context: &Context, effect: &crate::setup_flow::Effect, port: 
             let proxy = context.proxy.clone();
             let current_gen = context.session.borrow().inflight.unwrap_or(0);
             std::thread::spawn(move || {
-                let result = Convey::new(Some(port))
-                    .get("/init/api/state")
-                    .map_err(|refusal| refusal.message);
+                let result = Convey::new(Some(port)).setup_state();
                 proxy.send_event(UserEvent::Flow(crate::setup_flow::Event::StateLoaded {
                     generation: current_gen,
                     result,
@@ -187,16 +185,9 @@ fn dispatch_effect(context: &Context, effect: &crate::setup_flow::Effect, port: 
             };
             let proxy = context.proxy.clone();
             let current_gen = context.session.borrow().inflight.unwrap_or(0);
-            let body = crate::setup_flow::action_body(action);
+            let action = action.clone();
             std::thread::spawn(move || {
-                let result = match Convey::new(Some(port)).post("/init/api/action", Some(&body)) {
-                    Ok(val) => Ok(val),
-                    Err(refusal) => Err(crate::setup_flow::ActionErrorPayload {
-                        reason_code: refusal.reason_code,
-                        message: refusal.message,
-                        is_transport: refusal.status.is_none(),
-                    }),
-                };
+                let result = Convey::new(Some(port)).setup_action(&action);
                 proxy.send_event(UserEvent::Flow(crate::setup_flow::Event::ActionCompleted {
                     generation: current_gen,
                     result,
