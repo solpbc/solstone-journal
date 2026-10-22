@@ -553,6 +553,77 @@ pub fn due_activity_retries(journal: &Path, now_ms: i64) -> Result<Vec<ActivityR
     }
 }
 
+/// A rebuild seal cannot hide parked, blocked, muted or delayed activity work.
+pub(crate) fn require_day_drained(journal: &Path, day: &str) -> Result<(), String> {
+    let entries =
+        crate::daily_lifecycle::rebuild_files(journal, Path::new("health/activity-work"))?
+            .unwrap_or_default();
+    for (relative, bytes) in entries {
+        if relative.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let record: Record = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+        if record.version != 1 || path(journal, &record.identity)? != journal.join(relative) {
+            return Err("activity work filename mismatch".into());
+        }
+        if record.identity.day == day {
+            return Err("requested day has unfinished activity work".into());
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn rebuild_receipts(
+    context: &ThinkContext,
+    day: &str,
+) -> Result<BTreeMap<String, String>, String> {
+    require_day_drained(&context.journal, day)?;
+    let relative = Path::new("chronicle")
+        .join(day)
+        .join("health/talent-provenance/activity-inputs");
+    let entries =
+        crate::daily_lifecycle::rebuild_files(&context.journal, &relative)?.unwrap_or_default();
+    let mut proof = BTreeMap::new();
+    for (path, bytes) in entries {
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+        let facet = value["facet"]
+            .as_str()
+            .ok_or("activity receipt has no facet")?;
+        let activity = value["activity_id"]
+            .as_str()
+            .ok_or("activity receipt has no identity")?;
+        let expected = value["input_hash"]
+            .as_str()
+            .ok_or("activity receipt has no input binding")?;
+        if value["schema_version"] != 1
+            || crate::segment::activity_provenance_path(context, day, facet, activity)
+                != context.journal.join(&path)
+        {
+            return Err("activity receipt identity changed".into());
+        }
+        let record =
+            solstone_core_facets::get_activity_record(&context.journal, facet, day, activity)
+                .map_err(|e| e.to_string())?
+                .ok_or("completed activity disappeared")?;
+        if crate::segment::compute_activity_input_hash(context, day, &record).as_deref()
+            != Some(expected)
+        {
+            return Err("completed activity input changed".into());
+        }
+        proof.insert(
+            path.strip_prefix(&relative)
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .into_owned(),
+            expected.to_owned(),
+        );
+    }
+    Ok(proof)
+}
+
 /// A broken sibling is a visible gap, not a reason to suppress all valid work.
 pub fn discover_activity_retries(journal: &Path, now_ms: i64) -> (Vec<ActivityRetry>, Vec<String>) {
     let entries = match std::fs::read_dir(directory(journal)) {
@@ -760,6 +831,104 @@ pub(crate) fn seed_activity_retries_checked(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn rebuild_activity_observations_refuse_aliases_fifos_and_unbounded_receipts() {
+        use std::os::unix::fs::symlink;
+        let day = "20260101";
+        for subtree in [
+            "health/activity-work",
+            "chronicle/20260101/health/talent-provenance/activity-inputs",
+        ] {
+            for case in ["directory_alias", "file_alias", "fifo", "bytes", "entries"] {
+                let root = tempfile::tempdir().unwrap();
+                let outside = tempfile::tempdir().unwrap();
+                let context = ThinkContext::new(
+                    root.path(),
+                    day.into(),
+                    root.path().join("chronicle").join(day),
+                    1_700_000_000_000,
+                )
+                .unwrap();
+                assert!(rebuild_receipts(&context, day).unwrap().is_empty());
+                let base = root.path().join(subtree);
+                std::fs::create_dir_all(base.parent().unwrap()).unwrap();
+                if case == "directory_alias" {
+                    symlink(outside.path(), &base).unwrap();
+                } else {
+                    std::fs::create_dir(&base).unwrap();
+                    let file = base.join("receipt.json");
+                    match case {
+                        "file_alias" => {
+                            let source = outside.path().join("receipt.json");
+                            std::fs::write(&source, "{}").unwrap();
+                            symlink(source, file).unwrap();
+                        }
+                        "fifo" => assert!(
+                            std::process::Command::new("mkfifo")
+                                .arg(&file)
+                                .status()
+                                .unwrap()
+                                .success()
+                        ),
+                        "bytes" => std::fs::write(file, vec![b'x'; 4 * 1024 * 1024 + 1]).unwrap(),
+                        "entries" => {
+                            for n in 0..1025 {
+                                std::fs::write(base.join(format!("{n}.json")), "{}").unwrap();
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                assert!(
+                    crate::daily_lifecycle::rebuild_files(root.path(), Path::new(subtree)).is_err(),
+                    "bound observation must refuse before parsing: {subtree}/{case}"
+                );
+                assert!(rebuild_receipts(&context, day).is_err(), "{subtree}/{case}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_hidden_blocked_or_muted_activity_still_prevents_a_rebuild_seal() {
+        for muted in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let identity = ActivityRetry {
+                day: "20260101".into(),
+                facet: "work".into(),
+                activity: "meeting_120000_300".into(),
+            };
+            let target = path(root.path(), &identity).unwrap();
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            let record = Record {
+                version: 1,
+                identity,
+                input_hash: "input".into(),
+                remaining: BTreeSet::from(["activity".into()]),
+                uses: BTreeMap::new(),
+                parked: BTreeSet::from(["activity".into()]),
+                reasons: BTreeMap::new(),
+                attempts: 1,
+                next_attempt_ms: i64::MAX,
+                destination_id: None,
+                muted_pause: muted,
+                blocked: Some(BlockedDisposition {
+                    reason_code: "held".into(),
+                    message: "held".into(),
+                }),
+            };
+            solstone_core_journal_io::write_json(
+                &target,
+                &record,
+                solstone_core_journal_io::JsonWriteOptions::default(),
+            )
+            .unwrap();
+            assert!(due_activity_retries(root.path(), 0).unwrap().is_empty());
+            assert!(require_day_drained(root.path(), "20260101").is_err());
+            assert!(require_day_drained(root.path(), "20260102").is_ok());
+        }
+    }
     #[test]
     fn connection_retries_back_off_without_exhaustion() {
         assert_eq!(backoff_ms(1), 60_000);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Process-local SOL_STREAM cannot share the lib harness.
+//! Prove the bound stream is independent of process-local SOL_STREAM.
 
 use serde_json::Map;
 use solstone_core_talent_runtime::contract::GateDecision;
@@ -11,24 +11,30 @@ use std::env;
 use std::process::Command;
 
 #[test]
-fn criterion_11_reads_process_environment_not_request_env() {
-    for (stream, expected) in [
-        (Some("different.stream"), "skip"),
-        (Some("import.document"), "proceed"),
-        (None, "skip"),
-    ] {
-        let mut command = Command::new(env::current_exe().unwrap());
-        command.args([
-            "--exact",
-            "criterion_11_child_uses_the_production_gate",
-            "--nocapture",
-        ]);
-        command.env_remove("SOL_STREAM");
-        if let Some(s) = stream {
-            command.env("SOL_STREAM", s);
+fn criterion_11_uses_bound_stream_in_every_host_environment() {
+    for bound in [None, Some("different.stream"), Some("import.document")] {
+        for ambient in [None, Some("different.stream"), Some("import.document")] {
+            let mut command = Command::new(env::current_exe().unwrap());
+            command.args([
+                "--exact",
+                "criterion_11_child_uses_the_production_gate",
+                "--nocapture",
+            ]);
+            command.env_remove("SOL_STREAM");
+            if let Some(stream) = ambient {
+                command.env("SOL_STREAM", stream);
+            }
+            command.env("DOCUMENTS_GATE_BOUND", bound.unwrap_or(""));
+            command.env(
+                "DOCUMENTS_GATE_EXPECTATION",
+                if bound == Some("import.document") {
+                    "proceed"
+                } else {
+                    "skip"
+                },
+            );
+            assert!(command.status().unwrap().success());
         }
-        command.env("DOCUMENTS_GATE_EXPECTATION", expected);
-        assert!(command.status().unwrap().success());
     }
 }
 
@@ -37,7 +43,7 @@ fn criterion_11_child_uses_the_production_gate() {
     let Ok(expectation) = env::var("DOCUMENTS_GATE_EXPECTATION") else {
         return;
     };
-    let prepared = PreparedTalent {
+    let mut prepared = PreparedTalent {
         name: "documents".to_owned(),
         config: Map::from_iter([(
             "env".to_owned(),
@@ -46,13 +52,18 @@ fn criterion_11_child_uses_the_production_gate() {
             }),
         )]),
     };
+    let bound = env::var("DOCUMENTS_GATE_BOUND").unwrap();
+    if !bound.is_empty() {
+        prepared
+            .config
+            .insert("stream".into(), serde_json::Value::from(bound));
+    }
     let context = ExecutionContext {
         journal: Default::default(),
     };
     let before = prepared.config.clone();
-    // Cortex applies request.env to the child process at process.rs:118-127,
-    // while the request JSON carries the same map. Reading that map here
-    // would always skip in production, so the production gate reads env.
+    // Native callable hosts do not mutate the host process environment.
+    // Request.env is transport metadata; the bound stream drives the gate.
     let decision = gate(&prepared, &context).unwrap();
     match expectation.as_str() {
         "skip" => assert_eq!(

@@ -5,12 +5,17 @@ use crate::contract::GateDecision;
 use crate::{ExecutionContext, PreparedTalent, StageError};
 
 pub fn gate(
-    _prepared: &PreparedTalent,
+    prepared: &PreparedTalent,
     _context: &ExecutionContext,
 ) -> Result<GateDecision, StageError> {
-    // Cortex projects request.env into this worker's process environment; the
-    // hook deliberately reads that process environment rather than the request.
-    Ok(gate_stream(std::env::var("SOL_STREAM").ok().as_deref()))
+    // Callable hosts do not project request.env into the host environment.
+    // The prepared request carries the same bound stream in every host.
+    Ok(gate_stream(
+        prepared
+            .config
+            .get("stream")
+            .and_then(serde_json::Value::as_str),
+    ))
 }
 
 fn gate_stream(stream: Option<&str>) -> GateDecision {

@@ -14,6 +14,9 @@ use serde_json::{Map, Value};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender, CallosumSocketConnection};
 use solstone_core_journal_io::cortex_use::{allocate_cortex_use_id, talent_directory_name};
 
+mod receipt;
+pub use receipt::read_completed_use_events;
+
 const CLAIM_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const OUTCOME_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);

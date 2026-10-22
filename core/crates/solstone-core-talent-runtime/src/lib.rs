@@ -17,6 +17,7 @@ use solstone_core_system_health::{DataState, read_segment_data_state};
 
 pub mod activity_contract;
 pub mod assemble;
+pub mod conditional_segment;
 pub mod contract;
 mod daily_execution;
 pub mod daily_location;
@@ -567,6 +568,7 @@ pub fn execute_request(
             _ => {}
         }
     }
+    let applicability_request = request.clone();
     let outcome = execute_unclaimed(request, paths, context, generate, writer, cancellation);
     if cancellation.is_cancelled() || matches!(outcome, RuntimeOutcome::Cancelled) {
         return RuntimeOutcome::Cancelled;
@@ -577,6 +579,16 @@ pub fn execute_request(
             Some(error.reason_code())
         }
         RuntimeOutcome::SchemaValidationFailed { .. } => Some("schema_invalid"),
+        RuntimeOutcome::Skipped { .. } | RuntimeOutcome::PrepareSkipped { .. }
+            if conditional_segment::skip_is_applicable(
+                &applicability_request,
+                paths,
+                context,
+                &outcome,
+            ) == Ok(true) =>
+        {
+            None
+        }
         _ => Some("talent_unfinished"),
     };
     if let Some(attempt) = attempt {
@@ -622,6 +634,7 @@ fn execute_unclaimed(
     writer: &mut impl Write,
     cancellation: &solstone_core_generate::Cancellation,
 ) -> RuntimeOutcome {
+    let validation_request = request.clone();
     let mut prepared =
         match prepare::prepare(request, paths, context, prepare::PrepareMode::Execute) {
             Ok(prepared) => prepared,
@@ -633,10 +646,15 @@ fn execute_unclaimed(
     }
     emit_start(writer, &prepared);
     if let Some(reason) = prepared.config.get("skip_reason").and_then(Value::as_str) {
-        return RuntimeOutcome::PrepareSkipped {
-            talent: prepared.name.clone(),
-            reason: reason.to_owned(),
-        };
+        return conditional_segment::validate_skip(
+            RuntimeOutcome::PrepareSkipped {
+                talent: prepared.name.clone(),
+                reason: reason.to_owned(),
+            },
+            &validation_request,
+            paths,
+            context,
+        );
     }
     let talent_type = prepared
         .config
@@ -670,11 +688,16 @@ fn execute_unclaimed(
         match gate(&prepared, context) {
             Ok(GateDecision::Proceed) => {}
             Ok(GateDecision::Skip(reason)) => {
-                return RuntimeOutcome::Skipped {
-                    stage: hook.to_owned(),
-                    talent: prepared.name.clone(),
-                    reason,
-                };
+                return conditional_segment::validate_skip(
+                    RuntimeOutcome::Skipped {
+                        stage: hook.to_owned(),
+                        talent: prepared.name.clone(),
+                        reason,
+                    },
+                    &validation_request,
+                    paths,
+                    context,
+                );
             }
             Err(error) => return RuntimeOutcome::StageFailed(error),
         }
