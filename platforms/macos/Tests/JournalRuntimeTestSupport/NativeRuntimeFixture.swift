@@ -26,7 +26,7 @@ public enum NativeRuntimeFixtureError: LocalizedError {
             return """
             native journal runtime is missing at \(path); stage the accepted archive with \
             `make journal-native-runtime-accepted ...` or point \
-            \(NativeRuntimeFixture.runtimeDirectoryEnvironmentKey) at a runtime tree that contains bin/journal
+            \(NativeRuntimeFixture.runtimeDirectoryEnvironmentKey) at a runtime tree that contains bin/solstone
             """
         }
     }
@@ -59,7 +59,7 @@ public struct NativeRuntimeFixture: Sendable {
     }
 
     /// Resolve the runtime tree: the environment override first, then the checkout's staged
-    /// accepted runtime. Refuses by name when neither holds an executable `bin/journal`.
+    /// accepted runtime. Refuses by name when neither holds an executable `bin/solstone`.
     public static func resolveRuntimeRoot(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> URL {
@@ -70,8 +70,8 @@ public struct NativeRuntimeFixture: Sendable {
             candidate = packageRoot.appendingPathComponent(defaultRuntimeRelativePath, isDirectory: true)
         }
         let layout = SolstoneRuntimeLayout(rootURL: candidate)
-        guard FileManager.default.isExecutableFile(atPath: layout.journalBinary.path) else {
-            throw NativeRuntimeFixtureError.runtimeMissing(layout.journalBinary.path)
+        guard FileManager.default.isExecutableFile(atPath: layout.solstoneBinary.path) else {
+            throw NativeRuntimeFixtureError.runtimeMissing(layout.solstoneBinary.path)
         }
         return candidate
     }
@@ -113,7 +113,7 @@ public struct NativeRuntimeFixture: Sendable {
     }
 
     public var journalBinary: URL {
-        runtime.layout.journalBinary
+        runtime.layout.solstoneBinary
     }
 
     private static func isolatedEnvironment(
@@ -150,7 +150,7 @@ public struct NativeRuntimeFixture: Sendable {
         let started = ContinuousClock.now
         let result = try await runner.run(
             executable: journalBinary,
-            arguments: arguments,
+            arguments: ["journal"] + arguments,
             environment: environment,
             timeout: timeout,
             stdoutHandler: { stdout.append($0) },
