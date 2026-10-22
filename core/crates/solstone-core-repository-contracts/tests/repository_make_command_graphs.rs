@@ -475,7 +475,7 @@ fn msrv_target_is_retained_while_a_descendant_still_uses_it() {
     );
     write_executable(
         &shims.join("cargo"),
-        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" > \"$SOLSTONE_MSRV_TARGET_LOG\"\nmkdir -p \"$CARGO_TARGET_DIR\"\n/bin/sh -c 'printf \"%s\\n\" \"$$\" > \"$1\"; : > \"$2\"; exec /bin/sleep 30' child \"$SOLSTONE_CHILD_PID_LOG\" \"$SOLSTONE_CHILD_READY\" </dev/null >/dev/null 2>&1 &\nwhile [ ! -e \"$SOLSTONE_CHILD_READY\" ]; do /bin/sleep 0.01; done\nexit 23\n",
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" > \"$SOLSTONE_MSRV_TARGET_LOG\"\nmkdir -p \"$CARGO_TARGET_DIR\"\n/bin/sh -c 'printf \"%s\\n\" \"$$\" > \"$1\"; : > \"$2\"; exec /bin/sleep 600' child \"$SOLSTONE_CHILD_PID_LOG\" \"$SOLSTONE_CHILD_READY\" </dev/null >/dev/null 2>&1 &\nwhile [ ! -e \"$SOLSTONE_CHILD_READY\" ]; do /bin/sleep 0.01; done\nexit 23\n",
     );
 
     let configured_target = root.join("private-cargo-target");
