@@ -1323,6 +1323,20 @@ install-models:
 	@test -x "$(RUST_BIN)/solstone-core-sol" || { echo "missing $(RUST_BIN)/solstone-core-sol; run make build first" >&2; exit 1; }
 	$(RUST_BIN)/solstone-core-sol journal install-models
 
+# Build the standalone MLX helper with its Metal resource bundle.
+MLX_HELPER_DIR := core/crates/solstone-core-local/mlx-helper
+.PHONY: mlx-helper mlx-helper-clean
+mlx-helper:
+	@test "$$(uname -s)/$$(uname -m)" = Darwin/arm64 || { echo "mlx-helper requires macOS on arm64" >&2; exit 1; }
+	cd $(MLX_HELPER_DIR) && xcodebuild -scheme mlx-helper -destination 'platform=macOS,arch=arm64' -configuration Release -derivedDataPath DerivedData -skipPackagePluginValidation -skipMacroValidation build
+	@test -x $(MLX_HELPER_DIR)/DerivedData/Build/Products/Release/mlx-helper
+	@test -d $(MLX_HELPER_DIR)/DerivedData/Build/Products/Release/mlx-swift_Cmlx.bundle
+	@echo "binary: $$(pwd)/$(MLX_HELPER_DIR)/DerivedData/Build/Products/Release/mlx-helper"
+	@echo "Metal resources: $$(pwd)/$(MLX_HELPER_DIR)/DerivedData/Build/Products/Release/mlx-swift_Cmlx.bundle"
+
+mlx-helper-clean:
+	rm -rf $(MLX_HELPER_DIR)/DerivedData $(MLX_HELPER_DIR)/.build $(MLX_HELPER_DIR)/.swiftpm
+
 # Build the parakeet helper binary (macOS/arm64 only, requires Xcode CLT)
 parakeet-helper:
 	cd core/crates/solstone-core-transcribe/parakeet-helper && swift build -c release

@@ -270,3 +270,5 @@ URLs through this registry. The remaining catalog rows stay declarative until
 their owners adopt the registry.
 
 There are no runtime compatibility shims for the retired shapes.
+
+Development-only macOS inference helper: [mlx-helper](../core/crates/solstone-core-local/mlx-helper/README.md).
