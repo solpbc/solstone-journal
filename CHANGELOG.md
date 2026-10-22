@@ -6,12 +6,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.55] - 2026-10-22
+
 ### Added
 
 - your journal now keeps each word's timing and the speech model's confidence, when available, with new audio transcripts. existing transcripts stay as they are.
 - a month view in the map app shows visits and stays as areas shaded by how many days had one there, with a calendar and each trip away listed on its own. open it from "this month" on a day or week.
-- when an activity ran while your calendar had a meeting scheduled, the activity now shows the meeting beside it, with the people on the invite already in your journal. the activity keeps its own title. the meeting shows what was planned, not who came. agents you've let read your whole journal's transcripts see it too, and your morning briefing can call yesterday's activity by the meeting's name.
-- people on a calendar invite who are already in your journal, by their email or a name your journal already has for them, written the same way, are now linked to you as scheduled with you.
+- when an activity ran while your calendar had a meeting scheduled, the activity now shows the meeting beside it, with the people on the invite already in your journal. the activity keeps its own title. the meeting shows what was planned, not who came. agents you've let read your whole journal's transcripts see the meeting too, and its people if you've also let them see entities. your morning briefing can call yesterday's activity by the meeting's name.
+- people on a calendar invite who are already in your journal, found by their email or a name your journal has for them written the same way, now show in your connections.
 - events in calendar files you import from now on can also be found by the day each one happens, not only the day it was added or last changed. repeating events are listed up to a year after you import them. calendars you imported before aren't listed this way.
 - your journal now recognizes text from your screens on windows computers with intel or amd processors and linux computers with 64-bit arm processors. find it in search, including commands, errors and reference numbers. connected agents can read it when you enable screen text in their permissions; existing connections keep their current permissions. masking passwords and other secrets is best effort; your written redaction rules do not apply to screen text.
 
@@ -22,10 +24,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- setup logs now keep more detail when your journal fails to start.
-- on windows, long continuous recordings and some queued recordings now transcribe. your journal tries the recordings that were waiting for local transcription again after you update.
-- on linux, local transcription uses less memory when it runs on the cpu.
 - security fix on windows: someone impersonating the update server could supply altered journal software as an update; updates now require a valid sol pbc signature on the complete package.
+- setup logs now keep more detail when your journal fails to start.
+- on windows, long continuous recordings and some queued recordings now transcribe. on windows and linux, recordings that local transcription gave up on because it couldn't start are tried again after you update.
+- on linux, local transcription uses less memory when it runs on the cpu.
+- when you import a calendar file from Outlook, or another calendar that names windows time zones, its events now show their time and length instead of only their title.
 - on a day with hundreds of activities, your morning briefing now arrives, leaving out what doesn't fit, instead of not at all.
 - on mac, local transcription now leaves out long stretches of speech much less often. a transcript could miss a sentence or more, sometimes more than ten seconds of speech. now and then a short recording's transcript was empty. neither showed an error. recordings your journal already transcribed keep the transcripts they have.
 
