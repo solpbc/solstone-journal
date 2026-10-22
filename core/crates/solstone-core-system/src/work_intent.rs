@@ -45,7 +45,12 @@ pub struct DailyTarget {
 }
 
 pub struct RebuildLease {
+    #[cfg(not(windows))]
     _guard: FileLock,
+    // The Windows guard is Send, not Sync. Retain it opaquely until the last
+    // shared lease drops; no executor borrows or locks this private wrapper.
+    #[cfg(windows)]
+    _guard: std::sync::Mutex<FileLock>,
     pub id: String,
     pub day: String,
     pub resumed: bool,
@@ -263,7 +268,10 @@ pub fn begin_rebuild(
         }
     })?;
     Ok(RebuildLease {
+        #[cfg(not(windows))]
         _guard: guard,
+        #[cfg(windows)]
+        _guard: std::sync::Mutex::new(guard),
         id: id.into(),
         day: day.into(),
         resumed,
@@ -378,6 +386,53 @@ pub fn retire_current_checked(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rebuild_lease_can_be_retained_by_shared_workers() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<RebuildLease>();
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn final_worker_lease_excludes_recovery_until_worker_release() {
+        use std::sync::{Arc, mpsc};
+
+        let root = tempfile::tempdir().unwrap();
+        let day = "20260101";
+        let request = register(root.path(), day, true).unwrap();
+        let lease = Arc::new(begin_rebuild(root.path(), day, &request.id, "root").unwrap());
+        update_rebuild(root.path(), day, &request.id, &|| Ok(()), |progress| {
+            progress.segments = Some(SegmentSeal {
+                generation: 1,
+                raw_fingerprint: "input".into(),
+                receipts_digest: "proof".into(),
+            });
+            Ok(())
+        })
+        .unwrap();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let worker_lease = Arc::clone(&lease);
+        let worker = std::thread::spawn(move || {
+            ready_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            drop(worker_lease);
+        });
+        ready_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        drop(lease);
+        let blocked = begin_rebuild(root.path(), day, &request.id, "root");
+        // Join even if admission is broken, so assertion failure cannot leave
+        // the worker holding a lease beyond this test's bounded handshake.
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        assert!(matches!(
+            blocked,
+            Err(error) if error == "requested day is owned by another executor"
+        ));
+        let resumed = begin_rebuild(root.path(), day, &request.id, "root").unwrap();
+        assert!(resumed.resumed);
+    }
 
     #[test]
     fn recovery_requires_provenance_completed_segment_phase_and_released_executor() {
